@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: jtoye-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432" # use 5433 on host to avoid conflicts with existing postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    networks:
+      - jtoye-net
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: jtoye-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KC_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - jtoye-net
+    depends_on:
+      - postgres
+
+networks:
+  jtoye-net:
+    driver: bridge
+
+volumes:
+  pgdata:
