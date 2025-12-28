@@ -43,4 +43,4 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 
 ### Junie ###
-.junie/
+.junie/core-java/build-local/
