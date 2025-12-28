@@ -12,7 +12,7 @@ This guide demonstrates how to test the multi-tenant JWT authentication system w
 
 Run the diagnostic script to verify everything is working:
 ```bash
-bash diagnose-jwt-issue.sh
+bash scripts/testing/diagnose-jwt-issue.sh
 ```
 
 Expected output:
