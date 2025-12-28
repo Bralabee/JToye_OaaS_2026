@@ -1,0 +1,9 @@
+# Local development profile - automatically sets DB_PORT=5433
+# This profile is used for local development when running from IntelliJ
+# To use: Set active profile to 'local' in IntelliJ run configuration
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/jtoye
+    username: jtoye
+    password: secret

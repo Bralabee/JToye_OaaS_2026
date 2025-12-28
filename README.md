@@ -69,9 +69,10 @@ cd edge-go && go run ./cmd/edge
 
 Configuration
 - **Core API**: Port 9090 (configurable via `SERVER_PORT` env var)
-- **PostgreSQL**: Port 5433 (Docker), requires `DB_PORT=5433` env var
+- **PostgreSQL**: Port 5433 (Docker) - now configured as default
 - **Keycloak**: Port 8085
-- See `SETUP.md` for detailed setup instructions and troubleshooting
+- See `docs/setup/SETUP.md` for detailed setup instructions
+- See `docs/setup/INTELLIJ_SETUP.md` for IntelliJ IDEA configuration
 
 Security / OIDC
 - Resource server issuer: `${KC_ISSUER_URI:-http://localhost:8081/realms/jtoye-dev}`
