@@ -34,21 +34,22 @@ docs/
 2. **[CHANGELOG.md](../CHANGELOG.md)** - Version history and changes
 3. **[docs/status/PROJECT_STATUS.md](status/PROJECT_STATUS.md)** - Current project status and health
 
-### Testing & Verification
-4. **[docs/guides/TESTING_GUIDE.md](guides/TESTING_GUIDE.md)** - How to test the system
-5. **[docs/guides/APPLICATION_VERIFICATION.md](guides/APPLICATION_VERIFICATION.md)** - Verification procedures
+### Testing & User Guides
+4. **[docs/guides/USER_GUIDE.md](guides/USER_GUIDE.md)** - ⭐ Complete user guide for manual API testing
+5. **[docs/guides/TESTING_GUIDE.md](guides/TESTING_GUIDE.md)** - Automated testing procedures
+6. **[docs/guides/APPLICATION_VERIFICATION.md](guides/APPLICATION_VERIFICATION.md)** - Verification procedures
 
 ### Planning & Roadmap
-6. **[docs/planning/PHASE_1_PLAN.md](planning/PHASE_1_PLAN.md)** - Phase 1 implementation plan and progress
-7. **[docs/planning/PHASE_1_READINESS.md](planning/PHASE_1_READINESS.md)** - Phase 1 readiness assessment
-8. **[docs/planning/NEXT_SESSION_CHECKLIST.md](planning/NEXT_SESSION_CHECKLIST.md)** - Checklist for next session
+7. **[docs/planning/PHASE_1_PLAN.md](planning/PHASE_1_PLAN.md)** - Phase 1 implementation plan and progress
+8. **[docs/planning/PHASE_1_READINESS.md](planning/PHASE_1_READINESS.md)** - Phase 1 readiness assessment
+9. **[docs/planning/NEXT_SESSION_CHECKLIST.md](planning/NEXT_SESSION_CHECKLIST.md)** - Checklist for next session
 
 ### Architecture & Implementation
-9. **[docs/status/IMPLEMENTATION_SUMMARY.md](status/IMPLEMENTATION_SUMMARY.md)** - Architecture and technical details
-10. **[docs/status/SESSION_HANDOFF.md](status/SESSION_HANDOFF.md)** - Session notes and handoff
+10. **[docs/status/IMPLEMENTATION_SUMMARY.md](status/IMPLEMENTATION_SUMMARY.md)** - Architecture and technical details
+11. **[docs/status/SESSION_HANDOFF.md](status/SESSION_HANDOFF.md)** - Session notes and handoff
 
 ### Development Guidelines
-11. **[docs/AI_CONTEXT.md](AI_CONTEXT.md)** - Security & compliance directives for AI agents
+12. **[docs/AI_CONTEXT.md](AI_CONTEXT.md)** - Security & compliance directives for AI agents
 
 ---
 
@@ -110,20 +111,41 @@ docs/
 
 ---
 
+### 📖 guides/USER_GUIDE.md ⭐ NEW
+**Purpose:** Complete user guide for manual API testing
+**Audience:** Developers, QA engineers, API users
+**Key Sections:**
+- Quick start with authentication setup
+- Complete API endpoint reference (Shops, Products, Orders)
+- Manual testing with cURL (copy-paste ready examples)
+- Manual testing with Postman (collection setup)
+- Multi-tenant isolation testing
+- Common workflows (order lifecycle, bulk operations)
+- Comprehensive troubleshooting
+- Complete test script in appendix
+
+**When to read:**
+- **PRIMARY GUIDE** for anyone testing the API manually
+- When learning the API endpoints
+- When setting up Postman collections
+- When troubleshooting API issues
+
+---
+
 ### 🧪 guides/TESTING_GUIDE.md
-**Purpose:** Comprehensive testing procedures
-**Audience:** QA engineers, developers, testers
+**Purpose:** Automated testing procedures and diagnostics
+**Audience:** QA engineers, developers
 **Key Sections:**
 - Multi-tenant JWT authentication testing
 - Prerequisites and setup
-- Quick diagnostic test
+- Quick diagnostic test script
 - Detailed testing procedures
 - Test scenarios (JWT-only, header fallback, security)
 - Troubleshooting guide
 - Success criteria
 
 **When to read:**
-- Before running tests
+- Before running automated tests
 - When verifying tenant isolation
 - When troubleshooting authentication issues
 
@@ -231,7 +253,8 @@ docs/
 ```
 docs/
 ├── guides/
-│   ├── TESTING_GUIDE.md           # Testing procedures
+│   ├── USER_GUIDE.md              # Manual API testing guide ⭐
+│   ├── TESTING_GUIDE.md           # Automated testing procedures
 │   └── APPLICATION_VERIFICATION.md # Legacy verification
 ├── planning/
 │   ├── PHASE_1_PLAN.md            # Phase 1 implementation plan ⭐
@@ -278,7 +301,11 @@ docs/
 
 | Question | Document | Section |
 |----------|----------|---------|
+| How do I test the API manually? | **guides/USER_GUIDE.md** ⭐ | Complete guide |
 | How do I start the application? | README.md | Quick start |
+| How do I create an order? | guides/USER_GUIDE.md | Create Order (cURL/Postman) |
+| What are all the API endpoints? | guides/USER_GUIDE.md | API Endpoints |
+| How do I get a JWT token? | guides/USER_GUIDE.md | Authentication Setup |
 | Are all tests passing? | status/PROJECT_STATUS.md | Test Results |
 | What's Phase 1 status? | planning/PHASE_1_PLAN.md | Progress Tracking |
 | How do I test JWT authentication? | guides/TESTING_GUIDE.md | Quick Test |
@@ -289,7 +316,8 @@ docs/
 | What's the architecture? | status/IMPLEMENTATION_SUMMARY.md | Architecture Overview |
 | What's planned next? | planning/PHASE_1_PLAN.md | Next Steps |
 | How do orders work? | planning/PHASE_1_PLAN.md | Order Entity & CRUD |
-| What are the database migrations? | planning/PHASE_1_PLAN.md | Database Migrations |
+| How do I troubleshoot API errors? | guides/USER_GUIDE.md | Troubleshooting |
+| What are common workflows? | guides/USER_GUIDE.md | Common Workflows |
 
 ---
 
