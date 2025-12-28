@@ -39,8 +39,11 @@ class TenantIsolationSecurityTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.datasource.username", () -> "jtoye_app");
+        registry.add("spring.datasource.password", () -> "secret");
+        registry.add("spring.flyway.url", postgres::getJdbcUrl);
+        registry.add("spring.flyway.user", postgres::getUsername);
+        registry.add("spring.flyway.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
     }
 
@@ -52,6 +55,9 @@ class TenantIsolationSecurityTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private jakarta.persistence.EntityManager entityManager;
 
     private UUID tenantA;
     private UUID tenantB;
@@ -70,13 +76,17 @@ class TenantIsolationSecurityTest {
     void shouldOnlySeeTenantAShopsWhenTenantContextSetToA() {
         // Given: Create shops for both tenants
         TenantContext.set(tenantA);
-        Shop shopA1 = createShop("Shop A1");
-        Shop shopA2 = createShop("Shop A2");
+        createShop("Shop A1");
+        createShop("Shop A2");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         TenantContext.set(tenantB);
-        Shop shopB1 = createShop("Shop B1");
+        createShop("Shop B1");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         // When: Query as Tenant A
         TenantContext.set(tenantA);
@@ -95,6 +105,8 @@ class TenantIsolationSecurityTest {
         TenantContext.set(tenantA);
         createShop("Shop A1");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         // When: Query without tenant context (simulating missing tenant in request)
         List<Shop> shops = shopRepository.findAll();
@@ -107,12 +119,16 @@ class TenantIsolationSecurityTest {
     void shouldEnforceRLSOnProductsTable() {
         // Given: Create products for both tenants
         TenantContext.set(tenantA);
-        Product prodA = createProduct("SKU-A-001", "Product A");
+        createProduct("SKU-A-001", "Product A");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         TenantContext.set(tenantB);
-        Product prodB = createProduct("SKU-B-001", "Product B");
+        createProduct("SKU-B-001", "Product B");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         // When: Query as Tenant A
         TenantContext.set(tenantA);
@@ -128,6 +144,8 @@ class TenantIsolationSecurityTest {
     void shouldPreventInsertingDataForOtherTenant() {
         // Given: Set context to Tenant A
         TenantContext.set(tenantA);
+        entityManager.flush();
+        entityManager.clear();
 
         // When: Try to create a shop with Tenant B's ID (RLS should block)
         Shop shop = new Shop();
@@ -148,16 +166,22 @@ class TenantIsolationSecurityTest {
         TenantContext.set(tenantA);
         createShop("Shop A");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         TenantContext.set(tenantB);
         createShop("Shop B");
         TenantContext.clear();
+        entityManager.flush();
+        entityManager.clear();
 
         // When/Then: Switch contexts and verify isolation
         TenantContext.set(tenantA);
         assertThat(shopRepository.findAll()).hasSize(1).allMatch(s -> s.getName().equals("Shop A"));
         TenantContext.clear();
+        entityManager.clear();
 
+        // When/Then: Switch contexts and verify isolation
         TenantContext.set(tenantB);
         assertThat(shopRepository.findAll()).hasSize(1).allMatch(s -> s.getName().equals("Shop B"));
         TenantContext.clear();

@@ -35,7 +35,7 @@ spring:
           issuer-uri: ${KC_ISSUER_URI:http://localhost:8081/realms/jtoye-dev}
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:9090}
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain

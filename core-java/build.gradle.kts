@@ -10,6 +10,10 @@ java {
     }
 }
 
+// Redirect build directory to 'build-local' to avoid permission issues with the default 'build' directory
+// (which is sometimes created/owned by root in this environment).
+layout.buildDirectory.set(file("build-local"))
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
