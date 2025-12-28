@@ -75,27 +75,62 @@ Configuration
 - See `docs/setup/INTELLIJ_SETUP.md` for IntelliJ IDEA configuration
 
 Security / OIDC
-- Resource server issuer: `${KC_ISSUER_URI:-http://localhost:8081/realms/jtoye-dev}`
+- Resource server issuer: `${KC_ISSUER_URI:-http://localhost:8085/realms/jtoye-dev}`
 - All non-health endpoints require a valid Keycloak JWT for realm `jtoye-dev`.
+- **Multi-tenant JWT authentication**: Fully implemented and tested
+  - JWT tokens contain `tenant_id` claim via Keycloak group mappings
+  - Filter order: `TenantFilter` (header fallback) → JWT Auth → `JwtTenantFilter` (JWT tenant extraction)
+  - `JwtTenantFilter` runs after `BearerTokenAuthenticationFilter` to ensure JWT is validated
+  - JWT tenant has PRIORITY over X-Tenant-ID header for security
 - Tenant resolution priority:
-  1) JWT claim `tenant_id` (preferred) → `tenantId` → `tid`
-  2) Dev fallback header `X-Tenant-Id: <uuid>`
+  1) JWT claim `tenant_id` (preferred) → `tenantId` → `tid` - **PRODUCTION READY**
+  2) Dev fallback header `X-Tenant-Id: <uuid>` - **DEV/TESTING ONLY**
 
-Verify domain endpoints and RLS
-1) Get a token:
+Verify multi-tenant JWT authentication and RLS
+**Production approach (JWT-only - RECOMMENDED):**
 ```bash
+# Keycloak is pre-configured with:
+# - Groups: tenant-a, tenant-b (with tenant_id attributes)
+# - Users: tenant-a-user (password: password), tenant-b-user (password: password)
+# - Group membership protocol mapper to inject tenant_id into JWT
+
 KC=http://localhost:8085
+
+# Get token for Tenant A user
+TOKEN_A=$(curl -s \
+  -d 'grant_type=password' \
+  -d 'client_id=core-api' \
+  -d 'username=tenant-a-user' \
+  -d 'password=password' \
+  "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
+
+# Get token for Tenant B user
+TOKEN_B=$(curl -s \
+  -d 'grant_type=password' \
+  -d 'client_id=core-api' \
+  -d 'username=tenant-b-user' \
+  -d 'password=password' \
+  "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
+
+# Tenant A sees only their shops (JWT-only, no header needed)
+curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/shops | jq '.content[] | .name'
+
+# Tenant B sees only their shops (JWT-only, no header needed)
+curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/shops | jq '.content[] | .name'
+```
+
+**Dev approach (header fallback):**
+```bash
+# Get a generic token
 TOKEN=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
   -d 'username=dev-user' \
   -d 'password=password' \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
-```
-2) Choose tenants (dev):
-```bash
-TENANT_A=8d5e8f7a-9c2d-4c1a-9c2f-1f1a2b3c4d5e
-TENANT_B=11111111-2222-3333-4444-555555555555
+
+TENANT_A=00000000-0000-0000-0000-000000000001
+TENANT_B=00000000-0000-0000-0000-000000000002
 ```
 3) Ensure tenant rows, then create/list data for RLS demonstration:
 ```bash
@@ -130,7 +165,23 @@ Data Security (RLS)
 For AI agents
 - See `docs/AI_CONTEXT.md` for the strict Security & Compliance directives and project guardrails.
 
+## Current Status
+
+✅ **Completed (Phase 0/1)**:
+- Multi-tenant JWT authentication with Keycloak group mappings
+- Row-Level Security (RLS) enforcement via PostgreSQL policies
+- JWT `tenant_id` extraction and ThreadLocal context management
+- AOP-based tenant isolation (`TenantSetLocalAspect`)
+- Flyway database migrations with RLS policies
+- Test data and verification scripts
+
+🔧 **Verified Working**:
+- JWT-only authentication returns correct tenant-scoped data
+- RLS blocks cross-tenant access at database level
+- Filter chain executes in correct order (TenantFilter → Auth → JwtTenantFilter)
+- Aspect sets `app.current_tenant_id` on each transaction
+
 Roadmap (per manifesto)
 - Core-Java: enrich domain (DTO-first), Envers auditing config/tables, StateMachine for orders, JasperReports labels.
-- Infra: map `tenant_id` into JWT via Keycloak protocol mapper; optional CI.
+- ~~Infra: map `tenant_id` into JWT via Keycloak protocol mapper~~ ✅ **COMPLETED**
 - Edge-Go: WhatsApp bridge + conflict resolution; circuit breakers.

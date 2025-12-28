@@ -9,6 +9,14 @@ ALTER TABLE shops FORCE ROW LEVEL SECURITY;
 ALTER TABLE products FORCE ROW LEVEL SECURITY;
 ALTER TABLE financial_transactions FORCE ROW LEVEL SECURITY;
 
+-- Explicitly ensure bypassrls is disabled for current roles (though default is disabled)
+DO $$
+BEGIN
+    EXECUTE 'ALTER ROLE ' || current_user || ' NOBYPASSRLS';
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Could not set NOBYPASSRLS on current user';
+END $$;
+
 -- Only allow access to rows where tenant_id = current_tenant_id()
 DO $$
 BEGIN
@@ -16,6 +24,7 @@ BEGIN
         SELECT 1 FROM pg_policies WHERE tablename = 'shops' AND policyname = 'shops_rls_policy'
     ) THEN
         CREATE POLICY shops_rls_policy ON shops
+            FOR ALL
             USING (tenant_id = current_tenant_id())
             WITH CHECK (tenant_id = current_tenant_id());
     END IF;
@@ -24,6 +33,7 @@ BEGIN
         SELECT 1 FROM pg_policies WHERE tablename = 'products' AND policyname = 'products_rls_policy'
     ) THEN
         CREATE POLICY products_rls_policy ON products
+            FOR ALL
             USING (tenant_id = current_tenant_id())
             WITH CHECK (tenant_id = current_tenant_id());
     END IF;
@@ -32,6 +42,7 @@ BEGIN
         SELECT 1 FROM pg_policies WHERE tablename = 'financial_transactions' AND policyname = 'financial_transactions_rls_policy'
     ) THEN
         CREATE POLICY financial_transactions_rls_policy ON financial_transactions
+            FOR ALL
             USING (tenant_id = current_tenant_id())
             WITH CHECK (tenant_id = current_tenant_id());
     END IF;

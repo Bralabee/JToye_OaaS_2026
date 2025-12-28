@@ -17,14 +17,15 @@ END$$;
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
 LANGUAGE plpgsql AS $$
 DECLARE
-    v uuid;
+    v text;
 BEGIN
-    BEGIN
-        v := current_setting('app.current_tenant_id', true)::uuid;
-    EXCEPTION WHEN others THEN
-        v := NULL;
-    END;
-    RETURN v;
+    v := current_setting('app.current_tenant_id', true);
+    IF v IS NULL OR v = '' OR v = 'default' THEN
+        RETURN NULL;
+    END IF;
+    RETURN v::uuid;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
 END;
 $$;
 

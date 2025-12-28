@@ -39,8 +39,8 @@ class TenantIsolationSecurityTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", () -> "jtoye_app");
-        registry.add("spring.datasource.password", () -> "secret");
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.url", postgres::getJdbcUrl);
         registry.add("spring.flyway.user", postgres::getUsername);
         registry.add("spring.flyway.password", postgres::getPassword);
@@ -70,6 +70,18 @@ class TenantIsolationSecurityTest {
         // Create tenant rows
         jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?)", tenantA, "Tenant A");
         jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?)", tenantB, "Tenant B");
+
+        // Create a non-privileged user and transfer ownership
+        jdbcTemplate.execute("DO $$\n" +
+                "BEGIN\n" +
+                "   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'jtoye_test_user') THEN\n" +
+                "      CREATE ROLE jtoye_test_user LOGIN PASSWORD 'secret';\n" +
+                "   END IF;\n" +
+                "END$$;");
+        jdbcTemplate.execute("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO jtoye_test_user");
+        jdbcTemplate.execute("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO jtoye_test_user");
+        jdbcTemplate.execute("ALTER TABLE shops OWNER TO jtoye_test_user");
+        jdbcTemplate.execute("ALTER TABLE products OWNER TO jtoye_test_user");
     }
 
     @Test

@@ -4,6 +4,8 @@ import jakarta.persistence.EntityManager;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
 import org.hibernate.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -15,6 +17,7 @@ import java.util.UUID;
 @Aspect
 @Component
 public class TenantSetLocalAspect {
+    private static final Logger log = LoggerFactory.getLogger(TenantSetLocalAspect.class);
 
     private final EntityManager entityManager;
 
@@ -54,20 +57,19 @@ public class TenantSetLocalAspect {
 
     private void applyTenant(UUID tenantId) {
         Session session = entityManager.unwrap(Session.class);
-        session.doWork((Connection connection) -> {
-            // Note: PostgreSQL does not support parameter placeholders for SET LOCAL; use a literal.
-            try (java.sql.Statement st = connection.createStatement()) {
-                st.execute("SET LOCAL app.current_tenant_id = '" + tenantId + "'");
+        session.doWork(connection -> {
+            try (var stmt = connection.createStatement()) {
+                stmt.execute("SET LOCAL app.current_tenant_id = '" + tenantId + "'");
+                log.debug("Set RLS tenant context: {}", tenantId);
             }
         });
     }
 
     private void resetTenant() {
         Session session = entityManager.unwrap(Session.class);
-        session.doWork((Connection connection) -> {
-            try (java.sql.Statement st = connection.createStatement()) {
-                // For custom GUCs, use SET LOCAL ... TO DEFAULT to clear the value in this transaction
-                st.execute("SET LOCAL app.current_tenant_id TO DEFAULT");
+        session.doWork(connection -> {
+            try (var stmt = connection.createStatement()) {
+                stmt.execute("SET LOCAL app.current_tenant_id TO DEFAULT");
             }
         });
     }
