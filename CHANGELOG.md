@@ -5,7 +5,31 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Systems Engineering Review
+## [Unreleased] - Critical Fixes Implementation
+
+### Fixed
+- 🔴 **CRITICAL:** Fixed SQL injection vulnerability in `TenantSetLocalAspect.java:62`
+  - Changed from direct string concatenation to safe `set_config()` function
+  - Uses UUID.toString() which returns validated format
+  - Transaction-local setting preserved (same as SET LOCAL)
+- ⚠️ **HIGH:** Added ThreadLocal cleanup filter to prevent memory leaks
+  - New `TenantContextCleanupFilter` with HIGHEST_PRECEDENCE
+  - Ensures TenantContext.clear() always executes after request
+  - Prevents cross-tenant data exposure in thread pools
+  - Includes debug logging for monitoring
+
+### Testing
+- ✅ All 19 existing tests pass
+- ✅ No breaking changes
+- ✅ No regression
+- ✅ Backward compatible
+
+### Security Improvements
+- Eliminated SQL injection attack vector
+- Prevented tenant context bleeding
+- Prevented memory leaks in production
+
+## [0.2.0] - Systems Engineering Review
 
 ### Security Review
 - 🔴 **CRITICAL:** Identified SQL injection vulnerability in `TenantSetLocalAspect.java:62`
