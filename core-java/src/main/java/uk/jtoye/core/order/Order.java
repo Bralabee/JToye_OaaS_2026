@@ -28,6 +28,14 @@ public class Order {
     @Column(name = "shop_id", nullable = false)
     private UUID shopId;
 
+    /**
+     * Optional FK to Customer entity.
+     * Nullable for backward compatibility with existing orders.
+     * New orders should link to Customer when available.
+     */
+    @Column(name = "customer_id")
+    private UUID customerId;
+
     @Column(name = "order_number", nullable = false, length = 50)
     private String orderNumber;
 
@@ -35,6 +43,10 @@ public class Order {
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.DRAFT;
 
+    /**
+     * Customer name (denormalized for quick access).
+     * Kept for backward compatibility and performance.
+     */
     @Column(name = "customer_name", length = 255)
     private String customerName;
 
@@ -101,6 +113,14 @@ public class Order {
 
     public void setShopId(UUID shopId) {
         this.shopId = shopId;
+    }
+
+    public UUID getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(UUID customerId) {
+        this.customerId = customerId;
     }
 
     public String getOrderNumber() {
