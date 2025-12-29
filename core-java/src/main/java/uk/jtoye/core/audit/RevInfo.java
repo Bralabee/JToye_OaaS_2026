@@ -5,13 +5,15 @@ import org.hibernate.envers.RevisionEntity;
 import org.hibernate.envers.RevisionNumber;
 import org.hibernate.envers.RevisionTimestamp;
 
+import java.util.UUID;
+
 /**
- * Custom Envers revision entity mapped to our Flyway-managed table `revinfo`
- * and sequence `revinfo_seq`.
+ * Custom Envers revision entity with tenant context tracking.
+ * Captures tenant_id for audit trail compliance and tenant isolation.
  */
 @Entity
 @Table(name = "revinfo")
-@RevisionEntity
+@RevisionEntity(TenantRevisionListener.class)
 public class RevInfo {
 
     @Id
@@ -24,6 +26,12 @@ public class RevInfo {
     @Column(name = "revtstmp")
     @RevisionTimestamp
     private Long revtstmp;
+
+    @Column(name = "tenant_id")
+    private UUID tenantId;
+
+    @Column(name = "user_id", length = 255)
+    private String userId;
 
     public Integer getRev() {
         return rev;
@@ -39,5 +47,21 @@ public class RevInfo {
 
     public void setRevtstmp(Long revtstmp) {
         this.revtstmp = revtstmp;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 }

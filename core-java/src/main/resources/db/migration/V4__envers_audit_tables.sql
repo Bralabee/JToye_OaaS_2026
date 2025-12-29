@@ -67,27 +67,59 @@ ALTER TABLE products_aud ENABLE ROW LEVEL SECURITY;
 ALTER TABLE financial_transactions_aud ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies for audit tables
+-- Strategy: Allow unrestricted INSERT (Envers writes audit records)
+--           but restrict SELECT to current tenant (read isolation)
 DO $$
 BEGIN
+    -- Shops audit policies
     IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE tablename = 'shops_aud' AND policyname = 'shops_aud_rls_policy'
+        SELECT 1 FROM pg_policies WHERE tablename = 'shops_aud' AND policyname = 'shops_aud_select_policy'
     ) THEN
-        CREATE POLICY shops_aud_rls_policy ON shops_aud
+        CREATE POLICY shops_aud_select_policy ON shops_aud
+            FOR SELECT
             USING (tenant_id = current_tenant_id());
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE tablename = 'products_aud' AND policyname = 'products_aud_rls_policy'
+        SELECT 1 FROM pg_policies WHERE tablename = 'shops_aud' AND policyname = 'shops_aud_insert_policy'
     ) THEN
-        CREATE POLICY products_aud_rls_policy ON products_aud
+        CREATE POLICY shops_aud_insert_policy ON shops_aud
+            FOR INSERT
+            WITH CHECK (true);  -- Allow Envers to write all audit records
+    END IF;
+
+    -- Products audit policies
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'products_aud' AND policyname = 'products_aud_select_policy'
+    ) THEN
+        CREATE POLICY products_aud_select_policy ON products_aud
+            FOR SELECT
             USING (tenant_id = current_tenant_id());
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE tablename = 'financial_transactions_aud' AND policyname = 'financial_transactions_aud_rls_policy'
+        SELECT 1 FROM pg_policies WHERE tablename = 'products_aud' AND policyname = 'products_aud_insert_policy'
     ) THEN
-        CREATE POLICY financial_transactions_aud_rls_policy ON financial_transactions_aud
+        CREATE POLICY products_aud_insert_policy ON products_aud
+            FOR INSERT
+            WITH CHECK (true);  -- Allow Envers to write all audit records
+    END IF;
+
+    -- Financial transactions audit policies
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'financial_transactions_aud' AND policyname = 'financial_transactions_aud_select_policy'
+    ) THEN
+        CREATE POLICY financial_transactions_aud_select_policy ON financial_transactions_aud
+            FOR SELECT
             USING (tenant_id = current_tenant_id());
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'financial_transactions_aud' AND policyname = 'financial_transactions_aud_insert_policy'
+    ) THEN
+        CREATE POLICY financial_transactions_aud_insert_policy ON financial_transactions_aud
+            FOR INSERT
+            WITH CHECK (true);  -- Allow Envers to write all audit records
     END IF;
 END $$;
 

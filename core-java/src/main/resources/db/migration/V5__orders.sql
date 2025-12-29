@@ -140,14 +140,28 @@ CREATE INDEX idx_order_items_aud_rev ON order_items_aud(rev);
 CREATE INDEX idx_order_items_aud_tenant ON order_items_aud(tenant_id);
 
 -- RLS on audit tables
+-- Strategy: Allow unrestricted INSERT (Envers writes audit records)
+--           but restrict SELECT to current tenant (read isolation)
 ALTER TABLE orders_aud ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items_aud ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY orders_aud_rls_policy ON orders_aud
+-- Orders audit policies
+CREATE POLICY orders_aud_select_policy ON orders_aud
+    FOR SELECT
     USING (tenant_id = current_tenant_id());
 
-CREATE POLICY order_items_aud_rls_policy ON order_items_aud
+CREATE POLICY orders_aud_insert_policy ON orders_aud
+    FOR INSERT
+    WITH CHECK (true);  -- Allow Envers to write all audit records
+
+-- Order items audit policies
+CREATE POLICY order_items_aud_select_policy ON order_items_aud
+    FOR SELECT
     USING (tenant_id = current_tenant_id());
+
+CREATE POLICY order_items_aud_insert_policy ON order_items_aud
+    FOR INSERT
+    WITH CHECK (true);  -- Allow Envers to write all audit records
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
