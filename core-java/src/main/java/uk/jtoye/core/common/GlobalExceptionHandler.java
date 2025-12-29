@@ -9,6 +9,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -20,6 +22,30 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setTitle("Resource Not Found");
+        problem.setType(URI.create("https://jtoye.uk/errors/not-found"));
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidStateTransitionException.class)
+    public ProblemDetail handleInvalidStateTransition(InvalidStateTransitionException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Invalid State Transition");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-state-transition"));
+        return problem;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Invalid Argument");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-argument"));
+        return problem;
+    }
 
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex) {

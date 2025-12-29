@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemRequest;
@@ -61,7 +62,7 @@ public class OrderService {
         for (OrderItemRequest itemRequest : request.getItems()) {
             // Fetch product to get current price
             Product product = productRepository.findById(itemRequest.getProductId())
-                    .orElseThrow(() -> new IllegalArgumentException(
+                    .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + itemRequest.getProductId()));
 
             // Use actual product price
@@ -141,7 +142,7 @@ public class OrderService {
      */
     public OrderDto updateOrderStatus(UUID orderId, OrderStatus newStatus) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         log.info("Updating order {} status: {} -> {}",
                 order.getOrderNumber(), order.getStatus(), newStatus);
@@ -159,7 +160,7 @@ public class OrderService {
      */
     public void deleteOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);
