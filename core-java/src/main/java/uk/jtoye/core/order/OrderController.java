@@ -110,4 +110,78 @@ public class OrderController {
         orderService.deleteOrder(id);
         return ResponseEntity.noContent().build();
     }
+
+    // ========== State Transition Endpoints ==========
+
+    /**
+     * Submit draft order for processing.
+     * POST /orders/{id}/submit
+     * Transition: DRAFT → PENDING
+     */
+    @PostMapping("/{id}/submit")
+    @Operation(summary = "Submit order", description = "Submit a draft order for processing (DRAFT → PENDING)")
+    public ResponseEntity<OrderDto> submitOrder(@PathVariable UUID id) {
+        OrderDto order = orderService.submitOrder(id);
+        return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Confirm pending order.
+     * POST /orders/{id}/confirm
+     * Transition: PENDING → CONFIRMED
+     */
+    @PostMapping("/{id}/confirm")
+    @Operation(summary = "Confirm order", description = "Confirm a pending order (PENDING → CONFIRMED)")
+    public ResponseEntity<OrderDto> confirmOrder(@PathVariable UUID id) {
+        OrderDto order = orderService.confirmOrder(id);
+        return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Start preparing confirmed order.
+     * POST /orders/{id}/start-preparation
+     * Transition: CONFIRMED → PREPARING
+     */
+    @PostMapping("/{id}/start-preparation")
+    @Operation(summary = "Start preparation", description = "Start preparing a confirmed order (CONFIRMED → PREPARING)")
+    public ResponseEntity<OrderDto> startPreparation(@PathVariable UUID id) {
+        OrderDto order = orderService.startPreparation(id);
+        return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Mark order as ready.
+     * POST /orders/{id}/mark-ready
+     * Transition: PREPARING → READY
+     */
+    @PostMapping("/{id}/mark-ready")
+    @Operation(summary = "Mark as ready", description = "Mark a preparing order as ready (PREPARING → READY)")
+    public ResponseEntity<OrderDto> markOrderReady(@PathVariable UUID id) {
+        OrderDto order = orderService.markOrderReady(id);
+        return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Complete order.
+     * POST /orders/{id}/complete
+     * Transition: READY → COMPLETED
+     */
+    @PostMapping("/{id}/complete")
+    @Operation(summary = "Complete order", description = "Complete a ready order (READY → COMPLETED)")
+    public ResponseEntity<OrderDto> completeOrder(@PathVariable UUID id) {
+        OrderDto order = orderService.completeOrder(id);
+        return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Cancel order.
+     * POST /orders/{id}/cancel
+     * Transition: ANY → CANCELLED
+     */
+    @PostMapping("/{id}/cancel")
+    @Operation(summary = "Cancel order", description = "Cancel an order at any stage (ANY → CANCELLED)")
+    public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id) {
+        OrderDto order = orderService.cancelOrder(id);
+        return ResponseEntity.ok(order);
+    }
 }

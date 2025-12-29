@@ -30,10 +30,14 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
+    private final OrderStateMachineService stateMachineService;
 
-    public OrderService(OrderRepository orderRepository, ProductRepository productRepository) {
+    public OrderService(OrderRepository orderRepository,
+                       ProductRepository productRepository,
+                       OrderStateMachineService stateMachineService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
+        this.stateMachineService = stateMachineService;
     }
 
     /**
@@ -137,19 +141,95 @@ public class OrderService {
     }
 
     /**
-     * Update order status.
-     * In a full implementation, this would validate state transitions.
+     * Update order status (DEPRECATED - use transition methods instead).
+     * This method bypasses StateMachine validation.
+     * Kept for backward compatibility.
+     *
+     * @deprecated Use specific transition methods: submitOrder, confirmOrder, etc.
      */
+    @Deprecated
     public OrderDto updateOrderStatus(UUID orderId, OrderStatus newStatus) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-        log.info("Updating order {} status: {} -> {}",
+        log.warn("Updating order {} status without StateMachine validation: {} -> {}",
                 order.getOrderNumber(), order.getStatus(), newStatus);
 
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
         order = orderRepository.save(order);
+
+        return toDto(order);
+    }
+
+    /**
+     * Submit draft order for processing.
+     * Transition: DRAFT → PENDING
+     */
+    public OrderDto submitOrder(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.SUBMIT);
+    }
+
+    /**
+     * Confirm pending order.
+     * Transition: PENDING → CONFIRMED
+     */
+    public OrderDto confirmOrder(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.CONFIRM);
+    }
+
+    /**
+     * Start preparing confirmed order.
+     * Transition: CONFIRMED → PREPARING
+     */
+    public OrderDto startPreparation(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.START_PREP);
+    }
+
+    /**
+     * Mark order as ready for pickup/delivery.
+     * Transition: PREPARING → READY
+     */
+    public OrderDto markOrderReady(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.MARK_READY);
+    }
+
+    /**
+     * Complete order (picked up/delivered).
+     * Transition: READY → COMPLETED
+     */
+    public OrderDto completeOrder(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.COMPLETE);
+    }
+
+    /**
+     * Cancel order at any stage.
+     * Transition: ANY → CANCELLED
+     */
+    public OrderDto cancelOrder(UUID orderId) {
+        return transitionOrder(orderId, OrderEvent.CANCEL);
+    }
+
+    /**
+     * Execute a state transition using StateMachine.
+     * Validates transition, updates order, and persists.
+     */
+    private OrderDto transitionOrder(UUID orderId, OrderEvent event) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        OrderStatus oldStatus = order.getStatus();
+
+        // Use StateMachine to validate and execute transition
+        OrderStatus newStatus = stateMachineService.sendEvent(orderId, oldStatus, event);
+
+        // Update order with new status
+        order.setStatus(newStatus);
+        order.setUpdatedAt(OffsetDateTime.now());
+        order = orderRepository.save(order);
+
+        log.info("Order {} transitioned: {} -> {} via event {}",
+                order.getOrderNumber(), oldStatus, newStatus, event);
 
         return toDto(order);
     }
