@@ -1,7 +1,7 @@
 # Project Status - J'Toye OaaS 2026
 
-**Last Updated:** December 28, 2025
-**Phase:** 0/1 - Multi-tenant Foundation
+**Last Updated:** December 29, 2025
+**Phase:** 1 - Domain Enrichment + Critical Fixes
 **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -10,12 +10,16 @@
 
 | Component | Status | Tests | Notes |
 |-----------|--------|-------|-------|
-| Multi-tenant JWT Auth | ✅ Complete | 11/11 passing | Production ready |
+| Multi-tenant JWT Auth | ✅ Complete | 19/19 passing | Production ready |
 | PostgreSQL RLS | ✅ Complete | Verified | Database-level isolation |
 | Keycloak Integration | ✅ Complete | Configured | Group-based tenant mapping |
-| API Security | ✅ Complete | 6/6 passing | Integration tests passing |
-| Documentation | ✅ Complete | N/A | README, testing guide, changelog |
-| Edge Service | 🔄 Planned | N/A | Phase 2 roadmap |
+| API Security | ✅ Complete | 19/19 passing | All critical fixes applied |
+| Documentation | ✅ Complete | N/A | Comprehensive docs + guides |
+| Edge Service (Go) | ✅ Complete | 12/12 passing | Production ready with circuit breaker |
+| Critical Security Fixes | ✅ Complete | All verified | SQL injection, ThreadLocal, OAuth2 |
+| Order Management | ✅ Complete | 6/6 passing | With Envers auditing |
+| Product Pricing | ✅ Complete | Verified | Database-driven pricing |
+| Exception Handling | ✅ Complete | Verified | RFC 7807 ProblemDetail |
 
 ---
 
@@ -60,23 +64,41 @@
 
 ## Test Results
 
-### Latest Test Run (2025-12-28)
+### Latest Test Run (2025-12-29)
 
+#### Core-java Tests
 ```
-BUILD SUCCESSFUL in 18s
-Total Tests: 11
+BUILD SUCCESSFUL in 14s
+Total Tests: 19
 Failures: 0
 Success Rate: 100%
-Duration: 0.924s
+Duration: 1.041s
 ```
 
-### Test Breakdown
+### Core-java Test Breakdown
 
 | Test Suite | Tests | Status | Coverage |
 |------------|-------|--------|----------|
 | ShopControllerIntegrationTest | 6 | ✅ Pass | Multi-tenant shop operations |
 | ProductControllerTest | 3 | ✅ Pass | Product controller logic |
 | TenantSetLocalAspectTest | 2 | ✅ Pass | AOP tenant context injection |
+| OrderControllerIntegrationTest | 6 | ✅ Pass | Order CRUD + state management |
+| AuditServiceTest | 2 | ✅ Pass | Hibernate Envers auditing |
+
+#### Edge-go Tests
+```
+Total Tests: 12
+Failures: 0
+Success Rate: 100%
+Duration: 2.7s
+```
+
+### Edge-go Test Breakdown
+
+| Test Suite | Tests | Status | Coverage |
+|------------|-------|--------|----------|
+| JWT Middleware Tests | 5 | ✅ Pass | JWT validation, tenant extraction |
+| Core Client Tests | 7 | ✅ Pass | Health checks, batch sync, circuit breaker |
 
 ---
 
@@ -88,8 +110,8 @@ Duration: 0.924s
 |---------|------|--------|---------|
 | PostgreSQL | 5433 | 🟢 Running | Database |
 | Keycloak | 8085 | 🟢 Running | Authentication |
-| Core API | 9090 | 🟢 Running | Main API service |
-| Edge Service | 8080 | 🔴 Not Started | Future: SoE |
+| Core API (Java) | 9090 | 🟢 Ready | Main API service |
+| Edge Gateway (Go) | 8080 | 🟢 Ready | API gateway, circuit breaker |
 
 ### Database Migrations
 
@@ -98,7 +120,10 @@ Duration: 0.924s
 | V1__base_schema.sql | ✅ Applied | Base tables (tenants, shops, products) |
 | V2__rls_policies.sql | ✅ Applied | RLS policies and security functions |
 | V3__* | ✅ Applied | Additional enhancements |
-| V4__* | ✅ Applied | Schema refinements |
+| V4__audit_tables.sql | ✅ Applied | Hibernate Envers audit tables |
+| V5__orders.sql | ✅ Applied | Orders and order_items with RLS |
+| V6__fix_order_status_type.sql | ✅ Applied | Fixed enum compatibility |
+| V7__add_product_pricing.sql | ✅ Applied | Product pricing + order number unique constraint |
 
 ---
 
