@@ -46,10 +46,10 @@ func main() {
 	defer logger.Sync()
 
 	// Configuration from environment
-	coreAPIURL := getEnv("CORE_API_URL", "http://localhost:8080")
-	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8081/realms/jtoye-dev")
+	coreAPIURL := getEnv("CORE_API_URL", "http://localhost:9090")
+	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8085/realms/jtoye-dev")
 	jwksURL := keycloakIssuer + "/protocol/openid-connect/certs"
-	port := getEnv("PORT", "8090")
+	port := getEnv("PORT", "8080")
 
 	// Initialize Core API client with circuit breaker
 	coreClient := core.NewClient(coreAPIURL, logger)
