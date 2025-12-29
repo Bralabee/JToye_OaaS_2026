@@ -64,9 +64,8 @@ public class OrderService {
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Product not found: " + itemRequest.getProductId()));
 
-            // For now, use a default price (in real app, products would have prices)
-            // Using 1000 pennies ($10.00) as placeholder
-            long unitPrice = 1000L;
+            // Use actual product price
+            long unitPrice = product.getPricePennies();
 
             OrderItem item = new OrderItem(
                     product.getId(),

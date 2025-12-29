@@ -35,6 +35,9 @@ public class Product {
     @Column(name = "allergen_mask", nullable = false)
     private Integer allergenMask = 0;
 
+    @Column(name = "price_pennies", nullable = false)
+    private Long pricePennies = 1000L;
+
     public UUID getId() { return id; }
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
@@ -47,4 +50,6 @@ public class Product {
     public void setIngredientsText(String ingredientsText) { this.ingredientsText = ingredientsText; }
     public Integer getAllergenMask() { return allergenMask; }
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
+    public Long getPricePennies() { return pricePennies; }
+    public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
 }
