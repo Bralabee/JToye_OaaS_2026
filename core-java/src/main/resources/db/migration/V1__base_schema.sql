@@ -19,13 +19,17 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v text;
 BEGIN
-    v := current_setting('app.current_tenant_id', true);
+    -- Try to get the setting; if it doesn't exist or is empty, return NULL
+    BEGIN
+        v := current_setting('app.current_tenant_id', true);
+    EXCEPTION WHEN OTHERS THEN
+        RETURN NULL;
+    END;
+
     IF v IS NULL OR v = '' OR v = 'default' THEN
         RETURN NULL;
     END IF;
     RETURN v::uuid;
-EXCEPTION WHEN OTHERS THEN
-    RETURN NULL;
 END;
 $$;
 

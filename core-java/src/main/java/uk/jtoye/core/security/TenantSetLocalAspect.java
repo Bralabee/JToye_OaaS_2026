@@ -59,7 +59,11 @@ public class TenantSetLocalAspect {
         Session session = entityManager.unwrap(Session.class);
         session.doWork(connection -> {
             try (var stmt = connection.createStatement()) {
-                stmt.execute("SET LOCAL app.current_tenant_id = '" + tenantId + "'");
+                // Use set_config() to safely set tenant context
+                // UUID.toString() is safe as it returns validated format
+                String sql = String.format("SELECT set_config('app.current_tenant_id', '%s', true)",
+                                           tenantId.toString());
+                stmt.execute(sql);
                 log.debug("Set RLS tenant context: {}", tenantId);
             }
         });

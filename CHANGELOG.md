@@ -5,6 +5,51 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Systems Engineering Review
+
+### Security Review
+- 🔴 **CRITICAL:** Identified SQL injection vulnerability in `TenantSetLocalAspect.java:62`
+- ⚠️ **HIGH:** Identified ThreadLocal cleanup missing (memory leak + tenant isolation risk)
+- 🟡 **MEDIUM:** No rate limiting protection against DoS attacks
+
+### Reliability Review
+- ⚠️ **HIGH:** Single points of failure identified (TenantContext, Keycloak)
+- ⚠️ **HIGH:** Order number collision risk in high-volume scenarios
+- 🟡 **MEDIUM:** No state machine validation for order status transitions
+- 🟡 **MEDIUM:** Database connection pool not configured (using defaults)
+
+### Observability Review
+- ⚠️ **HIGH:** No metrics collection (Prometheus/Micrometer)
+- ⚠️ **HIGH:** No distributed tracing
+- 🟡 **MEDIUM:** No deep health checks (readiness/liveness)
+
+### Testing Review
+- 🟡 **MEDIUM:** Test pyramid inverted (100% integration, 0% unit tests)
+- 🟡 **MEDIUM:** No performance/load testing
+- 🟡 **MEDIUM:** No security testing (OWASP)
+
+### Code Quality Review
+- ✅ **EXCELLENT:** Clean architecture, SOLID principles followed
+- ✅ **EXCELLENT:** Documentation (USER_GUIDE, TESTING_GUIDE, comprehensive)
+- ✅ **EXCELLENT:** Code quality (no smells, consistent naming)
+- 🟡 **MODERATE:** Unused dependencies (Spring State Machine, JasperReports, Testcontainers)
+
+### Business Logic Review
+- ⚠️ **HIGH:** No product pricing (hardcoded $10.00 for all products)
+- 🟡 **MEDIUM:** No configuration management (hardcoded values)
+- 🟡 **MEDIUM:** No error handling strategy (generic exceptions only)
+
+### Production Readiness Assessment
+- **Overall Score:** 60% (NOT PRODUCTION READY)
+- **Critical Issues:** 5 must-fix before deployment
+- **High Priority Issues:** 10 recommended within 2 weeks
+- **Estimated Time to Production:** 2-6 weeks
+
+### Documentation
+- Added `SYSTEMS_ENGINEERING_REVIEW.md` - Comprehensive 1200+ line analysis
+- Identified architectural strengths and weaknesses
+- Provided tactical mitigation roadmap
+
 ## [0.2.0] - 2025-12-28 (Phase 1: Domain Enrichment)
 
 ### Added

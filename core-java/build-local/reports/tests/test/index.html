@@ -20,13 +20,13 @@
 <tr>
 <td>
 <div class="infoBox" id="tests">
-<div class="counter">5</div>
+<div class="counter">19</div>
 <p>tests</p>
 </div>
 </td>
 <td>
 <div class="infoBox" id="failures">
-<div class="counter">5</div>
+<div class="counter">0</div>
 <p>failures</p>
 </div>
 </td>
@@ -38,7 +38,7 @@
 </td>
 <td>
 <div class="infoBox" id="duration">
-<div class="counter">0.597s</div>
+<div class="counter">1.059s</div>
 <p>duration</p>
 </div>
 </td>
@@ -47,8 +47,8 @@
 </div>
 </td>
 <td>
-<div class="infoBox failures" id="successRate">
-<div class="percent">0%</div>
+<div class="infoBox success" id="successRate">
+<div class="percent">100%</div>
 <p>successful</p>
 </div>
 </td>
@@ -58,41 +58,13 @@
 <div id="tabs">
 <ul class="tabLinks">
 <li>
-<a href="#tab0">Failed tests</a>
+<a href="#tab0">Packages</a>
 </li>
 <li>
-<a href="#tab1">Packages</a>
-</li>
-<li>
-<a href="#tab2">Classes</a>
+<a href="#tab1">Classes</a>
 </li>
 </ul>
 <div id="tab0" class="tab">
-<h2>Failed tests</h2>
-<ul class="linkList">
-<li>
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">TenantIsolationSecurityTest</a>.
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html#shouldAllowCrossTenantsWhenContextChanges()">shouldAllowCrossTenantsWhenContextChanges()</a>
-</li>
-<li>
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">TenantIsolationSecurityTest</a>.
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html#shouldEnforceRLSOnProductsTable()">shouldEnforceRLSOnProductsTable()</a>
-</li>
-<li>
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">TenantIsolationSecurityTest</a>.
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html#shouldNotSeeAnyShopsWhenTenantContextNotSet()">shouldNotSeeAnyShopsWhenTenantContextNotSet()</a>
-</li>
-<li>
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">TenantIsolationSecurityTest</a>.
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html#shouldOnlySeeTenantAShopsWhenTenantContextSetToA()">shouldOnlySeeTenantAShopsWhenTenantContextSetToA()</a>
-</li>
-<li>
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">TenantIsolationSecurityTest</a>.
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html#shouldPreventInsertingDataForOtherTenant()">shouldPreventInsertingDataForOtherTenant()</a>
-</li>
-</ul>
-</div>
-<div id="tab1" class="tab">
 <h2>Packages</h2>
 <table>
 <thead>
@@ -107,19 +79,59 @@
 </thead>
 <tbody>
 <tr>
-<td class="failures">
+<td class="success">
+<a href="packages/uk.jtoye.core.audit.html">uk.jtoye.core.audit</a>
+</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>0.380s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="packages/uk.jtoye.core.integration.html">uk.jtoye.core.integration</a>
+</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>0.332s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="packages/uk.jtoye.core.order.html">uk.jtoye.core.order</a>
+</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>0.104s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="packages/uk.jtoye.core.product.html">uk.jtoye.core.product</a>
+</td>
+<td>3</td>
+<td>0</td>
+<td>0</td>
+<td>0.226s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
 <a href="packages/uk.jtoye.core.security.html">uk.jtoye.core.security</a>
 </td>
-<td>5</td>
-<td>5</td>
+<td>2</td>
 <td>0</td>
-<td>0.597s</td>
-<td class="failures">0%</td>
+<td>0</td>
+<td>0.017s</td>
+<td class="success">100%</td>
 </tr>
 </tbody>
 </table>
 </div>
-<div id="tab2" class="tab">
+<div id="tab1" class="tab">
 <h2>Classes</h2>
 <table>
 <thead>
@@ -134,14 +146,54 @@
 </thead>
 <tbody>
 <tr>
-<td class="failures">
-<a href="classes/uk.jtoye.core.security.TenantIsolationSecurityTest.html">uk.jtoye.core.security.TenantIsolationSecurityTest</a>
+<td class="success">
+<a href="classes/uk.jtoye.core.audit.AuditServiceTest.html">uk.jtoye.core.audit.AuditServiceTest</a>
 </td>
-<td>5</td>
-<td>5</td>
+<td>2</td>
 <td>0</td>
-<td>0.597s</td>
-<td class="failures">0%</td>
+<td>0</td>
+<td>0.380s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="classes/uk.jtoye.core.integration.ShopControllerIntegrationTest.html">uk.jtoye.core.integration.ShopControllerIntegrationTest</a>
+</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>0.332s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="classes/uk.jtoye.core.order.OrderControllerIntegrationTest.html">uk.jtoye.core.order.OrderControllerIntegrationTest</a>
+</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>0.104s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="classes/uk.jtoye.core.product.ProductControllerTest.html">uk.jtoye.core.product.ProductControllerTest</a>
+</td>
+<td>3</td>
+<td>0</td>
+<td>0</td>
+<td>0.226s</td>
+<td class="success">100%</td>
+</tr>
+<tr>
+<td class="success">
+<a href="classes/uk.jtoye.core.security.TenantSetLocalAspectTest.html">uk.jtoye.core.security.TenantSetLocalAspectTest</a>
+</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>0.017s</td>
+<td class="success">100%</td>
 </tr>
 </tbody>
 </table>
@@ -154,7 +206,7 @@
 <input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
 </label>
 </div>Generated by 
-<a href="http://www.gradle.org">Gradle 8.10.2</a> at 28 Dec 2025, 19:25:46</p>
+<a href="http://www.gradle.org">Gradle 8.10.2</a> at 29 Dec 2025, 20:44:10</p>
 </div>
 </div>
 </body>

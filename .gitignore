@@ -44,3 +44,5 @@ build/
 
 ### Junie ###
 .junie/core-java/build-local/
+.junie/
+core-java/build-local/
