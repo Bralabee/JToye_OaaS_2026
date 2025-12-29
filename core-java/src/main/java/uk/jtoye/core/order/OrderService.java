@@ -167,12 +167,10 @@ public class OrderService {
 
     /**
      * Generate unique order number for tenant.
-     * Format: ORD-{timestamp}-{random}
+     * Format: ORD-{uuid} (collision-proof, globally unique)
      */
     private String generateOrderNumber(UUID tenantId) {
-        long timestamp = System.currentTimeMillis();
-        int random = (int) (Math.random() * 1000);
-        return String.format("ORD-%d-%03d", timestamp, random);
+        return "ORD-" + UUID.randomUUID().toString();
     }
 
     /**
