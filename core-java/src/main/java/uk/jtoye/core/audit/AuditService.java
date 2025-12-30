@@ -73,10 +73,22 @@ public class AuditService {
 
         AuditReader auditReader = AuditReaderFactory.get(entityManager);
 
-        return auditReader.createQuery()
+        // forRevisionsOfEntity with selectEntitiesOnly=false returns Object[] 
+        // with [entity, revisionEntity, revisionType]
+        // We extract just the entities (first element of each array)
+        List<?> results = auditReader.createQuery()
                 .forRevisionsOfEntity(entityClass, false, true)
                 .addOrder(AuditEntity.revisionNumber().desc())
                 .getResultList();
+        
+        return results.stream()
+                .map(result -> {
+                    if (result instanceof Object[]) {
+                        return (T) ((Object[]) result)[0];
+                    }
+                    return (T) result;
+                })
+                .toList();
     }
 
     /**

@@ -42,7 +42,35 @@ bin/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
-### Junie ###
+### Build Directories ###
 .junie/core-java/build-local/
 .junie/
 core-java/build-local/
+
+### Credentials & Secrets ###
+CREDENTIALS.md
+*.env
+.env*
+secrets/
+credentials/
+*.key
+*.pem
+
+### Logs ###
+*.log
+logs/
+*.log.*
+
+### OS Specific ###
+Thumbs.db
+
+### Test Artifacts ###
+*.hprof
+hs_err_pid*
+replay_pid*
+
+### Temporary Files ###
+*.tmp
+*.bak
+*.swp
+*~

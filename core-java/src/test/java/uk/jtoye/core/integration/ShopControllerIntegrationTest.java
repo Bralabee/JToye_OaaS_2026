@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
-@Transactional
+@org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_METHOD)
 class ShopControllerIntegrationTest {
 
     @Container
@@ -58,7 +58,12 @@ class ShopControllerIntegrationTest {
     @BeforeEach
     void setup() {
         testTenantId = UUID.randomUUID();
-        jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?)", testTenantId, "Test Tenant");
+        String uniqueTenantName = "Test Tenant " + testTenantId.toString().substring(0, 8);
+        jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?)",
+                testTenantId, uniqueTenantName);
+
+        // Clean up ALL existing shops to ensure test isolation
+        jdbcTemplate.update("DELETE FROM shops");
     }
 
     @Test
@@ -89,8 +94,9 @@ class ShopControllerIntegrationTest {
     @Test
     @WithMockUser
     void createShopWithValidTenantShouldSucceed() throws Exception {
+        String uniqueShopName = "Test Shop " + UUID.randomUUID();
         CreateShopRequest request = new CreateShopRequest();
-        request.setName("Test Shop");
+        request.setName(uniqueShopName);
         request.setAddress("123 Test St");
 
         mockMvc.perform(post("/shops")
@@ -98,7 +104,7 @@ class ShopControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("Test Shop"))
+                .andExpect(jsonPath("$.name").value(uniqueShopName))
                 .andExpect(jsonPath("$.address").value("123 Test St"))
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.createdAt").exists());

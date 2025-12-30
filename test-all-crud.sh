@@ -111,10 +111,13 @@ test_crud() {
 PASSED=0
 FAILED=0
 
+# Generate unique identifiers using timestamp
+TIMESTAMP=$(date +%s)
+
 # Test Shops
 if test_crud "Shop" "/shops" \
-    '{"name":"E2E Test Shop","address":"123 Test Street"}' \
-    '{"name":"Updated E2E Shop","address":"456 Updated Avenue"}'; then
+    "{\"name\":\"E2E Test Shop ${TIMESTAMP}\",\"address\":\"123 Test Street\"}" \
+    "{\"name\":\"Updated E2E Shop ${TIMESTAMP}\",\"address\":\"456 Updated Avenue\"}"; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -122,8 +125,8 @@ fi
 
 # Test Products
 if test_crud "Product" "/products" \
-    '{"sku":"E2E-001","title":"Test Product","ingredientsText":"Flour, Water, Salt","allergenMask":1}' \
-    '{"sku":"E2E-001-UPDATED","title":"Updated Test Product","ingredientsText":"Flour, Water, Salt, Sugar","allergenMask":3}'; then
+    "{\"sku\":\"E2E-${TIMESTAMP}\",\"title\":\"Test Product\",\"ingredientsText\":\"Flour, Water, Salt\",\"allergenMask\":1}" \
+    "{\"sku\":\"E2E-UPD-${TIMESTAMP}\",\"title\":\"Updated Test Product\",\"ingredientsText\":\"Flour, Water, Salt, Sugar\",\"allergenMask\":3}"; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -131,8 +134,8 @@ fi
 
 # Test Customers
 if test_crud "Customer" "/customers" \
-    '{"name":"John Doe","email":"john.e2e@example.com","phone":"+44123456789","allergenRestrictions":0}' \
-    '{"name":"John Updated","email":"john.e2e@example.com","phone":"+44987654321","allergenRestrictions":1}'; then
+    "{\"name\":\"John Doe\",\"email\":\"john.${TIMESTAMP}@example.com\",\"phone\":\"+44123456789\",\"allergenRestrictions\":0}" \
+    "{\"name\":\"John Updated\",\"email\":\"john.${TIMESTAMP}@example.com\",\"phone\":\"+44987654321\",\"allergenRestrictions\":1}"; then
     ((PASSED++))
 else
     ((FAILED++))

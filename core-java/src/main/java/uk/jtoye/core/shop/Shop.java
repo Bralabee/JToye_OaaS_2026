@@ -20,7 +20,7 @@ public class Shop {
     private UUID tenantId;
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     @Column(nullable = false)
@@ -29,6 +29,7 @@ public class Shop {
     private String address;
 
     public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
