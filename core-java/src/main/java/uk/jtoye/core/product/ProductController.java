@@ -48,6 +48,21 @@ public class ProductController {
         return repo.findAll(pageable).map(this::toDto);
     }
 
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    @Operation(summary = "Get product by ID", description = "Returns a single product by ID for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Product found"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
+    public ResponseEntity<ProductDto> getById(
+            @Parameter(description = "Product ID") @PathVariable UUID id) {
+        return repo.findById(id)
+                .map(this::toDto)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping
     @Transactional
     @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text and allergen_mask per Natasha's Law (UK).")
@@ -68,6 +83,46 @@ public class ProductController {
         Product saved = repo.save(p);
         ProductDto dto = toDto(saved);
         return ResponseEntity.created(URI.create("/products/" + saved.getId())).body(dto);
+    }
+
+    @PutMapping("/{id}")
+    @Transactional
+    @Operation(summary = "Update product", description = "Updates an existing product for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Product updated successfully"),
+            @ApiResponse(responseCode = "404", description = "Product not found"),
+            @ApiResponse(responseCode = "400", description = "Validation error")
+    })
+    public ResponseEntity<ProductDto> update(
+            @Parameter(description = "Product ID") @PathVariable UUID id,
+            @Parameter(description = "Product update request") @Valid @RequestBody CreateProductRequest req) {
+        return repo.findById(id)
+                .map(product -> {
+                    product.setSku(req.getSku());
+                    product.setTitle(req.getTitle());
+                    product.setIngredientsText(req.getIngredientsText());
+                    product.setAllergenMask(req.getAllergenMask());
+                    Product updated = repo.saveAndFlush(product);
+                    return ResponseEntity.ok(toDto(updated));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    @Operation(summary = "Delete product", description = "Deletes a product for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Product deleted successfully"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Product ID") @PathVariable UUID id) {
+        return repo.findById(id)
+                .map(product -> {
+                    repo.delete(product);
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     private ProductDto toDto(Product p) {

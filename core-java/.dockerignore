@@ -1,0 +1,33 @@
+# Gradle build artifacts
+build/
+build-local/
+.gradle/
+.gradle-docker/
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Test results
+test-results/
+reports/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

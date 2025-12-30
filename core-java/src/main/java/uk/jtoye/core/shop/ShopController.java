@@ -48,6 +48,21 @@ public class ShopController {
         return repo.findAll(pageable).map(this::toDto);
     }
 
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    @Operation(summary = "Get shop by ID", description = "Returns a single shop by ID for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Shop found"),
+            @ApiResponse(responseCode = "404", description = "Shop not found")
+    })
+    public ResponseEntity<ShopDto> getById(
+            @Parameter(description = "Shop ID") @PathVariable UUID id) {
+        return repo.findById(id)
+                .map(this::toDto)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping
     @Transactional
     @Operation(summary = "Create shop", description = "Creates a new shop for the authenticated tenant")
@@ -66,6 +81,44 @@ public class ShopController {
         // Use saveAndFlush so creation timestamp is populated for the response
         Shop saved = repo.saveAndFlush(s);
         return ResponseEntity.created(URI.create("/shops/" + saved.getId())).body(toDto(saved));
+    }
+
+    @PutMapping("/{id}")
+    @Transactional
+    @Operation(summary = "Update shop", description = "Updates an existing shop for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Shop updated successfully"),
+            @ApiResponse(responseCode = "404", description = "Shop not found"),
+            @ApiResponse(responseCode = "400", description = "Validation error")
+    })
+    public ResponseEntity<ShopDto> update(
+            @Parameter(description = "Shop ID") @PathVariable UUID id,
+            @Parameter(description = "Shop update request") @Valid @RequestBody CreateShopRequest req) {
+        return repo.findById(id)
+                .map(shop -> {
+                    shop.setName(req.getName());
+                    shop.setAddress(req.getAddress());
+                    Shop updated = repo.saveAndFlush(shop);
+                    return ResponseEntity.ok(toDto(updated));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    @Operation(summary = "Delete shop", description = "Deletes a shop for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Shop deleted successfully"),
+            @ApiResponse(responseCode = "404", description = "Shop not found")
+    })
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Shop ID") @PathVariable UUID id) {
+        return repo.findById(id)
+                .map(shop -> {
+                    repo.delete(shop);
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     private ShopDto toDto(Shop s) {

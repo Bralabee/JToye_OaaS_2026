@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jtoye-production
+  labels:
+    name: jtoye-production
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jtoye-staging
+  labels:
+    name: jtoye-staging
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jtoye-dev
+  labels:
+    name: jtoye-dev
+    environment: development

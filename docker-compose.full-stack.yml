@@ -1,0 +1,185 @@
+# Full-stack Docker Compose for local development and testing
+# Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend
+
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: jtoye-postgres
+    environment:
+      POSTGRES_USER: jtoye
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: jtoye
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jtoye"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jtoye-network
+
+  # Keycloak Identity Provider
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: jtoye-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - jtoye-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: jtoye-redis
+    command: redis-server --appendonly yes --requirepass redispass123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - jtoye-network
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: jtoye-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: jtoye
+      RABBITMQ_DEFAULT_PASS: rabbitmqpass123
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jtoye-network
+
+  # Core Java API (Spring Boot)
+  core-java:
+    build:
+      context: .
+      dockerfile: core-java/Dockerfile
+    container_name: jtoye-core-java
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: jtoye
+      DB_USER: jtoye
+      DB_PASSWORD: secret
+      KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      REDIS_HOST: redis
+      REDIS_PASSWORD: redispass123
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: jtoye
+      RABBITMQ_PASSWORD: rabbitmqpass123
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
+    ports:
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - jtoye-network
+
+  # Edge Go API Gateway
+  edge-go:
+    build:
+      context: ./edge-go
+      dockerfile: Dockerfile
+    container_name: jtoye-edge-go
+    environment:
+      CORE_API_URL: http://core-java:9090
+      KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      core-java:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - jtoye-network
+
+  # Frontend (Next.js 14)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jtoye-frontend
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:9090
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: your-32-character-secret-change-in-production
+      KEYCLOAK_CLIENT_ID: frontend
+      KEYCLOAK_CLIENT_SECRET: frontend-secret-from-keycloak
+      KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      - core-java
+      - keycloak
+    networks:
+      - jtoye-network
+
+networks:
+  jtoye-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

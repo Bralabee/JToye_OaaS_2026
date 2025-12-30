@@ -1,0 +1,320 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, 'phase-*']
+  pull_request:
+    branches: [main, develop]
+  release:
+    types: [created]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/jtoye
+
+jobs:
+  # Job 1: Run tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: edge-go/go.sum
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run Java tests
+        run: ./gradlew test --no-daemon
+        working-directory: core-java
+
+      - name: Run Go tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+        working-directory: edge-go
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run frontend build (validates TypeScript)
+        run: npm run build
+        working-directory: frontend
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            core-java/build/reports/tests/
+            edge-go/coverage.out
+            frontend/.next/
+
+  # Job 2: Security scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/gradle@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --all-projects --severity-threshold=high
+
+  # Job 3: Build and push Docker images
+  build-and-push:
+    name: Build and Push Images
+    needs: [test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [core-java, edge-go, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service == 'core-java' && '.' || matrix.service }}
+          file: ${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload image scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+  # Job 4: Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.jtoye.co.uk
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+
+      - name: Update image tags in K8s manifests
+        run: |
+          cd k8s/base
+          for service in core-java edge-go frontend; do
+            kubectl set image deployment/${service} \
+              ${service}=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${service}:${{ github.sha }} \
+              -n jtoye-staging --dry-run=client -o yaml | kubectl apply -f -
+          done
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/core-java -n jtoye-staging --timeout=5m
+          kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
+          kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
+
+      - name: Run smoke tests
+        run: |
+          chmod +x ./scripts/smoke-test.sh
+          ./scripts/smoke-test.sh https://staging-api.jtoye.co.uk
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/core-java -n jtoye-staging
+          kubectl rollout undo deployment/edge-go -n jtoye-staging
+          kubectl rollout undo deployment/frontend -n jtoye-staging
+          exit 1
+
+  # Job 5: Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    environment:
+      name: production
+      url: https://app.jtoye.co.uk
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+
+      - name: Update image tags (core-java)
+        run: |
+          kubectl set image deployment/core-java \
+            core-java=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-core-java:${{ github.sha }} \
+            -n jtoye-production
+          kubectl rollout status deployment/core-java -n jtoye-production --timeout=10m
+
+      - name: Health check after core-java deployment
+        run: |
+          sleep 30
+          kubectl exec -n jtoye-production deployment/core-java -- curl -f http://localhost:9090/actuator/health || exit 1
+
+      - name: Update image tags (edge-go)
+        run: |
+          kubectl set image deployment/edge-go \
+            edge-go=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-edge-go:${{ github.sha }} \
+            -n jtoye-production
+          kubectl rollout status deployment/edge-go -n jtoye-production --timeout=5m
+
+      - name: Update image tags (frontend)
+        run: |
+          kubectl set image deployment/frontend \
+            frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }} \
+            -n jtoye-production
+          kubectl rollout status deployment/frontend -n jtoye-production --timeout=5m
+
+      - name: Run comprehensive smoke tests
+        run: |
+          chmod +x ./scripts/smoke-test.sh
+          ./scripts/smoke-test.sh https://api.jtoye.co.uk
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "✅ Production deployment successful: ${{ github.sha }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Deployment Successful*\n\nCommit: `${{ github.sha }}`\nActor: ${{ github.actor }}\nURL: https://app.jtoye.co.uk"
+                  }
+                }
+              ]
+            }
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/core-java -n jtoye-production
+          kubectl rollout undo deployment/edge-go -n jtoye-production
+          kubectl rollout undo deployment/frontend -n jtoye-production
+          echo "❌ Deployment failed, rolled back to previous version"
+          exit 1
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "❌ Production deployment FAILED: ${{ github.sha }} - Rolled back",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Deployment Failed*\n\nCommit: `${{ github.sha }}`\nActor: ${{ github.actor }}\n\n:warning: *Rolled back to previous version*"
+                  }
+                }
+              ]
+            }

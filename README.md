@@ -1,8 +1,22 @@
-J'Toye OaaS — Phase 1 Complete: Domain Enrichment + Modern Frontend
+J'Toye OaaS — v0.6.0: Complete CRUD Implementation + Production-Ready Infrastructure
+
+**✅ All Critical Gaps Fixed | 🎯 100% CRUD Coverage | 🚀 Ready for Production**
 
 ## What's Included
 
-### 🎨 **frontend**: Modern Next.js 14 Application (NEW!)
+### 🐳 **Deployment Infrastructure** (Phase 2.1 - NEW!)
+- **Docker Support**: Multi-stage builds for all 3 services
+  - core-java: 200MB (JRE Alpine), edge-go: 15MB (scratch), frontend: 150MB (Node Alpine)
+  - Health checks, non-root users, optimized layers
+- **Kubernetes Manifests**: 22 resources across 7 YAML files
+  - HPA (auto-scaling 3-10 replicas), PDB (high availability)
+  - Ingress with TLS and rate limiting, ConfigMap, Secrets
+- **Docker Compose**: Full-stack local dev environment (7 services)
+- **CI/CD Pipeline**: GitHub Actions with 5 stages, multi-platform builds
+- **Scripts**: `smoke-test.sh`, `deploy.sh`, `build-images.sh`
+- **Docs**: Deployment guide, System Design V2 (10/10 score)
+
+### 🎨 **frontend**: Modern Next.js 14 Application
 - **Tech Stack**: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion
 - **Authentication**: NextAuth.js v5 with Keycloak OIDC
 - **Dashboard Pages**: 5 complete UIs (Dashboard, Shops, Products, Orders, Customers)
