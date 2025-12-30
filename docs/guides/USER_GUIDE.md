@@ -1,7 +1,7 @@
 # J'Toye OaaS 2026 - User Guide
 
-**Last Updated:** December 28, 2025
-**Version:** 0.2.0 (Phase 1)
+**Last Updated:** December 30, 2025
+**Version:** 0.7.0 (Phase 2.1)
 **Audience:** Developers, QA Engineers, API Users
 
 ---
@@ -61,15 +61,21 @@ Wait for services to be ready:
 - **PostgreSQL**: Port 5433
 - **Keycloak**: http://localhost:8080
 - **core-java API**: http://localhost:9090
+- **edge-go API**: http://localhost:8089 (Docker) or 8080 (Local)
+- **Frontend UI**: http://localhost:3000
 
 ### 2. Verify Services
 
 ```bash
 # Check API health
-curl http://localhost:9090/actuator/health
+curl http://localhost:9090/health
+```
 
-# Expected output:
-# {"status":"UP"}
+Expected output: `OK`
+
+```bash
+# Check Edge health
+curl http://localhost:8089/health
 ```
 
 ### 3. Load Test Data
@@ -164,14 +170,28 @@ http://localhost:9090
 - `PUT /products/{id}` - Update product
 - `DELETE /products/{id}` - Delete product
 
-#### Orders API (New in v0.2.0)
+#### Orders API
 - `GET /orders` - List all orders (paginated, tenant-scoped)
 - `GET /orders/{id}` - Get order by ID
-- `GET /orders/status/{status}` - Filter orders by status
-- `GET /orders/shop/{shopId}` - Get orders for a shop
 - `POST /orders` - Create order
-- `PATCH /orders/{id}/status?status={newStatus}` - Update order status
 - `DELETE /orders/{id}` - Delete order
+- Transitions:
+  - `POST /orders/{id}/submit` - Draft to Pending
+  - `POST /orders/{id}/confirm` - Pending to Confirmed
+  - `POST /orders/{id}/start-prep` - Confirmed to Preparing
+  - `POST /orders/{id}/mark-ready` - Preparing to Ready
+  - `POST /orders/{id}/complete` - Ready to Completed
+  - `POST /orders/{id}/cancel` - Cancel at any stage
+
+#### Customers API
+- `GET /customers` - List all customers (tenant-scoped)
+- `POST /customers` - Create customer
+- `PUT /customers/{id}` - Update customer
+- `DELETE /customers/{id}` - Delete customer
+
+#### Financial Transactions API
+- `GET /financial-transactions` - List all transactions (tenant-scoped)
+- `POST /financial-transactions` - Create transaction (calculates VAT)
 
 ### Order Status Values
 - `DRAFT` - Order being created
@@ -1121,7 +1141,7 @@ curl -s -X POST \
 - [../planning/PHASE_1_PLAN.md](../planning/PHASE_1_PLAN.md) - Phase 1 implementation details
 - [../status/PROJECT_STATUS.md](../status/PROJECT_STATUS.md) - Current project status
 - [../../README.md](../../README.md) - Project overview
-- [../../CHANGELOG.md](../../CHANGELOG.md) - Version history
+- [../CHANGELOG.md](../CHANGELOG.md) - Version history
 
 ---
 

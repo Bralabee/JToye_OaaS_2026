@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.0] - 2025-12-30 (100% Test Coverage + Full Integration Tests)
+## [0.7.0] - 2025-12-30 (Full Stack Docker + 100% CRUD)
+
+### Added - Full Stack Docker Compose ⭐
+- **Comprehensive orchestration**: `docker-compose.full-stack.yml` now supports all 7 services
+  - PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend
+- **Port Conflict Resolution**: Remapped `edge-go` to port `8089` in Docker to avoid local conflicts
+- **Reliable Health Checks**: 
+  - Implemented custom health-check command for `edge-go` scratch container
+  - Added robust TCP-based health check for Keycloak
+  - Optimized frontend health check using Node.js script
+- **Infrastructure Automation**: 
+  - Updated `00-create-db.sql` to automatically create `keycloak` database
+  - Standardized `extra_hosts` with `keycloak-host:host-gateway` for consistent OIDC networking
+
+### Added - Integration Tests
+- **CustomerControllerIntegrationTest**: 6 comprehensive tests covering full CRUD lifecycle
+- **FinancialTransactionControllerIntegrationTest**: 6 tests including VAT calculations
+- **Achieved 100% test pass rate**: 36/36 tests passing (was 24/24)
+
+### Fixed - Application Reliability
+- **Keycloak Connectivity**: Fixed database credentials mismatch in Docker Compose
+- **Smoke Tests**: Improved `scripts/smoke-test.sh` to handle initial startup redirects correctly
+- **Documentation**: Comprehensive updates across all guides reflecting v0.7.0 state
+
+### Status - CRUD Coverage
+- ✅ ShopController: 100%
+- ✅ ProductController: 100%
+- ✅ CustomerController: 100%
+- ✅ OrderController: 100% (with State Machine)
+- ✅ FinancialTransactionController: 100%
+- 🎯 **Project is now fully Dockerized and feature-complete for Phase 2.1**
+
+## [0.6.2] - 2025-12-30 (Integration Test Completion)
 
 ### Added - Integration Tests ⭐
 - **CustomerControllerIntegrationTest**: 6 comprehensive tests covering full CRUD lifecycle

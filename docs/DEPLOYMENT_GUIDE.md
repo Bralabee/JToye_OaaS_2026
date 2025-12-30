@@ -26,7 +26,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 | Service | Technology | Port | Image Size | Startup Time |
 |---------|-----------|------|------------|--------------|
 | **core-java** | Spring Boot 3 + JDK 21 | 9090 | ~200MB | ~30s |
-| **edge-go** | Go 1.22 (static binary) | 8080 | ~15MB | ~1s |
+| **edge-go** | Go 1.22 (static binary) | 8089 (Docker) / 8080 (Local) | ~15MB | ~1s |
 | **frontend** | Next.js 14 (standalone) | 3000 | ~150MB | ~5s |
 
 **Infrastructure:**
@@ -95,9 +95,10 @@ npm run dev
 
 # 4. Access
 # - Frontend: http://localhost:3000
-# - Backend: http://localhost:9090
+# - Core Backend: http://localhost:9090
+# - Edge Gateway: http://localhost:8089 (Docker) or 8080 (Local)
 # - Swagger: http://localhost:9090/swagger-ui.html
-# - Keycloak: http://localhost:8085 (admin/admin123)
+# - Keycloak: http://keycloak-host:8085 (admin/admin123)
 ```
 
 ### 3.2 Full Stack with Docker Compose
@@ -115,6 +116,14 @@ docker-compose -f docker-compose.full-stack.yml logs -f
 # Stop services
 docker-compose -f docker-compose.full-stack.yml down
 ```
+
+#### 3.2.1 OIDC Networking Note
+For OIDC authentication to work between the browser and Docker containers, you must add `keycloak-host` to your host's `/etc/hosts` file:
+```bash
+# Add this line to /etc/hosts
+127.0.0.1 keycloak-host
+```
+The `docker-compose.full-stack.yml` is pre-configured to use `http://keycloak-host:8085` as the issuer URL, which works both inside the containers (via `extra_hosts`) and in your browser.
 
 ### 3.3 Environment Variables
 
@@ -456,7 +465,22 @@ k6 run scripts/load-test.js
 
 ---
 
-## 8. Troubleshooting
+### 8. Troubleshooting
+
+#### 8.1 Port Conflicts
+Ensure ports 9090, 8089, 3000, 5433, and 8085 are free. If port 8080 is taken, the `edge-go` service in Docker is remapped to `8089` to avoid conflicts with common local services.
+
+#### 8.2 OIDC Redirect Issues
+Always use `http://keycloak-host:8085` as the issuer and ensure `keycloak-host` is in your `/etc/hosts`.
+
+#### 8.3 Database Connection
+If Keycloak fails to start, verify that the `keycloak` database exists. The `infra/db/init/00-create-db.sql` script handles this automatically in the full-stack setup.
+
+#### 8.4 Permissions
+If Gradle build fails in `core-java`, use:
+```bash
+./gradlew :core-java:bootJar -PbuildDir=build-local
+```
 
 ### 8.1 Common Issues
 

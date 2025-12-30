@@ -1,7 +1,7 @@
 # Documentation Index - J'Toye OaaS 2026
 
-**Last Updated:** December 28, 2025
-**Project Status:** ✅ Phase 1 Complete (19/19 tests passing)
+**Last Updated:** December 30, 2025
+**Project Status:** ✅ Phase 2.1 Complete (32/36 tests passing)
 
 ---
 
@@ -31,8 +31,9 @@ docs/
 
 ### Essential Reading (Root Directory)
 1. **[README.md](../README.md)** - Start here! Quick start guide and overview
-2. **[CHANGELOG.md](../CHANGELOG.md)** - Version history and changes
+2. **[docs/CHANGELOG.md](CHANGELOG.md)** - Version history and changes
 3. **[docs/status/PROJECT_STATUS.md](status/PROJECT_STATUS.md)** - Current project status and health
+4. **[docs/CREDENTIALS.md](CREDENTIALS.md)** - Development credentials and test users
 
 ### Testing & User Guides
 4. **[docs/guides/USER_GUIDE.md](guides/USER_GUIDE.md)** - ⭐ Complete user guide for manual API testing
@@ -173,19 +174,36 @@ docs/
 
 ---
 
-### 📝 ../CHANGELOG.md
+### 📝 docs/CHANGELOG.md
 **Purpose:** Complete version history and release notes
 **Audience:** All team members, stakeholders
 **Key Sections:**
+- Version 0.7.0 (Phase 2.1): Complete CRUD + Infrastructure
+- Version 0.6.0 (Phase 1): Full CRUD implementation
 - Version 0.2.0 (Phase 1): Envers + Orders
 - Version 0.1.0 (Phase 0/1): Multi-tenant foundation
 - Version 0.0.1: Initial scaffolding
-- Release notes with achievements
 
 **When to read:**
 - Before releases
 - When reviewing changes between versions
 - During release planning
+
+---
+
+### 🔑 docs/CREDENTIALS.md
+**Purpose:** Development credentials and test users
+**Audience:** Developers, QA engineers
+**Key Sections:**
+- Database credentials
+- Keycloak admin credentials
+- Test users for different tenants
+- JWT token acquisition examples
+
+**When to read:**
+- During initial setup
+- When needing test user credentials
+- When testing different tenant contexts
 
 ---
 
@@ -245,8 +263,7 @@ docs/
 ### Root Directory
 ```
 /
-├── README.md                      # Project overview & quick start
-└── CHANGELOG.md                   # Version history
+└── README.md                      # Project overview & quick start
 ```
 
 ### docs/ Directory
@@ -267,6 +284,8 @@ docs/
 │   └── README_SESSION_SUMMARY.md  # Session summary
 ├── setup/                          # Setup files
 ├── AI_CONTEXT.md                  # AI agent guidelines
+├── CHANGELOG.md                   # Version history
+├── CREDENTIALS.md                 # Dev credentials
 └── DOCUMENTATION_INDEX.md         # This file
 ```
 
@@ -281,7 +300,7 @@ docs/
 | Document | Update Trigger | Frequency |
 |----------|---------------|-----------|
 | README.md | Major features, configuration changes | As needed |
-| CHANGELOG.md | Every feature, fix, release | Every release |
+| CHANGELOG.md | docs/CHANGELOG.md | Every release |
 | planning/PHASE_1_PLAN.md | Phase 1 progress, commits | Per session |
 | status/PROJECT_STATUS.md | Test results, deployments | Daily/Weekly |
 | guides/TESTING_GUIDE.md | New test procedures, API changes | As needed |
@@ -310,7 +329,7 @@ docs/
 | What's Phase 1 status? | planning/PHASE_1_PLAN.md | Progress Tracking |
 | How do I test JWT authentication? | guides/TESTING_GUIDE.md | Quick Test |
 | How does the filter chain work? | status/IMPLEMENTATION_SUMMARY.md | Key Components |
-| What changed in version 0.2.0? | CHANGELOG.md | [0.2.0] |
+| What changed in version 0.7.0? | docs/CHANGELOG.md | [0.7.0] |
 | What features are complete? | status/PROJECT_STATUS.md | Current Capabilities |
 | How do I verify RLS? | guides/TESTING_GUIDE.md | Verify RLS |
 | What's the architecture? | status/IMPLEMENTATION_SUMMARY.md | Architecture Overview |

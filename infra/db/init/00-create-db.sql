@@ -15,6 +15,9 @@ END$$;
 SELECT 'CREATE DATABASE jtoye OWNER jtoye'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'jtoye')\gexec
 
+SELECT 'CREATE DATABASE keycloak OWNER jtoye'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'keycloak')\gexec
+
 -- Create role jtoye_app if it doesn't exist (non-owner for RLS)
 DO $$
 BEGIN

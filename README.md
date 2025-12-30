@@ -1,6 +1,6 @@
-J'Toye OaaS — v0.6.0: Complete CRUD Implementation + Production-Ready Infrastructure
+J'Toye OaaS — v0.7.0: Full Stack Docker + Comprehensive CRUD
 
-**✅ All Critical Gaps Fixed | 🎯 100% CRUD Coverage | 🚀 Ready for Production**
+**✅ All Critical Gaps Fixed | 🎯 100% CRUD Coverage | 🚀 Full-Stack Dockerized**
 
 ## What's Included
 
@@ -91,14 +91,15 @@ npm run dev
 
 ### 4. Access the Application
 - **Frontend UI**: http://localhost:3000
-- **Backend API**: http://localhost:9090
-- **Swagger UI**: http://localhost:9090/swagger-ui.html
-- **Keycloak Admin**: http://localhost:8085 (admin/admin123)
+- **Edge API**: http://localhost:8089 (Docker) or http://localhost:8080 (Local)
+- **Keycloak Admin**: http://keycloak-host:8085 (admin/admin123)
 
 ### 5. Sign In
 Visit http://localhost:3000 and sign in with:
 - **Tenant A**: `tenant-a-user` / `password123`
 - **Tenant B**: `tenant-b-user` / `password123`
+
+*Note: Add `127.0.0.1 keycloak-host` to your `/etc/hosts` file for OIDC to work.*
 
 Manual start (optional)
 1) Infrastructure
@@ -129,6 +130,8 @@ Configuration
 - **Keycloak**: Port 8085
 - See `docs/setup/SETUP.md` for detailed setup instructions
 - See `docs/setup/INTELLIJ_SETUP.md` for IntelliJ IDEA configuration
+- See `docs/CREDENTIALS.md` for development credentials
+- See `docs/CHANGELOG.md` for version history
 
 Security / OIDC
 - Resource server issuer: `${KC_ISSUER_URI:-http://localhost:8085/realms/jtoye-dev}`

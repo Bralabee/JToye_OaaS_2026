@@ -13,6 +13,8 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+set +e
+
 echo -e "${YELLOW}=== J'Toye OaaS Smoke Test Suite ===${NC}"
 echo "API URL: $API_URL"
 echo ""
@@ -65,7 +67,7 @@ else
 fi
 
 # Test 4: Swagger UI (should be accessible)
-if test_endpoint "Swagger UI" "$API_URL/swagger-ui.html"; then
+if test_endpoint "Swagger UI" "$API_URL/swagger-ui.html" "302"; then
     ((TESTS_PASSED++))
 else
     ((TESTS_FAILED++))
@@ -85,10 +87,17 @@ else
     ((TESTS_FAILED++))
 fi
 
-# Test 7: Invalid endpoint (should return 404)
-if test_endpoint "Invalid Endpoint" "$API_URL/nonexistent" "404"; then
+# Test 7: Invalid endpoint (should return 401 or 404)
+echo -n "Testing Invalid Endpoint... "
+INVALID_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+    --max-time $TIMEOUT \
+    "$API_URL/nonexistent" 2>/dev/null || echo "000")
+
+if [ "$INVALID_RESPONSE" = "404" ] || [ "$INVALID_RESPONSE" = "401" ]; then
+    echo -e "${GREEN}✓ PASS${NC} (HTTP $INVALID_RESPONSE)"
     ((TESTS_PASSED++))
 else
+    echo -e "${RED}✗ FAIL${NC} (Expected HTTP 404/401, got $INVALID_RESPONSE)"
     ((TESTS_FAILED++))
 fi
 

@@ -41,6 +41,16 @@ func rateLimiter(rps int, burst int) gin.HandlerFunc {
 }
 
 func main() {
+	// Check for health-check command (used by Docker HEALTHCHECK)
+	if len(os.Args) > 1 && os.Args[1] == "health-check" {
+		port := getEnv("PORT", "8080")
+		resp, err := http.Get("http://localhost:" + port + "/health")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// Initialize structured logger
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
