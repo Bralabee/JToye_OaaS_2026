@@ -23,6 +23,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
     ```bash
     cd infra && docker-compose up -d
     ```
+    *Note: If running for the first time, Postgres will take a few seconds to initialize. The services are configured to wait for the database to be ready.*
 2.  **Run Backend (Core)**:
     ```bash
     ./run-app.sh
