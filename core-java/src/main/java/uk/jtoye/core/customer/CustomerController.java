@@ -1,5 +1,6 @@
 package uk.jtoye.core.customer;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -15,13 +16,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/customers")
+@RequiredArgsConstructor
 public class CustomerController {
 
     private final CustomerRepository customerRepository;
-
-    public CustomerController(CustomerRepository customerRepository) {
-        this.customerRepository = customerRepository;
-    }
 
     @GetMapping
     public Page<CustomerDto> getAllCustomers(

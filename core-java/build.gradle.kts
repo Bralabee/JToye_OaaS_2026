@@ -30,6 +30,10 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.3")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
+    // Lombok for boilerplate reduction
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:testcontainers:1.19.8")

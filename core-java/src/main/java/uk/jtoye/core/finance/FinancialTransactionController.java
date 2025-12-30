@@ -1,5 +1,6 @@
 package uk.jtoye.core.finance;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -15,13 +16,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/financial-transactions")
+@RequiredArgsConstructor
 public class FinancialTransactionController {
 
     private final FinancialTransactionRepository financialTransactionRepository;
-
-    public FinancialTransactionController(FinancialTransactionRepository financialTransactionRepository) {
-        this.financialTransactionRepository = financialTransactionRepository;
-    }
 
     @GetMapping
     public Page<FinancialTransactionDto> getAllTransactions(
