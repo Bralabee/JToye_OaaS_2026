@@ -170,7 +170,7 @@ services:
       NEXTAUTH_SECRET: your-32-character-secret-change-in-production
       KEYCLOAK_CLIENT_ID: frontend
       KEYCLOAK_CLIENT_SECRET: frontend-secret-from-keycloak
-      KEYCLOAK_ISSUER: http://keycloak-host:8085/realms/jtoye-dev
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/jtoye-dev
     ports:
       - "3000:3000"
     depends_on:
