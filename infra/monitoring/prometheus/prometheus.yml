@@ -1,0 +1,88 @@
+# Prometheus configuration for JToye OaaS monitoring
+global:
+  scrape_interval: 15s # Scrape targets every 15 seconds
+  evaluation_interval: 15s # Evaluate rules every 15 seconds
+  external_labels:
+    cluster: 'jtoye-dev'
+    environment: 'development'
+
+# Alertmanager configuration (optional - can add later)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Load alerting rules
+rule_files:
+  - 'alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Core Java API (Spring Boot Actuator)
+  - job_name: 'core-java'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['jtoye-core-java:9090']
+        labels:
+          service: 'core-api'
+          component: 'backend'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'core-java'
+
+  # Edge Go API
+  - job_name: 'edge-go'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['jtoye-edge-go:8080']
+        labels:
+          service: 'edge-api'
+          component: 'gateway'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'edge-go'
+
+  # PostgreSQL Database
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['jtoye-postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          component: 'database'
+
+  # Keycloak (if metrics endpoint available)
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['jtoye-keycloak:8080']
+        labels:
+          service: 'keycloak'
+          component: 'auth'
+    # Keycloak may not expose metrics by default - this is optional
+
+  # Redis (if exporter added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+    # Only if redis-exporter is added to docker-compose
+
+  # RabbitMQ Management Plugin
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['jtoye-rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          component: 'messaging'
+    # RabbitMQ management plugin exposes Prometheus metrics on port 15692
