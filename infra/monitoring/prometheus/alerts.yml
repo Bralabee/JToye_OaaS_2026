@@ -1,0 +1,139 @@
+# Alerting rules for JToye OaaS
+groups:
+  - name: api_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_server_requests_seconds_count[5m])) by (service)
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate detected on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} has {{ $value | humanizePercentage }} error rate (threshold: 5%)"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} instance {{ $labels.instance }} has been down for more than 2 minutes"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket[5m])) by (service, le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High response time on {{ $labels.service }}"
+          description: "P95 latency is {{ $value | humanizeDuration }} (threshold: 1s)"
+
+  - name: database_alerts
+    interval: 30s
+    rules:
+      # Database connection pool exhaustion
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          (
+            hikaricp_connections_active / hikaricp_connections_max
+          ) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "Connection pool is {{ $value | humanizePercentage }} full (threshold: 90%)"
+
+      # Database down
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL has been unreachable for more than 1 minute"
+
+      # Too many database connections
+      - alert: TooManyDatabaseConnections
+        expr: pg_stat_database_numbackends > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High number of database connections"
+          description: "Database has {{ $value }} connections (threshold: 100)"
+
+  - name: resource_alerts
+    interval: 30s
+    rules:
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}
+          ) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: jvm
+        annotations:
+          summary: "High JVM heap memory usage on {{ $labels.service }}"
+          description: "Heap memory is {{ $value | humanizePercentage }} full (threshold: 85%)"
+
+      # Frequent garbage collection
+      - alert: FrequentGarbageCollection
+        expr: rate(jvm_gc_pause_seconds_count[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: jvm
+        annotations:
+          summary: "Frequent garbage collection on {{ $labels.service }}"
+          description: "GC rate is {{ $value | humanize }} per second (threshold: 10/s)"
+
+  - name: business_alerts
+    interval: 30s
+    rules:
+      # No orders created recently (potential issue)
+      - alert: NoOrdersCreated
+        expr: |
+          (
+            increase(http_server_requests_seconds_count{uri="/orders",method="POST",status="201"}[30m]) < 1
+          )
+        for: 30m
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "No orders created in last 30 minutes"
+          description: "No successful order creation detected. This may indicate a business issue."
+
+      # High tenant isolation check failures (security concern)
+      - alert: TenantIsolationFailure
+        expr: rate(tenant_context_missing_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Tenant context missing in requests"
+          description: "{{ $value }} requests per second lack tenant context (potential security issue)"
