@@ -53,15 +53,21 @@ import {
   FileCheck,
   Ban,
 } from "lucide-react"
-import type { Order, OrderStatus, Shop } from "@/types/api"
+import type { Order, OrderStatus, Shop, Product } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
+import { Trash2 } from "lucide-react"
+
+const orderItemSchema = z.object({
+  productId: z.string().min(1, "Product is required"),
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+})
 
 const orderSchema = z.object({
   shopId: z.string().min(1, "Shop is required"),
   customerName: z.string().min(1, "Customer name is required").max(100),
   customerEmail: z.string().email("Invalid email").max(255),
   customerPhone: z.string().max(20).optional(),
-  totalPricePennies: z.number().min(0, "Price must be positive"),
+  items: z.array(orderItemSchema).min(1, "At least one item is required"),
 })
 
 type OrderFormData = z.infer<typeof orderSchema>
@@ -203,10 +209,12 @@ const getAvailableTransitions = (
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
+  const [orderItems, setOrderItems] = useState<{ productId: string; quantity: number }[]>([])
   const { toast } = useToast()
 
   const {
@@ -219,7 +227,7 @@ export default function OrdersPage() {
   } = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
     defaultValues: {
-      totalPricePennies: 0,
+      items: [],
     },
   })
 
@@ -233,12 +241,14 @@ export default function OrdersPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [ordersRes, shopsRes] = await Promise.all([
+      const [ordersRes, shopsRes, productsRes] = await Promise.all([
         apiClient.get("/orders?size=100&sort=createdAt,desc"),
         apiClient.get("/shops?size=100"),
+        apiClient.get("/products?size=100"),
       ])
       setOrders(ordersRes.data.content || [])
       setShops(shopsRes.data.content || [])
+      setProducts(productsRes.data.content || [])
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load orders"
       toast({
@@ -257,16 +267,58 @@ export default function OrdersPage() {
       customerName: "",
       customerEmail: "",
       customerPhone: "",
-      totalPricePennies: 0,
+      items: [],
     })
+    setOrderItems([])
     setDialogOpen(true)
+  }
+
+  const addOrderItem = () => {
+    setOrderItems([...orderItems, { productId: "", quantity: 1 }])
+  }
+
+  const removeOrderItem = (index: number) => {
+    setOrderItems(orderItems.filter((_, i) => i !== index))
+  }
+
+  const updateOrderItem = (index: number, field: "productId" | "quantity", value: string | number) => {
+    const updated = [...orderItems]
+    updated[index] = { ...updated[index], [field]: value }
+    setOrderItems(updated)
   }
 
   const onSubmit = async (data: OrderFormData) => {
     try {
+      // Validate items
+      if (orderItems.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Validation error",
+          description: "Please add at least one item to the order.",
+        })
+        return
+      }
+
+      // Check all items have products selected
+      const invalidItems = orderItems.filter(item => !item.productId || item.quantity < 1)
+      if (invalidItems.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Validation error",
+          description: "Please select a product and quantity for all items.",
+        })
+        return
+      }
+
       setSubmitting(true)
 
-      await apiClient.post("/orders", data)
+      // Add items to form data
+      const payload = {
+        ...data,
+        items: orderItems,
+      }
+
+      await apiClient.post("/orders", payload)
       toast({
         title: "Order created",
         description: `Order for ${data.customerName} has been created successfully.`,
@@ -274,6 +326,7 @@ export default function OrdersPage() {
 
       setDialogOpen(false)
       reset()
+      setOrderItems([])
       fetchData()
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to create order"
@@ -504,7 +557,7 @@ export default function OrdersPage() {
 
       {/* Create Order Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Order</DialogTitle>
             <DialogDescription>
@@ -577,22 +630,69 @@ export default function OrdersPage() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="totalPricePennies">Total Price (£)</Label>
-              <Input
-                id="totalPricePennies"
-                type="number"
-                step="0.01"
-                placeholder="e.g., 25.50"
-                onChange={(e) => {
-                  const pounds = parseFloat(e.target.value) || 0
-                  setValue("totalPricePennies", Math.round(pounds * 100))
-                }}
-              />
-              {errors.totalPricePennies && (
-                <p className="text-sm text-red-600">
-                  {errors.totalPricePennies.message}
+            {/* Order Items Section */}
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Order Items</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={addOrderItem}
+                  className="gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add Item
+                </Button>
+              </div>
+
+              {orderItems.length === 0 && (
+                <p className="text-sm text-slate-500 py-4 text-center border-2 border-dashed rounded-lg">
+                  No items added. Click &quot;Add Item&quot; to start building the order.
                 </p>
+              )}
+
+              {orderItems.map((item, index) => (
+                <div key={index} className="flex gap-2 items-start p-3 border rounded-lg bg-slate-50">
+                  <div className="flex-1 space-y-2">
+                    <Select
+                      value={item.productId}
+                      onValueChange={(value) => updateOrderItem(index, "productId", value)}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Select product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.title} - £{((product.pricePennies || 0) / 100).toFixed(2)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateOrderItem(index, "quantity", parseInt(e.target.value) || 1)}
+                      placeholder="Quantity"
+                      className="bg-white"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeOrderItem(index)}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+
+              {errors.items && (
+                <p className="text-sm text-red-600">{errors.items.message}</p>
               )}
             </div>
 

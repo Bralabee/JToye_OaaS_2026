@@ -33,6 +33,7 @@ export interface Product {
   title: string
   ingredientsText: string
   allergenMask: number
+  pricePennies?: number
   createdAt: string
   updatedAt: string
 }
