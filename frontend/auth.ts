@@ -7,10 +7,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.KEYCLOAK_CLIENT_ID!,
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET || "",
       issuer: process.env.KEYCLOAK_ISSUER,
+      // Use public-facing URL for browser redirects, internal URL for server-side
       authorization: {
+        url: process.env.NEXT_PUBLIC_KEYCLOAK_URL
+          ? `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/protocol/openid-connect/auth`
+          : undefined,
         params: {
           redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/keycloak`,
         },
+      },
+      token: `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
+      userinfo: `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name ?? profile.preferred_username,
+          email: profile.email,
+          image: profile.picture,
+        }
       },
     }),
   ],

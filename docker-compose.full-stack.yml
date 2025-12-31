@@ -37,6 +37,8 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: jtoye
       KC_DB_PASSWORD: secret
+      KC_HOSTNAME_STRICT: false
+      KC_HTTP_RELATIVE_PATH: /
     ports:
       - "8085:8080"
     volumes:
@@ -103,7 +105,7 @@ services:
       DB_NAME: jtoye
       DB_USER: jtoye
       DB_PASSWORD: secret
-      KC_ISSUER_URI: http://keycloak-host:8085/realms/jtoye-dev
+      KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       REDIS_HOST: redis
       REDIS_PASSWORD: redispass123
       RABBITMQ_HOST: rabbitmq
@@ -140,7 +142,7 @@ services:
     container_name: jtoye-edge-go
     environment:
       CORE_API_URL: http://core-java:9090
-      KC_ISSUER_URI: http://keycloak-host:8085/realms/jtoye-dev
+      KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       PORT: 8080
     ports:
       - "8089:8080"
@@ -167,10 +169,11 @@ services:
       NODE_ENV: development
       NEXT_PUBLIC_API_URL: http://localhost:9090
       NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: your-32-character-secret-change-in-production
-      KEYCLOAK_CLIENT_ID: frontend
-      KEYCLOAK_CLIENT_SECRET: frontend-secret-from-keycloak
+      NEXTAUTH_SECRET: your-nextauth-secret-change-in-production
+      KEYCLOAK_CLIENT_ID: core-api
+      KEYCLOAK_CLIENT_SECRET: core-api-secret-2026
       KEYCLOAK_ISSUER: http://keycloak:8080/realms/jtoye-dev
+      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev
     ports:
       - "3000:3000"
     depends_on:
@@ -181,8 +184,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    extra_hosts:
-      - "keycloak-host:host-gateway"
     networks:
       - jtoye-network
 
