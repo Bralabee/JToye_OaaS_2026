@@ -130,6 +130,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write
     strategy:
       matrix:
         service: [core-java, edge-go, frontend]
