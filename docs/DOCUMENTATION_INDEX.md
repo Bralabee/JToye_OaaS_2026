@@ -31,23 +31,26 @@ docs/
 
 ### Essential Reading (Root Directory)
 1. **[README.md](../README.md)** - Start here! Quick start guide and overview
-2. **[docs/CHANGELOG.md](CHANGELOG.md)** - Version history and changes
-3. **[docs/status/PROJECT_STATUS.md](status/PROJECT_STATUS.md)** - Current project status and health
-4. **[docs/CREDENTIALS.md](CREDENTIALS.md)** - Development credentials and test users
+2. **[docs/DOCKER_QUICK_START.md](DOCKER_QUICK_START.md)** - ⭐ NEW! One-command Docker setup guide
+3. **[docs/DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment guide (local, Docker, K8s)
+4. **[docs/CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+5. **[docs/status/PROJECT_STATUS.md](status/PROJECT_STATUS.md)** - Current project status and health
+6. **[docs/CREDENTIALS.md](CREDENTIALS.md)** - Development credentials and test users
 
 ### Testing & User Guides
-4. **[docs/guides/USER_GUIDE.md](guides/USER_GUIDE.md)** - ⭐ Complete user guide for manual API testing
-5. **[docs/guides/TESTING_GUIDE.md](guides/TESTING_GUIDE.md)** - Automated testing procedures
-6. **[docs/guides/APPLICATION_VERIFICATION.md](guides/APPLICATION_VERIFICATION.md)** - Verification procedures
+7. **[docs/guides/USER_GUIDE.md](guides/USER_GUIDE.md)** - ⭐ Complete user guide for manual API testing
+8. **[docs/guides/TESTING_GUIDE.md](guides/TESTING_GUIDE.md)** - Automated testing procedures
+9. **[docs/guides/APPLICATION_VERIFICATION.md](guides/APPLICATION_VERIFICATION.md)** - Verification procedures
 
 ### Planning & Roadmap
-7. **[docs/planning/PHASE_1_PLAN.md](planning/PHASE_1_PLAN.md)** - Phase 1 implementation plan and progress
-8. **[docs/planning/PHASE_1_READINESS.md](planning/PHASE_1_READINESS.md)** - Phase 1 readiness assessment
-9. **[docs/planning/NEXT_SESSION_CHECKLIST.md](planning/NEXT_SESSION_CHECKLIST.md)** - Checklist for next session
+10. **[docs/planning/PHASE_1_PLAN.md](planning/PHASE_1_PLAN.md)** - Phase 1 implementation plan and progress
+11. **[docs/planning/PHASE_1_READINESS.md](planning/PHASE_1_READINESS.md)** - Phase 1 readiness assessment
+12. **[docs/planning/NEXT_SESSION_CHECKLIST.md](planning/NEXT_SESSION_CHECKLIST.md)** - Checklist for next session
 
 ### Architecture & Implementation
-10. **[docs/status/IMPLEMENTATION_SUMMARY.md](status/IMPLEMENTATION_SUMMARY.md)** - Architecture and technical details
-11. **[docs/status/SESSION_HANDOFF.md](status/SESSION_HANDOFF.md)** - Session notes and handoff
+13. **[docs/status/IMPLEMENTATION_SUMMARY.md](status/IMPLEMENTATION_SUMMARY.md)** - Architecture and technical details
+14. **[docs/status/SESSION_HANDOFF.md](status/SESSION_HANDOFF.md)** - Session notes and handoff
+15. **[docs/AI_CONTEXT.md](AI_CONTEXT.md)** - ⭐ UPDATED! AI agent guidelines with Docker networking details
 
 ### Development Guidelines
 12. **[docs/AI_CONTEXT.md](AI_CONTEXT.md)** - Security & compliance directives for AI agents

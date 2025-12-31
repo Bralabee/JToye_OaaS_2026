@@ -104,26 +104,50 @@ npm run dev
 ### 3.2 Full Stack with Docker Compose
 
 ```bash
-# Build all images
-./scripts/build-images.sh
-
-# Start all services
-docker-compose -f docker-compose.full-stack.yml up -d
+# Build all images and start services
+docker-compose -f docker-compose.full-stack.yml up -d --build
 
 # View logs
 docker-compose -f docker-compose.full-stack.yml logs -f
 
+# Check service status
+docker-compose -f docker-compose.full-stack.yml ps
+
 # Stop services
 docker-compose -f docker-compose.full-stack.yml down
+
+# Clean up (including volumes)
+docker-compose -f docker-compose.full-stack.yml down -v
 ```
 
-#### 3.2.1 OIDC Networking Note
-For OIDC authentication to work between the browser and Docker containers, you must add `keycloak-host` to your host's `/etc/hosts` file:
-```bash
-# Add this line to /etc/hosts
-127.0.0.1 keycloak-host
-```
-The `docker-compose.full-stack.yml` is pre-configured to use `http://keycloak-host:8085` as the issuer URL, which works both inside the containers (via `extra_hosts`) and in your browser.
+#### 3.2.1 Docker Networking Configuration
+
+**IMPORTANT:** The Docker setup is fully self-contained and requires NO host configuration (no /etc/hosts edits needed).
+
+**How it works:**
+1. All services run on Docker bridge network `jtoye-network`
+2. Keycloak is configured with `KC_HOSTNAME_URL: http://localhost:8085` so tokens have this issuer
+3. Frontend container has `extra_hosts: localhost:host-gateway` allowing it to reach the host's localhost:8085
+4. Frontend uses `KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev` matching the token issuer
+5. Browser redirects work because localhost:8085 is mapped to host (port 8085:8080)
+
+**OAuth Flow:**
+- Browser → `http://localhost:8085` (Keycloak on host)
+- Keycloak issues token with `iss: http://localhost:8085/realms/jtoye-dev`
+- Frontend validates token against `http://localhost:8085` (via host-gateway)
+- ✅ Token validation succeeds
+
+**Accessing Services:**
+- Frontend: http://localhost:3000
+- Core API: http://localhost:9090 (endpoints: `/customers`, `/products`, etc.)
+- Keycloak Admin: http://localhost:8085 (admin/admin123)
+- RabbitMQ Management: http://localhost:15672 (jtoye/rabbitmqpass123)
+
+**Test Authentication:**
+1. Open http://localhost:3000/auth/signin
+2. Click "Sign in with Keycloak"
+3. Login with: admin / admin123
+4. You'll be redirected to the dashboard
 
 ### 3.3 Environment Variables
 

@@ -42,12 +42,21 @@ Key Paths
 - Infra: `infra/docker-compose.yml` (PostgreSQL port 5433, Keycloak port 8085)
 
 Runtime Assumptions (Dev)
-- Core API: Port 9090 (was 8080)
+- Core API: Port 9090 (REST endpoints at `/customers`, `/products`, `/orders`, etc. - NO /api/v1 prefix)
 - PostgreSQL: Port 5433 (Docker)
 - Keycloak: Port 8085, issuer `http://localhost:8085/realms/jtoye-dev`
 - Frontend: Port 3000
 - JWT must contain `tenant_id` (PRODUCTION) or use `X-Tenant-Id` header as fallback (DEV ONLY).
-- Test users: `tenant-a-user` / `password123`, `tenant-b-user` / `password123`
+- Test users: `admin` / `admin123` (Keycloak admin console)
+- Tenant IDs: `00000000-0000-0000-0000-000000000001` (Tenant A), `00000000-0000-0000-0000-000000000002` (Tenant B)
+
+Docker Networking (Full Stack)
+- All services run on Docker bridge network `jtoye-network`
+- Frontend has `extra_hosts: localhost:host-gateway` to reach host's localhost for Keycloak OAuth redirects
+- Keycloak configured with `KC_HOSTNAME_URL: http://localhost:8085` for consistent issuer in tokens
+- Frontend uses `KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev` matching token issuer
+- Core Java uses `KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev` for internal container-to-container validation
+- Browser OAuth flow: localhost:8085 (host) → Frontend validates using localhost:8085 → Success
 
 Coding Style
 - Strong typing, DTOs for API payloads, avoid exposing entities directly.
