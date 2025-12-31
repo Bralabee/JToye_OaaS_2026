@@ -57,17 +57,11 @@ import type { Order, OrderStatus, Shop, Product } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 import { Trash2 } from "lucide-react"
 
-const orderItemSchema = z.object({
-  productId: z.string().min(1, "Product is required"),
-  quantity: z.number().min(1, "Quantity must be at least 1"),
-})
-
 const orderSchema = z.object({
   shopId: z.string().min(1, "Shop is required"),
   customerName: z.string().min(1, "Customer name is required").max(100),
   customerEmail: z.string().email("Invalid email").max(255),
   customerPhone: z.string().max(20).optional(),
-  items: z.array(orderItemSchema).min(1, "At least one item is required"),
 })
 
 type OrderFormData = z.infer<typeof orderSchema>
@@ -226,9 +220,6 @@ export default function OrdersPage() {
     watch,
   } = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
-    defaultValues: {
-      items: [],
-    },
   })
 
   const selectedShopId = watch("shopId")
@@ -267,7 +258,6 @@ export default function OrdersPage() {
       customerName: "",
       customerEmail: "",
       customerPhone: "",
-      items: [],
     })
     setOrderItems([])
     setDialogOpen(true)
@@ -690,10 +680,6 @@ export default function OrdersPage() {
                   </Button>
                 </div>
               ))}
-
-              {errors.items && (
-                <p className="text-sm text-red-600">{errors.items.message}</p>
-              )}
             </div>
 
             <DialogFooter>
