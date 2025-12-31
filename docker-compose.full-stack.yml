@@ -164,6 +164,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:9090
     container_name: jtoye-frontend
     environment:
       NODE_ENV: development

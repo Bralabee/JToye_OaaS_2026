@@ -25,6 +25,11 @@ RUN npm ci
 # Build Next.js app with standalone output
 # This creates a minimal production build with only necessary files
 ENV NEXT_TELEMETRY_DISABLED 1
+
+# Build args for public environment variables (embedded at build time)
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN npm run build
 
 # Stage 3: Runner
