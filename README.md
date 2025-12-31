@@ -66,43 +66,44 @@ J'Toye OaaS — v0.7.0: Full Stack Docker + Comprehensive CRUD
 - **Go 1.22+** (for edge-go service)
 - **Docker + Docker Compose** (for PostgreSQL + Keycloak)
 
-## 🚀 Quick Start (One-Command Setup)
+## 🚀 Quick Start (One-Command Docker Setup)
 
-For the best experience, use the full-stack Docker Compose which handles all services, networking, and database initialization automatically.
+**✨ The full-stack Docker setup requires NO local installations** - everything runs in containers!
 
-### 1. Networking (Mandatory)
-For OIDC authentication to work between your browser and the Docker containers, you **must** add `keycloak-host` to your local hosts file:
+### 1. Launch the Stack
 ```bash
-# Add this line to /etc/hosts (Linux/macOS) or C:\Windows\System32\drivers\etc\hosts (Windows)
-127.0.0.1 keycloak-host
-```
-
-### 2. Launch the Stack
-```bash
-# Build all service images
-./scripts/build-images.sh
-
 # Start everything (Postgres, Keycloak, Redis, RabbitMQ, Core, Edge, Frontend)
-docker-compose -f docker-compose.full-stack.yml up -d
-```
-*Note: On first run, Postgres initializes the databases and Keycloak imports the realm. This process may take ~60-90 seconds. The stack is configured with robust health checks to ensure services start in the correct order. Use `docker-compose -f docker-compose.full-stack.yml logs -f` to monitor progress.*
-
-### 3. Initialize Seed Data (Optional)
-To quickly populate the database with test shops and products:
-```bash
-bash scripts/testing/diagnose-jwt-issue.sh
+docker-compose -f docker-compose.full-stack.yml up
 ```
 
-### 4. Access the Application
+That's it! On first run:
+- PostgreSQL initializes both `jtoye` and `keycloak` databases (~10s)
+- Keycloak imports the `jtoye-dev` realm with test users (~30s)
+- All services start with health checks ensuring correct startup order
+
+*Tip: Use `docker-compose -f docker-compose.full-stack.yml up -d` to run in detached mode*
+
+### 2. Access the Application
 - **Frontend UI**: [http://localhost:3000](http://localhost:3000)
-- **Keycloak Admin**: [http://keycloak-host:8085](http://keycloak-host:8085) (admin/admin123)
-- **Edge API**: [http://localhost:8089](http://localhost:8089)
 - **Core API**: [http://localhost:9090](http://localhost:9090)
+- **Edge API**: [http://localhost:8089](http://localhost:8089)
+- **Keycloak Admin**: [http://localhost:8085](http://localhost:8085) (admin/admin123)
+- **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (jtoye/rabbitmqpass123)
 
-### 5. Sign In
-Sign in at [http://localhost:3000](http://localhost:3000) with:
+### 3. Sign In
+Visit [http://localhost:3000](http://localhost:3000) and sign in with:
 - **Tenant A**: `tenant-a-user` / `password123`
 - **Tenant B**: `tenant-b-user` / `password123`
+- **Admin**: `admin-user` / `admin123`
+
+### 4. Stop the Stack
+```bash
+# Stop services but keep data
+docker-compose -f docker-compose.full-stack.yml down
+
+# Stop and remove all data (reset)
+docker-compose -f docker-compose.full-stack.yml down -v
+```
 
 ---
 

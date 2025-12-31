@@ -1,48 +1,86 @@
 # JToye OaaS 2026 - Setup Instructions
 
-## Prerequisites
-- Java 21
-- Docker & Docker Compose
-- Gradle (wrapper included)
+## Quick Start (Recommended)
 
-## Database Setup
+### Full-Stack Docker Setup
+**No local installations required!** Run everything in Docker:
 
-The application uses PostgreSQL running in Docker on port **5433** (not the default 5432).
-
-### Start the database:
 ```bash
-cd infra
-docker-compose up -d postgres
+# Start all services (PostgreSQL, Keycloak, Redis, RabbitMQ, Backend, Edge, Frontend)
+docker-compose -f docker-compose.full-stack.yml up
 ```
 
-### Verify database is running:
+Access the application:
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:9090
+- **Keycloak**: http://localhost:8085
+
+Login with: `tenant-a-user` / `password123`
+
+Stop the stack:
 ```bash
-docker ps | grep jtoye-postgres
+docker-compose -f docker-compose.full-stack.yml down
 ```
 
-## Running the Application
+---
+
+## Developer Setup (Local Development)
+
+### Prerequisites
+- **Java 21** (for core-java)
+- **Node.js 20+** (for frontend)
+- **Go 1.22+** (for edge-go)
+- **Docker & Docker Compose** (for infrastructure)
+
+### 1. Start Infrastructure Services
+
+Start PostgreSQL, Keycloak, Redis, and RabbitMQ:
+```bash
+docker-compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
+```
+
+Verify services are running:
+```bash
+docker-compose -f docker-compose.full-stack.yml ps
+```
+
+### 2. Running Services Locally
 
 ### Option 1: Using the run script (Recommended)
 ```bash
 ./run-app.sh
 ```
 
-### Option 2: Using Gradle directly
+#### Core Java Backend
+
+**Option A: Using Gradle**
 ```bash
 cd core-java
-DB_PORT=5433 ../gradlew bootRun
+../gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-### Option 3: IntelliJ IDEA Run Configuration
-
+**Option B: IntelliJ IDEA**
 1. Open `Run` → `Edit Configurations...`
-2. Select or create `CoreApplication` configuration
-3. Add **Environment variables**:
-   ```
-   DB_PORT=5433
-   ```
-4. Click `Apply` and `OK`
-5. Run the application
+2. Select `CoreApplication`
+3. Set **Active profiles**: `local`
+4. Run the application
+
+The `local` profile is pre-configured to connect to PostgreSQL on port 5433.
+
+#### Edge Go Service
+```bash
+cd edge-go
+go run ./cmd/edge
+```
+
+#### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Access at: http://localhost:3000
 
 ## Configuration
 
