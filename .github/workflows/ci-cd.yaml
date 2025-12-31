@@ -59,11 +59,11 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: |
-            core-java/build/reports/tests/
+            core-java/build-local/reports/tests/
             edge-go/coverage.out
             frontend/.next/
 
