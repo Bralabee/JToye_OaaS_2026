@@ -163,7 +163,7 @@ const getAvailableTransitions = (
     CONFIRMED: [
       {
         action: "Start Prep",
-        endpoint: "start-preparing",
+        endpoint: "start-preparation",
         nextStatus: "PREPARING",
         icon: ChefHat,
         color: "bg-purple-600 hover:bg-purple-700",
