@@ -37,17 +37,10 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: jtoye-keycloak
-    command: ["start-dev", "--import-realm", "--health-enabled=true"]
+    command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: jtoye
-      KC_DB_PASSWORD: secret
-      KC_HOSTNAME_STRICT: false
-      KC_HOSTNAME_URL: http://localhost:8085
-      KC_HTTP_RELATIVE_PATH: /
     ports:
       - "8085:8080"
     volumes:
@@ -57,9 +50,9 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      interval: 10s
+      timeout: 5s
+      retries: 10
       start_period: 60s
     networks:
       - jtoye-network
@@ -132,12 +125,13 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    restart: on-failure:5
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     extra_hosts:
       - "keycloak-host:host-gateway"
     networks:
