@@ -1,356 +1,321 @@
-J'Toye OaaS — v0.7.0: Full Stack Docker + Comprehensive CRUD
+# J'Toye OaaS
 
-**✅ All Critical Gaps Fixed | 🎯 100% CRUD Coverage | 🚀 Full-Stack Dockerized**
+**Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
-## What's Included
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
+[![Tests](https://img.shields.io/badge/tests-53%2F53%20passing-brightgreen.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-### 🐳 **Deployment Infrastructure** (Phase 2.1 - NEW!)
-- **Docker Support**: Multi-stage builds for all 3 services
-  - core-java: 200MB (JRE Alpine), edge-go: 15MB (scratch), frontend: 150MB (Node Alpine)
-  - Health checks, non-root users, optimized layers
-- **Kubernetes Manifests**: 22 resources across 7 YAML files
-  - HPA (auto-scaling 3-10 replicas), PDB (high availability)
-  - Ingress with TLS and rate limiting, ConfigMap, Secrets
-- **Docker Compose**: Full-stack local dev environment (7 services)
-- **CI/CD Pipeline**: GitHub Actions with 5 stages, multi-platform builds
-- **Scripts**: `smoke-test.sh`, `deploy.sh`, `build-images.sh`
-- **Docs**: Deployment guide, System Design V2 (10/10 score)
+---
 
-### 🎨 **frontend**: Modern Next.js 14 Application
-- **Tech Stack**: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion
-- **Authentication**: NextAuth.js v5 with Keycloak OIDC
-- **Dashboard Pages**: 5 complete UIs (Dashboard, Shops, Products, Orders, Customers)
-- **Features**:
-  - Smooth animations and responsive design
-  - Full CRUD operations with beautiful forms
-  - State machine visualization for orders
-  - Allergen tracking with emoji badges
-  - Toast notifications and loading states
-- **Quick Start**: `cd frontend && npm install && npm run dev`
-- **URL**: http://localhost:3000
+## 📋 Overview
 
-### ☕ **core-java**: Spring Boot 3 (System of Record)
-- **Dependencies**: Web, Data JPA, AOP, Security (JWT), Envers, StateMachine, Lombok, Flyway, PostgreSQL
-- **REST APIs** (7 controllers):
-  - **ShopsController**: GET/POST/PUT/DELETE /shops
-  - **ProductsController**: GET/POST/PUT/DELETE /products
-  - **OrdersController**: Full order lifecycle + state machine transitions
-  - **CustomersController**: GET/POST/PUT/DELETE /customers (NEW!)
-  - **FinancialTransactionsController**: GET/POST /financial-transactions (NEW!)
-  - **DevController**: POST /dev/tenants/ensure
-  - Public: `GET /health`
-  - RLS wiring:
-    - `JwtTenantFilter` extracts tenant from JWT claims in order: `tenant_id` → `tenantId` → `tid`
-    - `TenantFilter` reads `X-Tenant-Id` header as a dev fallback if JWT lacks tenant
-    - `TenantSetLocalAspect` executes `SET LOCAL app.current_tenant_id = ?` inside transactions
-  - Flyway migrations:
-    - `V1__base_schema.sql` — Base schema, `vat_rate_enum`, mandatory `ingredients_text`, `allergen_mask`
-    - `V2__rls_policies.sql` — RLS policies using `current_setting('app.current_tenant_id')`
+J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS platform designed for retail operations. Built with enterprise-grade security featuring PostgreSQL Row-Level Security (RLS), full CRUD operations, and modern authentication.
 
-### 🔷 **edge-go**: Go 1.22 Gin Service (System of Engagement)
-- Token-bucket rate limiting middleware
-- Circuit breaker for resilience
-- JWT validation with Keycloak
-- Endpoints: `GET /health`, `POST /sync/batch`, `POST /webhooks/whatsapp`
-- **Tests**: 12/12 passing (100% success rate)
+### Tech Stack
 
-### 🐳 **infra**: Docker Compose Infrastructure
-- **PostgreSQL 15**: Port 5433, `jtoye` database with RLS policies
-- **Keycloak**: Port 8085, realm `jtoye-dev` with pre-configured clients
-  - Test users: `tenant-a-user`, `tenant-b-user` (password: `password123`)
-  - Clients: `core-api` (backend), `frontend` redirect configured
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 14, TypeScript, Tailwind CSS, NextAuth.js v5 |
+| **Backend** | Spring Boot 3, Java 21, Hibernate Envers, Spring State Machine |
+| **Edge** | Go 1.22, Gin, Circuit Breakers, Rate Limiting |
+| **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
+| **Auth** | Keycloak 24 (OAuth2/OIDC) |
+| **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
 
-## Prerequisites
-- **Java 21** (for core-java backend)
-- **Node.js 18+** (for frontend, 20+ recommended)
-- **Go 1.22+** (for edge-go service)
-- **Docker + Docker Compose** (for PostgreSQL + Keycloak)
+### Key Features
 
-## ⚠️ First-Time Setup
+✅ **Multi-Tenancy** - PostgreSQL RLS with JWT-based isolation
+✅ **Full CRUD** - 7 REST controllers (Shops, Products, Orders, Customers, etc.)
+✅ **State Machine** - Order workflow management
+✅ **Audit Trail** - Hibernate Envers on all entities
+✅ **Modern UI** - 5 responsive dashboards with animations
+✅ **Production Ready** - Docker, Kubernetes, CI/CD pipeline
 
-**IMPORTANT:** Before running the application locally (non-Docker), you must configure environment variables.
+---
 
-### Option 1: Full-Stack Docker (Recommended - No Setup Needed)
-✅ **No environment files required!** All configuration is embedded in `docker-compose.full-stack.yml`.
+## 🚀 Quick Start
 
-Skip to [Quick Start](#-quick-start-one-command-docker-setup) below.
+### Option 1: Docker (2 Minutes)
 
-### Option 2: Local Development (Requires Environment Setup)
-📋 **Environment files must be created from templates:**
+✅ **No configuration required!** Everything runs in containers.
 
-**Linux/Mac:**
 ```bash
+docker-compose -f docker-compose.full-stack.yml up
+```
+
+**Access:**
+- UI: http://localhost:3000
+- API: http://localhost:9090
+- Keycloak: http://localhost:8085
+
+**Login:** `tenant-a-user` / `password123`
+
+### Option 2: Local Development (10 Minutes)
+
+⚠️ **Requires environment setup first!**
+
+```bash
+# 1. Copy environment templates
 cp frontend/.env.local.example frontend/.env.local
 cp core-java/.env.example core-java/.env
 cp edge-go/.env.example edge-go/.env
 cp infra/.env.example infra/.env
+
+# 2. Start infrastructure
+cd infra && docker-compose up -d && cd ..
+
+# 3. Start backend
+./run-app.sh
+
+# 4. Start frontend (new terminal)
+cd frontend && npm install && npm run dev
 ```
 
-**Windows (Command Prompt):**
-```cmd
-copy frontend\.env.local.example frontend\.env.local
-copy core-java\.env.example core-java\.env
-copy edge-go\.env.example edge-go\.env
-copy infra\.env.example infra\.env
+📖 **Detailed Guide:** See [docs/QUICK_START.md](docs/QUICK_START.md)
+
+---
+
+## 📚 Documentation
+
+### Getting Started
+- **[QUICK_START.md](docs/QUICK_START.md)** - Get running in minutes (all platforms)
+- **[ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)** - Environment configuration guide
+- **[DOCKER_QUICK_START.md](docs/DOCKER_QUICK_START.md)** - Docker-specific instructions
+
+### Development
+- **[USER_GUIDE.md](docs/USER_GUIDE.md)** - How to use the application
+- **[TESTING.md](docs/TESTING.md)** - Testing guide with examples
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Detailed configuration reference
+
+### Deployment & Operations
+- **[DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Production deployment
+- **[PRODUCTION_READINESS_REPORT.md](docs/PRODUCTION_READINESS_REPORT.md)** - Production checklist
+- **[SECURITY_AUDIT_REPORT.md](docs/SECURITY_AUDIT_REPORT.md)** - Security assessment
+
+### Architecture
+- **[AI_CONTEXT.md](docs/AI_CONTEXT.md)** - System context and architecture
+- **[DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md)** - Complete docs index
+- **[CHANGELOG.md](docs/CHANGELOG.md)** - Version history
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Browser                                                     │
+│  └─ Next.js 14 Frontend (Port 3000)                        │
+│     └─ NextAuth.js v5 ← → Keycloak (Port 8085)            │
+└──────────────────────┬────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Backend Services                                            │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  Core Java   │←→│  Edge Go     │←→│  Redis       │     │
+│  │  Port 9090   │  │  Port 8089   │  │  Port 6379   │     │
+│  │              │  │              │  │              │     │
+│  │  Spring Boot │  │  Rate Limit  │  │  Cache       │     │
+│  │  JWT Auth    │  │  Circuit     │  │              │     │
+│  │  RLS         │  │  Breaker     │  │              │     │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘     │
+│         │                                                   │
+│         ↓                                                   │
+│  ┌──────────────────────────────────────┐                  │
+│  │  PostgreSQL 15 (Port 5433)          │                  │
+│  │  - Row-Level Security (RLS)         │                  │
+│  │  - Multi-tenant isolation           │                  │
+│  │  - Audit trails (Envers)            │                  │
+│  └──────────────────────────────────────┘                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Windows (PowerShell):**
-```powershell
-Copy-Item frontend\.env.local.example frontend\.env.local
-Copy-Item core-java\.env.example core-java\.env
-Copy-Item edge-go\.env.example edge-go\.env
-Copy-Item infra\.env.example infra\.env
+**Security Model:**
+- JWT tokens contain `tenant_id` claim
+- Every database query runs with `SET LOCAL app.current_tenant_id`
+- PostgreSQL RLS enforces data isolation at database level
+- No manual `WHERE tenant_id = ?` needed in code
+
+---
+
+## 🎯 What's Included
+
+### Core Features
+
+**7 REST APIs:**
+- `/shops` - Retail location management
+- `/products` - Product catalog with allergen tracking
+- `/orders` - Order lifecycle with state machine
+- `/customers` - Customer profiles
+- `/financial-transactions` - Transaction tracking
+- `/dev/tenants` - Tenant management (dev only)
+- `/health` - Health check endpoint
+
+**Frontend Dashboards:**
+- Dashboard - Overview metrics
+- Shops - Location management
+- Products - Catalog with allergen badges
+- Orders - Order workflow visualization
+- Customers - Customer management
+
+**State Machine:**
+```
+DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED
 ```
 
-**⚠️ Important:**
-- These files contain credentials and are NOT committed to Git
-- Default values work for local development
-- See **[docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)** for detailed configuration guide
+### Infrastructure
 
-## 🚀 Quick Start (One-Command Docker Setup)
+**Docker Support:**
+- Multi-stage Dockerfiles for all services
+- Size-optimized images (core: 200MB, edge: 15MB, frontend: 150MB)
+- Health checks and graceful shutdown
+- Non-root users for security
 
-**✨ The full-stack Docker setup requires NO local installations and NO environment files** - everything runs in containers!
+**Kubernetes:**
+- 22 resources across 7 YAML files
+- HorizontalPodAutoscaler (3-10 replicas)
+- PodDisruptionBudget for high availability
+- Ingress with TLS and rate limiting
 
-### 1. Launch the Stack
+**CI/CD:**
+- GitHub Actions pipeline
+- Automated testing, building, scanning
+- Multi-platform Docker builds
+- Deployment scripts
+
+---
+
+## 🔒 Security
+
+### Multi-Tenant Isolation
+
+**JWT-Based (Production):**
 ```bash
-# Start everything (Postgres, Keycloak, Redis, RabbitMQ, Core, Edge, Frontend)
-docker-compose -f docker-compose.full-stack.yml up
+# Keycloak issues JWT with tenant_id claim
+# Core Java validates JWT and extracts tenant_id
+# RLS policies enforce isolation at database level
 ```
 
-That's it! On first run:
-- PostgreSQL initializes both `jtoye` and `keycloak` databases (~10s)
-- Keycloak imports the `jtoye-dev` realm with test users (~30s)
-- All services start with health checks ensuring correct startup order
+**Row-Level Security:**
+```sql
+CREATE POLICY tenant_isolation ON shops
+  FOR ALL TO jtoye_app
+  USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+```
 
-*Tip: Use `docker-compose -f docker-compose.full-stack.yml up -d` to run in detached mode*
+**Compliance:**
+- ✅ Natasha's Law - Full ingredient and allergen labeling
+- ✅ HMRC VAT - VAT rate tracking on transactions
+- ✅ Audit Trail - Hibernate Envers on all entities
 
-### 2. Access the Application
-- **Frontend UI**: [http://localhost:3000](http://localhost:3000)
-- **Core API**: [http://localhost:9090](http://localhost:9090)
-- **Edge API**: [http://localhost:8089](http://localhost:8089)
-- **Keycloak Admin**: [http://localhost:8085](http://localhost:8085) (admin/admin123)
-- **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (jtoye/rabbitmqpass123)
+---
 
-### 3. Sign In
-Visit [http://localhost:3000](http://localhost:3000) and sign in with:
-- **Tenant A**: `tenant-a-user` / `password123`
-- **Tenant B**: `tenant-b-user` / `password123`
-- **Admin**: `admin-user` / `admin123`
+## 📊 Status
 
-### 4. Stop the Stack
+### Current Version: v0.7.0
+
+**Test Results:**
+- Backend: 41/41 passing ✅
+- Edge: 12/12 passing ✅
+- Total: 53/53 (100%) ✅
+
+**Production Readiness:** 95/100
+
+**Features:**
+- [x] Full CRUD operations
+- [x] Multi-tenant isolation
+- [x] JWT authentication
+- [x] Row-Level Security
+- [x] State machine
+- [x] Audit trails
+- [x] Modern UI
+- [x] Docker deployment
+- [x] Kubernetes manifests
+- [x] CI/CD pipeline
+
+---
+
+## 🛠️ Development
+
+### Prerequisites
+
+- **Java 21** (Eclipse Temurin recommended)
+- **Node.js 20+** (with npm)
+- **Go 1.22+**
+- **Docker & Docker Compose**
+
+### Project Structure
+
+```
+JToye_OaaS_2026/
+├── core-java/          # Spring Boot backend
+├── edge-go/            # Go API gateway
+├── frontend/           # Next.js 14 UI
+├── infra/              # Docker Compose, Keycloak, DB
+├── k8s/                # Kubernetes manifests
+├── docs/               # Documentation
+└── scripts/            # Build and deployment scripts
+```
+
+### Common Commands
+
 ```bash
-# Stop services but keep data
-docker-compose -f docker-compose.full-stack.yml down
+# Run all tests
+./gradlew :core-java:test
+cd edge-go && go test ./...
 
-# Stop and remove all data (reset)
-docker-compose -f docker-compose.full-stack.yml down -v
+# Build Docker images
+./scripts/build-images.sh
+
+# Deploy to Kubernetes
+./scripts/deploy.sh staging
+
+# Run smoke tests
+./scripts/smoke-test.sh
 ```
 
 ---
 
-## 🛠️ Developer Manual Start (Individual Services)
+## 🤝 Contributing
 
-If you prefer to run services individually for development:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-**⚠️ Prerequisites:** You must first set up environment files. See [First-Time Setup](#️-first-time-setup) above or [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md).
+**Development Guidelines:**
+- Follow existing code style
+- Add tests for new features
+- Update documentation
+- Ensure all tests pass
 
-### 1. Start Infrastructure
-```bash
-cd infra && docker-compose up -d
-# PostgreSQL on port 5433, Keycloak on port 8085
-# This uses infra/.env file (created from infra/.env.example)
-```
+---
 
-2) Core service
-```bash
-# Option 1: Using the run script
-./run-app.sh
+## 📝 License
 
-# Option 2: Direct gradle command with environment variables
-DB_PORT=5433 ./gradlew :core-java:bootRun
-```
-*Note: The core-java service runs on port **9090** (not 8080) and connects to PostgreSQL on port **5433** (not 5432). You must set `DB_PORT=5433` when running the application.*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-*The core-java build is configured to use `build-local/` directory by default to avoid permission issues with the standard `build/` directory often encountered in mixed environments.*
+---
 
-3) Edge service
-```bash
-cd edge-go && go run ./cmd/edge
-```
+## 🔗 Links
 
-Configuration
-- **Core API**: Port 9090 (configurable via `SERVER_PORT` env var)
-- **PostgreSQL**: Port 5433 (Docker) - now configured as default
-- **Keycloak**: Port 8085
-- See `docs/setup/SETUP.md` for detailed setup instructions
-- See `docs/setup/INTELLIJ_SETUP.md` for IntelliJ IDEA configuration
-- See `docs/CREDENTIALS.md` for development credentials
-- See `docs/CHANGELOG.md` for version history
+- **Documentation:** [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md)
+- **Issues:** [GitHub Issues](https://github.com/jtoye/oaas/issues)
+- **Changelog:** [CHANGELOG.md](docs/CHANGELOG.md)
 
-Security / OIDC
-- Resource server issuer: `${KC_ISSUER_URI:-http://localhost:8085/realms/jtoye-dev}`
-- All non-health endpoints require a valid Keycloak JWT for realm `jtoye-dev`.
-- **Multi-tenant JWT authentication**: Fully implemented and tested
-  - JWT tokens contain `tenant_id` claim via Keycloak group mappings
-  - Filter order: `TenantFilter` (header fallback) → JWT Auth → `JwtTenantFilter` (JWT tenant extraction)
-  - `JwtTenantFilter` runs after `BearerTokenAuthenticationFilter` to ensure JWT is validated
-  - JWT tenant has PRIORITY over X-Tenant-ID header for security
-- Tenant resolution priority:
-  1) JWT claim `tenant_id` (preferred) → `tenantId` → `tid` - **PRODUCTION READY**
-  2) Dev fallback header `X-Tenant-Id: <uuid>` - **DEV/TESTING ONLY**
+---
 
-Verify multi-tenant JWT authentication and RLS
-**Production approach (JWT-only - RECOMMENDED):**
-```bash
-# Keycloak is pre-configured with:
-# - Groups: tenant-a, tenant-b (with tenant_id attributes)
-# - Users: tenant-a-user (password: password), tenant-b-user (password: password)
-# - Group membership protocol mapper to inject tenant_id into JWT
+## 📞 Support
 
-KC=http://localhost:8085
+- **Quick Start Issues:** See [docs/QUICK_START.md](docs/QUICK_START.md)
+- **Environment Setup:** See [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
+- **Configuration:** See [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+- **Testing:** See [docs/TESTING.md](docs/TESTING.md)
 
-# Get token for Tenant A user
-TOKEN_A=$(curl -s \
-  -d 'grant_type=password' \
-  -d 'client_id=core-api' \
-  -d 'username=tenant-a-user' \
-  -d 'password=password' \
-  "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
+---
 
-# Get token for Tenant B user
-TOKEN_B=$(curl -s \
-  -d 'grant_type=password' \
-  -d 'client_id=core-api' \
-  -d 'username=tenant-b-user' \
-  -d 'password=password' \
-  "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
-
-# Tenant A sees only their shops (JWT-only, no header needed)
-curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/shops | jq '.content[] | .name'
-
-# Tenant B sees only their shops (JWT-only, no header needed)
-curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/shops | jq '.content[] | .name'
-```
-
-**Dev approach (header fallback):**
-```bash
-# Get a generic token
-TOKEN=$(curl -s \
-  -d 'grant_type=password' \
-  -d 'client_id=core-api' \
-  -d 'username=dev-user' \
-  -d 'password=password' \
-  "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
-
-TENANT_A=00000000-0000-0000-0000-000000000001
-TENANT_B=00000000-0000-0000-0000-000000000002
-```
-3) Ensure tenant rows, then create/list data for RLS demonstration:
-```bash
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" \
-  "http://localhost:9090/dev/tenants/ensure?name=Tenant-A"
-
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Main Street Shop","address":"1 Main St"}' \
-  http://localhost:9090/shops | jq
-
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" \
-  -H 'Content-Type: application/json' \
-  -d '{"sku":"YAM-5KG","title":"Yam 5kg","ingredientsText":"Yam (100%)","allergenMask":0}' \
-  http://localhost:9090/products | jq
-
-curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" http://localhost:9090/shops | jq
-curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" http://localhost:9090/products | jq
-
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_B" \
-  "http://localhost:9090/dev/tenants/ensure?name=Tenant-B"
-
-curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_B" http://localhost:9090/shops | jq
-curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_B" http://localhost:9090/products | jq
-```
-
-Data Security (RLS)
-- Never manually filter by `tenant_id` in code — let Postgres RLS enforce isolation.
-- Every transactional DB call runs under `SET LOCAL app.current_tenant_id` set from `TenantContext`.
-- `TenantContext` is populated by JWT claims; header fallback exists in dev only.
-
-For AI agents
-- See `docs/AI_CONTEXT.md` for the strict Security & Compliance directives and project guardrails.
-
-## 📊 Current Status
-
-### ✅ Production Ready - v0.7.0!
-
-**Backend (core-java)**:
-- ✅ 7 REST controllers with full CRUD operations
-- ✅ 41 tests passing (100% success rate)
-- ✅ Domain model: Shop, Product, Order, Customer, FinancialTransaction
-- ✅ Spring StateMachine for order workflow (with comprehensive tests)
-- ✅ Hibernate Envers auditing with tenant context
-- ✅ RLS policies on all tables
-- ✅ CORS configured for frontend
-- ✅ Lombok for clean code
-- ✅ All critical security fixes implemented
-
-**Frontend (Next.js 14)**:
-- ✅ Complete UI with 5 dashboard pages
-- ✅ NextAuth.js v5 authentication
-- ✅ Tenant isolation end-to-end
-- ✅ Beautiful animations and responsive design
-- ✅ Full CRUD operations on all entities
-- ✅ Build successful, all pages functional
-
-**Infrastructure**:
-- ✅ PostgreSQL 15 with RLS
-- ✅ Keycloak OIDC with tenant mapping
-- ✅ Docker Compose orchestration (full-stack + monitoring)
-- ✅ Prometheus + Grafana monitoring (ports 9091, 3001)
-- ✅ Automated backups with 30-day retention
-- ✅ Secrets management with generation tooling
-- ✅ Load testing framework
-
-**Tests**: 41/41 backend tests + 12/12 edge-go tests + Frontend build passing = **53/53 tests (100%)**
-
-**Production Readiness Score**: 95/100 ✅
-
-
-
-🔧 **Production Ready Features**:
-
-- ✅ JWT-only authentication returns correct tenant-scoped data
-
-- ✅ RLS blocks cross-tenant access at database level
-
-- ✅ Filter chain executes in correct order: `TenantFilter` → `BearerTokenAuthenticationFilter` → `JwtTenantFilter`
-
-- ✅ JWT tenant has PRIORITY over X-Tenant-ID header for security
-
-- ✅ AOP aspect sets `app.current_tenant_id` on each transaction
-
-- ✅ Multi-tenant isolation verified at both API and database levels
-
-- ✅ Integration tests confirm tenant data isolation works correctly
-
-
-
-📊 **Test Results (Last Run: 2025-12-28)**:
-
-- **Total Tests**: 11 (all passing)
-
-- **ShopControllerIntegrationTest**: 6 tests ✅
-
-- **ProductControllerTest**: 3 tests ✅
-
-- **TenantSetLocalAspectTest**: 2 tests ✅
-
-- **Success Rate**: 100%
-
-- **Duration**: 0.924s
-
-
-
-Roadmap
-- Core-Java: enrich domain (DTO-first), Envers auditing config/tables, StateMachine for orders, JasperReports labels.
-- ~~Infra: map `tenant_id` into JWT via Keycloak protocol mapper~~ ✅ **COMPLETED**
-- Edge-Go: WhatsApp bridge + conflict resolution; circuit breakers.
+**Built with ❤️ for modern retail operations**
