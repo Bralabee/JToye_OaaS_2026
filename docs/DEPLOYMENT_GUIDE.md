@@ -1,8 +1,21 @@
 # J'Toye OaaS - Deployment Guide
 
-**Version:** 2.0 (Phase 2.1 Complete)
-**Date:** 2025-12-30
+**Version:** 2.1 (Environment-Aware)
+**Date:** 2026-01-03
 **Status:** Production Ready
+
+---
+
+## ⚠️ Important: Environment Strategy
+
+This project is **environment-aware** with different configurations for dev/staging/production.
+
+📖 **See [ENVIRONMENT_STRATEGY.md](ENVIRONMENT_STRATEGY.md) for:**
+- Environment comparison (dev vs staging vs prod)
+- Configuration management (12-factor app)
+- Secret management strategy
+- Environment promotion workflow
+- Deployment checklists
 
 ---
 
