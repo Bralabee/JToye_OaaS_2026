@@ -33,6 +33,7 @@
 | **How do I perform QA testing?** | **QA_TEST_PLAN.md** ⭐ |
 | **What about dev/staging/prod?** | **ENVIRONMENT_STRATEGY.md** ⭐ |
 | **Docker networking issues?** | **DOCKER_IPTABLES_ISSUE.md** ⚠️ |
+| **Docker full-stack status?** | **DOCKER_FULL_STACK_STATUS.md** ⚠️ |
 | **How do I run with Docker?** | QUICK_START.md or DOCKER_QUICK_START.md |
 | **What's the project overview?** | README.md |
 | **How do I deploy to production?** | DEPLOYMENT_GUIDE.md |
@@ -71,6 +72,7 @@
 ### Troubleshooting
 18. **[DOCKER_IPTABLES_ISSUE.md](DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
 19. **[IPTABLES_FIX_RESULTS.md](IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
+20. **[DOCKER_FULL_STACK_STATUS.md](DOCKER_FULL_STACK_STATUS.md)** - ⚠️ Docker full-stack compose status
 
 ---
 
