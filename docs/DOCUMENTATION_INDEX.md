@@ -16,6 +16,8 @@
 - **TESTING.md** - NEW! Testing guide with API examples
 - **QA_TEST_PLAN.md** - NEW! Comprehensive QA testing procedures
 - **FRESH_CLONE_TEST_RESULTS.md** - NEW! First-time clone experience test results
+- **DOCKER_IPTABLES_ISSUE.md** - NEW! Docker networking troubleshooting
+- **IPTABLES_FIX_RESULTS.md** - NEW! Docker iptables fix verification
 
 ---
 
@@ -30,6 +32,7 @@
 | **How do I test the API?** | **TESTING.md** ⭐ |
 | **How do I perform QA testing?** | **QA_TEST_PLAN.md** ⭐ |
 | **What about dev/staging/prod?** | **ENVIRONMENT_STRATEGY.md** ⭐ |
+| **Docker networking issues?** | **DOCKER_IPTABLES_ISSUE.md** ⚠️ |
 | **How do I run with Docker?** | QUICK_START.md or DOCKER_QUICK_START.md |
 | **What's the project overview?** | README.md |
 | **How do I deploy to production?** | DEPLOYMENT_GUIDE.md |
@@ -64,6 +67,10 @@
 15. **[AI_CONTEXT.md](AI_CONTEXT.md)** - System architecture
 16. **[CHANGELOG.md](CHANGELOG.md)** - Version history
 17. **[SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)** - Security assessment
+
+### Troubleshooting
+18. **[DOCKER_IPTABLES_ISSUE.md](DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
+19. **[IPTABLES_FIX_RESULTS.md](IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
 
 ---
 

@@ -315,6 +315,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Environment Setup:** See [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
 - **Configuration:** See [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - **Testing:** See [docs/TESTING.md](docs/TESTING.md)
+- **Docker Networking Issues:** See [docs/DOCKER_IPTABLES_ISSUE.md](docs/DOCKER_IPTABLES_ISSUE.md) ⚠️
 
 ---
 
