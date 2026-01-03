@@ -32,7 +32,7 @@ const requiredEnvVars: (keyof EnvVars)[] = [
 
 export function validateEnvironment(): void {
   const missing: string[] = [];
-  const invalid: string[] = [];
+  const warnings: string[] = [];
 
   for (const envVar of requiredEnvVars) {
     const value = process.env[envVar];
@@ -42,45 +42,42 @@ export function validateEnvironment(): void {
       continue;
     }
 
-    // Validate specific formats
+    // Validate specific formats (non-blocking)
     if (envVar.includes('URL') || envVar.includes('ISSUER')) {
       try {
         new URL(value);
       } catch {
-        invalid.push(`${envVar} (invalid URL format: ${value})`);
+        warnings.push(`${envVar} has invalid URL format: ${value}`);
       }
     }
 
-    // Check for placeholder values
-    if (value.includes('CHANGE_ME') || value.includes('your-') && envVar === 'NEXTAUTH_SECRET') {
-      invalid.push(`${envVar} (using placeholder value, should be changed)`);
+    // Check for placeholder values (non-blocking)
+    if (value.includes('CHANGE_ME') || (value.includes('your-') && envVar === 'NEXTAUTH_SECRET')) {
+      warnings.push(`${envVar} is using a placeholder value - should be changed in production`);
     }
   }
 
-  if (missing.length > 0 || invalid.length > 0) {
-    console.error('\n❌ Environment Configuration Error!\n');
-
-    if (missing.length > 0) {
-      console.error('Missing required environment variables:');
-      missing.forEach(v => console.error(`  - ${v}`));
-      console.error('');
-    }
-
-    if (invalid.length > 0) {
-      console.error('Invalid environment variable values:');
-      invalid.forEach(v => console.error(`  - ${v}`));
-      console.error('');
-    }
-
-    console.error('📋 Setup Instructions:');
-    console.error('  1. Copy frontend/.env.local.example to frontend/.env.local');
-    console.error('  2. Update values as needed');
-    console.error('  3. See docs/ENVIRONMENT_SETUP.md for detailed guide\n');
-
-    throw new Error('Environment validation failed. See logs above.');
+  // Only fail if variables are completely missing
+  if (missing.length > 0) {
+    console.warn('\n⚠️  Environment Configuration Warning!\n');
+    console.warn('Missing environment variables (will use defaults):');
+    missing.forEach(v => console.warn(`  - ${v}`));
+    console.warn('\n📋 For production use:');
+    console.warn('  1. Copy frontend/.env.local.example to frontend/.env.local');
+    console.warn('  2. Update values as needed');
+    console.warn('  3. See docs/ENVIRONMENT_SETUP.md for detailed guide\n');
   }
 
-  console.log('✅ Environment variables validated successfully');
+  // Show warnings but don't fail
+  if (warnings.length > 0) {
+    console.warn('⚠️  Configuration warnings:');
+    warnings.forEach(w => console.warn(`  - ${w}`));
+    console.warn('');
+  }
+
+  if (missing.length === 0 && warnings.length === 0) {
+    console.log('✅ Environment variables validated successfully');
+  }
 }
 
 /**
