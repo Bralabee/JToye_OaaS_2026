@@ -2,6 +2,12 @@
 
 **J'Toye OaaS - Full Stack Docker Setup**
 
+## ✅ No Environment Setup Required
+
+The full-stack Docker Compose configuration has all values hardcoded for simplicity. **No `.env` files are needed!**
+
+This is the easiest way to get the entire application running.
+
 ## One-Command Setup
 
 ```bash

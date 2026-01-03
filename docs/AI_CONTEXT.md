@@ -48,6 +48,25 @@ Runtime Assumptions (Dev)
 - Frontend: Port 3000
 - JWT must contain `tenant_id` (PRODUCTION) or use `X-Tenant-Id` header as fallback (DEV ONLY).
 - Test users: `admin` / `admin123` (Keycloak admin console)
+
+Environment Configuration
+- ✅ **Full-Stack Docker**: `docker-compose.full-stack.yml` - NO .env files needed (all values hardcoded)
+- ⚠️ **Local Development**: REQUIRES environment files before running
+  - `frontend/.env.local` (from `frontend/.env.local.example`)
+  - `core-java/.env` (from `core-java/.env.example`)
+  - `edge-go/.env` (from `edge-go/.env.example`)
+  - `infra/.env` (from `infra/.env.example`)
+- 📋 See `docs/ENVIRONMENT_SETUP.md` for comprehensive setup instructions
+- 🚫 NEVER commit `.env`, `.env.local`, or any file containing actual credentials
+- ✅ ALWAYS commit `.env.example`, `.env.local.example` templates
+- Frontend has environment validation at startup (`frontend/instrumentation.ts`) - fails fast if config missing
+- All `.env.example` files contain default values suitable for local development
+
+Key Environment Variables:
+- Frontend: `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ISSUER`, `NEXTAUTH_SECRET`, `NEXT_PUBLIC_API_URL`
+- Core: `DB_HOST`, `DB_PORT`, `KC_ISSUER_URI`, `SERVER_PORT`
+- Edge: `CORE_API_URL`, `KC_ISSUER_URI`, `PORT`
+- Infra: `DB_PASSWORD`, `KC_ADMIN_PASSWORD` (Docker Compose only)
 - Tenant IDs: `00000000-0000-0000-0000-000000000001` (Tenant A), `00000000-0000-0000-0000-000000000002` (Tenant B)
 
 Docker Networking (Full Stack)

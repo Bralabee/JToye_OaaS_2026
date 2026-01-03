@@ -49,9 +49,25 @@ core-java/build-local/
 
 ### Credentials & Secrets ###
 CREDENTIALS.md
+
+# Environment files (contain secrets - NEVER commit these!)
 *.env
-.env*
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# BUT keep example/template files (these ARE committed)
+!.env.example
+!.env.local.example
+!.env*.example
+!infra/secrets/.env.template
+
+# Other secrets
 secrets/
+!secrets/.env.template
 credentials/
 *.key
 *.pem
