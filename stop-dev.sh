@@ -4,13 +4,19 @@
 echo "🛑 Stopping J'Toye OaaS Development Environment"
 echo "================================================"
 
-# Stop frontend
+# Stop frontend (more aggressive)
 echo "Stopping frontend..."
-pkill -f "npm run dev" || true
+pkill -9 -f "npm run dev" || true
+pkill -9 -f "node.*next.*dev" || true
+pkill -9 -f "next-server" || true
 
 # Stop backend
 echo "Stopping backend..."
-pkill -f "gradlew" || true
+pkill -9 -f "gradlew" || true
+pkill -9 -f "java.*CoreApplication" || true
+
+# Wait a moment for processes to die
+sleep 2
 
 # Stop infrastructure
 echo "Stopping infrastructure..."
