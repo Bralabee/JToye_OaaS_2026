@@ -46,7 +46,7 @@ export function validateEnvironment(): void {
     if (envVar.includes('URL') || envVar.includes('ISSUER')) {
       try {
         new URL(value);
-      } catch (e) {
+      } catch {
         invalid.push(`${envVar} (invalid URL format: ${value})`);
       }
     }
