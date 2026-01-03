@@ -66,9 +66,50 @@ J'Toye OaaS — v0.7.0: Full Stack Docker + Comprehensive CRUD
 - **Go 1.22+** (for edge-go service)
 - **Docker + Docker Compose** (for PostgreSQL + Keycloak)
 
+## ⚠️ First-Time Setup
+
+**IMPORTANT:** Before running the application locally (non-Docker), you must configure environment variables.
+
+### Option 1: Full-Stack Docker (Recommended - No Setup Needed)
+✅ **No environment files required!** All configuration is embedded in `docker-compose.full-stack.yml`.
+
+Skip to [Quick Start](#-quick-start-one-command-docker-setup) below.
+
+### Option 2: Local Development (Requires Environment Setup)
+📋 **Environment files must be created from templates:**
+
+**Linux/Mac:**
+```bash
+cp frontend/.env.local.example frontend/.env.local
+cp core-java/.env.example core-java/.env
+cp edge-go/.env.example edge-go/.env
+cp infra/.env.example infra/.env
+```
+
+**Windows (Command Prompt):**
+```cmd
+copy frontend\.env.local.example frontend\.env.local
+copy core-java\.env.example core-java\.env
+copy edge-go\.env.example edge-go\.env
+copy infra\.env.example infra\.env
+```
+
+**Windows (PowerShell):**
+```powershell
+Copy-Item frontend\.env.local.example frontend\.env.local
+Copy-Item core-java\.env.example core-java\.env
+Copy-Item edge-go\.env.example edge-go\.env
+Copy-Item infra\.env.example infra\.env
+```
+
+**⚠️ Important:**
+- These files contain credentials and are NOT committed to Git
+- Default values work for local development
+- See **[docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)** for detailed configuration guide
+
 ## 🚀 Quick Start (One-Command Docker Setup)
 
-**✨ The full-stack Docker setup requires NO local installations** - everything runs in containers!
+**✨ The full-stack Docker setup requires NO local installations and NO environment files** - everything runs in containers!
 
 ### 1. Launch the Stack
 ```bash
@@ -111,10 +152,13 @@ docker-compose -f docker-compose.full-stack.yml down -v
 
 If you prefer to run services individually for development:
 
+**⚠️ Prerequisites:** You must first set up environment files. See [First-Time Setup](#️-first-time-setup) above or [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md).
+
 ### 1. Start Infrastructure
 ```bash
 cd infra && docker-compose up -d
 # PostgreSQL on port 5433, Keycloak on port 8085
+# This uses infra/.env file (created from infra/.env.example)
 ```
 
 2) Core service

@@ -1,10 +1,22 @@
+# Infrastructure Docker Compose
+# This file provides PostgreSQL and Keycloak for local development
+#
+# SETUP REQUIRED:
+# 1. Copy .env.example to .env in this directory
+# 2. Update values if needed (defaults work for local dev)
+# 3. Run: docker-compose up -d
+#
+# See docs/ENVIRONMENT_SETUP.md for detailed instructions
+
 services:
   postgres:
     image: postgres:15
     container_name: jtoye-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Creates both 'jtoye' and 'keycloak' databases via init scripts
+      POSTGRES_USER: ${DB_USER:-jtoye}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_DB: ${DB_NAME:-jtoye}
     ports:
       - "5433:5432" # use 5433 on host to avoid conflicts with existing postgres
     volumes:
@@ -12,6 +24,11 @@ services:
       - ./db/init:/docker-entrypoint-initdb.d
     networks:
       - jtoye-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-jtoye}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
@@ -27,7 +44,8 @@ services:
     networks:
       - jtoye-net
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 networks:
   jtoye-net:

@@ -1,5 +1,13 @@
 # Full-stack Docker Compose for local development and testing
 # Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend
+#
+# ✅ NO .env FILE REQUIRED - All values are hardcoded for simplicity
+# This is the EASIEST way to run the entire stack
+#
+# USAGE:
+#   docker-compose -f docker-compose.full-stack.yml up
+#
+# See docs/DOCKER_QUICK_START.md for detailed instructions
 
 version: '3.9'
 
