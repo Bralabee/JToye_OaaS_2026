@@ -5,7 +5,7 @@ This guide demonstrates how to test the multi-tenant JWT authentication system w
 
 ## Prerequisites
 - Infrastructure running: `cd infra && docker-compose up -d`
-- Core Java API running on port 9090 (via IntelliJ or `./run-app.sh`)
+- Core Java API running on port 9090 (via IntelliJ or `./scripts/run-app.sh`)
 - Test data loaded in database
 
 ## Quick Test

@@ -67,7 +67,7 @@ cp infra/.env.example infra/.env
 cd infra && docker-compose up -d && cd ..
 
 # 3. Start backend
-./run-app.sh
+./scripts/run-app.sh
 
 # 4. Start frontend (new terminal)
 cd frontend && npm install && npm run dev

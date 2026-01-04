@@ -48,7 +48,7 @@ docker-compose -f docker-compose.full-stack.yml ps
 
 ### Option 1: Using the run script (Recommended)
 ```bash
-./run-app.sh
+./scripts/run-app.sh
 ```
 
 #### Core Java Backend

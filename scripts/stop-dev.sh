@@ -20,6 +20,7 @@ sleep 2
 
 # Stop infrastructure
 echo "Stopping infrastructure..."
+cd "$(dirname "$0")/.."
 cd infra
 docker compose down
 cd ..

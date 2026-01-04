@@ -86,7 +86,7 @@ docker ps | grep jtoye
 #### Step 3: Start Backend
 
 ```bash
-./run-app.sh
+./scripts/run-app.sh
 ```
 
 **Or manually:**
