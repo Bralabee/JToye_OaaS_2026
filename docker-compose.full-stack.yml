@@ -41,6 +41,10 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: jtoye
+      KC_DB_PASSWORD: secret
     ports:
       - "8085:8080"
     volumes:
