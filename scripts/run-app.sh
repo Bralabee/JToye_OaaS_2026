@@ -11,6 +11,5 @@ echo "Starting JToye OaaS application..."
 echo "Database: postgresql://localhost:5433/jtoye"
 echo "Server will start on: http://localhost:9090"
 echo ""
-
-cd "$(dirname "$0")/core-java"
+cd "$(dirname "$0")/../core-java"
 ../gradlew bootRun

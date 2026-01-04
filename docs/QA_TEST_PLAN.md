@@ -227,7 +227,7 @@ curl http://localhost:8085/realms/jtoye-dev
 **Step 3: Start Backend**
 
 ```bash
-./run-app.sh
+./scripts/run-app.sh
 ```
 
 **Expected:**

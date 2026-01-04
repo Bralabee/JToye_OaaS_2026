@@ -47,7 +47,7 @@ See [DOCKER_QUICK_START.md](DOCKER_QUICK_START.md) for details.
 
 3.  **Run Backend (Core)**:
     ```bash
-    ./run-app.sh
+    ./scripts/run-app.sh
     ```
     *Note: This uses `core-java/.env` file.*
 

@@ -54,7 +54,7 @@ J'Toye OaaS 2026 is a multi-tenant e-commerce platform with:
 cd /path/to/JToye_OaaS_2026
 
 # Start all services (PostgreSQL, Keycloak, core-java)
-./run-app.sh
+./scripts/run-app.sh
 ```
 
 Wait for services to be ready:
@@ -888,7 +888,7 @@ Unable to acquire JDBC Connection
    ```
 3. Restart services:
    ```bash
-   ./run-app.sh
+   ./scripts/run-app.sh
    ```
 
 ---
@@ -1103,7 +1103,7 @@ TENANT_B_ID=00000000-0000-0000-0000-000000000002
 
 ```bash
 # Start services
-./run-app.sh
+./scripts/run-app.sh
 
 # Stop services
 docker-compose -f infra/docker-compose.yml down

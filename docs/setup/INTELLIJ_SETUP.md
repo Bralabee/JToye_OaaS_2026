@@ -85,7 +85,7 @@ Started CoreApplication in X.XXX seconds
 
 If IntelliJ configuration is problematic, use the terminal:
 ```bash
-./run-app.sh
+./scripts/run-app.sh
 ```
 
 This script automatically sets all required environment variables.
@@ -97,7 +97,7 @@ This script automatically sets all required environment variables.
 ❌ **Wrong:** Running without any environment variables
 
 ✅ **Correct:** `DB_PORT=5433` set in environment variables
-✅ **Correct:** Using the `./run-app.sh` script
+✅ **Correct:** Using the `./scripts/run-app.sh` script
 
 ## Troubleshooting
 

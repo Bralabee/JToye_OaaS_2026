@@ -298,7 +298,7 @@ docker-compose up -d
 
 # 2. Start backend (uses core-java/.env)
 cd ..
-./run-app.sh
+./scripts/run-app.sh
 
 # 3. Start frontend (uses frontend/.env.local)
 cd frontend
@@ -408,7 +408,7 @@ unknown variable
 
 **Solution:**
 1. **Frontend:** Stop (`Ctrl+C`), restart `npm run dev`
-2. **Backend:** Stop, restart `./run-app.sh`
+2. **Backend:** Stop, restart `./scripts/run-app.sh`
 3. **Docker:** `docker-compose down && docker-compose up`
 4. Environment variables are loaded at startup only
 

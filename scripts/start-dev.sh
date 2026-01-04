@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 
 # Step 1: Start Infrastructure
 echo -e "\n${YELLOW}Step 1: Starting Infrastructure (PostgreSQL, Keycloak)${NC}"
+cd "$(dirname "$0")/.."
 cd infra
 docker compose up -d
 cd ..
@@ -79,5 +80,5 @@ echo "  Backend:  logs/backend.log"
 echo "  Frontend: logs/frontend.log"
 echo ""
 echo "To stop all services:"
-echo "  ./stop-dev.sh"
+echo "  ./scripts/stop-dev.sh"
 echo ""

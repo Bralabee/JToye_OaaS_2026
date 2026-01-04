@@ -99,7 +99,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 cd infra && docker-compose up -d
 
 # 2. Start backend
-./run-app.sh
+./scripts/run-app.sh
 
 # 3. Start frontend (in new terminal)
 cd frontend

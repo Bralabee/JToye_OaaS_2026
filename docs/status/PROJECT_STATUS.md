@@ -248,7 +248,7 @@ All critical issues have been resolved:
 cd infra && docker-compose up -d
 
 # Core API
-./run-app.sh
+./scripts/run-app.sh
 
 # Verify
 curl http://localhost:9090/health

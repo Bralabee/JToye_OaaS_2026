@@ -142,7 +142,7 @@ npm start
 
 To test the frontend:
 
-1. Start backend API: `./run-app.sh` (from project root)
+1. Start backend API: `./scripts/run-app.sh` (from project root)
 2. Start frontend: `npm run dev`
 3. Login with Keycloak test users:
    - `tenant-a-user` / `password`
