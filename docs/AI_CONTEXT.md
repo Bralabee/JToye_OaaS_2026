@@ -11,15 +11,20 @@ Stack
 
 Prime Directives
 1) Security — RLS First
+   - ⚠️  **CRITICAL**: Application MUST use `jtoye_app` database user, NOT `jtoye` (superuser bypasses RLS!)
    - Never manually filter with `WHERE tenant_id = ?` in repositories or queries.
    - Every DB transaction must run with `SET LOCAL app.current_tenant_id = '<uuid>'`.
    - The application achieves this via:
      - `JwtTenantFilter` → extracts `tenant_id` (or `tenantId`/`tid`) from JWT into `TenantContext`.
      - `TenantFilter` (dev fallback) → reads `X-Tenant-Id` header if JWT claim absent.
      - `TenantSetLocalAspect` → runs before transactional methods and executes `SET LOCAL app.current_tenant_id = ?`.
+   - Security Validation:
+     - `DatabaseConfigurationValidator` runs at startup and FAILS if using superuser
+     - Check `/health/security` endpoint to verify RLS status
    - Testing RLS:
      - ALWAYS run RLS-sensitive tests as a non-superuser (e.g., `jtoye_app`) because superusers bypass RLS.
      - Flush and clear `EntityManager` when preparing test data to avoid Hibernate first-level cache bypassing RLS.
+     - Use `@TestPropertySource(properties = {"spring.datasource.username=jtoye_app"})` in tests
 
 2) Compliance
    - Natasha's Law: All product records must include `ingredients_text` and `allergen_mask` (14 allergens tracked via bitmask).
@@ -64,10 +69,22 @@ Environment Configuration
 
 Key Environment Variables:
 - Frontend: `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ISSUER`, `NEXTAUTH_SECRET`, `NEXT_PUBLIC_API_URL`
-- Core: `DB_HOST`, `DB_PORT`, `KC_ISSUER_URI`, `SERVER_PORT`
+- Core: `DB_HOST`, `DB_PORT`, `KC_ISSUER_URI`, `SERVER_PORT`, **`DB_USER=jtoye_app` (MUST NOT be jtoye!)**
 - Edge: `CORE_API_URL`, `KC_ISSUER_URI`, `PORT`
 - Infra: `DB_PASSWORD`, `KC_ADMIN_PASSWORD` (Docker Compose only)
 - Tenant IDs: `00000000-0000-0000-0000-000000000001` (Tenant A), `00000000-0000-0000-0000-000000000002` (Tenant B)
+
+Database Users:
+- `jtoye` - Superuser for migrations and admin tasks (NEVER use for application!)
+- `jtoye_app` - Application user with RLS enforcement (ALWAYS use this!)
+
+Order State Machine Endpoints:
+- POST `/orders/{id}/submit` - DRAFT → PENDING
+- POST `/orders/{id}/confirm` - PENDING → CONFIRMED
+- POST `/orders/{id}/start-preparation` - CONFIRMED → PREPARING
+- POST `/orders/{id}/mark-ready` - PREPARING → READY
+- POST `/orders/{id}/complete` - READY → COMPLETED
+- POST `/orders/{id}/cancel` - ANY → CANCELLED
 
 Docker Networking (Full Stack)
 - All services run on Docker bridge network `jtoye-network`
