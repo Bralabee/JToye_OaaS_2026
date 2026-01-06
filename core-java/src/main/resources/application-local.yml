@@ -1,9 +1,10 @@
-# Local development profile - automatically sets DB_PORT=5433
-# This profile is used for local development when running from IntelliJ
+# Local development profile with Docker stack
+# This profile connects to the Dockerized PostgreSQL on port 5433
 # To use: Set active profile to 'local' in IntelliJ run configuration
+# OR: Set environment variable SPRING_PROFILES_ACTIVE=local
 
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5433/jtoye
-    username: jtoye
+    username: jtoye_app
     password: secret

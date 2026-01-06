@@ -64,6 +64,42 @@ DB_USER: jtoye  # ❌ WRONG - This is the superuser!
 DB_USER: postgres  # ❌ WRONG - Another superuser!
 ```
 
+### Database Connection Ports
+
+J'Toye OaaS supports multiple development modes with different database ports:
+
+| Mode | Profile | DB_PORT | PostgreSQL Location | Use Case |
+|------|---------|---------|-------------------|----------|
+| **Docker Full Stack** | (env var) | `5432` (internal) | Docker container | Production-like testing |
+| **Hybrid Development** | `local` | `5433` | Docker container (host-mapped) | Backend development with hot-reload |
+| **Standalone Local** | (default) | `5432` | Local installation | Offline development, no Docker |
+
+**Configuration Files:**
+```yaml
+# application.yml (default profile - standalone local)
+url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}
+username: ${DB_USER:jtoye_app}  # ✅ Always jtoye_app
+
+# application-local.yml (hybrid mode - Docker dependencies)
+url: jdbc:postgresql://localhost:5433/jtoye
+username: jtoye_app  # ✅ Must be jtoye_app, NOT jtoye
+
+# docker-compose.full-stack.yml (inside container)
+DB_HOST: postgres
+DB_PORT: 5432  # Internal port inside Docker network
+DB_USER: jtoye_app  # ✅ Must be jtoye_app
+```
+
+**⚠️ CRITICAL:** All profiles must use `jtoye_app` user, never `jtoye` superuser!
+
+**Common Mistake:**
+```yaml
+# application-local.yml
+username: jtoye  # ❌ WRONG - Bypasses RLS even in local development!
+```
+
+This mistake was discovered in v0.7.2 and has been fixed. See [RELEASE_NOTES_0.7.2.md](RELEASE_NOTES_0.7.2.md) for details.
+
 ---
 
 ## Database Users
