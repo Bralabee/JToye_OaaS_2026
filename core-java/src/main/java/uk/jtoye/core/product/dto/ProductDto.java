@@ -9,6 +9,7 @@ public class ProductDto {
     private String title;
     private String ingredientsText;
     private Integer allergenMask;
+    private Long pricePennies;
     private OffsetDateTime createdAt;
 
     public UUID getId() { return id; }
@@ -21,6 +22,8 @@ public class ProductDto {
     public void setIngredientsText(String ingredientsText) { this.ingredientsText = ingredientsText; }
     public Integer getAllergenMask() { return allergenMask; }
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
+    public Long getPricePennies() { return pricePennies; }
+    public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
 }

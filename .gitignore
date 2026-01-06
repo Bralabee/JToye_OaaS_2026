@@ -76,6 +76,7 @@ credentials/
 *.log
 logs/
 *.log.*
+core-java/test-output.txt
 
 ### OS Specific ###
 Thumbs.db
@@ -91,3 +92,14 @@ replay_pid*
 *.swp
 *~
 backups/*.sql.gz
+
+### Docker Volumes ###
+postgres_data/
+redis_data/
+rabbitmq_data/
+keycloak_data/
+
+### Node modules ###
+node_modules/
+.next/
+.npm/

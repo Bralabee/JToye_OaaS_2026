@@ -13,6 +13,8 @@ import uk.jtoye.core.order.dto.OrderItemRequest;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -30,19 +32,23 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
+    private final ShopRepository shopRepository;
     private final OrderStateMachineService stateMachineService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
+                       ShopRepository shopRepository,
                        OrderStateMachineService stateMachineService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
+        this.shopRepository = shopRepository;
         this.stateMachineService = stateMachineService;
     }
 
     /**
      * Create a new order with items.
      * Automatically assigns tenant from context and calculates totals.
+     * Validates that the shop belongs to the current tenant.
      */
     public OrderDto createOrder(CreateOrderRequest request) {
         UUID tenantId = TenantContext.get()
@@ -50,10 +56,17 @@ public class OrderService {
 
         log.debug("Creating order for tenant {} at shop {}", tenantId, request.getShopId());
 
+        // Validate shop exists and belongs to current tenant (RLS will filter, but explicit check provides better error message)
+        Shop shop = shopRepository.findById(request.getShopId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Shop not found or does not belong to your tenant: " + request.getShopId()));
+
+        // RLS ensures shop.getTenantId() == tenantId automatically, but this provides defensive programming
+
         // Create order entity
         Order order = new Order();
         order.setTenantId(tenantId);
-        order.setShopId(request.getShopId());
+        order.setShopId(shop.getId()); // Use validated shop ID
         order.setOrderNumber(generateOrderNumber(tenantId));
         order.setStatus(OrderStatus.DRAFT);
         order.setCustomerName(request.getCustomerName());

@@ -1,34 +1,97 @@
+# Production profile - Hardened security and performance settings
+# Usage: SPRING_PROFILES_ACTIVE=prod or --spring.profiles.active=prod
+# ⚠️ Override sensitive values via environment variables
+
 spring:
   datasource:
     hikari:
-      maximum-pool-size: 50
-      minimum-idle: 10
+      maximum-pool-size: ${DB_POOL_SIZE:50}  # Higher for production load
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 30000  # Stricter leak detection
+      pool-name: JToyeHikariPool-PROD
+
   jpa:
+    hibernate:
+      ddl-auto: none  # Never auto-modify schema in production
     properties:
       hibernate:
-        generate_statistics: false
+        generate_statistics: false  # Disable for performance
+        format_sql: false
+        use_sql_comments: false
         jdbc:
           batch_size: 50
+        order_inserts: true
+        order_updates: true
+    show-sql: false  # Never log SQL in production
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    validate-on-migrate: true
+    out-of-order: false
+    baseline-on-migrate: false
 
 server:
   error:
-    include-message: never
+    include-message: never  # Security: Don't expose error details
     include-binding-errors: never
     include-stacktrace: never
+    include-exception: false
+  shutdown: graceful
+  compression:
+    enabled: true
+    min-response-size: 1024
+  http2:
+    enabled: true
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
 
 logging:
   level:
     uk.jtoye: INFO
     org.hibernate.SQL: WARN
     org.springframework.security: WARN
+    org.springframework.web: WARN
+    org.springframework.data: WARN
   pattern:
-    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","logger":"%logger{36}","message":"%msg","thread":"%thread"}%n'
+    # JSON structured logging for production log aggregation (ELK, Splunk, etc.)
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n'
+  file:
+    name: ${LOG_PATH:/var/log/jtoye}/application.log
+    max-size: 10MB
+    max-history: 30
+    total-size-cap: 1GB
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
   endpoint:
     health:
-      show-details: never
+      show-details: when-authorized  # Only authorized users see details
+      probes:
+        enabled: true  # Enable Kubernetes probes
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: production
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
 springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}  # Disabled by default
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}

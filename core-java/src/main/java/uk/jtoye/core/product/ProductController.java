@@ -65,10 +65,10 @@ public class ProductController {
 
     @PostMapping
     @Transactional
-    @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text and allergen_mask per Natasha's Law (UK).")
+    @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text, allergen_mask, and price per Natasha's Law (UK) and business requirements.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Product created successfully"),
-            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields"),
+            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price"),
             @ApiResponse(responseCode = "409", description = "Product SKU already exists for this tenant")
     })
     public ResponseEntity<ProductDto> create(
@@ -80,6 +80,7 @@ public class ProductController {
         p.setTitle(req.getTitle());
         p.setIngredientsText(req.getIngredientsText());
         p.setAllergenMask(req.getAllergenMask());
+        p.setPricePennies(req.getPricePennies());
         Product saved = repo.save(p);
         ProductDto dto = toDto(saved);
         return ResponseEntity.created(URI.create("/products/" + saved.getId())).body(dto);
@@ -102,6 +103,7 @@ public class ProductController {
                     product.setTitle(req.getTitle());
                     product.setIngredientsText(req.getIngredientsText());
                     product.setAllergenMask(req.getAllergenMask());
+                    product.setPricePennies(req.getPricePennies());
                     Product updated = repo.saveAndFlush(product);
                     return ResponseEntity.ok(toDto(updated));
                 })
@@ -132,6 +134,7 @@ public class ProductController {
         dto.setTitle(p.getTitle());
         dto.setIngredientsText(p.getIngredientsText());
         dto.setAllergenMask(p.getAllergenMask());
+        dto.setPricePennies(p.getPricePennies());
         dto.setCreatedAt(p.getCreatedAt());
         return dto;
     }

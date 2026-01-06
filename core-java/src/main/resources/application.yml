@@ -61,6 +61,12 @@ management:
     export:
       prometheus:
         enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_PROBABILITY:0.1}  # Sample 10% of requests (increase in staging/dev)
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
 
 logging:
   level:
@@ -68,7 +74,7 @@ logging:
     org.hibernate.SQL: ${SQL_LOG_LEVEL:WARN}
     org.springframework.security: ${SECURITY_LOG_LEVEL:INFO}
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n"
 
 springdoc:
   api-docs:
