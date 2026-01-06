@@ -47,6 +47,62 @@ Before running the application, you need to create environment files:
 
 ---
 
+## Local Development Modes
+
+J'Toye OaaS supports **two local development modes**:
+
+### Mode 1: Hybrid (Recommended for Core Java Development)
+**Run core-java locally, connect to Dockerized dependencies**
+
+- ✅ **Best for:** Backend development, debugging, hot-reload
+- ✅ **Fast:** Instant code changes without Docker rebuild
+- ✅ **Easy debugging:** Attach IDE debugger directly
+- 📦 **Dependencies:** PostgreSQL, Keycloak, Redis, RabbitMQ run in Docker
+- 🔧 **Configuration:** Use Spring profile `local` or set `DB_PORT=5433`
+
+```bash
+# Start dependencies
+docker compose -f docker-compose.full-stack.yml up postgres keycloak redis rabbitmq
+
+# Run core-java locally (IntelliJ)
+# Set environment: SPRING_PROFILES_ACTIVE=local
+# OR run with: ./gradlew bootRun --args='--spring.profiles.active=local'
+```
+
+### Mode 2: Standalone (Pure Local Development)
+**Run everything locally without Docker**
+
+- ✅ **Best for:** Offline development, full control
+- ✅ **No Docker required:** All services run natively
+- ⚠️ **Requires:** Local PostgreSQL 15+, local Keycloak setup
+- 🔧 **Configuration:** Use default profile (no profile set)
+- 🔧 **Database:** PostgreSQL on default port 5432
+
+```bash
+# Prerequisites:
+# - PostgreSQL 15+ installed and running on port 5432
+# - Database 'jtoye' created with user 'jtoye_app'
+# - Keycloak installed and running on port 8085
+
+# Run core-java locally (default profile uses port 5432)
+./gradlew bootRun
+```
+
+### Configuration Summary
+
+| Setting | Hybrid Mode | Standalone Mode |
+|---------|------------|-----------------|
+| **Spring Profile** | `local` | (none/default) |
+| **DB_HOST** | `localhost` | `localhost` |
+| **DB_PORT** | `5433` | `5432` |
+| **DB_USER** | `jtoye_app` ⚠️ | `jtoye_app` ⚠️ |
+| **PostgreSQL** | Docker container | Local installation |
+| **Keycloak** | Docker container (8085) | Local installation (8085) |
+
+⚠️ **CRITICAL SECURITY:** Never use `jtoye` superuser for application - it bypasses RLS!
+
+---
+
 ## Environment Files Required
 
 ### File Structure
