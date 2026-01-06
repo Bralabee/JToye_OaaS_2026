@@ -7,6 +7,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.security.TenantContext;
 
@@ -22,6 +23,7 @@ public class CustomerController {
     private final CustomerRepository customerRepository;
 
     @GetMapping
+    @Transactional(readOnly = true)
     public Page<CustomerDto> getAllCustomers(
             @PageableDefault(size = 100, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return customerRepository.findAll(pageable)
@@ -29,6 +31,7 @@ public class CustomerController {
     }
 
     @GetMapping("/{id}")
+    @Transactional(readOnly = true)
     public ResponseEntity<CustomerDto> getCustomerById(@PathVariable UUID id) {
         return customerRepository.findById(id)
                 .map(this::toDto)
@@ -37,6 +40,7 @@ public class CustomerController {
     }
 
     @PostMapping
+    @Transactional
     public ResponseEntity<CustomerDto> createCustomer(@Valid @RequestBody CreateCustomerRequest request) {
         Customer customer = new Customer();
         customer.setTenantId(TenantContext.get().orElseThrow());
@@ -51,6 +55,7 @@ public class CustomerController {
     }
 
     @PutMapping("/{id}")
+    @Transactional
     public ResponseEntity<CustomerDto> updateCustomer(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateCustomerRequest request) {
@@ -69,6 +74,7 @@ public class CustomerController {
     }
 
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<Void> deleteCustomer(@PathVariable UUID id) {
         if (customerRepository.existsById(id)) {
             customerRepository.deleteById(id);
