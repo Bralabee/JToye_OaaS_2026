@@ -1,0 +1,98 @@
+# Staging profile - Production-like settings with debugging enabled
+# Usage: SPRING_PROFILES_ACTIVE=staging or --spring.profiles.active=staging
+# Purpose: Pre-production testing, integration testing, QA validation
+
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:30}  # Mid-range pool size
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 45000  # Moderate leak detection
+      pool-name: JToyeHikariPool-STAGING
+
+  jpa:
+    hibernate:
+      ddl-auto: none  # Use Flyway migrations only
+    properties:
+      hibernate:
+        generate_statistics: false
+        format_sql: true  # Enable for debugging
+        use_sql_comments: true  # Enable comments for debugging
+        jdbc:
+          batch_size: 30
+        order_inserts: true
+        order_updates: true
+    show-sql: false  # Can enable temporarily for debugging
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    validate-on-migrate: true
+    out-of-order: false
+    baseline-on-migrate: false
+
+server:
+  error:
+    include-message: always  # Show errors for debugging (staging only!)
+    include-binding-errors: always
+    include-stacktrace: on_param  # Show stack trace with ?trace=true
+    include-exception: false
+  shutdown: graceful
+  compression:
+    enabled: true
+    min-response-size: 1024
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
+
+logging:
+  level:
+    uk.jtoye: DEBUG  # Detailed logging for staging
+    org.hibernate.SQL: DEBUG  # SQL logging enabled
+    org.springframework.security: INFO
+    org.springframework.web: INFO
+    org.springframework.data: INFO
+  pattern:
+    # Structured JSON logging for log aggregation
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n'
+  file:
+    name: ${LOG_PATH:/var/log/jtoye}/application-staging.log
+    max-size: 10MB
+    max-history: 15
+    total-size-cap: 500MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,configprops  # More endpoints for debugging
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always  # Always show health details in staging
+      probes:
+        enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: staging
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+springdoc:
+  api-docs:
+    enabled: true  # Enable Swagger in staging for API testing
+  swagger-ui:
+    enabled: true
+    tags-sorter: alpha
+    operations-sorter: alpha
+    path: /swagger-ui.html

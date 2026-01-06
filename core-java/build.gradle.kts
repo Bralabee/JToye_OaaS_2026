@@ -21,7 +21,14 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.statemachine:spring-statemachine-starter:3.2.1")
+
+    // Observability: Micrometer for metrics and distributed tracing
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
+    implementation("io.zipkin.reporter2:zipkin-reporter-brave")
+
     // Use Spring Boot managed Hibernate ORM version to avoid mismatch
     implementation("org.hibernate.orm:hibernate-envers")
     implementation("net.sf.jasperreports:jasperreports:6.21.3")

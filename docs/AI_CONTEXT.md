@@ -1,13 +1,15 @@
 ### System Context for AI Agents
 
 Project: J'Toye OaaS (UK Retail 2026)
+Version: 0.8.0 (Enhanced Security & Observability)
 
 Stack
-- Core: Java 21, Spring Boot 3, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, Lombok
+- Core: Java 21, Spring Boot 3.3.4, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, Micrometer Tracing (Zipkin), Lombok
 - Edge: Go 1.22, Gin, circuit breakers, rate limiting
 - Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
 - Identity: Keycloak 24 (realm: jtoye-dev)
+- Observability: Prometheus metrics, Zipkin distributed tracing, structured JSON logging
 
 Prime Directives
 1) Security — RLS First
@@ -36,8 +38,14 @@ Prime Directives
      - Flush and clear `EntityManager` when preparing test data to avoid Hibernate first-level cache bypassing RLS.
      - Use `@TestPropertySource(properties = {"spring.datasource.username=jtoye_app"})` in tests
 
-2) Compliance
-   - Natasha's Law: All product records must include `ingredients_text` and `allergen_mask` (14 allergens tracked via bitmask).
+2) Input Validation & Business Rules
+   - Product Pricing: REQUIRED. Range 0-1,000,000,000 pennies (£0.00 to £10M). Enforced via `@NotNull`, `@Min(0)`, `@Max(1000000000L)` in DTOs.
+   - Allergen Mask: Range 0-16383 (14 allergens max). Enforced via `@Max(16383)`.
+   - Shop Ownership: Orders MUST reference shops belonging to current tenant. Validated in `OrderService.createOrder()`.
+   - Foreign Key Validation: All cross-entity references validated against RLS-filtered results.
+
+3) Compliance
+   - Natasha's Law (UK): All product records must include `ingredients_text` and `allergen_mask` (14 allergens tracked via bitmask 0-16383).
    - HMRC VAT: All financial records must include `vat_rate_enum`.
    - Audit Trail: Hibernate Envers enabled on all domain entities with tenant-aware revision tracking.
 
@@ -64,7 +72,13 @@ Runtime Assumptions (Dev)
 - JWT must contain `tenant_id` (PRODUCTION) or use `X-Tenant-Id` header as fallback (DEV ONLY).
 - Test users: `admin` / `admin123` (Keycloak admin console)
 
-Environment Configuration
+Environment Configuration & Profiles
+- Spring Profiles:
+  - `dev` (default): Development with verbose logging, Swagger enabled, error details exposed
+  - `local`: Hybrid development (IntelliJ + Dockerized PostgreSQL on port 5433)
+  - `staging`: Production-like with DEBUG logging, Swagger enabled, full error details for QA testing
+  - `prod`: Hardened security (no Swagger, no error details, INFO logging, JSON structured logs, graceful shutdown)
+- Profile Selection: Set `SPRING_PROFILES_ACTIVE=prod` or `--spring.profiles.active=prod`
 - ✅ **Full-Stack Docker**: `docker-compose.full-stack.yml` - NO .env files needed (all values hardcoded)
 - ⚠️ **Local Development**: REQUIRES environment files before running
   - `frontend/.env.local` (from `frontend/.env.local.example`)
@@ -76,6 +90,13 @@ Environment Configuration
 - ✅ ALWAYS commit `.env.example`, `.env.local.example` templates
 - Frontend has environment validation at startup (`frontend/instrumentation.ts`) - fails fast if config missing
 - All `.env.example` files contain default values suitable for local development
+
+Observability & Monitoring
+- Prometheus Metrics: Exposed at `/actuator/prometheus` (all profiles)
+- Distributed Tracing: Zipkin integration with correlation IDs (`traceId`, `spanId` in logs)
+- Sampling: 10% in prod (configurable via `TRACING_PROBABILITY`), 100% in staging/dev
+- Structured Logging: JSON format in prod/staging for log aggregation (ELK, Splunk, Datadog)
+- Health Probes: `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` (Kubernetes-ready)
 
 Key Environment Variables:
 - Frontend: `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ISSUER`, `NEXTAUTH_SECRET`, `NEXT_PUBLIC_API_URL`
