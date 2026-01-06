@@ -1,6 +1,6 @@
 # Security Architecture - J'Toye OaaS
 
-**Version:** 0.7.1
+**Version:** 0.7.2
 **Last Updated:** 2026-01-06
 **Status:** Production Ready
 
@@ -98,27 +98,48 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO jtoye_app;
 
 All tables with tenant data have RLS enabled:
 
-| Table | RLS Enabled | Policy Count | Enforcement |
-|-------|-------------|--------------|-------------|
-| `shops` | ✅ Yes | 1 | FORCED |
-| `products` | ✅ Yes | 1 | FORCED |
-| `orders` | ✅ Yes | 4 | NORMAL |
-| `customers` | ✅ Yes | 4 | FORCED |
-| `financial_transactions` | ✅ Yes | 1 | FORCED |
+| Table | RLS Enabled | Policy Count | Enforcement | Standardized (V15) |
+|-------|-------------|--------------|-------------|--------------------|
+| `shops` | ✅ Yes | 1 | FORCED | ✅ Yes |
+| `products` | ✅ Yes | 1 | FORCED | ✅ Yes |
+| `orders` | ✅ Yes | 4 | NORMAL | ✅ Yes (V15) |
+| `order_items` | ✅ Yes | 4 | NORMAL | ✅ Yes (V15) |
+| `customers` | ✅ Yes | 4 | FORCED | ✅ Yes (V14) |
+| `financial_transactions` | ✅ Yes | 1 | FORCED | ✅ Yes |
 
-### Policy Example
+### Standardized RLS Policy Pattern
+
+**All tables now use the standardized pattern (as of V15):**
 
 ```sql
--- shops table RLS policy
-CREATE POLICY shops_rls_policy ON shops
-  FOR ALL
-  TO jtoye_app
-  USING (tenant_id = current_tenant_id())
-  WITH CHECK (tenant_id = current_tenant_id());
+-- Standard policy pattern using current_tenant_id() function
+CREATE POLICY table_name_select_policy ON table_name
+    FOR SELECT
+    USING (tenant_id = current_tenant_id());
+
+CREATE POLICY table_name_insert_policy ON table_name
+    FOR INSERT
+    WITH CHECK (tenant_id = current_tenant_id());
+
+CREATE POLICY table_name_update_policy ON table_name
+    FOR UPDATE
+    USING (tenant_id = current_tenant_id())
+    WITH CHECK (tenant_id = current_tenant_id());
+
+CREATE POLICY table_name_delete_policy ON table_name
+    FOR DELETE
+    USING (tenant_id = current_tenant_id());
 
 -- Forced RLS (even table owner cannot bypass)
-ALTER TABLE shops FORCE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE ROW LEVEL SECURITY;
 ```
+
+**Benefits of Standardized Pattern:**
+- ✅ Consistent UUID comparison (no type casting)
+- ✅ Centralized logic in `current_tenant_id()` function
+- ✅ Easier to maintain and audit
+- ✅ Better query planner optimization
+- ✅ Clear migration history (V14 customers, V15 orders/order_items)
 
 ### Required Function
 
@@ -177,6 +198,97 @@ public class TenantSetLocalAspect {
     }
 }
 ```
+
+### ⚠️ CRITICAL: @Transactional Requirement
+
+**ALL controllers that directly access repositories MUST have `@Transactional` annotations.**
+
+**Why This is Critical:**
+- Without `@Transactional`, `TenantSetLocalAspect` never runs
+- Without the aspect running, `app.current_tenant_id` is never set
+- Without tenant context set, RLS policies fail with "violates row-level security policy"
+- **Result: Complete security failure for that controller**
+
+**✅ Correct Pattern:**
+```java
+@RestController
+@RequestMapping("/customers")
+public class CustomerController {
+
+    @GetMapping
+    @Transactional(readOnly = true)  // ✅ REQUIRED for SELECT
+    public Page<CustomerDto> getAll(Pageable pageable) {
+        return customerRepository.findAll(pageable).map(this::toDto);
+    }
+
+    @PostMapping
+    @Transactional  // ✅ REQUIRED for INSERT
+    public ResponseEntity<CustomerDto> create(@RequestBody CreateRequest req) {
+        Customer customer = new Customer();
+        customer.setTenantId(TenantContext.get().orElseThrow());
+        // ... set fields
+        return ResponseEntity.ok(toDto(customerRepository.save(customer)));
+    }
+
+    @PutMapping("/{id}")
+    @Transactional  // ✅ REQUIRED for UPDATE
+    public ResponseEntity<CustomerDto> update(@PathVariable UUID id, @RequestBody UpdateRequest req) {
+        // ... update logic
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional  // ✅ REQUIRED for DELETE
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        // ... delete logic
+    }
+}
+```
+
+**❌ WRONG - Will Fail:**
+```java
+@RestController
+@RequestMapping("/customers")
+public class CustomerController {
+
+    @GetMapping  // ❌ Missing @Transactional
+    public Page<CustomerDto> getAll(Pageable pageable) {
+        return customerRepository.findAll(pageable).map(this::toDto);
+        // ERROR: new row violates row-level security policy
+    }
+}
+```
+
+**Alternative Pattern (Service Layer):**
+```java
+// Controller delegates to service
+@RestController
+@RequestMapping("/orders")
+public class OrderController {
+
+    @GetMapping
+    public Page<OrderDto> getAll(Pageable pageable) {
+        return orderService.getAllOrders(pageable);  // Service has @Transactional
+    }
+}
+
+// Service has class-level @Transactional
+@Service
+@Transactional  // ✅ All methods are transactional
+public class OrderService {
+
+    public Page<OrderDto> getAllOrders(Pageable pageable) {
+        // TenantSetLocalAspect runs here because of class-level @Transactional
+        return orderRepository.findAll(pageable).map(this::toDto);
+    }
+}
+```
+
+**Controllers with Direct Repository Access Requiring @Transactional:**
+- ✅ `CustomerController` - Fixed in v0.7.2
+- ✅ `FinancialTransactionController` - Fixed in v0.7.2
+- ✅ `ProductController` - Already correct
+- ✅ `ShopController` - Already correct
+- ✅ `OrderController` - Uses OrderService (which has class-level @Transactional)
 
 ### 4. RLS Filtering
 

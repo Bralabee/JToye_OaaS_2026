@@ -12,15 +12,25 @@ Stack
 Prime Directives
 1) Security — RLS First
    - ⚠️  **CRITICAL**: Application MUST use `jtoye_app` database user, NOT `jtoye` (superuser bypasses RLS!)
+   - ⚠️  **CRITICAL**: ALL controllers with direct repository access MUST have `@Transactional` annotations
    - Never manually filter with `WHERE tenant_id = ?` in repositories or queries.
    - Every DB transaction must run with `SET LOCAL app.current_tenant_id = '<uuid>'`.
    - The application achieves this via:
      - `JwtTenantFilter` → extracts `tenant_id` (or `tenantId`/`tid`) from JWT into `TenantContext`.
      - `TenantFilter` (dev fallback) → reads `X-Tenant-Id` header if JWT claim absent.
-     - `TenantSetLocalAspect` → runs before transactional methods and executes `SET LOCAL app.current_tenant_id = ?`.
+     - `TenantSetLocalAspect` → runs before `@Transactional` methods and executes `SET LOCAL app.current_tenant_id = ?`.
+   - ⚠️  **WITHOUT @Transactional**: `TenantSetLocalAspect` never runs → RLS policies fail → security breach!
+   - Controller Patterns:
+     - ✅ CORRECT: Controller with `@Transactional` on all methods accessing repositories
+     - ✅ CORRECT: Controller delegates to Service with class-level `@Transactional`
+     - ❌ WRONG: Controller accesses repository directly without `@Transactional`
    - Security Validation:
      - `DatabaseConfigurationValidator` runs at startup and FAILS if using superuser
      - Check `/health/security` endpoint to verify RLS status
+   - RLS Policy Standard (as of V15):
+     - All tables use `tenant_id = current_tenant_id()` pattern
+     - Consistent UUID comparison across all tables
+     - Migrations: V2 (shops/products/transactions), V14 (customers), V15 (orders/order_items)
    - Testing RLS:
      - ALWAYS run RLS-sensitive tests as a non-superuser (e.g., `jtoye_app`) because superusers bypass RLS.
      - Flush and clear `EntityManager` when preparing test data to avoid Hibernate first-level cache bypassing RLS.
