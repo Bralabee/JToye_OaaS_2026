@@ -7,6 +7,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.security.TenantContext;
 
@@ -22,6 +23,7 @@ public class FinancialTransactionController {
     private final FinancialTransactionRepository financialTransactionRepository;
 
     @GetMapping
+    @Transactional(readOnly = true)
     public Page<FinancialTransactionDto> getAllTransactions(
             @PageableDefault(size = 100, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return financialTransactionRepository.findAll(pageable)
@@ -29,6 +31,7 @@ public class FinancialTransactionController {
     }
 
     @GetMapping("/{id}")
+    @Transactional(readOnly = true)
     public ResponseEntity<FinancialTransactionDto> getTransactionById(@PathVariable UUID id) {
         return financialTransactionRepository.findById(id)
                 .map(this::toDto)
@@ -37,6 +40,7 @@ public class FinancialTransactionController {
     }
 
     @PostMapping
+    @Transactional
     public ResponseEntity<FinancialTransactionDto> createTransaction(@Valid @RequestBody CreateTransactionRequest request) {
         FinancialTransaction transaction = new FinancialTransaction();
         transaction.setTenantId(TenantContext.get().orElseThrow());
