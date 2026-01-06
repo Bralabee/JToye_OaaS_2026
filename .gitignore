@@ -90,3 +90,4 @@ replay_pid*
 *.bak
 *.swp
 *~
+backups/*.sql.gz

@@ -109,7 +109,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: jtoye
-      DB_USER: jtoye
+      DB_USER: jtoye_app
       DB_PASSWORD: secret
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       REDIS_HOST: redis
