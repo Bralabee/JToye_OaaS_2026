@@ -108,3 +108,8 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:false}  # Disabled by default
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
+
+rate-limiting:
+  enabled: true
+  default-limit: 100
+  burst-capacity: 20

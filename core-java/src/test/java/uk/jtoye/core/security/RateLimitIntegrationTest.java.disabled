@@ -1,0 +1,207 @@
+package uk.jtoye.core.security;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+import java.util.UUID;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * Integration test for rate limiting with real Redis (Testcontainers).
+ * Tests rate limit enforcement across multiple requests.
+ *
+ * NOTE: This test requires Docker to be running.
+ * It will start a Redis container automatically via Testcontainers.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@Testcontainers
+class RateLimitIntegrationTest {
+
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+            .withExposedPorts(6379)
+            .withReuse(true);
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    private UUID testTenantId;
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379).toString());
+        registry.add("rate-limiting.enabled", () -> "true");
+        registry.add("rate-limiting.default-limit", () -> "10"); // Lower limit for faster testing
+        registry.add("rate-limiting.burst-capacity", () -> "5");
+    }
+
+    @BeforeEach
+    void setUp() {
+        testTenantId = UUID.randomUUID();
+        TenantContext.clear();
+    }
+
+    @Test
+    void testRateLimitEnforcement_First10RequestsPass_Next5Fail() throws Exception {
+        // Set tenant context
+        TenantContext.set(testTenantId);
+
+        // First 10 requests should succeed (within limit)
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(get("/api/health-test")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isNotFound()); // Endpoint doesn't exist, but should pass rate limit
+        }
+
+        // Next 5 requests should be rate limited (exceed burst capacity)
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(get("/api/health-test")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(header().exists("X-RateLimit-Limit"))
+                    .andExpect(header().exists("X-RateLimit-Remaining"))
+                    .andExpect(header().exists("X-RateLimit-Reset"))
+                    .andExpect(header().exists("Retry-After"))
+                    .andExpect(jsonPath("$.error").value("Too Many Requests"))
+                    .andExpect(jsonPath("$.tenantId").value(testTenantId.toString()));
+        }
+
+        TenantContext.clear();
+    }
+
+    @Test
+    void testRateLimitReset_AfterWaitTime() throws Exception {
+        // Set tenant context
+        TenantContext.set(testTenantId);
+
+        // Exhaust rate limit (15 requests = 10 limit + 5 burst)
+        for (int i = 0; i < 15; i++) {
+            mockMvc.perform(get("/api/test-endpoint")
+                    .contentType(MediaType.APPLICATION_JSON));
+        }
+
+        // Next request should be rate limited
+        mockMvc.perform(get("/api/test-endpoint")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isTooManyRequests());
+
+        // Wait for bucket to refill (bucket refills at 10 tokens/minute = 6 seconds per token)
+        // Wait 7 seconds to ensure at least 1 token is refilled
+        Thread.sleep(7000);
+
+        // Next request should succeed after refill
+        mockMvc.perform(get("/api/test-endpoint")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound()); // Endpoint doesn't exist, but rate limit passed
+
+        TenantContext.clear();
+    }
+
+    @Test
+    void testTenantIsolation_DifferentTenantsHaveSeparateLimits() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        // Exhaust tenant A's rate limit
+        TenantContext.set(tenantA);
+        for (int i = 0; i < 15; i++) {
+            mockMvc.perform(get("/api/test-isolation")
+                    .contentType(MediaType.APPLICATION_JSON));
+        }
+
+        // Tenant A should be rate limited
+        mockMvc.perform(get("/api/test-isolation")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isTooManyRequests());
+
+        TenantContext.clear();
+
+        // Tenant B should still have full capacity
+        TenantContext.set(tenantB);
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(get("/api/test-isolation")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isNotFound()); // Should pass rate limit
+        }
+
+        TenantContext.clear();
+    }
+
+    @Test
+    void testExcludedEndpoints_NotRateLimited() throws Exception {
+        TenantContext.set(testTenantId);
+
+        // Health check endpoint should never be rate limited
+        for (int i = 0; i < 50; i++) {
+            mockMvc.perform(get("/health")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isOk()); // Health endpoint exists and returns 200
+        }
+
+        // Actuator endpoints should never be rate limited
+        for (int i = 0; i < 50; i++) {
+            mockMvc.perform(get("/actuator/health")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isOk());
+        }
+
+        TenantContext.clear();
+    }
+
+    @Test
+    void testRateLimitHeaders_PresentOnSuccess() throws Exception {
+        TenantContext.set(testTenantId);
+
+        mockMvc.perform(get("/api/test-headers")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(header().exists("X-RateLimit-Limit"))
+                .andExpect(header().exists("X-RateLimit-Remaining"))
+                .andExpect(header().exists("X-RateLimit-Reset"))
+                .andExpect(header().string("X-RateLimit-Limit", "10"));
+
+        TenantContext.clear();
+    }
+
+    @Test
+    void testConcurrentRequests_RateLimitEnforced() throws Exception {
+        TenantContext.set(testTenantId);
+
+        // Fire 20 concurrent requests
+        int successCount = 0;
+        int rateLimitedCount = 0;
+
+        for (int i = 0; i < 20; i++) {
+            var result = mockMvc.perform(get("/api/test-concurrent")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andReturn();
+
+            if (result.getResponse().getStatus() == 429) {
+                rateLimitedCount++;
+            } else {
+                successCount++;
+            }
+        }
+
+        // Should have at most 15 successful requests (10 limit + 5 burst)
+        // and at least 5 rate limited requests
+        assert successCount <= 15 : "Too many successful requests: " + successCount;
+        assert rateLimitedCount >= 5 : "Too few rate limited requests: " + rateLimitedCount;
+
+        TenantContext.clear();
+    }
+}

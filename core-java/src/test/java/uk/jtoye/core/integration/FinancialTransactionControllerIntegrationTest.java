@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import uk.jtoye.core.finance.FinancialTransactionController.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.VatRate;
 
 import java.util.UUID;

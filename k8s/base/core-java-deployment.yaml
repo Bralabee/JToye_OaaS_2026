@@ -88,6 +88,21 @@ spec:
             configMapKeyRef:
               name: app-config
               key: rabbitmq.host
+        - name: RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: username
+        - name: RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: password
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
         resources:
           requests:
             memory: "512Mi"
@@ -95,11 +110,18 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        startupProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 9090
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 30  # 5 minutes max startup time
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: 9090
-          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
@@ -107,7 +129,6 @@ spec:
           httpGet:
             path: /actuator/health/readiness
             port: 9090
-          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
