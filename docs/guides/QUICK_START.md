@@ -266,4 +266,4 @@ docker-compose -f docker-compose.full-stack.yml down -v
 
 ---
 
-**Need Help?** See [TROUBLESHOOTING.md](ENVIRONMENT_SETUP.md#troubleshooting) for comprehensive troubleshooting guide.
+**Need Help?** See [TROUBLESHOOTING](ENVIRONMENT_SETUP.md#troubleshooting) for comprehensive troubleshooting guide.

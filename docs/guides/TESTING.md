@@ -152,7 +152,7 @@ curl -X POST http://localhost:9090/products \
     "title": "Nigerian Yam 5kg",
     "ingredientsText": "Yam (100%)",
     "allergenMask": 0,
-    "priceGbp": 15.99
+    "pricePennies": 1599
   }'
 ```
 
@@ -225,6 +225,31 @@ curl -X POST http://localhost:9090/customers \
 ```
 
 **Note:** `allergenMask` is a bitmask for 14 allergens (0 = no allergies).
+
+#### Batch Sync API
+
+**Sync Batch (from Edge):**
+```bash
+curl -X POST http://localhost:9090/sync/batch \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "type": "shop",
+        "name": "Edge Shop 1",
+        "address": "456 Edge Rd"
+      },
+      {
+        "type": "product",
+        "sku": "EDGE-PROD-1",
+        "title": "Edge Product 1",
+        "pricePennies": 1250,
+        "allergenMask": 1
+      }
+    ]
+  }'
+```
 
 ---
 
@@ -381,7 +406,7 @@ for product in "${PRODUCTS[@]}"; do
   curl -s -X POST http://localhost:9090/products \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"sku\":\"$sku\",\"title\":\"$title\",\"priceGbp\":$price,\"ingredientsText\":\"100% natural\",\"allergenMask\":0}"
+    -d "{\"sku\":\"$sku\",\"title\":\"$title\",\"pricePennies\":1599,\"ingredientsText\":\"100% natural\",\"allergenMask\":0}"
 done
 ```
 
@@ -455,7 +480,7 @@ echo "3. Creating product..."
 PRODUCT_ID=$(curl -s -X POST $API/products \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"sku":"TEST-1","title":"Test Product","ingredientsText":"Test","allergenMask":0,"priceGbp":9.99}' | jq -r .id)
+  -d '{"sku":"TEST-1","title":"Test Product","ingredientsText":"Test","allergenMask":0,"pricePennies":999}' | jq -r .id)
 
 echo "Product ID: $PRODUCT_ID"
 
@@ -570,6 +595,6 @@ SET LOCAL app.current_tenant_id = '00000000-0000-0000-0000-000000000001';
 ---
 
 **See Also:**
-- [CONFIGURATION.md](CONFIGURATION.md) - Authentication setup
+- [CONFIGURATION.md](../config/CONFIGURATION.md) - Authentication setup
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Production testing
 - [USER_GUIDE.md](USER_GUIDE.md) - Manual testing workflows

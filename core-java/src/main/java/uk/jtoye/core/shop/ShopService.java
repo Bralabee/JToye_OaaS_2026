@@ -118,18 +118,4 @@ public class ShopService {
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
     }
 
-    /**
-     * Convert Shop entity to DTO.
-     * @deprecated Use {@link ShopMapper#toDto(Shop)} instead.
-     * TODO: Remove after migration to MapStruct is complete.
-     */
-    @Deprecated
-    private ShopDto toDto(Shop shop) {
-        ShopDto dto = new ShopDto();
-        dto.setId(shop.getId());
-        dto.setName(shop.getName());
-        dto.setAddress(shop.getAddress());
-        dto.setCreatedAt(shop.getCreatedAt());
-        return dto;
-    }
 }

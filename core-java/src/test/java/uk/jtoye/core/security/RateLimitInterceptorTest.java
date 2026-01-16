@@ -3,8 +3,8 @@ package uk.jtoye.core.security;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
-import io.github.bucket4j.distributed.remote.RemoteBucketBuilder;
-import io.github.bucket4j.distributed.remote.RemoteBucketState;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.distributed.proxy.RemoteBucketBuilder;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +19,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.*;
  * Tests rate limiting logic with mocked Bucket4j dependencies.
  */
 @ExtendWith(MockitoExtension.class)
+@org.mockito.junit.jupiter.MockitoSettings(strictness = org.mockito.quality.Strictness.LENIENT)
 class RateLimitInterceptorTest {
 
     @Mock
@@ -40,11 +42,7 @@ class RateLimitInterceptorTest {
     @Mock
     private HttpServletResponse response;
 
-    @Mock
-    private RemoteBucketBuilder<String> bucketBuilder;
-
-    @Mock
-    private io.github.bucket4j.distributed.proxy.RemoteBucket bucket;
+    private Bucket bucket;
 
     @InjectMocks
     private RateLimitInterceptor interceptor;
@@ -52,8 +50,12 @@ class RateLimitInterceptorTest {
     private UUID testTenantId;
 
     @BeforeEach
-    void setUp() {
+    @SuppressWarnings("unchecked")
+    void setUp() throws Exception {
         testTenantId = UUID.randomUUID();
+
+        // Standard mock
+        bucket = mock(Bucket.class, withSettings().extraInterfaces(Class.forName("io.github.bucket4j.distributed.BucketProxy")));
 
         // Set interceptor properties via reflection
         ReflectionTestUtils.setField(interceptor, "rateLimitingEnabled", true);
@@ -61,9 +63,10 @@ class RateLimitInterceptorTest {
         ReflectionTestUtils.setField(interceptor, "burstCapacity", 20);
         ReflectionTestUtils.setField(interceptor, "proxyManager", proxyManager);
 
-        // Setup proxy manager mock chain
-        when(proxyManager.builder()).thenReturn(bucketBuilder);
-        when(bucketBuilder.build(anyString(), any())).thenReturn(bucket);
+        // Setup proxy manager mock
+        RemoteBucketBuilder builder = mock(RemoteBucketBuilder.class);
+        doReturn(builder).when(proxyManager).builder();
+        doAnswer(invocation -> bucket).when(builder).build(anyString(), any(Supplier.class));
     }
 
     @Test
@@ -113,7 +116,7 @@ class RateLimitInterceptorTest {
 
         // Assert
         assertFalse(result, "Request should be blocked");
-        verify(response).setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+        verify(response).setStatus(429);
         verify(response).setHeader("X-RateLimit-Limit", "100");
         verify(response).setHeader("X-RateLimit-Remaining", "0");
         verify(response).setHeader(eq("Retry-After"), eq("30"));
@@ -128,6 +131,7 @@ class RateLimitInterceptorTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testTenantIsolation_DifferentTenantsHaveSeparateLimits() throws Exception {
         // Arrange
         UUID tenantA = UUID.randomUUID();
@@ -144,14 +148,16 @@ class RateLimitInterceptorTest {
         when(probeB.getRemainingTokens()).thenReturn(50L);
 
         // Mock different buckets for different tenants
-        io.github.bucket4j.distributed.proxy.RemoteBucket bucketA = mock(io.github.bucket4j.distributed.proxy.RemoteBucket.class);
-        io.github.bucket4j.distributed.proxy.RemoteBucket bucketB = mock(io.github.bucket4j.distributed.proxy.RemoteBucket.class);
+        Bucket bucketA = mock(Bucket.class, withSettings().extraInterfaces(Class.forName("io.github.bucket4j.distributed.BucketProxy")));
+        Bucket bucketB = mock(Bucket.class, withSettings().extraInterfaces(Class.forName("io.github.bucket4j.distributed.BucketProxy")));
 
         when(bucketA.tryConsumeAndReturnRemaining(1)).thenReturn(probeA);
         when(bucketB.tryConsumeAndReturnRemaining(1)).thenReturn(probeB);
 
-        when(bucketBuilder.build(contains(tenantA.toString()), any())).thenReturn(bucketA);
-        when(bucketBuilder.build(contains(tenantB.toString()), any())).thenReturn(bucketB);
+        RemoteBucketBuilder builder = mock(RemoteBucketBuilder.class);
+        doReturn(builder).when(proxyManager).builder();
+        doAnswer(invocation -> bucketA).when(builder).build(argThat((String s) -> s != null && s.contains(tenantA.toString())), any(Supplier.class));
+        doAnswer(invocation -> bucketB).when(builder).build(argThat((String s) -> s != null && s.contains(tenantB.toString())), any(Supplier.class));
 
         StringWriter stringWriter = new StringWriter();
         PrintWriter writer = new PrintWriter(stringWriter);

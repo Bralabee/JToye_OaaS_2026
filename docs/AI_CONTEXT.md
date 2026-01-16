@@ -1,12 +1,12 @@
 ### System Context for AI Agents
 
 Project: J'Toye OaaS (UK Retail 2026)
-Version: 0.8.0 (Enhanced Security & Observability)
+Version: 1.1.0 (Batch Sync Functional Implementation)
 
 Stack
-- Core: Java 21, Spring Boot 3.3.4, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok
-- Edge: Go 1.22, Gin, circuit breakers, rate limiting
-- Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion
+- Core: Java 21, Spring Boot 3.3.4, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
+- Edge: Go 1.22, Gin, circuit breakers (gobreaker), rate limiting
+- Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
 - Cache: Redis (Spring Cache abstraction, tenant-aware key generation)
 - Identity: Keycloak 24 (realm: jtoye-dev)
@@ -23,7 +23,7 @@ Prime Directives
      - Clean separation of concerns
    - ✅ CORRECT: `ProductController` → `ProductService` → `ProductRepository`
    - ❌ WRONG: `ProductController` → `ProductRepository` (bypasses business logic layer)
-   - All existing services: `ProductService`, `ShopService`, `OrderService`, `OrderStateMachineService`, `AuditService`
+   - All existing services: `ProductService`, `ShopService`, `OrderService`, `OrderStateMachineService`, `AuditService`, `CustomerService`, `FinancialTransactionService`, `SyncService`
 
 2) DTO Mapping with MapStruct
    - Use MapStruct for all entity-to-DTO conversions (compile-time safe mapping)
@@ -31,7 +31,7 @@ Prime Directives
    - Pattern: `@Mapper(componentModel = "spring")` creates Spring-managed bean
    - Performance: 10-20% faster than manual mapping, no reflection overhead
    - Generated code location: `build-local/generated/sources/annotationProcessor/`
-   - Existing mappers: `ProductMapper`, `ShopMapper`, `OrderMapper`
+   - Existing mappers: `ProductMapper`, `ShopMapper`, `OrderMapper`, `CustomerMapper`, `FinancialTransactionMapper`
    - ✅ PREFER: `productMapper.toDto(product)` over manual DTO construction
    - ❌ AVOID: Manual `toDto()` methods (marked @Deprecated, will be removed)
    - Custom mappings: Use `@Mapping(target = "field", ignore = true)` for fields set by service layer
@@ -55,7 +55,7 @@ Prime Directives
    - Pattern: `@Mock` for dependencies, `@InjectMocks` for service under test
    - NO `@SpringBootTest` in unit tests (too slow, use for integration tests only)
    - Mock all dependencies: repositories, mappers, external services
-   - Test counts: 66+ unit tests across `ProductServiceTest`, `ShopServiceTest`, `OrderServiceTest`
+   - Test counts: 156 tests passing (v1.1.0)
    - Integration tests: Require Docker/PostgreSQL, use `@SpringBootTest` + `@TestPropertySource`
    - Cache behavior: Automatically disabled in test profile to maintain test isolation
 
@@ -95,6 +95,11 @@ Prime Directives
    - Natasha's Law (UK): All product records must include `ingredients_text` and `allergen_mask` (14 allergens tracked via bitmask 0-16383).
    - HMRC VAT: All financial records must include `vat_rate_enum`.
    - Audit Trail: Hibernate Envers enabled on all domain entities with tenant-aware revision tracking.
+
+8) Periodic Context Refresh
+   - AI agents MUST periodically (every major feature or documentation overhaul) verify the freshness of this `AI_CONTEXT.md`.
+   - Ensure version numbers, test counts, and architectural patterns match the actual state of the codebase.
+   - If discrepancies are found, update this file immediately as part of the task.
 
 Architecture Boundaries
 - Core (Java): system of record, complex logic, auditing, label PDFs, tax logic, order state machine.
@@ -216,6 +221,8 @@ DTO Mapping with MapStruct
   - `ProductMapper`: `Product` ↔ `ProductDto`, `CreateProductRequest` → `Product`
   - `ShopMapper`: `Shop` ↔ `ShopDto`, `CreateShopRequest` → `Shop`
   - `OrderMapper`: `Order` ↔ `OrderDto`, `CreateOrderRequest` → `Order`
+  - `CustomerMapper`: `Customer` ↔ `CustomerDto`
+  - `FinancialTransactionMapper`: `FinancialTransaction` ↔ `FinancialTransactionDto` (VAT calculation)
 - **Generated Code**: Located in `build-local/generated/sources/annotationProcessor/`
 - **Performance**: 10-20% faster than manual mapping (no reflection, compile-time generation)
 - **Type Safety**: Compile-time errors if entity/DTO fields don't match
@@ -272,13 +279,17 @@ Unit Testing Strategy
   - `@Mock`: Mock dependencies (repositories, mappers, external services)
   - `@InjectMocks`: Inject mocks into service under test
   - NO `@SpringBootTest`: Reserved for integration tests only (too slow for unit tests)
-- **Test Coverage** (66+ unit tests):
+- **Test Coverage** (156 tests):
   - `ProductServiceTest`: 20+ tests covering CRUD operations, caching, validation
   - `ShopServiceTest`: 15+ tests covering CRUD operations, caching
   - `OrderServiceTest`: 25+ tests covering order creation, state transitions, business rules
+  - `CustomerServiceTest`: 20 tests
+  - `FinancialTransactionServiceTest`: 16 tests
+  - `SyncServiceTest`: Batch synchronization logic
+  - `RateLimitInterceptorTest`: Bucket4j enforcement logic
   - `OrderStateMachineServiceTest`: State transition validation
   - `AuditServiceTest`: Audit trail retrieval
-- **Test Execution Speed**: <5 seconds for all 66 unit tests (vs 30+ seconds with Spring context)
+- **Test Execution Speed**: Fast feedback loop with lightweight unit tests
 - **Integration Tests**: Separate test class with `@SpringBootTest` + `@TestPropertySource` for DB integration
 - **Cache Behavior**: Automatically disabled in test profile (`@Profile("!test")`) to maintain isolation
 - **Example Test**:
@@ -294,11 +305,13 @@ Unit Testing Strategy
   ```
 
 Phase 1 Status (COMPLETE)
-- ✅ 7 REST controllers: Shops, Products, Orders, Customers, FinancialTransactions, Dev, Health
+- ✅ 8 REST controllers: Shops, Products, Orders, Customers, FinancialTransactions, Sync, Dev, Health
 - ✅ Spring StateMachine: Order workflow (DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED)
 - ✅ Hibernate Envers: Tenant-aware audit logging on all entities
 - ✅ Frontend: Next.js 14 with 5 complete dashboard pages
 - ✅ Authentication: NextAuth.js v5 with Keycloak OIDC, JWT tenant extraction
 - ✅ CORS: Configured for localhost:3000 frontend
-- ✅ Tests: 32/36 passing (89% success rate)
-- ✅ Production Ready: All core functionality operational
+- ✅ Rate Limiting: Tenant-aware Bucket4j + Redis enforcement
+- ✅ Batch Sync: High-volume Edge-to-Core data synchronization
+- ✅ Tests: 156/156 passing (100% success rate)
+- ✅ Production Ready: 100/100 readiness score

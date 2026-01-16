@@ -134,21 +134,4 @@ public class ProductService {
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
     }
 
-    /**
-     * Convert Product entity to DTO.
-     * @deprecated Use {@link ProductMapper#toDto(Product)} instead.
-     * TODO: Remove after migration to MapStruct is complete.
-     */
-    @Deprecated
-    private ProductDto toDto(Product product) {
-        ProductDto dto = new ProductDto();
-        dto.setId(product.getId());
-        dto.setSku(product.getSku());
-        dto.setTitle(product.getTitle());
-        dto.setIngredientsText(product.getIngredientsText());
-        dto.setAllergenMask(product.getAllergenMask());
-        dto.setPricePennies(product.getPricePennies());
-        dto.setCreatedAt(product.getCreatedAt());
-        return dto;
-    }
 }

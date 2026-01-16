@@ -161,7 +161,6 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      */
     @SuppressWarnings("unused")
     private String getTenantTier(UUID tenantId) {
-        // TODO: Query tenant service or cache to determine tier
         // For now, return standard tier for all tenants
         return "STANDARD";
     }

@@ -299,26 +299,4 @@ public class OrderService {
         return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
-    /**
-     * Convert Order entity to DTO.
-     * @deprecated Use {@link OrderMapper#toDto(Order)} instead.
-     * TODO: Remove after migration to MapStruct is complete.
-     */
-    @Deprecated
-    private OrderDto toDto(Order order) {
-        OrderDto dto = new OrderDto();
-        dto.setId(order.getId());
-        dto.setTenantId(order.getTenantId());
-        dto.setShopId(order.getShopId());
-        dto.setOrderNumber(order.getOrderNumber());
-        dto.setStatus(order.getStatus());
-        dto.setCustomerName(order.getCustomerName());
-        dto.setCustomerEmail(order.getCustomerEmail());
-        dto.setCustomerPhone(order.getCustomerPhone());
-        dto.setNotes(order.getNotes());
-        dto.setTotalAmountPennies(order.getTotalAmountPennies());
-        dto.setCreatedAt(order.getCreatedAt());
-        dto.setUpdatedAt(order.getUpdatedAt());
-        return dto;
-    }
 }

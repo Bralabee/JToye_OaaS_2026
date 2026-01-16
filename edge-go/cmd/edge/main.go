@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -133,9 +139,33 @@ func main() {
 	})
 
 	protected.POST("/webhooks/whatsapp", func(c *gin.Context) {
-		// TODO: Implement WhatsApp webhook signature verification
+		// WhatsApp uses SHA256 HMAC for signature verification
+		// The signature is sent in the 'X-Hub-Signature-256' header
+		signature := c.GetHeader("X-Hub-Signature-256")
+		appSecret := os.Getenv("WHATSAPP_APP_SECRET")
+
+		if appSecret != "" && signature != "" {
+			body, err := io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
+				return
+			}
+			// Restore body for further processing
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+			if !verifyWhatsAppSignature(body, signature, appSecret) {
+				logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+				return
+			}
+		} else if appSecret != "" {
+			logger.Warn("Missing WhatsApp webhook signature")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature"})
+			return
+		}
+
 		// TODO: Process webhook and forward to Core API
-		logger.Info("WhatsApp webhook received")
+		logger.Info("WhatsApp webhook received and verified")
 		c.Status(http.StatusNoContent)
 	})
 
@@ -151,5 +181,19 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func verifyWhatsAppSignature(payload []byte, signature string, secret string) bool {
+	// Remove 'sha256=' prefix if present
+	actualSignature := signature
+	if strings.HasPrefix(signature, "sha256=") {
+		actualSignature = signature[7:]
+	}
+
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write(payload)
+	expectedSignature := hex.EncodeToString(h.Sum(nil))
+
+	return hmac.Equal([]byte(actualSignature), []byte(expectedSignature))
 }
 

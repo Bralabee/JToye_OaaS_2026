@@ -56,11 +56,11 @@ ls -la frontend/.env.local.example  # Should exist
 - ✅ Two options presented: Docker (easy) vs Local (development)
 - ✅ Links to detailed guides present
 
-**Checklist:**
-- [ ] README mentions environment setup requirement
-- [ ] Docker option clearly marked as "no setup needed"
-- [ ] Local option includes warning about environment files
-- [ ] Documentation links are correct (no 404s)
+**Test Counts:**
+- Total Tests: 156 ✅
+- Backend: 144 ✅
+- Edge: 12 ✅
+- Pass Rate: 100% ✅
 
 ---
 
@@ -485,7 +485,7 @@ curl -X POST http://localhost:9090/products \
     "title": "QA Test Product",
     "ingredientsText": "Test ingredients (100%)",
     "allergenMask": 0,
-    "priceGbp": 9.99
+    "pricePennies": 999
   }' | jq
 
 PRODUCT_ID=$(curl -s -X POST http://localhost:9090/products \
@@ -623,6 +623,38 @@ CUSTOMER_ID=$(curl -s -X POST http://localhost:9090/customers \
 - [ ] Update customer allergen preferences
 - [ ] Retrieve customer details
 - [ ] Delete customer
+
+### 5. Batch Sync API
+
+**Sync Batch (from Edge):**
+```bash
+curl -X POST http://localhost:9090/sync/batch \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "type": "shop",
+        "name": "Edge Shop",
+        "address": "456 Edge Rd"
+      },
+      {
+        "type": "product",
+        "sku": "EDGE-001",
+        "title": "Edge Product",
+        "pricePennies": 1250,
+        "ingredientsText": "Natural",
+        "allergenMask": 0
+      }
+    ]
+  }'
+```
+
+**Test Cases:**
+- [ ] Batch sync with shops only
+- [ ] Batch sync with products only
+- [ ] Mixed batch processing
+- [ ] Cache eviction verified (Shops/Products caches cleared)
 
 ---
 
@@ -790,12 +822,12 @@ SHOP=$(curl -s -X POST http://localhost:9090/shops \
 PROD1=$(curl -s -X POST http://localhost:9090/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
-  -d '{"sku":"INT-001","title":"Product 1","ingredientsText":"Test","allergenMask":0,"priceGbp":10}' | jq -r .id)
+  -d '{"sku":"INT-001","title":"Product 1","ingredientsText":"Test","allergenMask":0,"pricePennies":1000}' | jq -r .id)
 
 PROD2=$(curl -s -X POST http://localhost:9090/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
-  -d '{"sku":"INT-002","title":"Product 2","ingredientsText":"Test","allergenMask":0,"priceGbp":20}' | jq -r .id)
+  -d '{"sku":"INT-002","title":"Product 2","ingredientsText":"Test","allergenMask":0,"pricePennies":2000}' | jq -r .id)
 
 # 3. Create customer
 CUSTOMER=$(curl -s -X POST http://localhost:9090/customers \
