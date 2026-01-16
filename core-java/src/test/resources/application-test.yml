@@ -1,0 +1,26 @@
+# Test profile configuration
+# Automatically activated during test execution
+# Disables Redis caching to maintain test isolation and prevent test interference
+
+spring:
+  cache:
+    type: none  # Disable caching in tests for predictable behavior
+  datasource:
+    # Use H2 in-memory database for tests
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # Auto-create schema for tests
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false  # Disable Flyway in tests (use ddl-auto instead)
+
+logging:
+  level:
+    uk.jtoye: DEBUG
+    org.springframework.cache: DEBUG  # Log cache operations for debugging

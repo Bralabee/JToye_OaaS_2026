@@ -12,30 +12,34 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
 
+/**
+ * REST controller for shop management.
+ * All endpoints require JWT authentication and are automatically tenant-scoped.
+ */
 @RestController
 @RequestMapping("/shops")
 @Tag(name = "Shops", description = "Shop management endpoints")
 @SecurityRequirement(name = "bearer-jwt")
 @SecurityRequirement(name = "tenant-header")
 public class ShopController {
-    private final ShopRepository repo;
+    private final ShopService shopService;
 
-    public ShopController(ShopRepository repo) {
-        this.repo = repo;
+    public ShopController(ShopService shopService) {
+        this.shopService = shopService;
     }
 
+    /**
+     * Get all shops with pagination.
+     * GET /shops
+     */
     @GetMapping
-    @Transactional(readOnly = true)
     @Operation(summary = "List shops", description = "Returns a paginated list of shops for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved shops"),
@@ -45,11 +49,14 @@ public class ShopController {
     public Page<ShopDto> list(
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return repo.findAll(pageable).map(this::toDto);
+        return shopService.getAllShops(pageable);
     }
 
+    /**
+     * Get shop by ID.
+     * GET /shops/{id}
+     */
     @GetMapping("/{id}")
-    @Transactional(readOnly = true)
     @Operation(summary = "Get shop by ID", description = "Returns a single shop by ID for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Shop found"),
@@ -57,14 +64,16 @@ public class ShopController {
     })
     public ResponseEntity<ShopDto> getById(
             @Parameter(description = "Shop ID") @PathVariable UUID id) {
-        return repo.findById(id)
-                .map(this::toDto)
+        return shopService.getShopById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /**
+     * Create a new shop.
+     * POST /shops
+     */
     @PostMapping
-    @Transactional
     @Operation(summary = "Create shop", description = "Creates a new shop for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Shop created successfully"),
@@ -73,18 +82,15 @@ public class ShopController {
     })
     public ResponseEntity<ShopDto> create(
             @Parameter(description = "Shop creation request") @Valid @RequestBody CreateShopRequest req) {
-        UUID tenantId = CurrentTenant.require();
-        Shop s = new Shop();
-        s.setTenantId(tenantId);
-        s.setName(req.getName());
-        s.setAddress(req.getAddress());
-        // Use saveAndFlush so creation timestamp is populated for the response
-        Shop saved = repo.saveAndFlush(s);
-        return ResponseEntity.created(URI.create("/shops/" + saved.getId())).body(toDto(saved));
+        ShopDto shop = shopService.createShop(req);
+        return ResponseEntity.created(URI.create("/shops/" + shop.getId())).body(shop);
     }
 
+    /**
+     * Update shop.
+     * PUT /shops/{id}
+     */
     @PutMapping("/{id}")
-    @Transactional
     @Operation(summary = "Update shop", description = "Updates an existing shop for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Shop updated successfully"),
@@ -94,18 +100,15 @@ public class ShopController {
     public ResponseEntity<ShopDto> update(
             @Parameter(description = "Shop ID") @PathVariable UUID id,
             @Parameter(description = "Shop update request") @Valid @RequestBody CreateShopRequest req) {
-        return repo.findById(id)
-                .map(shop -> {
-                    shop.setName(req.getName());
-                    shop.setAddress(req.getAddress());
-                    Shop updated = repo.saveAndFlush(shop);
-                    return ResponseEntity.ok(toDto(updated));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        ShopDto shop = shopService.updateShop(id, req);
+        return ResponseEntity.ok(shop);
     }
 
+    /**
+     * Delete shop.
+     * DELETE /shops/{id}
+     */
     @DeleteMapping("/{id}")
-    @Transactional
     @Operation(summary = "Delete shop", description = "Deletes a shop for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Shop deleted successfully"),
@@ -113,20 +116,7 @@ public class ShopController {
     })
     public ResponseEntity<Void> delete(
             @Parameter(description = "Shop ID") @PathVariable UUID id) {
-        return repo.findById(id)
-                .map(shop -> {
-                    repo.delete(shop);
-                    return ResponseEntity.noContent().<Void>build();
-                })
-                .orElse(ResponseEntity.notFound().build());
-    }
-
-    private ShopDto toDto(Shop s) {
-        ShopDto dto = new ShopDto();
-        dto.setId(s.getId());
-        dto.setName(s.getName());
-        dto.setAddress(s.getAddress());
-        dto.setCreatedAt(s.getCreatedAt());
-        return dto;
+        shopService.deleteShop(id);
+        return ResponseEntity.noContent().build();
     }
 }

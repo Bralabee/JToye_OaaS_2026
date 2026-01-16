@@ -16,7 +16,9 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,15 +36,18 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
     private final OrderStateMachineService stateMachineService;
+    private final OrderMapper orderMapper;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        ShopRepository shopRepository,
-                       OrderStateMachineService stateMachineService) {
+                       OrderStateMachineService stateMachineService,
+                       OrderMapper orderMapper) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
         this.stateMachineService = stateMachineService;
+        this.orderMapper = orderMapper;
     }
 
     /**
@@ -103,7 +108,7 @@ public class OrderService {
         log.info("Created order {} with {} items, total: {} pennies",
                 order.getOrderNumber(), order.getItems().size(), order.getTotalAmountPennies());
 
-        return toDto(order);
+        return orderMapper.toDto(order);
     }
 
     /**
@@ -112,7 +117,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Optional<OrderDto> getOrderById(UUID orderId) {
         return orderRepository.findById(orderId)
-                .map(this::toDto);
+                .map(orderMapper::toDto);
     }
 
     /**
@@ -121,7 +126,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Optional<OrderDto> getOrderByNumber(String orderNumber) {
         return orderRepository.findByOrderNumber(orderNumber)
-                .map(this::toDto);
+                .map(orderMapper::toDto);
     }
 
     /**
@@ -130,7 +135,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Page<OrderDto> getAllOrders(Pageable pageable) {
         return orderRepository.findAll(pageable)
-                .map(this::toDto);
+                .map(orderMapper::toDto);
     }
 
     /**
@@ -139,7 +144,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public List<OrderDto> getOrdersByStatus(OrderStatus status) {
         return orderRepository.findByStatus(status).stream()
-                .map(this::toDto)
+                .map(orderMapper::toDto)
                 .toList();
     }
 
@@ -149,7 +154,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public List<OrderDto> getOrdersByShop(UUID shopId) {
         return orderRepository.findByShopId(shopId).stream()
-                .map(this::toDto)
+                .map(orderMapper::toDto)
                 .toList();
     }
 
@@ -172,7 +177,7 @@ public class OrderService {
         order.setUpdatedAt(OffsetDateTime.now());
         order = orderRepository.save(order);
 
-        return toDto(order);
+        return orderMapper.toDto(order);
     }
 
     /**
@@ -244,7 +249,7 @@ public class OrderService {
         log.info("Order {} transitioned: {} -> {} via event {}",
                 order.getOrderNumber(), oldStatus, newStatus, event);
 
-        return toDto(order);
+        return orderMapper.toDto(order);
     }
 
     /**
@@ -261,15 +266,45 @@ public class OrderService {
 
     /**
      * Generate unique order number for tenant.
-     * Format: ORD-{uuid} (collision-proof, globally unique)
+     * <p>
+     * Format: ORD-{tenant-prefix}-{YYYYMMDD}-{random-suffix}
+     * Example: ORD-A1B2C3D4-20260116-E5F6G7H8
+     * <p>
+     * Structure:
+     * - ORD: Constant prefix for easy identification
+     * - tenant-prefix: First 8 characters of tenant UUID (uppercase) for tenant isolation
+     * - YYYYMMDD: ISO date for chronological sorting and filtering
+     * - random-suffix: 8-character random hex for collision-proof uniqueness
+     * <p>
+     * Benefits:
+     * - Tenant-aware: Customer support can identify tenant at a glance
+     * - Sortable: Date component enables chronological ordering
+     * - Debuggable: Human-readable format with clear structure
+     * - Collision-proof: Random suffix ensures uniqueness without sequence coordination
+     * - Backward compatible: Existing orders retain their old format
+     *
+     * @param tenantId the tenant UUID for prefix generation
+     * @return unique order number string
      */
     private String generateOrderNumber(UUID tenantId) {
-        return "ORD-" + UUID.randomUUID().toString();
+        // Extract first 8 characters of tenant UUID for prefix (compact yet unique)
+        String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
+
+        // Add date for sorting/filtering (YYYYMMDD format)
+        String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        // Add random suffix for uniqueness (8 hex characters, no hyphens)
+        String randomSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+
+        return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
     /**
      * Convert Order entity to DTO.
+     * @deprecated Use {@link OrderMapper#toDto(Order)} instead.
+     * TODO: Remove after migration to MapStruct is complete.
      */
+    @Deprecated
     private OrderDto toDto(Order order) {
         OrderDto dto = new OrderDto();
         dto.setId(order.getId());

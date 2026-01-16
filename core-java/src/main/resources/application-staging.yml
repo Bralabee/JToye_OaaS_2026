@@ -12,6 +12,18 @@ spring:
       max-lifetime: 1800000
       leak-detection-threshold: 45000  # Moderate leak detection
       pool-name: JToyeHikariPool-STAGING
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2500ms
+      lettuce:
+        pool:
+          max-active: 15
+          max-idle: 8
+          min-idle: 3
+          max-wait: 1500ms
 
   jpa:
     hibernate:

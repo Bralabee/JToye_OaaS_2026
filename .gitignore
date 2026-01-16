@@ -46,6 +46,15 @@ build/
 .junie/core-java/build-local/
 .junie/
 core-java/build-local/
+build-local/
+
+### MapStruct Generated Sources ###
+**/build/generated/sources/annotationProcessor/
+**/build-local/generated/sources/annotationProcessor/
+
+### Cache Directories ###
+.cache/
+*.cache
 
 ### Credentials & Secrets ###
 CREDENTIALS.md
@@ -77,6 +86,8 @@ credentials/
 logs/
 *.log.*
 core-java/test-output.txt
+**/test-output.txt
+test-results/
 
 ### OS Specific ###
 Thumbs.db
