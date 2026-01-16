@@ -635,8 +635,8 @@ kubectl scale deployment/core-java --replicas=3 -n jtoye-production
 ## 10. Contact & Support
 
 **Documentation:**
-- System Design: `docs/architecture/SYSTEM_DESIGN_V2.md`
-- Security Audit: `docs/SECURITY_AUDIT_REPORT.md`
+- System Design: `../architecture/SYSTEM_DESIGN_V2.md`
+- Security Audit: `../reports/SECURITY_AUDIT_REPORT.md`
 - API Docs: https://api.jtoye.co.uk/swagger-ui.html
 
 **Support:**

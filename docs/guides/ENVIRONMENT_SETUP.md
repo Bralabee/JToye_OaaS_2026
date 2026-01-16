@@ -516,4 +516,4 @@ After setting up environment variables:
 ---
 
 **Last Updated:** 2026-01-03
-**For Issues:** Check project README.md or open a GitHub issue
+**For Issues:** Check project [README.md](../../README.md) or open a GitHub issue

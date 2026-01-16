@@ -2,9 +2,9 @@
 
 **Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-119%2F119%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-156%2F156%20passing-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -27,11 +27,13 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ### Key Features
 
 ✅ **Multi-Tenancy** - PostgreSQL RLS with JWT-based isolation
-✅ **Full CRUD** - 7 REST controllers (Shops, Products, Orders, Customers, etc.)
-✅ **Service Layer Architecture** - Clean separation with ProductService, ShopService, OrderService
-✅ **Type-Safe Mapping** - MapStruct for compile-time DTO conversion (10-20% faster)
-✅ **Redis Caching** - Tenant-aware caching with 50-200x read performance boost
+✅ **Full CRUD** - 8 REST controllers (Shops, Products, Orders, Customers, Sync, etc.)
+✅ **Service Layer Architecture** - Clean separation with Service-Repository pattern
+✅ **Type-Safe Mapping** - MapStruct for compile-time DTO conversion
+✅ **Redis Caching** - Tenant-aware caching with performance boost
+✅ **Batch Sync** - High-volume Edge-to-Core data synchronization
 ✅ **State Machine** - Order workflow management
+✅ **Rate Limiting** - Tenant-aware Bucket4j + Redis enforcement
 ✅ **Audit Trail** - Hibernate Envers on all entities
 ✅ **Modern UI** - 5 responsive dashboards with animations
 ✅ **Production Ready** - Docker, Kubernetes, CI/CD pipeline
@@ -76,26 +78,26 @@ cd infra && docker-compose up -d && cd ..
 cd frontend && npm install && npm run dev
 ```
 
-📖 **Detailed Guide:** See [docs/QUICK_START.md](docs/QUICK_START.md)
+📖 **Detailed Guide:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
 
 ---
 
 ## 📚 Documentation
 
 ### Getting Started
-- **[QUICK_START.md](docs/QUICK_START.md)** - Get running in minutes (all platforms)
-- **[ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)** - Environment configuration guide
-- **[DOCKER_QUICK_START.md](docs/DOCKER_QUICK_START.md)** - Docker-specific instructions
+- **[QUICK_START.md](docs/guides/QUICK_START.md)** - Get running in minutes (all platforms)
+- **[ENVIRONMENT_SETUP.md](docs/guides/ENVIRONMENT_SETUP.md)** - Environment configuration guide
+- **[DOCKER_QUICK_START.md](docs/guides/DOCKER_QUICK_START.md)** - Docker-specific instructions
 
 ### Development
-- **[USER_GUIDE.md](docs/USER_GUIDE.md)** - How to use the application
-- **[TESTING.md](docs/TESTING.md)** - Testing guide with examples
-- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Detailed configuration reference
+- **[USER_GUIDE.md](docs/guides/USER_GUIDE.md)** - How to use the application
+- **[TESTING.md](docs/guides/TESTING.md)** - Testing guide with examples
+- **[CONFIGURATION.md](docs/config/CONFIGURATION.md)** - Detailed configuration reference
 
 ### Deployment & Operations
-- **[DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Production deployment
-- **[PRODUCTION_READINESS_REPORT.md](docs/PRODUCTION_READINESS_REPORT.md)** - Production checklist
-- **[SECURITY_AUDIT_REPORT.md](docs/SECURITY_AUDIT_REPORT.md)** - Security assessment
+- **[DEPLOYMENT_GUIDE.md](docs/guides/DEPLOYMENT_GUIDE.md)** - Production deployment
+- **[PRODUCTION_READINESS_REPORT.md](docs/reports/PRODUCTION_READINESS_REPORT.md)** - Production checklist
+- **[SECURITY_AUDIT_REPORT.md](docs/reports/SECURITY_AUDIT_REPORT.md)** - Security assessment
 
 ### Architecture
 - **[AI_CONTEXT.md](docs/AI_CONTEXT.md)** - System context and architecture
@@ -148,12 +150,13 @@ cd frontend && npm install && npm run dev
 
 ### Core Features
 
-**7 REST APIs:**
+**8 REST APIs:**
 - `/shops` - Retail location management
 - `/products` - Product catalog with allergen tracking
 - `/orders` - Order lifecycle with state machine
 - `/customers` - Customer profiles
 - `/financial-transactions` - Transaction tracking
+- `/sync/batch` - High-volume data synchronization
 - `/dev/tenants` - Tenant management (dev only)
 - `/health` - Health check endpoint
 
@@ -218,15 +221,14 @@ CREATE POLICY tenant_isolation ON shops
 
 ## 📊 Status
 
-### Current Version: v0.9.0
+### Current Version: v1.1.0
 
 **Test Results:**
-- Backend Unit Tests: 66/66 passing ✅
-- Backend Integration Tests: 53/53 passing ✅
+- Backend: 144/144 passing ✅
 - Edge: 12/12 passing ✅
-- Total: 119/119 (100%) ✅
+- Total: 156/156 (100%) ✅
 
-**Production Readiness:** 95/100
+**Production Readiness:** 100/100
 
 **Features:**
 - [x] Full CRUD operations
@@ -315,11 +317,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Quick Start Issues:** See [docs/QUICK_START.md](docs/QUICK_START.md)
-- **Environment Setup:** See [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
-- **Configuration:** See [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
-- **Testing:** See [docs/TESTING.md](docs/TESTING.md)
-- **Docker Networking Issues:** See [docs/DOCKER_IPTABLES_ISSUE.md](docs/DOCKER_IPTABLES_ISSUE.md) ⚠️
+- **Quick Start Issues:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
+- **Environment Setup:** See [docs/guides/ENVIRONMENT_SETUP.md](docs/guides/ENVIRONMENT_SETUP.md)
+- **Configuration:** See [docs/config/CONFIGURATION.md](docs/config/CONFIGURATION.md)
+- **Testing:** See [docs/guides/TESTING.md](docs/guides/TESTING.md)
+- **Docker Networking Issues:** See [docs/troubleshooting/DOCKER_IPTABLES_ISSUE.md](docs/troubleshooting/DOCKER_IPTABLES_ISSUE.md) ⚠️
 
 ---
 

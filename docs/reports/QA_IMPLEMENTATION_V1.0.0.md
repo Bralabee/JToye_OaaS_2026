@@ -94,9 +94,9 @@ This implementation addresses ALL critical issues identified in the comprehensiv
 3. **production/configmap-patch.yaml** (13 lines) - Production config
 4. **staging/kustomization.yaml** (39 lines) - Staging overlay
 5. **staging/configmap-patch.yaml** (13 lines) - Staging config
-6. **DEPLOYMENT.md** (462 lines) - Comprehensive deployment guide
-7. **PRODUCTION_READINESS_REPORT.md** (580+ lines) - Detailed audit
-8. **QUICK_START.md** (180+ lines) - 5-minute deployment guide
+6. **[DEPLOYMENT.md](../guides/DEPLOYMENT_GUIDE.md)** - Comprehensive deployment guide
+7. **[PRODUCTION_READINESS_REPORT.md](PRODUCTION_READINESS_REPORT.md)** - Detailed audit
+8. **[QUICK_START.md](../guides/QUICK_START.md)** - 5-minute deployment guide
 
 #### Key Features:
 - High Availability: HPA (3-10 replicas), PDB (minAvailable: 2)

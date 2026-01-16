@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-16 (Batch Sync Functional Implementation)
+
+### Added
+- **Functional Batch Sync**: Transitioned the `/sync/batch` endpoint from a skeleton to a fully functional implementation.
+  - Added support for upserting **Shops** by name.
+  - Added support for upserting **Products** by SKU.
+  - Implemented automatic **Cache Eviction** (`shops`, `products`) on successful batch processing to maintain consistency.
+  - Added new repository methods: `ShopRepository.findByName` and `ProductRepository.findBySku`.
+- **Sync Test Suite**: Added comprehensive unit tests in `SyncServiceTest` covering:
+  - Shop upsert logic.
+  - Product upsert logic (including `pricePennies` Long/Integer conversion).
+  - Mixed item batch processing.
+  - Unknown item type handling.
+
+### Changed
+- Promoted project version to `1.1.0`.
+- Updated test status to `156/156 passing`.
+
+## [1.0.1] - 2026-01-16 (Rate Limit Test Fix)
+
+### Fixed
+- Resolved critical `ClassCastException` and `WrongTypeOfReturnValue` in `RateLimitInterceptorTest.java`.
+- Updated test mocking logic to correctly handle Bucket4j 8.x `BucketProxy` interface using reflection-based extra interfaces.
+- Verified all 9 unit tests for the rate-limiting interceptor are now passing.
+
 ## [1.0.0] - 2026-01-16 (QA-Driven Production Readiness Release)
 
-### Added - Backend Root Redirect & Security Fix
+### Added
+- WhatsApp webhook signature verification (HMAC-SHA256) in `edge-go`.
+- Restored and updated `RateLimitInterceptorTest` for Bucket4j 8.x.
+
+### Changed
+- Finalized migration to MapStruct across all core services.
+- Removed deprecated `toDto` methods in `OrderService`, `ProductService`, and `ShopService`.
+- Promoted project to GA (General Availability) status.
+
+### Fixed
+- Fixed compilation and runtime issues in `RateLimitInterceptorTest` due to Bucket4j 8.10.1 API changes.
 - **Backend Redirect**: Added a redirect from the root path (`/`) to Swagger UI (`/swagger-ui.html`) in `CoreApplication.java`.
   - Provides a functional landing page for the backend instead of a raw error.
 - **Security Configuration**: Updated `SecurityConfig.java` to permit public access to the root path (`/`).
