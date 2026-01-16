@@ -8,3 +8,8 @@ spring:
     url: jdbc:postgresql://localhost:5433/jtoye
     username: jtoye_app
     password: secret
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redispass123  # From docker-compose.full-stack.yml
