@@ -28,6 +28,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-cache")
 
+    // Bucket4j for rate limiting
+    implementation("com.bucket4j:bucket4j-core:8.10.1")
+    implementation("com.bucket4j:bucket4j-redis:8.10.1")
+
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
@@ -57,6 +61,7 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:1.19.8")
     testImplementation("org.testcontainers:junit-jupiter:1.19.8")
     testImplementation("com.h2database:h2") // for lightweight unit tests
+    // Redis testcontainers uses the generic GenericContainer, not a specific module
 }
 
 tasks.test {

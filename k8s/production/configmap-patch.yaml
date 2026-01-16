@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # Production-specific overrides
+  log.level: "INFO"
+  sql.log.level: "WARN"
+
+  # Production URLs
+  keycloak.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+  api.url: "https://api.jtoye.co.uk"
+  frontend.url: "https://app.jtoye.co.uk"

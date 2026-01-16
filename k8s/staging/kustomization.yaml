@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging overlay configuration
+namespace: jtoye-staging
+
+# Reference base configuration
+bases:
+  - ../base
+
+# Staging-specific labels
+commonLabels:
+  environment: staging
+
+# Staging-specific annotations
+commonAnnotations:
+  deployment.timestamp: "REPLACE_WITH_DEPLOYMENT_TIMESTAMP"
+
+# Image tags for staging (typically using 'staging' or 'latest' tags)
+images:
+  - name: ghcr.io/jtoye/core-java
+    newTag: staging
+  - name: ghcr.io/jtoye/edge-go
+    newTag: staging
+  - name: ghcr.io/jtoye/frontend
+    newTag: staging
+
+# ConfigMap patches for staging environment
+patchesStrategicMerge:
+  - configmap-patch.yaml
+
+# Staging replicas (reduced for cost savings)
+replicas:
+  - name: core-java
+    count: 2
+  - name: edge-go
+    count: 2
+  - name: frontend
+    count: 2

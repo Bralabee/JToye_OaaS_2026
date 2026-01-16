@@ -1,99 +1,112 @@
 package uk.jtoye.core.customer;
 
-import lombok.RequiredArgsConstructor;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 
-import jakarta.validation.Valid;
+import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * REST controller for customer management.
+ * All endpoints require JWT authentication and are automatically tenant-scoped.
+ */
 @RestController
 @RequestMapping("/customers")
-@RequiredArgsConstructor
+@Tag(name = "Customers", description = "Customer relationship management endpoints")
+@SecurityRequirement(name = "bearer-jwt")
+@SecurityRequirement(name = "tenant-header")
 public class CustomerController {
+    private final CustomerService customerService;
 
-    private final CustomerRepository customerRepository;
+    public CustomerController(CustomerService customerService) {
+        this.customerService = customerService;
+    }
 
     @GetMapping
-    @Transactional(readOnly = true)
-    public Page<CustomerDto> getAllCustomers(
+    @Operation(summary = "List customers", description = "Returns a paginated list of customers for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved customers"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT")
+    })
+    public Page<CustomerDto> list(
+            @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 100, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return customerRepository.findAll(pageable)
-                .map(this::toDto);
+        // RLS ensures we only see current tenant rows
+        return customerService.getAllCustomers(pageable);
     }
 
     @GetMapping("/{id}")
-    @Transactional(readOnly = true)
-    public ResponseEntity<CustomerDto> getCustomerById(@PathVariable UUID id) {
-        return customerRepository.findById(id)
-                .map(this::toDto)
+    @Operation(summary = "Get customer by ID", description = "Returns a single customer by ID for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Customer found"),
+            @ApiResponse(responseCode = "404", description = "Customer not found")
+    })
+    public ResponseEntity<CustomerDto> getById(
+            @Parameter(description = "Customer ID") @PathVariable UUID id) {
+        return customerService.getCustomerById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    @Transactional
-    public ResponseEntity<CustomerDto> createCustomer(@Valid @RequestBody CreateCustomerRequest request) {
-        Customer customer = new Customer();
-        customer.setTenantId(TenantContext.get().orElseThrow());
-        customer.setName(request.name());
-        customer.setEmail(request.email());
-        customer.setPhone(request.phone());
-        customer.setAllergenRestrictions(request.allergenRestrictions() != null ? request.allergenRestrictions() : 0);
-        customer.setUpdatedAt(OffsetDateTime.now());
-
-        Customer saved = customerRepository.save(customer);
-        return ResponseEntity.status(HttpStatus.CREATED).body(toDto(saved));
+    @Operation(summary = "Create customer", description = "Creates a new customer. Requires name and email (unique per tenant).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Customer created successfully"),
+            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields"),
+            @ApiResponse(responseCode = "409", description = "Customer email already exists for this tenant")
+    })
+    public ResponseEntity<CustomerDto> create(
+            @Parameter(description = "Customer creation request") @Valid @RequestBody CreateCustomerRequest req) {
+        CustomerDto dto = customerService.createCustomer(req);
+        return ResponseEntity.created(URI.create("/customers/" + dto.id())).body(dto);
     }
 
     @PutMapping("/{id}")
-    @Transactional
-    public ResponseEntity<CustomerDto> updateCustomer(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateCustomerRequest request) {
-        return customerRepository.findById(id)
-                .map(customer -> {
-                    customer.setName(request.name());
-                    customer.setEmail(request.email());
-                    customer.setPhone(request.phone());
-                    customer.setAllergenRestrictions(request.allergenRestrictions() != null ? request.allergenRestrictions() : 0);
-                    customer.setUpdatedAt(OffsetDateTime.now());
-                    return customerRepository.save(customer);
-                })
-                .map(this::toDto)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    @Operation(summary = "Update customer", description = "Updates an existing customer for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Customer updated successfully"),
+            @ApiResponse(responseCode = "404", description = "Customer not found"),
+            @ApiResponse(responseCode = "400", description = "Validation error")
+    })
+    public ResponseEntity<CustomerDto> update(
+            @Parameter(description = "Customer ID") @PathVariable UUID id,
+            @Parameter(description = "Customer update request") @Valid @RequestBody UpdateCustomerRequest req) {
+        try {
+            CustomerDto dto = customerService.updateCustomer(id, req);
+            return ResponseEntity.ok(dto);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @DeleteMapping("/{id}")
-    @Transactional
-    public ResponseEntity<Void> deleteCustomer(@PathVariable UUID id) {
-        if (customerRepository.existsById(id)) {
-            customerRepository.deleteById(id);
+    @Operation(summary = "Delete customer", description = "Deletes a customer for the authenticated tenant")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Customer deleted successfully"),
+            @ApiResponse(responseCode = "404", description = "Customer not found"),
+            @ApiResponse(responseCode = "409", description = "Cannot delete customer with existing orders")
+    })
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Customer ID") @PathVariable UUID id) {
+        try {
+            customerService.deleteCustomer(id);
             return ResponseEntity.noContent().build();
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.notFound().build();
-    }
-
-    private CustomerDto toDto(Customer customer) {
-        return new CustomerDto(
-                customer.getId(),
-                customer.getTenantId(),
-                customer.getName(),
-                customer.getEmail(),
-                customer.getPhone(),
-                customer.getAllergenRestrictions(),
-                customer.getCreatedAt(),
-                customer.getUpdatedAt()
-        );
     }
 
     public record CustomerDto(

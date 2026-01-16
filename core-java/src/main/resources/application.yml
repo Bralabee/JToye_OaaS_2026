@@ -97,3 +97,8 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
+
+rate-limiting:
+  enabled: ${RATE_LIMIT_ENABLED:true}
+  default-limit: ${RATE_LIMIT_PER_MINUTE:100}
+  burst-capacity: ${RATE_LIMIT_BURST:20}

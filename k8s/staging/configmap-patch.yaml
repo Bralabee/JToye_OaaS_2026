@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # Staging-specific overrides
+  log.level: "DEBUG"
+  sql.log.level: "DEBUG"
+
+  # Staging URLs
+  keycloak.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
+  api.url: "https://api-staging.jtoye.co.uk"
+  frontend.url: "https://app-staging.jtoye.co.uk"

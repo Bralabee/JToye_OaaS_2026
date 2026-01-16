@@ -1,0 +1,21 @@
+# Test profile - Disable rate limiting to avoid test failures
+# Usage: SPRING_PROFILES_ACTIVE=test or --spring.profiles.active=test
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # Auto-create schema for tests
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        generate_statistics: false
+
+rate-limiting:
+  enabled: false  # Disable rate limiting in tests
+
+logging:
+  level:
+    uk.jtoye: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG

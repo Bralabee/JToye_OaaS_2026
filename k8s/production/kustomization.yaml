@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Production overlay configuration
+namespace: jtoye-production
+
+# Reference base configuration
+bases:
+  - ../base
+
+# Production-specific labels
+commonLabels:
+  environment: production
+
+# Production-specific annotations
+commonAnnotations:
+  deployment.timestamp: "REPLACE_WITH_DEPLOYMENT_TIMESTAMP"
+
+# Image tags for production (override defaults)
+images:
+  - name: ghcr.io/jtoye/core-java
+    newTag: v0.8.0
+  - name: ghcr.io/jtoye/edge-go
+    newTag: v0.8.0
+  - name: ghcr.io/jtoye/frontend
+    newTag: v0.8.0
+
+# ConfigMap patches for production environment
+patchesStrategicMerge:
+  - configmap-patch.yaml
+
+# Production replicas scaling (optional - HPA handles this)
+replicas:
+  - name: core-java
+    count: 3
+  - name: edge-go
+    count: 5
+  - name: frontend
+    count: 3

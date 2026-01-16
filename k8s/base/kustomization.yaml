@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base Kubernetes resources
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets-template.yaml
+  - core-java-deployment.yaml
+  - edge-go-deployment.yaml
+  - frontend-deployment.yaml
+  - ingress.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: jtoye-platform
+
+# Common annotations
+commonAnnotations:
+  maintainer: "jtoye-devops-team"
+  documentation: "https://github.com/jtoye/oaas-platform"
