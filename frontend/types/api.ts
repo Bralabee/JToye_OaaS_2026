@@ -122,6 +122,35 @@ export interface CreateCustomerRequest {
   allergenRestrictions?: number
 }
 
+// Financial Transaction Types
+export type VatRate = "ZERO" | "REDUCED" | "STANDARD" | "EXEMPT"
+
+export interface FinancialTransaction {
+  id: string
+  tenantId: string
+  amountPennies: number
+  vatRate: VatRate
+  vatAmountPennies: number
+  description?: string
+  createdAt: string
+}
+
+export interface VatBreakdown {
+  vatRate: VatRate
+  totalAmountPennies: number
+  totalVatPennies: number
+  count: number
+}
+
+export interface FinancialSummary {
+  totalRevenuePennies: number
+  totalExpensesPennies: number
+  netAmountPennies: number
+  totalVatPennies: number
+  transactionCount: number
+  vatBreakdown: VatBreakdown[]
+}
+
 // Allergen constants
 export const ALLERGENS = [
   { bit: 0, name: "Gluten", icon: "🌾" },

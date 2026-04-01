@@ -14,6 +14,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
 
 import java.net.URI;
@@ -74,6 +75,13 @@ public class FinancialTransactionController {
             @Parameter(description = "Transaction creation request") @Valid @RequestBody CreateTransactionRequest request) {
         FinancialTransactionDto dto = financialTransactionService.createTransaction(request);
         return ResponseEntity.created(URI.create("/financial-transactions/" + dto.id())).body(dto);
+    }
+
+    @GetMapping("/summary")
+    @Operation(summary = "Get financial summary", description = "Returns aggregated revenue, expenses, net amount, and VAT breakdown for the authenticated tenant")
+    @ApiResponse(responseCode = "200", description = "Summary generated successfully")
+    public FinancialSummaryDto getSummary() {
+        return financialTransactionService.getSummary();
     }
 
     // NOTE: No PUT or DELETE endpoints - financial transactions are IMMUTABLE

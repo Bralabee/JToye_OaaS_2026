@@ -7,11 +7,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
 import uk.jtoye.core.security.TenantContext;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for financial transaction management operations.
@@ -98,6 +101,51 @@ public class FinancialTransactionService {
         log.debug("Fetching financial transaction by reference: {}", reference);
         return financialTransactionRepository.findOneByReference(reference)
                 .map(financialTransactionMapper::toDto);
+    }
+
+    /**
+     * Get a financial summary for the current tenant.
+     * Aggregates revenue, expenses, VAT breakdown, and transaction count.
+     */
+    @Transactional(readOnly = true)
+    public FinancialSummaryDto getSummary() {
+        log.debug("Generating financial summary for current tenant");
+        List<FinancialTransaction> transactions = financialTransactionRepository.findAll();
+
+        long totalRevenue = transactions.stream()
+                .mapToLong(FinancialTransaction::getAmountPennies)
+                .filter(a -> a > 0)
+                .sum();
+
+        long totalExpenses = transactions.stream()
+                .mapToLong(FinancialTransaction::getAmountPennies)
+                .filter(a -> a < 0)
+                .map(Math::abs)
+                .sum();
+
+        long totalVat = transactions.stream()
+                .mapToLong(FinancialTransaction::calculateVatAmount)
+                .sum();
+
+        List<FinancialSummaryDto.VatBreakdown> vatBreakdown = transactions.stream()
+                .collect(Collectors.groupingBy(FinancialTransaction::getVatRate))
+                .entrySet().stream()
+                .map(entry -> new FinancialSummaryDto.VatBreakdown(
+                        entry.getKey(),
+                        entry.getValue().stream().mapToLong(FinancialTransaction::getAmountPennies).sum(),
+                        entry.getValue().stream().mapToLong(FinancialTransaction::calculateVatAmount).sum(),
+                        entry.getValue().size()
+                ))
+                .toList();
+
+        return new FinancialSummaryDto(
+                totalRevenue,
+                totalExpenses,
+                totalRevenue - totalExpenses,
+                totalVat,
+                transactions.size(),
+                vatBreakdown
+        );
     }
 
     // NOTE: No update or delete methods - financial transactions are IMMUTABLE

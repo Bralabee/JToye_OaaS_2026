@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
 import uk.jtoye.core.security.TenantContext;
 
@@ -397,6 +398,54 @@ class FinancialTransactionServiceTest {
         // Then
         assertNull(result.description());
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
+    }
+
+    @Test
+    @DisplayName("getSummary - Returns correct aggregation of transactions")
+    void testGetSummary() {
+        // Given: mix of revenue and expense transactions with different VAT rates
+        FinancialTransaction revenue1 = new FinancialTransaction(20000L, VatRate.STANDARD, "ORD-001");
+        revenue1.setTenantId(tenantId);
+        setField(revenue1, "id", UUID.randomUUID());
+        setField(revenue1, "createdAt", OffsetDateTime.now());
+
+        FinancialTransaction revenue2 = new FinancialTransaction(5000L, VatRate.ZERO, "ORD-002");
+        revenue2.setTenantId(tenantId);
+        setField(revenue2, "id", UUID.randomUUID());
+        setField(revenue2, "createdAt", OffsetDateTime.now());
+
+        FinancialTransaction refund = new FinancialTransaction(-3000L, VatRate.STANDARD, "REFUND-001");
+        refund.setTenantId(tenantId);
+        setField(refund, "id", UUID.randomUUID());
+        setField(refund, "createdAt", OffsetDateTime.now());
+
+        when(financialTransactionRepository.findAll()).thenReturn(List.of(revenue1, revenue2, refund));
+
+        // When
+        FinancialSummaryDto summary = financialTransactionService.getSummary();
+
+        // Then
+        assertEquals(25000L, summary.totalRevenuePennies());   // 20000 + 5000
+        assertEquals(3000L, summary.totalExpensesPennies());    // abs(-3000)
+        assertEquals(22000L, summary.netAmountPennies());       // 25000 - 3000
+        assertEquals(3400L, summary.totalVatPennies());         // (20000*0.2) + 0 + (-3000*0.2) = 4000 + 0 + (-600) = 3400
+        assertEquals(3, summary.transactionCount());
+        assertEquals(2, summary.vatBreakdown().size());         // STANDARD + ZERO
+    }
+
+    @Test
+    @DisplayName("getSummary - Returns zeros when no transactions exist")
+    void testGetSummary_Empty() {
+        when(financialTransactionRepository.findAll()).thenReturn(List.of());
+
+        FinancialSummaryDto summary = financialTransactionService.getSummary();
+
+        assertEquals(0L, summary.totalRevenuePennies());
+        assertEquals(0L, summary.totalExpensesPennies());
+        assertEquals(0L, summary.netAmountPennies());
+        assertEquals(0L, summary.totalVatPennies());
+        assertEquals(0, summary.transactionCount());
+        assertTrue(summary.vatBreakdown().isEmpty());
     }
 
     @Test
