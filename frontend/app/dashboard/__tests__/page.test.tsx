@@ -2,6 +2,23 @@ import { render, screen, waitFor } from '@testing-library/react'
 import DashboardPage from '../page'
 import apiClient from '@/lib/api-client'
 
+import React from 'react'
+
+// Mock recharts — jsdom doesn't support SVG rendering
+jest.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PieChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Pie: () => <div />,
+  Cell: () => <div />,
+  BarChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Bar: () => <div />,
+  XAxis: () => <div />,
+  YAxis: () => <div />,
+  CartesianGrid: () => <div />,
+  Tooltip: () => <div />,
+  Legend: () => <div />,
+}))
+
 // Mock the API client
 jest.mock('@/lib/api-client')
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -13,9 +30,24 @@ jest.mock('@/hooks/use-toast', () => ({
   }),
 }))
 
+// Mock ResizeObserver for recharts
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
+const defaultMock = (url: string) => {
+  if (url === '/financial-transactions/summary') {
+    return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
+  }
+  return Promise.resolve({ data: { content: [], totalElements: 0 } })
+}
+
 describe('Dashboard Page', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockedApiClient.get.mockImplementation(defaultMock as jest.Mock)
   })
 
   it('should render loading spinner initially', () => {
@@ -29,13 +61,6 @@ describe('Dashboard Page', () => {
   })
 
   it('should render dashboard heading after loading', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 0,
-      },
-    })
-
     render(<DashboardPage />)
 
     await waitFor(() => {
@@ -44,13 +69,6 @@ describe('Dashboard Page', () => {
   })
 
   it('should display welcome message', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 0,
-      },
-    })
-
     render(<DashboardPage />)
 
     await waitFor(() => {
@@ -59,11 +77,9 @@ describe('Dashboard Page', () => {
   })
 
   it('should fetch and display stats', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 42,
-      },
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url === '/financial-transactions/summary') return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
+      return Promise.resolve({ data: { content: [], totalElements: 42 } })
     })
 
     render(<DashboardPage />)
@@ -75,13 +91,6 @@ describe('Dashboard Page', () => {
   })
 
   it('should display all stat card titles', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 0,
-      },
-    })
-
     render(<DashboardPage />)
 
     await waitFor(() => {
@@ -93,13 +102,6 @@ describe('Dashboard Page', () => {
   })
 
   it('should display "No orders yet" when there are no recent orders', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 0,
-      },
-    })
-
     render(<DashboardPage />)
 
     await waitFor(() => {
@@ -123,12 +125,12 @@ describe('Dashboard Page', () => {
       },
     ]
 
-    let callCount = 0
-    mockedApiClient.get.mockImplementation(() => {
-      callCount++
-      if (callCount === 5) {
-        // Last call is for recent orders
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url === '/orders?size=10&sort=createdAt,desc') {
         return Promise.resolve({ data: { content: mockOrders, totalElements: 1 } })
+      }
+      if (url === '/financial-transactions/summary') {
+        return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
       }
       return Promise.resolve({ data: { content: [], totalElements: 5 } })
     })
@@ -143,13 +145,6 @@ describe('Dashboard Page', () => {
   })
 
   it('should make API calls to fetch dashboard data', async () => {
-    mockedApiClient.get.mockResolvedValue({
-      data: {
-        content: [],
-        totalElements: 0,
-      },
-    })
-
     render(<DashboardPage />)
 
     await waitFor(() => {
@@ -158,6 +153,8 @@ describe('Dashboard Page', () => {
       expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/customers?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=10&sort=createdAt,desc')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=200')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/financial-transactions/summary')
     })
   })
 })
