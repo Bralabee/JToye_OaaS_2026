@@ -110,6 +110,19 @@ redis_data/
 rabbitmq_data/
 keycloak_data/
 
+### AI Agent Artifacts ###
+.agent/
+SPRING_FRAMEWORK_UPGRADE_REPORT.md
+
+### IDE extras ###
+.idea/workspace.xml
+.idea/copilot.data.migration.ask2agent.xml
+.idea/modules/
+
+### SWC Cache ###
+.swc/
+**/.swc/
+
 ### Node modules ###
 node_modules/
 .next/
