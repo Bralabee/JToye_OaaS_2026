@@ -559,7 +559,7 @@ export default function OrdersPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-semibold">
-                            £{(order.totalPricePennies / 100).toFixed(2)}
+                            £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
                           </TableCell>
                           <TableCell className="text-slate-600">
                             {formatDistanceToNow(new Date(order.createdAt), {

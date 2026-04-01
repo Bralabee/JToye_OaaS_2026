@@ -51,6 +51,10 @@ const productSchema = z.object({
     .string()
     .min(1, "Ingredients are required")
     .max(1000, "Ingredients text too long"),
+  pricePounds: z
+    .string()
+    .min(1, "Price is required")
+    .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Price must be a non-negative number"),
 })
 
 type ProductFormData = z.infer<typeof productSchema>
@@ -110,7 +114,7 @@ export default function ProductsPage() {
 
   const openCreateDialog = () => {
     setEditingProduct(null)
-    reset({ sku: "", title: "", ingredientsText: "" })
+    reset({ sku: "", title: "", ingredientsText: "", pricePounds: "" })
     setAllergenMask(0)
     setDialogOpen(true)
   }
@@ -120,6 +124,7 @@ export default function ProductsPage() {
     setValue("sku", product.sku)
     setValue("title", product.title)
     setValue("ingredientsText", product.ingredientsText)
+    setValue("pricePounds", ((product.pricePennies || 0) / 100).toFixed(2))
     setAllergenMask(product.allergenMask)
     setDialogOpen(true)
   }
@@ -138,8 +143,11 @@ export default function ProductsPage() {
       setSubmitting(true)
 
       const payload: CreateProductRequest = {
-        ...data,
+        sku: data.sku,
+        title: data.title,
+        ingredientsText: data.ingredientsText,
         allergenMask,
+        pricePennies: Math.round(parseFloat(data.pricePounds) * 100),
       }
 
       if (editingProduct) {
@@ -418,6 +426,21 @@ export default function ProductsPage() {
                 <p className="text-sm text-red-600">
                   {errors.ingredientsText.message}
                 </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pricePounds">Price (£)</Label>
+              <Input
+                id="pricePounds"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="e.g., 12.50"
+                {...register("pricePounds")}
+              />
+              {errors.pricePounds && (
+                <p className="text-sm text-red-600">{errors.pricePounds.message}</p>
               )}
             </div>
 
