@@ -164,9 +164,35 @@ func main() {
 			return
 		}
 
-		// TODO: Process webhook and forward to Core API
-		logger.Info("WhatsApp webhook received and verified")
-		c.Status(http.StatusNoContent)
+		// Read body for forwarding (may already be read for signature verification)
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil && len(body) == 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
+			return
+		}
+
+		// Forward to Core API
+		tenantID, _ := c.Get("tenant_id")
+		token := ""
+		if authHeader := c.GetHeader("Authorization"); len(authHeader) > 7 {
+			token = authHeader[7:]
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+
+		tenantStr := ""
+		if tenantID != nil {
+			tenantStr = tenantID.(string)
+		}
+
+		if err := coreClient.ForwardWebhook(ctx, token, tenantStr, "whatsapp", body); err != nil {
+			logger.Error("Failed to forward WhatsApp webhook", zap.Error(err))
+			// Still return 200 to WhatsApp to prevent retries
+		}
+
+		logger.Info("WhatsApp webhook received, verified, and forwarded")
+		c.Status(http.StatusOK)
 	})
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))

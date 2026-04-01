@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
+import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 
 import java.util.List;
@@ -61,6 +62,18 @@ public class OrderController {
     @Operation(summary = "Get order by ID", description = "Returns a single order for the authenticated tenant")
     public ResponseEntity<OrderDto> getOrderById(@PathVariable UUID id) {
         return orderService.getOrderById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Get order with items by ID.
+     * GET /orders/{id}/detail
+     */
+    @GetMapping("/{id}/detail")
+    @Operation(summary = "Get order detail with items", description = "Returns order with line items for the authenticated tenant")
+    public ResponseEntity<OrderDetailDto> getOrderDetail(@PathVariable UUID id) {
+        return orderService.getOrderDetailById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

@@ -1,6 +1,6 @@
 plugins {
-    id("org.springframework.boot") version "3.3.4" apply false
-    id("io.spring.dependency-management") version "1.1.6" apply false
+    id("org.springframework.boot") version "3.4.2" apply false
+    id("io.spring.dependency-management") version "1.1.7" apply false
     java
 }
 
@@ -12,7 +12,7 @@ java {
 
 allprojects {
     group = "uk.jtoye"
-    version = "0.1.0-SNAPSHOT"
+    version = "1.2.0"
 }
 
 subprojects {

@@ -70,7 +70,7 @@ describe('Products Page', () => {
     render(<ProductsPage />)
 
     await waitFor(() => {
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/products?size=100&sort=createdAt,desc')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/products?page=0&size=20&sort=createdAt,desc')
     })
   })
 

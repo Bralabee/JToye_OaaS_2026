@@ -44,6 +44,7 @@ import {
   AlertCircle,
   Calendar,
 } from "lucide-react"
+import { Pagination } from "@/components/ui/pagination"
 import type { Customer, CreateCustomerRequest } from "@/types/api"
 import {
   ALLERGENS,
@@ -61,9 +62,14 @@ const customerSchema = z.object({
 
 type CustomerFormData = z.infer<typeof customerSchema>
 
+const PAGE_SIZE = 20
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
@@ -85,15 +91,17 @@ export default function CustomersPage() {
   useEffect(() => {
     fetchCustomers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPage])
 
   const fetchCustomers = async () => {
     try {
       setLoading(true)
       const response = await apiClient.get(
-        "/customers?size=100&sort=createdAt,desc"
+        `/customers?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
       )
       setCustomers(response.data.content || [])
+      setTotalPages(response.data.totalPages || 0)
+      setTotalElements(response.data.totalElements || 0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load customers"
       toast({
@@ -159,7 +167,8 @@ export default function CustomersPage() {
       setDialogOpen(false)
       reset()
       setAllergenRestrictions(0)
-      fetchCustomers()
+      if (currentPage === 0) fetchCustomers()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : `Failed to ${editingCustomer ? "update" : "create"} customer`
       toast({
@@ -184,7 +193,8 @@ export default function CustomersPage() {
       })
       setDeleteDialogOpen(false)
       setDeletingCustomer(null)
-      fetchCustomers()
+      if (currentPage === 0) fetchCustomers()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to delete customer"
       toast({
@@ -235,7 +245,7 @@ export default function CustomersPage() {
           <CardHeader>
             <CardTitle>All Customers</CardTitle>
             <CardDescription>
-              {customers.length} customer{customers.length !== 1 ? "s" : ""} in total
+              {totalElements} customer{totalElements !== 1 ? "s" : ""} in total
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -361,6 +371,13 @@ export default function CustomersPage() {
                 </Table>
               </div>
             )}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalElements={totalElements}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
           </CardContent>
         </Card>
       </motion.div>

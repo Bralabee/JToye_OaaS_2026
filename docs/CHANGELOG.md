@@ -5,7 +5,48 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-04-01 (Feature Expansion & Infrastructure Fixes)
+
+### Added
+- **Order Detail Endpoint**: `GET /orders/{id}/detail` returns order with line items via `OrderDetailDto` + `OrderItemDto` (MapStruct generated).
+- **RabbitMQ Integration**: Added `spring-boot-starter-amqp`, exchange `order.events`, queue `order.state-changes`. Order state transitions publish events with routing key `order.state.{status}`.
+- **Customer-Order Linking**: `CreateOrderRequest` accepts optional `customerId`. When provided, customer name/email/phone are auto-populated from the Customer entity.
+- **Auto Financial Transactions**: Completing an order automatically creates a `FinancialTransaction` with STANDARD VAT and order number as reference.
+- **Frontend Pagination**: All 4 CRUD pages (shops, products, orders, customers) paginate at 20 items/page with full navigation controls.
+- **Frontend Search**: Text search on Shops (name/address) and Products (title/SKU) pages.
+- **Frontend Status Filter**: Dropdown filter on Orders page (All/Draft/Pending/Confirmed/Preparing/Ready/Completed/Cancelled).
+- **NextAuth Token Refresh**: Silent token rotation via Keycloak OIDC refresh_token grant when access token expires.
+- **WhatsApp Webhook Forwarding**: Edge-go now forwards verified webhook payloads to Core API (was previously TODO).
+- **Project Analysis Docs**: Comprehensive analysis directory with deep-dive catalogs for each module.
+
+### Fixed
+- **Version Alignment**: `build.gradle.kts` updated from `0.1.0-SNAPSHOT` to `1.1.0`. Spring Boot refs corrected to `3.4.2` across all docs.
+- **SpringDoc Upgrade**: `2.6.0` -> `2.8.6` to fix `NoSuchMethodError` with Spring Boot 3.4.2.
+- **PostgreSQL 15 Permissions**: Added `CREATE` grant on public schema for `jtoye_app` (required for Flyway in PostgreSQL 15+).
+- **Keycloak Docker Networking**: Split-horizon OIDC config (`KEYCLOAK_ISSUER_INTERNAL`) and `KC_HOSTNAME` for consistent issuer across Docker containers.
+- **Docker Compose Frontend**: Removed `keycloak:host-gateway` extra_host that overrode internal DNS resolution.
+
+### Changed
+- Promoted project version to `1.2.0`.
+- Test profile now excludes `RabbitAutoConfiguration` so unit tests don't need a running broker.
+- `OrderService` now accepts `CustomerRepository` and `FinancialTransactionService` dependencies.
+
+## [1.1.1] - 2026-01-25 (Security Hardening & Infrastructure Verification)
+
+### Added
+- **Production Security**: Added `@Profile("!prod")` to `OpenApiConfig.java` to disable Swagger UI in production environment.
+- **Comprehensive Analysis Report**: Created detailed project analysis covering architecture, security, code quality, and recommendations.
+- **Implementation Plan**: Documented performance testing commands, observability enhancements, and 30+ item production deployment checklist.
+- **Monitoring Stack Verification**: Verified Prometheus (9091), Grafana (3002), PostgreSQL Exporter (9187) all operational.
+
+### Changed
+- **Database Permissions**: Granted jtoye_app user full CRUD permissions on all tables for RLS testing.
+- **Network Configuration**: Created jtoye-network Docker network for service interconnection.
+
+### Verified
+- **Security Controls**: Confirmed DevTenantController already has `@Profile({"dev", "local", "default"})` restriction.
+- **Test Status**: 115/142 unit tests pass; 27 integration tests require Testcontainers (by design).
+- **Infrastructure**: PostgreSQL (5433), Keycloak (8085), Prometheus (9091), Grafana (3002) all healthy.
 
 ## [1.1.0] - 2026-01-16 (Batch Sync Functional Implementation)
 
