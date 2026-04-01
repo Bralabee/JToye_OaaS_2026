@@ -5,14 +5,23 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-04-01 (Dashboard Charts, Search & Customer Orders)
+## [1.3.0] - 2026-04-01 (Real-time, Search, Charts, Labels & WhatsApp)
 
 ### Added
+- **Real-time Order Updates**: SSE endpoint `GET /orders/stream` broadcasts order state changes. Frontend auto-refreshes orders page via `EventSource`.
+- **WhatsApp Message Parser**: `edge-go/internal/whatsapp` package parses Cloud API webhook payloads into structured order items (regex: "Nx Product" patterns). 6 Go tests.
+- **Allergen Label PDFs**: `GET /products/{id}/label` generates Natasha's Law compliant PDF labels (product name, SKU, price, ingredients, allergen warnings). OpenPDF.
 - **Dashboard Charts**: Order status distribution donut chart and revenue by VAT category bar chart (recharts).
 - **Backend Search**: `GET /shops/search?q=` and `GET /products/search?q=` with JPQL LIKE queries on name/address and title/SKU.
 - **Customer Order History**: `GET /orders/customer/{customerId}` endpoint. "View Orders" button on customers page.
-- **Server-Side Search**: Shops and products pages now call backend search endpoints (debounced, 2+ chars) instead of client-side filtering.
+- **Server-Side Search**: Shops and products pages call backend search endpoints (debounced, 300ms, 2+ chars).
 - **Customer Order Filter**: Orders page reads `?customer=` query param and filters by customer ID.
+
+### Fixed
+- **Label Download Auth**: Label button uses authenticated `apiClient` with blob download instead of raw URL (which lacked JWT).
+
+### Removed
+- 18 unused Java imports/variables across 14 files.
 
 ## [1.2.1] - 2026-04-01 (Feature Completion & Bug Fixes)
 
