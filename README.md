@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-156%2F156%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-166%2F166%20passing-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---

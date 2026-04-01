@@ -5,6 +5,27 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-04-01 (Feature Completion & Bug Fixes)
+
+### Added
+- **Order Detail Dialog**: Click any order row to view full details — order number, status, customer info, shop name, and line items table with product name resolution, quantities, and prices.
+- **RabbitMQ Consumer**: `OrderStateChangeListener` consumes from `order.state-changes` queue with dedicated handlers for COMPLETED and CANCELLED states. Extension points for notifications/webhooks.
+- **Financial Reporting**: `GET /financial-transactions/summary` endpoint returning revenue, expenses, net, VAT breakdown per rate. New Finance dashboard page with summary cards, VAT breakdown panel, and paginated transaction list.
+- **Finance Sidebar Link**: Finance page accessible from sidebar navigation.
+- **Product Price Column**: Products table now displays price per product.
+
+### Fixed
+- **Product Price Field**: Product create/edit form now includes required Price (£) input — previously returned 400 from backend.
+- **Order Total NaN**: Fixed `Order` type field name mismatch (`totalPricePennies` → `totalAmountPennies`) that caused £NaN display in orders table and dashboard.
+- **Version Alignment**: OpenAPI config version `0.1.0-SNAPSHOT` → `1.2.0`, README badge `1.1.0` → `1.2.0`.
+- **Stale CreateOrderRequest**: Removed unused `totalPricePennies` field (total is calculated server-side from items).
+
+### Tests
+- 120 Java unit tests passing (18 financial, 3 listener, +99 existing)
+- 43 Jest tests passing
+- 3 Go test suites passing
+- 27 integration tests require TestContainers (by design)
+
 ## [1.2.0] - 2026-04-01 (Feature Expansion & Infrastructure Fixes)
 
 ### Added

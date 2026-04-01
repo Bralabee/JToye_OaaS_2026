@@ -284,6 +284,7 @@ export default function ProductsPage() {
                       <TableHead>SKU</TableHead>
                       <TableHead>Title</TableHead>
                       <TableHead>Allergens</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -337,6 +338,11 @@ export default function ProductsPage() {
                                 })
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {product.pricePennies != null
+                              ? `£${(product.pricePennies / 100).toFixed(2)}`
+                              : "—"}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
