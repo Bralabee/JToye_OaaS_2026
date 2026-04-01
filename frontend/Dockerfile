@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for frontend (Next.js 14)
+# Multi-stage Dockerfile for frontend (Next.js 16)
 # Optimized for production: standalone build, minimal size
 
 # Stage 1: Dependencies
@@ -45,7 +45,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy standalone build (Next.js 14 optimization)
+# Copy standalone build (Next.js 16 optimization)
 # This includes only necessary files, significantly reducing image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
@@ -69,6 +69,6 @@ CMD ["node", "server.js"]
 
 # Labels for image metadata
 LABEL org.opencontainers.image.title="J'Toye OaaS Frontend"
-LABEL org.opencontainers.image.description="Next.js 14 frontend with NextAuth.js authentication"
+LABEL org.opencontainers.image.description="Next.js 16 frontend with NextAuth.js authentication"
 LABEL org.opencontainers.image.vendor="J'Toye"
 LABEL org.opencontainers.image.source="https://github.com/jtoye/oaas"
