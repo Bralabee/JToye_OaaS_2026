@@ -111,7 +111,7 @@ cd frontend && npm install && npm run dev
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Browser                                                     │
-│  └─ Next.js 14 Frontend (Port 3000)                        │
+│  └─ Next.js 16 Frontend (Port 3000)                        │
 │     └─ NextAuth.js v5 ← → Keycloak (Port 8085)            │
 └──────────────────────┬────────────────────────────────────┘
                        │
@@ -260,7 +260,7 @@ CREATE POLICY tenant_isolation ON shops
 JToye_OaaS_2026/
 ├── core-java/          # Spring Boot backend
 ├── edge-go/            # Go API gateway
-├── frontend/           # Next.js 14 UI
+├── frontend/           # Next.js 16 UI
 ├── infra/              # Docker Compose, Keycloak, DB
 ├── k8s/                # Kubernetes manifests
 ├── docs/               # Documentation
