@@ -47,6 +47,9 @@ services:
       KC_DB_PASSWORD: secret
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: "8085"
+      KC_HOSTNAME_STRICT: "false"
       JAVA_OPTS: "-Xms512m -Xmx1024m"
     ports:
       - "8085:8080"
@@ -187,6 +190,7 @@ services:
       KEYCLOAK_CLIENT_ID: core-api
       KEYCLOAK_CLIENT_SECRET: core-api-secret-2026
       KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
+      KEYCLOAK_ISSUER_INTERNAL: http://keycloak:8080/realms/jtoye-dev
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev
       PORT: 3000
       HOSTNAME: "0.0.0.0"
@@ -194,7 +198,6 @@ services:
       - "3000:3000"
     extra_hosts:
       - "localhost:host-gateway"
-      - "keycloak:host-gateway"
     depends_on:
       - core-java
       - keycloak

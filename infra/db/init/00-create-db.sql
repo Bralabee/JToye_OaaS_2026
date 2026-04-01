@@ -33,8 +33,8 @@ GRANT CONNECT ON DATABASE jtoye TO jtoye_app;
 \connect jtoye
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Grant usage on schema and all tables to jtoye_app
-GRANT USAGE ON SCHEMA public TO jtoye_app;
+-- Grant usage and create on schema to jtoye_app (CREATE needed for Flyway migrations in PostgreSQL 15+)
+GRANT USAGE, CREATE ON SCHEMA public TO jtoye_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO jtoye_app;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO jtoye_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO jtoye_app;

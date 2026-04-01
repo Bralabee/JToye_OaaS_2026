@@ -11,6 +11,7 @@ public class CreateOrderRequest {
     @NotNull
     private UUID shopId;
 
+    private UUID customerId;
     private String customerName;
     private String customerEmail;
     private String customerPhone;
@@ -26,6 +27,14 @@ public class CreateOrderRequest {
 
     public void setShopId(UUID shopId) {
         this.shopId = shopId;
+    }
+
+    public UUID getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(UUID customerId) {
+        this.customerId = customerId;
     }
 
     public String getCustomerName() {

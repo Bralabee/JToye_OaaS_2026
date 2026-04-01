@@ -33,9 +33,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Store, Plus, Pencil, Trash2, MapPin, Calendar } from "lucide-react"
+import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search } from "lucide-react"
+import { Pagination } from "@/components/ui/pagination"
 import type { Shop } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
+
+const PAGE_SIZE = 20
 
 const shopSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
@@ -47,6 +50,10 @@ type ShopFormData = z.infer<typeof shopSchema>
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
@@ -67,13 +74,15 @@ export default function ShopsPage() {
   useEffect(() => {
     fetchShops()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPage])
 
   const fetchShops = async () => {
     try {
       setLoading(true)
-      const response = await apiClient.get("/shops?size=100&sort=createdAt,desc")
+      const response = await apiClient.get(`/shops?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       setShops(response.data.content || [])
+      setTotalPages(response.data.totalPages || 0)
+      setTotalElements(response.data.totalElements || 0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load shops"
       toast({
@@ -126,7 +135,8 @@ export default function ShopsPage() {
 
       setDialogOpen(false)
       reset()
-      fetchShops()
+      if (currentPage === 0) fetchShops()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : `Failed to ${editingShop ? "update" : "create"} shop`
       toast({
@@ -151,7 +161,8 @@ export default function ShopsPage() {
       })
       setDeleteDialogOpen(false)
       setDeletingShop(null)
-      fetchShops()
+      if (currentPage === 0) fetchShops()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to delete shop"
       toast({
@@ -197,11 +208,22 @@ export default function ShopsPage() {
         transition={{ delay: 0.1 }}
       >
         <Card>
-          <CardHeader>
-            <CardTitle>All Shops</CardTitle>
-            <CardDescription>
-              {shops.length} shop{shops.length !== 1 ? "s" : ""} in total
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>All Shops</CardTitle>
+              <CardDescription>
+                {totalElements} shop{totalElements !== 1 ? "s" : ""} in total
+              </CardDescription>
+            </div>
+            <div className="relative w-[220px]">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search shops..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {shops.length === 0 ? (
@@ -230,7 +252,7 @@ export default function ShopsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shops.map((shop) => (
+                    {shops.filter(s => !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.address?.toLowerCase().includes(searchQuery.toLowerCase())).map((shop) => (
                       <motion.tr
                         key={shop.id}
                         initial={{ opacity: 0 }}
@@ -285,6 +307,13 @@ export default function ShopsPage() {
                 </Table>
               </div>
             )}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalElements={totalElements}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
           </CardContent>
         </Card>
       </motion.div>

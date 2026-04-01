@@ -1,6 +1,6 @@
 plugins {
-    id("org.springframework.boot") version "3.3.4"
-    id("io.spring.dependency-management") version "1.1.6"
+    id("org.springframework.boot") version "3.4.2"
+    id("io.spring.dependency-management") version "1.1.7"
     java
 }
 
@@ -28,6 +28,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-cache")
 
+    // RabbitMQ messaging
+    implementation("org.springframework.boot:spring-boot-starter-amqp")
+
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
     implementation("com.bucket4j:bucket4j-redis:8.10.1")
@@ -43,7 +46,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.3")
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 
     // Lombok for boilerplate reduction
     compileOnly("org.projectlombok:lombok")

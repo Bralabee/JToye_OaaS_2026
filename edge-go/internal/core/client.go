@@ -119,6 +119,44 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 	return resp, nil
 }
 
+// ForwardWebhook sends a raw webhook payload to Core API
+func (c *Client) ForwardWebhook(ctx context.Context, token, tenantID string, source string, payload []byte) error {
+	_, err := c.breaker.Execute(func() (interface{}, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/webhooks/"+source, bytes.NewBuffer(payload))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		httpReq.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+token)
+		}
+		if tenantID != "" {
+			httpReq.Header.Set("X-Tenant-Id", tenantID)
+		}
+
+		httpResp, err := c.client.Do(httpReq)
+		if err != nil {
+			c.logger.Error("Webhook forward failed", zap.String("source", source), zap.Error(err))
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+		defer httpResp.Body.Close()
+
+		if httpResp.StatusCode >= 500 {
+			body, _ := io.ReadAll(httpResp.Body)
+			return nil, fmt.Errorf("server error: %d: %s", httpResp.StatusCode, string(body))
+		}
+
+		if httpResp.StatusCode >= 400 {
+			body, _ := io.ReadAll(httpResp.Body)
+			c.logger.Warn("Webhook forward rejected", zap.Int("status", httpResp.StatusCode), zap.String("body", string(body)))
+		}
+
+		return nil, nil
+	})
+	return err
+}
+
 // HealthCheck checks if the Core API is healthy
 func (c *Client) HealthCheck(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/health", nil)

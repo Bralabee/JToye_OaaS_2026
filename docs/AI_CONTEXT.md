@@ -1,10 +1,10 @@
 ### System Context for AI Agents
 
 Project: J'Toye OaaS (UK Retail 2026)
-Version: 1.1.0 (Batch Sync Functional Implementation)
+Version: 1.1.1 (Security Hardening & Infrastructure Verification)
 
 Stack
-- Core: Java 21, Spring Boot 3.3.4, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
+- Core: Java 21, Spring Boot 3.4.2, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
 - Edge: Go 1.22, Gin, circuit breakers (gobreaker), rate limiting
 - Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
@@ -135,6 +135,7 @@ Environment Configuration & Profiles
   - `staging`: Production-like with DEBUG logging, Swagger enabled, full error details for QA testing
   - `prod`: Hardened security (no Swagger, no error details, INFO logging, JSON structured logs, graceful shutdown)
 - Profile Selection: Set `SPRING_PROFILES_ACTIVE=prod` or `--spring.profiles.active=prod`
+- **OpenAPI/Swagger**: Disabled in production via `@Profile("!prod")` on `OpenApiConfig.java`
 - ✅ **Full-Stack Docker**: `docker-compose.full-stack.yml` - NO .env files needed (all values hardcoded)
 - ⚠️ **Local Development**: REQUIRES environment files before running
   - `frontend/.env.local` (from `frontend/.env.local.example`)

@@ -17,6 +17,8 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemRequest;
+import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -57,10 +59,19 @@ class OrderServiceTest {
     private ShopRepository shopRepository;
 
     @Mock
+    private CustomerRepository customerRepository;
+
+    @Mock
     private OrderStateMachineService stateMachineService;
 
     @Mock
     private OrderMapper orderMapper;
+
+    @Mock
+    private OrderEventPublisher eventPublisher;
+
+    @Mock
+    private FinancialTransactionService financialTransactionService;
 
     @InjectMocks
     private OrderService orderService;

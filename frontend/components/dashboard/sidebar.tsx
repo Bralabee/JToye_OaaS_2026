@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -9,7 +10,9 @@ import {
   ShoppingCart,
   Users,
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Moon,
+  Sun,
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
@@ -25,6 +28,21 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const [dark, setDark] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem("theme")
+    const isDark = saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
+    setDark(isDark)
+    document.documentElement.classList.toggle("dark", isDark)
+  }, [])
+
+  const toggleDark = () => {
+    const next = !dark
+    setDark(next)
+    document.documentElement.classList.toggle("dark", next)
+    localStorage.setItem("theme", next ? "dark" : "light")
+  }
 
   return (
     <div className="flex h-full w-64 flex-col bg-slate-900 text-white">
@@ -74,8 +92,16 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-slate-800 p-4">
+      {/* Theme Toggle + Logout */}
+      <div className="border-t border-slate-800 p-4 space-y-1">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+          onClick={toggleDark}
+        >
+          {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          {dark ? "Light Mode" : "Dark Mode"}
+        </Button>
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
