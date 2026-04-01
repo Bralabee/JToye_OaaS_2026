@@ -55,7 +55,7 @@ Prime Directives
    - Pattern: `@Mock` for dependencies, `@InjectMocks` for service under test
    - NO `@SpringBootTest` in unit tests (too slow, use for integration tests only)
    - Mock all dependencies: repositories, mappers, external services
-   - Test counts: 156 tests passing (v1.1.0)
+   - Test counts: 166 tests passing (v1.1.0)
    - Integration tests: Require Docker/PostgreSQL, use `@SpringBootTest` + `@TestPropertySource`
    - Cache behavior: Automatically disabled in test profile to maintain test isolation
 
@@ -314,5 +314,5 @@ Phase 1 Status (COMPLETE)
 - ✅ CORS: Configured for localhost:3000 frontend
 - ✅ Rate Limiting: Tenant-aware Bucket4j + Redis enforcement
 - ✅ Batch Sync: High-volume Edge-to-Core data synchronization
-- ✅ Tests: 156/156 passing (100% success rate)
+- ✅ Tests: 166/166 passing (100% success rate)
 - ✅ Production Ready: 100/100 readiness score
