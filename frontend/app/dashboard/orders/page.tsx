@@ -54,8 +54,8 @@ import {
   Ban,
 } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
-import type { Order, OrderStatus, Shop, Product } from "@/types/api"
-import { formatDistanceToNow } from "date-fns"
+import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api"
+import { formatDistanceToNow, format } from "date-fns"
 import { Trash2 } from "lucide-react"
 
 const orderSchema = z.object({
@@ -216,6 +216,9 @@ export default function OrdersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [orderItems, setOrderItems] = useState<{ productId: string; quantity: number }[]>([])
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const { toast } = useToast()
 
   const {
@@ -259,6 +262,36 @@ export default function OrdersPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchOrderDetail = async (orderId: string) => {
+    try {
+      setDetailLoading(true)
+      setDetailDialogOpen(true)
+      setSelectedOrderDetail(null)
+      const res = await apiClient.get(`/orders/${orderId}/detail`)
+      setSelectedOrderDetail(res.data)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to load order details"
+      toast({
+        variant: "destructive",
+        title: "Error loading order details",
+        description: errorMessage,
+      })
+      setDetailDialogOpen(false)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const getProductName = (productId: string): string => {
+    const product = products.find(p => p.id === productId)
+    return product ? product.title : productId.substring(0, 8) + "..."
+  }
+
+  const getShopName = (shopId: string): string => {
+    const shop = shops.find(s => s.id === shopId)
+    return shop ? shop.name : shopId.substring(0, 8) + "..."
   }
 
   const openCreateDialog = () => {
@@ -499,7 +532,8 @@ export default function OrdersPage() {
                           key={order.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          className="group"
+                          className="group cursor-pointer hover:bg-slate-50"
+                          onClick={() => fetchOrderDetail(order.id)}
                         >
                           <TableCell className="font-mono text-xs">
                             {order.id.substring(0, 8)}...
@@ -533,7 +567,7 @@ export default function OrdersPage() {
                             })}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                               {transitions.map((transition) => {
                                 const TransitionIcon = transition.icon
                                 return (
@@ -731,6 +765,136 @@ export default function OrdersPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          {detailLoading || !selectedOrderDetail ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+            </div>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  <ShoppingCart className="h-5 w-5" />
+                  {selectedOrderDetail.orderNumber || selectedOrderDetail.id.substring(0, 8)}
+                </DialogTitle>
+                <DialogDescription>
+                  Created {format(new Date(selectedOrderDetail.createdAt), "PPpp")}
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Status + Total */}
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 p-4">
+                <Badge className={`${statusConfig[selectedOrderDetail.status].bgColor} flex items-center gap-1 text-white`}>
+                  {(() => { const Icon = statusConfig[selectedOrderDetail.status].icon; return <Icon className="h-3 w-3" /> })()}
+                  {statusConfig[selectedOrderDetail.status].label}
+                </Badge>
+                <span className="text-2xl font-bold">
+                  £{((selectedOrderDetail.totalAmountPennies || 0) / 100).toFixed(2)}
+                </span>
+              </div>
+
+              {/* Customer Info */}
+              <div className="grid grid-cols-2 gap-4 rounded-lg border p-4">
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Customer</p>
+                  <p className="font-medium">{selectedOrderDetail.customerName || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Shop</p>
+                  <p className="font-medium">{getShopName(selectedOrderDetail.shopId)}</p>
+                </div>
+                {selectedOrderDetail.customerEmail && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500">Email</p>
+                    <p className="text-sm">{selectedOrderDetail.customerEmail}</p>
+                  </div>
+                )}
+                {selectedOrderDetail.customerPhone && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500">Phone</p>
+                    <p className="text-sm">{selectedOrderDetail.customerPhone}</p>
+                  </div>
+                )}
+                {selectedOrderDetail.notes && (
+                  <div className="col-span-2">
+                    <p className="text-xs font-medium text-slate-500">Notes</p>
+                    <p className="text-sm">{selectedOrderDetail.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Line Items */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">
+                  Items ({selectedOrderDetail.items?.length || 0})
+                </h3>
+                {selectedOrderDetail.items && selectedOrderDetail.items.length > 0 ? (
+                  <div className="overflow-hidden rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead className="text-center">Qty</TableHead>
+                          <TableHead className="text-right">Unit Price</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedOrderDetail.items.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium">
+                              {getProductName(item.productId)}
+                            </TableCell>
+                            <TableCell className="text-center">{item.quantity}</TableCell>
+                            <TableCell className="text-right">
+                              £{((item.unitPricePennies || 0) / 100).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              £{((item.totalPricePennies || 0) / 100).toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="py-4 text-center text-sm text-slate-500">No items in this order.</p>
+                )}
+              </div>
+
+              {/* Actions */}
+              {getAvailableTransitions(selectedOrderDetail.status).length > 0 && (
+                <div className="flex justify-end gap-2 border-t pt-4">
+                  {getAvailableTransitions(selectedOrderDetail.status).map((transition) => {
+                    const TransitionIcon = transition.icon
+                    return (
+                      <Button
+                        key={transition.action}
+                        size="sm"
+                        className={`${transition.color} text-white`}
+                        onClick={() => {
+                          handleStateTransition(
+                            selectedOrderDetail.id,
+                            transition.endpoint,
+                            transition.action
+                          )
+                          setDetailDialogOpen(false)
+                        }}
+                      >
+                        <TransitionIcon className="mr-1 h-3 w-3" />
+                        {transition.action}
+                      </Button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
