@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
 import {
@@ -367,6 +367,27 @@ export default function ProductsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const res = await apiClient.get(`/products/${product.id}/label`, { responseType: "blob" })
+                                    const url = URL.createObjectURL(res.data)
+                                    const a = document.createElement("a")
+                                    a.href = url
+                                    a.download = `label-${product.sku}.pdf`
+                                    a.click()
+                                    URL.revokeObjectURL(url)
+                                  } catch {
+                                    toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
+                                  }
+                                }}
+                                className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                title="Download allergen label"
+                              >
+                                <FileText className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"

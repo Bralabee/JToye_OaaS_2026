@@ -10,10 +10,19 @@ import uk.jtoye.core.config.RabbitMQConfig;
 public class OrderStateChangeListener {
     private static final Logger log = LoggerFactory.getLogger(OrderStateChangeListener.class);
 
+    private final OrderSseService sseService;
+
+    public OrderStateChangeListener(OrderSseService sseService) {
+        this.sseService = sseService;
+    }
+
     @RabbitListener(queues = RabbitMQConfig.ORDER_EVENTS_QUEUE)
     public void handleOrderStateChange(OrderStateChangeEvent event) {
         log.info("Order state change received: order={} tenant={} {} -> {}",
                 event.orderNumber(), event.tenantId(), event.previousStatus(), event.newStatus());
+
+        // Broadcast to SSE clients for real-time UI updates
+        sseService.broadcast(event);
 
         switch (event.newStatus()) {
             case COMPLETED -> handleOrderCompleted(event);
@@ -26,12 +35,10 @@ public class OrderStateChangeListener {
     private void handleOrderCompleted(OrderStateChangeEvent event) {
         log.info("Order {} completed for tenant {} at {}",
                 event.orderNumber(), event.tenantId(), event.timestamp());
-        // Extension point: trigger email notification, webhook, analytics update
     }
 
     private void handleOrderCancelled(OrderStateChangeEvent event) {
         log.info("Order {} cancelled for tenant {} (was {})",
                 event.orderNumber(), event.tenantId(), event.previousStatus());
-        // Extension point: trigger refund workflow, customer notification
     }
 }
