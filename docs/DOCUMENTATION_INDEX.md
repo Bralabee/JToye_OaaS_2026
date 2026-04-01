@@ -1,7 +1,7 @@
 # Documentation Index - J'Toye OaaS 2026
 
 **Last Updated:** January 16, 2026
-**Project Status:** ✅ v1.1.0 (156/156 tests passing)
+**Project Status:** ✅ v1.1.0 (166/166 tests passing)
 
 ---
 
@@ -91,7 +91,7 @@
 - **Directory Reorganization**: Categorized documentation into `guides/`, `reports/`, `architecture/`, `troubleshooting/`, `config/`, and `archive/`.
 - **AI Context Update**: Refreshed `AI_CONTEXT.md` with v1.1.0 patterns (Service Layer, MapStruct, Batch Sync).
 - **Batch Sync Documentation**: Added functional Batch Sync API examples to `guides/TESTING.md`.
-- **Test Alignment**: Updated all documentation to reflect 156 passing tests and standard `pricePennies` format.
+- **Test Alignment**: Updated all documentation to reflect 166 passing tests and standard `pricePennies` format.
 
 ---
 
