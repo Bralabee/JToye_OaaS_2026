@@ -1,8 +1,7 @@
 # Full-stack Docker Compose for local development and testing
 # Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend
 #
-# ✅ NO .env FILE REQUIRED - All values are hardcoded for simplicity
-# This is the EASIEST way to run the entire stack
+# Requires a .env file — copy .env.example to .env and fill in values.
 #
 # USAGE:
 #   docker-compose -f docker-compose.full-stack.yml up
@@ -17,16 +16,16 @@ services:
     image: postgres:15-alpine
     container_name: jtoye-postgres
     environment:
-      POSTGRES_USER: jtoye
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: jtoye
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/db/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "psql -U jtoye -d jtoye -c 'SELECT 1' && psql -U jtoye -d keycloak -c 'SELECT 1'"]
+      test: ["CMD-SHELL", "psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT 1' && psql -U ${POSTGRES_USER} -d keycloak -c 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,12 +38,12 @@ services:
     container_name: jtoye-keycloak
     command: ["start-dev", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: jtoye
-      KC_DB_PASSWORD: secret
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HOSTNAME: localhost
@@ -73,7 +72,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: jtoye-redis
-    command: redis-server --appendonly yes --requirepass redispass123
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     ports:
       - "6379:6379"
     volumes:
@@ -91,8 +90,8 @@ services:
     image: rabbitmq:3.12-management-alpine
     container_name: jtoye-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: jtoye
-      RABBITMQ_DEFAULT_PASS: rabbitmqpass123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
     ports:
       - "5672:5672"   # AMQP
       - "15672:15672" # Management UI
@@ -116,15 +115,15 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: jtoye
-      DB_USER: jtoye_app
-      DB_PASSWORD: secret
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       REDIS_HOST: redis
-      REDIS_PASSWORD: redispass123
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: jtoye
-      RABBITMQ_PASSWORD: rabbitmqpass123
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"
@@ -186,9 +185,9 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:9090
       NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: hg+spnLq776MvpadmoLBT7BGyFKHABiL46fCbYS6s+M=
-      KEYCLOAK_CLIENT_ID: core-api
-      KEYCLOAK_CLIENT_SECRET: core-api-secret-2026
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
       KEYCLOAK_ISSUER_INTERNAL: http://keycloak:8080/realms/jtoye-dev
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev

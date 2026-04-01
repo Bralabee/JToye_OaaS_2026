@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Testcontainers
 @org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_METHOD)
+@org.junit.jupiter.api.Tag("testcontainers")
 class ShopControllerIntegrationTest {
 
     @Container
@@ -41,6 +42,7 @@ class ShopControllerIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("rate-limiting.enabled", () -> "false");
     }
 
     @Autowired

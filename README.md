@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.3.0-green.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-166%2F166%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-199%2F199%20passing-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -221,12 +221,13 @@ CREATE POLICY tenant_isolation ON shops
 
 ## 📊 Status
 
-### Current Version: v1.1.0
+### Current Version: v1.3.0
 
 **Test Results:**
-- Backend: 144/144 passing ✅
-- Edge: 12/12 passing ✅
-- Total: 156/156 (100%) ✅
+- Backend: 130/130 passing ✅ (+ 37 Testcontainers integration tests, require Docker)
+- Edge: 26/26 passing ✅
+- Frontend: 43/43 passing ✅
+- Total: 199/199 (100%) ✅
 
 **Production Readiness:** 100/100
 
