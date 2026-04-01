@@ -460,7 +460,6 @@ class CustomerServiceTest {
     @DisplayName("updateCustomer - Updates timestamp automatically")
     void testUpdateCustomer_UpdatesTimestamp() {
         // Given
-        OffsetDateTime originalUpdatedAt = testCustomer.getUpdatedAt();
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
         when(customerRepository.saveAndFlush(any(Customer.class))).thenAnswer(invocation -> {
             // Simulate a small delay

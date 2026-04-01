@@ -14,7 +14,6 @@ import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
-import javax.sql.DataSource;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,9 +53,6 @@ class MultiTenantIsolationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private DataSource dataSource;
 
     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-000000000002");
