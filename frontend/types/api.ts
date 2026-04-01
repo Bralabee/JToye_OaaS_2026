@@ -69,6 +69,31 @@ export interface Order {
   updatedAt: string
 }
 
+export interface OrderItem {
+  id: string
+  productId: string
+  quantity: number
+  unitPricePennies: number
+  totalPricePennies: number
+  createdAt: string
+}
+
+export interface OrderDetail {
+  id: string
+  tenantId: string
+  shopId: string
+  orderNumber?: string
+  status: OrderStatus
+  customerName?: string
+  customerEmail?: string
+  customerPhone?: string
+  notes?: string
+  totalAmountPennies: number
+  items: OrderItem[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface CreateOrderRequest {
   shopId: string
   customerName?: string
