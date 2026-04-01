@@ -18,6 +18,7 @@ import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -60,6 +61,12 @@ public class ProductController {
         return productService.getProductById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "Search products", description = "Search products by title or SKU")
+    public List<ProductDto> search(@RequestParam String q) {
+        return productService.search(q);
     }
 
     @PostMapping

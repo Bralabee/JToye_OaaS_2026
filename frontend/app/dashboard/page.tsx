@@ -237,7 +237,7 @@ export default function DashboardPage() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => [`${value} order${value !== 1 ? "s" : ""}`, ""]}
+                      formatter={(value) => [`${value} order${value !== 1 ? "s" : ""}`, ""]}
                     />
                     <Legend />
                   </PieChart>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `£${v}`} />
-                    <Tooltip formatter={(value: number) => [`£${value.toFixed(2)}`, ""]} />
+                    <Tooltip formatter={(value) => [`£${Number(value).toFixed(2)}`, ""]} />
                     <Legend />
                     <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="vat" name="VAT" fill="#a855f7" radius={[4, 4, 0, 0]} />

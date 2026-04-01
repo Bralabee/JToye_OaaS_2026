@@ -13,6 +13,8 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
+import java.util.List;
+
 import java.util.Optional;
 import java.util.UUID;
 
@@ -79,6 +81,17 @@ public class ShopService {
                 pageable.getPageNumber(), pageable.getPageSize());
         return shopRepository.findAll(pageable)
                 .map(shopMapper::toDto);
+    }
+
+    /**
+     * Search shops by name or address (tenant-scoped).
+     */
+    @Transactional(readOnly = true)
+    public List<ShopDto> search(String query) {
+        log.debug("Searching shops with query: {}", query);
+        return shopRepository.search(query).stream()
+                .map(shopMapper::toDto)
+                .toList();
     }
 
     /**
