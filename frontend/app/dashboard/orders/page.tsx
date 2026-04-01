@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -203,7 +204,9 @@ const getAvailableTransitions = (
 
 const PAGE_SIZE = 20
 
-export default function OrdersPage() {
+function OrdersPageInner() {
+  const searchParams = useSearchParams()
+  const customerIdParam = searchParams.get("customer")
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -242,14 +245,19 @@ export default function OrdersPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
+      const ordersPromise = customerIdParam
+        ? apiClient.get(`/orders/customer/${customerIdParam}`)
+        : apiClient.get(`/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       const [ordersRes, shopsRes, productsRes] = await Promise.all([
-        apiClient.get(`/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`),
+        ordersPromise,
         apiClient.get("/shops?size=100"),
         apiClient.get("/products?size=100"),
       ])
-      setOrders(ordersRes.data.content || [])
-      setTotalPages(ordersRes.data.totalPages || 0)
-      setTotalElements(ordersRes.data.totalElements || 0)
+      // Customer endpoint returns array; paginated returns {content, ...}
+      const orderData = customerIdParam ? ordersRes.data : ordersRes.data.content
+      setOrders(orderData || [])
+      setTotalPages(customerIdParam ? 1 : (ordersRes.data.totalPages || 0))
+      setTotalElements(customerIdParam ? (orderData?.length || 0) : (ordersRes.data.totalElements || 0))
       setShops(shopsRes.data.content || [])
       setProducts(productsRes.data.content || [])
     } catch (error: unknown) {
@@ -417,7 +425,9 @@ export default function OrdersPage() {
         <div>
           <h1 className="text-4xl font-bold text-slate-900">Orders</h1>
           <p className="mt-2 text-slate-600">
-            Manage orders and track their status through the workflow
+            {customerIdParam
+              ? "Showing orders for selected customer"
+              : "Manage orders and track their status through the workflow"}
           </p>
         </div>
         <Button onClick={openCreateDialog} className="gap-2">
@@ -898,5 +908,13 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div></div>}>
+      <OrdersPageInner />
+    </Suspense>
   )
 }
