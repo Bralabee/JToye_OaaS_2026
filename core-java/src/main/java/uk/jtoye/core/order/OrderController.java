@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -28,9 +29,21 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderSseService sseService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, OrderSseService sseService) {
         this.orderService = orderService;
+        this.sseService = sseService;
+    }
+
+    /**
+     * Subscribe to real-time order state change events via SSE.
+     * GET /orders/stream
+     */
+    @GetMapping(value = "/stream", produces = "text/event-stream")
+    @Operation(summary = "Order state change stream", description = "Server-Sent Events stream for real-time order updates")
+    public SseEmitter streamOrderEvents() {
+        return sseService.subscribe();
     }
 
     /**

@@ -32,9 +32,11 @@ import java.util.UUID;
 @SecurityRequirement(name = "tenant-header")
 public class ProductController {
     private final ProductService productService;
+    private final ProductLabelService labelService;
 
-    public ProductController(ProductService productService) {
+    public ProductController(ProductService productService, ProductLabelService labelService) {
         this.productService = productService;
+        this.labelService = labelService;
     }
 
     @GetMapping
@@ -67,6 +69,16 @@ public class ProductController {
     @Operation(summary = "Search products", description = "Search products by title or SKU")
     public List<ProductDto> search(@RequestParam String q) {
         return productService.search(q);
+    }
+
+    @GetMapping("/{id}/label")
+    @Operation(summary = "Generate allergen label PDF", description = "Returns a PDF allergen label for the product")
+    public ResponseEntity<byte[]> generateLabel(@PathVariable UUID id) {
+        byte[] pdf = labelService.generateLabel(id);
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/pdf")
+                .header("Content-Disposition", "attachment; filename=label-" + id + ".pdf")
+                .body(pdf);
     }
 
     @PostMapping

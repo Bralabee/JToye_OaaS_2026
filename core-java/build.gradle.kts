@@ -40,6 +40,9 @@ dependencies {
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
 
+    // PDF generation for allergen labels
+    implementation("com.github.librepdf:openpdf:2.0.3")
+
     // Use Spring Boot managed Hibernate ORM version to avoid mismatch
     implementation("org.hibernate.orm:hibernate-envers")
     implementation("net.sf.jasperreports:jasperreports:6.21.3")
