@@ -76,6 +76,16 @@ export default function ShopsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
+  useEffect(() => {
+    if (searchQuery.length >= 2) {
+      const timer = setTimeout(() => searchShops(searchQuery), 300)
+      return () => clearTimeout(timer)
+    } else if (searchQuery.length === 0) {
+      fetchShops()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   const fetchShops = async () => {
     try {
       setLoading(true)
@@ -92,6 +102,17 @@ export default function ShopsPage() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const searchShops = async (query: string) => {
+    try {
+      const response = await apiClient.get(`/shops/search?q=${encodeURIComponent(query)}`)
+      setShops(response.data || [])
+      setTotalPages(1)
+      setTotalElements(response.data?.length || 0)
+    } catch {
+      // Fall back to showing all shops
     }
   }
 
@@ -252,7 +273,7 @@ export default function ShopsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shops.filter(s => !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.address?.toLowerCase().includes(searchQuery.toLowerCase())).map((shop) => (
+                    {shops.map((shop) => (
                       <motion.tr
                         key={shop.id}
                         initial={{ opacity: 0 }}
