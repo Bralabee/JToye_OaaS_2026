@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.util.Optional;
 import java.util.UUID;

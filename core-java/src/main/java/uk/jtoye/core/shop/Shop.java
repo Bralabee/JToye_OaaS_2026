@@ -2,7 +2,6 @@ package uk.jtoye.core.shop;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.envers.Audited;
 
 import java.time.OffsetDateTime;

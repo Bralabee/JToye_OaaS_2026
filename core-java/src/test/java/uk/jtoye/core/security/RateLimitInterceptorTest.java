@@ -1,6 +1,5 @@
 package uk.jtoye.core.security;
 
-import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.github.bucket4j.Bucket;
@@ -17,7 +16,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
