@@ -91,6 +91,16 @@ export default function ProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
+  useEffect(() => {
+    if (searchQuery.length >= 2) {
+      const timer = setTimeout(() => searchProducts(searchQuery), 300)
+      return () => clearTimeout(timer)
+    } else if (searchQuery.length === 0) {
+      fetchProducts()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   const fetchProducts = async () => {
     try {
       setLoading(true)
@@ -109,6 +119,17 @@ export default function ProductsPage() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const searchProducts = async (query: string) => {
+    try {
+      const response = await apiClient.get(`/products/search?q=${encodeURIComponent(query)}`)
+      setProducts(response.data || [])
+      setTotalPages(1)
+      setTotalElements(response.data?.length || 0)
+    } catch {
+      // Fall back to showing all products
     }
   }
 
@@ -289,7 +310,7 @@ export default function ProductsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {products.filter(p => !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku.toLowerCase().includes(searchQuery.toLowerCase())).map((product) => {
+                    {products.map((product) => {
                       const allergenNames = getAllergenNames(product.allergenMask)
                       return (
                         <motion.tr

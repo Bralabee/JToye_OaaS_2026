@@ -5,6 +5,15 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-04-01 (Dashboard Charts, Search & Customer Orders)
+
+### Added
+- **Dashboard Charts**: Order status distribution donut chart and revenue by VAT category bar chart (recharts).
+- **Backend Search**: `GET /shops/search?q=` and `GET /products/search?q=` with JPQL LIKE queries on name/address and title/SKU.
+- **Customer Order History**: `GET /orders/customer/{customerId}` endpoint. "View Orders" button on customers page.
+- **Server-Side Search**: Shops and products pages now call backend search endpoints (debounced, 2+ chars) instead of client-side filtering.
+- **Customer Order Filter**: Orders page reads `?customer=` query param and filters by customer ID.
+
 ## [1.2.1] - 2026-04-01 (Feature Completion & Bug Fixes)
 
 ### Added
