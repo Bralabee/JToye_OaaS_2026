@@ -43,6 +43,7 @@ export interface CreateProductRequest {
   title: string
   ingredientsText: string
   allergenMask: number
+  pricePennies: number
 }
 
 // Order Types
@@ -64,7 +65,7 @@ export interface Order {
   customerEmail?: string
   customerPhone?: string
   customerId?: string
-  totalPricePennies: number
+  totalAmountPennies: number
   createdAt: string
   updatedAt: string
 }
@@ -100,7 +101,6 @@ export interface CreateOrderRequest {
   customerEmail?: string
   customerPhone?: string
   customerId?: string
-  totalPricePennies: number
 }
 
 // Customer Types

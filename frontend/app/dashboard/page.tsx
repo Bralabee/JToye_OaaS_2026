@@ -252,7 +252,7 @@ export default function DashboardPage() {
                             </Badge>
                           </td>
                           <td className="py-4 font-semibold text-slate-900">
-                            £{(order.totalPricePennies / 100).toFixed(2)}
+                            £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
                           </td>
                           <td className="py-4 text-slate-600">
                             {formatDistanceToNow(new Date(order.createdAt), {
