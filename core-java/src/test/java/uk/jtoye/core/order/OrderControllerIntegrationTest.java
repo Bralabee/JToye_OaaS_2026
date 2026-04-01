@@ -2,7 +2,6 @@ package uk.jtoye.core.order;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,9 +47,6 @@ class OrderControllerIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private EntityManager entityManager;
 
     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-000000000002");
