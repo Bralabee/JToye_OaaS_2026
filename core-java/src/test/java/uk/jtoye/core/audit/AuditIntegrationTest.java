@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @Testcontainers
+@org.junit.jupiter.api.Tag("testcontainers")
 class AuditIntegrationTest {
 
     @Container
@@ -44,6 +45,7 @@ class AuditIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("rate-limiting.enabled", () -> "false");
     }
 
     @Autowired

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 
 import java.util.UUID;
@@ -16,10 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies all valid state transitions and rejects invalid ones.
  */
 @SpringBootTest
-@TestPropertySource(properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:${DB_PORT:5433}/jtoye",
-        "spring.jpa.hibernate.ddl-auto=validate"
-})
+@ActiveProfiles("test")
 class OrderStateMachineServiceTest {
 
     @Autowired

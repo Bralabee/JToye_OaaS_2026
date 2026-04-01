@@ -5,6 +5,20 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Housekeeping
+
+### Fixed
+- **27 failing Java tests**: Fixed ProductControllerTest (wrong mock target), RateLimitConfig Redis connection in tests, OrderStateMachineServiceTest profile, broken YAML nesting in application-test.yml, DatabaseConfigurationValidator failing on H2
+- **Version alignment**: build.gradle.kts (1.2.0→1.3.0), README.md (v1.1.0→v1.3.0), DOCUMENTATION_INDEX.md (v1.1.0→v1.3.0)
+- **8 high-severity npm vulnerabilities**: Resolved via npm audit fix (axios, picomatch, minimatch, flatted, etc.)
+
+### Changed
+- **Docker secrets externalized**: 14 hardcoded secrets in docker-compose.full-stack.yml migrated to `.env` file with `.env.example` template
+- **Testcontainers upgraded**: 1.19.8 → 1.21.3
+- **Test infrastructure**: Added `@ConditionalOnProperty` to RateLimitConfig, `@Profile("!test")` to DatabaseConfigurationValidator and SecurityHealthController, Redis/RabbitMQ auto-config exclusions in test profile
+- **Testcontainers tests tagged**: `@Tag("testcontainers")` with Gradle exclusion by default (Docker API 1.32 vs 1.40+ incompatibility). Run with `./gradlew test -PincludeIntegration`
+- **Test counts updated**: README reflects actual 199/199 (130 Java + 26 Go + 43 Jest)
+
 ## [1.3.0] - 2026-04-01 (Real-time, Search, Charts, Labels & WhatsApp)
 
 ### Added

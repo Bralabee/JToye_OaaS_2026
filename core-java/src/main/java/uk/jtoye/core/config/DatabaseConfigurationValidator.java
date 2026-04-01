@@ -27,6 +27,7 @@ import java.util.Map;
  * @since 0.7.1
  */
 @Component
+@org.springframework.context.annotation.Profile("!test")
 public class DatabaseConfigurationValidator {
     private static final Logger log = LoggerFactory.getLogger(DatabaseConfigurationValidator.class);
 
