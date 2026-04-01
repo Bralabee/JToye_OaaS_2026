@@ -117,7 +117,7 @@ describe('Dashboard Page', () => {
         status: 'PENDING' as const,
         customerName: 'John Doe',
         customerEmail: 'john@example.com',
-        totalPricePennies: 1999,
+        totalAmountPennies: 1999,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
