@@ -17,6 +17,7 @@ import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -67,6 +68,16 @@ public class ShopController {
         return shopService.getShopById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Search shops by name or address.
+     * GET /shops/search?q=query
+     */
+    @GetMapping("/search")
+    @Operation(summary = "Search shops", description = "Search shops by name or address")
+    public List<ShopDto> search(@RequestParam String q) {
+        return shopService.search(q);
     }
 
     /**
