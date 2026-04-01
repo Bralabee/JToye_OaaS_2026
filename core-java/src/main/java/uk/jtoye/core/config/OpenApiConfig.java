@@ -56,7 +56,7 @@ public class OpenApiConfig {
                                                                 - `size` (default: 20, max: 100)
                                                                 - `sort` (e.g., `createdAt,desc`)
                                                                 """)
-                                                .version("0.1.0-SNAPSHOT")
+                                                .version("1.2.0")
                                                 .contact(new Contact()
                                                                 .name("J'Toye Engineering")
                                                                 .email("engineering@jtoye.uk"))
