@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Users,
   LayoutDashboard,
+  Banknote,
   LogOut,
   Moon,
   Sun,
@@ -23,6 +24,7 @@ const navigation = [
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingCart },
   { name: "Customers", href: "/dashboard/customers", icon: Users },
+  { name: "Finance", href: "/dashboard/finance", icon: Banknote },
 ]
 
 export function Sidebar() {
