@@ -28,4 +28,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * Find order by order number (tenant-scoped automatically).
      */
     Optional<Order> findByOrderNumber(String orderNumber);
+
+    /**
+     * Find orders by customer ID (tenant-scoped automatically).
+     */
+    List<Order> findByCustomerId(UUID customerId);
 }

@@ -234,6 +234,16 @@ public class OrderService {
     }
 
     /**
+     * Get orders by customer (tenant-scoped).
+     */
+    @Transactional(readOnly = true)
+    public List<OrderDto> getOrdersByCustomer(UUID customerId) {
+        return orderRepository.findByCustomerId(customerId).stream()
+                .map(orderMapper::toDto)
+                .toList();
+    }
+
+    /**
      * Update order status (DEPRECATED - use transition methods instead).
      * This method bypasses StateMachine validation.
      * Kept for backward compatibility.

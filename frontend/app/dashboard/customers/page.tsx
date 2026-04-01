@@ -43,7 +43,9 @@ import {
   Phone,
   AlertCircle,
   Calendar,
+  ShoppingCart,
 } from "lucide-react"
+import Link from "next/link"
 import { Pagination } from "@/components/ui/pagination"
 import type { Customer, CreateCustomerRequest } from "@/types/api"
 import {
@@ -346,6 +348,16 @@ export default function CustomersPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
+                              <Link href={`/dashboard/orders?customer=${customer.id}`}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                  title="View orders"
+                                >
+                                  <ShoppingCart className="h-4 w-4" />
+                                </Button>
+                              </Link>
                               <Button
                                 variant="ghost"
                                 size="sm"

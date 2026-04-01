@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import apiClient from "@/lib/api-client"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -16,8 +16,21 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react"
-import type { Order, OrderStatus } from "@/types/api"
+import type { Order, OrderStatus, FinancialSummary } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts"
 
 interface DashboardStats {
   shops: number
@@ -28,20 +41,29 @@ interface DashboardStats {
 
 const statusConfig: Record<
   OrderStatus,
-  { label: string; color: string; icon: React.ComponentType<{ className?: string }> }
+  { label: string; color: string; chartColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
-  DRAFT: { label: "Draft", color: "bg-gray-500", icon: Clock },
-  PENDING: { label: "Pending", color: "bg-yellow-500", icon: Clock },
-  CONFIRMED: { label: "Confirmed", color: "bg-blue-500", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", color: "bg-purple-500", icon: Clock },
-  READY: { label: "Ready", color: "bg-green-500", icon: CheckCircle2 },
-  COMPLETED: { label: "Completed", color: "bg-emerald-600", icon: CheckCircle2 },
-  CANCELLED: { label: "Cancelled", color: "bg-red-500", icon: XCircle },
+  DRAFT: { label: "Draft", color: "bg-gray-500", chartColor: "#6b7280", icon: Clock },
+  PENDING: { label: "Pending", color: "bg-yellow-500", chartColor: "#eab308", icon: Clock },
+  CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: "#3b82f6", icon: CheckCircle2 },
+  PREPARING: { label: "Preparing", color: "bg-purple-500", chartColor: "#a855f7", icon: Clock },
+  READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },
+  COMPLETED: { label: "Completed", color: "bg-emerald-600", chartColor: "#059669", icon: CheckCircle2 },
+  CANCELLED: { label: "Cancelled", color: "bg-red-500", chartColor: "#ef4444", icon: XCircle },
+}
+
+const vatRateLabels: Record<string, { label: string; color: string }> = {
+  STANDARD: { label: "Standard (20%)", color: "#3b82f6" },
+  REDUCED: { label: "Reduced (5%)", color: "#eab308" },
+  ZERO: { label: "Zero (0%)", color: "#22c55e" },
+  EXEMPT: { label: "Exempt", color: "#6b7280" },
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
+  const [allOrders, setAllOrders] = useState<Order[]>([])
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
@@ -54,14 +76,15 @@ export default function DashboardPage() {
     try {
       setLoading(true)
 
-      // Fetch stats
-      const [shopsRes, productsRes, ordersRes, customersRes, recentOrdersRes] =
+      const [shopsRes, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
         await Promise.all([
           apiClient.get("/shops?size=1"),
           apiClient.get("/products?size=1"),
           apiClient.get("/orders?size=1"),
           apiClient.get("/customers?size=1"),
           apiClient.get("/orders?size=10&sort=createdAt,desc"),
+          apiClient.get("/orders?size=200"),
+          apiClient.get("/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 
       setStats({
@@ -72,6 +95,8 @@ export default function DashboardPage() {
       })
 
       setRecentOrders(recentOrdersRes.data.content || [])
+      setAllOrders(allOrdersRes.data.content || [])
+      setFinancialSummary(finSummaryRes.data)
     } catch (error: unknown) {
       toast({
         variant: "destructive",
@@ -83,13 +108,31 @@ export default function DashboardPage() {
     }
   }
 
+  // Compute order status distribution
+  const statusDistribution = Object.entries(
+    allOrders.reduce<Record<string, number>>((acc, order) => {
+      acc[order.status] = (acc[order.status] || 0) + 1
+      return acc
+    }, {})
+  ).map(([status, count]) => ({
+    name: statusConfig[status as OrderStatus]?.label || status,
+    value: count,
+    color: statusConfig[status as OrderStatus]?.chartColor || "#6b7280",
+  }))
+
+  // Compute VAT breakdown for bar chart
+  const vatChartData = financialSummary?.vatBreakdown.map((vat) => ({
+    name: vatRateLabels[vat.vatRate]?.label || vat.vatRate,
+    revenue: vat.totalAmountPennies / 100,
+    vat: vat.totalVatPennies / 100,
+    color: vatRateLabels[vat.vatRate]?.color || "#6b7280",
+  })) || []
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
+      transition: { staggerChildren: 0.1 },
     },
   }
 
@@ -107,34 +150,10 @@ export default function DashboardPage() {
   }
 
   const statCards = [
-    {
-      title: "Shops",
-      value: stats?.shops || 0,
-      icon: Store,
-      color: "text-blue-600",
-      bgColor: "bg-blue-100",
-    },
-    {
-      title: "Products",
-      value: stats?.products || 0,
-      icon: Package,
-      color: "text-purple-600",
-      bgColor: "bg-purple-100",
-    },
-    {
-      title: "Orders",
-      value: stats?.orders || 0,
-      icon: ShoppingCart,
-      color: "text-green-600",
-      bgColor: "bg-green-100",
-    },
-    {
-      title: "Customers",
-      value: stats?.customers || 0,
-      icon: Users,
-      color: "text-orange-600",
-      bgColor: "bg-orange-100",
-    },
+    { title: "Shops", value: stats?.shops || 0, icon: Store, color: "text-blue-600", bgColor: "bg-blue-100" },
+    { title: "Products", value: stats?.products || 0, icon: Package, color: "text-purple-600", bgColor: "bg-purple-100" },
+    { title: "Orders", value: stats?.orders || 0, icon: ShoppingCart, color: "text-green-600", bgColor: "bg-green-100" },
+    { title: "Customers", value: stats?.customers || 0, icon: Users, color: "text-orange-600", bgColor: "bg-orange-100" },
   ]
 
   return (
@@ -185,11 +204,90 @@ export default function DashboardPage() {
         ))}
       </motion.div>
 
+      {/* Charts Row */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Order Status Distribution */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Order Status Distribution</CardTitle>
+              <CardDescription>Breakdown of orders by current status</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {statusDistribution.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">No orders to display</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={statusDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {statusDistribution.map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => [`${value} order${value !== 1 ? "s" : ""}`, ""]}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Revenue by VAT Rate */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Revenue by VAT Category</CardTitle>
+              <CardDescription>
+                {financialSummary
+                  ? `Total: £${(financialSummary.totalRevenuePennies / 100).toFixed(2)} revenue, £${(financialSummary.totalVatPennies / 100).toFixed(2)} VAT`
+                  : "No financial data yet"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {vatChartData.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">No transactions to display</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={vatChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `£${v}`} />
+                    <Tooltip formatter={(value) => [`£${Number(value).toFixed(2)}`, ""]} />
+                    <Legend />
+                    <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="vat" name="VAT" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
       {/* Recent Orders */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.4 }}
+        transition={{ duration: 0.5, delay: 0.5 }}
       >
         <Card>
           <CardHeader>

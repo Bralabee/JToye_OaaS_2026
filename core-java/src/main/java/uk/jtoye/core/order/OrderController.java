@@ -114,6 +114,17 @@ public class OrderController {
     }
 
     /**
+     * Get orders by customer.
+     * GET /orders/customer/{customerId}
+     */
+    @GetMapping("/customer/{customerId}")
+    @Operation(summary = "Get orders by customer", description = "Returns orders for a specific customer of the authenticated tenant")
+    public ResponseEntity<List<OrderDto>> getOrdersByCustomer(@PathVariable UUID customerId) {
+        List<OrderDto> orders = orderService.getOrdersByCustomer(customerId);
+        return ResponseEntity.ok(orders);
+    }
+
+    /**
      * Update order status.
      * PATCH /orders/{id}/status
      */

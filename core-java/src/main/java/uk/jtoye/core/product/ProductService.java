@@ -13,6 +13,7 @@ import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -86,6 +87,17 @@ public class ProductService {
                 pageable.getPageNumber(), pageable.getPageSize());
         return productRepository.findAll(pageable)
                 .map(productMapper::toDto);
+    }
+
+    /**
+     * Search products by title or SKU (tenant-scoped).
+     */
+    @Transactional(readOnly = true)
+    public List<ProductDto> search(String query) {
+        log.debug("Searching products with query: {}", query);
+        return productRepository.search(query).stream()
+                .map(productMapper::toDto)
+                .toList();
     }
 
     /**
