@@ -8,22 +8,36 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import uk.jtoye.core.notification.EmailNotificationService;
 
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class OrderStateChangeListenerTest {
 
     private OrderStateChangeListener listener;
     private ListAppender<ILoggingEvent> logAppender;
     private Logger listenerLogger;
 
+    @Mock
+    private OrderRepository orderRepository;
+
+    @Mock
+    private EmailNotificationService emailService;
+
     @BeforeEach
     void setUp() {
-        listener = new OrderStateChangeListener(new OrderSseService());
+        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -53,32 +67,62 @@ class OrderStateChangeListenerTest {
     }
 
     @Test
-    @DisplayName("Should handle COMPLETED status with completion log")
+    @DisplayName("Should handle COMPLETED status and send email")
     void handleOrderStateChange_completed() {
+        UUID orderId = UUID.randomUUID();
         OrderStateChangeEvent event = new OrderStateChangeEvent(
-                UUID.randomUUID(), UUID.randomUUID(), "ORD-TEST-20260401-CMP",
+                orderId, UUID.randomUUID(), "ORD-TEST-20260401-CMP",
                 OrderStatus.READY, OrderStatus.COMPLETED, OffsetDateTime.now()
         );
+
+        Order order = new Order();
+        order.setCustomerEmail("test@example.com");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
 
         listener.handleOrderStateChange(event);
 
         assertThat(logAppender.list)
                 .anyMatch(e -> e.getLevel() == Level.INFO
                         && e.getFormattedMessage().contains("completed"));
+
+        verify(emailService).sendOrderCompletedNotification(event, "test@example.com");
     }
 
     @Test
-    @DisplayName("Should handle CANCELLED status with cancellation log")
+    @DisplayName("Should handle CANCELLED status and send email")
     void handleOrderStateChange_cancelled() {
+        UUID orderId = UUID.randomUUID();
         OrderStateChangeEvent event = new OrderStateChangeEvent(
-                UUID.randomUUID(), UUID.randomUUID(), "ORD-TEST-20260401-CAN",
+                orderId, UUID.randomUUID(), "ORD-TEST-20260401-CAN",
                 OrderStatus.PENDING, OrderStatus.CANCELLED, OffsetDateTime.now()
         );
+
+        Order order = new Order();
+        order.setCustomerEmail("cancel@example.com");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
 
         listener.handleOrderStateChange(event);
 
         assertThat(logAppender.list)
                 .anyMatch(e -> e.getLevel() == Level.INFO
                         && e.getFormattedMessage().contains("cancelled"));
+
+        verify(emailService).sendOrderCancelledNotification(event, "cancel@example.com");
+    }
+
+    @Test
+    @DisplayName("Should handle missing order gracefully")
+    void handleOrderStateChange_orderNotFound() {
+        UUID orderId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                orderId, UUID.randomUUID(), "ORD-TEST-MISSING",
+                OrderStatus.READY, OrderStatus.COMPLETED, OffsetDateTime.now()
+        );
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
+
+        listener.handleOrderStateChange(event);
+
+        verifyNoInteractions(emailService);
     }
 }
