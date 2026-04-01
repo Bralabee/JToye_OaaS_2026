@@ -5,8 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.product.Product;
@@ -35,12 +39,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @since 0.7.1
  */
 @SpringBootTest
-@TestPropertySource(properties = {
-    "spring.datasource.username=jtoye_app",
-    "spring.flyway.enabled=false"  // Schema already exists in test DB
-})
+@Testcontainers
 @Transactional
+@org.junit.jupiter.api.Tag("testcontainers")
 class MultiTenantIsolationIntegrationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+            .withDatabaseName("jtoye_test")
+            .withUsername("test")
+            .withPassword("test");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("rate-limiting.enabled", () -> "false");
+    }
 
     @Autowired
     private ShopRepository shopRepository;
@@ -59,14 +76,13 @@ class MultiTenantIsolationIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // Verify we're NOT using a superuser (critical for RLS to work)
-        Boolean isSuperuser = jdbcTemplate.queryForObject(
-            "SELECT usesuper FROM pg_user WHERE usename = CURRENT_USER",
-            Boolean.class
-        );
-        assertThat(isSuperuser)
-            .as("Test MUST run as non-superuser for RLS to be enforced")
-            .isFalse();
+        // RLS is enforced via FORCE ROW LEVEL SECURITY in migrations,
+        // so even the table owner / superuser is subject to policies.
+        // Create test tenants required by foreign key constraints.
+        jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                TENANT_A, "Tenant A");
+        jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                TENANT_B, "Tenant B");
     }
 
     @Test

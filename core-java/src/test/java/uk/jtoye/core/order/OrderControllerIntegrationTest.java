@@ -5,8 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemRequest;
@@ -25,13 +29,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for Order management.
  * Tests order CRUD operations and tenant isolation.
+ * Requires PostgreSQL via Testcontainers for SET LOCAL tenant context.
  */
 @SpringBootTest(properties = {
         "logging.level.uk.jtoye.core.security.TenantSetLocalAspect=DEBUG"
 })
-@ActiveProfiles("test")
+@Testcontainers
 @Transactional
+@org.junit.jupiter.api.Tag("testcontainers")
 class OrderControllerIntegrationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+            .withDatabaseName("jtoye_test")
+            .withUsername("test")
+            .withPassword("test");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("rate-limiting.enabled", () -> "false");
+    }
 
     @Autowired
     private OrderService orderService;
@@ -57,8 +78,8 @@ class OrderControllerIntegrationTest {
     @BeforeEach
     void setUp() {
         // Create tenants
-        jdbcTemplate.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT_A + "', 'Tenant A') ON CONFLICT (id) DO NOTHING");
-        jdbcTemplate.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT_B + "', 'Tenant B') ON CONFLICT (id) DO NOTHING");
+        jdbcTemplate.execute("INSERT INTO tenants (id, name, created_at) VALUES ('" + TENANT_A + "', 'Tenant A', CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING");
+        jdbcTemplate.execute("INSERT INTO tenants (id, name, created_at) VALUES ('" + TENANT_B + "', 'Tenant B', CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING");
 
         // Create shop for Tenant A
         TenantContext.set(TENANT_A);

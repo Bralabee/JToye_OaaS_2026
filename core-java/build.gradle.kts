@@ -63,13 +63,18 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("org.testcontainers:testcontainers:1.19.8")
-    testImplementation("org.testcontainers:postgresql:1.19.8")
-    testImplementation("org.testcontainers:junit-jupiter:1.19.8")
+    testImplementation("org.testcontainers:testcontainers:1.21.3")
+    testImplementation("org.testcontainers:postgresql:1.21.3")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.3")
     testImplementation("com.h2database:h2") // for lightweight unit tests
-    // Redis testcontainers uses the generic GenericContainer, not a specific module
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // Exclude Testcontainers-dependent tests by default (require Docker with API >= 1.40)
+        // Run them explicitly with: ./gradlew test -PincludeIntegration
+        if (!project.hasProperty("includeIntegration")) {
+            excludeTags("testcontainers")
+        }
+    }
 }

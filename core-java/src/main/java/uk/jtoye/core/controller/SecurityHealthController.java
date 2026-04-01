@@ -20,6 +20,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/health/security")
 @Tag(name = "Health", description = "Security health and monitoring endpoints")
+@org.springframework.context.annotation.Profile("!test")
 public class SecurityHealthController {
 
     private final DatabaseConfigurationValidator validator;

@@ -29,7 +29,10 @@ import static org.mockito.Mockito.*;
 class ProductControllerTest {
 
     @Mock
-    private ProductRepository productRepository;
+    private ProductService productService;
+
+    @Mock
+    private ProductLabelService labelService;
 
     @InjectMocks
     private ProductController productController;
@@ -50,9 +53,9 @@ class ProductControllerTest {
     void listShouldReturnPaginatedProducts() {
         // Given
         TenantContext.set(testTenantId);
-        Product product = createTestProduct();
-        Page<Product> productPage = new PageImpl<>(List.of(product));
-        when(productRepository.findAll(any(Pageable.class))).thenReturn(productPage);
+        ProductDto productDto = createTestProductDto();
+        Page<ProductDto> productPage = new PageImpl<>(List.of(productDto));
+        when(productService.getAllProducts(any(Pageable.class))).thenReturn(productPage);
 
         // When
         Page<ProductDto> result = productController.list(PageRequest.of(0, 20));
@@ -60,7 +63,7 @@ class ProductControllerTest {
         // Then
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getSku()).isEqualTo("TEST-SKU");
-        verify(productRepository, times(1)).findAll(any(Pageable.class));
+        verify(productService, times(1)).getAllProducts(any(Pageable.class));
     }
 
     @Test
@@ -73,8 +76,8 @@ class ProductControllerTest {
         request.setIngredientsText("Test ingredients");
         request.setAllergenMask(0);
 
-        Product savedProduct = createTestProduct();
-        when(productRepository.save(any(Product.class))).thenReturn(savedProduct);
+        ProductDto savedDto = createTestProductDto();
+        when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(savedDto);
 
         // When
         ResponseEntity<ProductDto> response = productController.create(request);
@@ -83,7 +86,7 @@ class ProductControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getSku()).isEqualTo("TEST-SKU");
-        verify(productRepository, times(1)).save(any(Product.class));
+        verify(productService, times(1)).createProduct(any(CreateProductRequest.class));
     }
 
     @Test
@@ -96,18 +99,21 @@ class ProductControllerTest {
         request.setIngredientsText("Test ingredients");
         request.setAllergenMask(0);
 
+        when(productService.createProduct(any(CreateProductRequest.class)))
+                .thenThrow(new IllegalStateException("Tenant context not set"));
+
         // When/Then
         assertThrows(IllegalStateException.class, () -> productController.create(request));
-        verify(productRepository, never()).save(any(Product.class));
+        verify(productService, times(1)).createProduct(any(CreateProductRequest.class));
     }
 
-    private Product createTestProduct() {
-        Product product = new Product();
-        product.setTenantId(testTenantId);
-        product.setSku("TEST-SKU");
-        product.setTitle("Test Product");
-        product.setIngredientsText("Flour, Water, Salt");
-        product.setAllergenMask(1);
-        return product;
+    private ProductDto createTestProductDto() {
+        ProductDto dto = new ProductDto();
+        dto.setId(UUID.randomUUID());
+        dto.setSku("TEST-SKU");
+        dto.setTitle("Test Product");
+        dto.setIngredientsText("Flour, Water, Salt");
+        dto.setAllergenMask(1);
+        return dto;
     }
 }
