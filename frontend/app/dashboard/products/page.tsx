@@ -34,7 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search } from "lucide-react"
+import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
 import {
   ALLERGENS,
@@ -54,9 +55,15 @@ const productSchema = z.object({
 
 type ProductFormData = z.infer<typeof productSchema>
 
+const PAGE_SIZE = 20
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -78,15 +85,17 @@ export default function ProductsPage() {
   useEffect(() => {
     fetchProducts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPage])
 
   const fetchProducts = async () => {
     try {
       setLoading(true)
       const response = await apiClient.get(
-        "/products?size=100&sort=createdAt,desc"
+        `/products?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
       )
       setProducts(response.data.content || [])
+      setTotalPages(response.data.totalPages || 0)
+      setTotalElements(response.data.totalElements || 0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load products"
       toast({
@@ -152,7 +161,8 @@ export default function ProductsPage() {
       setDialogOpen(false)
       reset()
       setAllergenMask(0)
-      fetchProducts()
+      if (currentPage === 0) fetchProducts()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`
       toast({
@@ -177,7 +187,8 @@ export default function ProductsPage() {
       })
       setDeleteDialogOpen(false)
       setDeletingProduct(null)
-      fetchProducts()
+      if (currentPage === 0) fetchProducts()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to delete product"
       toast({
@@ -225,11 +236,22 @@ export default function ProductsPage() {
         transition={{ delay: 0.1 }}
       >
         <Card>
-          <CardHeader>
-            <CardTitle>All Products</CardTitle>
-            <CardDescription>
-              {products.length} product{products.length !== 1 ? "s" : ""} in total
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>All Products</CardTitle>
+              <CardDescription>
+                {totalElements} product{totalElements !== 1 ? "s" : ""} in total
+              </CardDescription>
+            </div>
+            <div className="relative w-[220px]">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search products..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {products.length === 0 ? (
@@ -258,7 +280,7 @@ export default function ProductsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {products.map((product) => {
+                    {products.filter(p => !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku.toLowerCase().includes(searchQuery.toLowerCase())).map((product) => {
                       const allergenNames = getAllergenNames(product.allergenMask)
                       return (
                         <motion.tr
@@ -335,6 +357,13 @@ export default function ProductsPage() {
                 </Table>
               </div>
             )}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalElements={totalElements}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
           </CardContent>
         </Card>
       </motion.div>

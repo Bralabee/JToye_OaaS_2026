@@ -6,9 +6,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.customer.Customer;
+import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.finance.FinancialTransactionService;
+import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
+import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
+import uk.jtoye.core.order.dto.UpdateOrderRequest;
 import uk.jtoye.core.order.dto.OrderItemRequest;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -35,19 +43,28 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
+    private final CustomerRepository customerRepository;
     private final OrderStateMachineService stateMachineService;
     private final OrderMapper orderMapper;
+    private final OrderEventPublisher eventPublisher;
+    private final FinancialTransactionService financialTransactionService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        ShopRepository shopRepository,
+                       CustomerRepository customerRepository,
                        OrderStateMachineService stateMachineService,
-                       OrderMapper orderMapper) {
+                       OrderMapper orderMapper,
+                       OrderEventPublisher eventPublisher,
+                       FinancialTransactionService financialTransactionService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
+        this.customerRepository = customerRepository;
         this.stateMachineService = stateMachineService;
         this.orderMapper = orderMapper;
+        this.eventPublisher = eventPublisher;
+        this.financialTransactionService = financialTransactionService;
     }
 
     /**
@@ -71,13 +88,26 @@ public class OrderService {
         // Create order entity
         Order order = new Order();
         order.setTenantId(tenantId);
-        order.setShopId(shop.getId()); // Use validated shop ID
+        order.setShopId(shop.getId());
         order.setOrderNumber(generateOrderNumber(tenantId));
         order.setStatus(OrderStatus.DRAFT);
-        order.setCustomerName(request.getCustomerName());
-        order.setCustomerEmail(request.getCustomerEmail());
-        order.setCustomerPhone(request.getCustomerPhone());
         order.setNotes(request.getNotes());
+
+        // Link customer: if customerId provided, look up and populate denormalized fields
+        if (request.getCustomerId() != null) {
+            Customer customer = customerRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Customer not found: " + request.getCustomerId()));
+            order.setCustomerId(customer.getId());
+            order.setCustomerName(customer.getName());
+            order.setCustomerEmail(customer.getEmail());
+            order.setCustomerPhone(customer.getPhone());
+        } else {
+            // Fallback: use directly provided fields (backward compatible)
+            order.setCustomerName(request.getCustomerName());
+            order.setCustomerEmail(request.getCustomerEmail());
+            order.setCustomerPhone(request.getCustomerPhone());
+        }
         order.setUpdatedAt(OffsetDateTime.now());
 
         // Add order items
@@ -118,6 +148,51 @@ public class OrderService {
     public Optional<OrderDto> getOrderById(UUID orderId) {
         return orderRepository.findById(orderId)
                 .map(orderMapper::toDto);
+    }
+
+    /**
+     * Get order with items by ID (tenant-scoped).
+     * Eagerly fetches items for the detail view.
+     */
+    @Transactional(readOnly = true)
+    public Optional<OrderDetailDto> getOrderDetailById(UUID orderId) {
+        return orderRepository.findById(orderId)
+                .map(orderMapper::toDetailDto);
+    }
+
+    /**
+     * Update order details (customer info, notes).
+     * Only allowed on DRAFT or PENDING orders.
+     */
+    public OrderDto updateOrder(UUID orderId, UpdateOrderRequest request) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getStatus() != OrderStatus.DRAFT && order.getStatus() != OrderStatus.PENDING) {
+            throw new InvalidStateTransitionException(
+                    "Cannot update order in " + order.getStatus() + " status. Only DRAFT or PENDING orders can be edited.");
+        }
+
+        // Link customer if customerId provided
+        if (request.getCustomerId() != null) {
+            Customer customer = customerRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
+            order.setCustomerId(customer.getId());
+            order.setCustomerName(customer.getName());
+            order.setCustomerEmail(customer.getEmail());
+            order.setCustomerPhone(customer.getPhone());
+        } else {
+            if (request.getCustomerName() != null) order.setCustomerName(request.getCustomerName());
+            if (request.getCustomerEmail() != null) order.setCustomerEmail(request.getCustomerEmail());
+            if (request.getCustomerPhone() != null) order.setCustomerPhone(request.getCustomerPhone());
+        }
+
+        if (request.getNotes() != null) order.setNotes(request.getNotes());
+        order.setUpdatedAt(OffsetDateTime.now());
+        order = orderRepository.save(order);
+
+        log.info("Updated order {} details", order.getOrderNumber());
+        return orderMapper.toDto(order);
     }
 
     /**
@@ -248,6 +323,22 @@ public class OrderService {
 
         log.info("Order {} transitioned: {} -> {} via event {}",
                 order.getOrderNumber(), oldStatus, newStatus, event);
+
+        // Publish state change event (non-blocking — RabbitMQ failure doesn't break the transition)
+        eventPublisher.publishStateChange(
+                order.getId(), order.getTenantId(), order.getOrderNumber(),
+                oldStatus, newStatus);
+
+        // Auto-create financial transaction when order is completed
+        if (newStatus == OrderStatus.COMPLETED && order.getTotalAmountPennies() != null) {
+            financialTransactionService.createTransaction(
+                    new CreateTransactionRequest(
+                            order.getTotalAmountPennies(),
+                            VatRate.STANDARD,
+                            "Order " + order.getOrderNumber()
+                    ));
+            log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
+        }
 
         return orderMapper.toDto(order);
     }

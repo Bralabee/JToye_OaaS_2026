@@ -70,10 +70,18 @@
 18. **[architecture/API_REFERENCE.md](architecture/API_REFERENCE.md)** - API Reference
 19. **[architecture/SECURITY_ARCHITECTURE.md](architecture/SECURITY_ARCHITECTURE.md)** - Security Architecture
 
+### Analysis (Deep Dive)
+20. **[analysis/PROJECT_DEEP_DIVE.md](analysis/PROJECT_DEEP_DIVE.md)** - Complete architecture overview, domain model, security, infrastructure
+21. **[analysis/CORE_JAVA_CATALOG.md](analysis/CORE_JAVA_CATALOG.md)** - Every class, config, migration, and test in the Spring Boot backend
+22. **[analysis/EDGE_GO_CATALOG.md](analysis/EDGE_GO_CATALOG.md)** - Go gateway endpoints, circuit breaker, JWT, WhatsApp webhook
+23. **[analysis/FRONTEND_CATALOG.md](analysis/FRONTEND_CATALOG.md)** - Next.js pages, components, auth flow, types, and tests
+24. **[analysis/INFRASTRUCTURE_CATALOG.md](analysis/INFRASTRUCTURE_CATALOG.md)** - Docker, K8s, CI/CD, scripts, monitoring, backups
+25. **[analysis/GAPS_AND_IMPROVEMENTS.md](analysis/GAPS_AND_IMPROVEMENTS.md)** - Discrepancies, feature gaps, and improvement opportunities
+
 ### Troubleshooting
-20. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
-21. **[troubleshooting/IPTABLES_FIX_RESULTS.md](troubleshooting/IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
-22. **[troubleshooting/DOCKER_NETWORKING_FIX.md](troubleshooting/DOCKER_NETWORKING_FIX.md)** - Docker networking fix details
+26. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
+27. **[troubleshooting/IPTABLES_FIX_RESULTS.md](troubleshooting/IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
+28. **[troubleshooting/DOCKER_NETWORKING_FIX.md](troubleshooting/DOCKER_NETWORKING_FIX.md)** - Docker networking fix details
 
 ---
 

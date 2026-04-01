@@ -761,7 +761,7 @@ spring:
 
 **Positives:**
 - Using Spring Boot BOM (dependency management)
-- Recent versions (Spring Boot 3.3.4)
+- Recent versions (Spring Boot 3.4.2)
 - Java 21 (modern LTS)
 
 **Concerns:**

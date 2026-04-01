@@ -14,7 +14,7 @@ The JToye OaaS application has been successfully deployed and tested. All core f
 | Component | Value | Status |
 |-----------|-------|--------|
 | Java Version | 21 | ✅ |
-| Spring Boot | 3.3.4 | ✅ |
+| Spring Boot | 3.4.2 | ✅ |
 | Gradle | 8.10.2 | ✅ |
 | PostgreSQL | 15.13 | ✅ |
 | Keycloak | 24.0.5 | ✅ |

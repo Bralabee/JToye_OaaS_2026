@@ -10,7 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
+import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
+import uk.jtoye.core.order.dto.UpdateOrderRequest;
 
 import java.util.List;
 import java.util.UUID;
@@ -63,6 +65,30 @@ public class OrderController {
         return orderService.getOrderById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Get order with items by ID.
+     * GET /orders/{id}/detail
+     */
+    @GetMapping("/{id}/detail")
+    @Operation(summary = "Get order detail with items", description = "Returns order with line items for the authenticated tenant")
+    public ResponseEntity<OrderDetailDto> getOrderDetail(@PathVariable UUID id) {
+        return orderService.getOrderDetailById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Update order details (customer info, notes).
+     * PUT /orders/{id}
+     * Only allowed on DRAFT or PENDING orders.
+     */
+    @PutMapping("/{id}")
+    @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders")
+    public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @RequestBody UpdateOrderRequest request) {
+        OrderDto order = orderService.updateOrder(id, request);
+        return ResponseEntity.ok(order);
     }
 
     /**

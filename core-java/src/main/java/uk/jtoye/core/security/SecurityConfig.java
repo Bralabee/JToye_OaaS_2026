@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -29,10 +30,14 @@ public class SecurityConfig {
      */
     @Bean
     public JwtDecoder jwtDecoder(RestTemplateBuilder restTemplateBuilder) {
-        // Create RestOperations with timeouts
+        // Create a custom ClientHttpRequestFactory with timeouts
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
+        requestFactory.setReadTimeout((int) Duration.ofSeconds(5).toMillis());
+
+        // Create RestOperations with the custom request factory
         RestOperations restOperations = restTemplateBuilder
-                .setConnectTimeout(Duration.ofSeconds(5))
-                .setReadTimeout(Duration.ofSeconds(5))
+                .requestFactory(() -> requestFactory)
                 .build();
 
         // Build JwtDecoder with custom RestOperations for JWKS fetching

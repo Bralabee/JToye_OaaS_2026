@@ -53,6 +53,7 @@ import {
   FileCheck,
   Ban,
 } from "lucide-react"
+import { Pagination } from "@/components/ui/pagination"
 import type { Order, OrderStatus, Shop, Product } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 import { Trash2 } from "lucide-react"
@@ -200,11 +201,17 @@ const getAvailableTransitions = (
   return transitions[currentStatus] || []
 }
 
+const PAGE_SIZE = 20
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
@@ -227,17 +234,19 @@ export default function OrdersPage() {
   useEffect(() => {
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPage])
 
   const fetchData = async () => {
     try {
       setLoading(true)
       const [ordersRes, shopsRes, productsRes] = await Promise.all([
-        apiClient.get("/orders?size=100&sort=createdAt,desc"),
+        apiClient.get(`/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`),
         apiClient.get("/shops?size=100"),
         apiClient.get("/products?size=100"),
       ])
       setOrders(ordersRes.data.content || [])
+      setTotalPages(ordersRes.data.totalPages || 0)
+      setTotalElements(ordersRes.data.totalElements || 0)
       setShops(shopsRes.data.content || [])
       setProducts(productsRes.data.content || [])
     } catch (error: unknown) {
@@ -317,7 +326,8 @@ export default function OrdersPage() {
       setDialogOpen(false)
       reset()
       setOrderItems([])
-      fetchData()
+      if (currentPage === 0) fetchData()
+      else setCurrentPage(0)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to create order"
       toast({
@@ -425,14 +435,32 @@ export default function OrdersPage() {
         transition={{ delay: 0.2 }}
       >
         <Card>
-          <CardHeader>
-            <CardTitle>All Orders</CardTitle>
-            <CardDescription>
-              {orders.length} order{orders.length !== 1 ? "s" : ""} in total
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>All Orders</CardTitle>
+              <CardDescription>
+                {totalElements} order{totalElements !== 1 ? "s" : ""} in total
+                {statusFilter !== "ALL" && ` (filtered: ${statusFilter})`}
+              </CardDescription>
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(0) }}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Filter status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="CONFIRMED">Confirmed</SelectItem>
+                <SelectItem value="PREPARING">Preparing</SelectItem>
+                <SelectItem value="READY">Ready</SelectItem>
+                <SelectItem value="COMPLETED">Completed</SelectItem>
+                <SelectItem value="CANCELLED">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent>
-            {orders.length === 0 ? (
+            {orders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
@@ -460,7 +488,7 @@ export default function OrdersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {orders.map((order) => {
+                    {orders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
                       const config = statusConfig[order.status]
                       const StatusIcon = config.icon
                       const transitions = getAvailableTransitions(order.status)
@@ -541,6 +569,13 @@ export default function OrdersPage() {
                 </Table>
               </div>
             )}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalElements={totalElements}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
           </CardContent>
         </Card>
       </motion.div>
