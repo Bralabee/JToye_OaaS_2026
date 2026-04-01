@@ -242,6 +242,21 @@ function OrdersPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
+  // Real-time updates via SSE
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
+    const eventSource = new EventSource(`${apiUrl}/orders/stream`)
+    eventSource.addEventListener("order-state-change", () => {
+      fetchData()
+    })
+    eventSource.onerror = () => {
+      // SSE connection failed — fall back to no auto-refresh
+      eventSource.close()
+    }
+    return () => eventSource.close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const fetchData = async () => {
     try {
       setLoading(true)

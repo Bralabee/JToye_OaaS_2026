@@ -23,7 +23,7 @@ class OrderStateChangeListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new OrderStateChangeListener();
+        listener = new OrderStateChangeListener(new OrderSseService());
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
