@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
-import { getLocalOrders } from "@/lib/order-history"
+import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
 
 interface OrderStatus {
   orderNumber: string
@@ -49,9 +49,11 @@ export default function OrderTrackingPage({
 }) {
   const { slug, orderNumber } = use(params)
   return (
-    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
-      <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
-    </Suspense>
+    <RequireCustomerAuth message="Sign in to track your order.">
+      <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
+        <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
+      </Suspense>
+    </RequireCustomerAuth>
   )
 }
 
@@ -63,25 +65,8 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
   const searchParams = useSearchParams()
 
-  // Resolve email from multiple sources (priority order):
-  // 1. URL query param (passed from My Orders page — most reliable)
-  // 2. Logged-in customer session
-  // 3. Checkout-specific localStorage
-  // 4. Local order history (matched by order number)
-  const email = (() => {
-    if (typeof window === "undefined") return ""
-    const urlEmail = searchParams.get("email")
-    if (urlEmail) return urlEmail
-    const session = getCustomerSession()
-    if (session?.profile.email) return session.profile.email
-    const checkoutEmail = localStorage.getItem(`jtoye-checkout-email-${slug}`)
-    if (checkoutEmail) return checkoutEmail
-    const localOrders = getLocalOrders()
-    const match = localOrders.find(o => o.orderNumber === orderNumber)
-    if (match?.email) return match.email
-    if (localOrders.length > 0) return localOrders[0].email
-    return ""
-  })()
+  // Use the authenticated customer's email — auth is required by RequireCustomerAuth wrapper
+  const email = getCustomerSession()?.profile?.email || ""
 
   const fetchStatus = useCallback(async () => {
     if (!email) {
