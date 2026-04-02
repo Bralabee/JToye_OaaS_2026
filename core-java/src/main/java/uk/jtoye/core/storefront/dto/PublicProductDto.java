@@ -1,5 +1,6 @@
 package uk.jtoye.core.storefront.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 public class PublicProductDto {
@@ -14,6 +15,7 @@ public class PublicProductDto {
     private String dietaryTags;
     private Integer preparationTimeMinutes;
     private Boolean featured;
+    private List<String> imageUrls;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -37,4 +39,6 @@ public class PublicProductDto {
     public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
     public Boolean getFeatured() { return featured; }
     public void setFeatured(Boolean featured) { this.featured = featured; }
+    public List<String> getImageUrls() { return imageUrls; }
+    public void setImageUrls(List<String> imageUrls) { this.imageUrls = imageUrls; }
 }

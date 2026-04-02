@@ -13,8 +13,10 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.storage.StorageService.ImageType;
 import uk.jtoye.core.storage.StorageService;
 
+import java.util.List;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -168,6 +170,50 @@ public class ProductService {
     }
 
     /**
+     * Add an additional image to the product gallery (max 5).
+     */
+    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
+    public ProductDto addAdditionalImage(UUID productId, MultipartFile file) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        if (product.getAdditionalImageUrls().size() >= 5) {
+            throw new IllegalStateException("Maximum 5 additional images allowed per product");
+        }
+
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        String url = storageService.upload(tenantId, "products", productId, file, ImageType.PRODUCT);
+        product.getAdditionalImageUrls().add(url);
+        product = productRepository.saveAndFlush(product);
+
+        log.info("Added additional image for product {} ({} total)", productId, product.getAdditionalImageUrls().size());
+        return productMapper.toDto(product);
+    }
+
+    /**
+     * Remove an additional image by index.
+     */
+    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
+    public ProductDto removeAdditionalImage(UUID productId, int index) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        List<String> urls = product.getAdditionalImageUrls();
+        if (index < 0 || index >= urls.size()) {
+            throw new ResourceNotFoundException("Image index out of range: " + index);
+        }
+
+        String removedUrl = urls.remove(index);
+        storageService.delete(removedUrl);
+        product = productRepository.saveAndFlush(product);
+
+        log.info("Removed additional image {} for product {}", index, productId);
+        return productMapper.toDto(product);
+    }
+
+    /**
      * Delete product by ID (tenant-scoped).
      * RLS ensures we can only delete products belonging to our tenant.
      * Evicts all product caches for the tenant to maintain consistency.
@@ -179,8 +225,9 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        // Clean up image from storage
+        // Clean up all images from storage
         storageService.delete(product.getImageUrl());
+        product.getAdditionalImageUrls().forEach(storageService::delete);
 
         productRepository.delete(product);
 

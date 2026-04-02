@@ -20,6 +20,7 @@ export interface PublicProduct {
   title: string
   description: string | null
   imageUrl: string | null
+  imageUrls: string[]
   ingredientsText: string
   allergenMask: number
   pricePennies: number

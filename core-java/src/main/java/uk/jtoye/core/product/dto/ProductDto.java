@@ -1,6 +1,7 @@
 package uk.jtoye.core.product.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public class ProductDto {
@@ -19,6 +20,7 @@ public class ProductDto {
     private Boolean featured;
     private Integer preparationTimeMinutes;
     private String dietaryTags;
+    private List<String> additionalImageUrls;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -50,4 +52,6 @@ public class ProductDto {
     public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
     public String getDietaryTags() { return dietaryTags; }
     public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
+    public List<String> getAdditionalImageUrls() { return additionalImageUrls; }
+    public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
 }

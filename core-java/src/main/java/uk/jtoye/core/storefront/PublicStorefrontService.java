@@ -32,6 +32,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -304,6 +305,17 @@ public class PublicStorefrontService {
         dto.setDietaryTags(product.getDietaryTags());
         dto.setPreparationTimeMinutes(product.getPreparationTimeMinutes());
         dto.setFeatured(product.getFeatured());
+
+        // Build combined image URLs list: primary first, then additional
+        List<String> allImages = new ArrayList<>();
+        if (product.getImageUrl() != null && !product.getImageUrl().isBlank()) {
+            allImages.add(product.getImageUrl());
+        }
+        if (product.getAdditionalImageUrls() != null) {
+            allImages.addAll(product.getAdditionalImageUrls());
+        }
+        dto.setImageUrls(allImages);
+
         return dto;
     }
 }

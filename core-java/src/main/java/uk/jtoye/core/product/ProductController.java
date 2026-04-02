@@ -128,6 +128,24 @@ public class ProductController {
         return ResponseEntity.ok(dto);
     }
 
+    @PostMapping(value = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Add additional product image", description = "Adds an additional image to the product gallery")
+    public ResponseEntity<ProductDto> addAdditionalImage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        ProductDto dto = productService.addAdditionalImage(id, file);
+        return ResponseEntity.ok(dto);
+    }
+
+    @DeleteMapping("/{id}/images/{index}")
+    @Operation(summary = "Remove additional product image", description = "Removes an additional image by index")
+    public ResponseEntity<ProductDto> removeAdditionalImage(
+            @PathVariable UUID id,
+            @PathVariable int index) {
+        ProductDto dto = productService.removeAdditionalImage(id, index);
+        return ResponseEntity.ok(dto);
+    }
+
     @DeleteMapping("/{id}/image")
     @Operation(summary = "Remove product image", description = "Removes the image from a product")
     @ApiResponses(value = {

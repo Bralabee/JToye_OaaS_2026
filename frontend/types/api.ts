@@ -62,6 +62,7 @@ export interface Product {
   pricePennies?: number
   description: string | null
   imageUrl: string | null
+  additionalImageUrls: string[]
   category: string | null
   displayOrder: number
   available: boolean
