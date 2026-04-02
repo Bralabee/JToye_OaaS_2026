@@ -39,13 +39,14 @@ const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: 
   CANCELLED: { icon: XCircle, color: "text-red-500 bg-red-50", label: "Cancelled" },
 }
 
-function OrderCard({ order, shopSlug }: { order: OrderSummary; shopSlug?: string }) {
+function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?: string; email?: string }) {
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
   const Icon = cfg.icon
   const isActive = !["COMPLETED", "CANCELLED"].includes(order.status)
+  const emailParam = email ? `?email=${encodeURIComponent(email)}` : ""
   const trackUrl = shopSlug
-    ? `/shop/${shopSlug}/orders/${order.orderNumber}`
-    : `/track?order=${order.orderNumber}`
+    ? `/shop/${shopSlug}/orders/${order.orderNumber}${emailParam}`
+    : `/track?order=${order.orderNumber}${email ? `&email=${encodeURIComponent(email)}` : ""}`
 
   return (
     <Link href={trackUrl} className="block group">
@@ -191,7 +192,7 @@ export default function CustomerOrdersPage() {
           </h2>
           <div className="space-y-3">
             {activeOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} />
+              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} email={email || undefined} />
             ))}
           </div>
         </section>
@@ -205,7 +206,7 @@ export default function CustomerOrdersPage() {
           </h2>
           <div className="space-y-3">
             {pastOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} />
+              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} email={email || undefined} />
             ))}
           </div>
         </section>

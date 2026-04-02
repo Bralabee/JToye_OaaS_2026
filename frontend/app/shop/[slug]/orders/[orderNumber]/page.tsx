@@ -1,6 +1,7 @@
 "use client"
 
-import { use, useEffect, useState, useCallback } from "react"
+import { Suspense, use, useEffect, useState, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
   CheckCircle2, Store, Copy, ArrowLeft, Clock,
@@ -47,17 +48,30 @@ export default function OrderTrackingPage({
   params: Promise<{ slug: string; orderNumber: string }>
 }) {
   const { slug, orderNumber } = use(params)
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
+      <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
+    </Suspense>
+  )
+}
+
+function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber: string }) {
   const [order, setOrder] = useState<OrderStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const searchParams = useSearchParams()
+
   // Resolve email from multiple sources (priority order):
-  // 1. Logged-in customer session
-  // 2. Checkout-specific localStorage (set during this shop's checkout)
-  // 3. Local order history (saved after any checkout)
+  // 1. URL query param (passed from My Orders page — most reliable)
+  // 2. Logged-in customer session
+  // 3. Checkout-specific localStorage
+  // 4. Local order history (matched by order number)
   const email = (() => {
     if (typeof window === "undefined") return ""
+    const urlEmail = searchParams.get("email")
+    if (urlEmail) return urlEmail
     const session = getCustomerSession()
     if (session?.profile.email) return session.profile.email
     const checkoutEmail = localStorage.getItem(`jtoye-checkout-email-${slug}`)
@@ -65,7 +79,6 @@ export default function OrderTrackingPage({
     const localOrders = getLocalOrders()
     const match = localOrders.find(o => o.orderNumber === orderNumber)
     if (match?.email) return match.email
-    // Fallback: use the most recent order's email
     if (localOrders.length > 0) return localOrders[0].email
     return ""
   })()
