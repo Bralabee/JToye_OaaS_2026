@@ -34,7 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check } from "lucide-react"
+import Link from "next/link"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload } from "lucide-react"
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
@@ -299,10 +300,18 @@ export default function ProductsPage() {
             Manage your product catalog with allergen information
           </p>
         </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/dashboard/products/import">
+            <Button variant="outline" className="gap-2">
+              <Upload className="h-4 w-4" />
+              Bulk Import
+            </Button>
+          </Link>
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
       </motion.div>
 
       {/* Products Table */}

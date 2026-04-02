@@ -19,6 +19,7 @@ import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.ai.ImageUploadResponse;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 
@@ -39,12 +40,14 @@ public class ProductController {
     private final ProductService productService;
     private final ProductLabelService labelService;
     private final ImageAnalysisService imageAnalysisService;
+    private final BulkImportService bulkImportService;
 
     public ProductController(ProductService productService, ProductLabelService labelService,
-                              ImageAnalysisService imageAnalysisService) {
+                              ImageAnalysisService imageAnalysisService, BulkImportService bulkImportService) {
         this.productService = productService;
         this.labelService = labelService;
         this.imageAnalysisService = imageAnalysisService;
+        this.bulkImportService = bulkImportService;
     }
 
     @GetMapping
@@ -78,6 +81,34 @@ public class ProductController {
     public List<ProductDto> search(@RequestParam String q) {
         return productService.search(q);
     }
+
+    // ---- Bulk Import ----
+
+    @GetMapping("/template")
+    @Operation(summary = "Download CSV template", description = "Returns a CSV template file for bulk product import")
+    public ResponseEntity<byte[]> downloadTemplate() {
+        byte[] csv = bulkImportService.generateCsvTemplate().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header("Content-Type", "text/csv")
+                .header("Content-Disposition", "attachment; filename=product-import-template.csv")
+                .body(csv);
+    }
+
+    @PostMapping(value = "/bulk/csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Bulk import from CSV", description = "Import multiple products from a CSV file. Returns created products and per-row errors.")
+    public ResponseEntity<BulkImportResult> bulkImportCsv(@RequestParam("file") MultipartFile file) {
+        BulkImportResult result = bulkImportService.importFromCsv(file);
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping(value = "/bulk/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Bulk import from images", description = "Upload multiple food photos. AI identifies each item and creates draft products.")
+    public ResponseEntity<BulkImportResult> bulkImportImages(@RequestParam("files") MultipartFile[] files) {
+        BulkImportResult result = bulkImportService.importFromImages(files);
+        return ResponseEntity.ok(result);
+    }
+
+    // ---- Labels ----
 
     @GetMapping("/{id}/label")
     @Operation(summary = "Generate allergen label PDF", description = "Returns a PDF allergen label for the product")
