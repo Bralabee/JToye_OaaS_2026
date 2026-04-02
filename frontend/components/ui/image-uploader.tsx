@@ -14,10 +14,22 @@ const DIMENSION_REQUIREMENTS = {
 const MAX_DIMENSION = 1600
 const JPEG_QUALITY = 0.85
 
+export interface AiSuggestions {
+  identifiedName?: string
+  description?: string
+  ingredients?: string
+  category?: string
+  dietaryTags?: string[]
+  allergenWarnings?: string[]
+  cuisineOrigin?: string
+  confidence?: number
+}
+
 interface ImageUploaderProps {
   currentImageUrl?: string | null
   uploadUrl: string
   onUploadComplete: (imageUrl: string) => void
+  onAiSuggestions?: (suggestions: AiSuggestions) => void
   onRemove?: () => void
   aspectRatio?: "square" | "banner" | "logo"
   label?: string
@@ -92,6 +104,7 @@ export function ImageUploader({
   currentImageUrl,
   uploadUrl,
   onUploadComplete,
+  onAiSuggestions,
   onRemove,
   aspectRatio = "square",
   label = "Upload image",
@@ -175,9 +188,18 @@ export function ImageUploader({
         })
 
         const data = response.data
+
+        // Handle both wrapped response (ImageUploadResponse) and direct DTO
+        const product = data.product || data
         const newUrl =
-          data.imageUrl || data.logoUrl || data.bannerUrl || displayUrl
+          product.imageUrl || product.logoUrl || product.bannerUrl || displayUrl
         onUploadComplete(newUrl)
+
+        // Pass AI suggestions to parent if available
+        if (data.aiSuggestions && onAiSuggestions) {
+          onAiSuggestions(data.aiSuggestions)
+        }
+
         setPreview(null)
       } catch (err: unknown) {
         setPreview(null)

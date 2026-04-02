@@ -5,9 +5,12 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Image Upload
+## [Unreleased] - Image Upload & AI Recognition
 
 ### Added
+- **AI Image Recognition**: Claude Vision analyzes uploaded food/grocery images — identifies dishes (including Nigerian, West African, Caribbean cuisines), suggests ingredients, category, dietary tags, and allergen warnings
+- **ImageAnalysisService**: Calls Claude Messages API with food-specific system prompt, returns structured JSON with confidence score
+- **AI Suggestions UI**: Vendor dashboard shows AI-generated suggestions after image upload with one-click "Apply" buttons to populate form fields
 - **Image upload infrastructure**: MinIO (S3-compatible) for dev, AWS S3 for prod — same code via AWS SDK v2
 - **MinIO Docker service**: Object storage at port 9000, console at port 9001, auto-creates `jtoye-images` bucket with public-read policy
 - **StorageService**: Upload/delete with tenant-isolated paths (`{tenantId}/{type}/{entityId}/{file}`), file type/size validation (JPEG, PNG, WebP, GIF up to 5MB)

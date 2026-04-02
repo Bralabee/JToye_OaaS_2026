@@ -135,6 +135,8 @@ services:
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_BUCKET: jtoye-images
       S3_PUBLIC_URL: http://localhost:9000/jtoye-images
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_ANALYSIS_ENABLED: ${AI_ANALYSIS_ENABLED:-true}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"

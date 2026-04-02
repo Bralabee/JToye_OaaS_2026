@@ -34,8 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon } from "lucide-react"
-import { ImageUploader } from "@/components/ui/image-uploader"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check } from "lucide-react"
+import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
@@ -61,6 +61,25 @@ const productSchema = z.object({
 
 type ProductFormData = z.infer<typeof productSchema>
 
+function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
+  return (
+    <div className="flex items-start gap-2 bg-white rounded-md px-2 py-1.5 border border-violet-100">
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-medium text-violet-500 uppercase">{label}</span>
+        <p className="text-xs text-slate-700 line-clamp-2">{value}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onAccept}
+        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 text-[10px] font-medium transition-colors"
+      >
+        <Check className="h-2.5 w-2.5" />
+        Apply
+      </button>
+    </div>
+  )
+}
+
 const PAGE_SIZE = 20
 
 export default function ProductsPage() {
@@ -78,6 +97,7 @@ export default function ProductsPage() {
   const [available, setAvailable] = useState(true)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
   const { toast } = useToast()
 
   const {
@@ -143,6 +163,7 @@ export default function ProductsPage() {
     setAllergenMask(0)
     setAvailable(true)
     setFeatured(false)
+    setAiSuggestions(null)
     setDialogOpen(true)
   }
 
@@ -155,6 +176,7 @@ export default function ProductsPage() {
     setAllergenMask(product.allergenMask)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
+    setAiSuggestions(null)
     setDialogOpen(true)
   }
 
@@ -567,10 +589,15 @@ export default function ProductsPage() {
                     setEditingProduct({ ...editingProduct, imageUrl: url })
                     fetchProducts()
                   }}
+                  onAiSuggestions={(suggestions) => {
+                    setAiSuggestions(suggestions)
+                    toast({ title: "AI Analysis Complete", description: `Identified: ${suggestions.identifiedName || "Unknown"}` })
+                  }}
                   onRemove={async () => {
                     try {
                       await apiClient.delete(`/products/${editingProduct.id}/image`)
                       setEditingProduct({ ...editingProduct, imageUrl: null })
+                      setAiSuggestions(null)
                       fetchProducts()
                     } catch {
                       toast({ variant: "destructive", title: "Error", description: "Failed to remove image" })
@@ -584,6 +611,93 @@ export default function ProductsPage() {
                   <span>Save the product first, then add an image</span>
                 </div>
               )}
+
+              {/* AI Suggestions Panel */}
+              {aiSuggestions && aiSuggestions.confidence && aiSuggestions.confidence > 0.3 && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-600" />
+                      <span className="text-sm font-semibold text-violet-800">AI Suggestions</span>
+                      <span className="text-xs text-violet-500">
+                        {Math.round((aiSuggestions.confidence || 0) * 100)}% confidence
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAiSuggestions(null)}
+                      className="text-xs text-violet-400 hover:text-violet-600"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  {aiSuggestions.cuisineOrigin && (
+                    <p className="text-xs text-violet-600">Cuisine: {aiSuggestions.cuisineOrigin}</p>
+                  )}
+                  <div className="grid grid-cols-1 gap-2">
+                    {aiSuggestions.identifiedName && (
+                      <AiSuggestionRow
+                        label="Product Name"
+                        value={aiSuggestions.identifiedName}
+                        onAccept={() => {
+                          setValue("title", aiSuggestions.identifiedName!)
+                          toast({ title: "Applied", description: `Title set to "${aiSuggestions.identifiedName}"` })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.description && (
+                      <AiSuggestionRow
+                        label="Description"
+                        value={aiSuggestions.description}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLTextAreaElement>("[name=description]")
+                          if (el) el.value = aiSuggestions.description!
+                          toast({ title: "Applied", description: "Description updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.ingredients && (
+                      <AiSuggestionRow
+                        label="Ingredients"
+                        value={aiSuggestions.ingredients}
+                        onAccept={() => {
+                          setValue("ingredientsText", aiSuggestions.ingredients!)
+                          toast({ title: "Applied", description: "Ingredients updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.category && (
+                      <AiSuggestionRow
+                        label="Category"
+                        value={aiSuggestions.category}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLInputElement>("[name=category]")
+                          if (el) el.value = aiSuggestions.category!
+                          toast({ title: "Applied", description: `Category set to "${aiSuggestions.category}"` })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.dietaryTags && aiSuggestions.dietaryTags.length > 0 && (
+                      <AiSuggestionRow
+                        label="Dietary Tags"
+                        value={aiSuggestions.dietaryTags.join(", ")}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLInputElement>("[name=dietaryTags]")
+                          if (el) el.value = aiSuggestions.dietaryTags!.join(", ")
+                          toast({ title: "Applied", description: "Dietary tags updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.allergenWarnings && aiSuggestions.allergenWarnings.length > 0 && (
+                      <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+                        <AlertCircle className="inline h-3 w-3 mr-1" />
+                        Allergen warnings: {aiSuggestions.allergenWarnings.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Keep hidden input for backwards compatibility with form submission */}
               <input type="hidden" name="imageUrl" value={editingProduct?.imageUrl || ""} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

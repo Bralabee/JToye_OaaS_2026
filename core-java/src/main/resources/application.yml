@@ -130,6 +130,12 @@ storage:
   max-file-size-bytes: 5242880
   allowed-content-types: image/jpeg,image/png,image/webp,image/gif
 
+ai:
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
+    enabled: ${AI_ANALYSIS_ENABLED:true}
+
 notification:
   email:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:true}

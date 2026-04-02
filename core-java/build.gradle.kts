@@ -42,6 +42,9 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:2.25.60"))
     implementation("software.amazon.awssdk:s3")
 
+    // Spring WebFlux for non-blocking HTTP client (Claude API calls)
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
+
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend

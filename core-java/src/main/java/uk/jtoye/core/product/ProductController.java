@@ -15,6 +15,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import uk.jtoye.core.ai.ImageAnalysisResult;
+import uk.jtoye.core.ai.ImageAnalysisService;
+import uk.jtoye.core.ai.ImageUploadResponse;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -35,10 +38,13 @@ import java.util.UUID;
 public class ProductController {
     private final ProductService productService;
     private final ProductLabelService labelService;
+    private final ImageAnalysisService imageAnalysisService;
 
-    public ProductController(ProductService productService, ProductLabelService labelService) {
+    public ProductController(ProductService productService, ProductLabelService labelService,
+                              ImageAnalysisService imageAnalysisService) {
         this.productService = productService;
         this.labelService = labelService;
+        this.imageAnalysisService = imageAnalysisService;
     }
 
     @GetMapping
@@ -115,17 +121,45 @@ public class ProductController {
     }
 
     @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Upload product image", description = "Uploads an image for a product. Replaces any existing image.")
+    @Operation(summary = "Upload product image", description = "Uploads an image and runs AI analysis to suggest name, ingredients, category, and dietary info.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Image uploaded successfully"),
+            @ApiResponse(responseCode = "200", description = "Image uploaded with AI suggestions"),
             @ApiResponse(responseCode = "400", description = "Invalid file type or size"),
             @ApiResponse(responseCode = "404", description = "Product not found")
     })
-    public ResponseEntity<ProductDto> uploadImage(
+    public ResponseEntity<ImageUploadResponse> uploadImage(
             @Parameter(description = "Product ID") @PathVariable UUID id,
             @RequestParam("file") MultipartFile file) {
         ProductDto dto = productService.uploadImage(id, file);
-        return ResponseEntity.ok(dto);
+
+        // Run AI analysis on the uploaded image (non-blocking — returns null if disabled/fails)
+        ImageAnalysisResult analysis = null;
+        try {
+            byte[] imageBytes = file.getBytes();
+            analysis = imageAnalysisService.analyze(imageBytes, file.getContentType()).orElse(null);
+        } catch (Exception e) {
+            // AI analysis is best-effort — don't fail the upload
+        }
+
+        return ResponseEntity.ok(new ImageUploadResponse(dto, analysis));
+    }
+
+    @PostMapping(value = "/{id}/image/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Analyze product image with AI", description = "Identifies the food item, suggests ingredients, category, and dietary info without saving the image.")
+    public ResponseEntity<ImageAnalysisResult> analyzeImage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        if (!imageAnalysisService.isEnabled()) {
+            return ResponseEntity.status(503).build();
+        }
+        try {
+            byte[] imageBytes = file.getBytes();
+            return imageAnalysisService.analyze(imageBytes, file.getContentType())
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.unprocessableEntity().build());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping(value = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
