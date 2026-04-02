@@ -36,6 +36,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon } from "lucide-react"
 import { ImageUploader } from "@/components/ui/image-uploader"
+import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
 import type { Shop, CreateShopRequest } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
@@ -327,13 +328,13 @@ export default function ShopsPage() {
                       >
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
-                            {shop.logoUrl ? (
-                              <img src={shop.logoUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />
-                            ) : (
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                                <Store className="h-4 w-4" />
-                              </div>
-                            )}
+                            <SafeImage
+                              src={shop.logoUrl}
+                              alt={shop.name}
+                              className="h-8 w-8 rounded-lg object-cover"
+                              fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                              fallbackIcon={<Store className="h-4 w-4 text-blue-600" />}
+                            />
                             {shop.name}
                           </div>
                         </TableCell>

@@ -36,6 +36,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon } from "lucide-react"
 import { ImageUploader } from "@/components/ui/image-uploader"
+import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
 import {
@@ -350,13 +351,13 @@ export default function ProductsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              {product.imageUrl ? (
-                                <img src={product.imageUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />
-                              ) : (
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
-                                  <Package className="h-4 w-4" />
-                                </div>
-                              )}
+                              <SafeImage
+                                src={product.imageUrl}
+                                alt={product.title}
+                                className="h-8 w-8 rounded-lg object-cover"
+                                fallbackClassName="h-8 w-8 rounded-lg bg-purple-100"
+                                fallbackIcon={<Package className="h-4 w-4 text-purple-600" />}
+                              />
                               <div>
                                 <div className="font-medium">{product.title}</div>
                                 <div className="line-clamp-1 text-xs text-slate-500">

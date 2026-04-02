@@ -11,6 +11,7 @@ import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
+import { SafeImage } from "@/components/ui/safe-image"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -153,19 +154,16 @@ function ProductCard({ product }: { product: PublicProduct }) {
         </div>
 
         {/* Product image */}
-        {product.imageUrl ? (
-          <div className="relative w-24 sm:w-28 flex-shrink-0">
-            <img
-              src={product.imageUrl}
-              alt={product.title}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          </div>
-        ) : (
-          <div className="w-24 sm:w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-            <Store className="h-8 w-8 text-slate-200" />
-          </div>
-        )}
+        <div className="relative w-24 sm:w-28 flex-shrink-0">
+          <SafeImage
+            src={product.imageUrl}
+            alt={product.title}
+            className="absolute inset-0 w-full h-full object-cover"
+            fallbackClassName="w-full h-full bg-gradient-to-br from-slate-100 to-slate-50"
+            fallbackIcon={<Store className="h-8 w-8 text-slate-200" />}
+            loading="lazy"
+          />
+        </div>
       </div>
     </article>
   )
@@ -252,10 +250,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
       {/* Hero banner */}
       <div className="relative h-48 sm:h-64 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500">
         {shop.bannerUrl && (
-          <img
+          <SafeImage
             src={shop.bannerUrl}
-            alt=""
+            alt={`${shop.name} banner`}
             className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
@@ -274,15 +273,15 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         {/* Shop info overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
           <div className="mx-auto max-w-4xl flex items-end gap-4">
-            {shop.logoUrl ? (
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
-                <img src={shop.logoUrl} alt={shop.name} className="h-full w-full object-cover" />
-              </div>
-            ) : (
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white flex items-center justify-center flex-shrink-0">
-                <Store className="h-8 w-8 text-orange-500" />
-              </div>
-            )}
+            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
+              <SafeImage
+                src={shop.logoUrl}
+                alt={shop.name}
+                className="h-full w-full object-cover"
+                fallbackIcon={<Store className="h-8 w-8 text-orange-500" />}
+                loading="eager"
+              />
+            </div>
             <div className="min-w-0 pb-1">
               <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
                 {shop.name}

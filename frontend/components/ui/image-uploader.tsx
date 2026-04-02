@@ -1,8 +1,18 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import { Upload, X, ImageIcon, Loader2 } from "lucide-react"
+import { X, ImageIcon, Loader2 } from "lucide-react"
 import apiClient from "@/lib/api-client"
+
+const DIMENSION_REQUIREMENTS = {
+  square: { minWidth: 400, minHeight: 400, label: "400x400px" },
+  banner: { minWidth: 600, minHeight: 200, label: "600x200px" },
+  logo: { minWidth: 100, minHeight: 100, label: "100x100px" },
+} as const
+
+/** Max dimension before we compress — keeps uploads fast and storage lean */
+const MAX_DIMENSION = 1600
+const JPEG_QUALITY = 0.85
 
 interface ImageUploaderProps {
   currentImageUrl?: string | null
@@ -12,6 +22,70 @@ interface ImageUploaderProps {
   aspectRatio?: "square" | "banner" | "logo"
   label?: string
   disabled?: boolean
+}
+
+/**
+ * Load an image file into an HTMLImageElement to read its dimensions.
+ */
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error("Could not read image. File may be corrupted."))
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+/**
+ * Compress and resize an image using canvas.
+ * - Scales down to MAX_DIMENSION if larger
+ * - Outputs as JPEG at JPEG_QUALITY (unless PNG with transparency needed)
+ */
+async function compressImage(file: File): Promise<File> {
+  const img = await loadImage(file)
+  const { naturalWidth: w, naturalHeight: h } = img
+
+  // Skip compression for small images or GIFs (animation lost on canvas)
+  if ((w <= MAX_DIMENSION && h <= MAX_DIMENSION && file.size < 500_000) || file.type === "image/gif") {
+    URL.revokeObjectURL(img.src)
+    return file
+  }
+
+  // Calculate target dimensions (maintain aspect ratio)
+  let targetW = w
+  let targetH = h
+  if (w > MAX_DIMENSION || h > MAX_DIMENSION) {
+    const scale = Math.min(MAX_DIMENSION / w, MAX_DIMENSION / h)
+    targetW = Math.round(w * scale)
+    targetH = Math.round(h * scale)
+  }
+
+  const canvas = document.createElement("canvas")
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext("2d")!
+  ctx.drawImage(img, 0, 0, targetW, targetH)
+  URL.revokeObjectURL(img.src)
+
+  // Output as JPEG (best compression for photos) unless PNG is needed for transparency
+  const outputType = file.type === "image/png" ? "image/png" : "image/jpeg"
+  const quality = outputType === "image/jpeg" ? JPEG_QUALITY : undefined
+
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          resolve(file) // Fallback to original
+          return
+        }
+        const ext = outputType === "image/png" ? ".png" : ".jpg"
+        const name = file.name.replace(/\.[^.]+$/, ext)
+        resolve(new File([blob], name, { type: outputType }))
+      },
+      outputType,
+      quality
+    )
+  })
 }
 
 export function ImageUploader({
@@ -28,6 +102,7 @@ export function ImageUploader({
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [imgBroken, setImgBroken] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const aspectClass =
@@ -37,35 +112,59 @@ export function ImageUploader({
         ? "aspect-square max-w-[160px]"
         : "aspect-square max-w-[200px]"
 
-  const displayUrl = preview || currentImageUrl
+  const displayUrl = preview || (imgBroken ? null : currentImageUrl)
+  const dimReq = DIMENSION_REQUIREMENTS[aspectRatio]
 
   const handleFile = useCallback(
     async (file: File) => {
       setError(null)
+      setImgBroken(false)
 
-      // Client-side validation
+      // Type check
       const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"]
       if (!allowed.includes(file.type)) {
         setError("Invalid file type. Use JPEG, PNG, WebP, or GIF.")
         return
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setError("File too large. Maximum 5MB.")
+      if (file.size > 10 * 1024 * 1024) {
+        setError("File too large. Maximum 10MB (will be compressed before upload).")
+        return
+      }
+
+      // Dimension validation
+      try {
+        const img = await loadImage(file)
+        const { naturalWidth: w, naturalHeight: h } = img
+        URL.revokeObjectURL(img.src)
+
+        if (w < dimReq.minWidth || h < dimReq.minHeight) {
+          setError(
+            `Image too small (${w}x${h}). Minimum ${dimReq.label} required.`
+          )
+          return
+        }
+      } catch {
+        setError("Could not read image. File may be corrupted.")
         return
       }
 
       // Show local preview immediately
       const objectUrl = URL.createObjectURL(file)
       setPreview(objectUrl)
-
-      // Upload
       setUploading(true)
       setProgress(0)
 
-      const formData = new FormData()
-      formData.append("file", file)
-
       try {
+        // Compress before upload
+        const compressed = await compressImage(file)
+        const savedPct = file.size > 0 ? Math.round((1 - compressed.size / file.size) * 100) : 0
+        if (savedPct > 5) {
+          console.log(`Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.size / 1024).toFixed(0)}KB (-${savedPct}%)`)
+        }
+
+        const formData = new FormData()
+        formData.append("file", compressed)
+
         const response = await apiClient.post(uploadUrl, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           onUploadProgress: (e) => {
@@ -75,12 +174,11 @@ export function ImageUploader({
           },
         })
 
-        // The response contains the updated entity DTO with the new image URL
         const data = response.data
         const newUrl =
           data.imageUrl || data.logoUrl || data.bannerUrl || displayUrl
         onUploadComplete(newUrl)
-        setPreview(null) // Clear preview, use the real URL now
+        setPreview(null)
       } catch (err: unknown) {
         setPreview(null)
         const message =
@@ -97,7 +195,7 @@ export function ImageUploader({
         URL.revokeObjectURL(objectUrl)
       }
     },
-    [uploadUrl, onUploadComplete, displayUrl]
+    [uploadUrl, onUploadComplete, displayUrl, dimReq]
   )
 
   const handleDrop = useCallback(
@@ -113,6 +211,7 @@ export function ImageUploader({
   const handleRemove = useCallback(async () => {
     if (onRemove) {
       onRemove()
+      setImgBroken(false)
     }
   }, [onRemove])
 
@@ -145,6 +244,7 @@ export function ImageUploader({
               src={displayUrl}
               alt="Preview"
               className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setImgBroken(true)}
             />
             {/* Overlay with replace action */}
             {!uploading && (
@@ -159,11 +259,11 @@ export function ImageUploader({
           /* Empty state */
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
             <ImageIcon className="h-8 w-8" />
-            <span className="text-sm">
+            <span className="text-sm text-center px-2">
               {dragOver ? "Drop image here" : "Drag & drop or click to upload"}
             </span>
-            <span className="text-xs text-slate-300">
-              JPEG, PNG, WebP, GIF up to 5MB
+            <span className="text-xs text-slate-300 text-center">
+              JPEG, PNG, WebP, GIF &middot; min {dimReq.label}
             </span>
           </div>
         )}
@@ -207,7 +307,7 @@ export function ImageUploader({
         onChange={(e) => {
           const file = e.target.files?.[0]
           if (file) handleFile(file)
-          e.target.value = "" // Reset so same file can be re-selected
+          e.target.value = ""
         }}
         disabled={disabled || uploading}
       />
