@@ -135,7 +135,7 @@ ai:
   provider: ${AI_PROVIDER:ollama}  # "ollama" (local, free) or "anthropic" (cloud, paid)
   ollama:
     url: ${OLLAMA_URL:http://localhost:11434}
-    model: ${OLLAMA_MODEL:llava:7b}
+    model: ${OLLAMA_MODEL:gemma3:12b}
   anthropic:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}

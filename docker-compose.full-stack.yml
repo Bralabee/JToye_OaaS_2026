@@ -137,7 +137,7 @@ services:
       S3_PUBLIC_URL: http://localhost:9000/jtoye-images
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
       AI_ENABLED: "true"
-      OLLAMA_URL: http://ollama:11434
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llava:7b}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
