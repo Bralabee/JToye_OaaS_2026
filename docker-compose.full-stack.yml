@@ -217,11 +217,16 @@ services:
 
   # Mailhog — local SMTP testing (view emails at http://localhost:8025)
   mailhog:
-    image: mailhog/mailhog:latest
+    image: mailhog/mailhog:v1.0.1
     container_name: jtoye-mailhog
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8025"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - jtoye-network
 

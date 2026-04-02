@@ -4,7 +4,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}
     username: ${DB_USER:jtoye_app}
-    password: ${DB_PASSWORD:secret}
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:20}
       minimum-idle: ${DB_POOL_MIN_IDLE:5}
@@ -52,7 +52,7 @@ spring:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:jtoye}
-    password: ${RABBITMQ_PASSWORD:rabbitmqpass123}
+    password: ${RABBITMQ_PASSWORD:}
   mail:
     host: ${SMTP_HOST:localhost}
     port: ${SMTP_PORT:587}
