@@ -263,7 +263,7 @@ services:
     networks:
       - jtoye-network
 
-  # Ollama — local AI for image recognition (free, no API key needed)
+  # Ollama — local AI for image recognition (GPU-accelerated, free)
   ollama:
     image: ollama/ollama:latest
     container_name: jtoye-ollama
@@ -279,8 +279,11 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits:
-          memory: 6G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     networks:
       - jtoye-network
 

@@ -166,7 +166,7 @@ public class ImageAnalysisService {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(120)) // Vision models can be slow locally
+                .timeout(Duration.ofSeconds(30)) // GPU inference is fast (2-5s per image)
                 .block();
 
         // Ollama returns { "response": "...", "done": true, ... }
