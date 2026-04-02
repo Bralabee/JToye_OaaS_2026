@@ -11,8 +11,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
@@ -113,6 +115,34 @@ public class ShopController {
             @Parameter(description = "Shop update request") @Valid @RequestBody CreateShopRequest req) {
         ShopDto shop = shopService.updateShop(id, req);
         return ResponseEntity.ok(shop);
+    }
+
+    @PostMapping(value = "/{id}/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload shop logo", description = "Uploads a logo image for the shop")
+    public ResponseEntity<ShopDto> uploadLogo(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(shopService.uploadLogo(id, file));
+    }
+
+    @DeleteMapping("/{id}/logo")
+    @Operation(summary = "Remove shop logo")
+    public ResponseEntity<ShopDto> removeLogo(@PathVariable UUID id) {
+        return ResponseEntity.ok(shopService.removeLogo(id));
+    }
+
+    @PostMapping(value = "/{id}/banner", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload shop banner", description = "Uploads a banner image for the shop")
+    public ResponseEntity<ShopDto> uploadBanner(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(shopService.uploadBanner(id, file));
+    }
+
+    @DeleteMapping("/{id}/banner")
+    @Operation(summary = "Remove shop banner")
+    public ResponseEntity<ShopDto> removeBanner(@PathVariable UUID id) {
+        return ResponseEntity.ok(shopService.removeBanner(id));
     }
 
     /**

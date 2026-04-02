@@ -8,10 +8,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.storage.StorageService;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,10 +30,12 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
+    private final StorageService storageService;
 
-    public ProductService(ProductRepository productRepository, ProductMapper productMapper) {
+    public ProductService(ProductRepository productRepository, ProductMapper productMapper, StorageService storageService) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
+        this.storageService = storageService;
     }
 
     /**
@@ -126,6 +130,44 @@ public class ProductService {
     }
 
     /**
+     * Upload an image for a product. Replaces any existing image.
+     */
+    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
+    public ProductDto uploadImage(UUID productId, MultipartFile file) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        // Delete old image if exists
+        storageService.delete(product.getImageUrl());
+
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        String url = storageService.upload(tenantId, "products", productId, file);
+        product.setImageUrl(url);
+        product = productRepository.saveAndFlush(product);
+
+        log.info("Uploaded image for product {} (SKU: {})", productId, product.getSku());
+        return productMapper.toDto(product);
+    }
+
+    /**
+     * Remove the image from a product.
+     */
+    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
+    public ProductDto removeImage(UUID productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        storageService.delete(product.getImageUrl());
+        product.setImageUrl(null);
+        product = productRepository.saveAndFlush(product);
+
+        log.info("Removed image for product {} (SKU: {})", productId, product.getSku());
+        return productMapper.toDto(product);
+    }
+
+    /**
      * Delete product by ID (tenant-scoped).
      * RLS ensures we can only delete products belonging to our tenant.
      * Evicts all product caches for the tenant to maintain consistency.
@@ -136,6 +178,9 @@ public class ProductService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        // Clean up image from storage
+        storageService.delete(product.getImageUrl());
 
         productRepository.delete(product);
 

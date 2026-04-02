@@ -34,7 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe } from "lucide-react"
+import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon } from "lucide-react"
+import { ImageUploader } from "@/components/ui/image-uploader"
 import { Pagination } from "@/components/ui/pagination"
 import type { Shop, CreateShopRequest } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
@@ -326,9 +327,13 @@ export default function ShopsPage() {
                       >
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                              <Store className="h-4 w-4" />
-                            </div>
+                            {shop.logoUrl ? (
+                              <img src={shop.logoUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                            ) : (
+                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                                <Store className="h-4 w-4" />
+                              </div>
+                            )}
                             {shop.name}
                           </div>
                         </TableCell>
@@ -445,16 +450,60 @@ export default function ShopsPage() {
             {/* Storefront Presentation */}
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Storefront Presentation</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="logoUrl">Logo URL</Label>
-                  <Input id="logoUrl" placeholder="https://..." {...register("logoUrl")} />
+              {editingShop ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <ImageUploader
+                    currentImageUrl={editingShop.logoUrl}
+                    uploadUrl={`/shops/${editingShop.id}/logo`}
+                    onUploadComplete={(url) => {
+                      setEditingShop({ ...editingShop, logoUrl: url })
+                      setValue("logoUrl", url)
+                      fetchShops()
+                    }}
+                    onRemove={async () => {
+                      try {
+                        await apiClient.delete(`/shops/${editingShop.id}/logo`)
+                        setEditingShop({ ...editingShop, logoUrl: null })
+                        setValue("logoUrl", "")
+                        fetchShops()
+                      } catch {
+                        toast({ variant: "destructive", title: "Error", description: "Failed to remove logo" })
+                      }
+                    }}
+                    aspectRatio="logo"
+                    label="Shop Logo"
+                  />
+                  <ImageUploader
+                    currentImageUrl={editingShop.bannerUrl}
+                    uploadUrl={`/shops/${editingShop.id}/banner`}
+                    onUploadComplete={(url) => {
+                      setEditingShop({ ...editingShop, bannerUrl: url })
+                      setValue("bannerUrl", url)
+                      fetchShops()
+                    }}
+                    onRemove={async () => {
+                      try {
+                        await apiClient.delete(`/shops/${editingShop.id}/banner`)
+                        setEditingShop({ ...editingShop, bannerUrl: null })
+                        setValue("bannerUrl", "")
+                        fetchShops()
+                      } catch {
+                        toast({ variant: "destructive", title: "Error", description: "Failed to remove banner" })
+                      }
+                    }}
+                    aspectRatio="banner"
+                    label="Banner Image"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="bannerUrl">Banner Image URL</Label>
-                  <Input id="bannerUrl" placeholder="https://..." {...register("bannerUrl")} />
+              ) : (
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>Save the shop first, then add logo and banner images</span>
                 </div>
-              </div>
+              )}
+              {/* Hidden inputs for form submission */}
+              <input type="hidden" {...register("logoUrl")} />
+              <input type="hidden" {...register("bannerUrl")} />
               <div className="space-y-1.5">
                 <Label htmlFor="tags">Tags (comma-separated)</Label>
                 <Input id="tags" placeholder="Nigerian, West African, Halal, Vegan options" {...register("tags")} />

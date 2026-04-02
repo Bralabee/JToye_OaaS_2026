@@ -38,6 +38,10 @@ dependencies {
     // Email notifications
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
+    // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
+    implementation(platform("software.amazon.awssdk:bom:2.25.60"))
+    implementation("software.amazon.awssdk:s3")
+
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend

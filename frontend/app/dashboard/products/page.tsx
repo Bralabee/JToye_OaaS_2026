@@ -34,7 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon } from "lucide-react"
+import { ImageUploader } from "@/components/ui/image-uploader"
 import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
 import {
@@ -349,9 +350,13 @@ export default function ProductsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
-                                <Package className="h-4 w-4" />
-                              </div>
+                              {product.imageUrl ? (
+                                <img src={product.imageUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                              ) : (
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+                                  <Package className="h-4 w-4" />
+                                </div>
+                              )}
                               <div>
                                 <div className="font-medium">{product.title}</div>
                                 <div className="line-clamp-1 text-xs text-slate-500">
@@ -553,11 +558,34 @@ export default function ProductsPage() {
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="imageUrl">Image URL</Label>
-                  <Input id="imageUrl" name="imageUrl" placeholder="https://..." defaultValue={editingProduct?.imageUrl || ""} />
+              {editingProduct ? (
+                <ImageUploader
+                  currentImageUrl={editingProduct.imageUrl}
+                  uploadUrl={`/products/${editingProduct.id}/image`}
+                  onUploadComplete={(url) => {
+                    setEditingProduct({ ...editingProduct, imageUrl: url })
+                    fetchProducts()
+                  }}
+                  onRemove={async () => {
+                    try {
+                      await apiClient.delete(`/products/${editingProduct.id}/image`)
+                      setEditingProduct({ ...editingProduct, imageUrl: null })
+                      fetchProducts()
+                    } catch {
+                      toast({ variant: "destructive", title: "Error", description: "Failed to remove image" })
+                    }
+                  }}
+                  label="Product Image"
+                />
+              ) : (
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>Save the product first, then add an image</span>
                 </div>
+              )}
+              {/* Keep hidden input for backwards compatibility with form submission */}
+              <input type="hidden" name="imageUrl" value={editingProduct?.imageUrl || ""} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="category">Category</Label>
                   <Input id="category" name="category" placeholder="e.g., Mains" defaultValue={editingProduct?.category || ""} list="category-list" />

@@ -11,8 +11,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -110,6 +112,32 @@ public class ProductController {
         } catch (ResourceNotFoundException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload product image", description = "Uploads an image for a product. Replaces any existing image.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Image uploaded successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid file type or size"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
+    public ResponseEntity<ProductDto> uploadImage(
+            @Parameter(description = "Product ID") @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        ProductDto dto = productService.uploadImage(id, file);
+        return ResponseEntity.ok(dto);
+    }
+
+    @DeleteMapping("/{id}/image")
+    @Operation(summary = "Remove product image", description = "Removes the image from a product")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Image removed"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
+    public ResponseEntity<ProductDto> removeImage(
+            @Parameter(description = "Product ID") @PathVariable UUID id) {
+        ProductDto dto = productService.removeImage(id);
+        return ResponseEntity.ok(dto);
     }
 
     @DeleteMapping("/{id}")

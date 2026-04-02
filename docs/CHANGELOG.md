@@ -5,6 +5,22 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Image Upload
+
+### Added
+- **Image upload infrastructure**: MinIO (S3-compatible) for dev, AWS S3 for prod — same code via AWS SDK v2
+- **MinIO Docker service**: Object storage at port 9000, console at port 9001, auto-creates `jtoye-images` bucket with public-read policy
+- **StorageService**: Upload/delete with tenant-isolated paths (`{tenantId}/{type}/{entityId}/{file}`), file type/size validation (JPEG, PNG, WebP, GIF up to 5MB)
+- **Product image upload**: `POST /products/{id}/image` and `DELETE /products/{id}/image` multipart endpoints
+- **Shop logo/banner upload**: `POST /shops/{id}/logo`, `POST /shops/{id}/banner` with DELETE variants
+- **ImageUploader component**: Drag-and-drop, mobile camera support (`capture="environment"`), progress bar, live preview, error handling
+- **Image cleanup on delete**: Product/shop deletion removes associated images from storage
+
+### Changed
+- **Vendor dashboard (Products)**: Image URL text input replaced with drag-and-drop uploader, product thumbnails in table
+- **Vendor dashboard (Shops)**: Logo/banner URL text inputs replaced with visual uploaders, shop logos in table
+- **Next.js config**: Added `images.remotePatterns` for MinIO/S3 image optimization
+
 ## [Unreleased] - Public Storefront
 
 ### Added

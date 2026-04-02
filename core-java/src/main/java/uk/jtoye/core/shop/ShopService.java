@@ -8,10 +8,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
+import uk.jtoye.core.storage.StorageService;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,10 +26,12 @@ public class ShopService {
 
     private final ShopRepository shopRepository;
     private final ShopMapper shopMapper;
+    private final StorageService storageService;
 
-    public ShopService(ShopRepository shopRepository, ShopMapper shopMapper) {
+    public ShopService(ShopRepository shopRepository, ShopMapper shopMapper, StorageService storageService) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
+        this.storageService = storageService;
     }
 
     @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
@@ -106,11 +110,77 @@ public class ShopService {
     }
 
     @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
+    public ShopDto uploadLogo(UUID shopId, MultipartFile file) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        storageService.delete(shop.getLogoUrl());
+
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        String url = storageService.uploadNamed(tenantId, "shops", shopId, "logo", file);
+        shop.setLogoUrl(url);
+        shop = shopRepository.saveAndFlush(shop);
+
+        log.info("Uploaded logo for shop {}", shopId);
+        return shopMapper.toDto(shop);
+    }
+
+    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
+    public ShopDto removeLogo(UUID shopId) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        storageService.delete(shop.getLogoUrl());
+        shop.setLogoUrl(null);
+        shop = shopRepository.saveAndFlush(shop);
+
+        log.info("Removed logo for shop {}", shopId);
+        return shopMapper.toDto(shop);
+    }
+
+    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
+    public ShopDto uploadBanner(UUID shopId, MultipartFile file) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        storageService.delete(shop.getBannerUrl());
+
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        String url = storageService.uploadNamed(tenantId, "shops", shopId, "banner", file);
+        shop.setBannerUrl(url);
+        shop = shopRepository.saveAndFlush(shop);
+
+        log.info("Uploaded banner for shop {}", shopId);
+        return shopMapper.toDto(shop);
+    }
+
+    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
+    public ShopDto removeBanner(UUID shopId) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        storageService.delete(shop.getBannerUrl());
+        shop.setBannerUrl(null);
+        shop = shopRepository.saveAndFlush(shop);
+
+        log.info("Removed banner for shop {}", shopId);
+        return shopMapper.toDto(shop);
+    }
+
+    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public void deleteShop(UUID shopId) {
         log.debug("Deleting shop {}", shopId);
 
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        // Clean up images from storage
+        storageService.delete(shop.getLogoUrl());
+        storageService.delete(shop.getBannerUrl());
 
         shopRepository.delete(shop);
 
