@@ -1,7 +1,7 @@
 ### System Context for AI Agents
 
 Project: J'Toye OaaS (UK Retail 2026)
-Version: 1.3.0 (Public Storefront, Cart, Checkout, Order Tracking)
+Version: 1.3.0 (Public Storefront, Cart, Checkout, Order Tracking, Image Upload, AI Recognition)
 
 Stack
 - Core: Java 21, Spring Boot 3.4.2, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
@@ -125,6 +125,9 @@ Runtime Assumptions (Dev)
 - PostgreSQL: Port 5433 (Docker)
 - Keycloak: Port 8085, issuer `http://localhost:8085/realms/jtoye-dev`
 - Frontend: Port 3000
+- MinIO API: Port 9000, Console: Port 9001
+- Ollama: Port 11434
+- Mailhog SMTP: Port 1025, Web UI: Port 8025
 - JWT must contain `tenant_id` (PRODUCTION) or use `X-Tenant-Id` header as fallback (DEV ONLY).
 - Test users: `admin` / `admin123` (Keycloak admin console)
 
@@ -160,6 +163,8 @@ Key Environment Variables:
 - Core: `DB_HOST`, `DB_PORT`, `KC_ISSUER_URI`, `SERVER_PORT`, **`DB_USER=jtoye_app` (MUST NOT be jtoye!)**
 - Edge: `CORE_API_URL`, `KC_ISSUER_URI`, `PORT`
 - Infra: `DB_PASSWORD`, `KC_ADMIN_PASSWORD` (Docker Compose only)
+- S3/MinIO: `S3_ENDPOINT` (MinIO/S3 endpoint URL), `S3_BUCKET` (image storage bucket name), `S3_PUBLIC_URL` (public URL prefix for stored images), `S3_ACCESS_KEY` (MinIO/S3 access key), `S3_SECRET_KEY` (MinIO/S3 secret key)
+- AI: `AI_PROVIDER` ("ollama" for local/free or "anthropic" for cloud/paid), `OLLAMA_URL` (Ollama server URL), `OLLAMA_MODEL` (vision model name, default: gemma3:12b), `ANTHROPIC_API_KEY` (only needed if AI_PROVIDER=anthropic)
 - Tenant IDs: `00000000-0000-0000-0000-000000000001` (Tenant A), `00000000-0000-0000-0000-000000000002` (Tenant B)
 
 Database Users:

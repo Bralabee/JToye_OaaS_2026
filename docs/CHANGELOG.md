@@ -18,11 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shop logo/banner upload**: `POST /shops/{id}/logo`, `POST /shops/{id}/banner` with DELETE variants
 - **ImageUploader component**: Drag-and-drop, mobile camera support (`capture="environment"`), progress bar, live preview, error handling
 - **Image cleanup on delete**: Product/shop deletion removes associated images from storage
+- **Multi-image products**: V19 migration — `additional_image_urls TEXT[]`, `POST /products/{id}/images` endpoint, image carousel in product detail modal
+- **Product detail modal**: Clickable product cards open rich detail view with image carousel, full description, ingredients, allergen breakdown, dietary tags, prep time, add-to-cart
+- **Bulk CSV import**: `GET /products/template` downloads CSV template, `POST /products/bulk/csv` imports with per-row validation and error reporting
+- **Bulk photo scan**: `POST /products/bulk/images` — upload multiple food photos, AI identifies each dish, creates draft products (price=0, available=false for vendor review)
+- **Import dashboard**: New `/dashboard/products/import` page with CSV Upload and Photo Scan tabs
+- **Auth-gated order tracking**: All order tracking pages require customer login via Keycloak — `RequireCustomerAuth` guard component
+- **Ollama integration**: Local GPU-accelerated AI replacing paid Anthropic API — `ImageAnalysisService` supports both providers
+- **SafeImage component**: Reusable image renderer with error fallback for broken URLs
 
 ### Changed
 - **Vendor dashboard (Products)**: Image URL text input replaced with drag-and-drop uploader, product thumbnails in table
 - **Vendor dashboard (Shops)**: Logo/banner URL text inputs replaced with visual uploaders, shop logos in table
 - **Next.js config**: Added `images.remotePatterns` for MinIO/S3 image optimization
+- **Storefront nav**: "My Orders" link hidden when not signed in
+- **Order tracking pages**: Removed guest email fallbacks — session email only
+- **Default AI model**: `gemma3:12b` (llava:7b crashes on some CUDA setups)
 
 ## [Unreleased] - Public Storefront
 

@@ -1,5 +1,5 @@
 # Full-stack Docker Compose for local development and testing
-# Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend
+# Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend, MinIO (S3), Ollama (AI), Mailhog (SMTP)
 #
 # Requires a .env file — copy .env.example to .env and fill in values.
 #
@@ -138,7 +138,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
       AI_ENABLED: "true"
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llava:7b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:12b}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
@@ -297,7 +297,7 @@ services:
     entrypoint: >
       /bin/sh -c "
       echo 'Pulling vision model (this may take a few minutes on first run)...' &&
-      OLLAMA_HOST=http://ollama:11434 ollama pull llava:7b &&
+      OLLAMA_HOST=http://ollama:11434 ollama pull gemma3:12b &&
       echo 'Vision model ready'
       "
     networks:

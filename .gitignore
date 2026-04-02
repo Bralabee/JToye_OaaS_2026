@@ -127,3 +127,10 @@ SPRING_FRAMEWORK_UPGRADE_REPORT.md
 node_modules/
 .next/
 .npm/
+
+# Playwright test artifacts
+playwright-report/
+
+# Local AI & storage data
+ollama_data/
+minio_data/
