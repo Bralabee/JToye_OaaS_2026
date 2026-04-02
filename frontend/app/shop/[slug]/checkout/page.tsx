@@ -6,6 +6,7 @@ import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Store, Loader2 } from "lucide-react"
 import { useCart } from "@/components/storefront/cart-provider"
 import { getCustomerSession } from "@/lib/customer-auth"
+import { saveLocalOrder } from "@/lib/order-history"
 import publicApiClient from "@/lib/public-api-client"
 
 function formatPrice(pennies: number): string {
@@ -75,6 +76,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       const confirmation = res.data
       // Save email for order tracking page
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
+      // Save order for "My Orders" page
+      saveLocalOrder({
+        orderNumber: confirmation.orderNumber,
+        email: customerEmail.trim(),
+        shopSlug: slug,
+        placedAt: new Date().toISOString(),
+      })
       clearCart()
       router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
     } catch (err: unknown) {

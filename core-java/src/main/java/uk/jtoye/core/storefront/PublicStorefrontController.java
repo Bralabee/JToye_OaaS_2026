@@ -62,6 +62,12 @@ public class PublicStorefrontController {
         return ResponseEntity.status(HttpStatus.CREATED).body(confirmation);
     }
 
+    @GetMapping("/orders")
+    @Operation(summary = "Customer order history", description = "List all orders for a customer by email address.")
+    public ResponseEntity<List<PublicOrderStatus>> getCustomerOrders(@RequestParam String email) {
+        return ResponseEntity.ok(storefrontService.getCustomerOrders(email));
+    }
+
     @GetMapping("/orders/{orderNumber}")
     @Operation(summary = "Track a guest order", description = "Look up order status by order number and email. Both must match.")
     public ResponseEntity<PublicOrderStatus> trackOrder(

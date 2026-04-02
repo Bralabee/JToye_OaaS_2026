@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { User, LogOut } from "lucide-react"
+import { User, LogOut, Package } from "lucide-react"
 import { getCustomerSession, customerLogin, customerLogout } from "@/lib/customer-auth"
 
 interface CustomerProfile {
@@ -29,10 +29,11 @@ export function StorefrontNav() {
         Browse
       </Link>
       <Link
-        href="/track"
-        className="text-slate-600 hover:text-slate-900 transition-colors"
+        href="/shop/orders"
+        className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
       >
-        Track Order
+        <Package className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">My Orders</span>
       </Link>
 
       {profile ? (

@@ -117,6 +117,39 @@ public class PublicStorefrontService {
     }
 
     /**
+     * List all orders for a customer email. Sets session variable for RLS policy.
+     */
+    public List<PublicOrderStatus> getCustomerOrders(String email) {
+        log.debug("Fetching order history for {}", email);
+
+        Session session = entityManager.unwrap(Session.class);
+        session.doWork(connection -> {
+            try (var stmt = connection.prepareStatement("SELECT set_config('app.customer_email', ?, true)")) {
+                stmt.setString(1, email);
+                stmt.execute();
+            }
+        });
+
+        List<Order> orders = orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email);
+
+        return orders.stream().map(order -> {
+            String shopName = shopRepository.findById(order.getShopId())
+                    .map(Shop::getName)
+                    .orElse("Unknown shop");
+
+            PublicOrderStatus status = new PublicOrderStatus();
+            status.setOrderNumber(order.getOrderNumber());
+            status.setStatus(order.getStatus().name());
+            status.setShopName(shopName);
+            status.setTotalAmountPennies(order.getTotalAmountPennies());
+            status.setItemCount(order.getItems() != null ? order.getItems().size() : 0);
+            status.setCreatedAt(order.getCreatedAt());
+            status.setUpdatedAt(order.getUpdatedAt());
+            return status;
+        }).toList();
+    }
+
+    /**
      * Track a guest order by order number + email verification.
      * Sets RLS session variables so the tracking policy allows the SELECT.
      */
