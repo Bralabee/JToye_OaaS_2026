@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
 import type { Product, CreateProductRequest } from "@/types/api"
 import {
@@ -73,6 +73,8 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
   const [allergenMask, setAllergenMask] = useState(0)
+  const [available, setAvailable] = useState(true)
+  const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
 
@@ -137,6 +139,8 @@ export default function ProductsPage() {
     setEditingProduct(null)
     reset({ sku: "", title: "", ingredientsText: "", pricePounds: "" })
     setAllergenMask(0)
+    setAvailable(true)
+    setFeatured(false)
     setDialogOpen(true)
   }
 
@@ -147,6 +151,8 @@ export default function ProductsPage() {
     setValue("ingredientsText", product.ingredientsText)
     setValue("pricePounds", ((product.pricePennies || 0) / 100).toFixed(2))
     setAllergenMask(product.allergenMask)
+    setAvailable(product.available ?? true)
+    setFeatured(product.featured ?? false)
     setDialogOpen(true)
   }
 
@@ -163,12 +169,29 @@ export default function ProductsPage() {
     try {
       setSubmitting(true)
 
+      // Read storefront fields from form elements (not zod-validated)
+      const form = document.getElementById("product-form") as HTMLFormElement
+      const descEl = form?.querySelector<HTMLTextAreaElement>("[name=description]")
+      const imageUrlEl = form?.querySelector<HTMLInputElement>("[name=imageUrl]")
+      const categoryEl = form?.querySelector<HTMLInputElement>("[name=category]")
+      const displayOrderEl = form?.querySelector<HTMLInputElement>("[name=displayOrder]")
+      const prepTimeEl = form?.querySelector<HTMLInputElement>("[name=preparationTimeMinutes]")
+      const dietaryTagsEl = form?.querySelector<HTMLInputElement>("[name=dietaryTags]")
+
       const payload: CreateProductRequest = {
         sku: data.sku,
         title: data.title,
         ingredientsText: data.ingredientsText,
         allergenMask,
         pricePennies: Math.round(parseFloat(data.pricePounds) * 100),
+        available,
+        featured,
+        description: descEl?.value || undefined,
+        imageUrl: imageUrlEl?.value || undefined,
+        category: categoryEl?.value || undefined,
+        displayOrder: displayOrderEl?.value ? parseInt(displayOrderEl.value) : undefined,
+        preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
+        dietaryTags: dietaryTagsEl?.value || undefined,
       }
 
       if (editingProduct) {
@@ -304,8 +327,10 @@ export default function ProductsPage() {
                     <TableRow>
                       <TableHead>SKU</TableHead>
                       <TableHead>Title</TableHead>
+                      <TableHead>Category</TableHead>
                       <TableHead>Allergens</TableHead>
                       <TableHead className="text-right">Price</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -333,6 +358,15 @@ export default function ProductsPage() {
                                   {product.ingredientsText}
                                 </div>
                               </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              {product.category ? (
+                                <Badge variant="outline" className="text-xs">{product.category}</Badge>
+                              ) : (
+                                <span className="text-xs text-slate-400">—</span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -364,6 +398,18 @@ export default function ProductsPage() {
                             {product.pricePennies != null
                               ? `£${(product.pricePennies / 100).toFixed(2)}`
                               : "—"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {product.available ? (
+                                <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
+                              ) : (
+                                <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
+                              )}
+                              {product.featured && (
+                                <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -437,7 +483,8 @@ export default function ProductsPage() {
                 : "Add a new product to your catalog."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form id="product-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
             <div className="space-y-2">
               <Label htmlFor="sku">SKU</Label>
               <Input
@@ -490,6 +537,61 @@ export default function ProductsPage() {
               {errors.pricePounds && (
                 <p className="text-sm text-red-600">{errors.pricePounds.message}</p>
               )}
+            </div>
+
+            {/* Storefront Presentation */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Storefront Presentation</h4>
+              <div className="space-y-2">
+                <Label htmlFor="description">Customer Description</Label>
+                <textarea
+                  id="description"
+                  name="description"
+                  placeholder="Describe this product for customers..."
+                  defaultValue={editingProduct?.description || ""}
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="imageUrl">Image URL</Label>
+                  <Input id="imageUrl" name="imageUrl" placeholder="https://..." defaultValue={editingProduct?.imageUrl || ""} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="category">Category</Label>
+                  <Input id="category" name="category" placeholder="e.g., Mains" defaultValue={editingProduct?.category || ""} list="category-list" />
+                  <datalist id="category-list">
+                    {Array.from(new Set(products.map(p => p.category).filter(Boolean))).map(cat => (
+                      <option key={cat} value={cat!} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="displayOrder">Display Order</Label>
+                  <Input id="displayOrder" name="displayOrder" type="number" min="0" placeholder="0" defaultValue={editingProduct?.displayOrder ?? 0} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="preparationTimeMinutes">Prep Time (min)</Label>
+                  <Input id="preparationTimeMinutes" name="preparationTimeMinutes" type="number" min="0" placeholder="15" defaultValue={editingProduct?.preparationTimeMinutes || ""} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dietaryTags">Dietary Tags</Label>
+                  <Input id="dietaryTags" name="dietaryTags" placeholder="Vegan, GF" defaultValue={editingProduct?.dietaryTags || ""} />
+                </div>
+              </div>
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+                  <span className="text-sm">Available</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+                  <span className="text-sm">Featured (Popular)</span>
+                </label>
+              </div>
             </div>
 
             <div className="space-y-3">

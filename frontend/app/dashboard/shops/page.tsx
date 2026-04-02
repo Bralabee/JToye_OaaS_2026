@@ -33,19 +33,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
-import type { Shop } from "@/types/api"
+import type { Shop, CreateShopRequest } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 
 const PAGE_SIZE = 20
 
 const shopSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
-  address: z.string().min(1, "Address is required").max(255, "Address too long"),
+  address: z.string().max(255, "Address too long").optional().or(z.literal("")),
+  description: z.string().max(2000).optional().or(z.literal("")),
+  phone: z.string().max(50).optional().or(z.literal("")),
+  email: z.string().max(255).optional().or(z.literal("")),
+  logoUrl: z.string().max(2000).optional().or(z.literal("")),
+  bannerUrl: z.string().max(2000).optional().or(z.literal("")),
+  deliveryInfo: z.string().max(500).optional().or(z.literal("")),
+  tags: z.string().max(500).optional().or(z.literal("")),
+  minimumOrderPounds: z.string().optional().or(z.literal("")),
 })
 
 type ShopFormData = z.infer<typeof shopSchema>
+
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
+const DAY_LABELS: Record<string, string> = {
+  mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
+}
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
@@ -59,6 +73,8 @@ export default function ShopsPage() {
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [deletingShop, setDeletingShop] = useState<Shop | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [published, setPublished] = useState(false)
+  const [openingHours, setOpeningHours] = useState<Record<string, string>>({})
   const { toast } = useToast()
 
   const {
@@ -118,14 +134,26 @@ export default function ShopsPage() {
 
   const openCreateDialog = () => {
     setEditingShop(null)
-    reset({ name: "", address: "" })
+    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
+    setPublished(false)
+    setOpeningHours({})
     setDialogOpen(true)
   }
 
   const openEditDialog = (shop: Shop) => {
     setEditingShop(shop)
     setValue("name", shop.name)
-    setValue("address", shop.address)
+    setValue("address", shop.address || "")
+    setValue("description", shop.description || "")
+    setValue("phone", shop.phone || "")
+    setValue("email", shop.email || "")
+    setValue("logoUrl", shop.logoUrl || "")
+    setValue("bannerUrl", shop.bannerUrl || "")
+    setValue("deliveryInfo", shop.deliveryInfo || "")
+    setValue("tags", shop.tags || "")
+    setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
+    setPublished(shop.published || false)
+    setOpeningHours(shop.openingHours || {})
     setDialogOpen(true)
   }
 
@@ -138,16 +166,31 @@ export default function ShopsPage() {
     try {
       setSubmitting(true)
 
+      const payload: CreateShopRequest = {
+        name: data.name,
+        address: data.address || undefined,
+        description: data.description || undefined,
+        phone: data.phone || undefined,
+        email: data.email || undefined,
+        logoUrl: data.logoUrl || undefined,
+        bannerUrl: data.bannerUrl || undefined,
+        deliveryInfo: data.deliveryInfo || undefined,
+        tags: data.tags || undefined,
+        minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
+        published,
+        openingHours: Object.keys(openingHours).length > 0 ? openingHours : undefined,
+      }
+
       if (editingShop) {
         // Update existing shop
-        await apiClient.put(`/shops/${editingShop.id}`, data)
+        await apiClient.put(`/shops/${editingShop.id}`, payload)
         toast({
           title: "Shop updated",
           description: `${data.name} has been updated successfully.`,
         })
       } else {
         // Create new shop
-        await apiClient.post("/shops", data)
+        await apiClient.post("/shops", payload)
         toast({
           title: "Shop created",
           description: `${data.name} has been created successfully.`,
@@ -268,6 +311,7 @@ export default function ShopsPage() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Address</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -291,8 +335,17 @@ export default function ShopsPage() {
                         <TableCell>
                           <div className="flex items-center gap-2 text-slate-600">
                             <MapPin className="h-4 w-4" />
-                            {shop.address}
+                            {shop.address || "—"}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {shop.published ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                              <Globe className="h-3 w-3 mr-1" />Published
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-slate-500">Draft</Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-slate-600">
                           <div className="flex items-center gap-2">
@@ -341,7 +394,7 @@ export default function ShopsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingShop ? "Edit Shop" : "Create New Shop"}
@@ -352,48 +405,111 @@ export default function ShopsPage() {
                 : "Add a new shop to your system."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Shop Name</Label>
-              <Input
-                id="name"
-                placeholder="e.g., Main Street Location"
-                {...register("name")}
-              />
-              {errors.name && (
-                <p className="text-sm text-red-600">{errors.name.message}</p>
-              )}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            {/* Basic Info */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Basic Info</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="name">Shop Name *</Label>
+                  <Input id="name" placeholder="e.g., Jollof Express" {...register("name")} />
+                  {errors.name && <p className="text-xs text-red-600">{errors.name.message}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="address">Address</Label>
+                  <Input id="address" placeholder="e.g., 123 High St, London" {...register("address")} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="description">Description</Label>
+                <textarea
+                  id="description"
+                  placeholder="Authentic Nigerian cuisine, fresh daily..."
+                  {...register("description")}
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="published"
+                  checked={published}
+                  onChange={(e) => setPublished(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                <Label htmlFor="published" className="text-sm font-normal">Publish to storefront (visible to customers)</Label>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                placeholder="e.g., 123 Main St, London, UK"
-                {...register("address")}
-              />
-              {errors.address && (
-                <p className="text-sm text-red-600">{errors.address.message}</p>
-              )}
+            {/* Storefront Presentation */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Storefront Presentation</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="logoUrl">Logo URL</Label>
+                  <Input id="logoUrl" placeholder="https://..." {...register("logoUrl")} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="bannerUrl">Banner Image URL</Label>
+                  <Input id="bannerUrl" placeholder="https://..." {...register("bannerUrl")} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tags">Tags (comma-separated)</Label>
+                <Input id="tags" placeholder="Nigerian, West African, Halal, Vegan options" {...register("tags")} />
+              </div>
+            </div>
+
+            {/* Contact & Delivery */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Contact & Delivery</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" placeholder="020 1234 5678" {...register("phone")} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" placeholder="shop@example.com" {...register("email")} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="deliveryInfo">Delivery Info</Label>
+                  <Input id="deliveryInfo" placeholder="Free delivery over £30" {...register("deliveryInfo")} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="minimumOrderPounds">Minimum Order (£)</Label>
+                  <Input id="minimumOrderPounds" type="number" step="0.01" min="0" placeholder="0.00" {...register("minimumOrderPounds")} />
+                </div>
+              </div>
+            </div>
+
+            {/* Opening Hours */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Opening Hours</h4>
+              <div className="grid grid-cols-1 gap-2">
+                {DAYS.map((day) => (
+                  <div key={day} className="flex items-center gap-3">
+                    <span className="w-10 text-xs font-medium text-slate-600">{DAY_LABELS[day]}</span>
+                    <Input
+                      className="flex-1"
+                      placeholder="09:00-17:00 or Closed"
+                      value={openingHours[day] || ""}
+                      onChange={(e) => setOpeningHours((prev) => ({ ...prev, [day]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDialogOpen(false)}
-                disabled={submitting}
-              >
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting
-                  ? editingShop
-                    ? "Updating..."
-                    : "Creating..."
-                  : editingShop
-                  ? "Update Shop"
-                  : "Create Shop"}
+                {submitting ? (editingShop ? "Updating..." : "Creating...") : (editingShop ? "Update Shop" : "Create Shop")}
               </Button>
             </DialogFooter>
           </form>

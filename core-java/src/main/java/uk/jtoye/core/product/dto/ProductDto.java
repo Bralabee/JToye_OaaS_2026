@@ -11,6 +11,14 @@ public class ProductDto {
     private Integer allergenMask;
     private Long pricePennies;
     private OffsetDateTime createdAt;
+    private String description;
+    private String imageUrl;
+    private String category;
+    private Integer displayOrder;
+    private Boolean available;
+    private Boolean featured;
+    private Integer preparationTimeMinutes;
+    private String dietaryTags;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -26,4 +34,20 @@ public class ProductDto {
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+    public Integer getDisplayOrder() { return displayOrder; }
+    public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
+    public Boolean getAvailable() { return available; }
+    public void setAvailable(Boolean available) { this.available = available; }
+    public Boolean getFeatured() { return featured; }
+    public void setFeatured(Boolean featured) { this.featured = featured; }
+    public Integer getPreparationTimeMinutes() { return preparationTimeMinutes; }
+    public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
+    public String getDietaryTags() { return dietaryTags; }
+    public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
 }

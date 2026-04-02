@@ -48,14 +48,14 @@ public class ProductService {
         log.debug("Creating product for tenant {}: SKU={}, title={}",
                 tenantId, request.getSku(), request.getTitle());
 
-        // Create product entity
-        Product product = new Product();
+        // Create product entity via mapper (handles all fields including storefront fields)
+        Product product = productMapper.toEntity(request);
         product.setTenantId(tenantId);
-        product.setSku(request.getSku());
-        product.setTitle(request.getTitle());
-        product.setIngredientsText(request.getIngredientsText());
-        product.setAllergenMask(request.getAllergenMask());
-        product.setPricePennies(request.getPricePennies());
+
+        // Apply defaults for storefront fields if not provided
+        if (product.getAvailable() == null) product.setAvailable(true);
+        if (product.getFeatured() == null) product.setFeatured(false);
+        if (product.getDisplayOrder() == null) product.setDisplayOrder(0);
 
         // Save product
         product = productRepository.save(product);
@@ -113,12 +113,8 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        // Update product fields
-        product.setSku(request.getSku());
-        product.setTitle(request.getTitle());
-        product.setIngredientsText(request.getIngredientsText());
-        product.setAllergenMask(request.getAllergenMask());
-        product.setPricePennies(request.getPricePennies());
+        // Update all fields via mapper (handles both core and storefront fields)
+        productMapper.updateEntity(request, product);
 
         // Save with flush to ensure immediate persistence
         product = productRepository.saveAndFlush(product);

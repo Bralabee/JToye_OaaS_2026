@@ -37,6 +37,30 @@ public class Product {
     @Column(name = "price_pennies", nullable = false)
     private Long pricePennies = 1000L;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "image_url")
+    private String imageUrl;
+
+    @Column(length = 100)
+    private String category;
+
+    @Column(name = "display_order", nullable = false)
+    private Integer displayOrder = 0;
+
+    @Column(nullable = false)
+    private Boolean available = true;
+
+    @Column(nullable = false)
+    private Boolean featured = false;
+
+    @Column(name = "preparation_time_minutes")
+    private Integer preparationTimeMinutes;
+
+    @Column(name = "dietary_tags", length = 255)
+    private String dietaryTags;
+
     public UUID getId() { return id; }
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
@@ -51,4 +75,20 @@ public class Product {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+    public Integer getDisplayOrder() { return displayOrder; }
+    public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
+    public Boolean getAvailable() { return available; }
+    public void setAvailable(Boolean available) { this.available = available; }
+    public Boolean getFeatured() { return featured; }
+    public void setFeatured(Boolean featured) { this.featured = featured; }
+    public Integer getPreparationTimeMinutes() { return preparationTimeMinutes; }
+    public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
+    public String getDietaryTags() { return dietaryTags; }
+    public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
 }

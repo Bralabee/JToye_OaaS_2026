@@ -28,18 +28,39 @@ public class CreateProductRequest {
     @NotNull(message = "Allergen mask is required (Natasha's Law)")
     @Min(value = 0, message = "Allergen mask must be non-negative")
     @Max(value = 16383, message = "Allergen mask must not exceed 16383 (14 allergens max)")
-    @Schema(description = "Bitmask representing allergens (Natasha's Law requirement, 0-16383 for 14 allergens)", example = "0", required = true)
+    @Schema(description = "Bitmask representing allergens (Natasha's Law requirement)", example = "0", required = true)
     private Integer allergenMask;
 
     @NotNull(message = "Price is required")
-    @Min(value = 0, message = "Price must be non-negative (zero or more pennies)")
-    @Max(value = 1000000000L, message = "Price must not exceed £10,000,000 (1000000000 pennies)")
-    @Schema(description = "Product price in pennies (GBP minor units). Range: 0 to 1,000,000,000 (£0.00 to £10,000,000.00)",
-            example = "999",
-            required = true,
-            minimum = "0",
-            maximum = "1000000000")
+    @Min(value = 0, message = "Price must be non-negative")
+    @Max(value = 1000000000L, message = "Price must not exceed £10,000,000")
+    @Schema(description = "Product price in pennies", example = "999", required = true)
     private Long pricePennies;
+
+    // Optional storefront presentation fields
+    @Schema(description = "Customer-facing product description")
+    private String description;
+
+    @Schema(description = "Product image URL")
+    private String imageUrl;
+
+    @Schema(description = "Product category for menu grouping", example = "Mains")
+    private String category;
+
+    @Schema(description = "Sort position within category", example = "0")
+    private Integer displayOrder;
+
+    @Schema(description = "Whether the product is currently available", example = "true")
+    private Boolean available;
+
+    @Schema(description = "Whether the product is featured/popular", example = "false")
+    private Boolean featured;
+
+    @Schema(description = "Estimated preparation time in minutes", example = "15")
+    private Integer preparationTimeMinutes;
+
+    @Schema(description = "Comma-separated dietary tags", example = "Vegan, Gluten-Free")
+    private String dietaryTags;
 
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
@@ -51,4 +72,20 @@ public class CreateProductRequest {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+    public Integer getDisplayOrder() { return displayOrder; }
+    public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
+    public Boolean getAvailable() { return available; }
+    public void setAvailable(Boolean available) { this.available = available; }
+    public Boolean getFeatured() { return featured; }
+    public void setFeatured(Boolean featured) { this.featured = featured; }
+    public Integer getPreparationTimeMinutes() { return preparationTimeMinutes; }
+    public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
+    public String getDietaryTags() { return dietaryTags; }
+    public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
 }

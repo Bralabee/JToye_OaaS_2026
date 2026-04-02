@@ -12,10 +12,6 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 
 import java.time.format.DateTimeFormatter;
 
-/**
- * Sends email notifications for order state changes.
- * Async to avoid blocking the RabbitMQ listener thread.
- */
 @Service
 public class EmailNotificationService {
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationService.class);
@@ -26,43 +22,107 @@ public class EmailNotificationService {
     @Value("${notification.email.from:noreply@jtoye.uk}")
     private String fromAddress;
 
-    @Value("${notification.email.enabled:false}")
+    @Value("${notification.email.enabled:true}")
     private boolean emailEnabled;
+
+    @Value("${notification.email.tracking-base-url:http://localhost:3000}")
+    private String trackingBaseUrl;
 
     public EmailNotificationService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
     @Async
-    public void sendOrderCompletedNotification(OrderStateChangeEvent event, String recipientEmail) {
-        if (!emailEnabled || recipientEmail == null || recipientEmail.isBlank()) {
-            log.debug("Email notification skipped for order {} (enabled={}, email={})",
-                    event.orderNumber(), emailEnabled, recipientEmail);
-            return;
-        }
+    public void sendOrderConfirmation(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Received",
+                """
+                We've received your order %s.
 
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromAddress);
-        message.setTo(recipientEmail);
-        message.setSubject("Order " + event.orderNumber() + " — Completed");
-        message.setText(String.format(
+                The shop will confirm it shortly. You'll receive an update when they start preparing it.
+
+                %s
+
+                — J'Toye""");
+    }
+
+    @Async
+    public void sendOrderConfirmed(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Confirmed",
+                """
+                Great news! Your order %s has been confirmed by the shop.
+
+                Preparation will begin soon.
+
+                %s
+
+                — J'Toye""");
+    }
+
+    @Async
+    public void sendOrderPreparing(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Being Prepared",
+                """
+                Your order %s is now being prepared.
+
+                We'll let you know when it's ready.
+
+                %s
+
+                — J'Toye""");
+    }
+
+    @Async
+    public void sendOrderReady(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Ready!",
+                """
+                Your order %s is ready for collection!
+
+                Please pick it up at your earliest convenience.
+
+                %s
+
+                — J'Toye""");
+    }
+
+    @Async
+    public void sendOrderCompletedNotification(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Completed",
                 """
                 Your order %s has been completed.
 
-                Completed at: %s
+                Thank you for your business! We hope to see you again soon.
 
-                Thank you for your business!
+                %s
 
-                — J'Toye""",
-                event.orderNumber(),
-                event.timestamp().format(FORMATTER)
-        ));
-
-        send(message, event.orderNumber());
+                — J'Toye""");
     }
 
     @Async
     public void sendOrderCancelledNotification(OrderStateChangeEvent event, String recipientEmail) {
+        sendNotification(event, recipientEmail,
+                "Order " + event.orderNumber() + " — Cancelled",
+                """
+                Your order %s has been cancelled.
+
+                Previous status: %s
+                If this was unexpected, please contact the shop directly.
+
+                %s
+
+                — J'Toye""".formatted(
+                        event.orderNumber(),
+                        event.previousStatus(),
+                        trackingLink(event)
+                ));
+    }
+
+    private void sendNotification(OrderStateChangeEvent event, String recipientEmail,
+                                   String subject, String bodyTemplate) {
         if (!emailEnabled || recipientEmail == null || recipientEmail.isBlank()) {
             log.debug("Email notification skipped for order {} (enabled={}, email={})",
                     event.orderNumber(), emailEnabled, recipientEmail);
@@ -72,23 +132,14 @@ public class EmailNotificationService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(recipientEmail);
-        message.setSubject("Order " + event.orderNumber() + " — Cancelled");
-        message.setText(String.format(
-                """
-                Your order %s has been cancelled.
-
-                Previous status: %s
-                Cancelled at: %s
-
-                If this was unexpected, please contact us.
-
-                — J'Toye""",
-                event.orderNumber(),
-                event.previousStatus(),
-                event.timestamp().format(FORMATTER)
-        ));
+        message.setSubject(subject);
+        message.setText(bodyTemplate.formatted(event.orderNumber(), trackingLink(event)));
 
         send(message, event.orderNumber());
+    }
+
+    private String trackingLink(OrderStateChangeEvent event) {
+        return "Track your order: " + trackingBaseUrl + "/track?order=" + event.orderNumber();
     }
 
     private void send(SimpleMailMessage message, String orderNumber) {

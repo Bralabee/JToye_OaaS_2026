@@ -243,7 +243,7 @@ jobs:
     name: Deploy to Production
     needs: [build-and-push]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
       name: production
       url: https://app.jtoye.co.uk
