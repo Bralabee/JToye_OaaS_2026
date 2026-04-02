@@ -33,4 +33,10 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * Find orders by customer ID (tenant-scoped automatically).
      */
     List<Order> findByCustomerId(UUID customerId);
+
+    /**
+     * Find order by order number and customer email.
+     * Used for guest order tracking — RLS policy requires matching session variables.
+     */
+    Optional<Order> findByOrderNumberAndCustomerEmail(String orderNumber, String customerEmail);
 }

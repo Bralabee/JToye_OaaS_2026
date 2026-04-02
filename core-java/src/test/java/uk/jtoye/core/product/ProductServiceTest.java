@@ -102,8 +102,45 @@ class ProductServiceTest {
             dto.setAllergenMask(product.getAllergenMask());
             dto.setPricePennies(product.getPricePennies());
             dto.setCreatedAt(product.getCreatedAt());
+            dto.setAvailable(product.getAvailable());
+            dto.setFeatured(product.getFeatured());
+            dto.setCategory(product.getCategory());
             return dto;
         });
+
+        lenient().when(productMapper.toEntity(any(CreateProductRequest.class))).thenAnswer(invocation -> {
+            CreateProductRequest req = invocation.getArgument(0);
+            Product product = new Product();
+            product.setSku(req.getSku());
+            product.setTitle(req.getTitle());
+            product.setIngredientsText(req.getIngredientsText());
+            product.setAllergenMask(req.getAllergenMask());
+            product.setPricePennies(req.getPricePennies());
+            product.setDescription(req.getDescription());
+            product.setImageUrl(req.getImageUrl());
+            product.setCategory(req.getCategory());
+            product.setDisplayOrder(req.getDisplayOrder());
+            product.setAvailable(req.getAvailable());
+            product.setFeatured(req.getFeatured());
+            product.setPreparationTimeMinutes(req.getPreparationTimeMinutes());
+            product.setDietaryTags(req.getDietaryTags());
+            return product;
+        });
+
+        lenient().doAnswer(invocation -> {
+            CreateProductRequest req = invocation.getArgument(0);
+            Product product = invocation.getArgument(1);
+            product.setSku(req.getSku());
+            product.setTitle(req.getTitle());
+            product.setIngredientsText(req.getIngredientsText());
+            product.setAllergenMask(req.getAllergenMask());
+            product.setPricePennies(req.getPricePennies());
+            if (req.getDescription() != null) product.setDescription(req.getDescription());
+            if (req.getCategory() != null) product.setCategory(req.getCategory());
+            if (req.getAvailable() != null) product.setAvailable(req.getAvailable());
+            if (req.getFeatured() != null) product.setFeatured(req.getFeatured());
+            return null;
+        }).when(productMapper).updateEntity(any(CreateProductRequest.class), any(Product.class));
     }
 
     @Test

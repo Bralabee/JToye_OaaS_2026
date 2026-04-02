@@ -1,16 +1,12 @@
-package uk.jtoye.core.shop.dto;
-
-import jakarta.validation.constraints.NotBlank;
+package uk.jtoye.core.storefront.dto;
 
 import java.util.Map;
 
-public class CreateShopRequest {
-    @NotBlank
-    private String name;
-
-    private String address;
+public class PublicShopDto {
     private String slug;
+    private String name;
     private String description;
+    private String address;
     private String logoUrl;
     private String bannerUrl;
     private String phone;
@@ -20,17 +16,16 @@ public class CreateShopRequest {
     private Map<String, String> openingHours;
     private String deliveryInfo;
     private Long minimumOrderPennies;
-    private Boolean published;
     private String tags;
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getAddress() { return address; }
-    public void setAddress(String address) { this.address = address; }
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
     public String getLogoUrl() { return logoUrl; }
     public void setLogoUrl(String logoUrl) { this.logoUrl = logoUrl; }
     public String getBannerUrl() { return bannerUrl; }
@@ -49,8 +44,6 @@ public class CreateShopRequest {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
-    public Boolean getPublished() { return published; }
-    public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
 }

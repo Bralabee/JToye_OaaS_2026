@@ -1,0 +1,477 @@
+"use client"
+
+import { useEffect, useState, useRef, use } from "react"
+import Link from "next/link"
+import {
+  MapPin, Clock, Phone, Mail, ArrowLeft, Store,
+  Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
+  ShoppingBag, Plus as PlusIcon, Minus
+} from "lucide-react"
+import publicApiClient from "@/lib/public-api-client"
+import { PublicShop, PublicProduct, ProductsByCategory } from "@/types/storefront"
+import { ALLERGENS, hasAllergen } from "@/types/api"
+import { useCart } from "@/components/storefront/cart-provider"
+
+function formatPrice(pennies: number): string {
+  return `£${(pennies / 100).toFixed(2)}`
+}
+
+function isOpenNow(hours: Record<string, string> | null): boolean {
+  if (!hours) return false
+  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+  const now = new Date()
+  const dayKey = days[now.getDay()]
+  const todayHours = hours[dayKey]
+  if (!todayHours || todayHours.toLowerCase() === "closed") return false
+  const match = todayHours.match(/(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})/)
+  if (!match) return false
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  return nowMinutes >= parseInt(match[1]) * 60 + parseInt(match[2]) &&
+    nowMinutes < parseInt(match[3]) * 60 + parseInt(match[4])
+}
+
+const DAY_LABELS: Record<string, string> = {
+  mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday",
+  fri: "Friday", sat: "Saturday", sun: "Sunday",
+}
+
+function DietaryBadge({ tag }: { tag: string }) {
+  const t = tag.toLowerCase().trim()
+  if (t.includes("vegan")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200"><Leaf className="h-2.5 w-2.5" />Vegan</span>
+  if (t.includes("vegetarian")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 ring-1 ring-green-200"><Leaf className="h-2.5 w-2.5" />Vegetarian</span>
+  if (t.includes("spicy")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-red-200"><Flame className="h-2.5 w-2.5" />Spicy</span>
+  if (t.includes("gluten")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">GF</span>
+  if (t.includes("halal")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 ring-1 ring-teal-200">Halal</span>
+  return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
+}
+
+function ProductCard({ product }: { product: PublicProduct }) {
+  const [showAllergens, setShowAllergens] = useState(false)
+  const { addItem, items, updateQuantity, removeItem } = useCart()
+  const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
+  const allergenList = ALLERGENS.filter(a => hasAllergen(product.allergenMask, a.bit))
+  const cartItem = items.find((i) => i.productId === product.id)
+  const quantity = cartItem?.quantity || 0
+
+  return (
+    <article className="group bg-white rounded-xl border border-slate-100 overflow-hidden transition-all hover:shadow-sm hover:border-slate-200">
+      <div className="flex gap-0">
+        {/* Content */}
+        <div className="flex-1 p-3 sm:p-4 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold text-slate-900 leading-tight truncate">
+                {product.featured && <Star className="inline h-3 w-3 text-amber-500 mr-1 -mt-0.5" />}
+                {product.title}
+              </h4>
+              {product.description && (
+                <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                  {product.description}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Dietary tags */}
+          {dietaryTags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {dietaryTags.map((tag) => (
+                <DietaryBadge key={tag} tag={tag} />
+              ))}
+            </div>
+          )}
+
+          {/* Bottom row */}
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-slate-900">
+                {formatPrice(product.pricePennies)}
+              </span>
+              {product.preparationTimeMinutes && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
+                  <Timer className="h-2.5 w-2.5" />
+                  {product.preparationTimeMinutes}min
+                </span>
+              )}
+              {allergenList.length > 0 && (
+                <button
+                  onClick={(e) => { e.preventDefault(); setShowAllergens(!showAllergens) }}
+                  className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-700"
+                >
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  {allergenList.length}
+                </button>
+              )}
+            </div>
+            {/* Add to cart / quantity controls */}
+            {quantity === 0 ? (
+              <button
+                onClick={() => addItem({
+                  productId: product.id,
+                  title: product.title,
+                  pricePennies: product.pricePennies,
+                  imageUrl: product.imageUrl,
+                  category: product.category,
+                })}
+                className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+              >
+                <PlusIcon className="h-3 w-3" />
+                Add
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-0 rounded-full bg-orange-500 text-white">
+                <button
+                  onClick={() => updateQuantity(product.id, quantity - 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
+                <button
+                  onClick={() => updateQuantity(product.id, quantity + 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                >
+                  <PlusIcon className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Allergen detail (expandable) */}
+          {showAllergens && allergenList.length > 0 && (
+            <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-100">
+              <p className="text-[10px] font-medium text-amber-800 mb-1">Contains:</p>
+              <div className="flex flex-wrap gap-1">
+                {allergenList.map(a => (
+                  <span key={a.bit} className="text-[10px] text-amber-700">
+                    {a.icon} {a.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Product image */}
+        {product.imageUrl ? (
+          <div className="relative w-24 sm:w-28 flex-shrink-0">
+            <img
+              src={product.imageUrl}
+              alt={product.title}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="w-24 sm:w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
+            <Store className="h-8 w-8 text-slate-200" />
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
+export default function ShopDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params)
+  const [shop, setShop] = useState<PublicShop | null>(null)
+  const [products, setProducts] = useState<ProductsByCategory>({})
+  const [loading, setLoading] = useState(true)
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [shopRes, productsRes] = await Promise.all([
+          publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
+          publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
+        ])
+        setShop(shopRes.data)
+        setProducts(productsRes.data)
+        const cats = Object.keys(productsRes.data)
+        if (cats.length > 0) setActiveCategory(cats[0])
+      } catch {
+        setShop(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [slug])
+
+  const categories = Object.keys(products)
+  const featuredProducts = Object.values(products)
+    .flat()
+    .filter((p) => p.featured)
+
+  function scrollToCategory(cat: string) {
+    setActiveCategory(cat)
+    categoryRefs.current[cat]?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  if (loading) {
+    return (
+      <div className="animate-pulse">
+        <div className="h-48 sm:h-64 bg-slate-200" />
+        <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
+          <div className="h-6 bg-slate-200 rounded w-1/3" />
+          <div className="h-4 bg-slate-100 rounded w-2/3" />
+          <div className="h-10 bg-slate-100 rounded" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 bg-slate-100 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!shop) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <Store className="mx-auto h-12 w-12 text-slate-300" />
+        <h2 className="mt-4 text-lg font-semibold text-slate-900">Shop not found</h2>
+        <p className="mt-1 text-sm text-slate-500">This shop may no longer be available.</p>
+        <Link
+          href="/shop"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to all shops
+        </Link>
+      </div>
+    )
+  }
+
+  const open = isOpenNow(shop.openingHours)
+
+  return (
+    <div>
+      {/* Hero banner */}
+      <div className="relative h-48 sm:h-64 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500">
+        {shop.bannerUrl && (
+          <img
+            src={shop.bannerUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+
+        {/* Back button */}
+        <div className="absolute top-4 left-4">
+          <Link
+            href="/shop"
+            className="inline-flex items-center gap-1 rounded-full bg-black/30 backdrop-blur-sm px-3 py-1.5 text-sm text-white hover:bg-black/50 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
+        </div>
+
+        {/* Shop info overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
+          <div className="mx-auto max-w-4xl flex items-end gap-4">
+            {shop.logoUrl ? (
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
+                <img src={shop.logoUrl} alt={shop.name} className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white flex items-center justify-center flex-shrink-0">
+                <Store className="h-8 w-8 text-orange-500" />
+              </div>
+            )}
+            <div className="min-w-0 pb-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+                {shop.name}
+              </h1>
+              <div className="mt-1 flex items-center gap-3 text-sm text-white/80">
+                <span className={`inline-flex items-center gap-1 text-xs font-medium ${open ? "text-emerald-300" : "text-slate-300"}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`} />
+                  {open ? "Open now" : "Closed"}
+                </span>
+                {shop.deliveryInfo && (
+                  <span className="text-xs truncate">{shop.deliveryInfo}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Shop details bar */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+            {shop.address && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                {shop.address}
+              </span>
+            )}
+            {shop.phone && (
+              <a href={`tel:${shop.phone}`} className="inline-flex items-center gap-1 hover:text-slate-700">
+                <Phone className="h-3.5 w-3.5 text-slate-400" />
+                {shop.phone}
+              </a>
+            )}
+            {shop.email && (
+              <a href={`mailto:${shop.email}`} className="inline-flex items-center gap-1 hover:text-slate-700">
+                <Mail className="h-3.5 w-3.5 text-slate-400" />
+                {shop.email}
+              </a>
+            )}
+            {shop.minimumOrderPennies > 0 && (
+              <span className="font-medium text-slate-600">
+                Min order {formatPrice(shop.minimumOrderPennies)}
+              </span>
+            )}
+          </div>
+
+          {shop.description && (
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              {shop.description}
+            </p>
+          )}
+
+          {/* Opening hours (collapsible on mobile) */}
+          {shop.openingHours && Object.keys(shop.openingHours).length > 0 && (
+            <details className="mt-3 group">
+              <summary className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                <Clock className="h-3.5 w-3.5" />
+                <span>Opening hours</span>
+                <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
+                  <div key={day} className="flex justify-between gap-2">
+                    <span className="text-slate-500">{DAY_LABELS[day]}</span>
+                    <span className="font-medium text-slate-700">
+                      {shop.openingHours?.[day] || "Closed"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+
+      {/* Category navigation (sticky) */}
+      {categories.length > 1 && (
+        <div className="sticky top-14 z-40 bg-white border-b border-slate-200 shadow-sm">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6">
+            <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => scrollToCategory(cat)}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    activeCategory === cat
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
+
+      {/* Menu */}
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6">
+        {/* Featured section */}
+        {featuredProducts.length > 0 && (
+          <section className="mb-8">
+            <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-900 mb-3">
+              <Star className="h-4 w-4 text-amber-500" />
+              Popular
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {featuredProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Category sections */}
+        {categories.map((category) => (
+          <section
+            key={category}
+            ref={(el) => { categoryRefs.current[category] = el }}
+            className="mb-8 scroll-mt-28"
+          >
+            <h2 className="text-base font-bold text-slate-900 mb-3">{category}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {products[category].map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {/* Empty state */}
+        {categories.length === 0 && (
+          <div className="text-center py-16">
+            <Store className="mx-auto h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-base font-medium text-slate-900">
+              Menu coming soon
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              This shop hasn&apos;t added any products yet.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Floating cart bar */}
+      <FloatingCartBar slug={slug} minimumOrderPennies={shop.minimumOrderPennies} />
+    </div>
+  )
+}
+
+function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
+  const { itemCount, totalPennies } = useCart()
+
+  if (itemCount === 0) return null
+
+  const belowMinimum = minimumOrderPennies > 0 && totalPennies < minimumOrderPennies
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4">
+      <div className="mx-auto max-w-4xl">
+        <Link
+          href={`/shop/${slug}/cart`}
+          className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
+            belowMinimum
+              ? "bg-slate-700 hover:bg-slate-800"
+              : "bg-orange-500 hover:bg-orange-600"
+          } text-white`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <ShoppingBag className="h-5 w-5" />
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-orange-600">
+                {itemCount}
+              </span>
+            </div>
+            <span className="text-sm font-medium">View basket</span>
+          </div>
+          <div className="text-right">
+            <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
+            {belowMinimum && (
+              <p className="text-[10px] text-slate-300">
+                Min {formatPrice(minimumOrderPennies)}
+              </p>
+            )}
+          </div>
+        </Link>
+      </div>
+    </div>
+  )
+}

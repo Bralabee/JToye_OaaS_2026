@@ -115,6 +115,12 @@ springdoc:
     tags-sorter: alpha
     operations-sorter: alpha
 
+notification:
+  email:
+    enabled: ${NOTIFICATION_EMAIL_ENABLED:true}
+    from: ${NOTIFICATION_EMAIL_FROM:noreply@jtoye.uk}
+    tracking-base-url: ${NOTIFICATION_EMAIL_TRACKING_BASE_URL:http://localhost:3000}
+
 rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}
   default-limit: ${RATE_LIMIT_PER_MINUTE:100}

@@ -122,12 +122,14 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      SMTP_HOST: ${SMTP_HOST:-localhost}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_AUTH: ${SMTP_AUTH:-false}
-      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      NOTIFICATION_EMAIL_ENABLED: "true"
+      NOTIFICATION_EMAIL_TRACKING_BASE_URL: "http://localhost:3000"
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"
@@ -210,6 +212,16 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
+    networks:
+      - jtoye-network
+
+  # Mailhog — local SMTP testing (view emails at http://localhost:8025)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: jtoye-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
     networks:
       - jtoye-network
 
