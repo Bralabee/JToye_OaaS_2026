@@ -8,8 +8,6 @@
 #
 # See docs/DOCKER_QUICK_START.md for detailed instructions
 
-version: '3.9'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -124,6 +122,12 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"

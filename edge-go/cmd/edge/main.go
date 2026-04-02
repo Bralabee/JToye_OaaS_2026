@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jtoye/edge/internal/core"
 	"github.com/jtoye/edge/internal/middleware"
+	"github.com/jtoye/edge/internal/whatsapp"
 	"go.uber.org/zap"
 )
 
@@ -66,6 +67,7 @@ func main() {
 	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8085/realms/jtoye-dev")
 	jwksURL := keycloakIssuer + "/protocol/openid-connect/certs"
 	port := getEnv("PORT", "8080")
+	defaultShopID := getEnv("WHATSAPP_DEFAULT_SHOP_ID", "")
 
 	// Initialize Core API client with circuit breaker
 	coreClient := core.NewClient(coreAPIURL, logger)
@@ -164,34 +166,90 @@ func main() {
 			return
 		}
 
-		// Read body for forwarding (may already be read for signature verification)
+		// Read body for parsing
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil && len(body) == 0 {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
 			return
 		}
 
-		// Forward to Core API
+		// Parse WhatsApp message into structured order
+		parsedOrder, err := whatsapp.ParseWebhook(body)
+		if err != nil {
+			logger.Error("Failed to parse WhatsApp webhook", zap.Error(err))
+			c.Status(http.StatusOK) // Still 200 to prevent retries
+			return
+		}
+		if parsedOrder == nil || len(parsedOrder.Items) == 0 {
+			logger.Info("WhatsApp webhook had no order items")
+			c.Status(http.StatusOK)
+			return
+		}
+
+		// Extract auth context
 		tenantID, _ := c.Get("tenant_id")
 		token := ""
 		if authHeader := c.GetHeader("Authorization"); len(authHeader) > 7 {
 			token = authHeader[7:]
 		}
-
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-		defer cancel()
-
 		tenantStr := ""
 		if tenantID != nil {
 			tenantStr = tenantID.(string)
 		}
 
-		if err := coreClient.ForwardWebhook(ctx, token, tenantStr, "whatsapp", body); err != nil {
-			logger.Error("Failed to forward WhatsApp webhook", zap.Error(err))
-			// Still return 200 to WhatsApp to prevent retries
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		defer cancel()
+
+		// Resolve product queries to UUIDs via Core API search
+		var orderItems []core.OrderItemRequest
+		for _, item := range parsedOrder.Items {
+			products, err := coreClient.SearchProducts(ctx, token, tenantStr, item.ProductQuery)
+			if err != nil {
+				logger.Warn("Product search failed", zap.String("query", item.ProductQuery), zap.Error(err))
+				continue
+			}
+			if len(products) == 0 {
+				logger.Warn("No product found for query", zap.String("query", item.ProductQuery))
+				continue
+			}
+			// Use first match
+			orderItems = append(orderItems, core.OrderItemRequest{
+				ProductID: products[0].ID,
+				Quantity:  item.Quantity,
+			})
 		}
 
-		logger.Info("WhatsApp webhook received, verified, and forwarded")
+		if len(orderItems) == 0 {
+			logger.Warn("No products resolved from WhatsApp order", zap.String("phone", parsedOrder.Phone))
+			c.Status(http.StatusOK)
+			return
+		}
+
+		// Create order via Core API
+		if defaultShopID == "" {
+			logger.Error("WHATSAPP_DEFAULT_SHOP_ID not configured, cannot create order")
+			c.Status(http.StatusOK)
+			return
+		}
+
+		createReq := &core.CreateOrderRequest{
+			ShopID:        defaultShopID,
+			CustomerPhone: parsedOrder.Phone,
+			Notes:         "WhatsApp order: " + parsedOrder.Raw,
+			Items:         orderItems,
+		}
+
+		orderResp, err := coreClient.CreateOrder(ctx, token, tenantStr, createReq)
+		if err != nil {
+			logger.Error("Failed to create order from WhatsApp", zap.Error(err))
+			c.Status(http.StatusOK) // Still 200 to prevent retries
+			return
+		}
+
+		logger.Info("WhatsApp order created",
+			zap.String("orderNumber", orderResp.OrderNumber),
+			zap.String("phone", parsedOrder.Phone),
+			zap.Int("items", len(orderItems)))
 		c.Status(http.StatusOK)
 	})
 

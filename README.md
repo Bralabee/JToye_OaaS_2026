@@ -17,7 +17,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | Next.js 14, TypeScript, Tailwind CSS, NextAuth.js v5 |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
 | **Backend** | Spring Boot 3, Java 21, MapStruct 1.5.5, Redis Caching, Spring State Machine |
 | **Edge** | Go 1.22, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
@@ -111,7 +111,7 @@ cd frontend && npm install && npm run dev
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Browser                                                     │
-│  └─ Next.js 14 Frontend (Port 3000)                        │
+│  └─ Next.js 16 Frontend (Port 3000)                        │
 │     └─ NextAuth.js v5 ← → Keycloak (Port 8085)            │
 └──────────────────────┬────────────────────────────────────┘
                        │
@@ -260,7 +260,7 @@ CREATE POLICY tenant_isolation ON shops
 JToye_OaaS_2026/
 ├── core-java/          # Spring Boot backend
 ├── edge-go/            # Go API gateway
-├── frontend/           # Next.js 14 UI
+├── frontend/           # Next.js 16 UI
 ├── infra/              # Docker Compose, Keycloak, DB
 ├── k8s/                # Kubernetes manifests
 ├── docs/               # Documentation

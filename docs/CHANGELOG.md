@@ -5,6 +5,19 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Quick Wins
+
+### Added
+- **Email notifications**: `EmailNotificationService` with SMTP integration, wired into `OrderStateChangeListener` for COMPLETED and CANCELLED events. Async, configurable via `notification.email.enabled` and SMTP env vars.
+- **WhatsApp order creation**: Edge-Go webhook handler now parses WhatsApp messages, searches products by query, and creates orders via Core API. Requires `WHATSAPP_DEFAULT_SHOP_ID` env var.
+- **Testcontainers setup script**: `scripts/fix-testcontainers-docker.sh` configures Docker to accept older API clients.
+- **Core API client methods**: `SearchProducts()` and `CreateOrder()` in edge-go for product lookup and order creation.
+
+### Changed
+- **React 19**: Upgraded from React 18 to React 19 with matching @types and @testing-library/react 16
+- **ESLint 9**: Upgraded from ESLint 8 to 9 (required by eslint-config-next 16.x)
+- **Next.js config**: Removed deprecated `experimental.instrumentationHook` (graduated to stable)
+
 ## [Unreleased] - Housekeeping
 
 ### Fixed
