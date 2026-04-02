@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Store, Loader2 } from "lucide-react"
 import { useCart } from "@/components/storefront/cart-provider"
+import { getCustomerSession } from "@/lib/customer-auth"
 import publicApiClient from "@/lib/public-api-client"
 
 function formatPrice(pennies: number): string {
@@ -24,8 +25,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const router = useRouter()
   const { items, totalPennies, itemCount, clearCart } = useCart()
 
-  const [customerName, setCustomerName] = useState("")
-  const [customerEmail, setCustomerEmail] = useState("")
+  // Pre-fill from customer session if logged in
+  const session = typeof window !== "undefined" ? getCustomerSession() : null
+  const [customerName, setCustomerName] = useState(session?.profile.name || "")
+  const [customerEmail, setCustomerEmail] = useState(session?.profile.email || "")
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)

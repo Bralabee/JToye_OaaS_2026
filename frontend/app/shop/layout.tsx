@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { StorefrontNav } from "@/components/storefront/storefront-nav"
 
 export const metadata: Metadata = {
   title: "J'Toye — Discover Local Vendors",
@@ -26,20 +27,7 @@ export default function StorefrontLayout({
               </span>
               <span>J&apos;Toye</span>
             </Link>
-            <nav className="flex items-center gap-4 text-sm">
-              <Link
-                href="/shop"
-                className="text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                Browse
-              </Link>
-              <Link
-                href="/track"
-                className="text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                Track Order
-              </Link>
-            </nav>
+            <StorefrontNav />
           </div>
         </div>
       </header>
