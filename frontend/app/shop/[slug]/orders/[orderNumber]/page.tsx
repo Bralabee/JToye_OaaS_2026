@@ -7,6 +7,8 @@ import {
   ChefHat, Package, CircleDot, XCircle, Loader2
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import { getCustomerSession } from "@/lib/customer-auth"
+import { getLocalOrders } from "@/lib/order-history"
 
 interface OrderStatus {
   orderNumber: string
@@ -50,10 +52,23 @@ export default function OrderTrackingPage({
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // Get email from localStorage (saved during checkout)
-  const email = typeof window !== "undefined"
-    ? localStorage.getItem(`jtoye-checkout-email-${slug}`) || ""
-    : ""
+  // Resolve email from multiple sources (priority order):
+  // 1. Logged-in customer session
+  // 2. Checkout-specific localStorage (set during this shop's checkout)
+  // 3. Local order history (saved after any checkout)
+  const email = (() => {
+    if (typeof window === "undefined") return ""
+    const session = getCustomerSession()
+    if (session?.profile.email) return session.profile.email
+    const checkoutEmail = localStorage.getItem(`jtoye-checkout-email-${slug}`)
+    if (checkoutEmail) return checkoutEmail
+    const localOrders = getLocalOrders()
+    const match = localOrders.find(o => o.orderNumber === orderNumber)
+    if (match?.email) return match.email
+    // Fallback: use the most recent order's email
+    if (localOrders.length > 0) return localOrders[0].email
+    return ""
+  })()
 
   const fetchStatus = useCallback(async () => {
     if (!email) {
@@ -103,23 +118,12 @@ export default function OrderTrackingPage({
     )
   }
 
-  // No email — show prompt to enter it
-  if (!email) {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-10 text-center">
-        <Package className="mx-auto h-12 w-12 text-slate-300" />
-        <h2 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Use the standalone tracking page to look up your order.
-        </p>
-        <Link
-          href={`/track?order=${orderNumber}`}
-          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
-        >
-          Go to order tracker
-        </Link>
-      </div>
-    )
+  // No email — inline email prompt (no redirect needed)
+  if (!email && !order) {
+    return <EmailPrompt orderNumber={orderNumber} onSubmit={(e) => {
+      localStorage.setItem(`jtoye-checkout-email-${slug}`, e)
+      window.location.reload()
+    }} />
   }
 
   return (
@@ -272,6 +276,41 @@ export default function OrderTrackingPage({
           <ArrowLeft className="h-4 w-4" />
           Browse other shops
         </Link>
+      </div>
+    </div>
+  )
+}
+
+function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit: (email: string) => void }) {
+  const [emailInput, setEmailInput] = useState("")
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-10">
+      <div className="text-center mb-6">
+        <Package className="mx-auto h-12 w-12 text-slate-300" />
+        <h2 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Enter the email you used when placing this order.
+        </p>
+      </div>
+      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+        <p className="text-[10px] font-mono text-slate-400 mb-3">{orderNumber}</p>
+        <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
+          <input
+            type="email"
+            required
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            placeholder="your@email.com"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+          />
+          <button
+            type="submit"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
+          >
+            View order status
+          </button>
+        </form>
       </div>
     </div>
   )
