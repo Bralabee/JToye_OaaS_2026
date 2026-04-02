@@ -135,8 +135,11 @@ services:
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_BUCKET: jtoye-images
       S3_PUBLIC_URL: http://localhost:9000/jtoye-images
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_ENABLED: "true"
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llava:7b}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AI_ANALYSIS_ENABLED: ${AI_ANALYSIS_ENABLED:-true}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"
@@ -260,6 +263,43 @@ services:
     networks:
       - jtoye-network
 
+  # Ollama — local AI for image recognition (free, no API key needed)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jtoye-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    networks:
+      - jtoye-network
+
+  # Ollama model pull — downloads the vision model on first run
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: jtoye-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Pulling vision model (this may take a few minutes on first run)...' &&
+      OLLAMA_HOST=http://ollama:11434 ollama pull llava:7b &&
+      echo 'Vision model ready'
+      "
+    networks:
+      - jtoye-network
+
   # Mailhog — local SMTP testing (view emails at http://localhost:8025)
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -285,3 +325,4 @@ volumes:
   rabbitmq_data:
   keycloak_data:
   minio_data:
+  ollama_data:

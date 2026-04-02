@@ -131,10 +131,14 @@ storage:
   allowed-content-types: image/jpeg,image/png,image/webp,image/gif
 
 ai:
+  enabled: ${AI_ENABLED:true}
+  provider: ${AI_PROVIDER:ollama}  # "ollama" (local, free) or "anthropic" (cloud, paid)
+  ollama:
+    url: ${OLLAMA_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llava:7b}
   anthropic:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
-    enabled: ${AI_ANALYSIS_ENABLED:true}
 
 notification:
   email:
