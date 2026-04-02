@@ -14,8 +14,7 @@ interface SafeImageProps {
 
 /**
  * Image component with error fallback and lazy loading.
- * When the image fails to load (broken URL, 404, network error),
- * shows a graceful placeholder instead of a broken image icon.
+ * Shows a placeholder when the image fails to load or src is null.
  */
 export function SafeImage({
   src,
@@ -26,7 +25,6 @@ export function SafeImage({
   loading = "lazy",
 }: SafeImageProps) {
   const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
 
   if (!src || failed) {
     return (
@@ -37,19 +35,12 @@ export function SafeImage({
   }
 
   return (
-    <>
-      {/* Loading skeleton shown until image loads */}
-      {!loaded && (
-        <div className={`animate-pulse bg-slate-200 ${className}`} />
-      )}
-      <img
-        src={src}
-        alt={alt}
-        className={`${className} ${loaded ? "" : "hidden"}`}
-        loading={loading}
-        onLoad={() => setLoaded(true)}
-        onError={() => setFailed(true)}
-      />
-    </>
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={() => setFailed(true)}
+    />
   )
 }
