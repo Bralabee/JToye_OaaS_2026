@@ -35,6 +35,9 @@ dependencies {
     implementation("com.bucket4j:bucket4j-core:8.10.1")
     implementation("com.bucket4j:bucket4j-redis:8.10.1")
 
+    // Email notifications
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
@@ -77,4 +80,6 @@ tasks.test {
             excludeTags("testcontainers")
         }
     }
+    // Docker Engine 29+ requires API >= 1.40; Testcontainers 1.21.x defaults to 1.32
+    environment("DOCKER_API_VERSION", "1.45")
 }

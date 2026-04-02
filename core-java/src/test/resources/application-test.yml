@@ -32,6 +32,10 @@ spring:
 rate-limiting:
   enabled: false
 
+notification:
+  email:
+    enabled: false
+
 logging:
   level:
     uk.jtoye: DEBUG
