@@ -16,13 +16,39 @@ export interface Shop {
   tenantId: string
   name: string
   address: string
+  slug: string
+  description: string | null
+  logoUrl: string | null
+  bannerUrl: string | null
+  phone: string | null
+  email: string | null
+  latitude: number | null
+  longitude: number | null
+  openingHours: Record<string, string> | null
+  deliveryInfo: string | null
+  minimumOrderPennies: number
+  published: boolean
+  tags: string | null
   createdAt: string
   updatedAt: string
 }
 
 export interface CreateShopRequest {
   name: string
-  address: string
+  address?: string
+  slug?: string
+  description?: string
+  logoUrl?: string
+  bannerUrl?: string
+  phone?: string
+  email?: string
+  latitude?: number
+  longitude?: number
+  openingHours?: Record<string, string>
+  deliveryInfo?: string
+  minimumOrderPennies?: number
+  published?: boolean
+  tags?: string
 }
 
 // Product Types
@@ -34,6 +60,14 @@ export interface Product {
   ingredientsText: string
   allergenMask: number
   pricePennies?: number
+  description: string | null
+  imageUrl: string | null
+  category: string | null
+  displayOrder: number
+  available: boolean
+  featured: boolean
+  preparationTimeMinutes: number | null
+  dietaryTags: string | null
   createdAt: string
   updatedAt: string
 }
@@ -44,6 +78,14 @@ export interface CreateProductRequest {
   ingredientsText: string
   allergenMask: number
   pricePennies: number
+  description?: string
+  imageUrl?: string
+  category?: string
+  displayOrder?: number
+  available?: boolean
+  featured?: boolean
+  preparationTimeMinutes?: number
+  dietaryTags?: string
 }
 
 // Order Types

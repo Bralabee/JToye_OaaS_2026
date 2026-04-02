@@ -93,8 +93,33 @@ class ShopServiceTest {
             dto.setName(shop.getName());
             dto.setAddress(shop.getAddress());
             dto.setCreatedAt(shop.getCreatedAt());
+            dto.setSlug(shop.getSlug());
+            dto.setPublished(shop.getPublished());
             return dto;
         });
+
+        lenient().when(shopMapper.toEntity(any(CreateShopRequest.class))).thenAnswer(invocation -> {
+            CreateShopRequest req = invocation.getArgument(0);
+            Shop shop = new Shop();
+            shop.setName(req.getName());
+            shop.setAddress(req.getAddress());
+            shop.setSlug(req.getSlug());
+            shop.setDescription(req.getDescription());
+            shop.setPublished(req.getPublished());
+            shop.setMinimumOrderPennies(req.getMinimumOrderPennies());
+            return shop;
+        });
+
+        lenient().doAnswer(invocation -> {
+            CreateShopRequest req = invocation.getArgument(0);
+            Shop shop = invocation.getArgument(1);
+            shop.setName(req.getName());
+            shop.setAddress(req.getAddress());
+            if (req.getSlug() != null) shop.setSlug(req.getSlug());
+            if (req.getDescription() != null) shop.setDescription(req.getDescription());
+            if (req.getPublished() != null) shop.setPublished(req.getPublished());
+            return null;
+        }).when(shopMapper).updateEntity(any(CreateShopRequest.class), any(Shop.class));
     }
 
     @Test

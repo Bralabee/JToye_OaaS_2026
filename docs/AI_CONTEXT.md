@@ -1,12 +1,12 @@
 ### System Context for AI Agents
 
 Project: J'Toye OaaS (UK Retail 2026)
-Version: 1.1.1 (Security Hardening & Infrastructure Verification)
+Version: 1.3.0 (Public Storefront, Cart, Checkout, Order Tracking)
 
 Stack
 - Core: Java 21, Spring Boot 3.4.2, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.5.5, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
 - Edge: Go 1.22, Gin, circuit breakers (gobreaker), rate limiting
-- Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
 - Cache: Redis (Spring Cache abstraction, tenant-aware key generation)
 - Identity: Keycloak 24 (realm: jtoye-dev)

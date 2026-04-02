@@ -1,5 +1,7 @@
 package uk.jtoye.core.shop;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,6 +12,15 @@ import java.util.UUID;
 
 public interface ShopRepository extends JpaRepository<Shop, UUID> {
     Optional<Shop> findByName(String name);
+
+    Optional<Shop> findBySlug(String slug);
+
+    Optional<Shop> findBySlugAndPublishedTrue(String slug);
+
+    Page<Shop> findByPublishedTrue(Pageable pageable);
+
+    @Query("SELECT s FROM Shop s WHERE s.published = true AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.tags) LIKE LOWER(CONCAT('%', :q, '%')))")
+    Page<Shop> searchPublished(@Param("q") String query, Pageable pageable);
 
     @Query("SELECT s FROM Shop s WHERE LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Shop> search(@Param("q") String query);

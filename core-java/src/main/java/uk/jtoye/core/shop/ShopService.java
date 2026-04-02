@@ -14,14 +14,9 @@ import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
 import java.util.List;
-
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Service for shop management operations.
- * All operations are automatically tenant-scoped via RLS policies.
- */
 @Service
 @Transactional
 public class ShopService {
@@ -35,11 +30,6 @@ public class ShopService {
         this.shopMapper = shopMapper;
     }
 
-    /**
-     * Create a new shop.
-     * Automatically assigns tenant from context.
-     * Evicts all shop caches for the tenant to maintain consistency.
-     */
     @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto createShop(CreateShopRequest request) {
         UUID tenantId = TenantContext.get()
@@ -47,12 +37,22 @@ public class ShopService {
 
         log.debug("Creating shop '{}' for tenant {}", request.getName(), tenantId);
 
-        Shop shop = new Shop();
+        Shop shop = shopMapper.toEntity(request);
         shop.setTenantId(tenantId);
-        shop.setName(request.getName());
-        shop.setAddress(request.getAddress());
 
-        // Use saveAndFlush to ensure creation timestamp is populated for the response
+        // Auto-generate slug from name if not provided
+        if (shop.getSlug() == null || shop.getSlug().isBlank()) {
+            shop.setSlug(generateSlug(request.getName()));
+        }
+
+        // Defaults
+        if (shop.getPublished() == null) {
+            shop.setPublished(false);
+        }
+        if (shop.getMinimumOrderPennies() == null) {
+            shop.setMinimumOrderPennies(0L);
+        }
+
         shop = shopRepository.saveAndFlush(shop);
 
         log.info("Created shop {} with ID {} for tenant {}", shop.getName(), shop.getId(), tenantId);
@@ -60,10 +60,6 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
-    /**
-     * Get shop by ID (tenant-scoped).
-     * Results are cached with tenant-aware key generation (TTL: 15 minutes).
-     */
     @Transactional(readOnly = true)
     @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ShopDto> getShopById(UUID shopId) {
@@ -72,9 +68,6 @@ public class ShopService {
                 .map(shopMapper::toDto);
     }
 
-    /**
-     * Get all shops (tenant-scoped, pageable).
-     */
     @Transactional(readOnly = true)
     public Page<ShopDto> getAllShops(Pageable pageable) {
         log.debug("Fetching shops with pagination: page {}, size {}",
@@ -83,9 +76,6 @@ public class ShopService {
                 .map(shopMapper::toDto);
     }
 
-    /**
-     * Search shops by name or address (tenant-scoped).
-     */
     @Transactional(readOnly = true)
     public List<ShopDto> search(String query) {
         log.debug("Searching shops with query: {}", query);
@@ -94,10 +84,6 @@ public class ShopService {
                 .toList();
     }
 
-    /**
-     * Update an existing shop (tenant-scoped).
-     * Evicts all shop caches for the tenant to maintain consistency.
-     */
     @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto updateShop(UUID shopId, CreateShopRequest request) {
         log.debug("Updating shop {}", shopId);
@@ -105,8 +91,12 @@ public class ShopService {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
-        shop.setName(request.getName());
-        shop.setAddress(request.getAddress());
+        shopMapper.updateEntity(request, shop);
+
+        // Regenerate slug if name changed and no explicit slug provided
+        if (request.getSlug() == null || request.getSlug().isBlank()) {
+            shop.setSlug(generateSlug(request.getName()));
+        }
 
         shop = shopRepository.saveAndFlush(shop);
 
@@ -115,10 +105,6 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
-    /**
-     * Delete shop by ID (tenant-scoped).
-     * Evicts all shop caches for the tenant to maintain consistency.
-     */
     @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public void deleteShop(UUID shopId) {
         log.debug("Deleting shop {}", shopId);
@@ -131,4 +117,15 @@ public class ShopService {
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
     }
 
+    private String generateSlug(String name) {
+        String base = name.toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "")
+                .replaceAll("\\s+", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "");
+
+        // Append short random suffix for uniqueness
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        return base + "-" + suffix;
+    }
 }

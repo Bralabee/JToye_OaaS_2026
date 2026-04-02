@@ -5,6 +5,27 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Public Storefront
+
+### Added
+- **Public storefront**: Customer-facing shop discovery at `/shop` with Deliveroo-style UI, category navigation, dietary badges, allergen info
+- **Shop enrichment**: V16 migration — slug, description, logo, banner, opening hours, delivery info, geolocation, tags, published flag
+- **Product enrichment**: V16 migration — description, image URL, category, display order, availability, featured, prep time, dietary tags
+- **Cart system**: React context + localStorage persistence per shop, add-to-cart UI, floating cart bar, cart page
+- **Guest checkout**: `POST /public/shops/{slug}/orders` with server-side price recalculation, order confirmation page
+- **Order tracking**: V17 RLS policy for secure guest lookup, live 5-step progress tracker at `/shop/{slug}/orders/{orderNumber}`, 15s auto-refresh
+- **Customer order history**: V18 RLS for email-based history, `/shop/orders` page with active/past sections, automatic tracking without manual input
+- **Email notifications (all states)**: Extended to PENDING, CONFIRMED, PREPARING, READY (not just COMPLETED/CANCELLED), tracking links in all emails
+- **Mailhog**: Added to docker-compose for local email testing (http://localhost:8025)
+- **Customer auth**: Keycloak storefront-client (public, PKCE, self-service registration), customer role, Sign in/out in storefront header
+- **Standalone order tracker**: `/track` page with order number + email lookup form
+
+### Changed
+- **Vendor dashboard**: Shops and products pages updated with all new storefront fields
+- **SecurityConfig**: Added `/public/**` to permitAll
+- **Email notifications enabled by default**: `notification.email.enabled=true`
+- **SMTP defaults to Mailhog** in docker-compose for local dev
+
 ## [Unreleased] - Quick Wins
 
 ### Added
