@@ -1,169 +1,136 @@
-# Handoff: J'Toye OaaS — Image Upload, AI Recognition, Bulk Import, Storefront UX
+# Handoff: J'Toye OaaS — Platform Audit Fixes + Stripe Integration Pending
 
-**Generated**: 2026-04-02
-**Branch**: `feat/image-upload` (PR #20 open, 12 commits ahead of main)
-**Status**: In Progress — core features built, housekeeping + final review needed
+**Generated**: 2026-04-03
+**Branch**: `feat/image-upload` (PR #20 open, pushed to origin)
+**Status**: Batch 1 complete, Stripe integration next
 
 ## Goal
 
-Build a production-grade image management system for a multi-tenant UK food retail SaaS. Vendors need to upload product photos, get AI-powered dish identification, bulk-import menus, and customers need to see rich product detail modals on the storefront.
+Full platform audit identified implementation, architectural, business, and monetisation gaps. This session completed Batch 1 (schema + backend fixes) and housekeeping. Next session should tackle Stripe payment integration (Batch 2), which is the #1 revenue blocker.
 
-## Completed
+## Completed (This Session)
 
-- [x] **MinIO/S3 image storage** — Docker service, tenant-isolated paths, public-read bucket, auto-init
-- [x] **Image upload endpoints** — `POST /products/{id}/image`, `/shops/{id}/logo`, `/shops/{id}/banner`, plus DELETE variants
-- [x] **Multi-image support** — V19 migration adds `additional_image_urls TEXT[]`, `POST /products/{id}/images` for gallery
-- [x] **Image quality control** — magic byte verification, min dimension validation (400x400 products, 100x100 logos, 600x200 banners), client-side compression (canvas resize to 1600px max, JPEG 0.85)
-- [x] **SafeImage component** — error fallback for broken image URLs, lazy loading
-- [x] **ImageUploader component** — drag-and-drop, mobile camera, progress bar, dimension validation
-- [x] **AI image recognition (Ollama)** — local GPU-accelerated vision model identifies dishes, suggests name/ingredients/category/dietary tags
-- [x] **AI suggestions UI** — vendor dashboard shows AI results with one-click "Apply" buttons
-- [x] **Bulk CSV import** — `POST /products/bulk/csv` with template download, per-row validation
-- [x] **Bulk photo scan** — `POST /products/bulk/images` uploads multiple photos, AI identifies each, creates draft products
-- [x] **Import dashboard page** — `/dashboard/products/import` with CSV and Photo Scan tabs
-- [x] **Product detail modal** — clickable cards open full-screen modal with image carousel, ingredients, allergens, dietary tags, add-to-cart
-- [x] **Auth-gated order tracking** — all tracking pages require customer login, "My Orders" hidden when not signed in
-- [x] **E2E test rewrite** — assertions verify `img.naturalWidth > 0` (not just DOM existence)
+### Batch 1 — Schema & Backend Fixes
+- [x] **Per-shop product menus** — V20 migration adds `shop_id` FK to products (nullable, NULL = all shops). `ProductRepository.findAvailableByShopOrderedByCategory(shopId)` filters products per-shop. Frontend: shop assignment dropdown in product create/edit.
+- [x] **Inventory tracking** — V20 adds `quantity_in_stock` (NULL = unlimited). `Product.hasStock(quantity)` helper. Stock validated on order creation, decremented on CONFIRMED, restored on CANCELLED. Frontend: "Track inventory" checkbox + stock input, "Out of Stock" badges on storefront.
+- [x] **"0 items" bug fix** — V21 migration adds denormalized `item_count` on orders (backfilled). `Order.calculateTotal()` now sets itemCount. `PublicStorefrontService` uses `order.getItemCount()` instead of lazy-loading items through RLS.
+- [x] **Guest API info disclosure** — `/public/orders` endpoint now accepts `verify` param (order number) to prove email ownership before returning order history.
 
-## Not Yet Done
+### Housekeeping
+- [x] **YAML logging fix** — `application-prod.yml:75` and `application-staging.yml:72` JSON logging patterns now use `>-` block scalar (was failing YAML parse)
+- [x] **45 new tests** — ImageAnalysisServiceTest (10), BulkImportServiceTest (13), StorageServiceTest (15), OrderSseServiceTest (7). Total: 183 Java tests, 0 failures.
+- [x] **Security hardening** — Removed hardcoded "minioadmin" defaults from `StorageProperties.java` (now empty strings, requires env vars)
+- [x] **console.log removed** — from `image-uploader.tsx` (compression stats logging)
+- [x] **Artifact cleanup** — deleted `.idea/.idea.bak`
+- [x] **Docs freshness** — DOCUMENTATION_INDEX.md date updated
 
-- [ ] **Housekeeping** — docs freshness audit (README, AI_CONTEXT, CHANGELOG), .gitignore check for new file types
-- [ ] **Vendor dashboard multi-image management** — the gallery upload UI for additional images (backend exists, frontend not wired)
-- [ ] **Backend auth on order tracking API** — `/public/orders` endpoints still accept any email without JWT validation (frontend blocks access but API is still open)
-- [ ] **Next.js `<Image>` optimization** — storefront uses `<img>` tags; `next.config.mjs` has `remotePatterns` but `<Image>` not adopted (external URLs from vendors wouldn't match patterns)
-- [ ] **Per-shop product menus** — all tenant products show on every shop (no `shop_id` on products table)
-- [ ] **"0 items" bug** — order cards show "0 items" on tracking pages (JPA lazy loading)
-- [ ] **E2E tests in CI** — require docker-compose, not wired into GitHub Actions
+### Previously Completed (Prior Sessions)
+- [x] MinIO/S3 image storage, upload endpoints, multi-image support
+- [x] AI image recognition (Ollama/Anthropic), bulk CSV + photo scan import
+- [x] Product detail modal, auth-gated order tracking, E2E tests
+- [x] Full order state machine, RabbitMQ events, email notifications
+- [x] PostgreSQL RLS multi-tenancy, Redis caching, rate limiting
+
+## Not Yet Done (Priority Order)
+
+### Batch 2 — Stripe Integration (NEXT SESSION, revenue blocker)
+- [ ] **Stripe payment intent flow** — Add Stripe Java SDK dependency, create `PaymentService` with payment intent creation, webhook handler for `payment_intent.succeeded`/`payment_intent.failed`
+- [ ] **Payment fields on Order** — New migration: `payment_status` (PENDING/AUTHORIZED/CAPTURED/FAILED/REFUNDED), `payment_reference` (Stripe PI ID), `payment_method` (card_last4)
+- [ ] **Frontend Stripe Elements** — `@stripe/react-stripe-js` in checkout page, card input, payment confirmation flow
+- [ ] **Order flow change** — Guest order should create payment intent first, then transition to PENDING only after payment succeeds
+
+### Batch 3 — Business Logic Gaps
+- [ ] **VAT at checkout** — Apply VAT rate to order total (currently orders have no tax breakdown)
+- [ ] **Opening hours enforcement** — Validate orders only accepted when shop is open (hours stored as JSONB)
+- [ ] **Customer allergen warnings** — Cross-check cart products' allergen masks against customer restrictions at checkout
+- [ ] **Order idempotency** — Add idempotency key to prevent double-submit
+
+### Batch 4 — Infra/Process
+- [ ] **Automated K8s backup** — CronJob for pg_dump → S3
+- [ ] **CORS from env vars** — SecurityConfig CORS origins currently hardcoded
+- [ ] **Keycloak token lifespan** — 3600s too long for production, reduce to 300-900s
+- [ ] **GDPR endpoints** — Data export + erasure ("right to be forgotten")
+
+### Other Known Gaps
+- [ ] Vendor dashboard multi-image gallery UI (backend done, frontend not wired)
+- [ ] Next.js `<Image>` optimization on storefront
+- [ ] E2E tests in CI pipeline
+- [ ] Vendor onboarding flow (self-service tenant creation)
+- [ ] Subscription billing (Stripe Billing for SaaS model)
 
 ## Failed Approaches (Don't Repeat These)
 
-1. **SafeImage with loading skeleton + hidden img** — skeleton `<div>` and `<img>` both used `absolute inset-0` inside a parent with no intrinsic height. Container collapsed to 0px, images invisible. `naturalWidth=0` in browser. Fixed by removing skeleton, rendering `<img>` directly with `onError` fallback.
-
-2. **llava:7b on RTX 2080 Ti** — Ollama's llava runner crashes with segfault during inference (CUDA driver incompatibility with Ollama 0.19.0). Fixed by switching to `gemma3:12b` which has vision support and runs fine on the same GPU.
-
-3. **Docker Ollama container pulling models** — container couldn't reach `registry.ollama.ai` (DNS resolution failed inside Docker network). Fixed by using the host's Ollama server (already installed with systemd) and configuring `OLLAMA_URL` as env var.
-
-4. **Anthropic Java SDK (`com.anthropic:anthropic-java:1.3.0`)** — artifact not found on Maven Central. Fixed by using Spring WebFlux `WebClient` to call Claude's REST API directly, then refactored to use Ollama instead (free, local).
-
-5. **Playwright modal close by clicking backdrop** — backdrop `<div>` had the modal `<div>` on top, so Playwright's click was intercepted by the modal content. Fixed by adding `onClick={onClose}` on the modal wrapper div (not just the backdrop).
+1. **SafeImage with loading skeleton + hidden img** — Container collapsed to 0px. Fixed by removing skeleton.
+2. **llava:7b on RTX 2080 Ti** — CUDA segfault. Use `gemma3:12b` instead.
+3. **Docker Ollama pulling models** — DNS failure. Use host Ollama.
+4. **Anthropic Java SDK** — Not on Maven Central. Use WebFlux WebClient or Ollama.
+5. **Playwright modal close by clicking backdrop** — Click intercepted. Fixed with `onClick={onClose}` on wrapper.
 
 ## Key Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| Ollama (local) over Anthropic (cloud) | Zero per-use cost for vendors, data stays on-prem, GPU inference is fast enough |
-| gemma3:12b over llava:7b | llava crashes on this CUDA setup, gemma3 has vision and is more stable |
-| Separate upload endpoints (not multipart in create) | Keeps existing JSON APIs clean, allows image upload after creation |
-| `TEXT[]` column for additional images (not junction table) | Simpler for 1-5 images per product, no joins needed |
-| Auth-gated tracking (not guest) | User explicitly requested no guest access to order tracking |
-| Draft products from AI scan (price=0, available=false) | Prevents unreviewed AI-generated content from going live |
-| Client-side compression before upload | Reduces upload time and storage cost, 1600px max is plenty for food photos |
+| `shop_id` nullable on products | NULL = available on all shops (backward compatible) |
+| Denormalized `item_count` on orders | Avoids lazy-loading items through RLS without tenant context |
+| Stock decrement on CONFIRMED (not DRAFT) | Vendor may reject order — don't lock stock prematurely |
+| Stock restore on CANCELLED | Only if order was already CONFIRMED (stock had been decremented) |
+| `verify` param on /public/orders (not mandatory) | Backward compatible. Can be made required later |
+| Empty string defaults for S3 credentials | Forces explicit env var config. Prevents accidental use of hardcoded creds |
 
 ## Current State
 
-**Working**: Shop discovery, product browsing with images, clickable detail modals with carousel, cart + checkout, order tracking (auth-gated), CSV bulk import, image upload with quality validation, AI image recognition (Ollama on GPU), email notifications.
+**Working**: Everything from prior sessions + per-shop products, inventory, 0-items fix, 183 passing tests.
 
-**Broken**: Nothing blocking. Some products have placeholder images from Pexels (vendors should upload their own). Ollama container in docker-compose can't pull models (use host Ollama instead).
+**Broken**: Nothing blocking. `StorageProperties` now has empty S3 credentials by default — ensure `.env` or env vars provide `S3_ACCESS_KEY` and `S3_SECRET_KEY` (or the `storage.s3.access-key` / `storage.s3.secret-key` Spring properties).
 
-**Uncommitted Changes**: Only `core-java/build-local/` compiled class files (build artifacts, in .gitignore).
+**Uncommitted**: Only `build-local/` compiled class files (in .gitignore).
 
 ## Files to Know
 
 | File | Why It Matters |
 |------|----------------|
-| `core-java/src/main/java/uk/jtoye/core/storage/StorageService.java` | Upload/delete with magic byte verification, dimension validation, tenant isolation |
-| `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java` | Dual-provider AI (Ollama/Anthropic), food-specific prompt, JSON parsing |
-| `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java` | CSV parsing + AI photo scan, creates products with auto-generated SKUs |
-| `core-java/src/main/java/uk/jtoye/core/product/ProductController.java` | All product endpoints including bulk import, image upload, AI analysis |
-| `core-java/src/main/resources/db/migration/V19__product_multiple_images.sql` | additional_image_urls TEXT[] column |
-| `frontend/components/ui/image-uploader.tsx` | Drag-drop upload with compression, dimension validation, AI suggestions callback |
-| `frontend/components/ui/safe-image.tsx` | Error-fallback image component used across all pages |
-| `frontend/components/storefront/product-detail-modal.tsx` | Full product detail with image carousel, ingredients, allergens |
-| `frontend/components/storefront/require-customer-auth.tsx` | Auth guard wrapping order tracking pages |
-| `frontend/app/dashboard/products/import/page.tsx` | Bulk import UI with CSV and Photo Scan tabs |
-| `frontend/e2e/storefront-flows.spec.ts` | E2E tests with real image rendering assertions |
-| `docker-compose.full-stack.yml` | MinIO + Ollama services added |
-
-## Code Context
-
-**AI Analysis Response** (from Ollama or Anthropic):
-```json
-{
-  "identifiedName": "Jollof Rice",
-  "description": "Smoky tomato-based rice dish, a West African staple",
-  "ingredients": "Rice, tomatoes, peppers, onions, vegetable oil, seasoning",
-  "category": "Mains",
-  "dietaryTags": ["Halal", "Gluten-Free"],
-  "allergenWarnings": [],
-  "cuisineOrigin": "Nigerian",
-  "confidence": 0.92
-}
-```
-
-**Image Upload Response** (wraps product + AI suggestions):
-```json
-{
-  "product": { "id": "...", "title": "...", "imageUrl": "http://localhost:9000/jtoye-images/..." },
-  "aiSuggestions": { "identifiedName": "...", "confidence": 0.92 }
-}
-```
-
-**Bulk Import Response**:
-```json
-{
-  "totalRows": 10, "successCount": 9, "errorCount": 1,
-  "created": [{ "id": "...", "title": "...", "sku": "...", "pricePennies": 899 }],
-  "errors": [{ "row": 5, "field": "price_pounds", "message": "Invalid price: abc" }]
-}
-```
-
-**AI Config** (`application.yml`):
-```yaml
-ai:
-  enabled: true
-  provider: ollama  # or "anthropic"
-  ollama:
-    url: http://localhost:11434
-    model: gemma3:12b
-  anthropic:
-    api-key: ${ANTHROPIC_API_KEY:}
-```
+| `core-java/src/main/resources/db/migration/V20__per_shop_products_and_inventory.sql` | shop_id + quantity_in_stock on products |
+| `core-java/src/main/resources/db/migration/V21__order_item_count.sql` | Denormalized item_count on orders |
+| `core-java/src/main/java/uk/jtoye/core/product/Product.java` | Now has shopId, quantityInStock, hasStock() |
+| `core-java/src/main/java/uk/jtoye/core/order/Order.java` | Now has itemCount, updated calculateTotal() |
+| `core-java/src/main/java/uk/jtoye/core/order/OrderService.java` | Stock validation + decrement/restore logic |
+| `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java` | Per-shop product filtering, stock validation, item_count fix |
+| `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java` | /public/orders verify param |
+| `core-java/src/main/java/uk/jtoye/core/storage/StorageProperties.java` | S3 credentials now empty by default |
+| `frontend/app/dashboard/products/page.tsx` | Shop assignment + inventory tracking UI |
+| `frontend/app/shop/[slug]/page.tsx` | Out-of-stock badges on storefront |
+| `frontend/components/storefront/product-detail-modal.tsx` | Out-of-stock in product modal |
+| `core-java/build.gradle.kts` | Dependencies — Stripe SDK will need to be added here |
 
 ## Resume Instructions
 
 1. `git checkout feat/image-upload && git pull`
-2. `docker compose -f docker-compose.full-stack.yml up -d` — starts all services including MinIO
-3. Ollama must be running on host: `systemctl status ollama` (or `ollama serve`)
-   - Model needed: `ollama pull gemma3:12b` (if not already pulled)
-4. Wait ~40s for core-java startup, then verify:
+2. `docker compose -f docker-compose.full-stack.yml up -d`
+3. Ensure `.env` has `S3_ACCESS_KEY=minioadmin` and `S3_SECRET_KEY=minioadmin` for local dev
+4. Ollama on host: `systemctl status ollama` (model: `gemma3:12b`)
+5. Wait ~40s for startup, then verify:
    - `curl -s http://localhost:9090/actuator/health` → `{"status":"UP"}`
-   - `curl -s http://localhost:9000/minio/health/live` → 200 OK
-   - `curl -s http://localhost:11434/api/tags` → lists gemma3:12b
    - `curl -s http://localhost:3000/shop` → 200 OK
-5. Run tests:
-   - `./gradlew :core-java:test` → 138 pass
+6. Run tests:
+   - `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64 ./gradlew :core-java:test` → 183 pass
    - `cd frontend && npx next build` → builds clean
-   - `npx jest --watchAll=false` → 43 pass
-6. View storefront: `http://localhost:3000/shop`
-7. Vendor dashboard: `http://localhost:3000/dashboard` (login: tenant-a-user / password123)
+7. **Start Stripe integration** (Batch 2)
 
 ## Setup Required
 
-- **Docker**: All services via `docker-compose.full-stack.yml` (10 containers including MinIO, Ollama)
-- **Java**: `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
+- **Docker**: `docker-compose.full-stack.yml` (10 containers)
+- **Java**: `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64` (Java 21 required, Java 25 installed as default but Gradle toolchain needs 21)
 - **Node**: v20.19.3
-- **GPU**: NVIDIA RTX 2080 Ti (11GB VRAM) with NVIDIA Container Toolkit
-- **Ollama**: Running on host at localhost:11434 with `gemma3:12b` model
-- **Test users**: `tenant-a-user` / `password123` (vendor), self-register for customer
-- **MinIO console**: http://localhost:9001 (minioadmin/minioadmin)
-- **Mailhog**: http://localhost:8025 for email testing
+- **GPU**: NVIDIA RTX 2080 Ti with NVIDIA Container Toolkit
+- **Ollama**: Host at localhost:11434, `gemma3:12b` model
+- **Test users**: `tenant-a-user` / `password123` (vendor)
+- **MinIO console**: http://localhost:9001 (credentials from env vars)
+- **Mailhog**: http://localhost:8025
 
 ## Warnings
 
-- `build-local/` directory has uncommitted compiled classes — build artifacts, in .gitignore
-- Docker Ollama container can't reach external internet to pull models — use host Ollama
-- `llava:7b` crashes on this system's CUDA setup — use `gemma3:12b` instead
-- The `application.yml` DB/RabbitMQ password defaults are empty — `.env` file MUST be present
-- Frontend container must be rebuilt (`docker compose up -d --build frontend`) to see code changes
-- `additional_image_urls TEXT[]` needs PostgreSQL (won't work with H2 in tests unless array handling is mocked)
-- AI photo scan with 20+ images can take 5+ minutes even on GPU
+- Java 25 is the system default but Gradle toolchain requires Java 21. Always set `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
+- `StorageProperties` S3 credentials are now empty by default — `.env` MUST provide them
+- Docker Ollama container can't pull models — use host Ollama
+- `llava:7b` crashes — use `gemma3:12b`
+- AI photo scan with 20+ images takes 5+ minutes on GPU
