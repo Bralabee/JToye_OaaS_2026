@@ -72,7 +72,8 @@ logging:
     org.springframework.data: WARN
   pattern:
     # JSON structured logging for production log aggregation (ELK, Splunk, etc.)
-    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n'
+    console: >-
+      {"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n
   file:
     name: ${LOG_PATH:/var/log/jtoye}/application.log
     max-size: 10MB

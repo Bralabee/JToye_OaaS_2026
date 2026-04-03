@@ -170,10 +170,6 @@ export function ImageUploader({
       try {
         // Compress before upload
         const compressed = await compressImage(file)
-        const savedPct = file.size > 0 ? Math.round((1 - compressed.size / file.size) * 100) : 0
-        if (savedPct > 5) {
-          console.log(`Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.size / 1024).toFixed(0)}KB (-${savedPct}%)`)
-        }
 
         const formData = new FormData()
         formData.append("file", compressed)

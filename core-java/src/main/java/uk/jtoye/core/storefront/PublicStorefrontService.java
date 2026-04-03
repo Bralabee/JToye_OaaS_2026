@@ -92,6 +92,7 @@ public class PublicStorefrontService {
     /**
      * Get available products for a published shop, grouped by category.
      * Sets TenantContext from the shop's tenant_id so RLS allows product queries.
+     * Filters to products assigned to this shop (or unassigned = tenant-wide).
      */
     public Map<String, List<PublicProductDto>> getShopProducts(String slug) {
         log.debug("Fetching products for shop: {}", slug);
@@ -102,7 +103,8 @@ public class PublicStorefrontService {
         // Set tenant context so product queries work through RLS
         TenantContext.set(shop.getTenantId());
         try {
-            List<Product> products = productRepository.findAvailableOrderedByCategory();
+            // Filter: products assigned to this shop OR unassigned (shop_id IS NULL = tenant-wide)
+            List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
 
             // Group by category, preserving order; uncategorized items go under "Other"
             return products.stream()
@@ -143,7 +145,7 @@ public class PublicStorefrontService {
             status.setStatus(order.getStatus().name());
             status.setShopName(shopName);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
-            status.setItemCount(order.getItems() != null ? order.getItems().size() : 0);
+            status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
             return status;
@@ -184,7 +186,7 @@ public class PublicStorefrontService {
         status.setStatus(order.getStatus().name());
         status.setShopName(shopName);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
-        status.setItemCount(order.getItems().size());
+        status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
         return status;
@@ -223,6 +225,13 @@ public class PublicStorefrontService {
 
                 if (!Boolean.TRUE.equals(product.getAvailable())) {
                     throw new IllegalArgumentException("Product is not available: " + product.getTitle());
+                }
+
+                // Validate stock
+                if (!product.hasStock(itemReq.getQuantity())) {
+                    throw new IllegalArgumentException(
+                            "Insufficient stock for '" + product.getTitle() + "': requested "
+                                    + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
                 }
 
                 OrderItem item = new OrderItem(
@@ -305,6 +314,7 @@ public class PublicStorefrontService {
         dto.setDietaryTags(product.getDietaryTags());
         dto.setPreparationTimeMinutes(product.getPreparationTimeMinutes());
         dto.setFeatured(product.getFeatured());
+        dto.setInStock(product.hasStock());
 
         // Build combined image URLs list: primary first, then additional
         List<String> allImages = new ArrayList<>();

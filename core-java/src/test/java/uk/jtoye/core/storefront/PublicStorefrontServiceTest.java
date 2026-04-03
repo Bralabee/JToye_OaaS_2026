@@ -139,7 +139,7 @@ class PublicStorefrontServiceTest {
         p2.setPricePennies(450L);
         p2.setAvailable(true);
 
-        when(productRepository.findAvailableOrderedByCategory()).thenReturn(List.of(p1, p2));
+        when(productRepository.findAvailableByShopOrderedByCategory(publishedShop.getId())).thenReturn(List.of(p1, p2));
 
         var result = service.getShopProducts("test-shop-abc12345");
 

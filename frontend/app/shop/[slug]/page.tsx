@@ -12,6 +12,7 @@ import { PublicShop, PublicProduct, ProductsByCategory } from "@/types/storefron
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
+import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
 
 function formatPrice(pennies: number): string {
@@ -59,8 +60,11 @@ function ProductCard({ product }: { product: PublicProduct }) {
   const primaryImage = images[0] || null
   const hasMultipleImages = images.length > 1
 
+  const outOfStock = product.inStock === false
+
   const handleAddToCart = (e?: React.MouseEvent) => {
     e?.stopPropagation()
+    if (outOfStock) return
     addItem({
       productId: product.id,
       title: product.title,
@@ -83,6 +87,9 @@ function ProductCard({ product }: { product: PublicProduct }) {
               <h4 className="text-sm font-semibold text-slate-900 leading-tight truncate">
                 {product.featured && <Star className="inline h-3 w-3 text-amber-500 fill-amber-500 mr-1 -mt-0.5" />}
                 {product.title}
+                {outOfStock && (
+                  <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0 align-middle">Out of Stock</Badge>
+                )}
               </h4>
               {product.description && (
                 <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 leading-relaxed">
@@ -120,7 +127,11 @@ function ProductCard({ product }: { product: PublicProduct }) {
                 )}
               </div>
               {/* Add to cart / quantity controls */}
-              {quantity === 0 ? (
+              {outOfStock ? (
+                <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 cursor-not-allowed">
+                  Unavailable
+                </span>
+              ) : quantity === 0 ? (
                 <button
                   onClick={(e) => handleAddToCart(e)}
                   className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"

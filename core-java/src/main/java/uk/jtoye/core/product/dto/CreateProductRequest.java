@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.UUID;
+
 @Schema(description = "Request to create a new product (Natasha's Law compliant)")
 public class CreateProductRequest {
 
@@ -62,6 +64,13 @@ public class CreateProductRequest {
     @Schema(description = "Comma-separated dietary tags", example = "Vegan, Gluten-Free")
     private String dietaryTags;
 
+    @Schema(description = "Shop this product belongs to (null = available on all tenant shops)")
+    private UUID shopId;
+
+    @Min(value = 0, message = "Stock quantity must be non-negative")
+    @Schema(description = "Quantity in stock (null = unlimited/untracked)", example = "50")
+    private Integer quantityInStock;
+
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
     public String getTitle() { return title; }
@@ -88,4 +97,8 @@ public class CreateProductRequest {
     public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
     public String getDietaryTags() { return dietaryTags; }
     public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
+    public UUID getShopId() { return shopId; }
+    public void setShopId(UUID shopId) { this.shopId = shopId; }
+    public Integer getQuantityInStock() { return quantityInStock; }
+    public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
 }

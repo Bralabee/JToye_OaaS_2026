@@ -28,6 +28,7 @@ export interface PublicProduct {
   dietaryTags: string | null
   preparationTimeMinutes: number | null
   featured: boolean
+  inStock: boolean
 }
 
 export type ProductsByCategory = Record<string, PublicProduct[]>

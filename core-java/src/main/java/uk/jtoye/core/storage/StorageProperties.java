@@ -22,8 +22,8 @@ public class StorageProperties {
         private String endpoint = "http://localhost:9000";
         private String region = "eu-west-2";
         private String bucket = "jtoye-images";
-        private String accessKey = "minioadmin";
-        private String secretKey = "minioadmin";
+        private String accessKey = "";
+        private String secretKey = "";
         private String publicUrl = "http://localhost:9000/jtoye-images";
 
         public String getEndpoint() { return endpoint; }

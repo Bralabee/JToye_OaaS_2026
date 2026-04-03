@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 
@@ -58,6 +59,7 @@ export function ProductDetailModal({
     setCurrentImageIndex((i) => (i - 1 + images.length) % images.length)
   }, [images.length])
 
+  const outOfStock = product.inStock === false
   const allergenList = ALLERGENS.filter((a) => hasAllergen(product.allergenMask, a.bit))
   const dietaryTags = product.dietaryTags
     ?.split(",")
@@ -171,6 +173,9 @@ export function ProductDetailModal({
                     <Star className="h-4 w-4 text-amber-500 fill-amber-500 flex-shrink-0" />
                   )}
                   {product.title}
+                  {outOfStock && (
+                    <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
+                  )}
                 </h2>
               </div>
               <span className="text-xl font-bold text-slate-900 whitespace-nowrap">
@@ -245,7 +250,14 @@ export function ProductDetailModal({
 
           {/* Sticky add-to-cart footer */}
           <div className="border-t border-slate-100 p-4 bg-white flex-shrink-0">
-            {quantity === 0 ? (
+            {outOfStock ? (
+              <button
+                disabled
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-300 text-slate-500 font-semibold py-3 px-4 cursor-not-allowed"
+              >
+                Out of Stock
+              </button>
+            ) : quantity === 0 ? (
               <button
                 onClick={onAdd}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 transition-colors"

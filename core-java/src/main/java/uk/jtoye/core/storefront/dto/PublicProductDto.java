@@ -15,6 +15,7 @@ public class PublicProductDto {
     private String dietaryTags;
     private Integer preparationTimeMinutes;
     private Boolean featured;
+    private boolean inStock;
     private List<String> imageUrls;
 
     public UUID getId() { return id; }
@@ -39,6 +40,8 @@ public class PublicProductDto {
     public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
     public Boolean getFeatured() { return featured; }
     public void setFeatured(Boolean featured) { this.featured = featured; }
+    public boolean isInStock() { return inStock; }
+    public void setInStock(boolean inStock) { this.inStock = inStock; }
     public List<String> getImageUrls() { return imageUrls; }
     public void setImageUrls(List<String> imageUrls) { this.imageUrls = imageUrls; }
 }

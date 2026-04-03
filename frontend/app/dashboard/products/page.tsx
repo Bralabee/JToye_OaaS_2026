@@ -39,7 +39,7 @@ import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest } from "@/types/api"
+import type { Product, CreateProductRequest, Shop } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
@@ -99,6 +99,10 @@ export default function ProductsPage() {
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
+  const [shops, setShops] = useState<Shop[]>([])
+  const [selectedShopId, setSelectedShopId] = useState<string>("")
+  const [trackInventory, setTrackInventory] = useState(false)
+  const [quantityInStock, setQuantityInStock] = useState<number>(0)
   const { toast } = useToast()
 
   const {
@@ -113,8 +117,18 @@ export default function ProductsPage() {
 
   useEffect(() => {
     fetchProducts()
+    fetchShops()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
+
+  const fetchShops = async () => {
+    try {
+      const response = await apiClient.get("/shops?size=100")
+      setShops(response.data.content || [])
+    } catch {
+      // Shops are optional — fail silently
+    }
+  }
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -164,6 +178,9 @@ export default function ProductsPage() {
     setAllergenMask(0)
     setAvailable(true)
     setFeatured(false)
+    setSelectedShopId("")
+    setTrackInventory(false)
+    setQuantityInStock(0)
     setAiSuggestions(null)
     setDialogOpen(true)
   }
@@ -177,6 +194,9 @@ export default function ProductsPage() {
     setAllergenMask(product.allergenMask)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
+    setSelectedShopId(product.shopId || "")
+    setTrackInventory(product.quantityInStock != null)
+    setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
     setDialogOpen(true)
   }
@@ -217,6 +237,8 @@ export default function ProductsPage() {
         displayOrder: displayOrderEl?.value ? parseInt(displayOrderEl.value) : undefined,
         preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
         dietaryTags: dietaryTagsEl?.value || undefined,
+        shopId: selectedShopId || undefined,
+        quantityInStock: trackInventory ? quantityInStock : null,
       }
 
       if (editingProduct) {
@@ -719,6 +741,43 @@ export default function ProductsPage() {
                     ))}
                   </datalist>
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="shopId">Shop Assignment</Label>
+                <select
+                  id="shopId"
+                  value={selectedShopId}
+                  onChange={(e) => setSelectedShopId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">All Shops</option>
+                  {shops.map((shop) => (
+                    <option key={shop.id} value={shop.id}>{shop.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trackInventory}
+                    onChange={(e) => setTrackInventory(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <span className="text-sm font-medium">Track inventory</span>
+                </label>
+                {trackInventory && (
+                  <div className="mt-1.5">
+                    <Label htmlFor="quantityInStock">Stock Quantity</Label>
+                    <Input
+                      id="quantityInStock"
+                      type="number"
+                      min="0"
+                      value={quantityInStock}
+                      onChange={(e) => setQuantityInStock(parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
