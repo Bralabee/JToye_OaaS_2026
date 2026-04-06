@@ -25,6 +25,11 @@ public class GuestOrderRequest {
     @Size(max = 500)
     private String notes;
 
+    @Size(max = 64)
+    private String idempotencyKey;
+
+    private Integer customerAllergenMask;
+
     @NotEmpty(message = "At least one item is required")
     @Valid
     private List<GuestOrderItemRequest> items;
@@ -37,6 +42,10 @@ public class GuestOrderRequest {
     public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+    public Integer getCustomerAllergenMask() { return customerAllergenMask; }
+    public void setCustomerAllergenMask(Integer customerAllergenMask) { this.customerAllergenMask = customerAllergenMask; }
     public List<GuestOrderItemRequest> getItems() { return items; }
     public void setItems(List<GuestOrderItemRequest> items) { this.items = items; }
 }

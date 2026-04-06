@@ -15,6 +15,7 @@ import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -31,14 +32,19 @@ import uk.jtoye.core.storefront.dto.PublicShopDto;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -149,6 +155,9 @@ public class PublicStorefrontService {
             status.setStatus(order.getStatus().name());
             status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
+            status.setSubtotalPennies(order.getSubtotalPennies());
+            status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
+            status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
             status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
             status.setCreatedAt(order.getCreatedAt());
@@ -210,9 +219,35 @@ public class PublicStorefrontService {
         Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
 
+        // Enforce opening hours — reject orders when shop is closed
+        validateShopIsOpen(shop);
+
         UUID tenantId = shop.getTenantId();
         TenantContext.set(tenantId);
         try {
+            // Idempotency check — return existing order if same key was already submitted
+            String idempotencyKey = request.getIdempotencyKey();
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+                if (existing.isPresent()) {
+                    Order existingOrder = existing.get();
+                    log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
+                            idempotencyKey, existingOrder.getOrderNumber());
+                    return new GuestOrderConfirmation(
+                            existingOrder.getOrderNumber(),
+                            existingOrder.getStatus().name(),
+                            existingOrder.getSubtotalPennies(),
+                            existingOrder.getVatRate().name(),
+                            existingOrder.getVatAmountPennies(),
+                            existingOrder.getTotalAmountPennies(),
+                            shop.getName(),
+                            existingOrder.getItemCount(),
+                            existingOrder.getPaymentReference(),
+                            List.of()
+                    );
+                }
+            }
+
             Order order = new Order();
             order.setTenantId(tenantId);
             order.setShopId(shop.getId());
@@ -223,9 +258,16 @@ public class PublicStorefrontService {
             order.setCustomerEmail(request.getCustomerEmail());
             order.setCustomerPhone(request.getCustomerPhone());
             order.setNotes(request.getNotes());
+            order.setVatRate(VatRate.STANDARD);
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                order.setIdempotencyKey(idempotencyKey);
+            }
             order.setUpdatedAt(OffsetDateTime.now());
 
-            // Add items with server-side price lookup
+            // Add items with server-side price lookup + allergen cross-check
+            List<String> allergenWarnings = new ArrayList<>();
+            Integer customerAllergenMask = request.getCustomerAllergenMask();
+
             for (GuestOrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
                         .orElseThrow(() -> new ResourceNotFoundException(
@@ -242,6 +284,16 @@ public class PublicStorefrontService {
                                     + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
                 }
 
+                // Cross-check allergens if customer provided restrictions
+                if (customerAllergenMask != null && customerAllergenMask != 0
+                        && product.getAllergenMask() != null && product.getAllergenMask() != 0) {
+                    int conflict = customerAllergenMask & product.getAllergenMask();
+                    if (conflict != 0) {
+                        allergenWarnings.add(product.getTitle() + " contains allergens you've flagged: "
+                                + describeAllergens(conflict));
+                    }
+                }
+
                 OrderItem item = new OrderItem(
                         product.getId(),
                         itemReq.getQuantity(),
@@ -252,28 +304,65 @@ public class PublicStorefrontService {
             }
 
             order.calculateTotal();
-            order = orderRepository.save(order);
 
-            // Create Stripe PaymentIntent
-            String clientSecret;
-            try {
-                clientSecret = paymentService.createPaymentIntent(order);
-            } catch (com.stripe.exception.StripeException e) {
-                log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
-                throw new RuntimeException("Payment processing unavailable. Please try again later.");
+            // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
+            // If not configured, fall back to COD — order goes straight to PENDING.
+            String clientSecret = null;
+            if (paymentService.isConfigured()) {
+                try {
+                    clientSecret = paymentService.createPaymentIntent(order);
+                } catch (com.stripe.exception.StripeException e) {
+                    log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                    throw new RuntimeException("Payment processing unavailable. Please try again later.");
+                }
+            } else {
+                // COD fallback — no online payment
+                order.setStatus(OrderStatus.PENDING);
+                order.setPaymentStatus(PaymentStatus.NONE);
+                order.setPaymentMethod("Cash on Delivery");
             }
 
-            log.info("Created guest order {} with {} items, total: {} pennies for shop {} (awaiting payment)",
+            order = orderRepository.save(order);
+
+            // Deduct stock
+            for (GuestOrderItemRequest itemReq : request.getItems()) {
+                Product product = productRepository.findById(itemReq.getProductId()).orElse(null);
+                if (product != null && product.getQuantityInStock() != null) {
+                    product.setQuantityInStock(product.getQuantityInStock() - itemReq.getQuantity());
+                    productRepository.save(product);
+                }
+            }
+
+            // Publish event for COD orders (Stripe orders get event on webhook)
+            if (clientSecret == null) {
+                final Order savedOrder = order;
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishStateChange(
+                                savedOrder.getId(), savedOrder.getTenantId(), savedOrder.getOrderNumber(),
+                                OrderStatus.DRAFT, OrderStatus.PENDING);
+                    }
+                });
+            }
+
+            log.info("Created guest order {} with {} items, total: {} pennies (VAT: {} {}) for shop {}{}",
                     order.getOrderNumber(), order.getItems().size(),
-                    order.getTotalAmountPennies(), shop.getName());
+                    order.getTotalAmountPennies(), order.getVatAmountPennies(),
+                    order.getVatRate(), shop.getName(),
+                    clientSecret != null ? " (awaiting payment)" : " (COD)");
 
             return new GuestOrderConfirmation(
                     order.getOrderNumber(),
                     order.getStatus().name(),
+                    order.getSubtotalPennies(),
+                    order.getVatRate().name(),
+                    order.getVatAmountPennies(),
                     order.getTotalAmountPennies(),
                     shop.getName(),
                     order.getItems().size(),
-                    clientSecret
+                    clientSecret,
+                    allergenWarnings
             );
         } finally {
             TenantContext.clear();
@@ -304,6 +393,58 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setTags(shop.getTags());
         return dto;
+    }
+
+    private static final String[] ALLERGEN_NAMES = {
+            "Gluten", "Crustaceans", "Eggs", "Fish", "Peanuts", "Soybeans",
+            "Milk", "Nuts", "Celery", "Mustard", "Sesame", "Sulphites", "Lupin", "Molluscs"
+    };
+
+    private static String describeAllergens(int mask) {
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < ALLERGEN_NAMES.length; i++) {
+            if ((mask & (1 << i)) != 0) {
+                names.add(ALLERGEN_NAMES[i]);
+            }
+        }
+        return String.join(", ", names);
+    }
+
+    private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d{2}):(\\d{2})\\s*-\\s*(\\d{2}):(\\d{2})");
+    private static final Map<DayOfWeek, String> DAY_KEYS = Map.of(
+            DayOfWeek.MONDAY, "mon", DayOfWeek.TUESDAY, "tue", DayOfWeek.WEDNESDAY, "wed",
+            DayOfWeek.THURSDAY, "thu", DayOfWeek.FRIDAY, "fri", DayOfWeek.SATURDAY, "sat",
+            DayOfWeek.SUNDAY, "sun"
+    );
+
+    private void validateShopIsOpen(Shop shop) {
+        Map<String, String> hours = shop.getOpeningHours();
+        if (hours == null || hours.isEmpty()) {
+            // No hours configured = always open
+            return;
+        }
+
+        String dayKey = DAY_KEYS.get(LocalDate.now().getDayOfWeek());
+        String todayHours = hours.get(dayKey);
+        if (todayHours == null || todayHours.equalsIgnoreCase("closed")) {
+            throw new IllegalArgumentException(
+                    shop.getName() + " is closed today. Please check opening hours and try again later.");
+        }
+
+        Matcher m = HOURS_PATTERN.matcher(todayHours);
+        if (!m.find()) {
+            // Unparseable hours format — allow the order (fail open)
+            return;
+        }
+
+        LocalTime open = LocalTime.of(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+        LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
+        LocalTime now = LocalTime.now();
+
+        if (now.isBefore(open) || !now.isBefore(close)) {
+            throw new IllegalArgumentException(
+                    shop.getName() + " is currently closed. Opening hours today: " + todayHours + ". Please try again later.");
+        }
     }
 
     private PublicProductDto toPublicProductDto(Product product) {

@@ -1,5 +1,6 @@
 package uk.jtoye.core.order.dto;
 
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
 
@@ -16,6 +17,9 @@ public class OrderDto {
     private String customerEmail;
     private String customerPhone;
     private String notes;
+    private Long subtotalPennies;
+    private VatRate vatRate;
+    private Long vatAmountPennies;
     private Long totalAmountPennies;
     private Integer itemCount;
     private PaymentStatus paymentStatus;
@@ -72,4 +76,13 @@ public class OrderDto {
 
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public Long getSubtotalPennies() { return subtotalPennies; }
+    public void setSubtotalPennies(Long subtotalPennies) { this.subtotalPennies = subtotalPennies; }
+
+    public VatRate getVatRate() { return vatRate; }
+    public void setVatRate(VatRate vatRate) { this.vatRate = vatRate; }
+
+    public Long getVatAmountPennies() { return vatAmountPennies; }
+    public void setVatAmountPennies(Long vatAmountPennies) { this.vatAmountPennies = vatAmountPennies; }
 }
