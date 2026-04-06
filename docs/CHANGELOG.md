@@ -5,6 +5,13 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Batch 5: Customer Experience
+
+### Added
+- **PostgreSQL full-text search**: V25 migration — weighted tsvector columns on products (title=A, category=B, description=C) and shops (name=A, tags=B). GIN indexes for fast ranked search with auto-updating triggers. Repositories gain `fullTextSearch()` with `ts_rank` ordering, LIKE fallback for short queries
+- **Delivery fee calculation**: V26 migration — `delivery_fee_pennies` and `free_delivery_threshold_pennies` on shops. Orders track delivery fee. Total = subtotal + VAT + delivery. Fee waived when subtotal exceeds threshold
+- **Customer reviews with photos**: V27 migration — reviews table with food/delivery split ratings (1-5), comments, photo URLs. One review per completed order. RLS for public read, customer write. `GET/POST /public/shops/{slug}/reviews` endpoints. `shop_ratings` aggregate view
+
 ## [Unreleased] - Batch 3: Business Logic
 
 ### Added

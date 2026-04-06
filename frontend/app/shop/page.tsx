@@ -121,11 +121,23 @@ function ShopCard({ shop }: { shop: PublicShop }) {
             )}
           </div>
 
-          {shop.deliveryInfo && (
-            <p className="mt-1.5 text-xs text-slate-400 truncate">
-              {shop.deliveryInfo}
-            </p>
-          )}
+          <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
+            {shop.deliveryFeePennies > 0 ? (
+              <span className="text-slate-500">
+                Delivery {formatPennies(shop.deliveryFeePennies)}
+                {shop.freeDeliveryThresholdPennies && (
+                  <span className="text-emerald-600 ml-1">
+                    Free over {formatPennies(shop.freeDeliveryThresholdPennies)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-emerald-600 font-medium">Free delivery</span>
+            )}
+            {shop.deliveryInfo && (
+              <span className="text-slate-400 truncate">{shop.deliveryInfo}</span>
+            )}
+          </div>
         </div>
       </article>
     </Link>

@@ -19,6 +19,7 @@ interface OrderConfirmation {
   orderNumber: string
   status: string
   subtotalPennies: number
+  deliveryFeePennies: number
   vatRate: string
   vatAmountPennies: number
   totalAmountPennies: number
@@ -157,6 +158,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     clientSecret: string
     orderNumber: string
     subtotalPennies: number
+    deliveryFeePennies: number
     vatRate: string
     vatAmountPennies: number
     totalAmountPennies: number
@@ -227,6 +229,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
         subtotalPennies: confirmation.subtotalPennies,
+        deliveryFeePennies: confirmation.deliveryFeePennies || 0,
         vatRate: confirmation.vatRate,
         vatAmountPennies: confirmation.vatAmountPennies,
         totalAmountPennies: confirmation.totalAmountPennies,
@@ -283,6 +286,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <span className="text-slate-600">Subtotal</span>
               <span className="text-slate-900">{formatPrice(paymentState.subtotalPennies)}</span>
             </div>
+            {paymentState.deliveryFeePennies > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Delivery</span>
+                <span className="text-slate-900">{formatPrice(paymentState.deliveryFeePennies)}</span>
+              </div>
+            )}
+            {paymentState.deliveryFeePennies === 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Delivery</span>
+                <span className="text-emerald-600 font-medium">Free</span>
+              </div>
+            )}
             {paymentState.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">VAT ({paymentState.vatRate === "STANDARD" ? "20%" : paymentState.vatRate === "REDUCED" ? "5%" : "0%"})</span>

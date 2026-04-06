@@ -27,4 +27,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     @Query("SELECT p FROM Product p WHERE LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Product> search(@Param("q") String query);
+
+    @Query(value = "SELECT * FROM products WHERE search_vector @@ plainto_tsquery('english', :q) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC",
+           countQuery = "SELECT COUNT(*) FROM products WHERE search_vector @@ plainto_tsquery('english', :q)",
+           nativeQuery = true)
+    Page<Product> fullTextSearch(@Param("q") String query, Pageable pageable);
+
+    @Query(value = "SELECT * FROM products WHERE search_vector @@ plainto_tsquery('english', :q) AND available = true AND (shop_id = :shopId OR shop_id IS NULL) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC",
+           countQuery = "SELECT COUNT(*) FROM products WHERE search_vector @@ plainto_tsquery('english', :q) AND available = true AND (shop_id = :shopId OR shop_id IS NULL)",
+           nativeQuery = true)
+    Page<Product> fullTextSearchByShop(@Param("q") String query, @Param("shopId") UUID shopId, Pageable pageable);
 }

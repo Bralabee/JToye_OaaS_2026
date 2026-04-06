@@ -6,6 +6,7 @@ public class GuestOrderConfirmation {
     private String orderNumber;
     private String status;
     private Long subtotalPennies;
+    private Long deliveryFeePennies;
     private String vatRate;
     private Long vatAmountPennies;
     private Long totalAmountPennies;
@@ -15,12 +16,13 @@ public class GuestOrderConfirmation {
     private List<String> allergenWarnings;
 
     public GuestOrderConfirmation(String orderNumber, String status, Long subtotalPennies,
-                                  String vatRate, Long vatAmountPennies, Long totalAmountPennies,
-                                  String shopName, int itemCount, String clientSecret,
-                                  List<String> allergenWarnings) {
+                                  Long deliveryFeePennies, String vatRate, Long vatAmountPennies,
+                                  Long totalAmountPennies, String shopName, int itemCount,
+                                  String clientSecret, List<String> allergenWarnings) {
         this.orderNumber = orderNumber;
         this.status = status;
         this.subtotalPennies = subtotalPennies;
+        this.deliveryFeePennies = deliveryFeePennies;
         this.vatRate = vatRate;
         this.vatAmountPennies = vatAmountPennies;
         this.totalAmountPennies = totalAmountPennies;
@@ -33,6 +35,7 @@ public class GuestOrderConfirmation {
     public String getOrderNumber() { return orderNumber; }
     public String getStatus() { return status; }
     public Long getSubtotalPennies() { return subtotalPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
     public String getVatRate() { return vatRate; }
     public Long getVatAmountPennies() { return vatAmountPennies; }
     public Long getTotalAmountPennies() { return totalAmountPennies; }

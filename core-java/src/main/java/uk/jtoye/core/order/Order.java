@@ -73,6 +73,9 @@ public class Order {
     @Column(name = "vat_amount_pennies", nullable = false)
     private Long vatAmountPennies = 0L;
 
+    @Column(name = "delivery_fee_pennies", nullable = false)
+    private Long deliveryFeePennies = 0L;
+
     @Column(name = "total_amount_pennies", nullable = false)
     private Long totalAmountPennies = 0L;
 
@@ -120,7 +123,7 @@ public class Order {
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
         this.vatAmountPennies = calculateVatAmount(this.subtotalPennies, this.vatRate);
-        this.totalAmountPennies = this.subtotalPennies + this.vatAmountPennies;
+        this.totalAmountPennies = this.subtotalPennies + this.vatAmountPennies + this.deliveryFeePennies;
         this.itemCount = items.size();
     }
 
@@ -292,6 +295,14 @@ public class Order {
 
     public void setVatAmountPennies(Long vatAmountPennies) {
         this.vatAmountPennies = vatAmountPennies;
+    }
+
+    public Long getDeliveryFeePennies() {
+        return deliveryFeePennies;
+    }
+
+    public void setDeliveryFeePennies(Long deliveryFeePennies) {
+        this.deliveryFeePennies = deliveryFeePennies;
     }
 
     public String getIdempotencyKey() {

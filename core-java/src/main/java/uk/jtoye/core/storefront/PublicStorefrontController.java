@@ -10,6 +10,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import uk.jtoye.core.review.ReviewService;
+import uk.jtoye.core.review.dto.CreateReviewRequest;
+import uk.jtoye.core.review.dto.ReviewDto;
+import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
@@ -21,13 +25,15 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/public")
-@Tag(name = "Public Storefront", description = "Public endpoints for customer-facing shop discovery, product browsing, and order tracking")
+@Tag(name = "Public Storefront", description = "Public endpoints for customer-facing shop discovery, product browsing, order tracking, and reviews")
 public class PublicStorefrontController {
 
     private final PublicStorefrontService storefrontService;
+    private final ReviewService reviewService;
 
-    public PublicStorefrontController(PublicStorefrontService storefrontService) {
+    public PublicStorefrontController(PublicStorefrontService storefrontService, ReviewService reviewService) {
         this.storefrontService = storefrontService;
+        this.reviewService = reviewService;
     }
 
     @GetMapping("/shops")
@@ -45,6 +51,12 @@ public class PublicStorefrontController {
     @Operation(summary = "Get shop details", description = "Get full details of a published shop by its URL slug.")
     public ResponseEntity<PublicShopDto> getShop(@PathVariable String slug) {
         return ResponseEntity.ok(storefrontService.getShopBySlug(slug));
+    }
+
+    @GetMapping("/shops/{slug}/config")
+    @Operation(summary = "Get shop config", description = "Server-driven content: announcements, featured products, active promotions.")
+    public ResponseEntity<ShopConfigDto> getShopConfig(@PathVariable String slug) {
+        return ResponseEntity.ok(storefrontService.getShopConfig(slug));
     }
 
     @GetMapping("/shops/{slug}/products")
@@ -83,5 +95,23 @@ public class PublicStorefrontController {
             @PathVariable String orderNumber,
             @RequestParam String email) {
         return ResponseEntity.ok(storefrontService.trackOrder(orderNumber, email));
+    }
+
+    @GetMapping("/shops/{slug}/reviews")
+    @Operation(summary = "Get shop reviews", description = "List verified customer reviews for a shop, newest first.")
+    public Page<ReviewDto> getShopReviews(
+            @PathVariable String slug,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return reviewService.getShopReviews(slug, pageable);
+    }
+
+    @PostMapping("/shops/{slug}/reviews")
+    @Operation(summary = "Submit a review", description = "Leave a review for a completed order. One review per order.")
+    public ResponseEntity<ReviewDto> createReview(
+            @PathVariable String slug,
+            @RequestParam String email,
+            @Valid @RequestBody CreateReviewRequest request) {
+        ReviewDto review = reviewService.createReview(slug, email, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
 }
