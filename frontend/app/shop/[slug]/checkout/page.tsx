@@ -18,6 +18,9 @@ function formatPrice(pennies: number): string {
 interface OrderConfirmation {
   orderNumber: string
   status: string
+  subtotalPennies: number
+  vatRate: string
+  vatAmountPennies: number
   totalAmountPennies: number
   shopName: string
   itemCount: number
@@ -147,10 +150,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // After order is created, holds the Stripe client secret + order number
+  // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
     clientSecret: string
     orderNumber: string
+    subtotalPennies: number
+    vatRate: string
+    vatAmountPennies: number
+    totalAmountPennies: number
   } | null>(null)
 
   if (items.length === 0 && !paymentState) {
@@ -215,6 +222,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
+        subtotalPennies: confirmation.subtotalPennies,
+        vatRate: confirmation.vatRate,
+        vatAmountPennies: confirmation.vatAmountPennies,
+        totalAmountPennies: confirmation.totalAmountPennies,
       })
     } catch (err: unknown) {
       if (err && typeof err === "object" && "response" in err) {
@@ -241,7 +252,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </button>
         <h1 className="text-xl font-bold text-slate-900">Payment</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Order {paymentState.orderNumber} &middot; {formatPrice(totalPennies)}
+          Order {paymentState.orderNumber} &middot; {formatPrice(paymentState.totalAmountPennies)}
         </p>
 
         {/* Order summary */}
@@ -262,9 +273,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-3 border-t border-slate-100 pt-3 flex items-center justify-between">
-            <span className="text-base font-bold text-slate-900">Total</span>
-            <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+          <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="text-slate-900">{formatPrice(paymentState.subtotalPennies)}</span>
+            </div>
+            {paymentState.vatAmountPennies > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">VAT ({paymentState.vatRate === "STANDARD" ? "20%" : paymentState.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-900">{formatPrice(paymentState.vatAmountPennies)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-1.5">
+              <span className="text-base font-bold text-slate-900">Total</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(paymentState.totalAmountPennies)}</span>
+            </div>
           </div>
         </div>
 
@@ -286,7 +309,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             slug={slug}
             orderNumber={paymentState.orderNumber}
             customerEmail={customerEmail}
-            totalPennies={totalPennies}
+            totalPennies={paymentState.totalAmountPennies}
           />
         </Elements>
       </div>
@@ -382,9 +405,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-4 border-t border-slate-100 pt-3 flex items-center justify-between">
-            <span className="text-base font-bold text-slate-900">Total</span>
-            <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+          <div className="mt-4 border-t border-slate-100 pt-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-600">Subtotal</span>
+              <span className="text-sm text-slate-900">{formatPrice(totalPennies)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>VAT calculated at checkout</span>
+            </div>
           </div>
         </div>
 

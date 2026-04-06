@@ -3,6 +3,7 @@ package uk.jtoye.core.order;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
+import uk.jtoye.core.finance.VatRate;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -59,6 +60,16 @@ public class Order {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "subtotal_pennies", nullable = false)
+    private Long subtotalPennies = 0L;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vat_rate", nullable = false, length = 20)
+    private VatRate vatRate = VatRate.ZERO;
+
+    @Column(name = "vat_amount_pennies", nullable = false)
+    private Long vatAmountPennies = 0L;
+
     @Column(name = "total_amount_pennies", nullable = false)
     private Long totalAmountPennies = 0L;
 
@@ -102,10 +113,20 @@ public class Order {
     }
 
     public void calculateTotal() {
-        this.totalAmountPennies = items.stream()
+        this.subtotalPennies = items.stream()
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
+        this.vatAmountPennies = calculateVatAmount(this.subtotalPennies, this.vatRate);
+        this.totalAmountPennies = this.subtotalPennies + this.vatAmountPennies;
         this.itemCount = items.size();
+    }
+
+    private static long calculateVatAmount(long subtotalPennies, VatRate vatRate) {
+        return switch (vatRate) {
+            case ZERO, EXEMPT -> 0L;
+            case REDUCED -> (subtotalPennies * 5) / 100;
+            case STANDARD -> (subtotalPennies * 20) / 100;
+        };
     }
 
     // Getters and Setters
@@ -244,5 +265,29 @@ public class Order {
 
     public void setPaymentMethod(String paymentMethod) {
         this.paymentMethod = paymentMethod;
+    }
+
+    public Long getSubtotalPennies() {
+        return subtotalPennies;
+    }
+
+    public void setSubtotalPennies(Long subtotalPennies) {
+        this.subtotalPennies = subtotalPennies;
+    }
+
+    public VatRate getVatRate() {
+        return vatRate;
+    }
+
+    public void setVatRate(VatRate vatRate) {
+        this.vatRate = vatRate;
+    }
+
+    public Long getVatAmountPennies() {
+        return vatAmountPennies;
+    }
+
+    public void setVatAmountPennies(Long vatAmountPennies) {
+        this.vatAmountPennies = vatAmountPennies;
     }
 }

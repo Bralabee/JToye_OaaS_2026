@@ -15,6 +15,7 @@ import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -149,6 +150,9 @@ public class PublicStorefrontService {
             status.setStatus(order.getStatus().name());
             status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
+            status.setSubtotalPennies(order.getSubtotalPennies());
+            status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
+            status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
             status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
             status.setCreatedAt(order.getCreatedAt());
@@ -223,6 +227,7 @@ public class PublicStorefrontService {
             order.setCustomerEmail(request.getCustomerEmail());
             order.setCustomerPhone(request.getCustomerPhone());
             order.setNotes(request.getNotes());
+            order.setVatRate(VatRate.STANDARD);
             order.setUpdatedAt(OffsetDateTime.now());
 
             // Add items with server-side price lookup
@@ -270,6 +275,9 @@ public class PublicStorefrontService {
             return new GuestOrderConfirmation(
                     order.getOrderNumber(),
                     order.getStatus().name(),
+                    order.getSubtotalPennies(),
+                    order.getVatRate().name(),
+                    order.getVatAmountPennies(),
                     order.getTotalAmountPennies(),
                     shop.getName(),
                     order.getItems().size(),
