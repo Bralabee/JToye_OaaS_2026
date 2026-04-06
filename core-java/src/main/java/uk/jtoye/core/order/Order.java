@@ -57,6 +57,9 @@ public class Order {
     @Column(name = "customer_phone", length = 50)
     private String customerPhone;
 
+    @Column(name = "idempotency_key", length = 64)
+    private String idempotencyKey;
+
     @Column(columnDefinition = "TEXT")
     private String notes;
 
@@ -289,5 +292,13 @@ public class Order {
 
     public void setVatAmountPennies(Long vatAmountPennies) {
         this.vatAmountPennies = vatAmountPennies;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
     }
 }

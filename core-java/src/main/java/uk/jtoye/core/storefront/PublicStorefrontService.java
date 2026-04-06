@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -224,6 +225,29 @@ public class PublicStorefrontService {
         UUID tenantId = shop.getTenantId();
         TenantContext.set(tenantId);
         try {
+            // Idempotency check — return existing order if same key was already submitted
+            String idempotencyKey = request.getIdempotencyKey();
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+                if (existing.isPresent()) {
+                    Order existingOrder = existing.get();
+                    log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
+                            idempotencyKey, existingOrder.getOrderNumber());
+                    return new GuestOrderConfirmation(
+                            existingOrder.getOrderNumber(),
+                            existingOrder.getStatus().name(),
+                            existingOrder.getSubtotalPennies(),
+                            existingOrder.getVatRate().name(),
+                            existingOrder.getVatAmountPennies(),
+                            existingOrder.getTotalAmountPennies(),
+                            shop.getName(),
+                            existingOrder.getItemCount(),
+                            existingOrder.getPaymentReference(),
+                            List.of()
+                    );
+                }
+            }
+
             Order order = new Order();
             order.setTenantId(tenantId);
             order.setShopId(shop.getId());
@@ -235,6 +259,9 @@ public class PublicStorefrontService {
             order.setCustomerPhone(request.getCustomerPhone());
             order.setNotes(request.getNotes());
             order.setVatRate(VatRate.STANDARD);
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                order.setIdempotencyKey(idempotencyKey);
+            }
             order.setUpdatedAt(OffsetDateTime.now());
 
             // Add items with server-side price lookup + allergen cross-check

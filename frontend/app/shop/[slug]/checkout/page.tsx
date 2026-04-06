@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useCallback } from "react"
+import { use, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock } from "lucide-react"
@@ -148,6 +148,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [customerEmail, setCustomerEmail] = useState(session?.profile.email || "")
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -190,6 +191,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         customerEmail: customerEmail.trim(),
         customerPhone: customerPhone.trim(),
         notes: notes.trim() || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,

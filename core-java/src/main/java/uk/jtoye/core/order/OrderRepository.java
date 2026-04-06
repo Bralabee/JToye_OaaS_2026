@@ -45,4 +45,6 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * Used for customer order history — RLS policy requires matching session variable.
      */
     List<Order> findByCustomerEmailOrderByCreatedAtDesc(String customerEmail);
+
+    Optional<Order> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 }
