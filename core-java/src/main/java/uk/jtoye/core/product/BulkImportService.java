@@ -10,7 +10,6 @@ import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.BulkImportResult.RowError;
-import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
 
