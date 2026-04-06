@@ -140,6 +140,8 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:12b}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     ports:
       - "9090:9090"
@@ -207,6 +209,7 @@ services:
       KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
       KEYCLOAK_ISSUER_INTERNAL: http://keycloak:8080/realms/jtoye-dev
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       PORT: 3000
       HOSTNAME: "0.0.0.0"
     ports:

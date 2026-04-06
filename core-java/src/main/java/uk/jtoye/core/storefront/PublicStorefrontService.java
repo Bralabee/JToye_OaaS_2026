@@ -14,6 +14,8 @@ import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -49,15 +51,17 @@ public class PublicStorefrontService {
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
+    private final PaymentService paymentService;
 
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
-                                   EntityManager entityManager) {
+                                   EntityManager entityManager, PaymentService paymentService) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
+        this.paymentService = paymentService;
     }
 
     /**
@@ -143,6 +147,7 @@ public class PublicStorefrontService {
             PublicOrderStatus status = new PublicOrderStatus();
             status.setOrderNumber(order.getOrderNumber());
             status.setStatus(order.getStatus().name());
+            status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
             status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
@@ -184,6 +189,7 @@ public class PublicStorefrontService {
         PublicOrderStatus status = new PublicOrderStatus();
         status.setOrderNumber(order.getOrderNumber());
         status.setStatus(order.getStatus().name());
+        status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
         status.setShopName(shopName);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
         status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
@@ -194,7 +200,8 @@ public class PublicStorefrontService {
 
     /**
      * Create a guest order for a published shop.
-     * Sets TenantContext, creates order as PENDING, recalculates prices server-side.
+     * Creates order as DRAFT, creates a Stripe PaymentIntent, and returns the client secret.
+     * Order transitions to PENDING only after successful payment via webhook.
      */
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
@@ -210,7 +217,8 @@ public class PublicStorefrontService {
             order.setTenantId(tenantId);
             order.setShopId(shop.getId());
             order.setOrderNumber(generateOrderNumber(tenantId));
-            order.setStatus(OrderStatus.PENDING); // Skip DRAFT for guest orders
+            order.setStatus(OrderStatus.DRAFT);
+            order.setPaymentStatus(PaymentStatus.PENDING);
             order.setCustomerName(request.getCustomerName());
             order.setCustomerEmail(request.getCustomerEmail());
             order.setCustomerPhone(request.getCustomerPhone());
@@ -246,29 +254,26 @@ public class PublicStorefrontService {
             order.calculateTotal();
             order = orderRepository.save(order);
 
-            log.info("Created guest order {} with {} items, total: {} pennies for shop {}",
+            // Create Stripe PaymentIntent
+            String clientSecret;
+            try {
+                clientSecret = paymentService.createPaymentIntent(order);
+            } catch (com.stripe.exception.StripeException e) {
+                log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                throw new RuntimeException("Payment processing unavailable. Please try again later.");
+            }
+
+            log.info("Created guest order {} with {} items, total: {} pennies for shop {} (awaiting payment)",
                     order.getOrderNumber(), order.getItems().size(),
                     order.getTotalAmountPennies(), shop.getName());
-
-            // Publish event AFTER transaction commits so the order is visible to the listener
-            final Order savedOrder = order;
-            final UUID finalTenantId = tenantId;
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    eventPublisher.publishStateChange(
-                            savedOrder.getId(), finalTenantId, savedOrder.getOrderNumber(),
-                            OrderStatus.DRAFT, OrderStatus.PENDING
-                    );
-                }
-            });
 
             return new GuestOrderConfirmation(
                     order.getOrderNumber(),
                     order.getStatus().name(),
                     order.getTotalAmountPennies(),
                     shop.getName(),
-                    order.getItems().size()
+                    order.getItems().size(),
+                    clientSecret
             );
         } finally {
             TenantContext.clear();

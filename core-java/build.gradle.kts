@@ -50,6 +50,9 @@ dependencies {
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
 
+    // Stripe payment processing
+    implementation("com.stripe:stripe-java:28.2.0")
+
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
 

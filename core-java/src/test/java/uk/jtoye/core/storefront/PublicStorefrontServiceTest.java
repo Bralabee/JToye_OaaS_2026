@@ -16,6 +16,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
@@ -41,6 +42,7 @@ class PublicStorefrontServiceTest {
     @Mock private OrderEventPublisher eventPublisher;
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
+    @Mock private PaymentService paymentService;
 
     private PublicStorefrontService service;
 
@@ -58,7 +60,7 @@ class PublicStorefrontServiceTest {
             return null;
         }).when(hibernateSession).doWork(any());
 
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();

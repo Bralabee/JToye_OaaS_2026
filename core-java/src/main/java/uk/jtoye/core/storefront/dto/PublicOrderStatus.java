@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 public class PublicOrderStatus {
     private String orderNumber;
     private String status;
+    private String paymentStatus;
     private String shopName;
     private Long totalAmountPennies;
     private int itemCount;
@@ -15,6 +16,8 @@ public class PublicOrderStatus {
     public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
     public String getShopName() { return shopName; }
     public void setShopName(String shopName) { this.shopName = shopName; }
     public Long getTotalAmountPennies() { return totalAmountPennies; }
