@@ -304,20 +304,53 @@ public class PublicStorefrontService {
             }
 
             order.calculateTotal();
-            order = orderRepository.save(order);
 
-            // Create Stripe PaymentIntent
-            String clientSecret;
-            try {
-                clientSecret = paymentService.createPaymentIntent(order);
-            } catch (com.stripe.exception.StripeException e) {
-                log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
-                throw new RuntimeException("Payment processing unavailable. Please try again later.");
+            // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
+            // If not configured, fall back to COD — order goes straight to PENDING.
+            String clientSecret = null;
+            if (paymentService.isConfigured()) {
+                try {
+                    clientSecret = paymentService.createPaymentIntent(order);
+                } catch (com.stripe.exception.StripeException e) {
+                    log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                    throw new RuntimeException("Payment processing unavailable. Please try again later.");
+                }
+            } else {
+                // COD fallback — no online payment
+                order.setStatus(OrderStatus.PENDING);
+                order.setPaymentStatus(PaymentStatus.NONE);
+                order.setPaymentMethod("Cash on Delivery");
             }
 
-            log.info("Created guest order {} with {} items, total: {} pennies for shop {} (awaiting payment)",
+            order = orderRepository.save(order);
+
+            // Deduct stock
+            for (GuestOrderItemRequest itemReq : request.getItems()) {
+                Product product = productRepository.findById(itemReq.getProductId()).orElse(null);
+                if (product != null && product.getQuantityInStock() != null) {
+                    product.setQuantityInStock(product.getQuantityInStock() - itemReq.getQuantity());
+                    productRepository.save(product);
+                }
+            }
+
+            // Publish event for COD orders (Stripe orders get event on webhook)
+            if (clientSecret == null) {
+                final Order savedOrder = order;
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishStateChange(
+                                savedOrder.getId(), savedOrder.getTenantId(), savedOrder.getOrderNumber(),
+                                OrderStatus.DRAFT, OrderStatus.PENDING);
+                    }
+                });
+            }
+
+            log.info("Created guest order {} with {} items, total: {} pennies (VAT: {} {}) for shop {}{}",
                     order.getOrderNumber(), order.getItems().size(),
-                    order.getTotalAmountPennies(), shop.getName());
+                    order.getTotalAmountPennies(), order.getVatAmountPennies(),
+                    order.getVatRate(), shop.getName(),
+                    clientSecret != null ? " (awaiting payment)" : " (COD)");
 
             return new GuestOrderConfirmation(
                     order.getOrderNumber(),
