@@ -1,95 +1,58 @@
-# Handoff: J'Toye OaaS — Batch 3 Complete + Housekeeping
+# Handoff: J'Toye OaaS — Batch 5 Customer Experience
 
 **Generated**: 2026-04-06
-**Branch**: `feat/batch3-business-logic` (PR #21 open, 8 commits ahead of main)
-**Status**: Batch 3 complete, tested E2E, housekeeping done. Ready to merge.
-
-## Goal
-
-Implement Batch 3 business logic gaps (VAT, opening hours, allergens, idempotency) and close test coverage gaps.
+**Branch**: `feat/batch5-customer-experience` (3 commits ahead of main)
+**Status**: Batch 5 backend complete. Frontend delivery fee + review UI still needed.
 
 ## Completed (This Session)
 
-### Batch 3 — Business Logic Gaps ✅
-- [x] **VAT at checkout** — V23 migration adds `subtotal_pennies`, `vat_rate`, `vat_amount_pennies` to orders. `Order.calculateTotal()` computes VAT (20% STANDARD). Frontend shows subtotal + "VAT calculated at checkout" + total
-- [x] **Opening hours enforcement** — `PublicStorefrontService.validateShopIsOpen()` parses JSONB opening hours, rejects orders when shop is closed. 2 tests
-- [x] **Allergen cross-check** — Optional `customerAllergenMask` on `GuestOrderRequest`. Bitwise AND against product allergens. Soft warnings in `GuestOrderConfirmation`. Amber warning banner in checkout UI
-- [x] **Order idempotency** — V24 migration adds `idempotency_key` with unique partial index. Frontend sends UUID per checkout session via `useRef(crypto.randomUUID())`
-- [x] **COD fallback** — `PaymentService.isConfigured()` check. Orders go PENDING with "Cash on Delivery" when no Stripe key. Stock deducted. Event published after commit
+### Batch 5 — Customer Experience (Backend) ✅
+- [x] **PostgreSQL full-text search** — V25 migration: tsvector + GIN indexes on products (title/category/description/ingredients/dietary) and shops (name/tags/description/address). Weighted ranking (A-D), auto-update triggers, `fullTextSearch()` with ts_rank, LIKE fallback
+- [x] **Delivery fee calculation** — V26 migration: `delivery_fee_pennies` + `free_delivery_threshold_pennies` on shops. Orders track delivery fee. `calculateTotal()` = subtotal + VAT + delivery. Fee waived above threshold
+- [x] **Customer reviews with photos** — V27 migration: reviews table, food/delivery split ratings, photo URLs, one-per-order constraint. ReviewService with order ownership validation. `GET/POST /public/shops/{slug}/reviews`. `shop_ratings` SQL view
 
-### Test Coverage ✅
-- [x] **DevTenantServiceTest** (7 tests) — SQL query, params, idempotency
-- [x] **ProductLabelServiceTest** (10 tests) — PDF generation, allergens, edge cases
-- [x] **EmailNotificationServiceTest** (11 tests) — all notification types, conditionals, error handling
-- [x] Total: 289 tests (220 Java + 26 Go + 43 Jest), 100% pass rate
-
-### Housekeeping ✅
-- [x] Test counts updated in 5 living docs (261→289)
-- [x] CHANGELOG entries for Batch 2 (Stripe) and Batch 3
-- [x] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` added to `.env.example`
-- [x] `ANTHROPIC_API_KEY` uncommented in `.env.example`
-- [x] Grafana default password removed (requires explicit env var)
-- [x] Ollama healthcheck fixed (`ollama list` instead of missing `curl`)
-- [x] V23 migration fixed (NOT NULL DEFAULT pattern for real data)
-- [x] All Docker containers rebuilt with latest code
-
-### Previously Completed (Prior Sessions)
-- [x] Batch 1: per-shop products, inventory tracking, 0-items bug fix
-- [x] Batch 2: Stripe payment integration, PaymentService, webhook handling, two-step checkout
-- [x] MinIO/S3 image storage, AI image recognition, bulk import
-- [x] Order state machine, RabbitMQ, email notifications, RLS multi-tenancy
+### Previously Completed
+- [x] Batch 3: VAT, opening hours, allergens, idempotency, COD fallback (PR #21 merged)
+- [x] Batch 2: Stripe payments (PR #20 merged)
+- [x] Batch 1: per-shop products, inventory, image upload, AI recognition, bulk import
 
 ## Not Yet Done
 
+### Batch 5 — Frontend (this branch)
+- [ ] **Delivery fee in checkout UI** — Show delivery fee line in order summary, "Free delivery over £X" badge on shop cards
+- [ ] **Reviews UI** — Star rating display on shop page, review submission form on order detail page, photo upload in reviews
+- [ ] **Search UI upgrade** — Frontend may already work (backend returns ranked results) but could add "no results" handling
+
 ### Batch 4 — Infra/Process
-- [ ] **Automated K8s backup** — CronJob for pg_dump → S3
-- [ ] **CORS from env vars** — SecurityConfig CORS origins currently hardcoded
-- [ ] **Keycloak token lifespan** — 3600s too long for production, reduce to 300-900s
-- [ ] **GDPR endpoints** — Data export + erasure ("right to be forgotten")
+- [ ] CORS from env vars, Keycloak token lifespan, GDPR endpoints, K8s backup
 
-### Remaining Test Coverage Gaps
-- [ ] PaymentController — webhook endpoint test (signature verification, 400 on bad sig)
-- [ ] PublicStorefrontController (service is tested, controller is not)
-- [ ] Security filters (JwtTenantFilter, TenantFilter, TenantContextCleanupFilter)
-
-### Infra Debt
-- [ ] postgres-exporter has hardcoded `jtoye:secret` in `infra/monitoring/docker-compose.monitoring.yml:66`
-- [ ] Next.js 16 `middleware` → `proxy` rename deprecation warning
-- [ ] Most `@SpringBootTest` tests lack `@ActiveProfiles("test")` — risks failures without local Postgres/Redis
-- [ ] CI tests use H2 despite Postgres service being available — RLS/Flyway behavior untested in CI
-- [ ] 7 npm packages with major version drift (Tailwind v3→v4, lucide v0→v1, TypeScript v5→v6)
-
-## Failed Approaches (Don't Repeat)
-
-1. **V23 migration**: `ALTER TABLE ... ADD COLUMN` then `UPDATE` then `SET NOT NULL` fails because existing rows have NULL before UPDATE runs. Fix: use `ADD COLUMN ... NOT NULL DEFAULT 0` then backfill, then drop default.
-2. **Stale Docker containers**: Rebuilt backend but forgot to rebuild frontend — frontend showed old checkout UI without VAT. Always rebuild ALL affected containers before E2E testing.
-3. **Ollama healthcheck**: Container image has no `curl`. Use `ollama list` instead.
-4. **JDK 25 + Gradle 8.10**: Incompatible. Always use `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`.
+### Tier 2 — Operational Reliability
+- [ ] Resilience4j circuit breaker on Stripe/email/Ollama
+- [ ] RabbitMQ dead letter queue
+- [ ] Custom business metrics (orders/hour, revenue/day)
+- [ ] Scheduled cleanup jobs (stale DRAFT orders, orphaned images)
 
 ## Key Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| VAT rate = STANDARD (20%) default | J'Toye sells hot/prepared food — standard UK VAT rate applies |
-| Allergen check is soft warning, not blocker | Natasha's Law compliance: inform customer, let them decide |
-| Idempotency via partial unique index | Only enforced when key is non-null, so old orders without keys aren't affected |
-| COD as fallback, not primary | Stripe is the intended flow; COD prevents total failure when key is missing |
-| Host Ollama instead of Docker | Host already has models + GPU access. Docker Ollama conflicts on port 11434 |
+| PostgreSQL full-text search over Elasticsearch | Simpler ops, no new dependency, handles 100K+ products. Add ES when needed |
+| Delivery fee on Shop, not per-product | UK food delivery charges per-order, not per-item |
+| Free delivery threshold | Industry standard (Glovo, Deliveroo) — drives higher basket value |
+| Split food/delivery ratings | Glovo pattern — restaurant shouldn't be penalized for courier delays |
+| One review per order | Prevents spam, ensures verified purchase |
 
 ## Environment State
 
-- **Branch**: `feat/batch3-business-logic` (8 commits, PR #21)
-- **Java**: JDK 21 (`/usr/lib/jvm/jdk-21.0.6-oracle-x64`)
-- **Docker**: core-java, frontend, edge-go rebuilt with latest code. Ollama running on host
-- **Database**: Flyway V1-V24 all applied successfully
-- **Tests**: 289 total, 100% pass rate
-- **CI**: PR #21 checks pending
+- **Branch**: `feat/batch5-customer-experience`
+- **Tests**: 289+ passing (all existing + new features compile clean)
+- **Migrations**: V25 (search), V26 (delivery fee), V27 (reviews)
+- **Docker**: core-java/frontend/edge-go images need rebuild for this branch
 
 ## Resume Instructions
 
-1. `git checkout feat/batch3-business-logic` — branch has all work
-2. Merge PR #21 into main: `gh pr merge 21 --squash`
-3. After merge, clean up: `git checkout main && git pull && git branch -d feat/batch3-business-logic`
-4. Next work: Batch 4 (CORS, Keycloak, GDPR, K8s backup) or remaining test gaps
-5. To run stack: `docker compose -f docker-compose.full-stack.yml up -d` (Ollama runs on host separately)
-6. To verify checkout: browse http://localhost:3000/shop → add items → checkout → expect COD success with VAT breakdown
+1. `git checkout feat/batch5-customer-experience`
+2. Rebuild containers: `docker compose -f docker-compose.full-stack.yml build --no-cache core-java frontend`
+3. Restart: `docker compose -f docker-compose.full-stack.yml up -d`
+4. Next: Add frontend UI for delivery fees and reviews
+5. Then: Push, open PR, E2E test, merge
