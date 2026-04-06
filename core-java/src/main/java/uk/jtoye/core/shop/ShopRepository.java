@@ -24,4 +24,7 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
 
     @Query("SELECT s FROM Shop s WHERE LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Shop> search(@Param("q") String query);
+
+    @Query(value = "SELECT * FROM shops WHERE published = true AND search_vector @@ plainto_tsquery('english', :q) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC", nativeQuery = true)
+    Page<Shop> fullTextSearchPublished(@Param("q") String query, Pageable pageable);
 }

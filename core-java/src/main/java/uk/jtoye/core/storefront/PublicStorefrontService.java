@@ -85,6 +85,13 @@ public class PublicStorefrontService {
      */
     public Page<PublicShopDto> searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+        // Use full-text search for ranked results; fall back to LIKE for short queries
+        if (query != null && query.length() >= 2) {
+            Page<Shop> results = shopRepository.fullTextSearchPublished(query, pageable);
+            if (results.hasContent()) {
+                return results.map(this::toPublicShopDto);
+            }
+        }
         return shopRepository.searchPublished(query, pageable)
                 .map(this::toPublicShopDto);
     }
