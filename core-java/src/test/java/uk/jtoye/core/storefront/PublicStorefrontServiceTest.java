@@ -46,6 +46,7 @@ class PublicStorefrontServiceTest {
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
     @Mock private PaymentService paymentService;
+    @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
 
     private PublicStorefrontService service;
 
@@ -63,7 +64,7 @@ class PublicStorefrontServiceTest {
             return null;
         }).when(hibernateSession).doWork(any());
 
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();

@@ -23,7 +23,9 @@ import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
@@ -60,16 +62,53 @@ public class PublicStorefrontService {
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
     private final PaymentService paymentService;
+    private final ShopPromotionRepository promotionRepository;
 
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
-                                   EntityManager entityManager, PaymentService paymentService) {
+                                   EntityManager entityManager, PaymentService paymentService,
+                                   ShopPromotionRepository promotionRepository) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
         this.paymentService = paymentService;
+        this.promotionRepository = promotionRepository;
+    }
+
+    /**
+     * Get server-driven config for a shop: announcements, featured products, promotions.
+     */
+    public ShopConfigDto getShopConfig(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        ShopConfigDto config = new ShopConfigDto();
+        config.setAnnouncements(shop.getAnnouncements() != null ? shop.getAnnouncements() : List.of());
+
+        // Fetch featured products
+        TenantContext.set(shop.getTenantId());
+        try {
+            List<PublicProductDto> featured = List.of();
+            if (shop.getFeaturedProductIds() != null && !shop.getFeaturedProductIds().isEmpty()) {
+                featured = productRepository.findAllById(shop.getFeaturedProductIds()).stream()
+                        .filter(p -> Boolean.TRUE.equals(p.getAvailable()))
+                        .map(this::toPublicProductDto)
+                        .toList();
+            }
+            config.setFeaturedProducts(featured);
+        } finally {
+            TenantContext.clear();
+        }
+
+        // Fetch active promotions
+        List<ShopConfigDto.PromotionDto> promos = promotionRepository.findActiveByShopId(shop.getId()).stream()
+                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountPercent(), p.getCategory(), p.getValidUntil()))
+                .toList();
+        config.setActivePromotions(promos);
+
+        return config;
     }
 
     /**

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.review.dto.ReviewDto;
+import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
@@ -50,6 +51,12 @@ public class PublicStorefrontController {
     @Operation(summary = "Get shop details", description = "Get full details of a published shop by its URL slug.")
     public ResponseEntity<PublicShopDto> getShop(@PathVariable String slug) {
         return ResponseEntity.ok(storefrontService.getShopBySlug(slug));
+    }
+
+    @GetMapping("/shops/{slug}/config")
+    @Operation(summary = "Get shop config", description = "Server-driven content: announcements, featured products, active promotions.")
+    public ResponseEntity<ShopConfigDto> getShopConfig(@PathVariable String slug) {
+        return ResponseEntity.ok(storefrontService.getShopConfig(slug));
     }
 
     @GetMapping("/shops/{slug}/products")

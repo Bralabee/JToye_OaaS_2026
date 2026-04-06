@@ -9,6 +9,12 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
+
+interface ShopConfig {
+  announcements: string[]
+  featuredProducts: PublicProduct[]
+  activePromotions: { label: string; discountPercent: number | null; category: string | null; validUntil: string }[]
+}
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
@@ -199,6 +205,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const [reviews, setReviews] = useState<Review[]>([])
   const [reviewCount, setReviewCount] = useState(0)
   const [avgRating, setAvgRating] = useState(0)
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
@@ -207,10 +214,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
     async function load() {
       setLoading(true)
       try {
-        const [shopRes, productsRes, reviewsRes] = await Promise.all([
+        const [shopRes, productsRes, reviewsRes, configRes] = await Promise.all([
           publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
           publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
           publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
+          publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
         ])
         setShop(shopRes.data)
         setProducts(productsRes.data)
@@ -220,6 +228,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           const avg = reviewsRes.data.content.reduce((sum: number, r: Review) => sum + r.foodRating, 0) / reviewsRes.data.content.length
           setAvgRating(Math.round(avg * 10) / 10)
         }
+        if (configRes.data) setShopConfig(configRes.data)
         const cats = Object.keys(productsRes.data)
         if (cats.length > 0) setActiveCategory(cats[0])
       } catch {
@@ -408,6 +417,30 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           )}
         </div>
       </div>
+
+      {/* Announcements & Promotions (server-driven) */}
+      {shopConfig && (shopConfig.announcements.length > 0 || shopConfig.activePromotions.length > 0) && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
+            {shopConfig.announcements.map((msg, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <span className="text-blue-500 text-sm mt-0.5">&#x1f4e2;</span>
+                <p className="text-sm text-blue-800">{msg}</p>
+              </div>
+            ))}
+            {shopConfig.activePromotions.map((promo, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                <span className="text-sm font-medium text-amber-800">{promo.label}</span>
+                {promo.discountPercent && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                    {promo.discountPercent}% off
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Customer reviews */}
       {reviews.length > 0 && (

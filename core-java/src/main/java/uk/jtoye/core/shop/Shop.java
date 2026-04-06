@@ -7,6 +7,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -74,6 +75,12 @@ public class Shop {
     @Column(length = 500)
     private String tags;
 
+    @Column(name = "announcements", columnDefinition = "TEXT[]")
+    private List<String> announcements;
+
+    @Column(name = "featured_product_ids", columnDefinition = "UUID[]")
+    private List<UUID> featuredProductIds;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getTenantId() { return tenantId; }
@@ -113,4 +120,8 @@ public class Shop {
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    public List<String> getAnnouncements() { return announcements; }
+    public void setAnnouncements(List<String> announcements) { this.announcements = announcements; }
+    public List<UUID> getFeaturedProductIds() { return featuredProductIds; }
+    public void setFeaturedProductIds(List<UUID> featuredProductIds) { this.featuredProductIds = featuredProductIds; }
 }
