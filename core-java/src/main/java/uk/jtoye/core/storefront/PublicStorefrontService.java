@@ -5,7 +5,9 @@ import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -21,7 +23,9 @@ import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
@@ -58,16 +62,53 @@ public class PublicStorefrontService {
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
     private final PaymentService paymentService;
+    private final ShopPromotionRepository promotionRepository;
 
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
-                                   EntityManager entityManager, PaymentService paymentService) {
+                                   EntityManager entityManager, PaymentService paymentService,
+                                   ShopPromotionRepository promotionRepository) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
         this.paymentService = paymentService;
+        this.promotionRepository = promotionRepository;
+    }
+
+    /**
+     * Get server-driven config for a shop: announcements, featured products, promotions.
+     */
+    public ShopConfigDto getShopConfig(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        ShopConfigDto config = new ShopConfigDto();
+        config.setAnnouncements(shop.getAnnouncements() != null ? shop.getAnnouncements() : List.of());
+
+        // Fetch featured products
+        TenantContext.set(shop.getTenantId());
+        try {
+            List<PublicProductDto> featured = List.of();
+            if (shop.getFeaturedProductIds() != null && !shop.getFeaturedProductIds().isEmpty()) {
+                featured = productRepository.findAllById(shop.getFeaturedProductIds()).stream()
+                        .filter(p -> Boolean.TRUE.equals(p.getAvailable()))
+                        .map(this::toPublicProductDto)
+                        .toList();
+            }
+            config.setFeaturedProducts(featured);
+        } finally {
+            TenantContext.clear();
+        }
+
+        // Fetch active promotions
+        List<ShopConfigDto.PromotionDto> promos = promotionRepository.findActiveByShopId(shop.getId()).stream()
+                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountPercent(), p.getCategory(), p.getValidUntil()))
+                .toList();
+        config.setActivePromotions(promos);
+
+        return config;
     }
 
     /**
@@ -85,6 +126,15 @@ public class PublicStorefrontService {
      */
     public Page<PublicShopDto> searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+        // Use full-text search for ranked results; fall back to LIKE for short queries
+        if (query != null && query.length() >= 2) {
+            // Use unsorted Pageable for native queries — ts_rank handles ordering
+            Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
+            if (results.hasContent()) {
+                return results.map(this::toPublicShopDto);
+            }
+        }
         return shopRepository.searchPublished(query, pageable)
                 .map(this::toPublicShopDto);
     }
@@ -237,6 +287,7 @@ public class PublicStorefrontService {
                             existingOrder.getOrderNumber(),
                             existingOrder.getStatus().name(),
                             existingOrder.getSubtotalPennies(),
+                            existingOrder.getDeliveryFeePennies(),
                             existingOrder.getVatRate().name(),
                             existingOrder.getVatAmountPennies(),
                             existingOrder.getTotalAmountPennies(),
@@ -303,6 +354,17 @@ public class PublicStorefrontService {
                 order.addItem(item);
             }
 
+            // Calculate delivery fee — waived if subtotal exceeds free delivery threshold
+            long itemSubtotal = order.getItems().stream()
+                    .mapToLong(item -> item.getTotalPricePennies())
+                    .sum();
+            long deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
+            if (shop.getFreeDeliveryThresholdPennies() != null
+                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+                deliveryFee = 0L;
+            }
+            order.setDeliveryFeePennies(deliveryFee);
+
             order.calculateTotal();
 
             // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
@@ -356,6 +418,7 @@ public class PublicStorefrontService {
                     order.getOrderNumber(),
                     order.getStatus().name(),
                     order.getSubtotalPennies(),
+                    order.getDeliveryFeePennies(),
                     order.getVatRate().name(),
                     order.getVatAmountPennies(),
                     order.getTotalAmountPennies(),
@@ -391,6 +454,8 @@ public class PublicStorefrontService {
         dto.setOpeningHours(shop.getOpeningHours());
         dto.setDeliveryInfo(shop.getDeliveryInfo());
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
+        dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
+        dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
         dto.setTags(shop.getTags());
         return dto;
     }

@@ -8,7 +8,13 @@ import {
   ShoppingBag, Plus as PlusIcon, Minus
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
-import { PublicShop, PublicProduct, ProductsByCategory } from "@/types/storefront"
+import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
+
+interface ShopConfig {
+  announcements: string[]
+  featuredProducts: PublicProduct[]
+  activePromotions: { label: string; discountPercent: number | null; category: string | null; validUntil: string }[]
+}
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
@@ -196,6 +202,10 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const { slug } = use(params)
   const [shop, setShop] = useState<PublicShop | null>(null)
   const [products, setProducts] = useState<ProductsByCategory>({})
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [reviewCount, setReviewCount] = useState(0)
+  const [avgRating, setAvgRating] = useState(0)
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
@@ -204,12 +214,21 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
     async function load() {
       setLoading(true)
       try {
-        const [shopRes, productsRes] = await Promise.all([
+        const [shopRes, productsRes, reviewsRes, configRes] = await Promise.all([
           publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
           publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
+          publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
+          publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
         ])
         setShop(shopRes.data)
         setProducts(productsRes.data)
+        setReviews(reviewsRes.data.content)
+        setReviewCount(reviewsRes.data.totalElements)
+        if (reviewsRes.data.content.length > 0) {
+          const avg = reviewsRes.data.content.reduce((sum: number, r: Review) => sum + r.foodRating, 0) / reviewsRes.data.content.length
+          setAvgRating(Math.round(avg * 10) / 10)
+        }
+        if (configRes.data) setShopConfig(configRes.data)
         const cats = Object.keys(productsRes.data)
         if (cats.length > 0) setActiveCategory(cats[0])
       } catch {
@@ -314,6 +333,12 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
                   <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`} />
                   {open ? "Open now" : "Closed"}
                 </span>
+                {reviewCount > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-300">
+                    <Star className="h-3 w-3 fill-amber-300" />
+                    {avgRating} ({reviewCount})
+                  </span>
+                )}
                 {shop.deliveryInfo && (
                   <span className="text-xs truncate">{shop.deliveryInfo}</span>
                 )}
@@ -350,6 +375,18 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
                 Min order {formatPrice(shop.minimumOrderPennies)}
               </span>
             )}
+            {shop.deliveryFeePennies > 0 ? (
+              <span className="text-slate-600">
+                Delivery {formatPrice(shop.deliveryFeePennies)}
+                {shop.freeDeliveryThresholdPennies && (
+                  <span className="text-emerald-600 font-medium ml-1">
+                    Free over {formatPrice(shop.freeDeliveryThresholdPennies)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-emerald-600 font-medium">Free delivery</span>
+            )}
           </div>
 
           {shop.description && (
@@ -380,6 +417,71 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           )}
         </div>
       </div>
+
+      {/* Announcements & Promotions (server-driven) */}
+      {shopConfig && (shopConfig.announcements.length > 0 || shopConfig.activePromotions.length > 0) && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
+            {shopConfig.announcements.map((msg, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <span className="text-blue-500 text-sm mt-0.5">&#x1f4e2;</span>
+                <p className="text-sm text-blue-800">{msg}</p>
+              </div>
+            ))}
+            {shopConfig.activePromotions.map((promo, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                <span className="text-sm font-medium text-amber-800">{promo.label}</span>
+                {promo.discountPercent && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                    {promo.discountPercent}% off
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Customer reviews */}
+      {reviews.length > 0 && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-900">
+                Customer reviews ({reviewCount})
+              </h2>
+              <div className="flex items-center gap-1 text-sm">
+                <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                <span className="font-bold text-slate-900">{avgRating}</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {reviews.slice(0, 3).map((review) => (
+                <div key={review.id} className="rounded-lg bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-700">{review.customerName || "Anonymous"}</span>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star key={s} className={`h-3 w-3 ${s <= review.foodRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
+                      ))}
+                    </div>
+                  </div>
+                  {review.comment && (
+                    <p className="mt-1 text-xs text-slate-600 line-clamp-2">{review.comment}</p>
+                  )}
+                  {review.photoUrls && review.photoUrls.length > 0 && (
+                    <div className="mt-2 flex gap-1.5">
+                      {review.photoUrls.slice(0, 3).map((url, i) => (
+                        <SafeImage key={i} src={url} alt="Review photo" className="h-12 w-12 rounded-md object-cover" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category navigation (sticky) */}
       {categories.length > 1 && (

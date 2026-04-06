@@ -7,6 +7,7 @@ import org.hibernate.envers.Audited;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -62,11 +63,23 @@ public class Shop {
     @Column(name = "minimum_order_pennies", nullable = false)
     private Long minimumOrderPennies = 0L;
 
+    @Column(name = "delivery_fee_pennies", nullable = false)
+    private Long deliveryFeePennies = 0L;
+
+    @Column(name = "free_delivery_threshold_pennies")
+    private Long freeDeliveryThresholdPennies;
+
     @Column(nullable = false)
     private Boolean published = false;
 
     @Column(length = 500)
     private String tags;
+
+    @Column(name = "announcements", columnDefinition = "TEXT[]")
+    private List<String> announcements;
+
+    @Column(name = "featured_product_ids", columnDefinition = "UUID[]")
+    private List<UUID> featuredProductIds;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -99,8 +112,16 @@ public class Shop {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
+    public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    public List<String> getAnnouncements() { return announcements; }
+    public void setAnnouncements(List<String> announcements) { this.announcements = announcements; }
+    public List<UUID> getFeaturedProductIds() { return featuredProductIds; }
+    public void setFeaturedProductIds(List<UUID> featuredProductIds) { this.featuredProductIds = featuredProductIds; }
 }
