@@ -1,9 +1,11 @@
 "use client"
 
-import { use, useState } from "react"
+import { use, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Store, Loader2 } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock } from "lucide-react"
+import { loadStripe } from "@stripe/stripe-js"
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
@@ -19,6 +21,116 @@ interface OrderConfirmation {
   totalAmountPennies: number
   shopName: string
   itemCount: number
+  clientSecret: string
+}
+
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  : null
+
+/**
+ * Inner payment form — rendered inside Stripe Elements context.
+ */
+function PaymentForm({
+  slug,
+  orderNumber,
+  customerEmail,
+  totalPennies,
+}: {
+  slug: string
+  orderNumber: string
+  customerEmail: string
+  totalPennies: number
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const router = useRouter()
+  const { clearCart } = useCart()
+  const [paying, setPaying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handlePayment = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!stripe || !elements) return
+
+    setError(null)
+    setPaying(true)
+
+    try {
+      const { error: stripeError } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${window.location.origin}/shop/${slug}/orders/${orderNumber}`,
+          receipt_email: customerEmail,
+        },
+        redirect: "if_required",
+      })
+
+      if (stripeError) {
+        setError(stripeError.message || "Payment failed. Please try again.")
+        setPaying(false)
+        return
+      }
+
+      // Payment succeeded without redirect — save and navigate
+      saveLocalOrder({
+        orderNumber,
+        email: customerEmail,
+        shopSlug: slug,
+        placedAt: new Date().toISOString(),
+      })
+      clearCart()
+      router.push(`/shop/${slug}/orders/${orderNumber}`)
+    } catch {
+      setError("Something went wrong. Please try again.")
+      setPaying(false)
+    }
+  }, [stripe, elements, slug, orderNumber, customerEmail, clearCart, router])
+
+  return (
+    <form onSubmit={handlePayment} className="space-y-4">
+      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <CreditCard className="h-4 w-4 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
+        </div>
+        <PaymentElement
+          options={{
+            layout: "tabs",
+          }}
+        />
+      </div>
+
+      {error && (
+        <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={paying || !stripe || !elements}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        {paying ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Processing payment...
+          </>
+        ) : (
+          <>
+            <Lock className="h-3.5 w-3.5" />
+            Pay {formatPrice(totalPennies)}
+          </>
+        )}
+      </button>
+
+      <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
+        <Lock className="h-3 w-3" />
+        Secured by Stripe. Your card details never touch our servers.
+      </div>
+    </form>
+  )
 }
 
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -35,7 +147,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (items.length === 0) {
+  // After order is created, holds the Stripe client secret + order number
+  const [paymentState, setPaymentState] = useState<{
+    clientSecret: string
+    orderNumber: string
+  } | null>(null)
+
+  if (items.length === 0 && !paymentState) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <ShoppingBag className="mx-auto h-16 w-16 text-slate-200" />
@@ -51,7 +169,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Step 1: Collect customer details and create order
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
@@ -74,17 +193,29 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       )
 
       const confirmation = res.data
-      // Save email for order tracking page
+
+      if (!confirmation.clientSecret) {
+        // Fallback: no Stripe configured — order placed directly (COD mode)
+        localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
+        saveLocalOrder({
+          orderNumber: confirmation.orderNumber,
+          email: customerEmail.trim(),
+          shopSlug: slug,
+          placedAt: new Date().toISOString(),
+        })
+        clearCart()
+        router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
+        return
+      }
+
+      // Store email for order tracking
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
-      // Save order for "My Orders" page
-      saveLocalOrder({
+
+      // Move to payment step
+      setPaymentState({
+        clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
-        email: customerEmail.trim(),
-        shopSlug: slug,
-        placedAt: new Date().toISOString(),
       })
-      clearCart()
-      router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
     } catch (err: unknown) {
       if (err && typeof err === "object" && "response" in err) {
         const axiosErr = err as { response?: { data?: { detail?: string } } }
@@ -97,6 +228,72 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }
   }
 
+  // Step 2: Payment form (shown after order creation)
+  if (paymentState && stripePromise) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
+        <button
+          onClick={() => setPaymentState(null)}
+          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to details
+        </button>
+        <h1 className="text-xl font-bold text-slate-900">Payment</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Order {paymentState.orderNumber} &middot; {formatPrice(totalPennies)}
+        </p>
+
+        {/* Order summary */}
+        <div className="mt-4 rounded-xl bg-white border border-slate-100 p-4 shadow-sm mb-4">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">Order summary</h2>
+          <div className="space-y-2">
+            {items.map((item) => (
+              <div key={item.productId} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex-shrink-0 h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                    {item.quantity}
+                  </span>
+                  <span className="text-slate-700 truncate">{item.title}</span>
+                </div>
+                <span className="text-slate-900 font-medium flex-shrink-0 ml-2">
+                  {formatPrice(item.pricePennies * item.quantity)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 border-t border-slate-100 pt-3 flex items-center justify-between">
+            <span className="text-base font-bold text-slate-900">Total</span>
+            <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+          </div>
+        </div>
+
+        <Elements
+          stripe={stripePromise}
+          options={{
+            clientSecret: paymentState.clientSecret,
+            appearance: {
+              theme: "stripe",
+              variables: {
+                colorPrimary: "#f97316",
+                borderRadius: "12px",
+                fontFamily: "system-ui, -apple-system, sans-serif",
+              },
+            },
+          }}
+        >
+          <PaymentForm
+            slug={slug}
+            orderNumber={paymentState.orderNumber}
+            customerEmail={customerEmail}
+            totalPennies={totalPennies}
+          />
+        </Elements>
+      </div>
+    )
+  }
+
+  // Step 1: Customer details form
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
       {/* Header */}
@@ -110,7 +307,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       <h1 className="text-xl font-bold text-slate-900">Checkout</h1>
       <p className="text-sm text-slate-500 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+      <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
         {/* Customer details */}
         <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-slate-900">Your details</h2>
@@ -207,18 +404,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Placing order...
+              Creating order...
             </>
           ) : (
             <>
-              Place order &middot; {formatPrice(totalPennies)}
+              <CreditCard className="h-4 w-4" />
+              Continue to payment &middot; {formatPrice(totalPennies)}
             </>
           )}
         </button>
-
-        <p className="text-center text-[10px] text-slate-400">
-          Payment will be collected on pickup/delivery. By placing an order you agree to the shop&apos;s terms.
-        </p>
       </form>
     </div>
   )

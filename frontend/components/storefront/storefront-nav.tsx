@@ -60,13 +60,15 @@ export function StorefrontNav() {
       >
         Browse
       </Link>
-      <Link
-        href="/shop/orders"
-        className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
-      >
-        <Package className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">My Orders</span>
-      </Link>
+      {profile && (
+        <Link
+          href="/shop/orders"
+          className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
+        >
+          <Package className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">My Orders</span>
+        </Link>
+      )}
 
       {profile ? (
         <div className="flex items-center gap-2">

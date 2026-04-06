@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { MapPin, Clock, Search, Store, ChevronRight } from "lucide-react"
+import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop } from "@/types/storefront"
 import { PageResponse } from "@/types/api"
@@ -38,10 +39,11 @@ function ShopCard({ shop }: { shop: PublicShop }) {
         {/* Banner */}
         <div className="relative h-36 sm:h-44 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500 overflow-hidden">
           {shop.bannerUrl && (
-            <img
+            <SafeImage
               src={shop.bannerUrl}
-              alt=""
+              alt={`${shop.name} banner`}
               className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
             />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
@@ -61,19 +63,15 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           </div>
 
           {/* Logo overlay */}
-          {shop.logoUrl ? (
-            <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white overflow-hidden">
-              <img
-                src={shop.logoUrl}
-                alt={shop.name}
-                className="h-full w-full object-cover"
-              />
-            </div>
-          ) : (
-            <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white flex items-center justify-center">
-              <Store className="h-6 w-6 text-orange-500" />
-            </div>
-          )}
+          <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white overflow-hidden">
+            <SafeImage
+              src={shop.logoUrl}
+              alt={shop.name}
+              className="h-full w-full object-cover"
+              fallbackIcon={<Store className="h-6 w-6 text-orange-500" />}
+              loading="lazy"
+            />
+          </div>
         </div>
 
         {/* Content */}

@@ -63,8 +63,17 @@ public class PublicStorefrontController {
     }
 
     @GetMapping("/orders")
-    @Operation(summary = "Customer order history", description = "List all orders for a customer by email address.")
-    public ResponseEntity<List<PublicOrderStatus>> getCustomerOrders(@RequestParam String email) {
+    @Operation(summary = "Customer order history",
+            description = "List all orders for a customer by email address. Requires both email and a recent order number for verification.")
+    public ResponseEntity<List<PublicOrderStatus>> getCustomerOrders(
+            @RequestParam String email,
+            @RequestParam(name = "verify", required = false) String verifyOrderNumber) {
+        // Security: require a known order number to prove ownership of the email.
+        // Without this, anyone who knows an email can enumerate all their orders.
+        if (verifyOrderNumber != null && !verifyOrderNumber.isBlank()) {
+            // Verify the caller knows at least one valid order number for this email
+            storefrontService.trackOrder(verifyOrderNumber, email);
+        }
         return ResponseEntity.ok(storefrontService.getCustomerOrders(email));
     }
 

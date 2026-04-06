@@ -97,7 +97,7 @@ The Go-based `edge-go` service acts as a protective layer:
 *   **Self-Correction**: AI agents are instructed to periodically verify and refresh the AI context to ensure it reflects the actual state of the project (test counts, versions, etc.).
 
 ### Testing
-*   **Core Java**: `./gradlew :core-java:test` (166 tests passing)
+*   **Core Java**: `./gradlew :core-java:test` (183 tests passing)
 *   **Edge Go**: `cd edge-go && go test ./...`
 *   **Manual**: See [TESTING.md](TESTING.md) for API test examples and workflows.
 

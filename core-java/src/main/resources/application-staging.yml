@@ -69,7 +69,8 @@ logging:
     org.springframework.data: INFO
   pattern:
     # Structured JSON logging for log aggregation
-    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n'
+    console: >-
+      {"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n
   file:
     name: ${LOG_PATH:/var/log/jtoye}/application-staging.log
     max-size: 10MB

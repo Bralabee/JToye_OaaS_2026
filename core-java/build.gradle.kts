@@ -38,10 +38,20 @@ dependencies {
     // Email notifications
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
+    // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
+    implementation(platform("software.amazon.awssdk:bom:2.25.60"))
+    implementation("software.amazon.awssdk:s3")
+
+    // Spring WebFlux for non-blocking HTTP client (Claude API calls)
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
+
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
+
+    // Stripe payment processing
+    implementation("com.stripe:stripe-java:28.2.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")

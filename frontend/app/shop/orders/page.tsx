@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
-import { getLocalOrders, type LocalOrder } from "@/lib/order-history"
+import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
 
 interface OrderSummary {
   orderNumber: string
@@ -80,24 +80,22 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
 }
 
 export default function CustomerOrdersPage() {
+  return (
+    <RequireCustomerAuth message="Sign in to view your order history and track deliveries.">
+      <CustomerOrdersContent />
+    </RequireCustomerAuth>
+  )
+}
+
+function CustomerOrdersContent() {
   const [orders, setOrders] = useState<OrderSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState<string | null>(null)
-  const [localOrders, setLocalOrders] = useState<LocalOrder[]>([])
 
-  // Determine email source: logged-in session or prompt
   useEffect(() => {
     const session = getCustomerSession()
     if (session) {
       setEmail(session.profile.email)
-    } else {
-      // Check if we have any local orders
-      const local = getLocalOrders()
-      setLocalOrders(local)
-      // Use the email from the most recent local order
-      if (local.length > 0) {
-        setEmail(local[0].email)
-      }
     }
   }, [])
 
@@ -132,9 +130,6 @@ export default function CustomerOrdersPage() {
     return () => clearInterval(interval)
   }, [orders, fetchOrders])
 
-  // Build lookup map from local orders for shop slugs
-  const slugMap = Object.fromEntries(localOrders.map(o => [o.orderNumber, o.shopSlug]))
-
   const activeOrders = orders.filter(o => !["COMPLETED", "CANCELLED"].includes(o.status))
   const pastOrders = orders.filter(o => ["COMPLETED", "CANCELLED"].includes(o.status))
 
@@ -143,35 +138,6 @@ export default function CustomerOrdersPage() {
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
         <p className="mt-3 text-sm text-slate-500">Loading your orders...</p>
-      </div>
-    )
-  }
-
-  // No email and no local orders — show sign-in prompt
-  if (!email && localOrders.length === 0) {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Package className="mx-auto h-16 w-16 text-slate-200" />
-        <h2 className="mt-4 text-lg font-semibold text-slate-900">No orders yet</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Sign in to see your order history, or place an order to get started.
-        </p>
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            href="/shop"
-            className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 transition-colors"
-          >
-            <Store className="h-4 w-4" />
-            Browse shops
-          </Link>
-          <Link
-            href="/track"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <Search className="h-4 w-4" />
-            Track by order number
-          </Link>
-        </div>
       </div>
     )
   }
@@ -192,7 +158,7 @@ export default function CustomerOrdersPage() {
           </h2>
           <div className="space-y-3">
             {activeOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} email={email || undefined} />
+              <OrderCard key={order.orderNumber} order={order} email={email || undefined} />
             ))}
           </div>
         </section>
@@ -206,7 +172,7 @@ export default function CustomerOrdersPage() {
           </h2>
           <div className="space-y-3">
             {pastOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} shopSlug={slugMap[order.orderNumber]} email={email || undefined} />
+              <OrderCard key={order.orderNumber} order={order} email={email || undefined} />
             ))}
           </div>
         </section>

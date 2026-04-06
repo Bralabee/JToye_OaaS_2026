@@ -14,10 +14,12 @@ public interface ProductMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "additionalImageUrls", ignore = true)
     Product toEntity(CreateProductRequest request);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "additionalImageUrls", ignore = true)
     void updateEntity(CreateProductRequest request, @MappingTarget Product product);
 }

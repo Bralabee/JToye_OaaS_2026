@@ -55,7 +55,7 @@
 | S3 | **Complete Order-to-Cash Automation** | Order completion triggers automatic FinancialTransaction creation with VAT calculation via RabbitMQ consumer (`OrderStateChangeListener`) | Revenue recognition is automated. No manual bookkeeping step. Reduces operational cost and human error for tenants. |
 | S4 | **Production-Ready Infrastructure** | Docker Compose (7 services), Kubernetes (22 manifests, HPA 3-10 pods, PDB), GitHub Actions CI/CD, Prometheus + Grafana monitoring, automated backups | Platform can be deployed to production today. Infrastructure is not a blocker — it's an asset. |
 | S5 | **Polyglot Architecture with Clear Boundaries** | Java (business logic + compliance), Go (edge performance + circuit breaking), TypeScript (UI), SQL (data integrity) | Each language used where it excels. Go Edge handles 20 req/s with 15MB binary. Java handles complex domain logic. No "wrong tool for the job" situations. |
-| S6 | **Comprehensive Test Suite** | 166 tests: 120 Java (unit + integration with TestContainers), 43 Jest (frontend), 3 Go suites. 100% pass rate. | High confidence in refactoring safety. New developers can modify code without fear of silent breakage. |
+| S6 | **Comprehensive Test Suite** | 252 tests: 183 Java (unit + integration with TestContainers), 43 Jest (frontend), 26 Go tests. 100% pass rate. | High confidence in refactoring safety. New developers can modify code without fear of silent breakage. |
 | S7 | **Mature Caching Strategy** | Redis-backed, tenant-aware cache keys (`{cache}::{tenantId}::{params}`), Products 10min TTL, Shops 15min TTL, orders/customers intentionally uncached | Performance optimisation that respects data freshness requirements. No cross-tenant cache leakage possible. |
 | S8 | **Event-Driven Architecture** | RabbitMQ: order state changes published to exchange, consumed by listener, triggers financial transactions | Decoupled architecture enables future extensions (notifications, analytics, webhooks) without modifying core order logic. |
 
@@ -276,8 +276,8 @@ NASA/EU standard adapted for software systems:
 
 | Component | TRL Level | Description | Evidence |
 |-----------|-----------|-------------|----------|
-| **Core Java Backend** | **TRL 8** (System Complete, Qualified) | All APIs functional, 147 tests passing, production config exists | 8 controllers, 15 migrations, integration tests with TestContainers |
-| **Edge Go Gateway** | **TRL 8** | Circuit breaker, JWT, rate limiting, webhook forwarding all operational | 3 test suites, structured logging, health checks |
+| **Core Java Backend** | **TRL 8** (System Complete, Qualified) | All APIs functional, 183 tests passing, production config exists | 9 controllers, 22 migrations, integration tests with TestContainers |
+| **Edge Go Gateway** | **TRL 8** | Circuit breaker, JWT, rate limiting, webhook forwarding all operational | 26 tests across 4 packages, structured logging, health checks |
 | **Next.js Frontend** | **TRL 7** (System Prototype in Operational Environment) | Full CRUD UI, auth flow, dashboard charts | 43 Jest tests, but no E2E in CI. Visual regression untested. |
 | **PostgreSQL + RLS** | **TRL 9** (Actual System Proven in Operational Environment) | 15 migrations, RLS on all tables, proven tenant isolation | `DatabaseConfigurationValidator` prevents superuser bypass |
 | **Kubernetes Deployment** | **TRL 7** | Manifests complete, HPA/PDB configured, but not validated in production cluster | Kustomize overlays exist for staging/production |
@@ -340,7 +340,7 @@ NASA/EU standard adapted for software systems:
 | Objective | Measure | Target | Current | Status |
 |-----------|---------|--------|---------|--------|
 | Automated deployment | CI/CD pipeline coverage | Full stack | Full stack (GH Actions) | ✅ On Target |
-| Test reliability | Test pass rate | 100% | 100% (166 tests) | ✅ On Target |
+| Test reliability | Test pass rate | 100% | 100% (252 tests) | ✅ On Target |
 | Code quality | Security vulnerabilities | 0 Critical/High | 0 Critical, 0 High | ✅ On Target |
 | Release velocity | Time from commit to deploy | < 30 min | ~15 min (CI pipeline) | ✅ On Target |
 | Incident response | MTTR | < 1 hour | No incidents (pre-prod) | ⚠️ Untested |
@@ -400,7 +400,7 @@ Rare (1)      │ Cloud       │ OSS Vuln  │             │           │
 | **Requirements Management** | Level 2 (Managed) | Features tracked via PRs and CHANGELOG. No formal requirements traceability matrix. | Establish formal user stories with acceptance criteria |
 | **Project Planning** | Level 2 (Managed) | Version milestones (v0.7 → v1.3). Feature branches with clear scope. | Add estimation, resource planning, risk tracking |
 | **Configuration Management** | Level 3 (Defined) | Git branching strategy, Docker versioning, Flyway migrations, environment-specific configs | Automate config drift detection |
-| **Quality Assurance** | Level 3 (Defined) | 166 tests, Trivy scanning, CodeQL analysis, 100% pass rate | Add E2E tests, load testing, mutation testing |
+| **Quality Assurance** | Level 3 (Defined) | 252 tests, Trivy scanning, CodeQL analysis, 100% pass rate | Add E2E tests, load testing, mutation testing |
 | **Process Management** | Level 1 (Initial) | No formal SDLC process documented. Ad-hoc development cycles. | Define sprint cadence, definition of done, review process |
 | **Supplier Agreement Management** | Level 3 (Defined) | All open-source. No vendor dependencies. Clear dependency versions in build files. | Automate dependency updates (Renovate/Dependabot) |
 | **Decision Analysis** | Level 2 (Managed) | Technology choices documented in AI_CONTEXT.md. Architecture decisions implicit in code. | Create Architecture Decision Records (ADRs) |
@@ -437,7 +437,7 @@ The platform's technical maturity (Level 3-4 in code quality and configuration) 
 │ • Polyglot      │ • Cloud hosting  │                  │ • Web dashboard  │                 │
 │   codebase      │   (~£50/mo min)  │                  │   (Next.js)      │ • SaaS          │
 │   (30K LOC)     │ • Developer      │                  │ • REST API       │   subscription  │
-│ • 166 tests     │   salary (1 FTE) │                  │ • WhatsApp       │   (per-tenant)  │
+│ • 252 tests     │   salary (1 FTE) │                  │ • WhatsApp       │   (per-tenant)  │
 │ • 60+ docs      │ • Domain/SSL     │                  │   webhook        │ • Tiered        │
 │ • K8s manifests │   (~£50/yr)      │                  │ • Swagger/       │   pricing       │
 │ • Open-source   │ • No licence     │                  │   OpenAPI        │ • Enterprise    │
@@ -458,7 +458,7 @@ The platform's technical maturity (Level 3-4 in code quality and configuration) 
 | **Strategy** | Compliance-first UK food retail SaaS. Technical-led. No formal go-to-market strategy. | ⚠️ Partial | Define pricing model, target customer profile (ICP), and 12-month revenue targets. |
 | **Structure** | Flat (1-2 developers). No formal team roles. | ❌ Weak | Define roles: backend, frontend, DevOps, product. Even if same person, role clarity helps prioritisation. |
 | **Systems** | Strong technical systems (CI/CD, monitoring, testing). Weak business systems (no CRM, billing, support). | ⚠️ Partial | Add Stripe billing, customer support tooling, onboarding automation. |
-| **Shared Values** | Security-first, compliance-native, quality-focused (166 tests, 0 vulnerabilities). | ✅ Strong | Maintain. These values are embedded in architecture (RLS, Envers, rate limiting). |
+| **Shared Values** | Security-first, compliance-native, quality-focused (252 tests, 0 vulnerabilities). | ✅ Strong | Maintain. These values are embedded in architecture (RLS, Envers, rate limiting). |
 | **Style** | Developer-driven, pragmatic. Fast iteration (v0.1 → v1.3 in 96 days). | ✅ Strong | Preserve velocity. Don't introduce heavy process prematurely. |
 | **Staff** | 2 contributors. Deep expertise in Java, Go, TypeScript, infrastructure. | ❌ Critical Gap | Key-person risk is the #1 strategic threat. Hiring is priority. |
 | **Skills** | Full-stack polyglot capability. Security architecture. DevOps. Regulatory compliance domain knowledge. | ✅ Strong | Document domain knowledge (allergen regulations, VAT rules) to make it transferable. |

@@ -16,6 +16,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.storage.StorageService;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -40,6 +41,9 @@ class ProductServiceTest {
 
     @Mock
     private ProductMapper productMapper;
+
+    @Mock
+    private StorageService storageService;
 
     @InjectMocks
     private ProductService productService;

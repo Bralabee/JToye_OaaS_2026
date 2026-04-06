@@ -110,12 +110,19 @@ public class OrderService {
         }
         order.setUpdatedAt(OffsetDateTime.now());
 
-        // Add order items
+        // Add order items with stock validation
         for (OrderItemRequest itemRequest : request.getItems()) {
             // Fetch product to get current price
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + itemRequest.getProductId()));
+
+            // Validate stock availability
+            if (!product.hasStock(itemRequest.getQuantity())) {
+                throw new IllegalArgumentException(
+                        "Insufficient stock for product '" + product.getTitle() + "': requested "
+                                + itemRequest.getQuantity() + ", available " + product.getQuantityInStock());
+            }
 
             // Use actual product price
             long unitPrice = product.getPricePennies();
@@ -338,6 +345,32 @@ public class OrderService {
         eventPublisher.publishStateChange(
                 order.getId(), order.getTenantId(), order.getOrderNumber(),
                 oldStatus, newStatus);
+
+        // Decrement stock when order is confirmed (not on creation — vendor might reject)
+        if (newStatus == OrderStatus.CONFIRMED) {
+            for (OrderItem item : order.getItems()) {
+                Product product = productRepository.findById(item.getProductId()).orElse(null);
+                if (product != null && product.getQuantityInStock() != null) {
+                    int newStock = product.getQuantityInStock() - item.getQuantity();
+                    product.setQuantityInStock(Math.max(0, newStock));
+                    productRepository.save(product);
+                    log.info("Decremented stock for product {}: {} -> {}",
+                            product.getSku(), product.getQuantityInStock() + item.getQuantity(), Math.max(0, newStock));
+                }
+            }
+        }
+
+        // Restore stock when order is cancelled (if it was previously confirmed)
+        if (newStatus == OrderStatus.CANCELLED && oldStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()) {
+            for (OrderItem item : order.getItems()) {
+                Product product = productRepository.findById(item.getProductId()).orElse(null);
+                if (product != null && product.getQuantityInStock() != null) {
+                    product.setQuantityInStock(product.getQuantityInStock() + item.getQuantity());
+                    productRepository.save(product);
+                    log.info("Restored stock for product {}: +{}", product.getSku(), item.getQuantity());
+                }
+            }
+        }
 
         // Auto-create financial transaction when order is completed
         if (newStatus == OrderStatus.COMPLETED && order.getTotalAmountPennies() != null) {
