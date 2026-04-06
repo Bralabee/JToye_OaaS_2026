@@ -62,6 +62,12 @@ public class Shop {
     @Column(name = "minimum_order_pennies", nullable = false)
     private Long minimumOrderPennies = 0L;
 
+    @Column(name = "delivery_fee_pennies", nullable = false)
+    private Long deliveryFeePennies = 0L;
+
+    @Column(name = "free_delivery_threshold_pennies")
+    private Long freeDeliveryThresholdPennies;
+
     @Column(nullable = false)
     private Boolean published = false;
 
@@ -99,6 +105,10 @@ public class Shop {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
+    public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

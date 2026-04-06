@@ -16,6 +16,8 @@ public class PublicShopDto {
     private Map<String, String> openingHours;
     private String deliveryInfo;
     private Long minimumOrderPennies;
+    private Long deliveryFeePennies;
+    private Long freeDeliveryThresholdPennies;
     private String tags;
 
     public String getSlug() { return slug; }
@@ -44,6 +46,10 @@ public class PublicShopDto {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
+    public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
 }

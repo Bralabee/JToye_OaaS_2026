@@ -310,6 +310,17 @@ public class PublicStorefrontService {
                 order.addItem(item);
             }
 
+            // Calculate delivery fee — waived if subtotal exceeds free delivery threshold
+            long itemSubtotal = order.getItems().stream()
+                    .mapToLong(item -> item.getTotalPricePennies())
+                    .sum();
+            long deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
+            if (shop.getFreeDeliveryThresholdPennies() != null
+                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+                deliveryFee = 0L;
+            }
+            order.setDeliveryFeePennies(deliveryFee);
+
             order.calculateTotal();
 
             // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
@@ -398,6 +409,8 @@ public class PublicStorefrontService {
         dto.setOpeningHours(shop.getOpeningHours());
         dto.setDeliveryInfo(shop.getDeliveryInfo());
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
+        dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
+        dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
         dto.setTags(shop.getTags());
         return dto;
     }
