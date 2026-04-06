@@ -57,6 +57,9 @@ export function validateEnvironment(): void {
     }
   }
 
+  // Only log in development to avoid noise in production
+  if (process.env.NODE_ENV === 'production') return;
+
   // Only fail if variables are completely missing
   if (missing.length > 0) {
     console.warn('\n⚠️  Environment Configuration Warning!\n');
@@ -84,6 +87,7 @@ export function validateEnvironment(): void {
  * Log current environment configuration (safe - no secrets)
  */
 export function logEnvironmentInfo(): void {
+  if (process.env.NODE_ENV === 'production') return;
   console.log('\n📝 Environment Configuration:');
   console.log(`  API URL: ${process.env.NEXT_PUBLIC_API_URL}`);
   console.log(`  Keycloak Issuer: ${process.env.KEYCLOAK_ISSUER}`);

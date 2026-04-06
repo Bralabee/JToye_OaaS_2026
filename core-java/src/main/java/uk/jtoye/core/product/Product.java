@@ -5,6 +5,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -61,6 +63,15 @@ public class Product {
     @Column(name = "dietary_tags", length = 255)
     private String dietaryTags;
 
+    @Column(name = "shop_id")
+    private UUID shopId;
+
+    @Column(name = "quantity_in_stock")
+    private Integer quantityInStock;
+
+    @Column(name = "additional_image_urls", columnDefinition = "TEXT[]")
+    private List<String> additionalImageUrls = new ArrayList<>();
+
     public UUID getId() { return id; }
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
@@ -91,4 +102,25 @@ public class Product {
     public void setPreparationTimeMinutes(Integer preparationTimeMinutes) { this.preparationTimeMinutes = preparationTimeMinutes; }
     public String getDietaryTags() { return dietaryTags; }
     public void setDietaryTags(String dietaryTags) { this.dietaryTags = dietaryTags; }
+    public UUID getShopId() { return shopId; }
+    public void setShopId(UUID shopId) { this.shopId = shopId; }
+    public Integer getQuantityInStock() { return quantityInStock; }
+    public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
+    public List<String> getAdditionalImageUrls() { return additionalImageUrls; }
+    public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
+
+    /**
+     * Check if product has stock available.
+     * NULL quantityInStock means unlimited (no tracking).
+     */
+    public boolean hasStock() {
+        return quantityInStock == null || quantityInStock > 0;
+    }
+
+    /**
+     * Check if product has enough stock for the requested quantity.
+     */
+    public boolean hasStock(int requested) {
+        return quantityInStock == null || quantityInStock >= requested;
+    }
 }

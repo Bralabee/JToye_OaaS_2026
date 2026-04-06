@@ -18,7 +18,12 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("SELECT p FROM Product p WHERE p.available = true ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
     List<Product> findAvailableOrderedByCategory();
 
+    @Query("SELECT p FROM Product p WHERE p.available = true AND (p.shopId = :shopId OR p.shopId IS NULL) ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
+    List<Product> findAvailableByShopOrderedByCategory(@Param("shopId") UUID shopId);
+
     List<Product> findByFeaturedTrueAndAvailableTrue();
+
+    List<Product> findByShopId(UUID shopId);
 
     @Query("SELECT p FROM Product p WHERE LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Product> search(@Param("q") String query);

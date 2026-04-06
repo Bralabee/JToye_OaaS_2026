@@ -11,6 +11,9 @@ import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
+import { SafeImage } from "@/components/ui/safe-image"
+import { Badge } from "@/components/ui/badge"
+import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -46,23 +49,47 @@ function DietaryBadge({ tag }: { tag: string }) {
 }
 
 function ProductCard({ product }: { product: PublicProduct }) {
-  const [showAllergens, setShowAllergens] = useState(false)
-  const { addItem, items, updateQuantity, removeItem } = useCart()
+  const [modalOpen, setModalOpen] = useState(false)
+  const { addItem, items, updateQuantity } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
   const allergenList = ALLERGENS.filter(a => hasAllergen(product.allergenMask, a.bit))
   const cartItem = items.find((i) => i.productId === product.id)
   const quantity = cartItem?.quantity || 0
 
+  const images = product.imageUrls?.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : [])
+  const primaryImage = images[0] || null
+  const hasMultipleImages = images.length > 1
+
+  const outOfStock = product.inStock === false
+
+  const handleAddToCart = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (outOfStock) return
+    addItem({
+      productId: product.id,
+      title: product.title,
+      pricePennies: product.pricePennies,
+      imageUrl: product.imageUrl,
+      category: product.category,
+    })
+  }
+
   return (
-    <article className="group bg-white rounded-xl border border-slate-100 overflow-hidden transition-all hover:shadow-sm hover:border-slate-200">
-      <div className="flex gap-0">
-        {/* Content */}
-        <div className="flex-1 p-3 sm:p-4 min-w-0">
-          <div className="flex items-start justify-between gap-2">
+    <>
+      <article
+        className="group bg-white rounded-xl border border-slate-100 overflow-hidden transition-all hover:shadow-md hover:border-slate-200 cursor-pointer active:scale-[0.99]"
+        onClick={() => setModalOpen(true)}
+      >
+        <div className="flex gap-0">
+          {/* Content */}
+          <div className="flex-1 p-3 sm:p-4 min-w-0">
             <div className="min-w-0">
               <h4 className="text-sm font-semibold text-slate-900 leading-tight truncate">
-                {product.featured && <Star className="inline h-3 w-3 text-amber-500 mr-1 -mt-0.5" />}
+                {product.featured && <Star className="inline h-3 w-3 text-amber-500 fill-amber-500 mr-1 -mt-0.5" />}
                 {product.title}
+                {outOfStock && (
+                  <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0 align-middle">Out of Stock</Badge>
+                )}
               </h4>
               {product.description && (
                 <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 leading-relaxed">
@@ -70,104 +97,98 @@ function ProductCard({ product }: { product: PublicProduct }) {
                 </p>
               )}
             </div>
-          </div>
 
-          {/* Dietary tags */}
-          {dietaryTags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {dietaryTags.map((tag) => (
-                <DietaryBadge key={tag} tag={tag} />
-              ))}
-            </div>
-          )}
-
-          {/* Bottom row */}
-          <div className="mt-2.5 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-slate-900">
-                {formatPrice(product.pricePennies)}
-              </span>
-              {product.preparationTimeMinutes && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
-                  <Timer className="h-2.5 w-2.5" />
-                  {product.preparationTimeMinutes}min
-                </span>
-              )}
-              {allergenList.length > 0 && (
-                <button
-                  onClick={(e) => { e.preventDefault(); setShowAllergens(!showAllergens) }}
-                  className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-700"
-                >
-                  <AlertTriangle className="h-2.5 w-2.5" />
-                  {allergenList.length}
-                </button>
-              )}
-            </div>
-            {/* Add to cart / quantity controls */}
-            {quantity === 0 ? (
-              <button
-                onClick={() => addItem({
-                  productId: product.id,
-                  title: product.title,
-                  pricePennies: product.pricePennies,
-                  imageUrl: product.imageUrl,
-                  category: product.category,
-                })}
-                className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
-              >
-                <PlusIcon className="h-3 w-3" />
-                Add
-              </button>
-            ) : (
-              <div className="inline-flex items-center gap-0 rounded-full bg-orange-500 text-white">
-                <button
-                  onClick={() => updateQuantity(product.id, quantity - 1)}
-                  className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
-                >
-                  <Minus className="h-3 w-3" />
-                </button>
-                <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
-                <button
-                  onClick={() => updateQuantity(product.id, quantity + 1)}
-                  className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
-                >
-                  <PlusIcon className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Allergen detail (expandable) */}
-          {showAllergens && allergenList.length > 0 && (
-            <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-100">
-              <p className="text-[10px] font-medium text-amber-800 mb-1">Contains:</p>
-              <div className="flex flex-wrap gap-1">
-                {allergenList.map(a => (
-                  <span key={a.bit} className="text-[10px] text-amber-700">
-                    {a.icon} {a.name}
-                  </span>
+            {/* Dietary tags */}
+            {dietaryTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {dietaryTags.map((tag) => (
+                  <DietaryBadge key={tag} tag={tag} />
                 ))}
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {/* Product image */}
-        {product.imageUrl ? (
+            {/* Bottom row */}
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-900">
+                  {formatPrice(product.pricePennies)}
+                </span>
+                {product.preparationTimeMinutes && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
+                    <Timer className="h-2.5 w-2.5" />
+                    {product.preparationTimeMinutes}min
+                  </span>
+                )}
+                {allergenList.length > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600">
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    {allergenList.length}
+                  </span>
+                )}
+              </div>
+              {/* Add to cart / quantity controls */}
+              {outOfStock ? (
+                <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 cursor-not-allowed">
+                  Unavailable
+                </span>
+              ) : quantity === 0 ? (
+                <button
+                  onClick={(e) => handleAddToCart(e)}
+                  className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+                >
+                  <PlusIcon className="h-3 w-3" />
+                  Add
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-0 rounded-full bg-orange-500 text-white" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => updateQuantity(product.id, quantity - 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
+                  <button
+                    onClick={() => updateQuantity(product.id, quantity + 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                  >
+                    <PlusIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Product image with multi-image indicator */}
           <div className="relative w-24 sm:w-28 flex-shrink-0">
-            <img
-              src={product.imageUrl}
+            <SafeImage
+              src={primaryImage}
               alt={product.title}
               className="absolute inset-0 w-full h-full object-cover"
+              fallbackClassName="w-full h-full bg-gradient-to-br from-slate-100 to-slate-50"
+              fallbackIcon={<Store className="h-8 w-8 text-slate-200" />}
+              loading="lazy"
             />
+            {hasMultipleImages && (
+              <span className="absolute top-1.5 right-1.5 bg-black/50 backdrop-blur-sm text-white text-[10px] font-medium rounded-md px-1.5 py-0.5">
+                +{images.length - 1}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="w-24 sm:w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-            <Store className="h-8 w-8 text-slate-200" />
-          </div>
-        )}
-      </div>
-    </article>
+        </div>
+      </article>
+
+      {/* Detail modal */}
+      <ProductDetailModal
+        product={product}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        quantity={quantity}
+        onAdd={handleAddToCart}
+        onIncrement={() => updateQuantity(product.id, quantity + 1)}
+        onDecrement={() => updateQuantity(product.id, quantity - 1)}
+      />
+    </>
   )
 }
 
@@ -252,10 +273,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
       {/* Hero banner */}
       <div className="relative h-48 sm:h-64 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500">
         {shop.bannerUrl && (
-          <img
+          <SafeImage
             src={shop.bannerUrl}
-            alt=""
+            alt={`${shop.name} banner`}
             className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
@@ -274,15 +296,15 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         {/* Shop info overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
           <div className="mx-auto max-w-4xl flex items-end gap-4">
-            {shop.logoUrl ? (
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
-                <img src={shop.logoUrl} alt={shop.name} className="h-full w-full object-cover" />
-              </div>
-            ) : (
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white flex items-center justify-center flex-shrink-0">
-                <Store className="h-8 w-8 text-orange-500" />
-              </div>
-            )}
+            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
+              <SafeImage
+                src={shop.logoUrl}
+                alt={shop.name}
+                className="h-full w-full object-cover"
+                fallbackIcon={<Store className="h-8 w-8 text-orange-500" />}
+                loading="eager"
+              />
+            </div>
             <div className="min-w-0 pb-1">
               <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
                 {shop.name}

@@ -16,6 +16,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
@@ -41,6 +42,7 @@ class PublicStorefrontServiceTest {
     @Mock private OrderEventPublisher eventPublisher;
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
+    @Mock private PaymentService paymentService;
 
     private PublicStorefrontService service;
 
@@ -58,7 +60,7 @@ class PublicStorefrontServiceTest {
             return null;
         }).when(hibernateSession).doWork(any());
 
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -139,7 +141,7 @@ class PublicStorefrontServiceTest {
         p2.setPricePennies(450L);
         p2.setAvailable(true);
 
-        when(productRepository.findAvailableOrderedByCategory()).thenReturn(List.of(p1, p2));
+        when(productRepository.findAvailableByShopOrderedByCategory(publishedShop.getId())).thenReturn(List.of(p1, p2));
 
         var result = service.getShopProducts("test-shop-abc12345");
 

@@ -8,6 +8,8 @@ import {
   ChefHat, CircleDot, XCircle, ArrowLeft, Store
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
+import { getCustomerSession } from "@/lib/customer-auth"
 
 interface OrderStatus {
   orderNumber: string
@@ -33,16 +35,19 @@ function formatPrice(pennies: number): string {
 
 export default function TrackOrderPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>}>
-      <TrackOrderContent />
-    </Suspense>
+    <RequireCustomerAuth message="Sign in to track your orders.">
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>}>
+        <TrackOrderContent />
+      </Suspense>
+    </RequireCustomerAuth>
   )
 }
 
 function TrackOrderContent() {
   const searchParams = useSearchParams()
   const [orderNumber, setOrderNumber] = useState(searchParams.get("order") || "")
-  const [email, setEmail] = useState(searchParams.get("email") || "")
+  const sessionEmail = getCustomerSession()?.profile?.email || ""
+  const [email] = useState(searchParams.get("email") || sessionEmail)
   const [order, setOrder] = useState<OrderStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -127,18 +132,11 @@ function TrackOrderContent() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-xs font-medium text-slate-600">Email used for order</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-300 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-              />
-            </div>
+            {email && (
+              <p className="text-xs text-slate-500">
+                Tracking as <span className="font-medium text-slate-700">{email}</span>
+              </p>
+            )}
 
             <button
               type="submit"

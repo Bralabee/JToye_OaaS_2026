@@ -1,6 +1,7 @@
 package uk.jtoye.core.order.dto;
 
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.order.PaymentStatus;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -16,6 +17,10 @@ public class OrderDto {
     private String customerPhone;
     private String notes;
     private Long totalAmountPennies;
+    private Integer itemCount;
+    private PaymentStatus paymentStatus;
+    private String paymentReference;
+    private String paymentMethod;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
@@ -49,6 +54,18 @@ public class OrderDto {
 
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
+
+    public Integer getItemCount() { return itemCount; }
+    public void setItemCount(Integer itemCount) { this.itemCount = itemCount; }
+
+    public PaymentStatus getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus; }
+
+    public String getPaymentReference() { return paymentReference; }
+    public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
+
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

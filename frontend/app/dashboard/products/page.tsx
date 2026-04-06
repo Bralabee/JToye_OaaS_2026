@@ -34,9 +34,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff } from "lucide-react"
+import Link from "next/link"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload } from "lucide-react"
+import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
+import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest } from "@/types/api"
+import type { Product, CreateProductRequest, Shop } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
@@ -59,6 +62,25 @@ const productSchema = z.object({
 
 type ProductFormData = z.infer<typeof productSchema>
 
+function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
+  return (
+    <div className="flex items-start gap-2 bg-white rounded-md px-2 py-1.5 border border-violet-100">
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-medium text-violet-500 uppercase">{label}</span>
+        <p className="text-xs text-slate-700 line-clamp-2">{value}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onAccept}
+        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 text-[10px] font-medium transition-colors"
+      >
+        <Check className="h-2.5 w-2.5" />
+        Apply
+      </button>
+    </div>
+  )
+}
+
 const PAGE_SIZE = 20
 
 export default function ProductsPage() {
@@ -76,6 +98,11 @@ export default function ProductsPage() {
   const [available, setAvailable] = useState(true)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
+  const [shops, setShops] = useState<Shop[]>([])
+  const [selectedShopId, setSelectedShopId] = useState<string>("")
+  const [trackInventory, setTrackInventory] = useState(false)
+  const [quantityInStock, setQuantityInStock] = useState<number>(0)
   const { toast } = useToast()
 
   const {
@@ -90,8 +117,18 @@ export default function ProductsPage() {
 
   useEffect(() => {
     fetchProducts()
+    fetchShops()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
+
+  const fetchShops = async () => {
+    try {
+      const response = await apiClient.get("/shops?size=100")
+      setShops(response.data.content || [])
+    } catch {
+      // Shops are optional — fail silently
+    }
+  }
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -141,6 +178,10 @@ export default function ProductsPage() {
     setAllergenMask(0)
     setAvailable(true)
     setFeatured(false)
+    setSelectedShopId("")
+    setTrackInventory(false)
+    setQuantityInStock(0)
+    setAiSuggestions(null)
     setDialogOpen(true)
   }
 
@@ -153,6 +194,10 @@ export default function ProductsPage() {
     setAllergenMask(product.allergenMask)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
+    setSelectedShopId(product.shopId || "")
+    setTrackInventory(product.quantityInStock != null)
+    setQuantityInStock(product.quantityInStock ?? 0)
+    setAiSuggestions(null)
     setDialogOpen(true)
   }
 
@@ -192,6 +237,8 @@ export default function ProductsPage() {
         displayOrder: displayOrderEl?.value ? parseInt(displayOrderEl.value) : undefined,
         preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
         dietaryTags: dietaryTagsEl?.value || undefined,
+        shopId: selectedShopId || undefined,
+        quantityInStock: trackInventory ? quantityInStock : null,
       }
 
       if (editingProduct) {
@@ -275,10 +322,18 @@ export default function ProductsPage() {
             Manage your product catalog with allergen information
           </p>
         </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/dashboard/products/import">
+            <Button variant="outline" className="gap-2">
+              <Upload className="h-4 w-4" />
+              Bulk Import
+            </Button>
+          </Link>
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
       </motion.div>
 
       {/* Products Table */}
@@ -349,9 +404,13 @@ export default function ProductsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
-                                <Package className="h-4 w-4" />
-                              </div>
+                              <SafeImage
+                                src={product.imageUrl}
+                                alt={product.title}
+                                className="h-8 w-8 rounded-lg object-cover"
+                                fallbackClassName="h-8 w-8 rounded-lg bg-purple-100"
+                                fallbackIcon={<Package className="h-4 w-4 text-purple-600" />}
+                              />
                               <div>
                                 <div className="font-medium">{product.title}</div>
                                 <div className="line-clamp-1 text-xs text-slate-500">
@@ -553,11 +612,126 @@ export default function ProductsPage() {
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="imageUrl">Image URL</Label>
-                  <Input id="imageUrl" name="imageUrl" placeholder="https://..." defaultValue={editingProduct?.imageUrl || ""} />
+              {editingProduct ? (
+                <ImageUploader
+                  currentImageUrl={editingProduct.imageUrl}
+                  uploadUrl={`/products/${editingProduct.id}/image`}
+                  onUploadComplete={(url) => {
+                    setEditingProduct({ ...editingProduct, imageUrl: url })
+                    fetchProducts()
+                  }}
+                  onAiSuggestions={(suggestions) => {
+                    setAiSuggestions(suggestions)
+                    toast({ title: "AI Analysis Complete", description: `Identified: ${suggestions.identifiedName || "Unknown"}` })
+                  }}
+                  onRemove={async () => {
+                    try {
+                      await apiClient.delete(`/products/${editingProduct.id}/image`)
+                      setEditingProduct({ ...editingProduct, imageUrl: null })
+                      setAiSuggestions(null)
+                      fetchProducts()
+                    } catch {
+                      toast({ variant: "destructive", title: "Error", description: "Failed to remove image" })
+                    }
+                  }}
+                  label="Product Image"
+                />
+              ) : (
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>Save the product first, then add an image</span>
                 </div>
+              )}
+
+              {/* AI Suggestions Panel */}
+              {aiSuggestions && aiSuggestions.confidence && aiSuggestions.confidence > 0.3 && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-600" />
+                      <span className="text-sm font-semibold text-violet-800">AI Suggestions</span>
+                      <span className="text-xs text-violet-500">
+                        {Math.round((aiSuggestions.confidence || 0) * 100)}% confidence
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAiSuggestions(null)}
+                      className="text-xs text-violet-400 hover:text-violet-600"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  {aiSuggestions.cuisineOrigin && (
+                    <p className="text-xs text-violet-600">Cuisine: {aiSuggestions.cuisineOrigin}</p>
+                  )}
+                  <div className="grid grid-cols-1 gap-2">
+                    {aiSuggestions.identifiedName && (
+                      <AiSuggestionRow
+                        label="Product Name"
+                        value={aiSuggestions.identifiedName}
+                        onAccept={() => {
+                          setValue("title", aiSuggestions.identifiedName!)
+                          toast({ title: "Applied", description: `Title set to "${aiSuggestions.identifiedName}"` })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.description && (
+                      <AiSuggestionRow
+                        label="Description"
+                        value={aiSuggestions.description}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLTextAreaElement>("[name=description]")
+                          if (el) el.value = aiSuggestions.description!
+                          toast({ title: "Applied", description: "Description updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.ingredients && (
+                      <AiSuggestionRow
+                        label="Ingredients"
+                        value={aiSuggestions.ingredients}
+                        onAccept={() => {
+                          setValue("ingredientsText", aiSuggestions.ingredients!)
+                          toast({ title: "Applied", description: "Ingredients updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.category && (
+                      <AiSuggestionRow
+                        label="Category"
+                        value={aiSuggestions.category}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLInputElement>("[name=category]")
+                          if (el) el.value = aiSuggestions.category!
+                          toast({ title: "Applied", description: `Category set to "${aiSuggestions.category}"` })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.dietaryTags && aiSuggestions.dietaryTags.length > 0 && (
+                      <AiSuggestionRow
+                        label="Dietary Tags"
+                        value={aiSuggestions.dietaryTags.join(", ")}
+                        onAccept={() => {
+                          const el = document.querySelector<HTMLInputElement>("[name=dietaryTags]")
+                          if (el) el.value = aiSuggestions.dietaryTags!.join(", ")
+                          toast({ title: "Applied", description: "Dietary tags updated" })
+                        }}
+                      />
+                    )}
+                    {aiSuggestions.allergenWarnings && aiSuggestions.allergenWarnings.length > 0 && (
+                      <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+                        <AlertCircle className="inline h-3 w-3 mr-1" />
+                        Allergen warnings: {aiSuggestions.allergenWarnings.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Keep hidden input for backwards compatibility with form submission */}
+              <input type="hidden" name="imageUrl" value={editingProduct?.imageUrl || ""} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="category">Category</Label>
                   <Input id="category" name="category" placeholder="e.g., Mains" defaultValue={editingProduct?.category || ""} list="category-list" />
@@ -567,6 +741,43 @@ export default function ProductsPage() {
                     ))}
                   </datalist>
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="shopId">Shop Assignment</Label>
+                <select
+                  id="shopId"
+                  value={selectedShopId}
+                  onChange={(e) => setSelectedShopId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">All Shops</option>
+                  {shops.map((shop) => (
+                    <option key={shop.id} value={shop.id}>{shop.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trackInventory}
+                    onChange={(e) => setTrackInventory(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <span className="text-sm font-medium">Track inventory</span>
+                </label>
+                {trackInventory && (
+                  <div className="mt-1.5">
+                    <Label htmlFor="quantityInStock">Stock Quantity</Label>
+                    <Input
+                      id="quantityInStock"
+                      type="number"
+                      min="0"
+                      value={quantityInStock}
+                      onChange={(e) => setQuantityInStock(parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">

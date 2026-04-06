@@ -16,6 +16,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
+import uk.jtoye.core.storage.StorageService;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -40,6 +41,9 @@ class ShopServiceTest {
 
     @Mock
     private ShopMapper shopMapper;
+
+    @Mock
+    private StorageService storageService;
 
     @InjectMocks
     private ShopService shopService;

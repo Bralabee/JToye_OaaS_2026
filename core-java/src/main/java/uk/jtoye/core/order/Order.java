@@ -62,6 +62,19 @@ public class Order {
     @Column(name = "total_amount_pennies", nullable = false)
     private Long totalAmountPennies = 0L;
 
+    @Column(name = "item_count", nullable = false)
+    private Integer itemCount = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 20)
+    private PaymentStatus paymentStatus = PaymentStatus.NONE;
+
+    @Column(name = "payment_reference", length = 255)
+    private String paymentReference;
+
+    @Column(name = "payment_method", length = 100)
+    private String paymentMethod;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -92,6 +105,7 @@ public class Order {
         this.totalAmountPennies = items.stream()
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
+        this.itemCount = items.size();
     }
 
     // Getters and Setters
@@ -198,5 +212,37 @@ public class Order {
 
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    public Integer getItemCount() {
+        return itemCount;
+    }
+
+    public void setItemCount(Integer itemCount) {
+        this.itemCount = itemCount;
+    }
+
+    public PaymentStatus getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public void setPaymentStatus(PaymentStatus paymentStatus) {
+        this.paymentStatus = paymentStatus;
+    }
+
+    public String getPaymentReference() {
+        return paymentReference;
+    }
+
+    public void setPaymentReference(String paymentReference) {
+        this.paymentReference = paymentReference;
+    }
+
+    public String getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(String paymentMethod) {
+        this.paymentMethod = paymentMethod;
     }
 }

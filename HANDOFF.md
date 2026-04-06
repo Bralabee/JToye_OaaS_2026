@@ -1,160 +1,216 @@
-# Handoff: J'Toye OaaS — Public Customer Storefront Complete
+# Handoff: J'Toye OaaS — Stripe Integration Complete + Housekeeping Done
 
-**Generated**: 2026-04-02
-**Branch**: `feat/public-storefront` (PR #19 open, 10 commits)
-**Status**: Ready for Review / Merge
+**Generated**: 2026-04-05
+**Branch**: `feat/image-upload` (PR #20 open, uncommitted changes present)
+**Status**: Batch 2 (Stripe) complete + full housekeeping audit applied. Ready to commit.
 
 ## Goal
 
-Build a customer-facing public storefront for J'Toye OaaS — a multi-tenant UK retail SaaS platform. Customers should be able to discover shops, browse products, place orders, track them, and receive email notifications — all without vendor-level auth.
+Implement Stripe payment integration (Batch 2, revenue blocker) and run full project housekeeping with all recommended fixes applied.
 
-## Completed
+## Completed (This Session)
 
-- [x] **Public storefront UI** — Deliveroo-style shop discovery grid, product catalog with categories, dietary badges, allergen info, prep times
-- [x] **V16 migration** — 13 shop columns (slug, description, logo, banner, hours, geo, tags, published) + 8 product columns (description, image, category, dietary, availability, featured) + public RLS policy
-- [x] **Cart system** — React context + localStorage per shop slug, add-to-cart with quantity controls, floating cart bar, cart page
-- [x] **Guest checkout** — `POST /public/shops/{slug}/orders` with server-side price recalculation, order confirmation page
-- [x] **Order tracking** — V17 RLS for secure lookup (order_number + email verification via session variables), live 5-step progress tracker with 15s auto-refresh
-- [x] **Customer order history** — V18 RLS for email-based history, `/shop/orders` page, automatic tracking without manual order number input
-- [x] **Email notifications** — All 6 state transitions (PENDING→CONFIRMED→PREPARING→READY→COMPLETED/CANCELLED) with tracking links, Mailhog for dev
-- [x] **Customer auth** — Keycloak `storefront-client` (public, PKCE), self-service registration, `customer` role, Sign in/out in storefront header with immediate nav update
-- [x] **Vendor dashboard** — Updated shops + products pages with all new storefront fields
-- [x] **Playwright E2E suite** — 10 tests × 2 viewports (mobile + desktop) = 20 tests, all passing
-- [x] **Housekeeping** — Security fixes (removed insecure defaults), env parity, docs freshness, CI deploy fix, stale branch cleanup
-- [x] **PR #18 merged** — email notifications, WhatsApp order creation, tech debt
+### Batch 2 — Stripe Payment Integration ✅
+- [x] **Stripe Java SDK** — `com.stripe:stripe-java:28.2.0` added to `core-java/build.gradle.kts`
+- [x] **V22 migration** — `core-java/src/main/resources/db/migration/V22__payment_fields.sql` adds `payment_status`, `payment_reference`, `payment_method` to `orders` + `orders_aud`
+- [x] **PaymentStatus enum** — `uk.jtoye.core.order.PaymentStatus` (NONE, PENDING, AUTHORIZED, CAPTURED, FAILED, REFUNDED)
+- [x] **Order entity** — Added 3 payment fields to `Order.java` + `OrderDto.java`
+- [x] **StripeProperties** — `uk.jtoye.core.payment.StripeProperties` reads `stripe.api-key` and `stripe.webhook-secret`
+- [x] **PaymentService** — Creates PaymentIntents with GBP currency, metadata (order_id, tenant_id), handles webhooks `payment_intent.succeeded` and `payment_intent.payment_failed`, signature verification, creates FinancialTransaction on success
+- [x] **PaymentController** — Public `POST /public/payments/webhook` endpoint (no auth, signature verified)
+- [x] **Checkout flow change** — Guest order now creates DRAFT + PaymentIntent, returns `clientSecret`. Order transitions DRAFT→PENDING **only** on `payment_intent.succeeded` webhook. Falls back to COD if `STRIPE_API_KEY` unset.
+- [x] **Frontend** — `@stripe/react-stripe-js` + `@stripe/stripe-js` added. Checkout page refactored into two-step flow (details → payment) using PaymentElement with orange theme
+- [x] **7 PaymentService tests** — `PaymentServiceTest.java` covers init, invalid signature, payment success/failure, missing metadata, unhandled event types
+
+### Housekeeping — All 9 Recommended Actions ✅
+- [x] **edge-go/edge binary** — untracked from git (`git rm --cached`), added to `.gitignore`
+- [x] **Stripe env vars in compose** — `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` added to `docker-compose.full-stack.yml`
+- [x] **Grafana password** — uses `${GRAFANA_ADMIN_PASSWORD:-admin123}` env var in `infra/monitoring/docker-compose.monitoring.yml`
+- [x] **HANDOFF.md** — Batch 2 items marked complete
+- [x] **Test counts updated** — 5 living docs now reflect 252→259 tests (AI_CONTEXT, GAP_ANALYSIS, PROJECT_STATUS, USER_GUIDE, ENTERPRISE_STRATEGIC_ANALYSIS)
+- [x] **console.log gated** — `frontend/lib/env-validation.ts` guards logs with `NODE_ENV !== 'production'`
+- [x] **CI artifact trimmed** — removed `frontend/.next/` (594M) from `.github/workflows/ci-cd.yaml` upload
+- [x] **Deprecated `version: '3.9'`** — removed from monitoring compose
+
+### Previously Completed (Prior Sessions)
+- [x] Batch 1: per-shop products, inventory tracking, 0-items bug fix, guest API verify param
+- [x] MinIO/S3 image storage, AI image recognition, bulk import
+- [x] Order state machine, RabbitMQ, email notifications, RLS multi-tenancy
 
 ## Not Yet Done
 
-- [ ] **Payments (Stripe)** — FinancialTransaction is record-keeping only, no card payments
-- [ ] **Delivery management** — entirely new domain, not started
-- [ ] **Edge-go public routes** — storefront currently calls core-java:9090 directly, should proxy through edge-go with rate limiting
-- [ ] **Keycloak theme** — login/register page uses default Keycloak theme, not branded
-- [ ] **Customer token refresh** — `customer-auth.ts` doesn't refresh expired tokens (MVP — re-login required)
-- [ ] **"0 items" bug** — Order items show "0 items" on tracking/history pages (JPA lazy loading — `order.getItems()` returns empty outside transaction)
-- [ ] **Per-shop menus** — all tenant products show on every shop (no `shop_id` on products table)
-- [ ] **Product image upload** — currently URL-only, no file upload widget
-- [ ] **E2E in CI** — Playwright tests require docker-compose, not yet wired into GitHub Actions
+### Immediate — Commit This Session's Work
+1. Review uncommitted changes with `git diff --stat`
+2. Commit on `feat/image-upload` branch (or create new `feat/stripe-payments`)
+3. Push and update PR #20 (or open new PR)
 
-## Failed Approaches (Don't Repeat These)
+### Batch 3 — Business Logic Gaps
+- [ ] **VAT at checkout** — Apply VAT rate to order total (currently orders have no tax breakdown)
+- [ ] **Opening hours enforcement** — Validate orders only accepted when shop is open (hours stored as JSONB)
+- [ ] **Customer allergen warnings** — Cross-check cart products' allergen masks against customer restrictions at checkout
+- [ ] **Order idempotency** — Add idempotency key to prevent double-submit
 
-1. **RLS bypass for public shops via `current_tenant_id() IS NULL` check** — didn't work because `tenant_id = NULL` evaluates to UNKNOWN in PostgreSQL, not TRUE. Fixed by adding a separate permissive SELECT policy: `USING (published = true OR tenant_id = current_tenant_id())`.
+### Batch 4 — Infra/Process
+- [ ] **Automated K8s backup** — CronJob for pg_dump → S3
+- [ ] **CORS from env vars** — SecurityConfig CORS origins currently hardcoded
+- [ ] **Keycloak token lifespan** — 3600s too long for production, reduce to 300-900s
+- [ ] **GDPR endpoints** — Data export + erasure ("right to be forgotten")
 
-2. **V16 migration with `NOT NULL DEFAULT 'pending-slug'` for slug backfill** — failed because 8 existing shops all got the same default slug, and the UNIQUE index creation failed on duplicates. Also, RLS with `FORCE ROW LEVEL SECURITY` blocked the UPDATE backfill since Flyway runs without tenant context. Fixed by temporarily disabling RLS, backfilling with `name + id prefix`, then re-enabling.
+### Remaining Test Coverage Gaps (from housekeeping audit)
+- [ ] PaymentController — webhook endpoint test (signature verification, 400 on bad sig)
+- [ ] EmailNotificationService, DevTenantService, ProductLabelService
+- [ ] Security filters (JwtTenantFilter, TenantFilter, TenantContextCleanupFilter)
+- [ ] PublicStorefrontController (service is tested, controller is not)
 
-3. **Publishing RabbitMQ event inside `createGuestOrder()` transaction** — the listener picked up the event before the transaction committed, so `orderRepository.findById()` returned empty (order not yet visible to other transactions). Fixed with `TransactionSynchronizationManager.registerSynchronization(afterCommit)`.
+### Infra Debt (deferred from housekeeping)
+- [ ] postgres-exporter has hardcoded `jtoye:secret` in `infra/monitoring/docker-compose.monitoring.yml:66`
+- [ ] Next.js 16 `middleware` → `proxy` rename deprecation warning
+- [ ] Most `@SpringBootTest` tests lack `@ActiveProfiles("test")` — risks failures without local Postgres/Redis
+- [ ] CI tests use H2 despite Postgres service being available — RLS/Flyway behavior untested in CI
+- [ ] 7 npm packages with major version drift (Tailwind v3→v4, lucide v0→v1, TypeScript v5→v6)
 
-4. **`OrderStateChangeListener` email sending without tenant context** — the listener runs on a RabbitMQ consumer thread with no tenant context. Even setting `TenantContext` wasn't enough because `TenantSetLocalAspect` had already fired at transaction start (before the tenant was set). Fixed by manually calling `SET LOCAL app.current_tenant_id` via `EntityManager.unwrap(Session.class).doWork()` within the listener, plus adding `@Transactional` to the listener method.
+## Failed Approaches (Don't Repeat)
 
-5. **Tracking page email resolution from `localStorage.getItem(\`jtoye-checkout-email-\${slug}\`)` only** — failed for orders placed before the code was deployed (no localStorage entry existed). Also failed when navigating from My Orders because the slug-specific key wasn't always present. Fixed with multi-source email resolution: URL param → customer session → checkout localStorage → order history localStorage → inline prompt fallback.
-
-6. **Nav state after OAuth login not updating** — `useEffect([], [])` only ran once on mount. After OAuth redirect back to the storefront, localStorage had the tokens but the component didn't re-render. Fixed with focus/visibility event listeners + brief 1s polling for 5s after mount.
+1. **Original intent**: initially planned `ShopRepository ShopRepository, ProductRepository...` constructor signature. Added `PaymentService` to `PublicStorefrontService` constructor — test file needed matching update (added `@Mock PaymentService paymentService`).
+2. **Historical**: SafeImage with loading skeleton (container collapsed), llava:7b on RTX 2080 Ti (CUDA segfault → use gemma3:12b), Docker Ollama pulling models (DNS failure → host Ollama), Anthropic Java SDK not on Maven Central → WebClient.
 
 ## Key Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| Hybrid vendor-first storefront (Option C) | Keeps RLS intact, customers discover vendors then browse their catalog. Upgrade path to marketplace via read-only search index later. |
-| Permissive RLS policies (additive SELECT) | PostgreSQL OR's permissive policies — new policy works alongside existing tenant RLS without modifying it |
-| Service-layer `TenantContext.set()` for public product queries | Resolves shop → tenant_id, sets context, queries products. `TenantSetLocalAspect` applies it JIT before repository calls. |
-| Slug-based URLs (not UUID) | SEO-friendly, globally unique (not per-tenant) |
-| Separate customer auth (not NextAuth) | Vendor dashboard uses NextAuth with confidential `core-api` client. Customer storefront uses lightweight PKCE OAuth with public `storefront-client` + localStorage tokens to avoid config conflicts. |
-| Email as order verification | `GET /public/orders/{orderNumber}?email=` requires both to match — lightweight security without requiring customer accounts |
-| `afterCommit` event publishing | Guest orders publish RabbitMQ events after transaction commits so listener can find the order |
-| Mailhog for dev email | Zero-config SMTP testing, viewable at http://localhost:8025 |
+| Stripe event types: `payment_intent.succeeded` + `payment_intent.payment_failed` | Minimum viable webhook set. Refunds/disputes deferred to later batch. |
+| Currency hardcoded to `gbp` | UK-only MVP. Multi-currency deferred. |
+| Order stays DRAFT until webhook confirms | Don't show customer success before Stripe confirms. No race conditions. |
+| Payment method stored as human-readable ("Visa ending 4242") | Display-only, no PCI scope. Never store raw card data. |
+| FinancialTransaction created on webhook success | Keeps ledger append-only and consistent with existing pattern. |
+| Metadata-based lookup (not PI ID lookup) | Avoids needing DB index on payment_reference during webhook — uses order_id from metadata |
+| `automatic_payment_methods: enabled` on Stripe | Supports cards, Apple Pay, Google Pay, Link automatically — no extra integration |
+| COD fallback if no Stripe key | Backward compatible. `clientSecret == null` → frontend uses old direct-order flow |
+| Grafana password env var with fallback | Strict fail would break existing local dev. Keeps dev UX, allows prod override. |
 
 ## Current State
 
-**Working**: All storefront flows — browse, search, add to cart, checkout, order confirmation, My Orders, track order, email notifications, customer registration/login, vendor dashboard with new fields. 20/20 Playwright E2E tests pass.
+**Working**:
+- All 259 tests pass: 190 Java (added 7 PaymentServiceTest) + 26 Go + 43 Jest
+- Java compiles clean, Next.js builds clean, both Docker Compose files validate
+- Stripe integration fully implemented end-to-end (backend + frontend), gracefully degrades without API key
 
-**Broken**: Nothing blocking. "0 items" displays on order cards (cosmetic — JPA lazy loading). CI deploy step skipped (no K8s credentials).
+**Broken**: Nothing blocking.
 
-**Uncommitted Changes**: Only `core-java/build-local/` compiled class files (build artifacts, in .gitignore).
+**Uncommitted**: YES — significant changes need to be committed. See "Files Changed" below.
 
-## Files to Know
+## Files Changed (Uncommitted)
 
-| File | Why It Matters |
-|------|----------------|
-| `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java` | Core storefront logic — tenant context injection, order creation, tracking, email history |
-| `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java` | 5 public endpoints: list shops, shop detail, products, create order, track order, customer orders |
-| `core-java/src/main/java/uk/jtoye/core/security/TenantSetLocalAspect.java` | JIT tenant context on DB calls — fires `@Before` every repository method |
-| `core-java/src/main/resources/db/migration/V16__public_storefront.sql` | Shop + product enrichment, public RLS, audit tables |
-| `core-java/src/main/resources/db/migration/V17__order_tracking.sql` | Guest order tracking RLS via session variables |
-| `core-java/src/main/resources/db/migration/V18__order_history_by_email.sql` | Email-based order history RLS |
-| `frontend/components/storefront/cart-provider.tsx` | Cart context + localStorage persistence |
-| `frontend/lib/customer-auth.ts` | PKCE OAuth flow for customer login (separate from vendor NextAuth) |
-| `frontend/lib/order-history.ts` | Guest order localStorage management |
-| `frontend/app/shop/[slug]/page.tsx` | Shop detail + menu page with add-to-cart |
-| `frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx` | Order tracking with progress stepper |
-| `frontend/app/shop/orders/page.tsx` | Customer order history (My Orders) |
-| `frontend/e2e/storefront-flows.spec.ts` | 10 Playwright E2E tests |
-| `infra/keycloak/configure-keycloak.sh` | Keycloak setup including storefront-client |
+### New files
+- `core-java/src/main/java/uk/jtoye/core/order/PaymentStatus.java`
+- `core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java`
+- `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java`
+- `core-java/src/main/java/uk/jtoye/core/payment/PaymentController.java`
+- `core-java/src/main/resources/db/migration/V22__payment_fields.sql`
+- `core-java/src/test/java/uk/jtoye/core/payment/PaymentServiceTest.java`
 
-## Code Context
-
-**Public API endpoints** (no auth required):
-```
-GET  /public/shops                        → Page<PublicShopDto>
-GET  /public/shops/{slug}                 → PublicShopDto
-GET  /public/shops/{slug}/products        → Map<String, List<PublicProductDto>>  (grouped by category)
-POST /public/shops/{slug}/orders          → GuestOrderConfirmation
-GET  /public/orders?email={email}         → List<PublicOrderStatus>
-GET  /public/orders/{orderNumber}?email=  → PublicOrderStatus
-```
-
-**RLS pattern for public queries** (3 permissive policies):
-```sql
--- V16: shops — anyone can SELECT published shops
-CREATE POLICY shops_public_read ON shops FOR SELECT
-  USING (published = true OR tenant_id = current_tenant_id());
-
--- V17: orders — tracking by order_number + email via session vars
-CREATE POLICY orders_guest_tracking ON orders FOR SELECT
-  USING (tenant_id = current_tenant_id()
-    OR (order_number = current_setting('app.tracking_order_number', true)
-        AND customer_email = current_setting('app.tracking_email', true)));
-
--- V18: orders — history by email via session var
-CREATE POLICY orders_customer_history ON orders FOR SELECT
-  USING (tenant_id = current_tenant_id()
-    OR (customer_email = current_setting('app.customer_email', true)));
-```
-
-**Tenant context injection for product queries** (in `PublicStorefrontService`):
-```java
-Shop shop = shopRepository.findBySlugAndPublishedTrue(slug).orElseThrow(...);
-TenantContext.set(shop.getTenantId());
-try {
-    List<Product> products = productRepository.findAvailableOrderedByCategory();
-    // ... map to DTOs
-} finally {
-    TenantContext.clear();
-}
-```
+### Modified files
+- `core-java/build.gradle.kts` — added `com.stripe:stripe-java:28.2.0`
+- `core-java/src/main/java/uk/jtoye/core/order/Order.java` — 3 payment fields
+- `core-java/src/main/java/uk/jtoye/core/order/dto/OrderDto.java` — 3 payment fields
+- `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java` — new DRAFT+PaymentIntent flow
+- `core-java/src/main/java/uk/jtoye/core/storefront/dto/GuestOrderConfirmation.java` — `clientSecret` field
+- `core-java/src/main/java/uk/jtoye/core/storefront/dto/PublicOrderStatus.java` — `paymentStatus` field
+- `core-java/src/main/resources/application.yml` — `stripe:` config block
+- `core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontServiceTest.java` — PaymentService mock
+- `frontend/app/shop/[slug]/checkout/page.tsx` — two-step Stripe Elements flow
+- `frontend/lib/env-validation.ts` — NODE_ENV guards on logs
+- `frontend/package.json` + `package-lock.json` — Stripe deps
+- `.env.example` — Stripe keys
+- `.gitignore` — `edge-go/edge` binary
+- `.github/workflows/ci-cd.yaml` — removed .next/ from artifact upload
+- `docker-compose.full-stack.yml` — Stripe env vars
+- `infra/monitoring/docker-compose.monitoring.yml` — Grafana env var, removed `version:`
+- `docs/AI_CONTEXT.md`, `docs/reports/GAP_ANALYSIS.md`, `docs/status/PROJECT_STATUS.md`, `docs/guides/USER_GUIDE.md`, `docs/analysis/ENTERPRISE_STRATEGIC_ANALYSIS.md` — test counts updated
+- `HANDOFF.md` — this file
+- `edge-go/edge` — deleted (untracked)
 
 ## Resume Instructions
 
-1. `git checkout feat/public-storefront && git pull`
-2. `docker compose -f docker-compose.full-stack.yml up -d` — starts all 8 services
-3. Wait ~40s for core-java startup, then verify:
-   - `curl -s http://localhost:9090/public/shops | python3 -c "import sys,json; print(json.load(sys.stdin)['totalElements'], 'shops')"` → `1 shops`
-   - `curl -s http://localhost:3000/shop` → 200 OK
-   - `curl -s http://localhost:8025/` → 200 OK (Mailhog)
-4. Run E2E tests: `cd frontend && npx playwright test` → 20/20 pass
-5. Run unit tests: `./gradlew :core-java:test` → 138 pass, `npx jest --watchAll=false` → 43 pass
+### Option A: Commit and push now (recommended)
+```bash
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+git checkout feat/image-upload
+git add -A  # or selectively stage
+git commit -m "feat: Stripe payment integration + housekeeping fixes"
+git push
+# PR #20 auto-updates
+```
+
+Expected: CI runs, 190 Java tests + 26 Go + frontend build all pass.
+
+### Option B: Split into two commits
+```bash
+# Commit 1: Stripe integration
+git add core-java/src/main/java/uk/jtoye/core/payment/ \
+        core-java/src/main/java/uk/jtoye/core/order/PaymentStatus.java \
+        core-java/src/main/java/uk/jtoye/core/order/Order.java \
+        core-java/src/main/java/uk/jtoye/core/order/dto/OrderDto.java \
+        core-java/src/main/java/uk/jtoye/core/storefront/ \
+        core-java/src/main/resources/db/migration/V22__payment_fields.sql \
+        core-java/src/main/resources/application.yml \
+        core-java/build.gradle.kts \
+        core-java/src/test/java/uk/jtoye/core/payment/ \
+        core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontServiceTest.java \
+        frontend/app/shop/[slug]/checkout/page.tsx \
+        frontend/package.json frontend/package-lock.json \
+        .env.example
+git commit -m "feat: Stripe payment integration for guest checkout"
+
+# Commit 2: Housekeeping
+git add -A
+git commit -m "chore: housekeeping — env vars, docs, Grafana password, CI artifacts"
+git push
+```
+
+### Verify before committing
+```bash
+# Backend
+JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64 ./gradlew :core-java:test --rerun
+# Expect: BUILD SUCCESSFUL, 190 tests
+
+# Frontend
+cd frontend && npx next build
+# Expect: Compiled successfully
+
+# Compose validation
+docker compose -f docker-compose.full-stack.yml config --quiet
+docker compose -f infra/monitoring/docker-compose.monitoring.yml config --quiet
+# Expect: no output (valid)
+```
+
+### Then: Test Stripe end-to-end (optional but recommended)
+1. Get Stripe test keys from https://dashboard.stripe.com/test/apikeys
+2. Add to `.env`: `STRIPE_API_KEY=sk_test_...`, `STRIPE_WEBHOOK_SECRET=whsec_...`
+3. Add to `frontend/.env.local`: `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...`
+4. Start services: `docker compose -f docker-compose.full-stack.yml up -d`
+5. Install Stripe CLI, forward webhooks: `stripe listen --forward-to http://localhost:9090/public/payments/webhook`
+6. Browse to `http://localhost:3000/shop`, pick a shop, add to cart, checkout
+7. Use test card `4242 4242 4242 4242`, any future expiry, any CVC
+8. Verify: order transitions DRAFT→PENDING, FinancialTransaction created, payment_reference = Stripe PI ID
 
 ## Setup Required
 
-- **Docker**: All 8 containers via `docker-compose.full-stack.yml`
-- **Java**: `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
+- **Docker**: `docker-compose.full-stack.yml` (10 containers)
+- **Java**: `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64` (Java 21 toolchain)
 - **Node**: v20.19.3
-- **Test users**: `tenant-a-user` / `password123` (vendor), self-register for customer
-- **Keycloak clients**: `core-api` (vendor, confidential), `storefront-client` (customer, public)
-- **Mailhog**: http://localhost:8025 for email testing
+- **GPU**: NVIDIA RTX 2080 Ti with NVIDIA Container Toolkit (for Ollama)
+- **Ollama**: Host at localhost:11434, `gemma3:12b` model
+- **Stripe**: Test keys from Stripe Dashboard (optional — COD fallback works without)
+- **Stripe CLI**: For local webhook forwarding (https://stripe.com/docs/stripe-cli)
+- **Test users**: `tenant-a-user` / `password123` (vendor)
 
 ## Warnings
 
-- `build-local/` directory has uncommitted compiled classes — these are build artifacts, not source changes
-- The `application.yml` DB/RabbitMQ password defaults are now empty (`${DB_PASSWORD:}`) — `.env` file MUST be present or Spring Boot won't start
-- `core-java` container takes ~35s to start (Flyway migrations + Keycloak JWKS fetch)
-- Keycloak `configure-keycloak.sh` must be run once after first `docker compose up` to set up storefront-client and customer role
-- The `DEPLOY_ENABLED` GitHub repository variable must be set to `true` to enable production deploys in CI
+- Java 25 is system default but Gradle toolchain requires Java 21 — always set `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
+- `StorageProperties` S3 credentials empty by default — `.env` MUST provide them
+- Docker Ollama container can't pull models — use host Ollama
+- `llava:7b` crashes on RTX 2080 Ti — use `gemma3:12b`
+- Stripe webhook signature uses raw body — controller takes `@RequestBody String payload` (don't change to JSON binding)
+- `PaymentService.init()` gracefully degrades with empty API key — don't add fail-fast validation
+- `automatic_payment_methods: enabled` requires HTTPS in production (localhost is fine for dev)

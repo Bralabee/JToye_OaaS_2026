@@ -62,12 +62,15 @@ export interface Product {
   pricePennies?: number
   description: string | null
   imageUrl: string | null
+  additionalImageUrls: string[]
   category: string | null
   displayOrder: number
   available: boolean
   featured: boolean
   preparationTimeMinutes: number | null
   dietaryTags: string | null
+  shopId: string | null
+  quantityInStock: number | null
   createdAt: string
   updatedAt: string
 }
@@ -86,6 +89,8 @@ export interface CreateProductRequest {
   featured?: boolean
   preparationTimeMinutes?: number
   dietaryTags?: string
+  shopId?: string
+  quantityInStock?: number | null
 }
 
 // Order Types
@@ -108,6 +113,7 @@ export interface Order {
   customerPhone?: string
   customerId?: string
   totalAmountPennies: number
+  itemCount: number
   createdAt: string
   updatedAt: string
 }

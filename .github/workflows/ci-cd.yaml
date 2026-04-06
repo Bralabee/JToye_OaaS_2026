@@ -84,7 +84,6 @@ jobs:
           path: |
             core-java/build-local/reports/tests/
             edge-go/coverage.out
-            frontend/.next/
 
   # Job 2: Security scanning
   security-scan:

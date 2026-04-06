@@ -20,6 +20,7 @@ export interface PublicProduct {
   title: string
   description: string | null
   imageUrl: string | null
+  imageUrls: string[]
   ingredientsText: string
   allergenMask: number
   pricePennies: number
@@ -27,6 +28,7 @@ export interface PublicProduct {
   dietaryTags: string | null
   preparationTimeMinutes: number | null
   featured: boolean
+  inStock: boolean
 }
 
 export type ProductsByCategory = Record<string, PublicProduct[]>

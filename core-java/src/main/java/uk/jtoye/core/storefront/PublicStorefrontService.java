@@ -14,6 +14,8 @@ import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -32,6 +34,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,15 +51,17 @@ public class PublicStorefrontService {
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
+    private final PaymentService paymentService;
 
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
-                                   EntityManager entityManager) {
+                                   EntityManager entityManager, PaymentService paymentService) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
+        this.paymentService = paymentService;
     }
 
     /**
@@ -91,6 +96,7 @@ public class PublicStorefrontService {
     /**
      * Get available products for a published shop, grouped by category.
      * Sets TenantContext from the shop's tenant_id so RLS allows product queries.
+     * Filters to products assigned to this shop (or unassigned = tenant-wide).
      */
     public Map<String, List<PublicProductDto>> getShopProducts(String slug) {
         log.debug("Fetching products for shop: {}", slug);
@@ -101,7 +107,8 @@ public class PublicStorefrontService {
         // Set tenant context so product queries work through RLS
         TenantContext.set(shop.getTenantId());
         try {
-            List<Product> products = productRepository.findAvailableOrderedByCategory();
+            // Filter: products assigned to this shop OR unassigned (shop_id IS NULL = tenant-wide)
+            List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
 
             // Group by category, preserving order; uncategorized items go under "Other"
             return products.stream()
@@ -140,9 +147,10 @@ public class PublicStorefrontService {
             PublicOrderStatus status = new PublicOrderStatus();
             status.setOrderNumber(order.getOrderNumber());
             status.setStatus(order.getStatus().name());
+            status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
-            status.setItemCount(order.getItems() != null ? order.getItems().size() : 0);
+            status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
             return status;
@@ -181,9 +189,10 @@ public class PublicStorefrontService {
         PublicOrderStatus status = new PublicOrderStatus();
         status.setOrderNumber(order.getOrderNumber());
         status.setStatus(order.getStatus().name());
+        status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
         status.setShopName(shopName);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
-        status.setItemCount(order.getItems().size());
+        status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
         return status;
@@ -191,7 +200,8 @@ public class PublicStorefrontService {
 
     /**
      * Create a guest order for a published shop.
-     * Sets TenantContext, creates order as PENDING, recalculates prices server-side.
+     * Creates order as DRAFT, creates a Stripe PaymentIntent, and returns the client secret.
+     * Order transitions to PENDING only after successful payment via webhook.
      */
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
@@ -207,7 +217,8 @@ public class PublicStorefrontService {
             order.setTenantId(tenantId);
             order.setShopId(shop.getId());
             order.setOrderNumber(generateOrderNumber(tenantId));
-            order.setStatus(OrderStatus.PENDING); // Skip DRAFT for guest orders
+            order.setStatus(OrderStatus.DRAFT);
+            order.setPaymentStatus(PaymentStatus.PENDING);
             order.setCustomerName(request.getCustomerName());
             order.setCustomerEmail(request.getCustomerEmail());
             order.setCustomerPhone(request.getCustomerPhone());
@@ -224,6 +235,13 @@ public class PublicStorefrontService {
                     throw new IllegalArgumentException("Product is not available: " + product.getTitle());
                 }
 
+                // Validate stock
+                if (!product.hasStock(itemReq.getQuantity())) {
+                    throw new IllegalArgumentException(
+                            "Insufficient stock for '" + product.getTitle() + "': requested "
+                                    + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
+                }
+
                 OrderItem item = new OrderItem(
                         product.getId(),
                         itemReq.getQuantity(),
@@ -236,29 +254,26 @@ public class PublicStorefrontService {
             order.calculateTotal();
             order = orderRepository.save(order);
 
-            log.info("Created guest order {} with {} items, total: {} pennies for shop {}",
+            // Create Stripe PaymentIntent
+            String clientSecret;
+            try {
+                clientSecret = paymentService.createPaymentIntent(order);
+            } catch (com.stripe.exception.StripeException e) {
+                log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                throw new RuntimeException("Payment processing unavailable. Please try again later.");
+            }
+
+            log.info("Created guest order {} with {} items, total: {} pennies for shop {} (awaiting payment)",
                     order.getOrderNumber(), order.getItems().size(),
                     order.getTotalAmountPennies(), shop.getName());
-
-            // Publish event AFTER transaction commits so the order is visible to the listener
-            final Order savedOrder = order;
-            final UUID finalTenantId = tenantId;
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    eventPublisher.publishStateChange(
-                            savedOrder.getId(), finalTenantId, savedOrder.getOrderNumber(),
-                            OrderStatus.DRAFT, OrderStatus.PENDING
-                    );
-                }
-            });
 
             return new GuestOrderConfirmation(
                     order.getOrderNumber(),
                     order.getStatus().name(),
                     order.getTotalAmountPennies(),
                     shop.getName(),
-                    order.getItems().size()
+                    order.getItems().size(),
+                    clientSecret
             );
         } finally {
             TenantContext.clear();
@@ -304,6 +319,18 @@ public class PublicStorefrontService {
         dto.setDietaryTags(product.getDietaryTags());
         dto.setPreparationTimeMinutes(product.getPreparationTimeMinutes());
         dto.setFeatured(product.getFeatured());
+        dto.setInStock(product.hasStock());
+
+        // Build combined image URLs list: primary first, then additional
+        List<String> allImages = new ArrayList<>();
+        if (product.getImageUrl() != null && !product.getImageUrl().isBlank()) {
+            allImages.add(product.getImageUrl());
+        }
+        if (product.getAdditionalImageUrls() != null) {
+            allImages.addAll(product.getAdditionalImageUrls());
+        }
+        dto.setImageUrls(allImages);
+
         return dto;
     }
 }
