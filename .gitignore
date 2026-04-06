@@ -134,3 +134,6 @@ playwright-report/
 # Local AI & storage data
 ollama_data/
 minio_data/
+
+# Compiled Go binary
+edge-go/edge
