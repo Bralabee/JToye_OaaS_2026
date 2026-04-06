@@ -12,6 +12,8 @@ export interface PublicShop {
   openingHours: Record<string, string> | null
   deliveryInfo: string | null
   minimumOrderPennies: number
+  deliveryFeePennies: number
+  freeDeliveryThresholdPennies: number | null
   tags: string | null
 }
 
@@ -32,3 +34,13 @@ export interface PublicProduct {
 }
 
 export type ProductsByCategory = Record<string, PublicProduct[]>
+
+export interface Review {
+  id: string
+  customerName: string | null
+  foodRating: number
+  deliveryRating: number | null
+  comment: string | null
+  photoUrls: string[] | null
+  createdAt: string
+}
