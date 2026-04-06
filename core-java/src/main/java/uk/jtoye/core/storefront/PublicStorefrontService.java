@@ -5,7 +5,9 @@ import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -87,7 +89,9 @@ public class PublicStorefrontService {
         log.debug("Searching published shops: '{}'", query);
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
-            Page<Shop> results = shopRepository.fullTextSearchPublished(query, pageable);
+            // Use unsorted Pageable for native queries — ts_rank handles ordering
+            Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
                 return results.map(this::toPublicShopDto);
             }
