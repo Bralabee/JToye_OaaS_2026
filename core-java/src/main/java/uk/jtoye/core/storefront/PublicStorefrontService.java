@@ -32,7 +32,9 @@ import uk.jtoye.core.storefront.dto.PublicShopDto;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -40,6 +42,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -214,6 +218,9 @@ public class PublicStorefrontService {
         Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
 
+        // Enforce opening hours — reject orders when shop is closed
+        validateShopIsOpen(shop);
+
         UUID tenantId = shop.getTenantId();
         TenantContext.set(tenantId);
         try {
@@ -312,6 +319,43 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setTags(shop.getTags());
         return dto;
+    }
+
+    private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d{2}):(\\d{2})\\s*-\\s*(\\d{2}):(\\d{2})");
+    private static final Map<DayOfWeek, String> DAY_KEYS = Map.of(
+            DayOfWeek.MONDAY, "mon", DayOfWeek.TUESDAY, "tue", DayOfWeek.WEDNESDAY, "wed",
+            DayOfWeek.THURSDAY, "thu", DayOfWeek.FRIDAY, "fri", DayOfWeek.SATURDAY, "sat",
+            DayOfWeek.SUNDAY, "sun"
+    );
+
+    private void validateShopIsOpen(Shop shop) {
+        Map<String, String> hours = shop.getOpeningHours();
+        if (hours == null || hours.isEmpty()) {
+            // No hours configured = always open
+            return;
+        }
+
+        String dayKey = DAY_KEYS.get(LocalDate.now().getDayOfWeek());
+        String todayHours = hours.get(dayKey);
+        if (todayHours == null || todayHours.equalsIgnoreCase("closed")) {
+            throw new IllegalArgumentException(
+                    shop.getName() + " is closed today. Please check opening hours and try again later.");
+        }
+
+        Matcher m = HOURS_PATTERN.matcher(todayHours);
+        if (!m.find()) {
+            // Unparseable hours format — allow the order (fail open)
+            return;
+        }
+
+        LocalTime open = LocalTime.of(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+        LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
+        LocalTime now = LocalTime.now();
+
+        if (now.isBefore(open) || !now.isBefore(close)) {
+            throw new IllegalArgumentException(
+                    shop.getName() + " is currently closed. Opening hours today: " + todayHours + ". Please try again later.");
+        }
     }
 
     private PublicProductDto toPublicProductDto(Product product) {

@@ -24,8 +24,11 @@ import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.storefront.dto.*;
 
 import java.lang.reflect.Field;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -209,5 +212,49 @@ class PublicStorefrontServiceTest {
         assertEquals(1, result.size());
         assertEquals("ORD-HIST-001", result.get(0).getOrderNumber());
         assertEquals("COMPLETED", result.get(0).getStatus());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects order when shop is explicitly closed today")
+    void createGuestOrder_rejectsWhenClosed() {
+        // Set opening hours to "Closed" for today
+        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+        String todayKey = dayKeys[java.time.LocalDate.now().getDayOfWeek().getValue() % 7];
+        publishedShop.setOpeningHours(Map.of(todayKey, "Closed"));
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Test");
+        request.setCustomerEmail("test@example.com");
+        request.setCustomerPhone("07700000000");
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("closed"));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects order outside opening hours")
+    void createGuestOrder_rejectsOutsideHours() {
+        // Set opening hours to a window that's definitely not now (00:01 - 00:02)
+        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+        String todayKey = dayKeys[java.time.LocalDate.now().getDayOfWeek().getValue() % 7];
+        publishedShop.setOpeningHours(Map.of(todayKey, "00:01 - 00:02"));
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Test");
+        request.setCustomerEmail("test@example.com");
+        request.setCustomerPhone("07700000000");
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("closed"));
     }
 }
