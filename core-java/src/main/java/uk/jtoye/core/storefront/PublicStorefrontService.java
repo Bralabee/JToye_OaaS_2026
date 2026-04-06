@@ -237,7 +237,10 @@ public class PublicStorefrontService {
             order.setVatRate(VatRate.STANDARD);
             order.setUpdatedAt(OffsetDateTime.now());
 
-            // Add items with server-side price lookup
+            // Add items with server-side price lookup + allergen cross-check
+            List<String> allergenWarnings = new ArrayList<>();
+            Integer customerAllergenMask = request.getCustomerAllergenMask();
+
             for (GuestOrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
                         .orElseThrow(() -> new ResourceNotFoundException(
@@ -252,6 +255,16 @@ public class PublicStorefrontService {
                     throw new IllegalArgumentException(
                             "Insufficient stock for '" + product.getTitle() + "': requested "
                                     + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
+                }
+
+                // Cross-check allergens if customer provided restrictions
+                if (customerAllergenMask != null && customerAllergenMask != 0
+                        && product.getAllergenMask() != null && product.getAllergenMask() != 0) {
+                    int conflict = customerAllergenMask & product.getAllergenMask();
+                    if (conflict != 0) {
+                        allergenWarnings.add(product.getTitle() + " contains allergens you've flagged: "
+                                + describeAllergens(conflict));
+                    }
                 }
 
                 OrderItem item = new OrderItem(
@@ -288,7 +301,8 @@ public class PublicStorefrontService {
                     order.getTotalAmountPennies(),
                     shop.getName(),
                     order.getItems().size(),
-                    clientSecret
+                    clientSecret,
+                    allergenWarnings
             );
         } finally {
             TenantContext.clear();
@@ -319,6 +333,21 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setTags(shop.getTags());
         return dto;
+    }
+
+    private static final String[] ALLERGEN_NAMES = {
+            "Gluten", "Crustaceans", "Eggs", "Fish", "Peanuts", "Soybeans",
+            "Milk", "Nuts", "Celery", "Mustard", "Sesame", "Sulphites", "Lupin", "Molluscs"
+    };
+
+    private static String describeAllergens(int mask) {
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < ALLERGEN_NAMES.length; i++) {
+            if ((mask & (1 << i)) != 0) {
+                names.add(ALLERGEN_NAMES[i]);
+            }
+        }
+        return String.join(", ", names);
     }
 
     private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d{2}):(\\d{2})\\s*-\\s*(\\d{2}):(\\d{2})");

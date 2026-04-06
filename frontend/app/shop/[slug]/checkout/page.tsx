@@ -25,6 +25,7 @@ interface OrderConfirmation {
   shopName: string
   itemCount: number
   clientSecret: string
+  allergenWarnings: string[]
 }
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -158,6 +159,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     vatRate: string
     vatAmountPennies: number
     totalAmountPennies: number
+    allergenWarnings: string[]
   } | null>(null)
 
   if (items.length === 0 && !paymentState) {
@@ -226,6 +228,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         vatRate: confirmation.vatRate,
         vatAmountPennies: confirmation.vatAmountPennies,
         totalAmountPennies: confirmation.totalAmountPennies,
+        allergenWarnings: confirmation.allergenWarnings || [],
       })
     } catch (err: unknown) {
       if (err && typeof err === "object" && "response" in err) {
@@ -290,6 +293,20 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
           </div>
         </div>
+
+        {paymentState.allergenWarnings.length > 0 && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-4">
+            <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
+            <ul className="space-y-1">
+              {paymentState.allergenWarnings.map((warning, i) => (
+                <li key={i} className="text-sm text-amber-700">{warning}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-amber-600 mt-2">
+              Your order has been created. You may proceed if you accept the allergen risk, or go back to modify your order.
+            </p>
+          </div>
+        )}
 
         <Elements
           stripe={stripePromise}
