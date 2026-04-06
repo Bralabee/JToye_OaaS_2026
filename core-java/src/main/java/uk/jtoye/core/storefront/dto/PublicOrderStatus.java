@@ -7,6 +7,9 @@ public class PublicOrderStatus {
     private String status;
     private String paymentStatus;
     private String shopName;
+    private Long subtotalPennies;
+    private String vatRate;
+    private Long vatAmountPennies;
     private Long totalAmountPennies;
     private int itemCount;
     private OffsetDateTime createdAt;
@@ -22,6 +25,12 @@ public class PublicOrderStatus {
     public void setShopName(String shopName) { this.shopName = shopName; }
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
+    public Long getSubtotalPennies() { return subtotalPennies; }
+    public void setSubtotalPennies(Long subtotalPennies) { this.subtotalPennies = subtotalPennies; }
+    public String getVatRate() { return vatRate; }
+    public void setVatRate(String vatRate) { this.vatRate = vatRate; }
+    public Long getVatAmountPennies() { return vatAmountPennies; }
+    public void setVatAmountPennies(Long vatAmountPennies) { this.vatAmountPennies = vatAmountPennies; }
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

@@ -5,6 +5,28 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Batch 3: Business Logic
+
+### Added
+- **VAT at checkout**: V23 migration — `subtotal_pennies`, `vat_rate`, `vat_amount_pennies` on orders. 20% STANDARD VAT default for hot food. Frontend shows subtotal + VAT line + total in checkout
+- **Opening hours enforcement**: Server-side validation rejects orders when shop is closed. Parses JSONB `opening_hours` map. Shops with no hours = always open
+- **Allergen cross-check**: Optional `customerAllergenMask` on guest orders. Bitwise AND against product allergens. Soft warnings returned in order confirmation
+- **Order idempotency**: V24 migration — `idempotency_key` with unique partial index. Frontend sends UUID per checkout session. Duplicate submissions return original order
+- **COD fallback**: Orders go straight to PENDING with "Cash on Delivery" when Stripe API key is not configured
+
+### Fixed
+- V23 migration uses `NOT NULL DEFAULT 0` pattern to avoid null constraint failures on existing data
+- `PaymentService.isConfigured()` check prevents crash when Stripe is unconfigured
+- Untracked `build-local/` directory from git (was polluting diffs)
+
+## [Unreleased] - Batch 2: Stripe Payments
+
+### Added
+- **Stripe integration**: `PaymentService` with PaymentIntent creation, webhook signature verification, automatic order state transitions
+- **PaymentController**: Public `POST /public/payments/webhook` endpoint
+- **Two-step checkout**: Frontend refactored — customer details then Stripe PaymentElement with orange theme
+- **7 PaymentService tests**: init, webhook sig, success/failure, missing metadata, unhandled events
+
 ## [Unreleased] - Image Upload & AI Recognition
 
 ### Added

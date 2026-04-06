@@ -53,6 +53,10 @@ public class PaymentService {
         }
     }
 
+    public boolean isConfigured() {
+        return stripeProperties.getApiKey() != null && !stripeProperties.getApiKey().isBlank();
+    }
+
     /**
      * Create a Stripe PaymentIntent for a DRAFT order.
      * Returns the client secret for frontend confirmation.

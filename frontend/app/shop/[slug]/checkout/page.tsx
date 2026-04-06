@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useCallback } from "react"
+import { use, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock } from "lucide-react"
@@ -18,10 +18,14 @@ function formatPrice(pennies: number): string {
 interface OrderConfirmation {
   orderNumber: string
   status: string
+  subtotalPennies: number
+  vatRate: string
+  vatAmountPennies: number
   totalAmountPennies: number
   shopName: string
   itemCount: number
   clientSecret: string
+  allergenWarnings: string[]
 }
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -144,13 +148,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [customerEmail, setCustomerEmail] = useState(session?.profile.email || "")
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // After order is created, holds the Stripe client secret + order number
+  // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
     clientSecret: string
     orderNumber: string
+    subtotalPennies: number
+    vatRate: string
+    vatAmountPennies: number
+    totalAmountPennies: number
+    allergenWarnings: string[]
   } | null>(null)
 
   if (items.length === 0 && !paymentState) {
@@ -181,6 +191,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         customerEmail: customerEmail.trim(),
         customerPhone: customerPhone.trim(),
         notes: notes.trim() || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -215,6 +226,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
+        subtotalPennies: confirmation.subtotalPennies,
+        vatRate: confirmation.vatRate,
+        vatAmountPennies: confirmation.vatAmountPennies,
+        totalAmountPennies: confirmation.totalAmountPennies,
+        allergenWarnings: confirmation.allergenWarnings || [],
       })
     } catch (err: unknown) {
       if (err && typeof err === "object" && "response" in err) {
@@ -241,7 +257,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </button>
         <h1 className="text-xl font-bold text-slate-900">Payment</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Order {paymentState.orderNumber} &middot; {formatPrice(totalPennies)}
+          Order {paymentState.orderNumber} &middot; {formatPrice(paymentState.totalAmountPennies)}
         </p>
 
         {/* Order summary */}
@@ -262,11 +278,37 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-3 border-t border-slate-100 pt-3 flex items-center justify-between">
-            <span className="text-base font-bold text-slate-900">Total</span>
-            <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+          <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="text-slate-900">{formatPrice(paymentState.subtotalPennies)}</span>
+            </div>
+            {paymentState.vatAmountPennies > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">VAT ({paymentState.vatRate === "STANDARD" ? "20%" : paymentState.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-900">{formatPrice(paymentState.vatAmountPennies)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-1.5">
+              <span className="text-base font-bold text-slate-900">Total</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(paymentState.totalAmountPennies)}</span>
+            </div>
           </div>
         </div>
+
+        {paymentState.allergenWarnings.length > 0 && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-4">
+            <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
+            <ul className="space-y-1">
+              {paymentState.allergenWarnings.map((warning, i) => (
+                <li key={i} className="text-sm text-amber-700">{warning}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-amber-600 mt-2">
+              Your order has been created. You may proceed if you accept the allergen risk, or go back to modify your order.
+            </p>
+          </div>
+        )}
 
         <Elements
           stripe={stripePromise}
@@ -286,7 +328,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             slug={slug}
             orderNumber={paymentState.orderNumber}
             customerEmail={customerEmail}
-            totalPennies={totalPennies}
+            totalPennies={paymentState.totalAmountPennies}
           />
         </Elements>
       </div>
@@ -382,9 +424,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-4 border-t border-slate-100 pt-3 flex items-center justify-between">
-            <span className="text-base font-bold text-slate-900">Total</span>
-            <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+          <div className="mt-4 border-t border-slate-100 pt-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-600">Subtotal</span>
+              <span className="text-sm text-slate-900">{formatPrice(totalPennies)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>VAT calculated at checkout</span>
+            </div>
           </div>
         </div>
 
