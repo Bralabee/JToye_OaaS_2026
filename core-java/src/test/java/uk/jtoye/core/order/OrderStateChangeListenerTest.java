@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.EmailNotificationService;
 
 import jakarta.persistence.EntityManager;
@@ -44,6 +45,9 @@ class OrderStateChangeListenerTest {
     @Mock
     private Session hibernateSession;
 
+    @Mock
+    private BusinessMetricsService metrics;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
@@ -51,7 +55,7 @@ class OrderStateChangeListenerTest {
         java.sql.PreparedStatement mockStmt = mock(java.sql.PreparedStatement.class);
         lenient().when(mockConn.prepareStatement(any(String.class))).thenReturn(mockStmt);
         lenient().doAnswer(inv -> { inv.<org.hibernate.jdbc.Work>getArgument(0).execute(mockConn); return null; }).when(hibernateSession).doWork(any());
-        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService, entityManager);
+        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService, entityManager, metrics);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();

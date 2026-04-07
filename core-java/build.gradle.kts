@@ -50,6 +50,9 @@ dependencies {
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
 
+    // Resilience4j circuit breaker
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+
     // Stripe payment processing
     implementation("com.stripe:stripe-java:28.2.0")
 
