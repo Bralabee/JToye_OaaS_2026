@@ -9,9 +9,10 @@ import { PublicShop } from "@/types/storefront"
 import { PageResponse } from "@/types/api"
 
 function isOpenNow(hours: Record<string, string> | null): boolean {
-  if (!hours) return false
+  if (!hours || Object.keys(hours).length === 0) return true  // No hours = always open (matches backend)
   const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
-  const now = new Date()
+  // Use UK timezone explicitly to match backend validation
+  const now = new Date(new Date().toLocaleString("en-GB", { timeZone: "Europe/London" }))
   const dayKey = days[now.getDay()]
   const todayHours = hours[dayKey]
   if (!todayHours || todayHours.toLowerCase() === "closed") return false

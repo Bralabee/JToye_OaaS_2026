@@ -3,7 +3,7 @@
 import { use, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle } from "lucide-react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
@@ -165,7 +165,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     allergenWarnings: string[]
   } | null>(null)
 
-  if (items.length === 0 && !paymentState) {
+  // COD confirmation — shows full breakdown before redirect
+  const [codConfirmation, setCodConfirmation] = useState<{
+    orderNumber: string
+    subtotalPennies: number
+    deliveryFeePennies: number
+    vatRate: string
+    vatAmountPennies: number
+    totalAmountPennies: number
+    allergenWarnings: string[]
+  } | null>(null)
+
+  if (items.length === 0 && !paymentState && !codConfirmation) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <ShoppingBag className="mx-auto h-16 w-16 text-slate-200" />
@@ -208,7 +219,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       const confirmation = res.data
 
       if (!confirmation.clientSecret) {
-        // Fallback: no Stripe configured — order placed directly (COD mode)
+        // COD mode — show confirmation with full breakdown before redirect
         localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
         saveLocalOrder({
           orderNumber: confirmation.orderNumber,
@@ -217,7 +228,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           placedAt: new Date().toISOString(),
         })
         clearCart()
-        router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
+        setCodConfirmation({
+          orderNumber: confirmation.orderNumber,
+          subtotalPennies: confirmation.subtotalPennies,
+          deliveryFeePennies: confirmation.deliveryFeePennies || 0,
+          vatRate: confirmation.vatRate,
+          vatAmountPennies: confirmation.vatAmountPennies,
+          totalAmountPennies: confirmation.totalAmountPennies,
+          allergenWarnings: confirmation.allergenWarnings || [],
+        })
         return
       }
 
@@ -245,6 +264,79 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // COD confirmation — shows full price breakdown before tracking
+  if (codConfirmation) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
+        <div className="text-center mb-6">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+            <CheckCircle className="h-8 w-8 text-emerald-600" />
+          </div>
+          <h1 className="mt-4 text-xl font-bold text-slate-900">Order confirmed!</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Order {codConfirmation.orderNumber} &middot; Pay on collection
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm mb-6">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">Order total</h2>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="text-slate-900">{formatPrice(codConfirmation.subtotalPennies)}</span>
+            </div>
+            {codConfirmation.deliveryFeePennies > 0 ? (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Delivery</span>
+                <span className="text-slate-900">{formatPrice(codConfirmation.deliveryFeePennies)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Delivery</span>
+                <span className="text-emerald-600 font-medium">Free</span>
+              </div>
+            )}
+            {codConfirmation.vatAmountPennies > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">VAT ({codConfirmation.vatRate === "STANDARD" ? "20%" : codConfirmation.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <span className="text-base font-bold text-slate-900">Total</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(codConfirmation.totalAmountPennies)}</span>
+            </div>
+          </div>
+        </div>
+
+        {codConfirmation.allergenWarnings.length > 0 && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-6">
+            <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
+            <ul className="space-y-1">
+              {codConfirmation.allergenWarnings.map((warning, i) => (
+                <li key={i} className="text-sm text-amber-700">{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <Link
+          href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg"
+        >
+          Track your order
+        </Link>
+        <Link
+          href={`/shop/${slug}`}
+          className="flex w-full items-center justify-center gap-1 mt-3 rounded-2xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to shop
+        </Link>
+      </div>
+    )
   }
 
   // Step 2: Payment form (shown after order creation)
@@ -440,13 +532,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             ))}
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">Subtotal</span>
-              <span className="text-sm text-slate-900">{formatPrice(totalPennies)}</span>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="text-slate-900">{formatPrice(totalPennies)}</span>
             </div>
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>VAT calculated at checkout</span>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">VAT (20%)</span>
+              <span className="text-slate-900">{formatPrice(Math.round(totalPennies * 0.2))}</span>
             </div>
+            <div className="flex items-center justify-between pt-1.5">
+              <span className="text-base font-bold text-slate-900">Estimated total</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies + Math.round(totalPennies * 0.2))}</span>
+            </div>
+            <p className="text-[10px] text-slate-400">Final total confirmed after order is placed. Delivery fee may apply.</p>
           </div>
         </div>
 
@@ -471,7 +569,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           ) : (
             <>
               <CreditCard className="h-4 w-4" />
-              Continue to payment &middot; {formatPrice(totalPennies)}
+              Place order &middot; {formatPrice(totalPennies + Math.round(totalPennies * 0.2))}
             </>
           )}
         </button>

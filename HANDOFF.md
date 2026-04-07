@@ -1,58 +1,54 @@
-# Handoff: J'Toye OaaS — Batch 5 Customer Experience
+# Handoff: J'Toye OaaS — Batches 3-5 Complete, Batch 4 Ready for PR
 
-**Generated**: 2026-04-06
-**Branch**: `feat/batch5-customer-experience` (3 commits ahead of main)
-**Status**: Batch 5 backend complete. Frontend delivery fee + review UI still needed.
+**Generated**: 2026-04-07
+**Branch**: `feat/batch4-infra` (ready for PR → main)
+**Status**: Batch 4 complete. All tests passing.
 
 ## Completed (This Session)
 
-### Batch 5 — Customer Experience (Backend) ✅
-- [x] **PostgreSQL full-text search** — V25 migration: tsvector + GIN indexes on products (title/category/description/ingredients/dietary) and shops (name/tags/description/address). Weighted ranking (A-D), auto-update triggers, `fullTextSearch()` with ts_rank, LIKE fallback
-- [x] **Delivery fee calculation** — V26 migration: `delivery_fee_pennies` + `free_delivery_threshold_pennies` on shops. Orders track delivery fee. `calculateTotal()` = subtotal + VAT + delivery. Fee waived above threshold
-- [x] **Customer reviews with photos** — V27 migration: reviews table, food/delivery split ratings, photo URLs, one-per-order constraint. ReviewService with order ownership validation. `GET/POST /public/shops/{slug}/reviews`. `shop_ratings` SQL view
+### Batch 4 — Infrastructure & Process
+- [x] **CORS from env vars** — CorsConfig reads `CORS_ALLOWED_ORIGINS` env var, comma-separated, defaults to localhost:3000
+- [x] **Keycloak token lifespan** — access token 3600→300s, SSO max 36000→7200s, implicit 900→300s
+- [x] **GDPR endpoints** — `/gdpr/customers/{id}/export` (Article 20) + `/gdpr/customers/{id}/erase` (Article 17). Anonymises PII across customers, orders, reviews. 6 unit tests
+- [x] **K8s backup CronJob** — `pg-backup-cronjob.yaml` daily 02:00 UTC, pg_dump → S3, 30-day pruning
 
-### Previously Completed
-- [x] Batch 3: VAT, opening hours, allergens, idempotency, COD fallback (PR #21 merged)
-- [x] Batch 2: Stripe payments (PR #20 merged)
-- [x] Batch 1: per-shop products, inventory, image upload, AI recognition, bulk import
+## Previously Completed
+- Batch 3 (PR #21), Batch 5 (PR #22) — merged to main
+- 383+ tests, 100% pass
 
 ## Not Yet Done
 
-### Batch 5 — Frontend (this branch)
-- [ ] **Delivery fee in checkout UI** — Show delivery fee line in order summary, "Free delivery over £X" badge on shop cards
-- [ ] **Reviews UI** — Star rating display on shop page, review submission form on order detail page, photo upload in reviews
-- [ ] **Search UI upgrade** — Frontend may already work (backend returns ranked results) but could add "no results" handling
-
-### Batch 4 — Infra/Process
-- [ ] CORS from env vars, Keycloak token lifespan, GDPR endpoints, K8s backup
-
-### Tier 2 — Operational Reliability
+### Tier 2 — Reliability
 - [ ] Resilience4j circuit breaker on Stripe/email/Ollama
-- [ ] RabbitMQ dead letter queue
+- [ ] RabbitMQ dead letter queue + retry
 - [ ] Custom business metrics (orders/hour, revenue/day)
 - [ ] Scheduled cleanup jobs (stale DRAFT orders, orphaned images)
 
-## Key Decisions
+### Tier 3 — Enhancement
+- [ ] Vendor dashboard UI for announcements/promotions (API exists, no UI)
+- [ ] API versioning (/api/v1/ prefix)
+- [ ] WebSocket for kitchen displays
 
-| Decision | Rationale |
-|----------|-----------|
-| PostgreSQL full-text search over Elasticsearch | Simpler ops, no new dependency, handles 100K+ products. Add ES when needed |
-| Delivery fee on Shop, not per-product | UK food delivery charges per-order, not per-item |
-| Free delivery threshold | Industry standard (Glovo, Deliveroo) — drives higher basket value |
-| Split food/delivery ratings | Glovo pattern — restaurant shouldn't be penalized for courier delays |
-| One review per order | Prevents spam, ensures verified purchase |
+### Remaining Test Gaps
+- [ ] PaymentController (webhook endpoint)
+- [ ] PublicStorefrontController (service tested, controller not)
+- [ ] Security filters (JwtTenantFilter, TenantFilter)
+- [ ] ReviewService (new, needs tests)
 
-## Environment State
+## Failed Approaches (Don't Repeat)
+1. V23 migration: `SET NOT NULL` without `DEFAULT` fails on existing rows — use `NOT NULL DEFAULT 0`
+2. Stale Docker: always rebuild ALL containers before E2E testing
+3. Ollama healthcheck: no curl in image — use `ollama list`
+4. JDK 25 + Gradle 8.10: incompatible — use `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
+5. Native SQL `ORDER BY` + Spring Pageable: conflicts — add `countQuery`, use `Sort.unsorted()`
 
-- **Branch**: `feat/batch5-customer-experience`
-- **Tests**: 289+ passing (all existing + new features compile clean)
-- **Migrations**: V25 (search), V26 (delivery fee), V27 (reviews)
-- **Docker**: core-java/frontend/edge-go images need rebuild for this branch
+## Environment
+- **Branch**: `feat/batch4-infra`
+- **Java**: JDK 21 (`/usr/lib/jvm/jdk-21.0.6-oracle-x64`)
+- **Migrations**: V1-V28 (no new migration needed for Batch 4)
+- **Tests**: All passing
 
 ## Resume Instructions
-
-1. `git checkout feat/batch5-customer-experience`
-2. Rebuild containers: `docker compose -f docker-compose.full-stack.yml build --no-cache core-java frontend`
-3. Restart: `docker compose -f docker-compose.full-stack.yml up -d`
-4. Next: Add frontend UI for delivery fees and reviews
-5. Then: Push, open PR, E2E test, merge
+1. Merge Batch 4 PR, then `git checkout main && git pull`
+2. Next priority: Tier 2 reliability (circuit breakers, DLQ)
+3. Stack: `docker compose -f docker-compose.full-stack.yml up -d` (rebuild first if code changed)
