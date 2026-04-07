@@ -9,7 +9,6 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
-import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
 
 interface OrderStatus {
   orderNumber: string
@@ -49,11 +48,9 @@ export default function OrderTrackingPage({
 }) {
   const { slug, orderNumber } = use(params)
   return (
-    <RequireCustomerAuth message="Sign in to track your order.">
-      <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
-        <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
-      </Suspense>
-    </RequireCustomerAuth>
+    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
+      <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
+    </Suspense>
   )
 }
 
@@ -65,8 +62,12 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
   const searchParams = useSearchParams()
 
-  // Use the authenticated customer's email — auth is required by RequireCustomerAuth wrapper
-  const email = getCustomerSession()?.profile?.email || ""
+  // Use authenticated email, or fall back to the email stored during guest checkout
+  const sessionEmail = getCustomerSession()?.profile?.email || ""
+  const checkoutEmail = typeof window !== "undefined"
+    ? localStorage.getItem(`jtoye-checkout-email-${slug}`) || ""
+    : ""
+  const email = sessionEmail || checkoutEmail
 
   const fetchStatus = useCallback(async () => {
     if (!email) {

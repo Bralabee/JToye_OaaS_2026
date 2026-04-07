@@ -40,6 +40,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -482,6 +483,8 @@ public class PublicStorefrontService {
             DayOfWeek.SUNDAY, "sun"
     );
 
+    private static final ZoneId UK_ZONE = ZoneId.of("Europe/London");
+
     private void validateShopIsOpen(Shop shop) {
         Map<String, String> hours = shop.getOpeningHours();
         if (hours == null || hours.isEmpty()) {
@@ -489,7 +492,8 @@ public class PublicStorefrontService {
             return;
         }
 
-        String dayKey = DAY_KEYS.get(LocalDate.now().getDayOfWeek());
+        // Use UK timezone explicitly — opening hours are UK local times
+        String dayKey = DAY_KEYS.get(LocalDate.now(UK_ZONE).getDayOfWeek());
         String todayHours = hours.get(dayKey);
         if (todayHours == null || todayHours.equalsIgnoreCase("closed")) {
             throw new IllegalArgumentException(
@@ -504,7 +508,7 @@ public class PublicStorefrontService {
 
         LocalTime open = LocalTime.of(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
         LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
-        LocalTime now = LocalTime.now();
+        LocalTime now = LocalTime.now(UK_ZONE);
 
         if (now.isBefore(open) || !now.isBefore(close)) {
             throw new IllegalArgumentException(

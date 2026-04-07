@@ -26,9 +26,9 @@ function formatPrice(pennies: number): string {
 }
 
 function isOpenNow(hours: Record<string, string> | null): boolean {
-  if (!hours) return false
+  if (!hours || Object.keys(hours).length === 0) return true  // No hours = always open (matches backend)
   const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
-  const now = new Date()
+  const now = new Date(new Date().toLocaleString("en-GB", { timeZone: "Europe/London" }))
   const dayKey = days[now.getDay()]
   const todayHours = hours[dayKey]
   if (!todayHours || todayHours.toLowerCase() === "closed") return false

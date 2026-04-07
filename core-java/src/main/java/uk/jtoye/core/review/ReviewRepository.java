@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +17,8 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     Optional<Review> findByOrderId(UUID orderId);
 
     boolean existsByOrderId(UUID orderId);
+
+    List<Review> findByCustomerEmail(String customerEmail);
 
     @Query(value = "SELECT COUNT(*) FROM reviews WHERE shop_id = :shopId", nativeQuery = true)
     long countByShopId(@Param("shopId") UUID shopId);

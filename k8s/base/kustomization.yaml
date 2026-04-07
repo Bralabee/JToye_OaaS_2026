@@ -10,6 +10,7 @@ resources:
   - edge-go-deployment.yaml
   - frontend-deployment.yaml
   - ingress.yaml
+  - pg-backup-cronjob.yaml
 
 # Common labels applied to all resources
 commonLabels:
