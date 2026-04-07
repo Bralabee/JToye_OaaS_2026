@@ -2,6 +2,8 @@ package uk.jtoye.core.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -123,6 +125,8 @@ public class ImageAnalysisService {
     /**
      * Analyze a food/grocery image.
      */
+    @CircuitBreaker(name = "ai", fallbackMethod = "analyzeFallback")
+    @Retry(name = "ai")
     public Optional<ImageAnalysisResult> analyze(byte[] imageBytes, String mediaType) {
         if (!enabled) {
             log.debug("AI analysis skipped — service disabled");
@@ -141,6 +145,12 @@ public class ImageAnalysisService {
             log.error("AI analysis failed (provider={}): {}", provider, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    @SuppressWarnings("unused")
+    private Optional<ImageAnalysisResult> analyzeFallback(byte[] imageBytes, String mediaType, Throwable t) {
+        log.warn("AI circuit breaker open — skipping analysis: {}", t.getMessage());
+        return Optional.empty();
     }
 
     public boolean isEnabled() {
