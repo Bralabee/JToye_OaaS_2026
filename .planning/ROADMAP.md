@@ -32,10 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Stripe webhook and WhatsApp webhook paths remain accessible at their original paths without /api/v1/ prefix
   3. Swagger UI at /swagger-ui.html shows all endpoints with /api/v1/ paths
   4. Existing tests pass with the new path structure
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 01-01: TBD
+- [ ] 01-01-PLAN.md — Add /api/v1/ prefix via WebMvcConfigurer and update all tests
 
 ### Phase 2: API Versioning — Edge & Frontend
 **Goal**: The full request path from browser through Go edge to Spring Boot uses /api/v1/ consistently
@@ -45,7 +45,7 @@ Plans:
   1. Go edge gateway proxies requests to /api/v1/ backend paths correctly
   2. Next.js storefront loads and functions with all API calls using /api/v1/ paths
   3. No 404s or routing errors in browser console when navigating the storefront
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 02-01: TBD
@@ -60,7 +60,7 @@ Plans:
   3. Announcement entity exists as its own table (migrated from Shop.announcements TEXT[]) with Flyway migration
   4. Vendor can create, edit, and delete announcements with scheduling via API
   5. All marketing endpoints enforce RLS -- vendor A cannot see or modify vendor B's promotions or announcements
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 03-01: TBD
@@ -74,7 +74,7 @@ Plans:
   2. Vendor can create, edit, and delete promotions from the dashboard UI
   3. Vendor can create, edit, and delete announcements from the dashboard UI
   4. Dashboard displays scheduling information (active, upcoming, expired) for promotions and announcements
-**Plans**: TBD
+**Plans**: 1 plan
 **UI hint**: yes
 
 Plans:
@@ -89,7 +89,7 @@ Plans:
   2. Connections without a valid JWT are rejected before subscribing to any topic
   3. A tenant's WebSocket subscription only receives events for their own shops (not broadcasts to all tenants)
   4. TenantContext is available inside WebSocket message handlers, matching the authenticated user's tenant
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 05-01: TBD
@@ -102,7 +102,7 @@ Plans:
   1. When an order status changes, a RabbitMQ message is published
   2. A consumer picks up the message and broadcasts it to the correct tenant's WebSocket topic
   3. The existing SSE broadcast-to-all-tenants pattern is not used -- events are scoped to the correct tenant
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 06-01: TBD
@@ -116,7 +116,7 @@ Plans:
   2. Kitchen staff can tap/click a button to bump an order from PREPARING to READY and the change reflects immediately
   3. Order cards change colour based on age: green (fresh), yellow (aging), red (overdue)
   4. An audio alert plays when a new order arrives on the kitchen display
-**Plans**: TBD
+**Plans**: 1 plan
 **UI hint**: yes
 
 Plans:
@@ -132,7 +132,7 @@ Plans:
   3. JwtTenantFilter and TenantFilter have tests verifying tenant extraction, missing header rejection, and cross-tenant blocking
   4. ReviewService has unit tests covering create, update, delete, and average rating calculation
   5. Total test count exceeds 310 (the pre-milestone baseline)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 08-01: TBD
