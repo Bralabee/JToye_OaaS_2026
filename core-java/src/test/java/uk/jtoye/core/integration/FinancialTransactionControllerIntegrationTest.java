@@ -137,7 +137,7 @@ class FinancialTransactionControllerIntegrationTest {
         String transactionId = objectMapper.readTree(response).get("id").asText();
 
         // Get transaction by ID
-        mockMvc.perform(get("/financial-transactions/" + transactionId)
+        mockMvc.perform(get("/api/v1/financial-transactions/" + transactionId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(transactionId))

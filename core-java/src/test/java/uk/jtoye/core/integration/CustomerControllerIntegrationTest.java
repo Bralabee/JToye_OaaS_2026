@@ -140,7 +140,7 @@ class CustomerControllerIntegrationTest {
         String customerId = objectMapper.readTree(response).get("id").asText();
 
         // Get customer by ID
-        mockMvc.perform(get("/customers/" + customerId)
+        mockMvc.perform(get("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(customerId))
@@ -214,7 +214,7 @@ class CustomerControllerIntegrationTest {
                 .andExpect(status().isNoContent());
 
         // Verify customer is deleted
-        mockMvc.perform(get("/customers/" + customerId)
+        mockMvc.perform(get("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isNotFound());
     }
