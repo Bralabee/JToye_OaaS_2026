@@ -150,6 +150,9 @@ notification:
     from: ${NOTIFICATION_EMAIL_FROM:noreply@jtoye.uk}
     tracking-base-url: ${NOTIFICATION_EMAIL_TRACKING_BASE_URL:http://localhost:3000}
 
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
 rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}
   default-limit: ${RATE_LIMIT_PER_MINUTE:100}

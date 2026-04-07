@@ -1,0 +1,122 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+  namespace: jtoye-production
+  labels:
+    app.kubernetes.io/name: pg-backup
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: jtoye-oaas
+spec:
+  schedule: "0 2 * * *"  # Daily at 02:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800  # 30 minute timeout
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: pg-backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: pg-backup
+              image: postgres:15-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  FILENAME="jtoye-backup-${TIMESTAMP}.sql.gz"
+
+                  echo "Starting backup: ${FILENAME}"
+                  pg_dump \
+                    -h "${DB_HOST}" \
+                    -p "${DB_PORT}" \
+                    -U "${DB_USER}" \
+                    -d "${DB_NAME}" \
+                    --no-owner \
+                    --no-acl \
+                    --format=custom \
+                    | gzip > "/tmp/${FILENAME}"
+
+                  echo "Uploading to S3: s3://${S3_BUCKET}/backups/${FILENAME}"
+                  # Install and use AWS CLI for S3 upload
+                  apk add --no-cache aws-cli > /dev/null 2>&1
+                  aws s3 cp "/tmp/${FILENAME}" "s3://${S3_BUCKET}/backups/${FILENAME}" \
+                    --endpoint-url "${S3_ENDPOINT}"
+
+                  # Prune backups older than 30 days
+                  CUTOFF=$(date -d "-30 days" +%Y%m%d 2>/dev/null || date -v-30d +%Y%m%d)
+                  aws s3 ls "s3://${S3_BUCKET}/backups/" --endpoint-url "${S3_ENDPOINT}" \
+                    | awk '{print $4}' \
+                    | while read -r file; do
+                        FILE_DATE=$(echo "${file}" | grep -oP '\d{8}' | head -1)
+                        if [ -n "${FILE_DATE}" ] && [ "${FILE_DATE}" -lt "${CUTOFF}" ]; then
+                          echo "Pruning old backup: ${file}"
+                          aws s3 rm "s3://${S3_BUCKET}/backups/${file}" --endpoint-url "${S3_ENDPOINT}"
+                        fi
+                      done
+
+                  rm -f "/tmp/${FILENAME}"
+                  echo "Backup complete: ${FILENAME}"
+              env:
+                - name: DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: db-host
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: db-user
+                - name: DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: db-name
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: db-password
+                - name: S3_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: jtoye-config
+                      key: s3-bucket
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    configMapKeyRef:
+                      name: jtoye-config
+                      key: s3-endpoint
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: s3-access-key
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: jtoye-secrets
+                      key: s3-secret-key
+                - name: AWS_DEFAULT_REGION
+                  value: eu-west-2
+              resources:
+                requests:
+                  memory: 256Mi
+                  cpu: 250m
+                limits:
+                  memory: 512Mi
+                  cpu: 500m

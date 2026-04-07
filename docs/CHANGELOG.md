@@ -5,6 +5,19 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Batch 4: Infrastructure & Process
+
+### Added
+- **CORS from env vars**: `CorsConfig` now reads `CORS_ALLOWED_ORIGINS` from environment (comma-separated list). Defaults to `http://localhost:3000` for local dev. Unblocks real deployment with custom domains
+- **GDPR data subject rights**: New `/gdpr/customers/{id}/export` (Article 20 — data portability) and `/gdpr/customers/{id}/erase` (Article 17 — right to erasure) endpoints. Export returns all customer PII, orders, and reviews as JSON. Erasure anonymises PII across customers, orders, and reviews while preserving financial audit trails
+- **K8s backup CronJob**: `pg-backup-cronjob.yaml` — daily 02:00 UTC pg_dump to S3, gzipped, with 30-day retention pruning. Uses Kustomize, pulls DB credentials from secrets
+
+### Changed
+- **Keycloak token lifespan**: Access token reduced from 3600s (1 hour) to 300s (5 minutes). SSO max lifespan reduced from 36000s (10 hours) to 7200s (2 hours). Implicit flow token reduced to 300s. Tighter security posture for production
+
+### Tests
+- 6 new GDPR service tests: export with orders/reviews, export with allergens, erasure anonymisation, empty data handling, not-found errors
+
 ## [Unreleased] - Batch 5: Customer Experience
 
 ### Added
