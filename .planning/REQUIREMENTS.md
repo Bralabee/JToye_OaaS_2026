@@ -84,34 +84,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| APIV-01 | Pending | Pending |
-| APIV-02 | Pending | Pending |
-| APIV-03 | Pending | Pending |
-| APIV-04 | Pending | Pending |
-| APIV-05 | Pending | Pending |
-| VMKT-01 | Pending | Pending |
-| VMKT-02 | Pending | Pending |
-| VMKT-03 | Pending | Pending |
-| VMKT-04 | Pending | Pending |
-| VMKT-05 | Pending | Pending |
-| KDS-01 | Pending | Pending |
-| KDS-02 | Pending | Pending |
-| KDS-03 | Pending | Pending |
-| KDS-04 | Pending | Pending |
-| KDS-05 | Pending | Pending |
-| KDS-06 | Pending | Pending |
-| KDS-07 | Pending | Pending |
-| KDS-08 | Pending | Pending |
-| TEST-01 | Pending | Pending |
-| TEST-02 | Pending | Pending |
-| TEST-03 | Pending | Pending |
-| TEST-04 | Pending | Pending |
+| APIV-01 | Phase 1 | Pending |
+| APIV-02 | Phase 2 | Pending |
+| APIV-03 | Phase 2 | Pending |
+| APIV-04 | Phase 1 | Pending |
+| APIV-05 | Phase 1 | Pending |
+| VMKT-01 | Phase 3 | Pending |
+| VMKT-02 | Phase 3 | Pending |
+| VMKT-03 | Phase 3 | Pending |
+| VMKT-04 | Phase 3 | Pending |
+| VMKT-05 | Phase 4 | Pending |
+| KDS-01 | Phase 5 | Pending |
+| KDS-02 | Phase 5 | Pending |
+| KDS-03 | Phase 5 | Pending |
+| KDS-04 | Phase 7 | Pending |
+| KDS-05 | Phase 7 | Pending |
+| KDS-06 | Phase 7 | Pending |
+| KDS-07 | Phase 7 | Pending |
+| KDS-08 | Phase 6 | Pending |
+| TEST-01 | Phase 8 | Pending |
+| TEST-02 | Phase 8 | Pending |
+| TEST-03 | Phase 8 | Pending |
+| TEST-04 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-07*
-*Last updated: 2026-04-07 after initial definition*
+*Last updated: 2026-04-07 after roadmap creation*
