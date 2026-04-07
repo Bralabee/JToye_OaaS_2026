@@ -14,7 +14,7 @@
 
 ## Previously Completed
 - Batch 3 (PR #21), Batch 5 (PR #22) — merged to main
-- 383+ tests, 100% pass
+- 310 tests (241 Java + 26 Go + 43 Jest), 100% pass
 
 ## Not Yet Done
 
