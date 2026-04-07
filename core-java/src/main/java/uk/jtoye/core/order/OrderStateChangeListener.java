@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.notification.EmailNotificationService;
 import uk.jtoye.core.security.TenantContext;
@@ -19,15 +20,18 @@ public class OrderStateChangeListener {
     private final OrderRepository orderRepository;
     private final EmailNotificationService emailService;
     private final EntityManager entityManager;
+    private final BusinessMetricsService metrics;
 
     public OrderStateChangeListener(OrderSseService sseService,
                                      OrderRepository orderRepository,
                                      EmailNotificationService emailService,
-                                     EntityManager entityManager) {
+                                     EntityManager entityManager,
+                                     BusinessMetricsService metrics) {
         this.sseService = sseService;
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.entityManager = entityManager;
+        this.metrics = metrics;
     }
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_EVENTS_QUEUE)
@@ -57,6 +61,15 @@ public class OrderStateChangeListener {
     }
 
     private void sendEmailForState(OrderStateChangeEvent event) {
+        // Track business metrics
+        switch (event.newStatus()) {
+            case PENDING -> metrics.recordOrderCreated();
+            case COMPLETED -> orderRepository.findById(event.orderId())
+                    .ifPresent(o -> metrics.recordOrderCompleted(o.getTotalAmountPennies()));
+            case CANCELLED -> metrics.recordOrderCancelled();
+            default -> {} // no metric for intermediate states
+        }
+
         orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
             String email = order.getCustomerEmail();
             if (email == null || email.isBlank()) {

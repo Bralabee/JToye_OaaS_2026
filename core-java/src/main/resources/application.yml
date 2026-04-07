@@ -157,3 +157,37 @@ rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}
   default-limit: ${RATE_LIMIT_PER_MINUTE:100}
   burst-capacity: ${RATE_LIMIT_BURST:20}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      stripe:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+      email:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+      ai:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 1
+        register-health-indicator: true
+  retry:
+    instances:
+      email:
+        max-attempts: 3
+        wait-duration: 2s
+      ai:
+        max-attempts: 2
+        wait-duration: 5s
+
+cleanup:
+  stale-draft-hours: ${CLEANUP_STALE_DRAFT_HOURS:24}
+  orphaned-image-days: ${CLEANUP_ORPHANED_IMAGE_DAYS:7}

@@ -8,6 +8,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +62,7 @@ public class PaymentService {
      * Create a Stripe PaymentIntent for a DRAFT order.
      * Returns the client secret for frontend confirmation.
      */
+    @CircuitBreaker(name = "stripe")
     public String createPaymentIntent(Order order) throws StripeException {
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                 .setAmount(order.getTotalAmountPennies())

@@ -5,6 +5,19 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Tier 2: Reliability
+
+### Added
+- **Resilience4j circuit breakers**: Stripe payment (`stripe`), AI image analysis (`ai`) with fallback to `Optional.empty()`. Configurable sliding window, failure thresholds, half-open state. Health indicators exposed via actuator
+- **Resilience4j retry**: AI analysis retries twice with 5s backoff before circuit opens
+- **RabbitMQ dead letter queue**: Failed messages route to `order.state-changes.dlq` via `order.events.dlx` exchange. Listener retries 3x with exponential backoff (1s → 2s → 4s) before DLQ
+- **Custom business metrics**: `jtoye.orders.created`, `jtoye.orders.completed`, `jtoye.orders.cancelled`, `jtoye.revenue.pennies`, `jtoye.payments.failed`, `jtoye.orders.fulfillment` timer. Exposed at `/actuator/prometheus`
+- **Scheduled cleanup**: Daily 03:00 UTC job deletes DRAFT orders older than 24 hours (configurable via `CLEANUP_STALE_DRAFT_HOURS`)
+
+### Changed
+- `@EnableScheduling` added to CoreApplication
+- `OrderStateChangeListener` now tracks business metrics on order state changes
+
 ## [Unreleased] - Batch 4: Infrastructure & Process
 
 ### Added
