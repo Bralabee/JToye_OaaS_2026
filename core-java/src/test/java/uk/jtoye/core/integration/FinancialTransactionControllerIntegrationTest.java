@@ -76,7 +76,7 @@ class FinancialTransactionControllerIntegrationTest {
                 "Test payment"
         );
 
-        mockMvc.perform(post("/financial-transactions")
+        mockMvc.perform(post("/api/v1/financial-transactions")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -99,7 +99,7 @@ class FinancialTransactionControllerIntegrationTest {
                     VatRate.STANDARD,
                     "Transaction " + i
             );
-            mockMvc.perform(post("/financial-transactions")
+            mockMvc.perform(post("/api/v1/financial-transactions")
                             .header("X-Tenant-ID", testTenantId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -107,7 +107,7 @@ class FinancialTransactionControllerIntegrationTest {
         }
 
         // List transactions
-        mockMvc.perform(get("/financial-transactions")
+        mockMvc.perform(get("/api/v1/financial-transactions")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .param("page", "0")
                         .param("size", "10"))
@@ -127,7 +127,7 @@ class FinancialTransactionControllerIntegrationTest {
                 "Reduced VAT item"
         );
 
-        String response = mockMvc.perform(post("/financial-transactions")
+        String response = mockMvc.perform(post("/api/v1/financial-transactions")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -155,7 +155,7 @@ class FinancialTransactionControllerIntegrationTest {
                 "Zero VAT item"
         );
 
-        mockMvc.perform(post("/financial-transactions")
+        mockMvc.perform(post("/api/v1/financial-transactions")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -175,7 +175,7 @@ class FinancialTransactionControllerIntegrationTest {
         );
 
         // Expect 500 because TenantContext.get().orElseThrow() throws NoSuchElementException
-        mockMvc.perform(post("/financial-transactions")
+        mockMvc.perform(post("/api/v1/financial-transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError());
@@ -190,7 +190,7 @@ class FinancialTransactionControllerIntegrationTest {
                 "Invalid transaction"
         );
 
-        mockMvc.perform(post("/financial-transactions")
+        mockMvc.perform(post("/api/v1/financial-transactions")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
