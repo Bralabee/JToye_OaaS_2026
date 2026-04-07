@@ -12,7 +12,7 @@ This milestone transforms J'Toye OaaS from a transactional platform into a real-
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: API Versioning — Backend** - Add /api/v1/ prefix to all Spring Boot endpoints with webhook exemptions and updated Swagger docs
+- [x] **Phase 1: API Versioning — Backend** - Add /api/v1/ prefix to all Spring Boot endpoints with webhook exemptions and updated Swagger docs (completed 2026-04-07)
 - [ ] **Phase 2: API Versioning — Edge & Frontend** - Update Go edge gateway routes and Next.js API client for /api/v1/ paths
 - [ ] **Phase 3: Vendor Marketing Backend** - Promotion CRUD with scheduling, announcement entity extraction and CRUD
 - [ ] **Phase 4: Vendor Dashboard UI** - Dashboard page for vendors to manage promotions and announcements
@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 01-01-PLAN.md — Add /api/v1/ prefix via WebMvcConfigurer and update all tests
+- [x] 01-01-PLAN.md — Add /api/v1/ prefix via WebMvcConfigurer and update all tests
 
 ### Phase 2: API Versioning — Edge & Frontend
 **Goal**: The full request path from browser through Go edge to Spring Boot uses /api/v1/ consistently
@@ -145,7 +145,7 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. API Versioning -- Backend | 0/0 | Not started | - |
+| 1. API Versioning -- Backend | 1/1 | Complete    | 2026-04-07 |
 | 2. API Versioning -- Edge & Frontend | 0/0 | Not started | - |
 | 3. Vendor Marketing Backend | 0/0 | Not started | - |
 | 4. Vendor Dashboard UI | 0/0 | Not started | - |
