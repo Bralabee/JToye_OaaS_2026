@@ -35,7 +35,7 @@ Add Spring WebSocket/STOMP infrastructure with in-memory broker, tenant-aware ch
 
 ### TenantContext Propagation
 - **D-10:** TenantContext is ThreadLocal and does NOT propagate to WebSocket message handler threads. The TenantChannelInterceptor stores `tenantId` in STOMP session attributes at CONNECT time. Message handlers (`@MessageMapping`) read from session attributes and explicitly set TenantContext before any DB calls.
-- **D-11:** Create a `WebSocketTenantInterceptor` (ChannelInterceptor) that:
+- **D-11:** Create a `TenantChannelInterceptor` (ExecutorChannelInterceptor for thread-safe cleanup) that:
   1. On CONNECT: Extract JWT from handshake query param, validate via Keycloak JWKS, extract tenantId + roles, store in session attributes
   2. On SUBSCRIBE: Validate destination topic matches session tenantId
   3. On SEND (from client): Set TenantContext from session attributes before handler invocation
