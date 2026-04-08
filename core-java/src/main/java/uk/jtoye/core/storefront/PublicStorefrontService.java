@@ -86,7 +86,9 @@ public class PublicStorefrontService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
 
         ShopConfigDto config = new ShopConfigDto();
-        config.setAnnouncements(shop.getAnnouncements() != null ? shop.getAnnouncements() : List.of());
+        // Announcements migrated to shop_announcements table (V29); return empty list until
+        // dedicated announcement service is wired in Plan 03-02
+        config.setAnnouncements(List.of());
 
         // Fetch featured products
         TenantContext.set(shop.getTenantId());
