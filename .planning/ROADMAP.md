@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: API Versioning — Backend** - Add /api/v1/ prefix to all Spring Boot endpoints with webhook exemptions and updated Swagger docs (completed 2026-04-07)
 - [x] **Phase 2: API Versioning — Edge & Frontend** - Update Go edge gateway routes and Next.js API client for /api/v1/ paths (completed 2026-04-08)
 - [x] **Phase 3: Vendor Marketing Backend** - Promotion CRUD with scheduling, announcement entity extraction and CRUD (completed 2026-04-08)
-- [ ] **Phase 4: Vendor Dashboard UI** - Dashboard page for vendors to manage promotions and announcements
+- [x] **Phase 4: Vendor Dashboard UI** - Dashboard page for vendors to manage promotions and announcements (completed 2026-04-08)
 - [ ] **Phase 5: KDS Security & WebSocket Foundation** - Spring WebSocket/STOMP config with tenant-aware channel security
 - [ ] **Phase 6: KDS Event Pipeline** - Route WebSocket events through RabbitMQ consumer for single event pipeline
 - [ ] **Phase 7: Kitchen Display UI** - Real-time order card feed with status bumping, age indicators, and audio alerts
@@ -79,7 +79,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01-PLAN.md — Marketing dashboard page with Promotions and Announcements CRUD tabs
+- [x] 04-01-PLAN.md — Marketing dashboard page with Promotions and Announcements CRUD tabs
 
 ### Phase 5: KDS Security & WebSocket Foundation
 **Goal**: WebSocket connections are tenant-isolated and JWT-authenticated, preventing cross-tenant data leakage
@@ -149,7 +149,7 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 1. API Versioning -- Backend | 1/1 | Complete    | 2026-04-07 |
 | 2. API Versioning -- Edge & Frontend | 1/1 | Complete    | 2026-04-08 |
 | 3. Vendor Marketing Backend | 2/2 | Complete    | 2026-04-08 |
-| 4. Vendor Dashboard UI | 0/0 | Not started | - |
+| 4. Vendor Dashboard UI | 1/1 | Complete    | 2026-04-08 |
 | 5. KDS Security & WebSocket Foundation | 0/0 | Not started | - |
 | 6. KDS Event Pipeline | 0/0 | Not started | - |
 | 7. Kitchen Display UI | 0/0 | Not started | - |
