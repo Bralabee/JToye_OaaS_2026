@@ -55,7 +55,7 @@ Plans:
 **Depends on**: Phase 2
 **Requirements**: VMKT-01, VMKT-02, VMKT-03, VMKT-04
 **Success Criteria** (what must be TRUE):
-  1. Vendor can create a promotion with discount type and amount, and it appears in GET /api/v1/promotions
+  1. Vendor can create a promotion with discount type (PERCENTAGE or FLAT_AMOUNT) and amount, via new PromotionController. Flyway migration extends existing ShopPromotion entity with discountType + discountAmountPennies.
   2. Promotion with validFrom/validUntil dates only applies within the scheduled window (timezone-aware)
   3. Announcement entity exists as its own table (migrated from Shop.announcements TEXT[]) with Flyway migration
   4. Vendor can create, edit, and delete announcements with scheduling via API
@@ -85,7 +85,7 @@ Plans:
 **Depends on**: Phase 2
 **Requirements**: KDS-01, KDS-02, KDS-03
 **Success Criteria** (what must be TRUE):
-  1. WebSocket STOMP endpoint accepts connections at a known path (e.g., /ws)
+  1. WebSocket STOMP endpoint accepts connections at a known path (e.g., /ws). Existing SSE (OrderSseService) kept for dashboard; WebSocket is additive for KDS only.
   2. Connections without a valid JWT are rejected before subscribing to any topic
   3. A tenant's WebSocket subscription only receives events for their own shops (not broadcasts to all tenants)
   4. TenantContext is available inside WebSocket message handlers, matching the authenticated user's tenant
@@ -130,7 +130,7 @@ Plans:
   1. PaymentController webhook endpoint has tests covering successful payment, failed payment, and invalid signature scenarios
   2. PublicStorefrontController has tests covering shop listing, product listing, and search
   3. JwtTenantFilter and TenantFilter have tests verifying tenant extraction, missing header rejection, and cross-tenant blocking
-  4. ReviewService has unit tests covering create, update, delete, and average rating calculation
+  4. GdprController has integration tests covering export and erasure endpoints with tenant isolation verification
   5. Total test count exceeds 310 (the pre-milestone baseline)
 **Plans**: 1 plan
 

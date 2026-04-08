@@ -17,7 +17,7 @@ Requirements for Milestone 2. Each maps to roadmap phases.
 
 ### Vendor Marketing Dashboard
 
-- [ ] **VMKT-01**: Promotion CRUD — vendor can create, edit, delete promotions with discount type/amount
+- [ ] **VMKT-01**: Promotion CRUD — vendor can create, edit, delete promotions. Flyway migration adds discountType enum (PERCENTAGE, FLAT_AMOUNT) and discountAmountPennies to existing ShopPromotion entity. New PromotionController + PromotionService.
 - [ ] **VMKT-02**: Promotion scheduling — validFrom/validUntil with timezone-aware date handling
 - [ ] **VMKT-03**: Announcement entity extracted from Shop.announcements TEXT[] with Flyway migration
 - [ ] **VMKT-04**: Announcement CRUD — vendor can create, edit, delete announcements with scheduling
@@ -25,7 +25,7 @@ Requirements for Milestone 2. Each maps to roadmap phases.
 
 ### Kitchen Display System
 
-- [ ] **KDS-01**: Spring WebSocket/STOMP configuration with in-memory broker
+- [ ] **KDS-01**: Spring WebSocket/STOMP configuration with in-memory broker. Existing SSE (OrderSseService) kept for dashboard one-way updates; WebSocket added for bidirectional KDS use only.
 - [ ] **KDS-02**: TenantChannelInterceptor validates JWT and scopes subscriptions to tenant's shops
 - [ ] **KDS-03**: TenantContext propagation from WebSocket session attributes to message handlers
 - [ ] **KDS-04**: Real-time order card feed on kitchen display page
@@ -39,7 +39,7 @@ Requirements for Milestone 2. Each maps to roadmap phases.
 - [ ] **TEST-01**: PaymentController webhook endpoint tests
 - [ ] **TEST-02**: PublicStorefrontController tests
 - [ ] **TEST-03**: JwtTenantFilter and TenantFilter security filter tests
-- [ ] **TEST-04**: ReviewService unit tests
+- [ ] **TEST-04**: GdprController integration tests (export + erasure endpoints with tenant isolation verification)
 
 ## v2 Requirements
 
