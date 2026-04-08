@@ -79,7 +79,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — Marketing dashboard page with Promotions and Announcements CRUD tabs
 
 ### Phase 5: KDS Security & WebSocket Foundation
 **Goal**: WebSocket connections are tenant-isolated and JWT-authenticated, preventing cross-tenant data leakage
