@@ -60,10 +60,11 @@ Plans:
   3. Announcement entity exists as its own table (migrated from Shop.announcements TEXT[]) with Flyway migration
   4. Vendor can create, edit, and delete announcements with scheduling via API
   5. All marketing endpoints enforce RLS -- vendor A cannot see or modify vendor B's promotions or announcements
-**Plans**: 1 plan
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md — Flyway V29 migration, ShopPromotion extension with discount types, PromotionController CRUD
+- [ ] 03-02-PLAN.md — ShopAnnouncement entity and CRUD, public storefront endpoints, ShopConfigDto update
 
 ### Phase 4: Vendor Dashboard UI
 **Goal**: Vendors can manage their promotions and announcements through a dedicated dashboard page
@@ -147,7 +148,7 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 |-------|----------------|--------|-----------|
 | 1. API Versioning -- Backend | 1/1 | Complete    | 2026-04-07 |
 | 2. API Versioning -- Edge & Frontend | 1/1 | Complete    | 2026-04-08 |
-| 3. Vendor Marketing Backend | 0/0 | Not started | - |
+| 3. Vendor Marketing Backend | 0/2 | Planned | - |
 | 4. Vendor Dashboard UI | 0/0 | Not started | - |
 | 5. KDS Security & WebSocket Foundation | 0/0 | Not started | - |
 | 6. KDS Event Pipeline | 0/0 | Not started | - |
