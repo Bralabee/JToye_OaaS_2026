@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: API Versioning — Backend** - Add /api/v1/ prefix to all Spring Boot endpoints with webhook exemptions and updated Swagger docs (completed 2026-04-07)
 - [x] **Phase 2: API Versioning — Edge & Frontend** - Update Go edge gateway routes and Next.js API client for /api/v1/ paths (completed 2026-04-08)
-- [ ] **Phase 3: Vendor Marketing Backend** - Promotion CRUD with scheduling, announcement entity extraction and CRUD
+- [x] **Phase 3: Vendor Marketing Backend** - Promotion CRUD with scheduling, announcement entity extraction and CRUD (completed 2026-04-08)
 - [ ] **Phase 4: Vendor Dashboard UI** - Dashboard page for vendors to manage promotions and announcements
 - [ ] **Phase 5: KDS Security & WebSocket Foundation** - Spring WebSocket/STOMP config with tenant-aware channel security
 - [ ] **Phase 6: KDS Event Pipeline** - Route WebSocket events through RabbitMQ consumer for single event pipeline
@@ -63,8 +63,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Flyway V29 migration, ShopPromotion extension with discount types, PromotionController CRUD
-- [ ] 03-02-PLAN.md — ShopAnnouncement entity and CRUD, public storefront endpoints, ShopConfigDto update
+- [x] 03-01-PLAN.md — Flyway V29 migration, ShopPromotion extension with discount types, PromotionController CRUD
+- [x] 03-02-PLAN.md — ShopAnnouncement entity and CRUD, public storefront endpoints, ShopConfigDto update
 
 ### Phase 4: Vendor Dashboard UI
 **Goal**: Vendors can manage their promotions and announcements through a dedicated dashboard page
@@ -148,7 +148,7 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 |-------|----------------|--------|-----------|
 | 1. API Versioning -- Backend | 1/1 | Complete    | 2026-04-07 |
 | 2. API Versioning -- Edge & Frontend | 1/1 | Complete    | 2026-04-08 |
-| 3. Vendor Marketing Backend | 0/2 | Planned | - |
+| 3. Vendor Marketing Backend | 2/2 | Complete    | 2026-04-08 |
 | 4. Vendor Dashboard UI | 0/0 | Not started | - |
 | 5. KDS Security & WebSocket Foundation | 0/0 | Not started | - |
 | 6. KDS Event Pipeline | 0/0 | Not started | - |
