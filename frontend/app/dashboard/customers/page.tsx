@@ -99,7 +99,7 @@ export default function CustomersPage() {
     try {
       setLoading(true)
       const response = await apiClient.get(
-        `/customers?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/customers?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
       )
       setCustomers(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
@@ -152,14 +152,14 @@ export default function CustomersPage() {
 
       if (editingCustomer) {
         // Update existing customer
-        await apiClient.put(`/customers/${editingCustomer.id}`, payload)
+        await apiClient.put(`/api/v1/customers/${editingCustomer.id}`, payload)
         toast({
           title: "Customer updated",
           description: `${data.name} has been updated successfully.`,
         })
       } else {
         // Create new customer
-        await apiClient.post("/customers", payload)
+        await apiClient.post("/api/v1/customers", payload)
         toast({
           title: "Customer created",
           description: `${data.name} has been created successfully.`,
@@ -188,7 +188,7 @@ export default function CustomersPage() {
 
     try {
       setSubmitting(true)
-      await apiClient.delete(`/customers/${deletingCustomer.id}`)
+      await apiClient.delete(`/api/v1/customers/${deletingCustomer.id}`)
       toast({
         title: "Customer deleted",
         description: `${deletingCustomer.name} has been deleted successfully.`,
