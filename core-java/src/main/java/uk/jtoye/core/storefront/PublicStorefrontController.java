@@ -17,7 +17,9 @@ import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
+import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
+import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.PublicShopDto;
 
 import java.util.List;
@@ -57,6 +59,18 @@ public class PublicStorefrontController {
     @Operation(summary = "Get shop config", description = "Server-driven content: announcements, featured products, active promotions.")
     public ResponseEntity<ShopConfigDto> getShopConfig(@PathVariable String slug) {
         return ResponseEntity.ok(storefrontService.getShopConfig(slug));
+    }
+
+    @GetMapping("/shops/{slug}/promotions")
+    @Operation(summary = "Get active promotions", description = "Returns currently active promotions for a published shop.")
+    public ResponseEntity<List<PublicPromotionDto>> getShopPromotions(@PathVariable String slug) {
+        return ResponseEntity.ok(storefrontService.getActivePromotions(slug));
+    }
+
+    @GetMapping("/shops/{slug}/announcements")
+    @Operation(summary = "Get active announcements", description = "Returns currently active announcements for a published shop.")
+    public ResponseEntity<List<PublicAnnouncementDto>> getShopAnnouncements(@PathVariable String slug) {
+        return ResponseEntity.ok(storefrontService.getActiveAnnouncements(slug));
     }
 
     @GetMapping("/shops/{slug}/products")
