@@ -106,7 +106,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Wire SimpMessagingTemplate WebSocket broadcast into OrderStateChangeListener
 
 ### Phase 7: Kitchen Display UI
 **Goal**: Kitchen staff see a live order feed and can manage order progression in real time
@@ -151,6 +151,6 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 3. Vendor Marketing Backend | 2/2 | Complete    | 2026-04-08 |
 | 4. Vendor Dashboard UI | 1/1 | Complete    | 2026-04-08 |
 | 5. KDS Security & WebSocket Foundation | 1/1 | Complete    | 2026-04-08 |
-| 6. KDS Event Pipeline | 0/0 | Not started | - |
+| 6. KDS Event Pipeline | 0/1 | Not started | - |
 | 7. Kitchen Display UI | 0/0 | Not started | - |
 | 8. Test Coverage Closure | 0/0 | Not started | - |
