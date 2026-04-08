@@ -42,7 +42,7 @@ type CreateOrderResponse struct {
 func (c *Client) SearchProducts(ctx context.Context, token, tenantID, query string) ([]ProductSearchResult, error) {
 	var results []ProductSearchResult
 	_, err := c.breaker.Execute(func() (interface{}, error) {
-		reqURL := fmt.Sprintf("%s/products/search?q=%s", c.baseURL, url.QueryEscape(query))
+		reqURL := fmt.Sprintf("%s/api/v1/products/search?q=%s", c.baseURL, url.QueryEscape(query))
 		httpReq, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
@@ -81,7 +81,7 @@ func (c *Client) CreateOrder(ctx context.Context, token, tenantID string, req *C
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/orders", bytes.NewBuffer(payload))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/v1/orders", bytes.NewBuffer(payload))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
