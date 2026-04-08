@@ -107,7 +107,7 @@ func main() {
 	protected := r.Group("/")
 	protected.Use(jwtMiddleware.Validate())
 
-	protected.POST("/sync/batch", func(c *gin.Context) {
+	protected.POST("/api/v1/sync/batch", func(c *gin.Context) {
 		var payload struct {
 			Items []map[string]interface{} `json:"items"`
 		}
@@ -140,7 +140,7 @@ func main() {
 		c.JSON(http.StatusAccepted, resp)
 	})
 
-	protected.POST("/webhooks/whatsapp", func(c *gin.Context) {
+	protected.POST("/api/v1/webhooks/whatsapp", func(c *gin.Context) {
 		// WhatsApp uses SHA256 HMAC for signature verification
 		// The signature is sent in the 'X-Hub-Signature-256' header
 		signature := c.GetHeader("X-Hub-Signature-256")
