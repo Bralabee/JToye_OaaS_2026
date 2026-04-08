@@ -11,6 +11,7 @@ import {
   Users,
   LayoutDashboard,
   Banknote,
+  Megaphone,
   LogOut,
   Moon,
   Sun,
@@ -25,6 +26,7 @@ const navigation = [
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingCart },
   { name: "Customers", href: "/dashboard/customers", icon: Users },
   { name: "Finance", href: "/dashboard/finance", icon: Banknote },
+  { name: "Marketing", href: "/dashboard/marketing", icon: Megaphone },
 ]
 
 export function Sidebar() {

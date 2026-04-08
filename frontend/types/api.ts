@@ -199,6 +199,56 @@ export interface FinancialSummary {
   vatBreakdown: VatBreakdown[]
 }
 
+// Promotion Types
+export type DiscountType = "PERCENTAGE" | "FLAT_AMOUNT"
+
+export interface Promotion {
+  id: string
+  shopId: string
+  label: string
+  discountType: DiscountType
+  discountPercent: number | null
+  discountAmountPennies: number | null
+  category: string | null
+  validFrom: string
+  validUntil: string
+  active: boolean
+  createdAt: string
+}
+
+export interface CreatePromotionRequest {
+  label: string
+  discountType: DiscountType
+  discountPercent?: number
+  discountAmountPennies?: number
+  category?: string
+  validFrom: string
+  validUntil: string
+  active?: boolean
+  shopId: string
+}
+
+// Announcement Types
+export interface Announcement {
+  id: string
+  shopId: string
+  title: string
+  body: string | null
+  validFrom: string | null
+  validUntil: string | null
+  active: boolean
+  createdAt: string
+}
+
+export interface CreateAnnouncementRequest {
+  title: string
+  body?: string
+  validFrom?: string
+  validUntil?: string
+  active?: boolean
+  shopId: string
+}
+
 // Allergen constants
 export const ALLERGENS = [
   { bit: 0, name: "Gluten", icon: "🌾" },
