@@ -93,7 +93,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01: TBD
+- [ ] 05-01-PLAN.md — WebSocket/STOMP config, JwtHandshakeInterceptor, TenantChannelInterceptor with tenant-isolated security
 
 ### Phase 6: KDS Event Pipeline
 **Goal**: Order state changes flow through RabbitMQ into WebSocket broadcasts as a single unified event pipeline
@@ -150,7 +150,7 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 2. API Versioning -- Edge & Frontend | 1/1 | Complete    | 2026-04-08 |
 | 3. Vendor Marketing Backend | 2/2 | Complete    | 2026-04-08 |
 | 4. Vendor Dashboard UI | 1/1 | Complete    | 2026-04-08 |
-| 5. KDS Security & WebSocket Foundation | 0/0 | Not started | - |
+| 5. KDS Security & WebSocket Foundation | 0/1 | Not started | - |
 | 6. KDS Event Pipeline | 0/0 | Not started | - |
 | 7. Kitchen Display UI | 0/0 | Not started | - |
 | 8. Test Coverage Closure | 0/0 | Not started | - |
