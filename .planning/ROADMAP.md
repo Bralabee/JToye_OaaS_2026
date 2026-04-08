@@ -48,7 +48,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Update Go edge routes and Next.js dashboard API calls for /api/v1/ paths
 
 ### Phase 3: Vendor Marketing Backend
 **Goal**: Vendors have full API access to create and schedule promotions and announcements for their shops
