@@ -28,7 +28,7 @@ Vendors can manage their business end-to-end — from marketing to kitchen fulfi
 
 - [ ] Vendor dashboard UI for announcements, promotions/discounts, and scheduling
 - [ ] Real-time WebSocket kitchen display (live order feed + kitchen status updates)
-- [x] API versioning backend — /api/v1/ prefix on Spring Boot endpoints (Phase 1)
+- [x] API versioning — /api/v1/ prefix across backend, Go edge, and frontend (Phase 1+2)
 - [ ] Test coverage for PaymentController webhook endpoint
 - [ ] Test coverage for PublicStorefrontController
 - [ ] Test coverage for security filters (JwtTenantFilter, TenantFilter)
