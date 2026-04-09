@@ -201,7 +201,8 @@ export default function MarketingPage() {
 
   // Forms
   const promoForm = useForm<PromotionFormData>({
-    resolver: zodResolver(promotionSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(promotionSchema) as any,
     defaultValues: { discountType: "PERCENTAGE", active: true },
   })
 
