@@ -4,7 +4,7 @@ ALTER TABLE order_items ADD COLUMN product_name VARCHAR(255);
 
 -- Backfill from products table where possible
 UPDATE order_items oi
-SET product_name = p.name
+SET product_name = p.title
 FROM products p
 WHERE oi.product_id = p.id AND oi.product_name IS NULL;
 
