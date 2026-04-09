@@ -133,6 +133,7 @@ public class OrderService {
                     unitPrice
             );
             item.setTenantId(tenantId);
+            item.setProductName(product.getName());
             order.addItem(item);
         }
 

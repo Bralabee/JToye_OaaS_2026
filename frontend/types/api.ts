@@ -121,6 +121,7 @@ export interface Order {
 export interface OrderItem {
   id: string
   productId: string
+  productName: string
   quantity: number
   unitPricePennies: number
   totalPricePennies: number

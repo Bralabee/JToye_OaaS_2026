@@ -407,10 +407,8 @@ export default function KitchenPage() {
             const StatusIcon = config?.icon || Clock
             const itemNames =
               order.items
-                ?.map((item) => item.productId.substring(0, 8))
+                ?.map((item) => item.productName)
                 .join(", ") || "No items"
-            // Use product names if we had them, but OrderDetail.items has productId
-            // Show item count + summary
             const itemSummary =
               order.items && order.items.length > 0
                 ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
@@ -448,7 +446,7 @@ export default function KitchenPage() {
                         {order.items.map((item, i) => (
                           <span key={item.id || i}>
                             {i > 0 && ", "}
-                            {item.quantity}x {item.productId.substring(0, 8)}
+                            {item.quantity}x {item.productName}
                           </span>
                         ))}
                       </div>
