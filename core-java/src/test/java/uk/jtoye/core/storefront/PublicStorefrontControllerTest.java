@@ -125,14 +125,14 @@ class PublicStorefrontControllerTest {
     @Test
     void getShopConfig_returns200WithConfigData() throws Exception {
         ShopConfigDto config = new ShopConfigDto();
-        config.setAnnouncements(List.of("Free delivery this week!"));
+        config.setAnnouncements(List.of(new ShopConfigDto.AnnouncementSummary("Free delivery this week!", null, null)));
         config.setFeaturedProducts(List.of());
         config.setActivePromotions(List.of());
         when(storefrontService.getShopConfig("test-shop")).thenReturn(config);
 
         mockMvc.perform(get("/public/shops/test-shop/config"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.announcements[0]").value("Free delivery this week!"))
+                .andExpect(jsonPath("$.announcements[0].title").value("Free delivery this week!"))
                 .andExpect(jsonPath("$.featuredProducts").isArray())
                 .andExpect(jsonPath("$.activePromotions").isArray());
 
