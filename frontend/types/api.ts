@@ -249,6 +249,16 @@ export interface CreateAnnouncementRequest {
   shopId: string
 }
 
+// WebSocket Event Types
+export interface OrderStateChangeEvent {
+  orderId: string
+  tenantId: string
+  orderNumber: string
+  previousStatus: OrderStatus
+  newStatus: OrderStatus
+  timestamp: string
+}
+
 // Allergen constants
 export const ALLERGENS = [
   { bit: 0, name: "Gluten", icon: "🌾" },
