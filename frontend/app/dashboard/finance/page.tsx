@@ -69,9 +69,9 @@ export default function FinancePage() {
     try {
       setLoading(true)
       const [summaryRes, txRes] = await Promise.all([
-        apiClient.get("/financial-transactions/summary"),
+        apiClient.get("/api/v1/financial-transactions/summary"),
         apiClient.get(
-          `/financial-transactions?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+          `/api/v1/financial-transactions?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
         ),
       ])
       setSummary(summaryRes.data)

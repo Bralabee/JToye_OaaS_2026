@@ -48,7 +48,7 @@ class SyncControllerIntegrationTest {
                 }
                 """.formatted(tenantId);
 
-        mockMvc.perform(post("/sync/batch")
+        mockMvc.perform(post("/api/v1/sync/batch")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isOk())

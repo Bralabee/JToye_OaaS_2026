@@ -123,7 +123,7 @@ export default function ProductsPage() {
 
   const fetchShops = async () => {
     try {
-      const response = await apiClient.get("/shops?size=100")
+      const response = await apiClient.get("/api/v1/shops?size=100")
       setShops(response.data.content || [])
     } catch {
       // Shops are optional — fail silently
@@ -144,7 +144,7 @@ export default function ProductsPage() {
     try {
       setLoading(true)
       const response = await apiClient.get(
-        `/products?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/products?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
       )
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
@@ -163,7 +163,7 @@ export default function ProductsPage() {
 
   const searchProducts = async (query: string) => {
     try {
-      const response = await apiClient.get(`/products/search?q=${encodeURIComponent(query)}`)
+      const response = await apiClient.get(`/api/v1/products/search?q=${encodeURIComponent(query)}`)
       setProducts(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
@@ -243,14 +243,14 @@ export default function ProductsPage() {
 
       if (editingProduct) {
         // Update existing product
-        await apiClient.put(`/products/${editingProduct.id}`, payload)
+        await apiClient.put(`/api/v1/products/${editingProduct.id}`, payload)
         toast({
           title: "Product updated",
           description: `${data.title} has been updated successfully.`,
         })
       } else {
         // Create new product
-        await apiClient.post("/products", payload)
+        await apiClient.post("/api/v1/products", payload)
         toast({
           title: "Product created",
           description: `${data.title} has been created successfully.`,
@@ -279,7 +279,7 @@ export default function ProductsPage() {
 
     try {
       setSubmitting(true)
-      await apiClient.delete(`/products/${deletingProduct.id}`)
+      await apiClient.delete(`/api/v1/products/${deletingProduct.id}`)
       toast({
         title: "Product deleted",
         description: `${deletingProduct.title} has been deleted successfully.`,
@@ -477,7 +477,7 @@ export default function ProductsPage() {
                                 size="sm"
                                 onClick={async () => {
                                   try {
-                                    const res = await apiClient.get(`/products/${product.id}/label`, { responseType: "blob" })
+                                    const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
                                     const url = URL.createObjectURL(res.data)
                                     const a = document.createElement("a")
                                     a.href = url
@@ -615,7 +615,7 @@ export default function ProductsPage() {
               {editingProduct ? (
                 <ImageUploader
                   currentImageUrl={editingProduct.imageUrl}
-                  uploadUrl={`/products/${editingProduct.id}/image`}
+                  uploadUrl={`/api/v1/products/${editingProduct.id}/image`}
                   onUploadComplete={(url) => {
                     setEditingProduct({ ...editingProduct, imageUrl: url })
                     fetchProducts()
@@ -626,7 +626,7 @@ export default function ProductsPage() {
                   }}
                   onRemove={async () => {
                     try {
-                      await apiClient.delete(`/products/${editingProduct.id}/image`)
+                      await apiClient.delete(`/api/v1/products/${editingProduct.id}/image`)
                       setEditingProduct({ ...editingProduct, imageUrl: null })
                       setAiSuggestions(null)
                       fetchProducts()

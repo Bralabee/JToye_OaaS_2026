@@ -25,6 +25,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * NOTE: This test requires Docker to be running.
  * It will start a Redis container automatically via Testcontainers.
+ *
+ * NOTE: The /api/* paths used here (e.g. /api/health-test, /api/test-endpoint) are
+ * test-only paths that do not map to real versioned controllers. They exercise the
+ * rate limiter on arbitrary paths. When re-enabling this test, update these paths
+ * to use /api/v1/ prefixed versioned controller endpoints if testing real routes.
+ * The /health and /actuator/health paths are exempt infrastructure endpoints and
+ * must NOT be prefixed.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

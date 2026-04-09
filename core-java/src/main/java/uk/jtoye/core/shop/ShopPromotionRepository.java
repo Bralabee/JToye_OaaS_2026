@@ -1,5 +1,7 @@
 package uk.jtoye.core.shop;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,4 +15,6 @@ public interface ShopPromotionRepository extends JpaRepository<ShopPromotion, UU
     List<ShopPromotion> findActiveByShopId(@Param("shopId") UUID shopId);
 
     List<ShopPromotion> findByShopId(UUID shopId);
+
+    Page<ShopPromotion> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }
