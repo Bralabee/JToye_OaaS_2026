@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: KDS Security & WebSocket Foundation** - Spring WebSocket/STOMP config with tenant-aware channel security (completed 2026-04-08)
 - [x] **Phase 6: KDS Event Pipeline** - Route WebSocket events through RabbitMQ consumer for single event pipeline (completed 2026-04-08)
 - [x] **Phase 7: Kitchen Display UI** - Real-time order card feed with status bumping, age indicators, and audio alerts (completed 2026-04-09)
-- [ ] **Phase 8: Test Coverage Closure** - Tests for PaymentController, PublicStorefrontController, security filters, and GdprController
+- [x] **Phase 8: Test Coverage Closure** - Tests for PaymentController, PublicStorefrontController, security filters, and GdprController (completed 2026-04-09)
 
 ## Phase Details
 
@@ -136,8 +136,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — PaymentController webhook tests + PublicStorefrontController endpoint tests
-- [ ] 08-02-PLAN.md — JwtTenantFilter/TenantFilter security filter tests + GdprController integration tests
+- [x] 08-01-PLAN.md — PaymentController webhook tests + PublicStorefrontController endpoint tests
+- [x] 08-02-PLAN.md — JwtTenantFilter/TenantFilter security filter tests + GdprController integration tests
 
 ## Progress
 
@@ -154,4 +154,4 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 5. KDS Security & WebSocket Foundation | 1/1 | Complete    | 2026-04-08 |
 | 6. KDS Event Pipeline | 1/1 | Complete    | 2026-04-08 |
 | 7. Kitchen Display UI | 1/1 | Complete    | 2026-04-09 |
-| 8. Test Coverage Closure | 0/2 | Not started | - |
+| 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
