@@ -121,7 +121,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 07-01: TBD
+- [ ] 07-01-PLAN.md — Kitchen display page with STOMP WebSocket, order cards, status bumping, age indicators, audio alerts
 
 ### Phase 8: Test Coverage Closure
 **Goal**: Previously untested critical paths have test coverage, bringing the test suite above the milestone baseline
@@ -152,5 +152,5 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 4. Vendor Dashboard UI | 1/1 | Complete    | 2026-04-08 |
 | 5. KDS Security & WebSocket Foundation | 1/1 | Complete    | 2026-04-08 |
 | 6. KDS Event Pipeline | 1/1 | Complete    | 2026-04-08 |
-| 7. Kitchen Display UI | 0/0 | Not started | - |
+| 7. Kitchen Display UI | 0/1 | Not started | - |
 | 8. Test Coverage Closure | 0/0 | Not started | - |
