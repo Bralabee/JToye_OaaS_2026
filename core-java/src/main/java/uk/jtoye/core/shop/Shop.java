@@ -75,9 +75,6 @@ public class Shop {
     @Column(length = 500)
     private String tags;
 
-    @Column(name = "announcements", columnDefinition = "TEXT[]")
-    private List<String> announcements;
-
     @Column(name = "featured_product_ids", columnDefinition = "UUID[]")
     private List<UUID> featuredProductIds;
 
@@ -120,8 +117,6 @@ public class Shop {
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
-    public List<String> getAnnouncements() { return announcements; }
-    public void setAnnouncements(List<String> announcements) { this.announcements = announcements; }
     public List<UUID> getFeaturedProductIds() { return featuredProductIds; }
     public void setFeaturedProductIds(List<UUID> featuredProductIds) { this.featuredProductIds = featuredProductIds; }
 }

@@ -19,7 +19,11 @@ import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.shop.DiscountType;
 import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopAnnouncement;
+import uk.jtoye.core.shop.ShopAnnouncementRepository;
+import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.storefront.dto.*;
 
@@ -47,6 +51,7 @@ class PublicStorefrontServiceTest {
     @Mock private Session hibernateSession;
     @Mock private PaymentService paymentService;
     @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
+    @Mock private ShopAnnouncementRepository announcementRepository;
 
     private PublicStorefrontService service;
 
@@ -64,7 +69,7 @@ class PublicStorefrontServiceTest {
             return null;
         }).when(hibernateSession).doWork(any());
 
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -257,5 +262,108 @@ class PublicStorefrontServiceTest {
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
+    }
+
+    @Test
+    @DisplayName("getActivePromotions returns filtered list with discount type info")
+    void getActivePromotions_returnsFilteredList() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        ShopPromotion percentagePromo = new ShopPromotion();
+        setField(percentagePromo, "id", UUID.randomUUID());
+        percentagePromo.setLabel("10% Off");
+        percentagePromo.setDiscountType(DiscountType.PERCENTAGE);
+        percentagePromo.setDiscountPercent(10);
+        percentagePromo.setCategory("All");
+        percentagePromo.setValidUntil(OffsetDateTime.now().plusDays(30));
+
+        ShopPromotion flatPromo = new ShopPromotion();
+        setField(flatPromo, "id", UUID.randomUUID());
+        flatPromo.setLabel("500p Off");
+        flatPromo.setDiscountType(DiscountType.FLAT_AMOUNT);
+        flatPromo.setDiscountAmountPennies(500);
+        flatPromo.setCategory("Mains");
+        flatPromo.setValidUntil(OffsetDateTime.now().plusDays(14));
+
+        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
+                .thenReturn(List.of(percentagePromo, flatPromo));
+
+        var result = service.getActivePromotions("test-shop-abc12345");
+
+        assertEquals(2, result.size());
+        assertEquals("10% Off", result.get(0).getLabel());
+        assertEquals(DiscountType.PERCENTAGE, result.get(0).getDiscountType());
+        assertEquals(10, result.get(0).getDiscountPercent());
+        assertNull(result.get(0).getDiscountAmountPennies());
+        assertEquals("500p Off", result.get(1).getLabel());
+        assertEquals(DiscountType.FLAT_AMOUNT, result.get(1).getDiscountType());
+        assertEquals(500, result.get(1).getDiscountAmountPennies());
+        assertNull(result.get(1).getDiscountPercent());
+    }
+
+    @Test
+    @DisplayName("getActiveAnnouncements returns filtered list")
+    void getActiveAnnouncements_returnsFilteredList() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        ShopAnnouncement a1 = new ShopAnnouncement();
+        setField(a1, "id", UUID.randomUUID());
+        a1.setTitle("Holiday Hours");
+        a1.setBody("Closed on Boxing Day.");
+        a1.setValidUntil(OffsetDateTime.now().plusDays(7));
+
+        ShopAnnouncement a2 = new ShopAnnouncement();
+        setField(a2, "id", UUID.randomUUID());
+        a2.setTitle("New Menu");
+        a2.setBody("Check out our spring menu!");
+        a2.setValidUntil(OffsetDateTime.now().plusDays(30));
+
+        when(announcementRepository.findActiveByShopId(publishedShop.getId()))
+                .thenReturn(List.of(a1, a2));
+
+        var result = service.getActiveAnnouncements("test-shop-abc12345");
+
+        assertEquals(2, result.size());
+        assertEquals("Holiday Hours", result.get(0).getTitle());
+        assertEquals("Closed on Boxing Day.", result.get(0).getBody());
+        assertEquals("New Menu", result.get(1).getTitle());
+    }
+
+    @Test
+    @DisplayName("getActivePromotions throws when shop not found")
+    void getActivePromotions_shopNotFound_throws() {
+        when(shopRepository.findBySlugAndPublishedTrue("nonexistent"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.getActivePromotions("nonexistent"));
+    }
+
+    @Test
+    @DisplayName("getShopConfig announcements come from repository not shop entity")
+    void getShopConfig_announcementsFromRepository() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        ShopAnnouncement a1 = new ShopAnnouncement();
+        setField(a1, "id", UUID.randomUUID());
+        a1.setTitle("Sale Today");
+        a1.setBody("Everything 20% off!");
+        a1.setValidUntil(OffsetDateTime.now().plusDays(1));
+
+        when(announcementRepository.findActiveByShopId(publishedShop.getId()))
+                .thenReturn(List.of(a1));
+        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
+                .thenReturn(List.of());
+
+        var result = service.getShopConfig("test-shop-abc12345");
+
+        assertNotNull(result.getAnnouncements());
+        assertEquals(1, result.getAnnouncements().size());
+        assertEquals("Sale Today", result.getAnnouncements().get(0).title());
+        assertEquals("Everything 20% off!", result.getAnnouncements().get(0).body());
+        verify(announcementRepository).findActiveByShopId(publishedShop.getId());
     }
 }

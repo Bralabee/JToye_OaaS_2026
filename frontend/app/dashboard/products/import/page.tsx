@@ -88,7 +88,7 @@ function CsvImportTab() {
 
   const downloadTemplate = async () => {
     try {
-      const res = await apiClient.get("/products/template", { responseType: "blob" })
+      const res = await apiClient.get("/api/v1/products/template", { responseType: "blob" })
       const url = URL.createObjectURL(res.data)
       const a = document.createElement("a")
       a.href = url
@@ -108,7 +108,7 @@ function CsvImportTab() {
     formData.append("file", file)
 
     try {
-      const res = await apiClient.post("/products/bulk/csv", formData, {
+      const res = await apiClient.post("/api/v1/products/bulk/csv", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       setResult(res.data)
@@ -223,7 +223,7 @@ function PhotoImportTab() {
     files.forEach(f => formData.append("files", f))
 
     try {
-      const res = await apiClient.post("/products/bulk/images", formData, {
+      const res = await apiClient.post("/api/v1/products/bulk/images", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 300000, // 5 min — AI analysis takes time
       })

@@ -31,6 +31,9 @@ dependencies {
     // RabbitMQ messaging
     implementation("org.springframework.boot:spring-boot-starter-amqp")
 
+    // WebSocket + STOMP for real-time KDS communication
+    implementation("org.springframework.boot:spring-boot-starter-websocket")
+
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
     implementation("com.bucket4j:bucket4j-redis:8.10.1")

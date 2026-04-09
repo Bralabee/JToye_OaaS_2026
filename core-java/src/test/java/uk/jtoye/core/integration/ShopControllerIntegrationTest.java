@@ -75,7 +75,7 @@ class ShopControllerIntegrationTest {
 
     @Test
     void listShopsWithoutAuthShouldReturn401() throws Exception {
-        mockMvc.perform(get("/shops"))
+        mockMvc.perform(get("/api/v1/shops"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -86,7 +86,7 @@ class ShopControllerIntegrationTest {
         request.setName("Test Shop");
         request.setAddress("123 Test St");
 
-        mockMvc.perform(post("/shops")
+        mockMvc.perform(post("/api/v1/shops")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -100,7 +100,7 @@ class ShopControllerIntegrationTest {
         request.setName(uniqueShopName);
         request.setAddress("123 Test St");
 
-        mockMvc.perform(post("/shops")
+        mockMvc.perform(post("/api/v1/shops")
                         .header("X-Tenant-Id", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -120,14 +120,14 @@ class ShopControllerIntegrationTest {
             request.setName("Shop " + i);
             request.setAddress("Address " + i);
 
-            mockMvc.perform(post("/shops")
+            mockMvc.perform(post("/api/v1/shops")
                     .header("X-Tenant-Id", testTenantId.toString())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)));
         }
 
         // Verify pagination
-        mockMvc.perform(get("/shops")
+        mockMvc.perform(get("/api/v1/shops")
                         .header("X-Tenant-Id", testTenantId.toString())
                         .param("page", "0")
                         .param("size", "3"))
@@ -145,7 +145,7 @@ class ShopControllerIntegrationTest {
         CreateShopRequest request = new CreateShopRequest();
         // Missing required name field
 
-        mockMvc.perform(post("/shops")
+        mockMvc.perform(post("/api/v1/shops")
                         .header("X-Tenant-Id", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))

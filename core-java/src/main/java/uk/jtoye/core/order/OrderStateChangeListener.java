@@ -5,6 +5,7 @@ import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.config.BusinessMetricsService;
@@ -21,17 +22,20 @@ public class OrderStateChangeListener {
     private final EmailNotificationService emailService;
     private final EntityManager entityManager;
     private final BusinessMetricsService metrics;
+    private final SimpMessagingTemplate simpMessagingTemplate;
 
     public OrderStateChangeListener(OrderSseService sseService,
                                      OrderRepository orderRepository,
                                      EmailNotificationService emailService,
                                      EntityManager entityManager,
-                                     BusinessMetricsService metrics) {
+                                     BusinessMetricsService metrics,
+                                     SimpMessagingTemplate simpMessagingTemplate) {
         this.sseService = sseService;
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.entityManager = entityManager;
         this.metrics = metrics;
+        this.simpMessagingTemplate = simpMessagingTemplate;
     }
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_EVENTS_QUEUE)
@@ -42,6 +46,19 @@ public class OrderStateChangeListener {
 
         // Broadcast to SSE clients for real-time UI updates
         sseService.broadcast(event);
+
+        // WebSocket broadcast to KDS topic (fire-and-forget per D-06)
+        try {
+            orderRepository.findById(event.orderId()).ifPresent(order -> {
+                if (order.getShopId() != null) {
+                    String topic = "/topic/kitchen/" + event.tenantId() + "/" + order.getShopId();
+                    simpMessagingTemplate.convertAndSend(topic, event);
+                    log.debug("WebSocket broadcast to {} for order {}", topic, event.orderNumber());
+                }
+            });
+        } catch (Exception e) {
+            log.warn("WebSocket broadcast failed for order {}: {}", event.orderNumber(), e.getMessage());
+        }
 
         // Set tenant context at both ThreadLocal and DB session level
         TenantContext.set(event.tenantId());

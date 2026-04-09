@@ -77,7 +77,7 @@ class CustomerControllerIntegrationTest {
                 5
         );
 
-        mockMvc.perform(post("/customers")
+        mockMvc.perform(post("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -101,7 +101,7 @@ class CustomerControllerIntegrationTest {
                     "+123456789" + i,
                     0
             );
-            mockMvc.perform(post("/customers")
+            mockMvc.perform(post("/api/v1/customers")
                             .header("X-Tenant-ID", testTenantId.toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -109,7 +109,7 @@ class CustomerControllerIntegrationTest {
         }
 
         // List customers
-        mockMvc.perform(get("/customers")
+        mockMvc.perform(get("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .param("page", "0")
                         .param("size", "10"))
@@ -130,7 +130,7 @@ class CustomerControllerIntegrationTest {
                 3
         );
 
-        String response = mockMvc.perform(post("/customers")
+        String response = mockMvc.perform(post("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -140,7 +140,7 @@ class CustomerControllerIntegrationTest {
         String customerId = objectMapper.readTree(response).get("id").asText();
 
         // Get customer by ID
-        mockMvc.perform(get("/customers/" + customerId)
+        mockMvc.perform(get("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(customerId))
@@ -159,7 +159,7 @@ class CustomerControllerIntegrationTest {
                 0
         );
 
-        String response = mockMvc.perform(post("/customers")
+        String response = mockMvc.perform(post("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createRequest)))
@@ -176,7 +176,7 @@ class CustomerControllerIntegrationTest {
                 7
         );
 
-        mockMvc.perform(put("/customers/" + customerId)
+        mockMvc.perform(put("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateRequest)))
@@ -199,7 +199,7 @@ class CustomerControllerIntegrationTest {
                 0
         );
 
-        String response = mockMvc.perform(post("/customers")
+        String response = mockMvc.perform(post("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -209,12 +209,12 @@ class CustomerControllerIntegrationTest {
         String customerId = objectMapper.readTree(response).get("id").asText();
 
         // Delete customer
-        mockMvc.perform(delete("/customers/" + customerId)
+        mockMvc.perform(delete("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isNoContent());
 
         // Verify customer is deleted
-        mockMvc.perform(get("/customers/" + customerId)
+        mockMvc.perform(get("/api/v1/customers/" + customerId)
                         .header("X-Tenant-ID", testTenantId.toString()))
                 .andExpect(status().isNotFound());
     }
@@ -229,7 +229,7 @@ class CustomerControllerIntegrationTest {
                 0
         );
 
-        mockMvc.perform(post("/customers")
+        mockMvc.perform(post("/api/v1/customers")
                         .header("X-Tenant-ID", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))

@@ -245,7 +245,7 @@ function OrdersPageInner() {
   // Real-time updates via SSE
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
-    const eventSource = new EventSource(`${apiUrl}/orders/stream`)
+    const eventSource = new EventSource(`${apiUrl}/api/v1/orders/stream`)
     eventSource.addEventListener("order-state-change", () => {
       fetchData()
     })
@@ -261,12 +261,12 @@ function OrdersPageInner() {
     try {
       setLoading(true)
       const ordersPromise = customerIdParam
-        ? apiClient.get(`/orders/customer/${customerIdParam}`)
-        : apiClient.get(`/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
+        ? apiClient.get(`/api/v1/orders/customer/${customerIdParam}`)
+        : apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       const [ordersRes, shopsRes, productsRes] = await Promise.all([
         ordersPromise,
-        apiClient.get("/shops?size=100"),
-        apiClient.get("/products?size=100"),
+        apiClient.get("/api/v1/shops?size=100"),
+        apiClient.get("/api/v1/products?size=100"),
       ])
       // Customer endpoint returns array; paginated returns {content, ...}
       const orderData = customerIdParam ? ordersRes.data : ordersRes.data.content
@@ -292,7 +292,7 @@ function OrdersPageInner() {
       setDetailLoading(true)
       setDetailDialogOpen(true)
       setSelectedOrderDetail(null)
-      const res = await apiClient.get(`/orders/${orderId}/detail`)
+      const res = await apiClient.get(`/api/v1/orders/${orderId}/detail`)
       setSelectedOrderDetail(res.data)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load order details"
@@ -373,7 +373,7 @@ function OrdersPageInner() {
         items: orderItems,
       }
 
-      await apiClient.post("/orders", payload)
+      await apiClient.post("/api/v1/orders", payload)
       toast({
         title: "Order created",
         description: `Order for ${data.customerName} has been created successfully.`,
@@ -403,7 +403,7 @@ function OrdersPageInner() {
   ) => {
     try {
       setProcessingOrderId(orderId)
-      await apiClient.post(`/orders/${orderId}/${endpoint}`)
+      await apiClient.post(`/api/v1/orders/${orderId}/${endpoint}`)
       toast({
         title: "Order updated",
         description: `Order has been ${actionName.toLowerCase()} successfully.`,

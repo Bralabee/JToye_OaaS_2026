@@ -107,7 +107,7 @@ export default function ShopsPage() {
   const fetchShops = async () => {
     try {
       setLoading(true)
-      const response = await apiClient.get(`/shops?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
+      const response = await apiClient.get(`/api/v1/shops?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       setShops(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
@@ -125,7 +125,7 @@ export default function ShopsPage() {
 
   const searchShops = async (query: string) => {
     try {
-      const response = await apiClient.get(`/shops/search?q=${encodeURIComponent(query)}`)
+      const response = await apiClient.get(`/api/v1/shops/search?q=${encodeURIComponent(query)}`)
       setShops(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
@@ -185,14 +185,14 @@ export default function ShopsPage() {
 
       if (editingShop) {
         // Update existing shop
-        await apiClient.put(`/shops/${editingShop.id}`, payload)
+        await apiClient.put(`/api/v1/shops/${editingShop.id}`, payload)
         toast({
           title: "Shop updated",
           description: `${data.name} has been updated successfully.`,
         })
       } else {
         // Create new shop
-        await apiClient.post("/shops", payload)
+        await apiClient.post("/api/v1/shops", payload)
         toast({
           title: "Shop created",
           description: `${data.name} has been created successfully.`,
@@ -220,7 +220,7 @@ export default function ShopsPage() {
 
     try {
       setSubmitting(true)
-      await apiClient.delete(`/shops/${deletingShop.id}`)
+      await apiClient.delete(`/api/v1/shops/${deletingShop.id}`)
       toast({
         title: "Shop deleted",
         description: `${deletingShop.name} has been deleted successfully.`,
@@ -455,7 +455,7 @@ export default function ShopsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <ImageUploader
                     currentImageUrl={editingShop.logoUrl}
-                    uploadUrl={`/shops/${editingShop.id}/logo`}
+                    uploadUrl={`/api/v1/shops/${editingShop.id}/logo`}
                     onUploadComplete={(url) => {
                       setEditingShop({ ...editingShop, logoUrl: url })
                       setValue("logoUrl", url)
@@ -463,7 +463,7 @@ export default function ShopsPage() {
                     }}
                     onRemove={async () => {
                       try {
-                        await apiClient.delete(`/shops/${editingShop.id}/logo`)
+                        await apiClient.delete(`/api/v1/shops/${editingShop.id}/logo`)
                         setEditingShop({ ...editingShop, logoUrl: null })
                         setValue("logoUrl", "")
                         fetchShops()
@@ -476,7 +476,7 @@ export default function ShopsPage() {
                   />
                   <ImageUploader
                     currentImageUrl={editingShop.bannerUrl}
-                    uploadUrl={`/shops/${editingShop.id}/banner`}
+                    uploadUrl={`/api/v1/shops/${editingShop.id}/banner`}
                     onUploadComplete={(url) => {
                       setEditingShop({ ...editingShop, bannerUrl: url })
                       setValue("bannerUrl", url)
@@ -484,7 +484,7 @@ export default function ShopsPage() {
                     }}
                     onRemove={async () => {
                       try {
-                        await apiClient.delete(`/shops/${editingShop.id}/banner`)
+                        await apiClient.delete(`/api/v1/shops/${editingShop.id}/banner`)
                         setEditingShop({ ...editingShop, bannerUrl: null })
                         setValue("bannerUrl", "")
                         fetchShops()

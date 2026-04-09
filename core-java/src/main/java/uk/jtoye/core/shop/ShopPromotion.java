@@ -20,8 +20,15 @@ public class ShopPromotion {
     @Column(nullable = false)
     private String label;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", nullable = false)
+    private DiscountType discountType = DiscountType.PERCENTAGE;
+
     @Column(name = "discount_percent")
     private Integer discountPercent;
+
+    @Column(name = "discount_amount_pennies")
+    private Integer discountAmountPennies;
 
     @Column(length = 100)
     private String category;
@@ -45,8 +52,12 @@ public class ShopPromotion {
     public void setShopId(UUID shopId) { this.shopId = shopId; }
     public String getLabel() { return label; }
     public void setLabel(String label) { this.label = label; }
+    public DiscountType getDiscountType() { return discountType; }
+    public void setDiscountType(DiscountType discountType) { this.discountType = discountType; }
     public Integer getDiscountPercent() { return discountPercent; }
     public void setDiscountPercent(Integer discountPercent) { this.discountPercent = discountPercent; }
+    public Integer getDiscountAmountPennies() { return discountAmountPennies; }
+    public void setDiscountAmountPennies(Integer discountAmountPennies) { this.discountAmountPennies = discountAmountPennies; }
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
     public OffsetDateTime getValidFrom() { return validFrom; }

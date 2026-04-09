@@ -78,13 +78,13 @@ export default function DashboardPage() {
 
       const [shopsRes, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
         await Promise.all([
-          apiClient.get("/shops?size=1"),
-          apiClient.get("/products?size=1"),
-          apiClient.get("/orders?size=1"),
-          apiClient.get("/customers?size=1"),
-          apiClient.get("/orders?size=10&sort=createdAt,desc"),
-          apiClient.get("/orders?size=200"),
-          apiClient.get("/financial-transactions/summary").catch(() => ({ data: null })),
+          apiClient.get("/api/v1/shops?size=1"),
+          apiClient.get("/api/v1/products?size=1"),
+          apiClient.get("/api/v1/orders?size=1"),
+          apiClient.get("/api/v1/customers?size=1"),
+          apiClient.get("/api/v1/orders?size=10&sort=createdAt,desc"),
+          apiClient.get("/api/v1/orders?size=200"),
+          apiClient.get("/api/v1/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 
       setStats({

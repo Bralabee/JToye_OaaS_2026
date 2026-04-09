@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.EmailNotificationService;
 
@@ -48,6 +49,9 @@ class OrderStateChangeListenerTest {
     @Mock
     private BusinessMetricsService metrics;
 
+    @Mock
+    private SimpMessagingTemplate simpMessagingTemplate;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
@@ -55,7 +59,7 @@ class OrderStateChangeListenerTest {
         java.sql.PreparedStatement mockStmt = mock(java.sql.PreparedStatement.class);
         lenient().when(mockConn.prepareStatement(any(String.class))).thenReturn(mockStmt);
         lenient().doAnswer(inv -> { inv.<org.hibernate.jdbc.Work>getArgument(0).execute(mockConn); return null; }).when(hibernateSession).doWork(any());
-        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService, entityManager, metrics);
+        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService, entityManager, metrics, simpMessagingTemplate);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -142,5 +146,67 @@ class OrderStateChangeListenerTest {
         listener.handleOrderStateChange(event);
 
         verifyNoInteractions(emailService);
+    }
+
+    @Test
+    @DisplayName("Should broadcast order state change to WebSocket topic")
+    void handleOrderStateChange_broadcastsToWebSocket() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                orderId, tenantId, "ORD-WS-001",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now()
+        );
+
+        Order order = new Order();
+        order.setShopId(shopId);
+        order.setCustomerEmail("ws@example.com");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        listener.handleOrderStateChange(event);
+
+        String expectedTopic = "/topic/kitchen/" + tenantId + "/" + shopId;
+        verify(simpMessagingTemplate).convertAndSend(expectedTopic, event);
+    }
+
+    @Test
+    @DisplayName("Should skip WebSocket broadcast when order not found")
+    void handleOrderStateChange_skipsWebSocketWhenOrderNotFound() {
+        UUID orderId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                orderId, UUID.randomUUID(), "ORD-WS-MISSING",
+                OrderStatus.READY, OrderStatus.COMPLETED, OffsetDateTime.now()
+        );
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
+
+        listener.handleOrderStateChange(event);
+
+        verify(simpMessagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
+    @Test
+    @DisplayName("Should continue pipeline when WebSocket broadcast fails")
+    void handleOrderStateChange_webSocketFailureDoesNotBlockPipeline() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                orderId, tenantId, "ORD-WS-FAIL",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now()
+        );
+
+        Order order = new Order();
+        order.setShopId(shopId);
+        order.setCustomerEmail("fail@example.com");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        doThrow(new RuntimeException("WebSocket down"))
+                .when(simpMessagingTemplate).convertAndSend(anyString(), any(Object.class));
+
+        listener.handleOrderStateChange(event);
+
+        // Email pipeline should still execute despite WebSocket failure
+        verify(emailService).sendOrderConfirmed(event, "fail@example.com");
     }
 }

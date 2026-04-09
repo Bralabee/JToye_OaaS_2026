@@ -23,8 +23,11 @@ import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopAnnouncementRepository;
 import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
+import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
@@ -64,11 +67,13 @@ public class PublicStorefrontService {
     private final EntityManager entityManager;
     private final PaymentService paymentService;
     private final ShopPromotionRepository promotionRepository;
+    private final ShopAnnouncementRepository announcementRepository;
 
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
                                    EntityManager entityManager, PaymentService paymentService,
-                                   ShopPromotionRepository promotionRepository) {
+                                   ShopPromotionRepository promotionRepository,
+                                   ShopAnnouncementRepository announcementRepository) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
@@ -76,6 +81,7 @@ public class PublicStorefrontService {
         this.entityManager = entityManager;
         this.paymentService = paymentService;
         this.promotionRepository = promotionRepository;
+        this.announcementRepository = announcementRepository;
     }
 
     /**
@@ -86,7 +92,11 @@ public class PublicStorefrontService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
 
         ShopConfigDto config = new ShopConfigDto();
-        config.setAnnouncements(shop.getAnnouncements() != null ? shop.getAnnouncements() : List.of());
+        // Announcements from shop_announcements table (V29) — query active within date window
+        List<ShopConfigDto.AnnouncementSummary> announcements = announcementRepository.findActiveByShopId(shop.getId()).stream()
+                .map(a -> new ShopConfigDto.AnnouncementSummary(a.getTitle(), a.getBody(), a.getValidUntil()))
+                .toList();
+        config.setAnnouncements(announcements);
 
         // Fetch featured products
         TenantContext.set(shop.getTenantId());
@@ -105,11 +115,50 @@ public class PublicStorefrontService {
 
         // Fetch active promotions
         List<ShopConfigDto.PromotionDto> promos = promotionRepository.findActiveByShopId(shop.getId()).stream()
-                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountPercent(), p.getCategory(), p.getValidUntil()))
+                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountType(), p.getDiscountPercent(), p.getDiscountAmountPennies(), p.getCategory(), p.getValidUntil()))
                 .toList();
         config.setActivePromotions(promos);
 
         return config;
+    }
+
+    /**
+     * Get active promotions for a published shop.
+     */
+    public List<PublicPromotionDto> getActivePromotions(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        return promotionRepository.findActiveByShopId(shop.getId()).stream()
+                .map(p -> {
+                    PublicPromotionDto dto = new PublicPromotionDto();
+                    dto.setLabel(p.getLabel());
+                    dto.setDiscountType(p.getDiscountType());
+                    dto.setDiscountPercent(p.getDiscountPercent());
+                    dto.setDiscountAmountPennies(p.getDiscountAmountPennies());
+                    dto.setCategory(p.getCategory());
+                    dto.setValidUntil(p.getValidUntil());
+                    return dto;
+                })
+                .toList();
+    }
+
+    /**
+     * Get active announcements for a published shop.
+     */
+    public List<PublicAnnouncementDto> getActiveAnnouncements(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        return announcementRepository.findActiveByShopId(shop.getId()).stream()
+                .map(a -> {
+                    PublicAnnouncementDto dto = new PublicAnnouncementDto();
+                    dto.setTitle(a.getTitle());
+                    dto.setBody(a.getBody());
+                    dto.setValidUntil(a.getValidUntil());
+                    return dto;
+                })
+                .toList();
     }
 
     /**

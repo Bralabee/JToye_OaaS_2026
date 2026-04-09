@@ -38,7 +38,7 @@ global.ResizeObserver = class {
 } as unknown as typeof ResizeObserver
 
 const defaultMock = (url: string) => {
-  if (url === '/financial-transactions/summary') {
+  if (url === '/api/v1/financial-transactions/summary') {
     return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
   }
   return Promise.resolve({ data: { content: [], totalElements: 0 } })
@@ -78,7 +78,7 @@ describe('Dashboard Page', () => {
 
   it('should fetch and display stats', async () => {
     mockedApiClient.get.mockImplementation((url: string) => {
-      if (url === '/financial-transactions/summary') return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
+      if (url === '/api/v1/financial-transactions/summary') return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
       return Promise.resolve({ data: { content: [], totalElements: 42 } })
     })
 
@@ -126,10 +126,10 @@ describe('Dashboard Page', () => {
     ]
 
     mockedApiClient.get.mockImplementation((url: string) => {
-      if (url === '/orders?size=10&sort=createdAt,desc') {
+      if (url === '/api/v1/orders?size=10&sort=createdAt,desc') {
         return Promise.resolve({ data: { content: mockOrders, totalElements: 1 } })
       }
-      if (url === '/financial-transactions/summary') {
+      if (url === '/api/v1/financial-transactions/summary') {
         return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
       }
       return Promise.resolve({ data: { content: [], totalElements: 5 } })
@@ -148,13 +148,13 @@ describe('Dashboard Page', () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/shops?size=1')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/products?size=1')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=1')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/customers?size=1')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=10&sort=createdAt,desc')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/orders?size=200')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/financial-transactions/summary')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/shops?size=1')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/products?size=1')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=1')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/customers?size=1')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=10&sort=createdAt,desc')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=200')
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/financial-transactions/summary')
     })
   })
 })

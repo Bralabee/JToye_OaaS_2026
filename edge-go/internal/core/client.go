@@ -77,7 +77,7 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/sync/batch", bytes.NewBuffer(payload))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/v1/sync/batch", bytes.NewBuffer(payload))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -122,7 +122,7 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 // ForwardWebhook sends a raw webhook payload to Core API
 func (c *Client) ForwardWebhook(ctx context.Context, token, tenantID string, source string, payload []byte) error {
 	_, err := c.breaker.Execute(func() (interface{}, error) {
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/webhooks/"+source, bytes.NewBuffer(payload))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/v1/webhooks/"+source, bytes.NewBuffer(payload))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
