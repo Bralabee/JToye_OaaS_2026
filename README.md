@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.3.0-green.svg)](CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-199%2F199%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-425%2F425%20passing-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -224,10 +224,10 @@ CREATE POLICY tenant_isolation ON shops
 ### Current Version: v1.3.0
 
 **Test Results:**
-- Backend: 130/130 passing ✅ (+ 37 Testcontainers integration tests, require Docker)
+- Backend: 312/312 passing ✅ (+ 44 Testcontainers integration tests, require Docker)
 - Edge: 26/26 passing ✅
 - Frontend: 43/43 passing ✅
-- Total: 199/199 (100%) ✅
+- Total: 425/425 (100%) ✅
 
 **Production Readiness:** 100/100
 
@@ -242,6 +242,10 @@ CREATE POLICY tenant_isolation ON shops
 - [x] Docker deployment
 - [x] Kubernetes manifests
 - [x] CI/CD pipeline
+- [x] API versioning (`/api/v1/`)
+- [x] Vendor marketing dashboard (promotions & announcements)
+- [x] Real-time kitchen display (WebSocket/STOMP)
+- [x] Stripe payment integration
 
 ---
 
