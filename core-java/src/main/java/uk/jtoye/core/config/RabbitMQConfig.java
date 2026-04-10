@@ -23,6 +23,11 @@ public class RabbitMQConfig {
     public static final String DLX_EXCHANGE = "order.events.dlx";
     public static final String DLQ_QUEUE = "order.state-changes.dlq";
 
+    public static final String PAYMENT_EVENTS_EXCHANGE = "payment.events";
+    public static final String PAYMENT_EVENTS_QUEUE = "payment.events";
+    public static final String PAYMENT_EVENTS_DLX = "payment.events.dlx";
+    public static final String PAYMENT_EVENTS_DLQ = "payment.events.dlq";
+
     @Bean
     public TopicExchange orderEventsExchange() {
         return new TopicExchange(ORDER_EVENTS_EXCHANGE);
@@ -56,6 +61,43 @@ public class RabbitMQConfig {
     public Binding deadLetterBinding() {
         return BindingBuilder.bind(deadLetterQueue())
                 .to(deadLetterExchange());
+    }
+
+    // --- Payment events topology ---
+
+    @Bean
+    public TopicExchange paymentEventsExchange() {
+        return new TopicExchange(PAYMENT_EVENTS_EXCHANGE);
+    }
+
+    @Bean
+    public FanoutExchange paymentDeadLetterExchange() {
+        return new FanoutExchange(PAYMENT_EVENTS_DLX);
+    }
+
+    @Bean
+    public Queue paymentEventsQueue() {
+        return QueueBuilder.durable(PAYMENT_EVENTS_QUEUE)
+                .withArgument("x-dead-letter-exchange", PAYMENT_EVENTS_DLX)
+                .build();
+    }
+
+    @Bean
+    public Queue paymentDeadLetterQueue() {
+        return QueueBuilder.durable(PAYMENT_EVENTS_DLQ).build();
+    }
+
+    @Bean
+    public Binding paymentEventsBinding(Queue paymentEventsQueue, TopicExchange paymentEventsExchange) {
+        return BindingBuilder.bind(paymentEventsQueue)
+                .to(paymentEventsExchange)
+                .with("payment.*");
+    }
+
+    @Bean
+    public Binding paymentDeadLetterBinding(Queue paymentDeadLetterQueue, FanoutExchange paymentDeadLetterExchange) {
+        return BindingBuilder.bind(paymentDeadLetterQueue)
+                .to(paymentDeadLetterExchange);
     }
 
     @Bean

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,8 +79,11 @@ func main() {
 	// Setup Gin
 	r := gin.Default()
 
-	// Global rate limiter
-	r.Use(rateLimiter(20, 40))
+	// Global rate limiter (configurable via env)
+	rps := getEnvInt("RATE_LIMIT_RPS", 20)
+	burst := getEnvInt("RATE_LIMIT_BURST", 40)
+	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
+	r.Use(rateLimiter(rps, burst))
 
 	// Public health endpoint
 	r.GET("/health", func(c *gin.Context) {
@@ -263,6 +267,15 @@ func main() {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			return parsed
+		}
 	}
 	return defaultValue
 }

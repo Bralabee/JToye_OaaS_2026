@@ -5,6 +5,32 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-10 (Milestone 2: Tier 3 Enhancements)
+
+### Breaking
+- **API versioning**: All REST endpoints now served under `/api/v1/` prefix. Webhooks (Stripe, WhatsApp), public storefront, actuator, and dev endpoints remain unprefixed. Clients must update base URLs
+
+### Added
+- **Vendor marketing dashboard**: `/dashboard/marketing` page with Promotions + Announcements CRUD. V29 migration extends `shop_promotions` with `discount_type` (PERCENTAGE/FLAT_AMOUNT) and `discount_amount_pennies`. New `announcements` table extracted from `shops.announcements` TEXT[]. `PromotionController` + `AnnouncementController` with scheduled validity windows. Public storefront endpoints for active promotions/announcements
+- **Real-time kitchen display**: `/dashboard/kitchen` page with WebSocket/STOMP live order feed. Spring `WebSocketConfig` at `/ws`, `JwtHandshakeInterceptor` for query-param auth, `TenantChannelInterceptor` (ExecutorChannelInterceptor) with 3-phase CONNECT/SUBSCRIBE/SEND security. `SimpMessagingTemplate` broadcasts to `/topic/kitchen/{tenantId}/{shopId}`. Frontend `useStomp` hook, order card grid with status bump buttons, age-based colour borders, Web Audio API alerts, shop selector, mute toggle. V30 migration denormalizes `product_name` onto `order_items` for rename-safe display
+- **Payment events on RabbitMQ**: New `payment.events` topic exchange with DLQ wiring. `PaymentEventPublisher` emits `PaymentEvent` (SUCCEEDED/FAILED) from Stripe webhook handlers. `PaymentEventAuditListener` consumes and audit-logs events — first consumer on the payment bus, proves end-to-end topology for future consumers (reconciliation, analytics, notifications)
+- **Edge rate limiter env vars**: `RATE_LIMIT_RPS` and `RATE_LIMIT_BURST` now wire through from environment to edge gateway. Previously documented but hardcoded at 20/40 in `main.go`. Defaults preserved for backwards compatibility
+
+### Fixed
+- **Frontend Docker healthcheck**: Changed from `localhost` to `127.0.0.1` — Next.js binds IPv4 only, Alpine `localhost` resolves to `::1` (IPv6), causing false "unhealthy" status
+- **V28 RLS policy GUC**: Fixed `app.tenant_id` → `app.current_tenant_id` mismatch
+- **V30 migration**: Uses `p.title` not `p.name` (products table column name)
+
+### Tests
+- **Test coverage closure** (Phase 8): PaymentController (4 tests), PublicStorefrontController (7 tests), JwtTenantFilter (6 tests), TenantFilter (5 tests), GdprController (5 tests)
+- **PaymentEventPublisher**: 3 unit tests covering succeeded/failed publishing and fire-and-forget exception swallowing
+- **Total**: 356 Java @Tests (+ 44 Testcontainers), 19 Go tests, 43 frontend unit tests, 15 Playwright e2e tests
+
+### Documentation
+- README test counts updated to reflect reality (425+ tests, not stale 199)
+- `.env.example` adds `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`
+- Milestone 2 features added to feature checklist
+
 ## [Unreleased] - Tier 2: Reliability
 
 ### Added
