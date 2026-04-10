@@ -32,15 +32,18 @@ public class PaymentService {
     private final StripeProperties stripeProperties;
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
+    private final PaymentEventPublisher paymentEventPublisher;
     private final FinancialTransactionService financialTransactionService;
 
     public PaymentService(StripeProperties stripeProperties,
                          OrderRepository orderRepository,
                          OrderEventPublisher eventPublisher,
+                         PaymentEventPublisher paymentEventPublisher,
                          FinancialTransactionService financialTransactionService) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
+        this.paymentEventPublisher = paymentEventPublisher;
         this.financialTransactionService = financialTransactionService;
     }
 
@@ -159,6 +162,11 @@ public class PaymentService {
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
                     OrderStatus.DRAFT, OrderStatus.PENDING);
 
+            // Publish payment succeeded event (for audit, analytics, reconciliation)
+            paymentEventPublisher.publishSucceeded(
+                    order.getId(), order.getTenantId(), order.getOrderNumber(),
+                    intent.getId(), order.getTotalAmountPennies(), "gbp");
+
             // Create financial transaction record
             financialTransactionService.createTransaction(
                     new CreateTransactionRequest(
@@ -198,7 +206,17 @@ public class PaymentService {
             order.setUpdatedAt(java.time.OffsetDateTime.now());
             orderRepository.save(order);
 
-            log.warn("Payment failed for order {} — PI: {}", order.getOrderNumber(), intent.getId());
+            String failureReason = intent.getLastPaymentError() != null
+                    ? intent.getLastPaymentError().getMessage()
+                    : "unknown";
+
+            // Publish payment failed event
+            paymentEventPublisher.publishFailed(
+                    order.getId(), order.getTenantId(), order.getOrderNumber(),
+                    intent.getId(), order.getTotalAmountPennies(), "gbp", failureReason);
+
+            log.warn("Payment failed for order {} — PI: {}: {}",
+                    order.getOrderNumber(), intent.getId(), failureReason);
         } finally {
             TenantContext.clear();
         }

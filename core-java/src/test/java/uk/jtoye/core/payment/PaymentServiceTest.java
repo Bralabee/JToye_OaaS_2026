@@ -37,6 +37,7 @@ class PaymentServiceTest {
     @Mock private StripeProperties stripeProperties;
     @Mock private OrderRepository orderRepository;
     @Mock private OrderEventPublisher eventPublisher;
+    @Mock private PaymentEventPublisher paymentEventPublisher;
     @Mock private FinancialTransactionService financialTransactionService;
 
     private PaymentService paymentService;
@@ -47,7 +48,8 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher, financialTransactionService);
+        paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher,
+                paymentEventPublisher, financialTransactionService);
 
         orderId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -146,6 +148,11 @@ class PaymentServiceTest {
             verify(eventPublisher).publishStateChange(
                     eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
                     eq(OrderStatus.DRAFT), eq(OrderStatus.PENDING));
+
+            // Verify payment succeeded event published
+            verify(paymentEventPublisher).publishSucceeded(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_test_123"), eq(1500L), eq("gbp"));
         }
     }
 
@@ -184,8 +191,12 @@ class PaymentServiceTest {
 
             // No financial transaction on failure
             verify(financialTransactionService, never()).createTransaction(any());
-            // No event published on failure
+            // No order state change published on failure (order stays DRAFT)
             verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any());
+            // But a payment.failed event IS published for audit/analytics
+            verify(paymentEventPublisher).publishFailed(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_test_fail"), eq(1500L), eq("gbp"), any());
         }
     }
 
