@@ -23,6 +23,12 @@ const customJestConfig = {
     '**/__tests__/**/*.[jt]s?(x)',
     '**/?(*.)+(spec|test).[jt]s?(x)',
   ],
+  // Exclude Playwright e2e specs — they use @playwright/test and break Jest's runner
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/e2e/',
+    '/.next/',
+  ],
 }
 
 module.exports = createJestConfig(customJestConfig)
