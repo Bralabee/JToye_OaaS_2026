@@ -31,7 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.env.example` adds `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`
 - Milestone 2 features added to feature checklist
 
-## [Unreleased] - Tier 2: Reliability
+---
+
+_The sections below were originally tagged `[Unreleased]` and accumulated across feature branches between v1.3.0 and v2.0.0. They all shipped as part of the v2.0.0 release and are preserved here with their original groupings for historical context._
+
+### Previously Unreleased: Tier 2 — Reliability
 
 ### Added
 - **Resilience4j circuit breakers**: Stripe payment (`stripe`), AI image analysis (`ai`) with fallback to `Optional.empty()`. Configurable sliding window, failure thresholds, half-open state. Health indicators exposed via actuator
@@ -44,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@EnableScheduling` added to CoreApplication
 - `OrderStateChangeListener` now tracks business metrics on order state changes
 
-## [Unreleased] - Batch 4: Infrastructure & Process
+### Previously Unreleased: Batch 4 — Infrastructure & Process
 
 ### Added
 - **CORS from env vars**: `CorsConfig` now reads `CORS_ALLOWED_ORIGINS` from environment (comma-separated list). Defaults to `http://localhost:3000` for local dev. Unblocks real deployment with custom domains
@@ -57,14 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - 6 new GDPR service tests: export with orders/reviews, export with allergens, erasure anonymisation, empty data handling, not-found errors
 
-## [Unreleased] - Batch 5: Customer Experience
+### Previously Unreleased: Batch 5 — Customer Experience
 
 ### Added
 - **PostgreSQL full-text search**: V25 migration — weighted tsvector columns on products (title=A, category=B, description=C) and shops (name=A, tags=B). GIN indexes for fast ranked search with auto-updating triggers. Repositories gain `fullTextSearch()` with `ts_rank` ordering, LIKE fallback for short queries
 - **Delivery fee calculation**: V26 migration — `delivery_fee_pennies` and `free_delivery_threshold_pennies` on shops. Orders track delivery fee. Total = subtotal + VAT + delivery. Fee waived when subtotal exceeds threshold
 - **Customer reviews with photos**: V27 migration — reviews table with food/delivery split ratings (1-5), comments, photo URLs. One review per completed order. RLS for public read, customer write. `GET/POST /public/shops/{slug}/reviews` endpoints. `shop_ratings` aggregate view
 
-## [Unreleased] - Batch 3: Business Logic
+### Previously Unreleased: Batch 3 — Business Logic
 
 ### Added
 - **VAT at checkout**: V23 migration — `subtotal_pennies`, `vat_rate`, `vat_amount_pennies` on orders. 20% STANDARD VAT default for hot food. Frontend shows subtotal + VAT line + total in checkout
@@ -78,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PaymentService.isConfigured()` check prevents crash when Stripe is unconfigured
 - Untracked `build-local/` directory from git (was polluting diffs)
 
-## [Unreleased] - Batch 2: Stripe Payments
+### Previously Unreleased: Batch 2 — Stripe Payments
 
 ### Added
 - **Stripe integration**: `PaymentService` with PaymentIntent creation, webhook signature verification, automatic order state transitions
@@ -86,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two-step checkout**: Frontend refactored — customer details then Stripe PaymentElement with orange theme
 - **7 PaymentService tests**: init, webhook sig, success/failure, missing metadata, unhandled events
 
-## [Unreleased] - Image Upload & AI Recognition
+### Previously Unreleased: Image Upload & AI Recognition
 
 ### Added
 - **AI Image Recognition**: Claude Vision analyzes uploaded food/grocery images — identifies dishes (including Nigerian, West African, Caribbean cuisines), suggests ingredients, category, dietary tags, and allergen warnings
@@ -116,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Order tracking pages**: Removed guest email fallbacks — session email only
 - **Default AI model**: `gemma3:12b` (llava:7b crashes on some CUDA setups)
 
-## [Unreleased] - Public Storefront
+### Previously Unreleased: Public Storefront
 
 ### Added
 - **Public storefront**: Customer-facing shop discovery at `/shop` with Deliveroo-style UI, category navigation, dietary badges, allergen info
@@ -137,7 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Email notifications enabled by default**: `notification.email.enabled=true`
 - **SMTP defaults to Mailhog** in docker-compose for local dev
 
-## [Unreleased] - Quick Wins
+### Previously Unreleased: Quick Wins
 
 ### Added
 - **Email notifications**: `EmailNotificationService` with SMTP integration, wired into `OrderStateChangeListener` for COMPLETED and CANCELLED events. Async, configurable via `notification.email.enabled` and SMTP env vars.
@@ -150,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ESLint 9**: Upgraded from ESLint 8 to 9 (required by eslint-config-next 16.x)
 - **Next.js config**: Removed deprecated `experimental.instrumentationHook` (graduated to stable)
 
-## [Unreleased] - Housekeeping
+### Previously Unreleased: Housekeeping
 
 ### Fixed
 - **27 failing Java tests**: Fixed ProductControllerTest (wrong mock target), RateLimitConfig Redis connection in tests, OrderStateMachineServiceTest profile, broken YAML nesting in application-test.yml, DatabaseConfigurationValidator failing on H2
