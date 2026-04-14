@@ -5,7 +5,7 @@ import (
 )
 
 func TestParseMessage_MultipleItems(t *testing.T) {
-	order := ParseMessage("+447700900000", "2x Chocolate Cake, 1x Sourdough Bread")
+	order := ParseMessage("+447700900000", "2x Chocolate Cake\n1x Sourdough Bread")
 	if len(order.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(order.Items))
 	}
@@ -14,6 +14,24 @@ func TestParseMessage_MultipleItems(t *testing.T) {
 	}
 	if order.Items[1].Quantity != 1 || order.Items[1].ProductQuery != "Sourdough Bread" {
 		t.Errorf("item 1: got %d x %s", order.Items[1].Quantity, order.Items[1].ProductQuery)
+	}
+}
+
+// TestParseMessage_ProductNameWithCommas is the regression for fix #8:
+// the previous regex truncated "Eggs, Ham, Cheese" at the first comma.
+// With the newline-delimited grammar the full product query is preserved.
+func TestParseMessage_ProductNameWithCommas(t *testing.T) {
+	order := ParseMessage("+447700900000", "2x Eggs, Ham, Cheese\n3 Bread")
+	if len(order.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d: %+v", len(order.Items), order.Items)
+	}
+	if order.Items[0].Quantity != 2 || order.Items[0].ProductQuery != "Eggs, Ham, Cheese" {
+		t.Errorf("item 0: got %d x %q, want 2 x %q",
+			order.Items[0].Quantity, order.Items[0].ProductQuery, "Eggs, Ham, Cheese")
+	}
+	if order.Items[1].Quantity != 3 || order.Items[1].ProductQuery != "Bread" {
+		t.Errorf("item 1: got %d x %q, want 3 x %q",
+			order.Items[1].Quantity, order.Items[1].ProductQuery, "Bread")
 	}
 }
 
@@ -52,7 +70,7 @@ func TestParseWebhook_ValidPayload(t *testing.T) {
 					"messages": [{
 						"from": "447700900000",
 						"type": "text",
-						"text": {"body": "2x Cake, 1x Bread"}
+						"text": {"body": "2x Cake\n1x Bread"}
 					}]
 				}
 			}]
