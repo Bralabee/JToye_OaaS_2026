@@ -232,7 +232,7 @@ services:
 
   # MinIO — S3-compatible object storage for images
   minio:
-    image: minio/minio:latest
+    image: minio/minio:${MINIO_IMAGE_TAG:-latest}
     container_name: jtoye-minio
     command: server /data --console-address ":9001"
     environment:
@@ -253,7 +253,7 @@ services:
 
   # MinIO init — creates bucket with public-read policy
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
     container_name: jtoye-minio-init
     depends_on:
       minio:
@@ -270,7 +270,7 @@ services:
 
   # Ollama — local AI for image recognition (GPU-accelerated, free)
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     container_name: jtoye-ollama
     ports:
       - "11434:11434"
@@ -294,7 +294,7 @@ services:
 
   # Ollama model pull — downloads the vision model on first run
   ollama-init:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     container_name: jtoye-ollama-init
     depends_on:
       ollama:
