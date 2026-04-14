@@ -28,8 +28,11 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Service for order management operations.
@@ -252,28 +255,6 @@ public class OrderService {
     }
 
     /**
-     * Update order status (DEPRECATED - use transition methods instead).
-     * This method bypasses StateMachine validation.
-     * Kept for backward compatibility.
-     *
-     * @deprecated Use specific transition methods: submitOrder, confirmOrder, etc.
-     */
-    @Deprecated
-    public OrderDto updateOrderStatus(UUID orderId, OrderStatus newStatus) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-
-        log.warn("Updating order {} status without StateMachine validation: {} -> {}",
-                order.getOrderNumber(), order.getStatus(), newStatus);
-
-        order.setStatus(newStatus);
-        order.setUpdatedAt(OffsetDateTime.now());
-        order = orderRepository.save(order);
-
-        return orderMapper.toDto(order);
-    }
-
-    /**
      * Submit draft order for processing.
      * Transition: DRAFT → PENDING
      */
@@ -349,28 +330,12 @@ public class OrderService {
 
         // Decrement stock when order is confirmed (not on creation — vendor might reject)
         if (newStatus == OrderStatus.CONFIRMED) {
-            for (OrderItem item : order.getItems()) {
-                Product product = productRepository.findById(item.getProductId()).orElse(null);
-                if (product != null && product.getQuantityInStock() != null) {
-                    int newStock = product.getQuantityInStock() - item.getQuantity();
-                    product.setQuantityInStock(Math.max(0, newStock));
-                    productRepository.save(product);
-                    log.info("Decremented stock for product {}: {} -> {}",
-                            product.getSku(), product.getQuantityInStock() + item.getQuantity(), Math.max(0, newStock));
-                }
-            }
+            adjustStockInBatch(order.getItems(), -1, "Decremented");
         }
 
         // Restore stock when order is cancelled (if it was previously confirmed)
         if (newStatus == OrderStatus.CANCELLED && oldStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()) {
-            for (OrderItem item : order.getItems()) {
-                Product product = productRepository.findById(item.getProductId()).orElse(null);
-                if (product != null && product.getQuantityInStock() != null) {
-                    product.setQuantityInStock(product.getQuantityInStock() + item.getQuantity());
-                    productRepository.save(product);
-                    log.info("Restored stock for product {}: +{}", product.getSku(), item.getQuantity());
-                }
-            }
+            adjustStockInBatch(order.getItems(), +1, "Restored");
         }
 
         // Auto-create financial transaction when order is completed
@@ -385,6 +350,43 @@ public class OrderService {
         }
 
         return orderMapper.toDto(order);
+    }
+
+    /**
+     * Batch-adjust product stock for all items of an order.
+     *
+     * <p>Previously each item did a {@code findById} + {@code save} pair, causing N+1
+     * database round-trips per order. This helper issues a single {@code findAllById}
+     * and a single {@code saveAll}, so a 5-item order now hits the DB twice instead
+     * of ten times. Stock never drops below zero.
+     *
+     * @param items     order items to adjust
+     * @param direction -1 to decrement, +1 to restore
+     * @param verb      log verb ("Decremented" or "Restored")
+     */
+    private void adjustStockInBatch(List<OrderItem> items, int direction, String verb) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<UUID> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .distinct()
+                .toList();
+        Map<UUID, Product> byId = productRepository.findAllById(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, Function.identity()));
+        for (OrderItem item : items) {
+            Product product = byId.get(item.getProductId());
+            if (product == null || product.getQuantityInStock() == null) {
+                continue;
+            }
+            int oldStock = product.getQuantityInStock();
+            int newStock = Math.max(0, oldStock + (direction * item.getQuantity()));
+            product.setQuantityInStock(newStock);
+            log.info("{} stock for product {}: {} -> {}", verb, product.getSku(), oldStock, newStock);
+        }
+        if (!byId.isEmpty()) {
+            productRepository.saveAll(byId.values());
+        }
     }
 
     /**

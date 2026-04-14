@@ -15,4 +15,22 @@ public class StripeProperties {
 
     public String getWebhookSecret() { return webhookSecret; }
     public void setWebhookSecret(String webhookSecret) { this.webhookSecret = webhookSecret; }
+
+    /**
+     * Redacted toString so accidental logger calls (log.info("config={}", stripeProps))
+     * cannot leak the live Stripe API key or webhook secret. Both fields are
+     * masked while still showing whether they are set — useful for diagnostics.
+     */
+    @Override
+    public String toString() {
+        return "StripeProperties(apiKey=" + mask(apiKey)
+                + ", webhookSecret=" + mask(webhookSecret) + ")";
+    }
+
+    private static String mask(String value) {
+        if (value == null || value.isBlank()) {
+            return "<unset>";
+        }
+        return "***";
+    }
 }

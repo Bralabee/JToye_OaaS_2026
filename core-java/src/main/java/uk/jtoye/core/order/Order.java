@@ -1,5 +1,6 @@
 package uk.jtoye.core.order;
 
+import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
@@ -101,6 +102,17 @@ public class Order {
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
+
+    /**
+     * Optimistic-locking version column. JPA-managed; never mutated by callers.
+     * A concurrent write whose SELECT saw an older value will throw
+     * {@link org.springframework.orm.ObjectOptimisticLockingFailureException}
+     * on save(), preventing silent last-writer-wins clobbering of stock
+     * decrements and state transitions.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     // Constructors
     public Order() {
@@ -311,5 +323,11 @@ public class Order {
 
     public void setIdempotencyKey(String idempotencyKey) {
         this.idempotencyKey = idempotencyKey;
+    }
+
+    /** JPA-managed optimistic lock version. Null until the entity is flushed. */
+    @Nullable
+    public Long getVersion() {
+        return version;
     }
 }

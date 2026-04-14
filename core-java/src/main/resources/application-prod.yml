@@ -84,7 +84,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Production exposes ONLY health and info. Prometheus scrape must
+        # go via a cluster-internal sidecar or dedicated metrics port —
+        # the public /actuator/prometheus endpoint is a known cardinality
+        # leak surface and must not be reachable from the outside.
+        include: health,info
       base-path: /actuator
   endpoint:
     health:

@@ -2,13 +2,13 @@ package uk.jtoye.core.product;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -32,20 +32,27 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
     private final StorageService storageService;
+    private final TenantCacheEvictor cacheEvictor;
 
-    public ProductService(ProductRepository productRepository, ProductMapper productMapper, StorageService storageService) {
+    public ProductService(ProductRepository productRepository,
+                          ProductMapper productMapper,
+                          StorageService storageService,
+                          TenantCacheEvictor cacheEvictor) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
+        this.cacheEvictor = cacheEvictor;
     }
 
     /**
      * Create a new product.
      * Automatically assigns tenant from context.
      * Validates required fields per Natasha's Law (ingredients_text, allergen_mask, price).
-     * Evicts all product caches for the tenant to maintain consistency.
+     *
+     * <p>No cache eviction: a brand-new product cannot have an existing cached entry
+     * under any previous id, so there is nothing to invalidate. (Previous
+     * {@code @CacheEvict(allEntries=true)} nuked every tenant's cache on every create.)
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto createProduct(CreateProductRequest request) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -110,7 +117,6 @@ public class ProductService {
      * RLS ensures we can only update products belonging to our tenant.
      * Evicts all product caches for the tenant to maintain consistency.
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto updateProduct(UUID productId, CreateProductRequest request) {
         log.debug("Updating product {}: SKU={}, title={}",
                 productId, request.getSku(), request.getTitle());
@@ -123,6 +129,7 @@ public class ProductService {
 
         // Save with flush to ensure immediate persistence
         product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Updated product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
@@ -133,7 +140,6 @@ public class ProductService {
     /**
      * Upload an image for a product. Replaces any existing image.
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto uploadImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
@@ -147,6 +153,7 @@ public class ProductService {
         String url = storageService.upload(tenantId, "products", productId, file);
         product.setImageUrl(url);
         product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Uploaded image for product {} (SKU: {})", productId, product.getSku());
         return productMapper.toDto(product);
@@ -155,7 +162,6 @@ public class ProductService {
     /**
      * Remove the image from a product.
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto removeImage(UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
@@ -163,6 +169,7 @@ public class ProductService {
         storageService.delete(product.getImageUrl());
         product.setImageUrl(null);
         product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed image for product {} (SKU: {})", productId, product.getSku());
         return productMapper.toDto(product);
@@ -171,7 +178,6 @@ public class ProductService {
     /**
      * Add an additional image to the product gallery (max 5).
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto addAdditionalImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
@@ -186,6 +192,7 @@ public class ProductService {
         String url = storageService.upload(tenantId, "products", productId, file, ImageType.PRODUCT);
         product.getAdditionalImageUrls().add(url);
         product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Added additional image for product {} ({} total)", productId, product.getAdditionalImageUrls().size());
         return productMapper.toDto(product);
@@ -194,7 +201,6 @@ public class ProductService {
     /**
      * Remove an additional image by index.
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public ProductDto removeAdditionalImage(UUID productId, int index) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
@@ -207,6 +213,7 @@ public class ProductService {
         String removedUrl = urls.remove(index);
         storageService.delete(removedUrl);
         product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed additional image {} for product {}", index, productId);
         return productMapper.toDto(product);
@@ -215,9 +222,8 @@ public class ProductService {
     /**
      * Delete product by ID (tenant-scoped).
      * RLS ensures we can only delete products belonging to our tenant.
-     * Evicts all product caches for the tenant to maintain consistency.
+     * Evicts ONLY this product's cache entry under the current tenant.
      */
-    @CacheEvict(value = "products", allEntries = true, beforeInvocation = false)
     public void deleteProduct(UUID productId) {
         log.debug("Deleting product {}", productId);
 
@@ -229,6 +235,7 @@ public class ProductService {
         product.getAdditionalImageUrls().forEach(storageService::delete);
 
         productRepository.delete(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
     }

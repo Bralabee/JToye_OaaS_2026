@@ -2,13 +2,13 @@ package uk.jtoye.core.shop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
@@ -27,14 +27,21 @@ public class ShopService {
     private final ShopRepository shopRepository;
     private final ShopMapper shopMapper;
     private final StorageService storageService;
+    private final TenantCacheEvictor cacheEvictor;
 
-    public ShopService(ShopRepository shopRepository, ShopMapper shopMapper, StorageService storageService) {
+    public ShopService(ShopRepository shopRepository,
+                       ShopMapper shopMapper,
+                       StorageService storageService,
+                       TenantCacheEvictor cacheEvictor) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
+        this.cacheEvictor = cacheEvictor;
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
+    // createShop inserts a brand-new entity; no existing cache key could match it,
+    // so no eviction is required. (Previously @CacheEvict(allEntries=true) blew
+    // away every tenant's cache on a single tenant's write.)
     public ShopDto createShop(CreateShopRequest request) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -88,7 +95,6 @@ public class ShopService {
                 .toList();
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto updateShop(UUID shopId, CreateShopRequest request) {
         log.debug("Updating shop {}", shopId);
 
@@ -103,13 +109,13 @@ public class ShopService {
         }
 
         shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Updated shop {} with ID {}", shop.getName(), shop.getId());
 
         return shopMapper.toDto(shop);
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto uploadLogo(UUID shopId, MultipartFile file) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
@@ -122,12 +128,12 @@ public class ShopService {
         String url = storageService.uploadNamed(tenantId, "shops", shopId, "logo", file);
         shop.setLogoUrl(url);
         shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Uploaded logo for shop {}", shopId);
         return shopMapper.toDto(shop);
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto removeLogo(UUID shopId) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
@@ -135,12 +141,12 @@ public class ShopService {
         storageService.delete(shop.getLogoUrl());
         shop.setLogoUrl(null);
         shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Removed logo for shop {}", shopId);
         return shopMapper.toDto(shop);
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto uploadBanner(UUID shopId, MultipartFile file) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
@@ -153,12 +159,12 @@ public class ShopService {
         String url = storageService.uploadNamed(tenantId, "shops", shopId, "banner", file);
         shop.setBannerUrl(url);
         shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Uploaded banner for shop {}", shopId);
         return shopMapper.toDto(shop);
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public ShopDto removeBanner(UUID shopId) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
@@ -166,12 +172,12 @@ public class ShopService {
         storageService.delete(shop.getBannerUrl());
         shop.setBannerUrl(null);
         shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Removed banner for shop {}", shopId);
         return shopMapper.toDto(shop);
     }
 
-    @CacheEvict(value = "shops", allEntries = true, beforeInvocation = false)
     public void deleteShop(UUID shopId) {
         log.debug("Deleting shop {}", shopId);
 
@@ -183,6 +189,7 @@ public class ShopService {
         storageService.delete(shop.getBannerUrl());
 
         shopRepository.delete(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
     }

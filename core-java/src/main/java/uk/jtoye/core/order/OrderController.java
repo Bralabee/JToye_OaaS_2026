@@ -99,7 +99,7 @@ public class OrderController {
      */
     @PutMapping("/{id}")
     @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders")
-    public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @RequestBody UpdateOrderRequest request) {
+    public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
         OrderDto order = orderService.updateOrder(id, request);
         return ResponseEntity.ok(order);
     }
@@ -135,19 +135,6 @@ public class OrderController {
     public ResponseEntity<List<OrderDto>> getOrdersByCustomer(@PathVariable UUID customerId) {
         List<OrderDto> orders = orderService.getOrdersByCustomer(customerId);
         return ResponseEntity.ok(orders);
-    }
-
-    /**
-     * Update order status.
-     * PATCH /orders/{id}/status
-     */
-    @PatchMapping("/{id}/status")
-    @Operation(summary = "Update order status", description = "Updates the status of an order")
-    public ResponseEntity<OrderDto> updateOrderStatus(
-            @PathVariable UUID id,
-            @RequestParam OrderStatus status) {
-        OrderDto order = orderService.updateOrderStatus(id, status);
-        return ResponseEntity.ok(order);
     }
 
     /**

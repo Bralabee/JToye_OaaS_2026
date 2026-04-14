@@ -14,6 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatRate;
@@ -28,6 +30,14 @@ import uk.jtoye.core.security.TenantContext;
 @Service
 public class PaymentService {
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+
+    /**
+     * Guard so the static Stripe.apiKey assignment happens at most once per
+     * JVM, even if multiple PaymentService beans are instantiated in different
+     * Spring contexts (e.g. nested test slices). Also lets tests observe
+     * idempotency without spilling the key to logs.
+     */
+    static final AtomicBoolean STRIPE_INITIALIZED = new AtomicBoolean(false);
 
     private final StripeProperties stripeProperties;
     private final OrderRepository orderRepository;
@@ -49,11 +59,17 @@ public class PaymentService {
 
     @PostConstruct
     void init() {
-        if (!stripeProperties.getApiKey().isBlank()) {
-            Stripe.apiKey = stripeProperties.getApiKey();
-            log.info("Stripe API key configured");
-        } else {
+        if (stripeProperties.getApiKey() == null || stripeProperties.getApiKey().isBlank()) {
             log.warn("Stripe API key not configured — payment processing will fail");
+            return;
+        }
+        // Idempotent: Stripe.apiKey is a static field, so we must only assign
+        // it once per JVM. A second call is harmless but the guard makes the
+        // intent explicit and keeps tests deterministic.
+        if (STRIPE_INITIALIZED.compareAndSet(false, true)) {
+            Stripe.apiKey = stripeProperties.getApiKey();
+            // NEVER log the key itself — only the fact that it was loaded.
+            log.info("Stripe API key configured (key redacted)");
         }
     }
 
