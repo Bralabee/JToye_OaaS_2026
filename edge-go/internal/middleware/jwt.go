@@ -70,7 +70,10 @@ func (m *JWTMiddleware) Validate() gin.HandlerFunc {
 			return
 		}
 
-		// Parse and validate token
+		// Parse and validate token.
+		// WithLeeway tolerates 30s of clock skew between Keycloak and this
+		// node so a mildly out-of-sync pod does not start 401-ing valid
+		// tokens on exp / nbf boundaries.
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			// Verify signing method
 			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
@@ -104,7 +107,7 @@ func (m *JWTMiddleware) Validate() gin.HandlerFunc {
 			}
 
 			return publicKey, nil
-		})
+		}, jwt.WithLeeway(30*time.Second))
 
 		if err != nil {
 			m.logger.Warn("JWT validation failed", zap.Error(err))
