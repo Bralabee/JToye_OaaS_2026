@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -44,6 +45,9 @@ class ProductServiceTest {
 
     @Mock
     private StorageService storageService;
+
+    @Mock
+    private TenantCacheEvictor cacheEvictor;
 
     @InjectMocks
     private ProductService productService;
