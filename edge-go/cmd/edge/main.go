@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,8 +45,11 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 	return token, true
 }
 
-// Simple token bucket rate limiter middleware
-func rateLimiter(rps int, burst int) gin.HandlerFunc {
+// Simple token bucket rate limiter middleware.
+// The refill goroutine is tied to the supplied context so it exits cleanly
+// on graceful shutdown instead of leaking the ticker + goroutine for the
+// process lifetime.
+func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 	tokens := make(chan struct{}, burst)
 	// fill bucket initially
 	for i := 0; i < burst; i++ {
@@ -53,10 +58,16 @@ func rateLimiter(rps int, burst int) gin.HandlerFunc {
 	// refill goroutine
 	ticker := time.NewTicker(time.Second / time.Duration(rps))
 	go func() {
-		for range ticker.C {
+		defer ticker.Stop()
+		for {
 			select {
-			case tokens <- struct{}{}:
-			default:
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case tokens <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -86,6 +97,11 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
+	// Root context cancelled on SIGINT/SIGTERM; used to stop background
+	// goroutines (rate limiter refill, future workers) on graceful shutdown.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	// Configuration from environment
 	coreAPIURL := getEnv("CORE_API_URL", "http://localhost:9090")
 	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8085/realms/jtoye-dev")
@@ -106,7 +122,7 @@ func main() {
 	rps := getEnvInt("RATE_LIMIT_RPS", 20)
 	burst := getEnvInt("RATE_LIMIT_BURST", 40)
 	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
-	r.Use(rateLimiter(rps, burst))
+	r.Use(rateLimiter(ctx, rps, burst))
 
 	// Public health endpoint
 	r.GET("/health", func(c *gin.Context) {
@@ -297,9 +313,27 @@ func main() {
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))
 
-	if err := r.Run(":" + port); err != nil {
-		logger.Fatal("Failed to start server", zap.Error(err))
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
 	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	// Block until the root context is cancelled (SIGINT/SIGTERM).
+	<-ctx.Done()
+	logger.Info("Shutdown signal received, draining connections")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", zap.Error(err))
+	}
+	// cancel() is already deferred above, which stops the rate limiter ticker.
 }
 
 func getEnv(key, defaultValue string) string {
