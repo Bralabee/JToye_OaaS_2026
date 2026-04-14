@@ -46,8 +46,19 @@ export default function TrackOrderPage() {
 function TrackOrderContent() {
   const searchParams = useSearchParams()
   const [orderNumber, setOrderNumber] = useState(searchParams.get("order") || "")
-  const sessionEmail = getCustomerSession()?.profile?.email || ""
-  const [email] = useState(searchParams.get("email") || sessionEmail)
+  const [email, setEmail] = useState(searchParams.get("email") || "")
+  useEffect(() => {
+    if (email) return
+    let cancelled = false
+    getCustomerSession().then((session) => {
+      if (cancelled) return
+      if (session?.profile?.email) setEmail(session.profile.email)
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [order, setOrder] = useState<OrderStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

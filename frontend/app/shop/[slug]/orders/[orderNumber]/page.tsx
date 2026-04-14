@@ -62,12 +62,22 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
   const searchParams = useSearchParams()
 
-  // Use authenticated email, or fall back to the email stored during guest checkout
-  const sessionEmail = getCustomerSession()?.profile?.email || ""
+  // Use authenticated email, or fall back to the email stored during guest checkout.
+  // Session is cookie-backed now, so we hydrate asynchronously.
   const checkoutEmail = typeof window !== "undefined"
     ? localStorage.getItem(`jtoye-checkout-email-${slug}`) || ""
     : ""
-  const email = sessionEmail || checkoutEmail
+  const [email, setEmail] = useState<string>(checkoutEmail)
+  useEffect(() => {
+    let cancelled = false
+    getCustomerSession().then((session) => {
+      if (cancelled) return
+      if (session?.profile?.email) setEmail(session.profile.email)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const fetchStatus = useCallback(async () => {
     if (!email) {

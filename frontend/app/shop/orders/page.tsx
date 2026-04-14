@@ -93,9 +93,14 @@ function CustomerOrdersContent() {
   const [email, setEmail] = useState<string | null>(null)
 
   useEffect(() => {
-    const session = getCustomerSession()
-    if (session) {
-      setEmail(session.profile.email)
+    let cancelled = false
+    getCustomerSession().then((session) => {
+      if (cancelled) return
+      if (session) setEmail(session.profile.email)
+      else setLoading(false)
+    })
+    return () => {
+      cancelled = true
     }
   }, [])
 
