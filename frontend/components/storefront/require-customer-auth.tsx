@@ -18,9 +18,15 @@ export function RequireCustomerAuth({ children, message }: RequireCustomerAuthPr
   const [authenticated, setAuthenticated] = useState(false)
 
   useEffect(() => {
-    const session = getCustomerSession()
-    setAuthenticated(!!session)
-    setChecked(true)
+    let cancelled = false
+    getCustomerSession().then((session) => {
+      if (cancelled) return
+      setAuthenticated(!!session)
+      setChecked(true)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (!checked) {

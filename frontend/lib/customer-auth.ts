@@ -1,6 +1,17 @@
 /**
- * Lightweight customer auth using Keycloak's storefront-client (public client).
- * Uses OAuth Authorization Code flow with PKCE, stores tokens in localStorage.
+ * Customer auth using Keycloak's storefront-client (public PKCE client).
+ *
+ * Security model:
+ *   - OAuth tokens (access, refresh, id) are stored in HttpOnly cookies via
+ *     the /api/customer-auth/* Next.js API routes. They are NEVER readable
+ *     from JavaScript. This protects against XSS exfiltration.
+ *   - The browser keeps only a non-sensitive localStorage marker
+ *     (`jtoye-customer-logged-in`) + the expiry timestamp so that UI code
+ *     can synchronously answer "am I logged in" without a round-trip.
+ *   - Any code that needs customer profile data must await
+ *     `getCustomerSession()`, which reads the cookie-backed session via
+ *     /api/customer-auth/session.
+ *
  * Separate from vendor NextAuth to avoid config conflicts.
  */
 
@@ -8,53 +19,58 @@ const KC_BASE = process.env.NEXT_PUBLIC_KEYCLOAK_URL || "http://localhost:8085/r
 const CLIENT_ID = "storefront-client"
 const REDIRECT_URI = typeof window !== "undefined" ? `${window.location.origin}/shop/auth/callback` : ""
 
-interface CustomerTokens {
-  accessToken: string
-  refreshToken: string
-  idToken: string
-  expiresAt: number // unix seconds
-}
+const MARKER_KEY = "jtoye-customer-logged-in"
+const EXPIRES_KEY = "jtoye-customer-expires-at"
 
-interface CustomerProfile {
+export interface CustomerProfile {
   sub: string
   email: string
   name: string
   emailVerified: boolean
 }
 
-function getStoredTokens(): CustomerTokens | null {
-  if (typeof window === "undefined") return null
+export interface CustomerSession {
+  profile: CustomerProfile
+  expiresAt: number
+}
+
+function setMarker(expiresAt: number) {
+  if (typeof window === "undefined") return
   try {
-    const raw = localStorage.getItem("jtoye-customer-tokens")
-    if (!raw) return null
-    return JSON.parse(raw)
+    localStorage.setItem(MARKER_KEY, "true")
+    localStorage.setItem(EXPIRES_KEY, String(expiresAt))
   } catch {
-    return null
+    /* storage may be unavailable (private mode) — ignore */
   }
 }
 
-function storeTokens(tokens: CustomerTokens) {
-  localStorage.setItem("jtoye-customer-tokens", JSON.stringify(tokens))
-}
-
-function clearTokens() {
-  localStorage.removeItem("jtoye-customer-tokens")
-  localStorage.removeItem("jtoye-customer-profile")
-}
-
-function getStoredProfile(): CustomerProfile | null {
-  if (typeof window === "undefined") return null
+function clearMarker() {
+  if (typeof window === "undefined") return
   try {
-    const raw = localStorage.getItem("jtoye-customer-profile")
-    if (!raw) return null
-    return JSON.parse(raw)
+    localStorage.removeItem(MARKER_KEY)
+    localStorage.removeItem(EXPIRES_KEY)
+    // Legacy cleanup — remove any tokens left from pre-cookie versions
+    localStorage.removeItem("jtoye-customer-tokens")
+    localStorage.removeItem("jtoye-customer-profile")
   } catch {
-    return null
+    /* ignore */
   }
 }
 
-function storeProfile(profile: CustomerProfile) {
-  localStorage.setItem("jtoye-customer-profile", JSON.stringify(profile))
+/**
+ * Synchronous "am I probably logged in" check based on the localStorage
+ * marker. UI-only — cannot be trusted for security decisions.
+ */
+export function isLoggedIn(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    if (localStorage.getItem(MARKER_KEY) !== "true") return false
+    const exp = Number(localStorage.getItem(EXPIRES_KEY) || "0")
+    if (!exp) return false
+    return exp > Math.floor(Date.now() / 1000)
+  } catch {
+    return false
+  }
 }
 
 // Generate PKCE code verifier and challenge
@@ -84,7 +100,6 @@ export async function customerLogin(returnTo?: string) {
   const verifier = generateCodeVerifier()
   const challenge = await generateCodeChallenge(verifier)
 
-  // Store verifier for callback
   sessionStorage.setItem("jtoye-pkce-verifier", verifier)
   if (returnTo) sessionStorage.setItem("jtoye-auth-return", returnTo)
 
@@ -119,12 +134,13 @@ export async function customerRegister(returnTo?: string) {
     code_challenge_method: "S256",
   })
 
-  // Keycloak's registration URL
   window.location.href = `${KC_BASE}/protocol/openid-connect/registrations?${params}`
 }
 
 /**
- * Handle OAuth callback — exchange code for tokens.
+ * Handle OAuth callback — exchange code for tokens, then hand them off to the
+ * server to be stored as HttpOnly cookies. Returns the profile parsed from
+ * the id token (profile data is not sensitive; only the raw tokens are).
  */
 export async function handleCallback(code: string): Promise<CustomerProfile | null> {
   const verifier = sessionStorage.getItem("jtoye-pkce-verifier")
@@ -146,15 +162,26 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
     if (!response.ok) return null
 
     const data = await response.json()
+    const expiresAt = Math.floor(Date.now() / 1000) + data.expires_in
 
-    storeTokens({
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      idToken: data.id_token,
-      expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+    // Hand tokens to the server — they become HttpOnly cookies and then the
+    // access/refresh/id strings never touch JS again.
+    const loginRes = await fetch("/api/customer-auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tokens: {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          idToken: data.id_token,
+          expiresAt,
+        },
+      }),
     })
+    if (!loginRes.ok) return null
 
-    // Decode ID token to get profile (JWT payload is base64)
+    // Decode ID token to get profile for returning to the caller (non-sensitive).
     const payload = JSON.parse(atob(data.id_token.split(".")[1]))
     const profile: CustomerProfile = {
       sub: payload.sub,
@@ -163,7 +190,7 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
       emailVerified: payload.email_verified || false,
     }
 
-    storeProfile(profile)
+    setMarker(expiresAt)
     sessionStorage.removeItem("jtoye-pkce-verifier")
 
     return profile
@@ -173,39 +200,76 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
 }
 
 /**
- * Get current customer session.
+ * Fetch the current customer session from the server (cookie-backed).
+ * Returns null when the customer is not logged in or the session expired.
+ *
+ * NOTE: This is async. Components that need the profile should `await` it
+ * in a `useEffect`. For "should I render the nav as logged in" synchronous
+ * checks, use `isLoggedIn()`.
  */
-export function getCustomerSession(): { profile: CustomerProfile; tokens: CustomerTokens } | null {
-  const tokens = getStoredTokens()
-  const profile = getStoredProfile()
-  if (!tokens || !profile) return null
-
-  // Check if token is expired
-  if (tokens.expiresAt < Math.floor(Date.now() / 1000)) {
-    // Could refresh here, but for MVP just clear and return null
-    clearTokens()
+export async function getCustomerSession(): Promise<CustomerSession | null> {
+  try {
+    const res = await fetch("/api/customer-auth/session", {
+      credentials: "include",
+      cache: "no-store",
+    })
+    if (!res.ok) {
+      clearMarker()
+      return null
+    }
+    const data = (await res.json()) as {
+      authenticated: boolean
+      expiresAt: number | null
+      profile: CustomerProfile
+    }
+    if (!data.authenticated) {
+      clearMarker()
+      return null
+    }
+    // Refresh the marker so subsequent synchronous checks agree with server
+    if (data.expiresAt) setMarker(data.expiresAt)
+    return { profile: data.profile, expiresAt: data.expiresAt || 0 }
+  } catch {
     return null
   }
-
-  return { profile, tokens }
 }
 
 /**
- * Customer logout.
+ * Customer logout — clears HttpOnly cookies on the server, clears the
+ * localStorage marker, then follows the Keycloak end-session URL built by
+ * the server (so the raw id token never reaches the browser).
  */
-export function customerLogout() {
-  const tokens = getStoredTokens()
-  clearTokens()
+export async function customerLogout() {
+  try {
+    // Get the Keycloak logout URL while the cookie still exists
+    let logoutUrl = "/shop"
+    try {
+      const urlRes = await fetch("/api/customer-auth/logout-url?redirect=/shop", {
+        credentials: "include",
+        cache: "no-store",
+      })
+      if (urlRes.ok) {
+        const data = (await urlRes.json()) as { url?: string }
+        if (data.url) logoutUrl = data.url
+      }
+    } catch {
+      /* ignore — fall back to /shop */
+    }
 
-  // Redirect to Keycloak logout
-  if (tokens?.idToken) {
-    const params = new URLSearchParams({
-      id_token_hint: tokens.idToken,
-      post_logout_redirect_uri: `${window.location.origin}/shop`,
+    await fetch("/api/customer-auth/logout", {
+      method: "POST",
+      credentials: "include",
     })
-    window.location.href = `${KC_BASE}/protocol/openid-connect/logout?${params}`
-  } else {
-    window.location.href = "/shop"
+
+    clearMarker()
+    if (typeof window !== "undefined") {
+      window.location.href = logoutUrl
+    }
+  } catch {
+    clearMarker()
+    if (typeof window !== "undefined") {
+      window.location.href = "/shop"
+    }
   }
 }
 
@@ -216,4 +280,20 @@ export function getAuthReturnUrl(): string {
   const returnTo = sessionStorage.getItem("jtoye-auth-return")
   sessionStorage.removeItem("jtoye-auth-return")
   return returnTo || "/shop"
+}
+
+/**
+ * Fetch helper for any endpoint that needs customer authentication: forwards
+ * the request through a dedicated proxy (not yet needed by any caller — the
+ * current codebase only uses public endpoints). Kept here so new callers have
+ * an obvious, safe entry point rather than reaching for localStorage.
+ */
+export async function fetchWithCustomerAuth(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: "include",
+  })
 }

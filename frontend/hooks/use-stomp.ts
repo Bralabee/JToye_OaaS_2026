@@ -47,9 +47,17 @@ export function useStomp(
     const client = new Client({
       reconnectDelay: 5000,
       beforeConnect: async () => {
-        // Fetch fresh JWT on every connect/reconnect (handles token refresh per T-03)
-        const session = await getSession()
-        const token = session?.accessToken || ""
+        // Fetch fresh JWT on every connect/reconnect (handles token refresh per T-03).
+        // A failing getSession() must NOT crash the hook — fall back to an empty
+        // token and let the broker reject the connection cleanly so the retry
+        // loop keeps running.
+        let token = ""
+        try {
+          const session = await getSession()
+          token = session?.accessToken || ""
+        } catch (err) {
+          console.warn("useStomp: getSession() failed, connecting without token", err)
+        }
         client.brokerURL = getWsBrokerUrl(token)
       },
       onConnect: () => {

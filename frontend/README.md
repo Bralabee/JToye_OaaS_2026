@@ -149,6 +149,27 @@ To test the frontend:
    - `tenant-b-user` / `password`
 4. Verify tenant isolation (each user sees only their data)
 
+## Dependency Notes
+
+### next-auth pinned at `5.0.0-beta.30`
+
+We intentionally pin `next-auth` to `5.0.0-beta.30` in `package.json`. The
+`latest` dist-tag of next-auth currently points at the v4 line (`4.24.13`)
+which predates the App Router auth() helper and the Keycloak provider
+wiring we rely on in `auth.ts`. The v5 line is still tagged `beta` and the
+latest beta release is `5.0.0-beta.30` — the version we depend on.
+
+Verified as of 2026-04-14:
+
+```
+$ npm view next-auth dist-tags
+{ latest: '4.24.13', beta: '5.0.0-beta.30', ... }
+```
+
+When v5 goes stable, bump `"next-auth": "^5"` and re-run the test gate.
+Do NOT downgrade to v4 — `app/dashboard/layout.tsx` and `middleware.ts`
+depend on the v5 `auth()` export shape.
+
 ## 📝 License
 
 Part of the J'Toye OaaS project - Enterprise-grade order management platform.

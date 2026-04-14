@@ -13,8 +13,8 @@ interface CustomerProfile {
 export function StorefrontNav() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
 
-  const checkSession = useCallback(() => {
-    const session = getCustomerSession()
+  const checkSession = useCallback(async () => {
+    const session = await getCustomerSession()
     setProfile(session?.profile || null)
   }, [])
 
@@ -27,9 +27,9 @@ export function StorefrontNav() {
     const onVisibility = () => {
       if (document.visibilityState === "visible") checkSession()
     }
-    // Re-check on storage changes (covers cross-tab login)
+    // Re-check on storage changes (covers cross-tab login via marker)
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "jtoye-customer-tokens" || e.key === "jtoye-customer-profile") {
+      if (e.key === "jtoye-customer-logged-in" || e.key === "jtoye-customer-expires-at") {
         checkSession()
       }
     }
