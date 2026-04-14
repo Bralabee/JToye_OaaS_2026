@@ -8,7 +8,7 @@ echo "🚀 Starting J'Toye OaaS Development Environment"
 echo "================================================"
 
 # Colors
-GREEN='\033[0.32m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
@@ -20,13 +20,19 @@ docker compose up -d
 cd ..
 
 echo "Waiting for infrastructure to be ready..."
-sleep 15
 
-# Check if Keycloak is up
+# Poll Keycloak directly; no need for a blanket sleep.
+# Bounded at 120 attempts * 2s = 4 minutes.
 echo "Checking Keycloak..."
+attempt=0
 until curl -s http://localhost:8085/realms/jtoye-dev/.well-known/openid-configuration > /dev/null 2>&1; do
-  echo "  Waiting for Keycloak..."
-  sleep 5
+  attempt=$((attempt + 1))
+  if [[ $attempt -gt 120 ]]; then
+    echo -e "${YELLOW}✗ Keycloak did not become ready in 4 minutes. Check: docker compose logs keycloak${NC}"
+    exit 1
+  fi
+  echo "  Waiting for Keycloak... (attempt $attempt/120)"
+  sleep 2
 done
 echo -e "${GREEN}✓ Keycloak is ready${NC}"
 
@@ -58,7 +64,15 @@ echo "Frontend started with PID: $FRONTEND_PID"
 
 # Wait for frontend
 echo "Waiting for frontend to be ready..."
-sleep 10
+attempt=0
+until curl -s http://localhost:3000 > /dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [[ $attempt -gt 60 ]]; then
+    echo -e "${YELLOW}✗ Frontend did not become ready in 2 minutes. Check: tail -f logs/frontend.log${NC}"
+    exit 1
+  fi
+  sleep 2
+done
 echo -e "${GREEN}✓ Frontend is ready${NC}"
 
 # Done
