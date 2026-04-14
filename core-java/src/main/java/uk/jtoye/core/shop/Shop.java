@@ -1,5 +1,6 @@
 package uk.jtoye.core.shop;
 
+import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -130,6 +131,7 @@ public class Shop {
     public List<UUID> getFeaturedProductIds() { return featuredProductIds; }
     public void setFeaturedProductIds(List<UUID> featuredProductIds) { this.featuredProductIds = featuredProductIds; }
 
-    /** JPA-managed optimistic lock version. Exposed read-only for diagnostics. */
+    /** JPA-managed optimistic lock version. Null until the entity is flushed. */
+    @Nullable
     public Long getVersion() { return version; }
 }

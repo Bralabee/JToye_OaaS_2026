@@ -1,5 +1,6 @@
 package uk.jtoye.core.order;
 
+import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
@@ -324,7 +325,8 @@ public class Order {
         this.idempotencyKey = idempotencyKey;
     }
 
-    /** JPA-managed optimistic lock version. Exposed read-only for diagnostics. */
+    /** JPA-managed optimistic lock version. Null until the entity is flushed. */
+    @Nullable
     public Long getVersion() {
         return version;
     }
