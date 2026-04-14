@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,8 +22,34 @@ import (
 	"go.uber.org/zap"
 )
 
-// Simple token bucket rate limiter middleware
-func rateLimiter(rps int, burst int) gin.HandlerFunc {
+// extractBearerToken pulls a Bearer token out of the Authorization header.
+// Returns ("", false) if the header is missing, uses a different scheme, or
+// carries no token value. Callers must treat the boolean as authoritative —
+// never index into the header string directly.
+func extractBearerToken(c *gin.Context) (string, bool) {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return "", false
+	}
+	const prefix = "Bearer "
+	if len(authHeader) <= len(prefix) {
+		return "", false
+	}
+	if !strings.EqualFold(authHeader[:len(prefix)], prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(authHeader[len(prefix):])
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+// Simple token bucket rate limiter middleware.
+// The refill goroutine is tied to the supplied context so it exits cleanly
+// on graceful shutdown instead of leaking the ticker + goroutine for the
+// process lifetime.
+func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 	tokens := make(chan struct{}, burst)
 	// fill bucket initially
 	for i := 0; i < burst; i++ {
@@ -30,10 +58,16 @@ func rateLimiter(rps int, burst int) gin.HandlerFunc {
 	// refill goroutine
 	ticker := time.NewTicker(time.Second / time.Duration(rps))
 	go func() {
-		for range ticker.C {
+		defer ticker.Stop()
+		for {
 			select {
-			case tokens <- struct{}{}:
-			default:
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case tokens <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -63,6 +97,11 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
+	// Root context cancelled on SIGINT/SIGTERM; used to stop background
+	// goroutines (rate limiter refill, future workers) on graceful shutdown.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	// Configuration from environment
 	coreAPIURL := getEnv("CORE_API_URL", "http://localhost:9090")
 	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8085/realms/jtoye-dev")
@@ -83,27 +122,52 @@ func main() {
 	rps := getEnvInt("RATE_LIMIT_RPS", 20)
 	burst := getEnvInt("RATE_LIMIT_BURST", 40)
 	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
-	r.Use(rateLimiter(rps, burst))
+	r.Use(rateLimiter(ctx, rps, burst))
 
-	// Public health endpoint
+	// Liveness probe: does not depend on any downstream. A failing
+	// /health should cause the kubelet to restart the pod, so it must
+	// not report DOWN just because Core or Keycloak is having a bad day.
 	r.GET("/health", func(c *gin.Context) {
-		// Check Core API health
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		c.JSON(http.StatusOK, gin.H{
+			"edge":   "OK",
+			"uptime": time.Now().Unix(), // Placeholder
+		})
+	})
+
+	// Readiness probe: checks downstream dependencies (Core API and
+	// Keycloak JWKS). A failing /ready should cause the kubelet to pull
+	// the pod out of the Service endpoint set until things recover,
+	// without restarting it.
+	r.GET("/ready", func(c *gin.Context) {
+		readyCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 
-		coreHealthy := coreClient.HealthCheck(ctx) == nil
+		coreHealthy := coreClient.HealthCheck(readyCtx) == nil
 
-		status := gin.H{
-			"edge":   "OK",
-			"core":   map[string]bool{"healthy": coreHealthy},
-			"uptime": time.Now().Unix(), // Placeholder
+		jwksHealthy := true
+		jwksReq, err := http.NewRequestWithContext(readyCtx, http.MethodGet, jwksURL, nil)
+		if err != nil {
+			jwksHealthy = false
+		} else {
+			jwksResp, jerr := (&http.Client{Timeout: 2 * time.Second}).Do(jwksReq)
+			if jerr != nil || jwksResp == nil || jwksResp.StatusCode != http.StatusOK {
+				jwksHealthy = false
+			}
+			if jwksResp != nil {
+				jwksResp.Body.Close()
+			}
 		}
 
-		if !coreHealthy {
+		status := gin.H{
+			"edge": "OK",
+			"core": map[string]bool{"healthy": coreHealthy},
+			"jwks": map[string]bool{"healthy": jwksHealthy},
+		}
+
+		if !coreHealthy || !jwksHealthy {
 			c.JSON(http.StatusServiceUnavailable, status)
 			return
 		}
-
 		c.JSON(http.StatusOK, status)
 	})
 
@@ -123,7 +187,11 @@ func main() {
 
 		// Extract tenant and token from context
 		tenantID, _ := c.Get("tenant_id")
-		token := c.GetHeader("Authorization")[7:] // Strip "Bearer "
+		token, ok := extractBearerToken(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
+			return
+		}
 
 		if tenantID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
@@ -150,30 +218,32 @@ func main() {
 		signature := c.GetHeader("X-Hub-Signature-256")
 		appSecret := os.Getenv("WHATSAPP_APP_SECRET")
 
-		if appSecret != "" && signature != "" {
-			body, err := io.ReadAll(c.Request.Body)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
-				return
-			}
-			// Restore body for further processing
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+		// Fail-closed: refuse to accept webhooks if the signing secret is
+		// not configured. Previously an unset secret would silently skip
+		// signature verification, allowing anyone to inject orders.
+		if appSecret == "" {
+			logger.Error("WHATSAPP_APP_SECRET not configured; refusing webhook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook signing not configured"})
+			return
+		}
 
-			if !verifyWhatsAppSignature(body, signature, appSecret) {
-				logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-				return
-			}
-		} else if appSecret != "" {
+		if signature == "" {
 			logger.Warn("Missing WhatsApp webhook signature")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature"})
 			return
 		}
 
-		// Read body for parsing
 		body, err := io.ReadAll(c.Request.Body)
-		if err != nil && len(body) == 0 {
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
+			return
+		}
+		// Restore body for further processing
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+		if !verifyWhatsAppSignature(body, signature, appSecret) {
+			logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
 
@@ -190,21 +260,35 @@ func main() {
 			return
 		}
 
-		// Extract auth context
+		// Extract auth context. The route sits behind the JWT middleware, so
+		// a missing/blank bearer here is a programming error — reject rather
+		// than forward an unauthenticated request to Core.
 		tenantID, _ := c.Get("tenant_id")
-		token := ""
-		if authHeader := c.GetHeader("Authorization"); len(authHeader) > 7 {
-			token = authHeader[7:]
+		token, ok := extractBearerToken(c)
+		if !ok {
+			logger.Warn("WhatsApp webhook rejected: missing bearer token")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
+			return
 		}
 		tenantStr := ""
 		if tenantID != nil {
 			tenantStr = tenantID.(string)
 		}
+		if tenantStr == "" {
+			logger.Warn("WhatsApp webhook rejected: tenant_id missing from JWT")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
 
-		// Resolve product queries to UUIDs via Core API search
+		// Resolve product queries to UUIDs via Core API search.
+		// Require a confident match: either a single search hit, or an
+		// exact (case-insensitive) name match within a multi-hit result.
+		// Ambiguous queries are skipped with a warning instead of silently
+		// binding to products[0] — which previously let "bread" pick an
+		// arbitrary bread-adjacent SKU.
 		var orderItems []core.OrderItemRequest
 		for _, item := range parsedOrder.Items {
 			products, err := coreClient.SearchProducts(ctx, token, tenantStr, item.ProductQuery)
@@ -216,9 +300,29 @@ func main() {
 				logger.Warn("No product found for query", zap.String("query", item.ProductQuery))
 				continue
 			}
-			// Use first match
+
+			var matched *core.ProductSearchResult
+			if len(products) == 1 {
+				matched = &products[0]
+			} else {
+				// Prefer an exact case-insensitive title equality.
+				query := strings.TrimSpace(item.ProductQuery)
+				for i := range products {
+					if strings.EqualFold(strings.TrimSpace(products[i].Title), query) {
+						matched = &products[i]
+						break
+					}
+				}
+			}
+			if matched == nil {
+				logger.Warn("Ambiguous product query; skipping",
+					zap.String("query", item.ProductQuery),
+					zap.Int("candidates", len(products)))
+				continue
+			}
+
 			orderItems = append(orderItems, core.OrderItemRequest{
-				ProductID: products[0].ID,
+				ProductID: matched.ID,
 				Quantity:  item.Quantity,
 			})
 		}
@@ -259,9 +363,27 @@ func main() {
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))
 
-	if err := r.Run(":" + port); err != nil {
-		logger.Fatal("Failed to start server", zap.Error(err))
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
 	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	// Block until the root context is cancelled (SIGINT/SIGTERM).
+	<-ctx.Done()
+	logger.Info("Shutdown signal received, draining connections")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", zap.Error(err))
+	}
+	// cancel() is already deferred above, which stops the rate limiter ticker.
 }
 
 func getEnv(key, defaultValue string) string {
@@ -293,4 +415,3 @@ func verifyWhatsAppSignature(payload []byte, signature string, secret string) bo
 
 	return hmac.Equal([]byte(actualSignature), []byte(expectedSignature))
 }
-

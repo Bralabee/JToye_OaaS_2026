@@ -21,16 +21,29 @@ type Client struct {
 	logger  *zap.Logger
 }
 
-// NewClient creates a new Core API client with circuit breaker
+// NewClient creates a new Core API client with circuit breaker.
+//
+// ReadyToTrip requires a minimum of 10 observed requests before it will
+// ever open the breaker. This prevents cold-start trips: without this
+// threshold, a single early failure in a fresh pod (1/1 failures =
+// 100% ratio) would immediately open the breaker and shed load for
+// 60s even though Core is healthy.
+//
+// The counter window is 30s (gobreaker auto-resets counts on each
+// Interval tick while in the closed state), which is long enough to
+// see a handful of real requests under normal load.
 func NewClient(baseURL string, logger *zap.Logger) *Client {
 	cbSettings := gobreaker.Settings{
 		Name:        "CoreAPI",
 		MaxRequests: 3,
-		Interval:    10 * time.Second,
+		Interval:    30 * time.Second,
 		Timeout:     60 * time.Second,
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			if counts.Requests < 10 {
+				return false
+			}
 			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.6
+			return failureRatio >= 0.6
 		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
 			logger.Info("Circuit breaker state changed",
@@ -59,8 +72,8 @@ type BatchSyncRequest struct {
 
 // BatchSyncResponse represents the response from batch sync
 type BatchSyncResponse struct {
-	Status       string `json:"status"`
-	ProcessedCount int  `json:"processed_count"`
+	Status         string `json:"status"`
+	ProcessedCount int    `json:"processed_count"`
 }
 
 // SyncBatch sends a batch sync request to the Core API

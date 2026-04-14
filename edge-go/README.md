@@ -30,6 +30,10 @@ CORE_API_URL=http://localhost:9090
 JWKS_URL=http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/certs
 JWT_ISSUER=http://localhost:8085/realms/jtoye-dev
 
+# JWKS refresh cadence (optional, default 5m). Go time.ParseDuration format.
+# Invalid values are ignored and the default is used.
+JWKS_REFRESH_INTERVAL=5m
+
 # Server settings
 PORT=8080
 ```
