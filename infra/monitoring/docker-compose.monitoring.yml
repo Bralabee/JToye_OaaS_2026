@@ -61,7 +61,7 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     container_name: jtoye-postgres-exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://jtoye:secret@postgres:5432/jtoye?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_EXPORTER_USER:-jtoye}:${POSTGRES_EXPORTER_PASSWORD:?POSTGRES_EXPORTER_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-jtoye}?sslmode=${POSTGRES_EXPORTER_SSLMODE:-require}"
     ports:
       - "9187:9187"
     networks:
