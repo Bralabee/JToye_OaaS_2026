@@ -124,25 +124,50 @@ func main() {
 	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
 	r.Use(rateLimiter(ctx, rps, burst))
 
-	// Public health endpoint
+	// Liveness probe: does not depend on any downstream. A failing
+	// /health should cause the kubelet to restart the pod, so it must
+	// not report DOWN just because Core or Keycloak is having a bad day.
 	r.GET("/health", func(c *gin.Context) {
-		// Check Core API health
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		c.JSON(http.StatusOK, gin.H{
+			"edge":   "OK",
+			"uptime": time.Now().Unix(), // Placeholder
+		})
+	})
+
+	// Readiness probe: checks downstream dependencies (Core API and
+	// Keycloak JWKS). A failing /ready should cause the kubelet to pull
+	// the pod out of the Service endpoint set until things recover,
+	// without restarting it.
+	r.GET("/ready", func(c *gin.Context) {
+		readyCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 
-		coreHealthy := coreClient.HealthCheck(ctx) == nil
+		coreHealthy := coreClient.HealthCheck(readyCtx) == nil
 
-		status := gin.H{
-			"edge":   "OK",
-			"core":   map[string]bool{"healthy": coreHealthy},
-			"uptime": time.Now().Unix(), // Placeholder
+		jwksHealthy := true
+		jwksReq, err := http.NewRequestWithContext(readyCtx, http.MethodGet, jwksURL, nil)
+		if err != nil {
+			jwksHealthy = false
+		} else {
+			jwksResp, jerr := (&http.Client{Timeout: 2 * time.Second}).Do(jwksReq)
+			if jerr != nil || jwksResp == nil || jwksResp.StatusCode != http.StatusOK {
+				jwksHealthy = false
+			}
+			if jwksResp != nil {
+				jwksResp.Body.Close()
+			}
 		}
 
-		if !coreHealthy {
+		status := gin.H{
+			"edge": "OK",
+			"core": map[string]bool{"healthy": coreHealthy},
+			"jwks": map[string]bool{"healthy": jwksHealthy},
+		}
+
+		if !coreHealthy || !jwksHealthy {
 			c.JSON(http.StatusServiceUnavailable, status)
 			return
 		}
-
 		c.JSON(http.StatusOK, status)
 	})
 
