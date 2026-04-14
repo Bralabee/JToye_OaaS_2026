@@ -181,8 +181,11 @@ class OrderControllerIntegrationTest {
             OrderDto createdOrder = orderService.createOrder(request);
             assertThat(createdOrder.getStatus()).isEqualTo(OrderStatus.DRAFT);
 
-            // Update status
-            OrderDto updatedOrder = orderService.updateOrderStatus(createdOrder.getId(), OrderStatus.CONFIRMED);
+            // Update status through the proper state machine path:
+            // DRAFT → PENDING → CONFIRMED. The legacy updateOrderStatus() shortcut
+            // that bypassed the state machine was removed (see Audit Phase 2, Fix #5).
+            orderService.submitOrder(createdOrder.getId());
+            OrderDto updatedOrder = orderService.confirmOrder(createdOrder.getId());
 
             // Verify
             assertThat(updatedOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED);

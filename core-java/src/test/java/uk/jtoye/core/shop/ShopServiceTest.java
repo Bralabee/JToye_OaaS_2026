@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
@@ -44,6 +45,9 @@ class ShopServiceTest {
 
     @Mock
     private StorageService storageService;
+
+    @Mock
+    private TenantCacheEvictor cacheEvictor;
 
     @InjectMocks
     private ShopService shopService;
