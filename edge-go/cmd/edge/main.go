@@ -219,12 +219,24 @@ func main() {
 			return
 		}
 
-		// Extract auth context
+		// Extract auth context. The route sits behind the JWT middleware, so
+		// a missing/blank bearer here is a programming error — reject rather
+		// than forward an unauthenticated request to Core.
 		tenantID, _ := c.Get("tenant_id")
-		token, _ := extractBearerToken(c)
+		token, ok := extractBearerToken(c)
+		if !ok {
+			logger.Warn("WhatsApp webhook rejected: missing bearer token")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
+			return
+		}
 		tenantStr := ""
 		if tenantID != nil {
 			tenantStr = tenantID.(string)
+		}
+		if tenantStr == "" {
+			logger.Warn("WhatsApp webhook rejected: tenant_id missing from JWT")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
+			return
 		}
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
