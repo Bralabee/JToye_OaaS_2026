@@ -37,7 +37,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: frontend
-        image: ghcr.io/jtoye/frontend:latest
+        image: ghcr.io/jtoye/frontend:2.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
