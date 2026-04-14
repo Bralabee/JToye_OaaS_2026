@@ -199,10 +199,15 @@ export default function MarketingPage() {
   const [announcementSubmitting, setAnnouncementSubmitting] = useState(false)
   const [announcementStatusFilter, setAnnouncementStatusFilter] = useState<StatusFilter>("all")
 
-  // Forms
-  const promoForm = useForm<PromotionFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(promotionSchema) as any,
+  // Forms — type the form with z.input (pre-coerce) and z.output (post-coerce)
+  // explicitly so react-hook-form reconciles zod@v4 coerced fields and
+  // refinements without needing `as any`. The resolver's TContext is void.
+  const promoForm = useForm<
+    z.input<typeof promotionSchema>,
+    unknown,
+    z.output<typeof promotionSchema>
+  >({
+    resolver: zodResolver(promotionSchema),
     defaultValues: { discountType: "PERCENTAGE", active: true },
   })
 
