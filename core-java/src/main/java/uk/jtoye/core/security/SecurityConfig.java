@@ -49,6 +49,14 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtTenantFilter jwtTenantFilter, TenantFilter tenantFilter) throws Exception {
         http
+            // CSRF protection disabled: this is a stateless JWT bearer-token API.
+            // All authenticated requests must carry an Authorization: Bearer <jwt>
+            // header (see JwtTenantFilter + oauth2ResourceServer below) — no
+            // session cookies are issued, so there is no ambient credential a
+            // malicious cross-origin form submission could ride. A browser
+            // cannot synthesise the Bearer header from a <form action=...> POST,
+            // and CORS already restricts which origins may read responses.
+            // This is the standard stateless-API posture; see ADR-001.
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults()) // Enable CORS with default configuration
             .authorizeHttpRequests(auth -> auth
