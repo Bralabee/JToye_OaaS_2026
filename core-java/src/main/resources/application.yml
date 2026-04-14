@@ -88,7 +88,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        # Base profile exposes only health and info. Metrics and the
+        # Prometheus scrape endpoint are sensitive (cardinality leaks,
+        # hostname/tenant label leaks) and are explicitly opted-in per
+        # non-prod profile (application-local.yml, application-staging.yml).
+        # Production (application-prod.yml) keeps them disabled — scrape
+        # via sidecar or out-of-band tooling instead.
+        include: health,info
   endpoint:
     health:
       show-details: when-authorized
