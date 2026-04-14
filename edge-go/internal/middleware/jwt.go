@@ -31,6 +31,11 @@ type JWK struct {
 	E   string `json:"e"`
 }
 
+// jwksHTTPClient is used for all JWKS fetches. Uses a short overall timeout
+// so a wedged Keycloak cannot stall request handling for the default Go
+// client's 0 (infinite) timeout.
+var jwksHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 // JWTMiddleware validates JWT tokens from Keycloak
 type JWTMiddleware struct {
 	jwksURL     string
@@ -146,7 +151,11 @@ func (m *JWTMiddleware) Validate() gin.HandlerFunc {
 
 // refreshKeys fetches public keys from Keycloak JWKS endpoint
 func (m *JWTMiddleware) refreshKeys() error {
-	resp, err := http.Get(m.jwksURL)
+	req, err := http.NewRequest(http.MethodGet, m.jwksURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build JWKS request: %w", err)
+	}
+	resp, err := jwksHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
