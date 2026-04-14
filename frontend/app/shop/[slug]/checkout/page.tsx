@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useCallback, useRef } from "react"
+import { use, useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle } from "lucide-react"
@@ -143,10 +143,20 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const router = useRouter()
   const { items, totalPennies, itemCount, clearCart } = useCart()
 
-  // Pre-fill from customer session if logged in
-  const session = typeof window !== "undefined" ? getCustomerSession() : null
-  const [customerName, setCustomerName] = useState(session?.profile.name || "")
-  const [customerEmail, setCustomerEmail] = useState(session?.profile.email || "")
+  // Pre-fill from customer session if logged in (async, cookie-backed)
+  const [customerName, setCustomerName] = useState("")
+  const [customerEmail, setCustomerEmail] = useState("")
+  useEffect(() => {
+    let cancelled = false
+    getCustomerSession().then((session) => {
+      if (cancelled || !session) return
+      setCustomerName((prev) => prev || session.profile.name || "")
+      setCustomerEmail((prev) => prev || session.profile.email || "")
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
   const idempotencyKeyRef = useRef(crypto.randomUUID())

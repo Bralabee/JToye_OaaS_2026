@@ -1,42 +1,24 @@
-"use client"
+import { redirect } from "next/navigation"
+import { auth } from "@/auth"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 
-import { useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
-
-export default function DashboardLayout({
+/**
+ * Server Component dashboard layout.
+ *
+ * Resolves the NextAuth session server-side via `auth()` and redirects
+ * unauthenticated visitors BEFORE any HTML is streamed. This fixes the
+ * blank flash on expired sessions that the previous client-side useSession
+ * implementation suffered from, and provides defence in depth on top of
+ * middleware.ts (which also matches /dashboard/:path*).
+ */
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { data: session, status } = useSession()
-  const router = useRouter()
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin")
-    }
-  }, [status, router])
-
-  if (status === "loading") {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
+  const session = await auth()
   if (!session) {
-    return null
+    redirect("/auth/signin")
   }
-
-  return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-8 dark:text-slate-100">{children}</div>
-      </main>
-    </div>
-  )
+  return <DashboardShell>{children}</DashboardShell>
 }

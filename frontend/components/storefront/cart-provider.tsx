@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
 
 export interface CartItem {
   productId: string
@@ -108,22 +108,26 @@ export function CartProvider({
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPennies = items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0)
 
-  return (
-    <CartContext.Provider
-      value={{
-        items,
-        addItem,
-        removeItem,
-        updateQuantity,
-        clearCart,
-        itemCount,
-        totalPennies,
-        shopSlug,
-      }}
-    >
-      {children}
-    </CartContext.Provider>
+  // Memoize the context value so children that only read subsets (e.g. just
+  // itemCount) do not re-render on every parent render. addItem/removeItem/
+  // updateQuantity/clearCart are already stable via useCallback above, so the
+  // only thing that should change the reference identity is the cart data
+  // itself.
+  const value = useMemo<CartContextValue>(
+    () => ({
+      items,
+      addItem,
+      removeItem,
+      updateQuantity,
+      clearCart,
+      itemCount,
+      totalPennies,
+      shopSlug,
+    }),
+    [items, addItem, removeItem, updateQuantity, clearCart, itemCount, totalPennies, shopSlug]
   )
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
 
 export function useCart() {
