@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V30 (order_item_product_name denormalization)
+- Current schema version: V32 (optimistic locking on orders/shops)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`
@@ -298,7 +298,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Depends on: PostgreSQL JDBC driver, Flyway for schema migration
 - Used by: Service layer exclusively
 - Purpose: Multi-tenant data storage with RLS enforcement and audit trails
-- Location: Schema defined in `core-java/src/main/resources/db/migration/` (30 Flyway migrations)
+- Location: Schema defined in `core-java/src/main/resources/db/migration/` (32 Flyway migrations)
 - Contains: Tables (shops, products, orders, customers, financial_transactions, reviews, etc.), RLS policies per table, audit tables via Envers
 - Depends on: JDBC driver, Java code for policy setup
 - Used by: Core Java service layer via JPA, trigger functions for audit events
