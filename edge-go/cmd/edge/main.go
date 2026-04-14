@@ -20,6 +20,29 @@ import (
 	"go.uber.org/zap"
 )
 
+// extractBearerToken pulls a Bearer token out of the Authorization header.
+// Returns ("", false) if the header is missing, uses a different scheme, or
+// carries no token value. Callers must treat the boolean as authoritative —
+// never index into the header string directly.
+func extractBearerToken(c *gin.Context) (string, bool) {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return "", false
+	}
+	const prefix = "Bearer "
+	if len(authHeader) <= len(prefix) {
+		return "", false
+	}
+	if !strings.EqualFold(authHeader[:len(prefix)], prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(authHeader[len(prefix):])
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
 // Simple token bucket rate limiter middleware
 func rateLimiter(rps int, burst int) gin.HandlerFunc {
 	tokens := make(chan struct{}, burst)
@@ -123,7 +146,11 @@ func main() {
 
 		// Extract tenant and token from context
 		tenantID, _ := c.Get("tenant_id")
-		token := c.GetHeader("Authorization")[7:] // Strip "Bearer "
+		token, ok := extractBearerToken(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
+			return
+		}
 
 		if tenantID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
@@ -192,10 +219,7 @@ func main() {
 
 		// Extract auth context
 		tenantID, _ := c.Get("tenant_id")
-		token := ""
-		if authHeader := c.GetHeader("Authorization"); len(authHeader) > 7 {
-			token = authHeader[7:]
-		}
+		token, _ := extractBearerToken(c)
 		tenantStr := ""
 		if tenantID != nil {
 			tenantStr = tenantID.(string)
@@ -293,4 +317,3 @@ func verifyWhatsAppSignature(payload []byte, signature string, secret string) bo
 
 	return hmac.Equal([]byte(actualSignature), []byte(expectedSignature))
 }
-
