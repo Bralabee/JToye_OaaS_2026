@@ -177,30 +177,32 @@ func main() {
 		signature := c.GetHeader("X-Hub-Signature-256")
 		appSecret := os.Getenv("WHATSAPP_APP_SECRET")
 
-		if appSecret != "" && signature != "" {
-			body, err := io.ReadAll(c.Request.Body)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
-				return
-			}
-			// Restore body for further processing
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+		// Fail-closed: refuse to accept webhooks if the signing secret is
+		// not configured. Previously an unset secret would silently skip
+		// signature verification, allowing anyone to inject orders.
+		if appSecret == "" {
+			logger.Error("WHATSAPP_APP_SECRET not configured; refusing webhook")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook signing not configured"})
+			return
+		}
 
-			if !verifyWhatsAppSignature(body, signature, appSecret) {
-				logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-				return
-			}
-		} else if appSecret != "" {
+		if signature == "" {
 			logger.Warn("Missing WhatsApp webhook signature")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature"})
 			return
 		}
 
-		// Read body for parsing
 		body, err := io.ReadAll(c.Request.Body)
-		if err != nil && len(body) == 0 {
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
+			return
+		}
+		// Restore body for further processing
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+		if !verifyWhatsAppSignature(body, signature, appSecret) {
+			logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
 
