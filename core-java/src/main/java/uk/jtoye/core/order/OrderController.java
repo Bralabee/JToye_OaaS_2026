@@ -138,19 +138,6 @@ public class OrderController {
     }
 
     /**
-     * Update order status.
-     * PATCH /orders/{id}/status
-     */
-    @PatchMapping("/{id}/status")
-    @Operation(summary = "Update order status", description = "Updates the status of an order")
-    public ResponseEntity<OrderDto> updateOrderStatus(
-            @PathVariable UUID id,
-            @RequestParam OrderStatus status) {
-        OrderDto order = orderService.updateOrderStatus(id, status);
-        return ResponseEntity.ok(order);
-    }
-
-    /**
      * Delete order.
      * DELETE /orders/{id}
      */

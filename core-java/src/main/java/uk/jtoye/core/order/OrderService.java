@@ -255,28 +255,6 @@ public class OrderService {
     }
 
     /**
-     * Update order status (DEPRECATED - use transition methods instead).
-     * This method bypasses StateMachine validation.
-     * Kept for backward compatibility.
-     *
-     * @deprecated Use specific transition methods: submitOrder, confirmOrder, etc.
-     */
-    @Deprecated
-    public OrderDto updateOrderStatus(UUID orderId, OrderStatus newStatus) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-
-        log.warn("Updating order {} status without StateMachine validation: {} -> {}",
-                order.getOrderNumber(), order.getStatus(), newStatus);
-
-        order.setStatus(newStatus);
-        order.setUpdatedAt(OffsetDateTime.now());
-        order = orderRepository.save(order);
-
-        return orderMapper.toDto(order);
-    }
-
-    /**
      * Submit draft order for processing.
      * Transition: DRAFT → PENDING
      */
