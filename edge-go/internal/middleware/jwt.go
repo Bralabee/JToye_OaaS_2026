@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
+
+// defaultJWKSRefreshInterval is the fallback cadence for re-fetching the
+// Keycloak JWKS document when JWKS_REFRESH_INTERVAL is unset or invalid.
+const defaultJWKSRefreshInterval = 5 * time.Minute
 
 // JWKSResponse represents the response from Keycloak JWKS endpoint
 type JWKSResponse struct {
@@ -38,20 +43,37 @@ var jwksHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
 // JWTMiddleware validates JWT tokens from Keycloak
 type JWTMiddleware struct {
-	jwksURL     string
-	issuer      string
-	logger      *zap.Logger
-	publicKeys  map[string]*rsa.PublicKey
-	lastRefresh time.Time
+	jwksURL         string
+	issuer          string
+	logger          *zap.Logger
+	publicKeys      map[string]*rsa.PublicKey
+	lastRefresh     time.Time
+	refreshInterval time.Duration
 }
 
-// NewJWTMiddleware creates a new JWT middleware
+// NewJWTMiddleware creates a new JWT middleware. JWKS_REFRESH_INTERVAL
+// (parsed with time.ParseDuration, e.g. "30s", "10m") overrides the
+// default 5-minute JWKS refresh cadence; invalid values fall back to
+// the default with a warning log.
 func NewJWTMiddleware(jwksURL, issuer string, logger *zap.Logger) *JWTMiddleware {
+	refreshInterval := defaultJWKSRefreshInterval
+	if raw := os.Getenv("JWKS_REFRESH_INTERVAL"); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			refreshInterval = parsed
+			logger.Info("JWKS refresh interval override",
+				zap.Duration("interval", refreshInterval))
+		} else {
+			logger.Warn("Invalid JWKS_REFRESH_INTERVAL; using default",
+				zap.String("value", raw),
+				zap.Duration("default", refreshInterval))
+		}
+	}
 	return &JWTMiddleware{
-		jwksURL:    jwksURL,
-		issuer:     issuer,
-		logger:     logger,
-		publicKeys: make(map[string]*rsa.PublicKey),
+		jwksURL:         jwksURL,
+		issuer:          issuer,
+		logger:          logger,
+		publicKeys:      make(map[string]*rsa.PublicKey),
+		refreshInterval: refreshInterval,
 	}
 }
 
@@ -86,8 +108,8 @@ func (m *JWTMiddleware) Validate() gin.HandlerFunc {
 				return nil, errors.New("missing kid in token header")
 			}
 
-			// Refresh keys if needed (every 5 minutes)
-			if time.Since(m.lastRefresh) > 5*time.Minute {
+			// Refresh keys if the configured interval has elapsed.
+			if time.Since(m.lastRefresh) > m.refreshInterval {
 				if err := m.refreshKeys(); err != nil {
 					m.logger.Error("Failed to refresh JWKS", zap.Error(err))
 				}
