@@ -37,8 +37,15 @@ type ParsedOrder struct {
 	Raw   string      `json:"raw"`
 }
 
-// itemPattern matches patterns like "2x Chocolate Cake", "3 bread", "1x item"
-var itemPattern = regexp.MustCompile(`(?i)(\d+)\s*[xX]?\s+(.+?)(?:,|$)`)
+// itemLinePattern matches a single line like "2x Chocolate Cake",
+// "3 bread", or "1 Eggs, Ham, Cheese". The grammar is:
+//
+//	<qty> [x|X] <one-or-more-space> <product-query>
+//
+// The entire remainder of the line is treated as the product query,
+// so product names containing commas ("Eggs, Ham, Cheese") survive
+// intact. Line breaks delimit items.
+var itemLinePattern = regexp.MustCompile(`(?i)^\s*(\d+)\s*[xX]?\s+(.+?)\s*$`)
 
 // ParseWebhook extracts messages from a WhatsApp Cloud API webhook payload
 func ParseWebhook(body []byte) (*ParsedOrder, error) {
@@ -60,27 +67,42 @@ func ParseWebhook(body []byte) (*ParsedOrder, error) {
 	return nil, nil
 }
 
-// ParseMessage parses a text message into order items
-// Supports: "2x Chocolate Cake, 1x Bread" or "2 cakes, 3 pastries"
+// ParseMessage parses a text message into order items.
+//
+// The grammar is newline-delimited: one item per line, formatted as
+// "<qty> [x] <product query>". This preserves product names that
+// contain commas (e.g. "Eggs, Ham, Cheese") — the previous regex
+// used comma-or-end as the terminator and silently truncated them.
+//
+// If no line matches the pattern the full trimmed message is returned
+// as a single order item with quantity 1.
 func ParseMessage(phone, text string) *ParsedOrder {
 	order := &ParsedOrder{
 		Phone: phone,
 		Raw:   text,
 	}
 
-	matches := itemPattern.FindAllStringSubmatch(text, -1)
-	for _, match := range matches {
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		match := itemLinePattern.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
 		qty, _ := strconv.Atoi(match[1])
 		if qty <= 0 {
 			qty = 1
 		}
 		product := strings.TrimSpace(match[2])
-		if product != "" {
-			order.Items = append(order.Items, OrderItem{
-				ProductQuery: product,
-				Quantity:     qty,
-			})
+		if product == "" {
+			continue
 		}
+		order.Items = append(order.Items, OrderItem{
+			ProductQuery: product,
+			Quantity:     qty,
+		})
 	}
 
 	// If no pattern matched, treat the whole message as a single item query
