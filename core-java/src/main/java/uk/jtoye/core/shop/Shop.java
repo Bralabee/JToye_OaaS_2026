@@ -78,6 +78,16 @@ public class Shop {
     @Column(name = "featured_product_ids", columnDefinition = "UUID[]")
     private List<UUID> featuredProductIds;
 
+    /**
+     * Optimistic-locking version column. JPA-managed; never mutated by callers.
+     * Concurrent updates to the same shop will throw
+     * ObjectOptimisticLockingFailureException on save() instead of silently
+     * overwriting each other's changes.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getTenantId() { return tenantId; }
@@ -119,4 +129,7 @@ public class Shop {
     public void setTags(String tags) { this.tags = tags; }
     public List<UUID> getFeaturedProductIds() { return featuredProductIds; }
     public void setFeaturedProductIds(List<UUID> featuredProductIds) { this.featuredProductIds = featuredProductIds; }
+
+    /** JPA-managed optimistic lock version. Exposed read-only for diagnostics. */
+    public Long getVersion() { return version; }
 }
