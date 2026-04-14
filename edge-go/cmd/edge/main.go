@@ -258,7 +258,12 @@ func main() {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
 
-		// Resolve product queries to UUIDs via Core API search
+		// Resolve product queries to UUIDs via Core API search.
+		// Require a confident match: either a single search hit, or an
+		// exact (case-insensitive) name match within a multi-hit result.
+		// Ambiguous queries are skipped with a warning instead of silently
+		// binding to products[0] — which previously let "bread" pick an
+		// arbitrary bread-adjacent SKU.
 		var orderItems []core.OrderItemRequest
 		for _, item := range parsedOrder.Items {
 			products, err := coreClient.SearchProducts(ctx, token, tenantStr, item.ProductQuery)
@@ -270,9 +275,29 @@ func main() {
 				logger.Warn("No product found for query", zap.String("query", item.ProductQuery))
 				continue
 			}
-			// Use first match
+
+			var matched *core.ProductSearchResult
+			if len(products) == 1 {
+				matched = &products[0]
+			} else {
+				// Prefer an exact case-insensitive title equality.
+				query := strings.TrimSpace(item.ProductQuery)
+				for i := range products {
+					if strings.EqualFold(strings.TrimSpace(products[i].Title), query) {
+						matched = &products[i]
+						break
+					}
+				}
+			}
+			if matched == nil {
+				logger.Warn("Ambiguous product query; skipping",
+					zap.String("query", item.ProductQuery),
+					zap.Int("candidates", len(products)))
+				continue
+			}
+
 			orderItems = append(orderItems, core.OrderItemRequest{
-				ProductID: products[0].ID,
+				ProductID: matched.ID,
 				Quantity:  item.Quantity,
 			})
 		}
