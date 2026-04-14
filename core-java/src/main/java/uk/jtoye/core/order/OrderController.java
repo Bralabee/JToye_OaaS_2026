@@ -99,7 +99,7 @@ public class OrderController {
      */
     @PutMapping("/{id}")
     @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders")
-    public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @RequestBody UpdateOrderRequest request) {
+    public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
         OrderDto order = orderService.updateOrder(id, request);
         return ResponseEntity.ok(order);
     }

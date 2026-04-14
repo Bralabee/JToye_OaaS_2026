@@ -3,6 +3,7 @@ package uk.jtoye.core.sync;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,7 +31,7 @@ public class SyncController {
      */
     @PostMapping("/batch")
     @Operation(summary = "Batch Sync", description = "Receives a batch of data for synchronization from an Edge service")
-    public ResponseEntity<BatchSyncResponse> batchSync(@RequestBody BatchSyncRequest request) {
+    public ResponseEntity<BatchSyncResponse> batchSync(@Valid @RequestBody BatchSyncRequest request) {
         BatchSyncResponse response = syncService.processBatch(request);
         return ResponseEntity.ok(response);
     }
