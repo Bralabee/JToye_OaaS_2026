@@ -11,14 +11,21 @@ Requirements for Milestone 3. Three work orders = three requirement categories. 
 
 ### Work Order A — Repository secrets + alerting (SECR)
 
-Closes the credential-exposure hole and wires the 13 Prometheus alert rules into an Alertmanager + Slack route. Highest urgency, shortest effort (~2 days).
+**RESCOPED 2026-04-15 during phase 9 discuss + execution.** Two material corrections:
 
-- [ ] **SECR-01**: `.env` removed from git tracking (`git rm --cached .env`) with a matching `.gitignore` entry, verified by `git check-ignore`
-- [ ] **SECR-02**: All 5 committed credentials rotated in running services — Postgres `jtoye`/`keycloak` roles via `ALTER USER`, Keycloak admin via Admin CLI, Redis password in `redis.conf`, RabbitMQ via `rabbitmqctl change_password`, Keycloak client secret regenerated
-- [ ] **SECR-03**: Rotated values distributed to GitHub Actions Secrets (for CI/CD) and `k8s/` Secret manifests (for staging/prod); no plaintext committed
-- [ ] **SECR-04**: `prom/alertmanager:v0.27` container deployed in `infra/monitoring/docker-compose.monitoring.yml`; exposed on a stable port; Prometheus `alerting.alertmanagers` block bound to it
-- [ ] **SECR-05**: `alertmanager.yml` routes the 13 existing Prometheus alert rules to a Slack webhook (single channel); labels include `severity` and `service`
-- [ ] **SECR-06**: End-to-end alert roundtrip verified — force `ServiceDown` (e.g. kill `core-java`) and confirm a Slack message arrives within 60 s; runbook entry added describing the test
+1. **The `.env`-committed claim in the audit doc is false.** Verified via `git log --all --full-history -- .env` (empty), `git ls-files --error-unmatch .env` ("did not match any file"), and `git check-ignore -v .env` (matched by `.gitignore:64`). `.env.example` and `k8s/base/secrets-template.yaml` use `CHANGE_ME` / `REPLACE_WITH_*` placeholders only. SECR-01..03 are converted from rotation-style to verification + enforcement-style, and a new SECR-07 adds `gitleaks` CI to prevent any future drift from making the original finding real.
+2. **Alert destination rescoped from Slack to email via Mailhog.** The project has no committed Slack dependency beyond one CI notification workflow (`.github/workflows/ci-cd.yaml`); `docs/reports/PRODUCTION_READINESS_REPORT.md` lists `"email/Slack"` as interchangeable. Mailhog is already in `docker-compose.full-stack.yml`, so email needs no external accounts. Prod can override `ALERTMANAGER_SMTP_*` env vars to point at a real SMTP relay.
+3. **Alert rule count is 10, not 13** (verified by `grep -c "^\s*- alert:" infra/monitoring/prometheus/alerts.yml`). Audit doc figure was incorrect.
+
+Effort: ~1 day (down from 2 days because the credential rotation work is dropped).
+
+- [x] **SECR-01**: `.env` verified absent from git tracking via `git ls-files --error-unmatch .env` ("did not match") and `git check-ignore -v .env` (matched by `.gitignore:64`). Re-scoped from "remove from tracking" — already absent. Enforcement going forward via SECR-07.
+- [x] **SECR-02**: Credential rotation **dropped** — no credentials were ever committed. Enforcement via SECR-07 ensures future drift is caught at PR time.
+- [x] **SECR-03**: GitHub / k8s Secret distribution **dropped** — nothing to distribute. Alertmanager SMTP env vars (phase 9 additions) ship via the standard `.env.example` → `.env` pattern already used across the project.
+- [x] **SECR-04**: `prom/alertmanager:v0.27.0` container deployed in `infra/monitoring/docker-compose.monitoring.yml`, joined to `jtoye-network` so it can reach Mailhog at `mailhog:1025`. `prometheus.yml` `alerting.alertmanagers` block bound to `alertmanager:9093`. Verified via containerised `amtool check-config` + `promtool check config` — both PASS. Phase 9 plan 09-01, commit `295ea56` + `47ea7b4`.
+- [x] **SECR-05**: `alertmanager.yml` (rendered from `.tmpl` at container start via `entrypoint.sh` sed wrapper) routes the 10 existing Prometheus alert rules to an `email-default` receiver (Mailhog in dev, real SMTP in prod via `ALERTMANAGER_SMTP_*` env overrides). All 10 rules now carry `severity` + `service` literal-string labels driving the `group_by: [alertname, service]` tree and the email subject template. Phase 9 plan 09-01, commit `295ea56` + `47ea7b4`.
+- [ ] **SECR-06**: End-to-end alert roundtrip — `infra/monitoring/scripts/smoke-test-alertmanager.sh` posts a synthetic alert via Alertmanager's `/api/v2/alerts` endpoint + stops `jtoye-core-java` to trigger the real `ServiceDown` rule, asserting Mailhog receives both emails within 90 s. Runbook entry at `docs/runbooks/alerts.md` (ServiceDown section filled; other 9 alerts are TODO skeletons). **PARTIAL** — smoke script committed in phase 9 plan 09-03 but not yet green because unrelated `dealflow_*` containers hold the ports the J'Toye full stack needs (ports 5432 / 8025). **User action required** to close SECR-06: stop dealflow temporarily OR use an alternate port override, bring up `docker-compose.full-stack.yml` + `docker-compose.monitoring.yml`, run `./infra/monitoring/scripts/smoke-test-alertmanager.sh`, verify Mailhog UI at http://localhost:8025 shows both emails.
+- [ ] **SECR-07** (new 2026-04-15): Gitleaks CI enforcement — `.github/workflows/gitleaks.yml` runs `gitleaks-action@v2` on every PR + push to `main` using a tight `.gitleaks.toml` allowlist (4 paths, plus a content-based placeholder allowlist for defence in depth). Opt-in local pre-commit hook at `scripts/pre-commit-gitleaks.sh`. **Deferred finding surfaced:** `infra/keycloak/realm-export.json` contains dev-only OIDC client secrets and PBKDF2-hashed user passwords — allowlisted with an explicit comment pointing at `.planning/phases/09-repository-secrets-alerting/deferred-items.md` D-1 (proposed `SECR-08` for milestone 4+). Phase 9 plan 09-02, commit `165a7a7`. **Validation on first CI run** — gitleaks CLI not available locally; CI runner is the first validator.
 
 ### Work Order B — Storefront marketing + missing customer routes (STFR)
 
@@ -101,12 +108,13 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-14.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SECR-01 | Phase 9 | Pending |
-| SECR-02 | Phase 9 | Pending |
-| SECR-03 | Phase 9 | Pending |
-| SECR-04 | Phase 9 | Pending |
-| SECR-05 | Phase 9 | Pending |
-| SECR-06 | Phase 9 | Pending |
+| SECR-01 | Phase 9 | Verified (rescoped — already absent) |
+| SECR-02 | Phase 9 | Dropped (rescoped — no committed creds) |
+| SECR-03 | Phase 9 | Dropped (rescoped — no distribution needed) |
+| SECR-04 | Phase 9 | Done (commits 295ea56 + 47ea7b4) |
+| SECR-05 | Phase 9 | Done (email receiver, commit 295ea56 + 47ea7b4) |
+| SECR-06 | Phase 9 | PARTIAL (smoke script committed, not yet run live) |
+| SECR-07 | Phase 9 | Done (commit 165a7a7) |
 | STFR-01 | Phase 10 | Pending |
 | STFR-02 | Phase 10 | Pending |
 | STFR-03 | Phase 10 | Pending |
@@ -120,10 +128,14 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-14.
 | STMP-05 | Phase 11 | Pending |
 
 **Coverage:**
-- v1 requirements: 17 total (SECR ×6 + STFR ×6 + STMP ×5)
-- Mapped to phases: 17 (Phase 9 ×6, Phase 10 ×6, Phase 11 ×5)
+- v1 requirements: 18 total (SECR ×7 + STFR ×6 + STMP ×5) — SECR-07 added 2026-04-15 during phase 9 rescope
+- Mapped to phases: 18 (Phase 9 ×7, Phase 10 ×6, Phase 11 ×5)
 - Unmapped: 0 ✓
+- Done: SECR-01 (verified), SECR-04, SECR-05, SECR-07 (4 of 7 in Phase 9)
+- Dropped: SECR-02, SECR-03 (rescope — no committed creds to rotate/distribute)
+- Partial: SECR-06 (smoke script committed, needs live run)
+- Pending: STFR ×6 (Phase 10), STMP ×5 (Phase 11)
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 — traceability table filled by roadmap creation*
+*Last updated: 2026-04-15 — SECR section rescoped + SECR-07 added during phase 9 execution (Wave 1 complete, Wave 2 in progress)*

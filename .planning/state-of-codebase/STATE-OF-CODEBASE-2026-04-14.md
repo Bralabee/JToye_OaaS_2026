@@ -487,6 +487,20 @@ These remain code-traced (§3–§5) but not live-verified. The stack should com
 - **Effort:** 2 days
 - **Scope:** `git rm --cached .env`, add to `.gitignore`, rotate all 5 committed passwords via Keycloak admin + DB `ALTER USER` + K8s secret update, deploy `prom/alertmanager` container with Slack webhook config, bind Prometheus `alertmanagers` config, smoke-test one alert end-to-end.
 
+> **Verified incorrect during phase 9 execution (2026-04-15).** Three corrections:
+>
+> 1. **`.env` is NOT committed.** Verified by `git log --all --full-history -- .env` (no history), `git ls-files --error-unmatch .env` ("did not match"), and `git check-ignore -v .env` (matched by `.gitignore:64`). `.env.example` and `k8s/base/secrets-template.yaml` use `CHANGE_ME` / `REPLACE_WITH_*` placeholders only. The infra audit agent read `.env` from the local filesystem and wrongly inferred it was tracked. No credentials were ever committed and no rotation is needed.
+> 2. **Alert count is 10, not 13.** `grep -c "^\s*- alert:" infra/monitoring/prometheus/alerts.yml` = 10. All 10 are now routed via Alertmanager.
+> 3. **Destination rescoped from Slack to email via Mailhog.** The project has no committed Slack dependency beyond one CI notification workflow (`.github/workflows/ci-cd.yaml:294-326`); Mailhog is already in `docker-compose.full-stack.yml`; `docs/reports/PRODUCTION_READINESS_REPORT.md` lists `"email/Slack"` as interchangeable. Email needs no external accounts and keeps dev loops friction-free. Prod can override `ALERTMANAGER_SMTP_*` env vars to point at a real SMTP relay.
+>
+> **Actual phase 9 delivery** (see `.planning/phases/09-repository-secrets-alerting/`):
+> - Alertmanager `v0.27.0` deployed in compose (commit `295ea56`); Prometheus `alerting.alertmanagers` wired and 10 alert rules labelled (commit `47ea7b4`); email routing via Mailhog template-rendered at container start by a sed wrapper; `amtool check-config` + `promtool check config` both PASS.
+> - Gitleaks CI (`gitleaks-action@v2`) + tight `.gitleaks.toml` allowlist + opt-in local hook (commit `165a7a7`), added as new requirement `SECR-07` to prevent any future `.env` drift from making this finding real.
+> - Smoke test script (`infra/monitoring/scripts/smoke-test-alertmanager.sh`) + runbook skeleton (`docs/runbooks/alerts.md`) committed; live E2E verification still pending because unrelated `dealflow_*` containers currently hold the ports the J'Toye full stack needs.
+> - Real deferred finding discovered: `infra/keycloak/realm-export.json` contains dev-only OIDC client secrets + PBKDF2 user password hashes. Captured in `.planning/phases/09-repository-secrets-alerting/deferred-items.md` D-1 as proposed `SECR-08` for milestone 4+.
+>
+> §11 Work Order A is updated in `.planning/REQUIREMENTS.md` SECR-01..07 with full rationale.
+
 ---
 
 ## 10. Full audit-finding ledger
@@ -570,6 +584,8 @@ Three immediate orders unblock production. Everything else is quality-of-life.
 7. Smoke-test end-to-end: force one alert (e.g. kill core-java → `ServiceDown` fires) → confirm Slack message arrives
 
 **Exit:** `.env` gone from git history, alert-to-Slack roundtrip verified, runbook entry added for "alerting down" scenario.
+
+> **Verified incorrect during phase 9 execution (2026-04-15).** See the footnote on §9 Blocker 5 above for full correction: `.env` was never committed, alert count is 10 not 13, destination rescoped from Slack to email via Mailhog. Tasks 1-3 dropped as no-ops, tasks 4-6 delivered via phase 9 plans 09-01/09-02/09-03. A new `SECR-07` adds `gitleaks` CI enforcement to prevent future drift. Canonical status in `.planning/REQUIREMENTS.md`.
 
 ### Work Order B — `feat/storefront-marketing-and-cart-routes` — 1 week
 
