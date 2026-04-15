@@ -10,7 +10,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.review.ReviewService;
+import uk.jtoye.core.shop.DiscountType;
+import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
+import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.PublicShopDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
 
@@ -145,6 +148,58 @@ class PublicStorefrontControllerTest {
                 .thenThrow(new ResourceNotFoundException("Shop not found: ghost-shop"));
 
         mockMvc.perform(get("/public/shops/ghost-shop/products"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getShopPromotions_returns200WithActivePromotions() throws Exception {
+        PublicPromotionDto promo = new PublicPromotionDto();
+        promo.setLabel("Lunch special");
+        promo.setDiscountType(DiscountType.PERCENTAGE);
+        promo.setDiscountPercent(10);
+        promo.setCategory("Mains");
+        when(storefrontService.getActivePromotions("test-shop")).thenReturn(List.of(promo));
+
+        mockMvc.perform(get("/public/shops/test-shop/promotions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].label").value("Lunch special"))
+                .andExpect(jsonPath("$[0].discountPercent").value(10))
+                .andExpect(jsonPath("$[0].category").value("Mains"));
+
+        verify(storefrontService).getActivePromotions("test-shop");
+    }
+
+    @Test
+    void getShopPromotions_nonexistent_returns404() throws Exception {
+        when(storefrontService.getActivePromotions("ghost"))
+                .thenThrow(new ResourceNotFoundException("Shop not found: ghost"));
+
+        mockMvc.perform(get("/public/shops/ghost/promotions"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getShopAnnouncements_returns200WithActiveAnnouncements() throws Exception {
+        PublicAnnouncementDto announcement = new PublicAnnouncementDto();
+        announcement.setTitle("Closed Sunday");
+        announcement.setBody("Back Monday");
+        when(storefrontService.getActiveAnnouncements("test-shop"))
+                .thenReturn(List.of(announcement));
+
+        mockMvc.perform(get("/public/shops/test-shop/announcements"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("Closed Sunday"))
+                .andExpect(jsonPath("$[0].body").value("Back Monday"));
+
+        verify(storefrontService).getActiveAnnouncements("test-shop");
+    }
+
+    @Test
+    void getShopAnnouncements_nonexistent_returns404() throws Exception {
+        when(storefrontService.getActiveAnnouncements("ghost"))
+                .thenThrow(new ResourceNotFoundException("Shop not found: ghost"));
+
+        mockMvc.perform(get("/public/shops/ghost/announcements"))
                 .andExpect(status().isNotFound());
     }
 }
