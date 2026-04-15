@@ -43,6 +43,19 @@ Production-ready monitoring stack using Prometheus for metrics collection and Gr
 - **Purpose**: PostgreSQL metrics collection
 - **Metrics**: Connection pool, queries, locks, replication
 
+### 4. **Alertmanager** (Port 9093) — added in phase 9
+- **Purpose**: Alert routing, grouping, and notification delivery
+- **Image**: `prom/alertmanager:v0.27.0`
+- **Config**: rendered at container start from `alertmanager/alertmanager.yml.tmpl` via a sed-based `entrypoint.sh` wrapper (Alertmanager has no native env-var substitution)
+- **Destination**: email via Mailhog (dev) or real SMTP relay (prod). Override via:
+  - `ALERTMANAGER_SMTP_SMARTHOST` (default `mailhog:1025`)
+  - `ALERTMANAGER_SMTP_FROM` (default `alerts@jtoye.local`)
+  - `ALERTMANAGER_SMTP_TO` (default `ops@jtoye.local`)
+  - `ALERTMANAGER_SMTP_REQUIRE_TLS` (default `false`)
+- **Route tree:** single `email-default` receiver, `group_by: [alertname, service]`, `group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 12h`
+- **Smoke test:** `infra/monitoring/scripts/smoke-test-alertmanager.sh` posts a synthetic alert via Alertmanager's `/api/v2/alerts` endpoint + stops `jtoye-core-java` to trigger the real `ServiceDown` rule, asserting Mailhog receives both emails
+- **Runbook:** `docs/runbooks/alerts.md` — first-response steps per alert rule (`ServiceDown` filled in; other 9 rules are TODO-skeleton)
+
 ## Quick Start
 
 ### 1. Start Monitoring Stack

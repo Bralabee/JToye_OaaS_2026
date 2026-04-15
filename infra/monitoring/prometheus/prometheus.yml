@@ -6,11 +6,15 @@ global:
     cluster: 'jtoye-dev'
     environment: 'development'
 
-# Alertmanager configuration (optional - can add later)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
+# Alertmanager — phase 9. Lives in infra/monitoring/docker-compose.monitoring.yml
+# on the same `monitoring` network as this Prometheus, so DNS resolution by
+# service name works without any extra config. `/-/reload` endpoint is not
+# enabled on Prometheus — after editing this file you must
+# `docker compose restart prometheus`.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
 # Load alerting rules
 rule_files:
