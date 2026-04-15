@@ -56,6 +56,38 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Alertmanager - Alert routing (phase 9)
+  # Config is rendered from alertmanager.yml.tmpl by entrypoint.sh at container start,
+  # because Alertmanager has no native env-var substitution (see RESEARCH Pitfall 1).
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: jtoye-alertmanager
+    entrypoint:
+      - /bin/sh
+      - /etc/alertmanager/entrypoint.sh
+    environment:
+      # Defaults target Mailhog on jtoye-network (docker-compose.full-stack.yml).
+      # Override for prod SMTP by setting these in .env or deploy manifests.
+      - ALERTMANAGER_SMTP_SMARTHOST=${ALERTMANAGER_SMTP_SMARTHOST:-mailhog:1025}
+      - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-alerts@jtoye.local}
+      - ALERTMANAGER_SMTP_TO=${ALERTMANAGER_SMTP_TO:-ops@jtoye.local}
+      - ALERTMANAGER_SMTP_REQUIRE_TLS=${ALERTMANAGER_SMTP_REQUIRE_TLS:-false}
+    volumes:
+      - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - monitoring
+      - jtoye-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
   # PostgreSQL Exporter - Database metrics
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
@@ -80,3 +112,4 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  alertmanager_data:

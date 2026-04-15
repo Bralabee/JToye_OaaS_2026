@@ -137,3 +137,6 @@ minio_data/
 
 # Compiled Go binary
 edge-go/edge
+
+# Rendered Alertmanager config (phase 9 — entrypoint renders this at container start)
+infra/monitoring/alertmanager/alertmanager.yml
