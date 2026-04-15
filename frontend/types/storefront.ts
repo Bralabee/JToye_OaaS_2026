@@ -44,3 +44,18 @@ export interface Review {
   photoUrls: string[] | null
   createdAt: string
 }
+
+export interface PublicPromotion {
+  label: string
+  discountType: "PERCENTAGE" | "FLAT_AMOUNT"
+  discountPercent: number | null
+  discountAmountPennies: number | null
+  category: string | null
+  validUntil: string
+}
+
+export interface PublicAnnouncement {
+  title: string
+  body: string | null
+  validUntil: string | null
+}

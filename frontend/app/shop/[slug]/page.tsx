@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, use } from "react"
+import { useEffect, useState, useRef, useMemo, use } from "react"
 import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
+import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 
 interface ShopConfig {
   announcements: string[]
@@ -54,7 +55,7 @@ function DietaryBadge({ tag }: { tag: string }) {
   return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
 }
 
-function ProductCard({ product }: { product: PublicProduct }) {
+function ProductCard({ product, promo }: { product: PublicProduct; promo?: PublicPromotion }) {
   const [modalOpen, setModalOpen] = useState(false)
   const { addItem, items, updateQuantity } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
@@ -180,6 +181,16 @@ function ProductCard({ product }: { product: PublicProduct }) {
                 +{images.length - 1}
               </span>
             )}
+            {promo && (
+              <Badge
+                variant="destructive"
+                className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0 shadow-md"
+              >
+                {promo.discountType === "PERCENTAGE"
+                  ? `${promo.discountPercent}% off`
+                  : `£${((promo.discountAmountPennies ?? 0) / 100).toFixed(2)} off`}
+              </Badge>
+            )}
           </div>
         </div>
       </article>
@@ -206,6 +217,8 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const [reviewCount, setReviewCount] = useState(0)
   const [avgRating, setAvgRating] = useState(0)
   const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null)
+  const [promotions, setPromotions] = useState<PublicPromotion[]>([])
+  const [announcements, setAnnouncements] = useState<PublicAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
@@ -214,11 +227,13 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
     async function load() {
       setLoading(true)
       try {
-        const [shopRes, productsRes, reviewsRes, configRes] = await Promise.all([
+        const [shopRes, productsRes, reviewsRes, configRes, promotionsRes, announcementsRes] = await Promise.all([
           publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
           publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
           publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
           publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
+          publicApiClient.get<PublicPromotion[]>(`/public/shops/${slug}/promotions`).catch(() => ({ data: [] as PublicPromotion[] })),
+          publicApiClient.get<PublicAnnouncement[]>(`/public/shops/${slug}/announcements`).catch(() => ({ data: [] as PublicAnnouncement[] })),
         ])
         setShop(shopRes.data)
         setProducts(productsRes.data)
@@ -229,6 +244,8 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           setAvgRating(Math.round(avg * 10) / 10)
         }
         if (configRes.data) setShopConfig(configRes.data)
+        setPromotions(promotionsRes.data || [])
+        setAnnouncements(announcementsRes.data || [])
         const cats = Object.keys(productsRes.data)
         if (cats.length > 0) setActiveCategory(cats[0])
       } catch {
@@ -244,6 +261,14 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const featuredProducts = Object.values(products)
     .flat()
     .filter((p) => p.featured)
+
+  const promotionsByCategory = useMemo(() => {
+    const map = new Map<string, PublicPromotion>()
+    for (const p of promotions) {
+      if (p.category) map.set(p.category, p)
+    }
+    return map
+  }, [promotions])
 
   function scrollToCategory(cat: string) {
     setActiveCategory(cat)
@@ -418,22 +443,32 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         </div>
       </div>
 
-      {/* Announcements & Promotions (server-driven) */}
-      {shopConfig && (shopConfig.announcements.length > 0 || shopConfig.activePromotions.length > 0) && (
+      {/* Announcements & Promotions (dedicated public endpoints) */}
+      {(announcements.length > 0 || promotions.length > 0) && (
         <div className="bg-white border-b border-slate-200">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
-            {shopConfig.announcements.map((msg, i) => (
-              <div key={i} className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+            {announcements.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
                 <span className="text-blue-500 text-sm mt-0.5">&#x1f4e2;</span>
-                <p className="text-sm text-blue-800">{msg}</p>
+                <div className="text-sm text-blue-800">
+                  <p className="font-semibold">{announcements[0].title}</p>
+                  {announcements[0].body && (
+                    <p className="mt-0.5 text-blue-700">{announcements[0].body}</p>
+                  )}
+                </div>
               </div>
-            ))}
-            {shopConfig.activePromotions.map((promo, i) => (
+            )}
+            {promotions.map((promo, i) => (
               <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
                 <span className="text-sm font-medium text-amber-800">{promo.label}</span>
-                {promo.discountPercent && (
+                {promo.discountType === "PERCENTAGE" && promo.discountPercent !== null && (
                   <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
                     {promo.discountPercent}% off
+                  </span>
+                )}
+                {promo.discountType === "FLAT_AMOUNT" && promo.discountAmountPennies !== null && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                    £{(promo.discountAmountPennies / 100).toFixed(2)} off
                   </span>
                 )}
               </div>
@@ -517,7 +552,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {featuredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  promo={product.category ? promotionsByCategory.get(product.category) : undefined}
+                />
               ))}
             </div>
           </section>
@@ -533,7 +572,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             <h2 className="text-base font-bold text-slate-900 mb-3">{category}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {products[category].map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  promo={promotionsByCategory.get(category)}
+                />
               ))}
             </div>
           </section>
