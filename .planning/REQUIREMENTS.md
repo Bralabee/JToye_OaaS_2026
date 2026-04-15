@@ -97,33 +97,33 @@ Explicitly excluded from milestone 3. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. **Filled by roadmap creation** — currently empty because the roadmap has not yet been written for milestone 3.
+Which phases cover which requirements. Filled by roadmap creation 2026-04-14.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SECR-01 | — | Pending |
-| SECR-02 | — | Pending |
-| SECR-03 | — | Pending |
-| SECR-04 | — | Pending |
-| SECR-05 | — | Pending |
-| SECR-06 | — | Pending |
-| STFR-01 | — | Pending |
-| STFR-02 | — | Pending |
-| STFR-03 | — | Pending |
-| STFR-04 | — | Pending |
-| STFR-05 | — | Pending |
-| STFR-06 | — | Pending |
-| STMP-01 | — | Pending |
-| STMP-02 | — | Pending |
-| STMP-03 | — | Pending |
-| STMP-04 | — | Pending |
-| STMP-05 | — | Pending |
+| SECR-01 | Phase 9 | Pending |
+| SECR-02 | Phase 9 | Pending |
+| SECR-03 | Phase 9 | Pending |
+| SECR-04 | Phase 9 | Pending |
+| SECR-05 | Phase 9 | Pending |
+| SECR-06 | Phase 9 | Pending |
+| STFR-01 | Phase 10 | Pending |
+| STFR-02 | Phase 10 | Pending |
+| STFR-03 | Phase 10 | Pending |
+| STFR-04 | Phase 10 | Pending |
+| STFR-05 | Phase 10 | Pending |
+| STFR-06 | Phase 10 | Pending |
+| STMP-01 | Phase 11 | Pending |
+| STMP-02 | Phase 11 | Pending |
+| STMP-03 | Phase 11 | Pending |
+| STMP-04 | Phase 11 | Pending |
+| STMP-05 | Phase 11 | Pending |
 
 **Coverage:**
 - v1 requirements: 17 total (SECR ×6 + STFR ×6 + STMP ×5)
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 17 (pending roadmap)
+- Mapped to phases: 17 (Phase 9 ×6, Phase 10 ×6, Phase 11 ×5)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 on milestone 3 initialization*
+*Last updated: 2026-04-14 — traceability table filled by roadmap creation*
