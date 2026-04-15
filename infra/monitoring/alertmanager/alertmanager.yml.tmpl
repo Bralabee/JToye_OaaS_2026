@@ -1,0 +1,45 @@
+# Alertmanager configuration TEMPLATE (phase 9)
+#
+# Placeholders (__SMTP_SMARTHOST__, __SMTP_FROM__, __SMTP_TO__, __SMTP_REQUIRE_TLS__)
+# are rendered at container start by entrypoint.sh using sed. The rendered output
+# (alertmanager.yml) is .gitignored.
+#
+# Alertmanager has no native env-var substitution, which is why the sed wrapper
+# exists. DO NOT replace with ${VAR} syntax — Alertmanager will pass it through
+# literally and amtool will reject the config.
+#
+# Default route: local Mailhog (docker-compose.full-stack.yml, jtoye-network,
+# port 1025, no auth, no TLS). Override via .env for prod SMTP.
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: '__SMTP_SMARTHOST__'
+  smtp_from: '__SMTP_FROM__'
+  smtp_require_tls: __SMTP_REQUIRE_TLS__
+
+route:
+  receiver: email-default
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+receivers:
+  - name: email-default
+    email_configs:
+      - to: '__SMTP_TO__'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}/{{ .CommonLabels.severity }})'
+        html: |-
+          <p><b>Status:</b> {{ .Status | toUpper }}</p>
+          {{ range .Alerts }}
+          <hr>
+          <p><b>Alert:</b> {{ .Annotations.summary }}</p>
+          <p><b>Description:</b> {{ .Annotations.description }}</p>
+          <p><b>Severity:</b> {{ .Labels.severity }}</p>
+          <p><b>Service:</b> {{ .Labels.service }}</p>
+          <p><b>Started:</b> {{ .StartsAt }}</p>
+          {{ end }}
+
+inhibit_rules: []

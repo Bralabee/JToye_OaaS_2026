@@ -1,16 +1,18 @@
-# Roadmap: J'Toye OaaS — Milestone 2 (Tier 3 Enhancements)
+# Roadmap: J'Toye OaaS — Milestone 3 (v2.1 Post-Audit Hardening + Storefront Completion)
 
 ## Overview
 
-This milestone transforms J'Toye OaaS from a transactional platform into a real-time operational tool. API versioning lands first because it changes every URL in the system -- doing it later means double rework. With versioned endpoints stable, vendor marketing features build on existing backend entities (low risk, high value). The Kitchen Display System is the highest-complexity work: a tenant-aware WebSocket security layer must be proven before any real-time UI ships. Test gap closure runs as the final phase, ensuring the milestone ends with a stronger test suite than it started.
+Milestone 3 closes the three highest-priority gaps from the 2026-04-14 state-of-codebase audit (Work Orders A+B+C). Phase 9 ships first as a standalone safety net — it rotates committed credentials and wires the 13 existing Prometheus alert rules into Alertmanager so the platform stops firing alerts into the void. Phase 10 closes the vendor marketing loop by rendering promotions and announcements on the storefront plus adding the two missing customer routes (cart page, order history). Phase 11 swaps the in-memory STOMP broker for a RabbitMQ relay so `core-java` can scale past one replica without losing kitchen broadcasts — it depends on Phase 9 because STMP-05 reuses the Alertmanager route SECR-04 installs.
+
+Phase numbering continues from Milestone 2 (phases 1–8 complete). New work starts at Phase 9.
 
 ## Phases
 
 **Phase Numbering:**
 - Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- Decimal phases (9.1, 10.1): Urgent insertions (marked with INSERTED)
 
-Decimal phases appear between their surrounding integers in numeric order.
+Milestone 2 phases 1–8 are complete. Milestone 3 adds phases 9–11.
 
 - [x] **Phase 1: API Versioning — Backend** - Add /api/v1/ prefix to all Spring Boot endpoints with webhook exemptions and updated Swagger docs (completed 2026-04-07)
 - [x] **Phase 2: API Versioning — Edge & Frontend** - Update Go edge gateway routes and Next.js API client for /api/v1/ paths (completed 2026-04-08)
@@ -20,6 +22,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: KDS Event Pipeline** - Route WebSocket events through RabbitMQ consumer for single event pipeline (completed 2026-04-08)
 - [x] **Phase 7: Kitchen Display UI** - Real-time order card feed with status bumping, age indicators, and audio alerts (completed 2026-04-09)
 - [x] **Phase 8: Test Coverage Closure** - Tests for PaymentController, PublicStorefrontController, security filters, and GdprController (completed 2026-04-09)
+- [ ] **Phase 9: Repository Secrets + Alerting** - Remove committed .env, rotate 5 credentials, deploy Alertmanager with Slack routing for 13 existing alert rules
+- [ ] **Phase 10: Storefront Marketing Render + Missing Customer Routes** - Public promotions/announcements endpoints, storefront render, standalone cart page, customer order history, full-flow Playwright e2e
+- [ ] **Phase 11: STOMP Broker Relay for Horizontal Scale** - Swap SimpleBroker for StompBrokerRelay behind stomp.broker.mode flag, enable RabbitMQ STOMP plugin, two-replica broadcast verification
 
 ## Phase Details
 
@@ -139,11 +144,54 @@ Plans:
 - [x] 08-01-PLAN.md — PaymentController webhook tests + PublicStorefrontController endpoint tests
 - [x] 08-02-PLAN.md — JwtTenantFilter/TenantFilter security filter tests + GdprController integration tests
 
+### Phase 9: Repository Secrets + Alerting
+**Goal**: Every existing Prometheus alert rule reaches a human via Slack within 60 seconds, and gitleaks CI enforcement prevents future secret drift (re-scoped 2026-04-15: audit-doc premise of committed `.env` verified false; see `09-CONTEXT.md <critical_rescope>`)
+**Depends on**: Nothing (standalone safety net; ships first in milestone 3)
+**Requirements**: SECR-01, SECR-02, SECR-03, SECR-04, SECR-05, SECR-06, SECR-07
+**Success Criteria** (what must be TRUE):
+  1. `.env` is verified not tracked by git (`git ls-files --error-unmatch .env` errors, `git check-ignore -v .env` matches `.gitignore:64:.env`) — SECR-01 re-scoped to verification, SECR-02/03 dropped as no-ops because no committed credentials exist
+  2. Prometheus + Alertmanager run side-by-side in `infra/monitoring/docker-compose.monitoring.yml` with Prometheus's `alerting.alertmanagers` block pointing at the Alertmanager container
+  3. Force-stopping `core-java` produces a Slack message on the configured webhook channel within ~3 minutes (end-to-end alert roundtrip verified, runbook entry captured)
+  4. All 10 existing Prometheus alert rules (verified count, not 13 as the audit doc claims) carry `severity` and `service` labels and route to the Slack receiver without warnings in `amtool check-config`
+  5. `gitleaks/gitleaks-action@v2` runs on every PR to `main` with a `.gitleaks.toml` allowlist for `.env.example` + `k8s/base/secrets-template.yaml` placeholders, so future drift cannot make the original finding real (SECR-07)
+  6. `.planning/REQUIREMENTS.md` reflects the re-scope (SECR-01..03 rewritten, SECR-07 added, coverage count 17→18) and `.planning/state-of-codebase/STATE-OF-CODEBASE-2026-04-14.md` §9 Blocker 5 + §11 Work Order A carry a "verified incorrect" footnote without rewriting the original prose
+**Plans**: 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Deploy Alertmanager + wire Prometheus + audit alert rule labels
+- [ ] 09-02-PLAN.md — Gitleaks CI workflow + allowlist + opt-in local hook (SECR-07)
+- [ ] 09-03-PLAN.md — Smoke-test + runbook + README + REQUIREMENTS/audit-doc re-scope updates
+
+### Phase 10: Storefront Marketing Render + Missing Customer Routes
+**Goal**: Customers can see the promotions and announcements vendors publish, land on the two previously-missing customer routes without 404s, and complete a full browse→cart→checkout flow end-to-end
+**Depends on**: Nothing from milestone 3 (independent of Phase 9 and 11; can run in parallel with either)
+**Requirements**: STFR-01, STFR-02, STFR-03, STFR-04, STFR-05, STFR-06
+**Success Criteria** (what must be TRUE):
+  1. Hitting `GET /public/shops/{slug}/promotions` and `GET /public/shops/{slug}/announcements` returns only active (validFrom ≤ now ≤ validUntil) records scoped to the tenant that owns `{slug}` — cross-tenant probes return empty, controller-level integration tests cover both positive and negative paths
+  2. Opening `/shop/[slug]` as an unauthenticated visitor shows the announcement banner above the menu and renders discount badges on the product cards that match an active promotion (verified with Playwright against the full stack)
+  3. Navigating directly to `/shop/[slug]/cart` renders the standalone cart page — populated from the same localStorage key as the modal cart, supporting quantity edit, checkout link, and graceful empty-cart + missing-shop states (Jest covers both states)
+  4. Navigating to `/shop/orders` as a logged-in customer lists all of that customer's orders across every shop, with status filter, date filter, and pagination; unauthenticated visitors are redirected by `RequireCustomerAuth`
+  5. A Playwright e2e walks shop discovery → shop detail → add to cart → cart page → Stripe test-mode checkout → confirmation screen in a single run against the full docker-compose stack and passes in CI
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: STOMP Broker Relay for Horizontal Scale
+**Goal**: `core-java` can run with two or more replicas behind a load balancer without losing kitchen WebSocket broadcasts, and operators see STOMP broker lag in Prometheus/Grafana with alerting wired through the Phase 9 Alertmanager
+**Depends on**: Phase 9 (STMP-05 reuses the Alertmanager + Slack route installed in SECR-04/SECR-05)
+**Requirements**: STMP-01, STMP-02, STMP-03, STMP-04, STMP-05
+**Success Criteria** (what must be TRUE):
+  1. `WebSocketConfig.java` reads a `stomp.broker.mode` property — `in-memory` mode preserves today's `enableSimpleBroker` behaviour for local dev; `relay` mode calls `enableStompBrokerRelay("/topic","/queue")` with host/port/login wired from env
+  2. RabbitMQ has the `rabbitmq_stomp` plugin enabled in both `docker-compose.full-stack.yml` and the `k8s/` manifests, port 61613 is exposed, and relay credentials live as k8s Secret entries referenced via env vars
+  3. Running `docker compose up --scale core-java=2` and publishing an order state change to replica B causes a kitchen client connected to replica A to receive the message within 2 seconds (smoke-test log captured)
+  4. A Playwright e2e running against the two-replica stack in `relay` mode opens `/dashboard/kitchen`, triggers an order state change via REST on a different replica, and asserts the WebSocket message arrives within 2 seconds — green in CI
+  5. A Prometheus alert rule on RabbitMQ STOMP exchange lag > 5 seconds fires into the Phase 9 Alertmanager Slack route, and a Grafana dashboard tile displays live STOMP connection count
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
-Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel with other phases.
+Milestone 2: phases 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 (all complete)
+Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 11 in parallel where possible. Phase 11 must not start STMP-05 until Phase 9 SECR-04/SECR-05 are complete (shared Alertmanager route).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -155,3 +203,6 @@ Note: Phase 8 (Test Coverage) has no dependencies and can execute in parallel wi
 | 6. KDS Event Pipeline | 1/1 | Complete    | 2026-04-08 |
 | 7. Kitchen Display UI | 1/1 | Complete    | 2026-04-09 |
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
+| 9. Repository Secrets + Alerting | 0/? | Not started | - |
+| 10. Storefront Marketing Render + Missing Customer Routes | 0/? | Not started | - |
+| 11. STOMP Broker Relay for Horizontal Scale | 0/? | Not started | - |

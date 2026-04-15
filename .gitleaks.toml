@@ -1,0 +1,32 @@
+title = "J'Toye OaaS gitleaks config"
+
+[extend]
+useDefault = true
+
+# ---- Path-based allowlists ---------------------------------------------------
+[[allowlists]]
+description = "Placeholder template files containing CHANGE_ME / REPLACE_WITH_*"
+condition = "OR"
+paths = [
+  '''\.env\.example$''',
+  '''k8s/base/secrets-template\.yaml$''',
+  '''\.gitleaks\.toml$''',
+  # Keycloak realm import for local docker-compose bootstrap. Contains
+  # hardcoded dev-only OIDC client secrets (e.g. core-api-secret-2026) that
+  # are used exclusively for localhost dev. Flagged for follow-up: template
+  # these via env-var substitution before any staging/prod realm import.
+  # See .planning/phases/09-repository-secrets-alerting/deferred-items.md
+  '''infra/keycloak/realm-export\.json$''',
+]
+
+# ---- Content-based allowlists (defence-in-depth for any file) ----------------
+[[allowlists]]
+description = "Placeholder literal strings used across docs and examples"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''CHANGE_ME''',
+  '''REPLACE_WITH_[A-Z_]+''',
+  '''your-[a-z-]+-here''',
+  '''<[A-Z_]+>''',
+]
