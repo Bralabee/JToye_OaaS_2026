@@ -108,6 +108,11 @@ networks:
     driver: bridge
   jtoye-network:
     external: true
+    # Compose auto-prefixes network names with the project dir. The full-stack
+    # compose's `jtoye-network` is created as `jtoye_oaas_2026_jtoye-network`.
+    # Point the external reference at the actual name so this file can run
+    # standalone against an already-up full stack.
+    name: jtoye_oaas_2026_jtoye-network
 
 volumes:
   prometheus_data:
