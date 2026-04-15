@@ -145,16 +145,22 @@ Plans:
 - [x] 08-02-PLAN.md — JwtTenantFilter/TenantFilter security filter tests + GdprController integration tests
 
 ### Phase 9: Repository Secrets + Alerting
-**Goal**: Committed credentials are purged and rotated, and every existing Prometheus alert rule reaches a human via Slack within 60 seconds
+**Goal**: Every existing Prometheus alert rule reaches a human via Slack within 60 seconds, and gitleaks CI enforcement prevents future secret drift (re-scoped 2026-04-15: audit-doc premise of committed `.env` verified false; see `09-CONTEXT.md <critical_rescope>`)
 **Depends on**: Nothing (standalone safety net; ships first in milestone 3)
-**Requirements**: SECR-01, SECR-02, SECR-03, SECR-04, SECR-05, SECR-06
+**Requirements**: SECR-01, SECR-02, SECR-03, SECR-04, SECR-05, SECR-06, SECR-07
 **Success Criteria** (what must be TRUE):
-  1. `.env` is no longer tracked by git (`git check-ignore .env` succeeds) and a gitignore entry prevents re-adds
-  2. All 5 previously committed credentials (Postgres jtoye/keycloak roles, Keycloak admin, Redis, RabbitMQ, Keycloak client secret) have been rotated in running services and the rotated values exist only in GitHub Secrets + k8s Secret manifests
-  3. Prometheus + Alertmanager run side-by-side in `infra/monitoring/docker-compose.monitoring.yml` with Prometheus's `alerting.alertmanagers` block pointing at the Alertmanager container
-  4. Force-killing `core-java` produces a Slack message on the configured webhook channel within 60 seconds (end-to-end alert roundtrip verified, runbook entry captured)
-  5. All 13 existing Prometheus alert rules carry `severity` and `service` labels and route to the Slack receiver without warnings in Alertmanager config-check
-**Plans**: TBD
+  1. `.env` is verified not tracked by git (`git ls-files --error-unmatch .env` errors, `git check-ignore -v .env` matches `.gitignore:64:.env`) — SECR-01 re-scoped to verification, SECR-02/03 dropped as no-ops because no committed credentials exist
+  2. Prometheus + Alertmanager run side-by-side in `infra/monitoring/docker-compose.monitoring.yml` with Prometheus's `alerting.alertmanagers` block pointing at the Alertmanager container
+  3. Force-stopping `core-java` produces a Slack message on the configured webhook channel within ~3 minutes (end-to-end alert roundtrip verified, runbook entry captured)
+  4. All 10 existing Prometheus alert rules (verified count, not 13 as the audit doc claims) carry `severity` and `service` labels and route to the Slack receiver without warnings in `amtool check-config`
+  5. `gitleaks/gitleaks-action@v2` runs on every PR to `main` with a `.gitleaks.toml` allowlist for `.env.example` + `k8s/base/secrets-template.yaml` placeholders, so future drift cannot make the original finding real (SECR-07)
+  6. `.planning/REQUIREMENTS.md` reflects the re-scope (SECR-01..03 rewritten, SECR-07 added, coverage count 17→18) and `.planning/state-of-codebase/STATE-OF-CODEBASE-2026-04-14.md` §9 Blocker 5 + §11 Work Order A carry a "verified incorrect" footnote without rewriting the original prose
+**Plans**: 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Deploy Alertmanager + wire Prometheus + audit alert rule labels
+- [ ] 09-02-PLAN.md — Gitleaks CI workflow + allowlist + opt-in local hook (SECR-07)
+- [ ] 09-03-PLAN.md — Smoke-test + runbook + README + REQUIREMENTS/audit-doc re-scope updates
 
 ### Phase 10: Storefront Marketing Render + Missing Customer Routes
 **Goal**: Customers can see the promotions and announcements vendors publish, land on the two previously-missing customer routes without 404s, and complete a full browse→cart→checkout flow end-to-end
