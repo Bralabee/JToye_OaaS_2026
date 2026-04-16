@@ -26,10 +26,11 @@ let lastClient: Record<string, unknown> | null = null
 
 jest.mock("@stomp/stompjs", () => {
   return {
-    Client: jest.fn().mockImplementation((cfg: ClientConfig) => {
+    Client: jest.fn().mockImplementation((cfg: ClientConfig & { brokerURL?: string }) => {
       lastConfig = cfg
       const client = {
-        brokerURL: "",
+        brokerURL: cfg.brokerURL || "",
+        connectHeaders: {} as Record<string, string>,
         activate: mockActivate,
         deactivate: mockDeactivate,
         subscribe: mockSubscribe,
@@ -65,12 +66,16 @@ describe("useStomp", () => {
     expect(mockActivate).not.toHaveBeenCalled()
   })
 
-  it("beforeConnect fetches session and sets brokerURL with token", async () => {
+  it("beforeConnect fetches session and sets connectHeaders with token", async () => {
     renderHook(() => useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn()))
     expect(lastConfig?.beforeConnect).toBeDefined()
     await lastConfig!.beforeConnect!()
     expect(getSession).toHaveBeenCalled()
-    expect(lastClient?.brokerURL).toBe("ws://core.local:9090/ws?token=mock-token")
+    // Token should be in STOMP CONNECT headers, not the URL
+    expect(lastClient?.brokerURL).toBe("ws://core.local:9090/ws")
+    expect((lastClient as Record<string, unknown>)?.connectHeaders).toEqual({
+      Authorization: "Bearer mock-token",
+    })
   })
 
   it("beforeConnect does NOT crash when getSession() throws", async () => {
@@ -79,7 +84,10 @@ describe("useStomp", () => {
     renderHook(() => useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn()))
     await expect(lastConfig!.beforeConnect!()).resolves.toBeUndefined()
     // Falls back to an empty token so the broker can reject cleanly
-    expect(lastClient?.brokerURL).toBe("ws://core.local:9090/ws?token=")
+    expect(lastClient?.brokerURL).toBe("ws://core.local:9090/ws")
+    expect((lastClient as Record<string, unknown>)?.connectHeaders).toEqual({
+      Authorization: "Bearer ",
+    })
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })

@@ -76,7 +76,12 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
             throw new MessageDeliveryException("No session attributes");
         }
 
-        String token = (String) sessionAttrs.get("jwt_token");
+        // Prefer token from STOMP CONNECT frame headers (avoids URL query param leakage).
+        // Fall back to session attribute from handshake for backwards compatibility.
+        String token = extractTokenFromConnectHeaders(accessor);
+        if (token == null || token.isBlank()) {
+            token = (String) sessionAttrs.get("jwt_token");
+        }
         if (token == null || token.isBlank()) {
             throw new MessageDeliveryException("Missing JWT token");
         }
@@ -90,25 +95,47 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
         log.debug("WebSocket CONNECT authenticated for tenant {}", tenantId);
     }
 
+    private String extractTokenFromConnectHeaders(StompHeaderAccessor accessor) {
+        java.util.List<String> authHeaders = accessor.getNativeHeader("Authorization");
+        if (authHeaders != null && !authHeaders.isEmpty()) {
+            String value = authHeaders.get(0);
+            if (value != null && value.startsWith("Bearer ")) {
+                return value.substring(7);
+            }
+            return value;
+        }
+        return null;
+    }
+
     private void validateSubscription(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        if (destination == null || !destination.startsWith("/topic/kitchen/")) {
-            return; // Allow non-kitchen subscriptions through
+        if (destination == null) {
+            return;
+        }
+
+        // Enforce tenant isolation on ALL /topic/ subscriptions.
+        // Convention: /topic/{feature}/{tenantId}/{...}  (e.g. /topic/kitchen/{tid}/{shopId})
+        // Any topic destination with a tenant segment must match the session tenant.
+        if (!destination.startsWith("/topic/")) {
+            return;
         }
 
         UUID sessionTenant = getSessionTenant(accessor);
         String[] parts = destination.split("/");
-        // parts: ["", "topic", "kitchen", "{tenantId}", "{shopId}"]
-        if (parts.length >= 4) {
-            try {
-                UUID destTenant = UUID.fromString(parts[3]);
-                if (!destTenant.equals(sessionTenant)) {
-                    log.warn("Cross-tenant subscription denied: session={}, destination={}", sessionTenant, destTenant);
-                    throw new MessageDeliveryException("Cross-tenant subscription denied");
-                }
-            } catch (IllegalArgumentException e) {
-                throw new MessageDeliveryException("Invalid tenant ID in destination");
+        // parts: ["", "topic", "{feature}", "{tenantId}", ...]
+        if (parts.length < 4) {
+            log.warn("Subscription to topic without tenant segment denied: {}", destination);
+            throw new MessageDeliveryException("Topic subscriptions require a tenant segment");
+        }
+
+        try {
+            UUID destTenant = UUID.fromString(parts[3]);
+            if (!destTenant.equals(sessionTenant)) {
+                log.warn("Cross-tenant subscription denied: session={}, destination={}", sessionTenant, destTenant);
+                throw new MessageDeliveryException("Cross-tenant subscription denied");
             }
+        } catch (IllegalArgumentException e) {
+            throw new MessageDeliveryException("Invalid tenant ID in destination: " + parts[3]);
         }
     }
 
