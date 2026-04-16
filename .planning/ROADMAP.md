@@ -194,7 +194,7 @@ Plans:
 **UI hint**: no
 
 Plans:
-- [ ] 11-01-PLAN.md — Conditional STOMP broker mode + RabbitMQ STOMP plugin + k8s manifests (STMP-01, STMP-02)
+- [x] 11-01-PLAN.md — Conditional STOMP broker mode + RabbitMQ STOMP plugin + k8s manifests (STMP-01, STMP-02)
 - [ ] 11-02-PLAN.md — Two-replica smoke test + Playwright cross-replica e2e (STMP-03, STMP-04)
 - [ ] 11-03-PLAN.md — Prometheus StompBrokerLag alert + Grafana dashboard tile (STMP-05)
 
@@ -216,4 +216,4 @@ Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 1
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
 | 9. Repository Secrets + Alerting | 0/3 | Not started | - |
 | 10. Storefront Marketing Render + Missing Customer Routes | 0/3 | Not started | - |
-| 11. STOMP Broker Relay for Horizontal Scale | 0/3 | Not started | - |
+| 11. STOMP Broker Relay for Horizontal Scale | 1/3 | In Progress|  |
