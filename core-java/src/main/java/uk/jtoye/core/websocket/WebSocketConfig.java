@@ -10,6 +10,8 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import java.util.List;
+
 /**
  * WebSocket/STOMP configuration for real-time KDS communication.
  *
@@ -52,6 +54,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Value("${stomp.broker.system-passcode:guest}")
     private String systemPasscode;
 
+    @Value("${cors.allowed-origins:http://localhost:3000}")
+    private List<String> allowedOrigins;
+
     public WebSocketConfig(TenantChannelInterceptor tenantChannelInterceptor) {
         this.tenantChannelInterceptor = tenantChannelInterceptor;
     }
@@ -78,7 +83,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .addInterceptors(new JwtHandshakeInterceptor())
-                .setAllowedOriginPatterns("*");
+                .setAllowedOrigins(allowedOrigins.toArray(String[]::new));
         // D-09: No .withSockJS() -- modern browsers all support native WebSocket
     }
 
