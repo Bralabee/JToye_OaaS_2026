@@ -632,7 +632,7 @@
     "alwaysDisplayInConsole" : false,
     "clientAuthenticatorType" : "client-secret",
     "secret" : "core-api-secret-2026",
-    "redirectUris" : [ "http://localhost:8080/*", "http://localhost:3000/*", "http://localhost:9090/*" ],
+    "redirectUris" : [ "http://localhost:8080/*", "http://localhost:3000/*", "http://localhost:3100/*", "http://localhost:9090/*" ],
     "webOrigins" : [ "*" ],
     "notBefore" : 0,
     "bearerOnly" : false,

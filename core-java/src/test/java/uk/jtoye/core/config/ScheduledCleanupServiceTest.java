@@ -1,5 +1,7 @@
 package uk.jtoye.core.config;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,7 @@ import uk.jtoye.core.order.OrderStatus;
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -21,7 +24,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ScheduledCleanupServiceTest {
 
+    private static final UUID TEST_TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
     @Mock private OrderRepository orderRepository;
+    @Mock private EntityManager entityManager;
+    @Mock private Query tenantQuery;
     @InjectMocks private ScheduledCleanupService cleanupService;
 
     @BeforeEach
@@ -29,6 +36,10 @@ class ScheduledCleanupServiceTest {
         Field f = ScheduledCleanupService.class.getDeclaredField("staleDraftHours");
         f.setAccessible(true);
         f.set(cleanupService, 24);
+
+        // Mock tenant lookup so cleanupStaleDraftOrders iterates one test tenant
+        when(entityManager.createNativeQuery("SELECT id FROM tenants")).thenReturn(tenantQuery);
+        when(tenantQuery.getResultList()).thenReturn(List.of(TEST_TENANT));
     }
 
     @Test

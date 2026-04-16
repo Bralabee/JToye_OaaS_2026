@@ -22,3 +22,8 @@ data:
   # Application settings
   log.level: "INFO"
   sql.log.level: "WARN"
+
+  # STOMP broker relay configuration
+  stomp.broker.mode: "relay"
+  stomp.broker.relay-host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
+  stomp.broker.relay-port: "61613"

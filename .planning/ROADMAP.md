@@ -24,7 +24,7 @@ Milestone 2 phases 1–8 are complete. Milestone 3 adds phases 9–11.
 - [x] **Phase 8: Test Coverage Closure** - Tests for PaymentController, PublicStorefrontController, security filters, and GdprController (completed 2026-04-09)
 - [ ] **Phase 9: Repository Secrets + Alerting** - Remove committed .env, rotate 5 credentials, deploy Alertmanager with Slack routing for 13 existing alert rules
 - [ ] **Phase 10: Storefront Marketing Render + Missing Customer Routes** - Public promotions/announcements endpoints, storefront render, standalone cart page, customer order history, full-flow Playwright e2e
-- [ ] **Phase 11: STOMP Broker Relay for Horizontal Scale** - Swap SimpleBroker for StompBrokerRelay behind stomp.broker.mode flag, enable RabbitMQ STOMP plugin, two-replica broadcast verification
+- [x] **Phase 11: STOMP Broker Relay for Horizontal Scale** - Swap SimpleBroker for StompBrokerRelay behind stomp.broker.mode flag, enable RabbitMQ STOMP plugin, two-replica broadcast verification (completed 2026-04-16)
 
 ## Phase Details
 
@@ -190,7 +190,13 @@ Plans:
   3. Running `docker compose up --scale core-java=2` and publishing an order state change to replica B causes a kitchen client connected to replica A to receive the message within 2 seconds (smoke-test log captured)
   4. A Playwright e2e running against the two-replica stack in `relay` mode opens `/dashboard/kitchen`, triggers an order state change via REST on a different replica, and asserts the WebSocket message arrives within 2 seconds — green in CI
   5. A Prometheus alert rule on RabbitMQ STOMP exchange lag > 5 seconds fires into the Phase 9 Alertmanager Slack route, and a Grafana dashboard tile displays live STOMP connection count
-**Plans**: TBD
+**Plans**: 3 plans
+**UI hint**: no
+
+Plans:
+- [x] 11-01-PLAN.md — Conditional STOMP broker mode + RabbitMQ STOMP plugin + k8s manifests (STMP-01, STMP-02)
+- [x] 11-02-PLAN.md — Two-replica smoke test + Playwright cross-replica e2e (STMP-03, STMP-04)
+- [x] 11-03-PLAN.md — Prometheus StompBrokerLag alert + Grafana dashboard tile (STMP-05)
 
 ## Progress
 
@@ -208,6 +214,6 @@ Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 1
 | 6. KDS Event Pipeline | 1/1 | Complete    | 2026-04-08 |
 | 7. Kitchen Display UI | 1/1 | Complete    | 2026-04-09 |
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
-| 9. Repository Secrets + Alerting | 0/? | Not started | - |
+| 9. Repository Secrets + Alerting | 0/3 | Not started | - |
 | 10. Storefront Marketing Render + Missing Customer Routes | 0/3 | Not started | - |
-| 11. STOMP Broker Relay for Horizontal Scale | 0/? | Not started | - |
+| 11. STOMP Broker Relay for Horizontal Scale | 3/3 | Complete    | 2026-04-16 |

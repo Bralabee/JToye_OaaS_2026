@@ -17,6 +17,12 @@ paths = [
   # these via env-var substitution before any staging/prod realm import.
   # See .planning/phases/09-repository-secrets-alerting/deferred-items.md
   '''infra/keycloak/realm-export\.json$''',
+  # Planning artifacts contain curl examples with env var placeholders
+  # (e.g. curl -u ${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}).
+  # These are code snippets, not actual credentials.
+  '''\.planning/phases/.*-PLAN\.md$''',
+  '''\.planning/phases/.*-RESEARCH\.md$''',
+  '''scripts/smoke-test.*\.sh$''',
 ]
 
 # ---- Content-based allowlists (defence-in-depth for any file) ----------------
@@ -29,4 +35,15 @@ regexes = [
   '''REPLACE_WITH_[A-Z_]+''',
   '''your-[a-z-]+-here''',
   '''<[A-Z_]+>''',
+]
+
+# ---- Fingerprint-based allowlists (specific historical false positives) ------
+[[allowlists]]
+description = "curl -u examples in planning docs and smoke test scripts (env var placeholders, not real credentials)"
+condition = "OR"
+commits = [
+  "51edf6f52c4e3d5a25c68e1eac2299718dc26aa5",
+  "d2834bae09ab74ebfcb9bc0449fb4770e79f8854",
+  "3d62ed44899a0394881bd91de7051c1c8fbb1268",
+  "76fcf55d756a5b87e7b827f528a8783e662727d6",
 ]

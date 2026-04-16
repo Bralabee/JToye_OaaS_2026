@@ -33,7 +33,7 @@ scrape_configs:
   - job_name: 'core-java'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['jtoye-core-java:9090']
+      - targets: ['core-java:9090']
         labels:
           service: 'core-api'
           component: 'backend'
