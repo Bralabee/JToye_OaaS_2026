@@ -147,6 +147,50 @@ class TenantChannelInterceptorTest {
         assertThat(accessor.getSessionAttributes()).containsEntry("tenantId", TENANT_A);
     }
 
+    @Test
+    void shouldAuthenticateViaStompConnectHeader() {
+        Jwt jwt = buildJwt("tenant_id", TENANT_A.toString());
+        when(jwtDecoder.decode("header-token")).thenReturn(jwt);
+
+        // No jwt_token in session — token only in STOMP CONNECT Authorization header
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setLeaveMutable(true);
+        accessor.addNativeHeader("Authorization", "Bearer header-token");
+        Map<String, Object> sessionAttrs = new HashMap<>();
+        accessor.setSessionAttributes(sessionAttrs);
+        accessor.setSessionId("test-session");
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Message<?> result = interceptor.preSend(message, mock(MessageChannel.class));
+
+        assertThat(result).isNotNull();
+        StompHeaderAccessor resultAccessor = StompHeaderAccessor.wrap(result);
+        assertThat(resultAccessor.getSessionAttributes()).containsEntry("tenantId", TENANT_A);
+        assertThat(resultAccessor.getUser()).isNotNull();
+    }
+
+    @Test
+    void shouldPreferStompHeaderOverSessionAttribute() {
+        Jwt jwtA = buildJwt("tenant_id", TENANT_A.toString());
+        when(jwtDecoder.decode("header-token")).thenReturn(jwtA);
+
+        // Both session and header have tokens — header should win
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setLeaveMutable(true);
+        accessor.addNativeHeader("Authorization", "Bearer header-token");
+        Map<String, Object> sessionAttrs = new HashMap<>();
+        sessionAttrs.put("jwt_token", "session-token");
+        accessor.setSessionAttributes(sessionAttrs);
+        accessor.setSessionId("test-session");
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        interceptor.preSend(message, mock(MessageChannel.class));
+
+        // Should have decoded "header-token", not "session-token"
+        StompHeaderAccessor resultAccessor = StompHeaderAccessor.wrap(message);
+        assertThat(resultAccessor.getSessionAttributes()).containsEntry("tenantId", TENANT_A);
+    }
+
     // --- SUBSCRIBE tests ---
 
     @Test
@@ -180,8 +224,38 @@ class TenantChannelInterceptorTest {
     }
 
     @Test
-    void shouldAllowNonKitchenSubscription() {
+    void shouldRejectTopicWithoutTenantSegment() {
         String destination = "/topic/other";
+        Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("Topic subscriptions require a tenant segment");
+    }
+
+    @Test
+    void shouldAllowNonKitchenTopicWithCorrectTenant() {
+        String destination = "/topic/notifications/" + TENANT_A + "/updates";
+        Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
+
+        Message<?> result = interceptor.preSend(message, mock(MessageChannel.class));
+
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    void shouldBlockCrossTenantNonKitchenTopic() {
+        String destination = "/topic/notifications/" + TENANT_B + "/updates";
+        Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("Cross-tenant subscription denied");
+    }
+
+    @Test
+    void shouldAllowNonTopicSubscription() {
+        String destination = "/queue/reply-session123";
         Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
 
         Message<?> result = interceptor.preSend(message, mock(MessageChannel.class));

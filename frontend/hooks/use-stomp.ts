@@ -5,12 +5,11 @@ import { Client, IMessage } from "@stomp/stompjs"
 import { getSession } from "next-auth/react"
 import type { OrderStateChangeEvent } from "@/types/api"
 
-function getWsBrokerUrl(token: string): string {
+function getWsBrokerUrl(): string {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
-  // Strip protocol and derive ws:// or wss://
   const url = new URL(apiUrl)
   const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:"
-  return `${wsProtocol}//${url.host}/ws?token=${token}`
+  return `${wsProtocol}//${url.host}/ws`
 }
 
 export function useStomp(
@@ -45,12 +44,12 @@ export function useStomp(
     let wasConnectedBefore = false
 
     const client = new Client({
+      brokerURL: getWsBrokerUrl(),
       reconnectDelay: 5000,
       beforeConnect: async () => {
         // Fetch fresh JWT on every connect/reconnect (handles token refresh per T-03).
-        // A failing getSession() must NOT crash the hook — fall back to an empty
-        // token and let the broker reject the connection cleanly so the retry
-        // loop keeps running.
+        // Token is sent via STOMP CONNECT headers, not the URL query string,
+        // to avoid leaking credentials in browser history, logs, and proxies.
         let token = ""
         try {
           const session = await getSession()
@@ -58,7 +57,7 @@ export function useStomp(
         } catch (err) {
           console.warn("useStomp: getSession() failed, connecting without token", err)
         }
-        client.brokerURL = getWsBrokerUrl(token)
+        client.connectHeaders = { Authorization: `Bearer ${token}` }
       },
       onConnect: () => {
         setConnected(true)
@@ -91,9 +90,6 @@ export function useStomp(
         }
       },
     })
-
-    // Set initial broker URL (will be overridden by beforeConnect)
-    client.brokerURL = getWsBrokerUrl("")
 
     clientRef.current = client
     client.activate()

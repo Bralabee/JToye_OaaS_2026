@@ -10,7 +10,7 @@ groups:
             sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (service)
             /
             sum(rate(http_server_requests_seconds_count[5m])) by (service)
-          ) * 100 > 5
+          ) * 100 > 3
         for: 5m
         labels:
           severity: critical
@@ -18,7 +18,7 @@ groups:
           service: core-java
         annotations:
           summary: "High error rate detected on {{ $labels.service }}"
-          description: "Service {{ $labels.service }} has {{ $value | humanizePercentage }} error rate (threshold: 5%)"
+          description: "Service {{ $labels.service }} has {{ $value | humanizePercentage }} error rate (threshold: 3%)"
 
       # Service down alert
       - alert: ServiceDown
@@ -109,7 +109,7 @@ groups:
 
       # Frequent garbage collection
       - alert: FrequentGarbageCollection
-        expr: rate(jvm_gc_pause_seconds_count[5m]) > 10
+        expr: rate(jvm_gc_pause_seconds_count[5m]) > 50
         for: 5m
         labels:
           severity: warning
@@ -117,7 +117,7 @@ groups:
           service: core-java
         annotations:
           summary: "Frequent garbage collection on {{ $labels.service }}"
-          description: "GC rate is {{ $value | humanize }} per second (threshold: 10/s)"
+          description: "GC rate is {{ $value | humanize }} per second (threshold: 50/s)"
 
   - name: business_alerts
     interval: 30s
@@ -126,7 +126,7 @@ groups:
       - alert: NoOrdersCreated
         expr: |
           (
-            increase(http_server_requests_seconds_count{uri="/orders",method="POST",status="201"}[30m]) < 1
+            increase(http_server_requests_seconds_count{uri=~"/orders|/api/v[0-9]+/orders",method="POST",status="201"}[30m]) < 1
           )
         for: 30m
         labels:
@@ -149,6 +149,65 @@ groups:
           summary: "Tenant context missing in requests"
           description: "{{ $value }} requests per second lack tenant context (potential security issue)"
 
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Disk space running low
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+            / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          ) * 100 < 15
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+          service: node
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Only {{ $value | humanize }}% disk space remaining on {{ $labels.mountpoint }} (threshold: 15%)"
+
+      # Disk space critical
+      - alert: DiskSpaceCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+            / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          ) * 100 < 5
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+          service: node
+        annotations:
+          summary: "Disk space critical on {{ $labels.instance }}"
+          description: "Only {{ $value | humanize }}% disk space remaining — immediate action required"
+
+      # Keycloak down
+      - alert: KeycloakDown
+        expr: up{job="keycloak"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: auth
+          service: keycloak
+        annotations:
+          summary: "Keycloak identity provider is down"
+          description: "Keycloak has been unreachable for more than 2 minutes — all authentication will fail"
+
+      # Redis down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+          service: redis
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis has been unreachable for more than 1 minute — cache operations will fail"
+
   - name: messaging_alerts
     interval: 30s
     rules:
@@ -159,7 +218,7 @@ groups:
       - alert: StompBrokerLag
         expr: |
           sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
-        for: 5s
+        for: 30s
         labels:
           severity: warning
           component: messaging
