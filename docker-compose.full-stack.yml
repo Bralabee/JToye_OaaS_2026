@@ -148,7 +148,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     # Port range allows --scale core-java=2 (each replica gets a unique host port)
     # Replica 1 → localhost:9090, Replica 2 → localhost:9091
