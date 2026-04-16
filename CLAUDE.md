@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.22, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 310+ tests passing
+- **Testing**: All new code requires tests — project standard is 460+ tests passing (385 Java + 76 Jest)
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V32 (optimistic locking on orders/shops)
+- Current schema version: V33 (RLS policy fixes for promotions/announcements/reviews/payment_event_outbox)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`
