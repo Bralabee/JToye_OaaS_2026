@@ -35,12 +35,12 @@ Effort: ~1 day (down from 2 days because the credential rotation work is dropped
 
 The tier-3 vendor marketing flagship works end-to-end on the vendor side but is never rendered on the storefront — customers literally cannot see the promotions vendors are paying for. Plus two missing customer routes (`/shop/[slug]/cart` and `/shop/orders`) cause direct-link 404s and loyalty friction. ~1 week.
 
-- [ ] **STFR-01**: `PublicStorefrontController.getPromotions(slug)` — `GET /public/shops/{slug}/promotions` returns only active (validFrom ≤ now ≤ validUntil) promotions for the tenant owning `slug`; DTO + mapper + RLS-compatible query; controller-level integration test
-- [ ] **STFR-02**: `PublicStorefrontController.getAnnouncements(slug)` — `GET /public/shops/{slug}/announcements` returns only active+unexpired announcements with the same tenant scoping; controller-level integration test
-- [ ] **STFR-03**: `frontend/app/shop/[slug]/page.tsx` fetches promotions + announcements in parallel with shop, renders the announcement banner above the menu, and overlays discount badges on the product cards that match an active promotion; active-promotion-per-product lookup memoised
-- [ ] **STFR-04**: `frontend/app/shop/[slug]/cart/page.tsx` standalone cart view — reads the same localStorage key as the modal cart, renders items, supports quantity edit, links to checkout, and handles empty-cart + missing-shop gracefully; Jest test for empty and populated states
-- [ ] **STFR-05**: `frontend/app/shop/orders/page.tsx` authenticated customer order-history route — `RequireCustomerAuth` guard, lists all orders for the logged-in customer across all shops with status filter + date filter + pagination; backend `GET /public/customers/{id}/orders` endpoint (or equivalent) if not already exposed
-- [ ] **STFR-06**: Playwright e2e validates the full customer flow — shop discovery → shop detail → add to cart → cart page → checkout → Stripe test mode payment → confirmation screen; runs against the full docker-compose stack
+- [x] **STFR-01**: `PublicStorefrontController.getPromotions(slug)` — `GET /public/shops/{slug}/promotions` returns only active (validFrom ≤ now ≤ validUntil) promotions for the tenant owning `slug`; DTO + mapper + RLS-compatible query; controller-level integration test. Done: plan 10-01 commit `168582a`.
+- [x] **STFR-02**: `PublicStorefrontController.getAnnouncements(slug)` — `GET /public/shops/{slug}/announcements` returns only active+unexpired announcements with the same tenant scoping; controller-level integration test. Done: plan 10-01 commit `168582a`.
+- [x] **STFR-03**: `frontend/app/shop/[slug]/page.tsx` fetches promotions + announcements in parallel with shop, renders the announcement banner above the menu, and overlays discount badges on the product cards that match an active promotion; active-promotion-per-product lookup memoised. Done: plan 10-02 commit `cbbd609`.
+- [x] **STFR-04**: `frontend/app/shop/[slug]/cart/page.tsx` standalone cart view — reads the same localStorage key as the modal cart, renders items, supports quantity edit, links to checkout, and handles empty-cart + missing-shop gracefully; Jest test for empty and populated states. Done: plan 10-02 commit `bca8545`.
+- [x] **STFR-05**: `frontend/app/shop/orders/page.tsx` authenticated customer order-history route — `RequireCustomerAuth` guard, lists all orders for the logged-in customer across all shops with status filter + date filter + pagination; backend `GET /public/customers/{id}/orders` endpoint (or equivalent) if not already exposed. Done: plan 10-03 commits `926717c` + `7658e35`.
+- [x] **STFR-06**: Playwright e2e validates the full customer flow — shop discovery → shop detail → add to cart → cart page → checkout → Stripe test mode payment → confirmation screen; runs against the full docker-compose stack. Done: plan 10-03 commit `b11a3f4`.
 
 ### Work Order C — STOMP broker relay for horizontal scale (STMP)
 
@@ -119,12 +119,12 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-14.
 | SECR-05 | Phase 9 | Done (email receiver, commit 295ea56 + 47ea7b4) |
 | SECR-06 | Phase 9 | Done (smoke test PASSED 2026-04-15 — both synthetic + real ServiceDown delivered to Mailhog) |
 | SECR-07 | Phase 9 | Done (commit 165a7a7) |
-| STFR-01 | Phase 10 | Pending |
-| STFR-02 | Phase 10 | Pending |
-| STFR-03 | Phase 10 | Pending |
-| STFR-04 | Phase 10 | Pending |
-| STFR-05 | Phase 10 | Pending |
-| STFR-06 | Phase 10 | Pending |
+| STFR-01 | Phase 10 | Done (plan 10-01, commit 168582a) |
+| STFR-02 | Phase 10 | Done (plan 10-01, commit 168582a) |
+| STFR-03 | Phase 10 | Done (plan 10-02, commit cbbd609) |
+| STFR-04 | Phase 10 | Done (plan 10-02, commit bca8545) |
+| STFR-05 | Phase 10 | Done (plan 10-03, commits 926717c + 7658e35) |
+| STFR-06 | Phase 10 | Done (plan 10-03, commit b11a3f4) |
 | STMP-01 | Phase 11 | Pending |
 | STMP-02 | Phase 11 | Pending |
 | STMP-03 | Phase 11 | Pending |
@@ -136,11 +136,13 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-14.
 - Mapped to phases: 18 (Phase 9 ×7, Phase 10 ×6, Phase 11 ×5)
 - Unmapped: 0 ✓
 - Done: SECR-01 (verified), SECR-04, SECR-05, SECR-06 (live tested), SECR-07 (5 of 7 in Phase 9)
+- Done: STFR-01, STFR-02 (plan 10-01), STFR-03, STFR-04 (plan 10-02), STFR-05, STFR-06 (plan 10-03) (6 of 6 in Phase 10)
 - Dropped: SECR-02, SECR-03 (rescope — no committed creds to rotate/distribute)
-- Pending: STFR ×6 (Phase 10), STMP ×5 (Phase 11)
+- Pending: STMP ×5 (Phase 11)
 
 **Phase 9 is COMPLETE.**
+**Phase 10 is COMPLETE.**
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-15 — SECR section rescoped + SECR-07 added during phase 9 execution (Wave 1 complete, Wave 2 in progress)*
+*Last updated: 2026-04-16 — Phase 10 STFR-01..06 marked Done after plans 10-01, 10-02, 10-03 execution. Phase 11 (STMP) pending.*

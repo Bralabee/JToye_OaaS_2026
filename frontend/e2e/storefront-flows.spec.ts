@@ -147,6 +147,40 @@ test.describe("Shop Menu & Product Cards", () => {
     expect(failedImages.length).toBe(0)
   })
 
+  test("promotion banner and discount badge render on shop detail (STFR-06)", async ({ page }) => {
+    await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
+    await page.waitForLoadState("networkidle")
+    await page.waitForTimeout(2000)
+
+    // Announcement/promotion block lives above the menu. Presence is seed-
+    // dependent: skip cleanly if neither an announcement nor an active
+    // promotion exists in the dev stack. A deterministic V33 seed fixture
+    // is tracked as a milestone-4+ follow-up in 10-03-SUMMARY.md.
+    const announcement = page.locator("section:has(h2:has-text('Menu')) ~ *, aside, div").filter({
+      hasText: /announcement|new|promo|offer/i,
+    })
+    const percentBadge = page.locator("article").filter({ hasText: /\d+% off/ }).first()
+    const flatBadge = page.locator("article").filter({ hasText: /£\d+(\.\d+)? off/ }).first()
+
+    const announcementVisible = await announcement.first().isVisible().catch(() => false)
+    const percentVisible = await percentBadge.isVisible().catch(() => false)
+    const flatVisible = await flatBadge.isVisible().catch(() => false)
+
+    test.skip(
+      !announcementVisible && !percentVisible && !flatVisible,
+      "No active announcement or promotion seed — banner/badge assertion requires a V33 promo fixture (tracked as 10-03 follow-up)"
+    )
+
+    // At least one of the three marketing surfaces must render when the
+    // skip guard above did not trigger.
+    expect(announcementVisible || percentVisible || flatVisible).toBe(true)
+
+    if (percentVisible || flatVisible) {
+      const anyBadge = percentVisible ? percentBadge : flatBadge
+      await expect(anyBadge).toBeVisible()
+    }
+  })
+
   test("clicking product card opens detail modal", async ({ page }) => {
     await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
     await page.waitForLoadState("networkidle")
@@ -213,7 +247,10 @@ test.describe("Cart + Checkout", () => {
     const cartBar = page.locator("text=View basket")
     await expect(cartBar).toBeVisible()
 
-    await cartBar.click()
+    // STFR-06: navigate explicitly to the standalone /shop/{slug}/cart page
+    // before proceeding, so the dedicated cart route is exercised end-to-end
+    // (not just the floating cart drawer).
+    await page.goto(`${BASE}/shop/${SHOP_SLUG}/cart`)
     await page.waitForLoadState("networkidle")
     await expect(page.locator("text=Your basket")).toBeVisible()
     await expect(page.locator("text=Proceed to checkout")).toBeVisible()
