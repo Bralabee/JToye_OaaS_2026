@@ -103,6 +103,31 @@ spec:
             secretKeyRef:
               name: redis-credentials
               key: password
+        - name: STOMP_BROKER_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stomp.broker.mode
+        - name: STOMP_RELAY_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stomp.broker.relay-host
+        - name: STOMP_RELAY_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stomp.broker.relay-port
+        - name: STOMP_CLIENT_LOGIN
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: stomp-login
+        - name: STOMP_CLIENT_PASSCODE
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: stomp-passcode
         resources:
           requests:
             memory: "512Mi"
