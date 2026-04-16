@@ -42,7 +42,9 @@ class PaymentEventOutboxFlusherTest {
 
     @Mock private PaymentEventOutboxRepository repository;
     @Mock private RabbitTemplate rabbitTemplate;
+    @Mock private jakarta.persistence.EntityManager entityManager;
     @Mock private ObjectProvider<io.micrometer.core.instrument.MeterRegistry> meterRegistryProvider;
+    @Mock private jakarta.persistence.Query tenantQuery;
 
     private ObjectMapper objectMapper;
     private PaymentEventOutboxFlusher flusher;
@@ -53,7 +55,13 @@ class PaymentEventOutboxFlusherTest {
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         when(meterRegistryProvider.getIfAvailable()).thenReturn(null);
-        flusher = new PaymentEventOutboxFlusher(repository, rabbitTemplate, objectMapper, meterRegistryProvider);
+
+        // Mock tenant lookup — return a single test tenant so flushPending iterates once
+        UUID testTenantId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        when(entityManager.createNativeQuery("SELECT id FROM tenants")).thenReturn(tenantQuery);
+        when(tenantQuery.getResultList()).thenReturn(java.util.List.of(testTenantId));
+
+        flusher = new PaymentEventOutboxFlusher(repository, rabbitTemplate, objectMapper, entityManager, meterRegistryProvider);
     }
 
     private PaymentEventOutbox pendingRow() throws Exception {

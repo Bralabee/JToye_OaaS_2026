@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -12,9 +13,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.config.RabbitMQConfig;
+import uk.jtoye.core.security.TenantContext;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Scheduled flusher that drains PENDING rows from {@link PaymentEventOutbox}
@@ -35,15 +38,18 @@ public class PaymentEventOutboxFlusher {
     private final PaymentEventOutboxRepository repository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
     private final Counter deadLetterCounter;
 
     public PaymentEventOutboxFlusher(PaymentEventOutboxRepository repository,
                                      RabbitTemplate rabbitTemplate,
                                      ObjectMapper objectMapper,
+                                     EntityManager entityManager,
                                      ObjectProvider<MeterRegistry> meterRegistryProvider) {
         this.repository = repository;
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
+        this.entityManager = entityManager;
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.deadLetterCounter = reg != null
                 ? Counter.builder("payment.outbox.dead_letter")
@@ -52,17 +58,37 @@ public class PaymentEventOutboxFlusher {
                 : null;
     }
 
+    /**
+     * Flush PENDING payment events per-tenant.
+     *
+     * <p>SECURITY: Iterates per-tenant to ensure TenantContext is set before each
+     * query. The payment_event_outbox table has RLS (V33), so queries without
+     * TenantContext would return empty or fail. This also prevents cross-tenant
+     * event leakage to RabbitMQ listeners.
+     */
     @Scheduled(fixedDelayString = "${payment.outbox.flush-interval-ms:5000}")
     @Transactional
     public void flushPending() {
-        List<PaymentEventOutbox> pending = repository
-                .findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING);
-        if (pending.isEmpty()) {
-            return;
-        }
-        log.debug("Flushing {} pending payment events", pending.size());
-        for (PaymentEventOutbox row : pending) {
-            publishRow(row);
+        @SuppressWarnings("unchecked")
+        List<UUID> tenantIds = entityManager
+                .createNativeQuery("SELECT id FROM tenants")
+                .getResultList();
+
+        for (UUID tenantId : tenantIds) {
+            TenantContext.set(tenantId);
+            try {
+                List<PaymentEventOutbox> pending = repository
+                        .findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING);
+                if (pending.isEmpty()) {
+                    continue;
+                }
+                log.debug("Flushing {} pending payment events for tenant {}", pending.size(), tenantId);
+                for (PaymentEventOutbox row : pending) {
+                    publishRow(row);
+                }
+            } finally {
+                TenantContext.clear();
+            }
         }
     }
 
