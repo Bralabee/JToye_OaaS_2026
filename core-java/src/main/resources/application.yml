@@ -20,6 +20,10 @@ spring:
   cache:
     type: redis
   data:
+    web:
+      pageable:
+        max-page-size: 100
+        default-page-size: 20
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}

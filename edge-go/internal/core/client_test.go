@@ -188,6 +188,199 @@ func TestClient_SyncBatch_CircuitBreaker(t *testing.T) {
 	}
 }
 
+func TestClient_SearchProducts_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("Expected GET, got %s", r.Method)
+		}
+		if !testing.Short() {
+			if r.Header.Get("Authorization") != "Bearer test-token" {
+				t.Errorf("Expected Authorization header, got %s", r.Header.Get("Authorization"))
+			}
+			if r.Header.Get("X-Tenant-Id") != "tenant-123" {
+				t.Errorf("Expected X-Tenant-Id: tenant-123, got %s", r.Header.Get("X-Tenant-Id"))
+			}
+		}
+		q := r.URL.Query().Get("q")
+		if q != "chocolate cake" {
+			t.Errorf("Expected query 'chocolate cake', got %q", q)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]ProductSearchResult{
+			{ID: "prod-1", SKU: "CAKE-001", Title: "Chocolate Cake"},
+		})
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	results, err := client.SearchProducts(ctx, "test-token", "tenant-123", "chocolate cake")
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	if results[0].Title != "Chocolate Cake" {
+		t.Errorf("Expected 'Chocolate Cake', got %q", results[0].Title)
+	}
+}
+
+func TestClient_SearchProducts_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]ProductSearchResult{})
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	results, err := client.SearchProducts(ctx, "test-token", "tenant-123", "nonexistent")
+	if err != nil {
+		t.Errorf("Expected no error for empty results, got: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("Expected 0 results, got %d", len(results))
+	}
+}
+
+func TestClient_SearchProducts_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	_, err := client.SearchProducts(ctx, "test-token", "tenant-123", "cake")
+	if err == nil {
+		t.Error("Expected error for server error, got nil")
+	}
+}
+
+func TestClient_CreateOrder_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/orders" {
+			t.Errorf("Expected /api/v1/orders, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json")
+		}
+
+		var req CreateOrderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+		}
+		if req.ShopID != "shop-1" {
+			t.Errorf("Expected shopId 'shop-1', got %q", req.ShopID)
+		}
+		if len(req.Items) != 1 {
+			t.Errorf("Expected 1 item, got %d", len(req.Items))
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(CreateOrderResponse{
+			ID:          "order-1",
+			OrderNumber: "ORD-001",
+			Status:      "DRAFT",
+		})
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	resp, err := client.CreateOrder(ctx, "test-token", "tenant-123", &CreateOrderRequest{
+		ShopID:        "shop-1",
+		CustomerPhone: "+447700900000",
+		Notes:         "WhatsApp order",
+		Items:         []OrderItemRequest{{ProductID: "prod-1", Quantity: 2}},
+	})
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if resp.OrderNumber != "ORD-001" {
+		t.Errorf("Expected order number 'ORD-001', got %q", resp.OrderNumber)
+	}
+}
+
+func TestClient_CreateOrder_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("db error"))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	_, err := client.CreateOrder(ctx, "test-token", "tenant-123", &CreateOrderRequest{
+		ShopID: "shop-1",
+		Items:  []OrderItemRequest{{ProductID: "prod-1", Quantity: 1}},
+	})
+	if err == nil {
+		t.Error("Expected error for server error, got nil")
+	}
+}
+
+func TestClient_ForwardWebhook_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/webhooks/stripe" {
+			t.Errorf("Expected /api/v1/webhooks/stripe, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("Expected Authorization header")
+		}
+		if r.Header.Get("X-Tenant-Id") != "tenant-123" {
+			t.Errorf("Expected X-Tenant-Id header")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	err := client.ForwardWebhook(ctx, "test-token", "tenant-123", "stripe", []byte(`{"type":"payment_intent.succeeded"}`))
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+}
+
+func TestClient_ForwardWebhook_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	ctx := context.Background()
+	err := client.ForwardWebhook(ctx, "test-token", "tenant-123", "stripe", []byte(`{}`))
+	if err == nil {
+		t.Error("Expected error for server error, got nil")
+	}
+}
+
 func TestClient_NewClient(t *testing.T) {
 	logger, _ := zap.NewProduction()
 	client := NewClient("http://localhost:9090", logger)

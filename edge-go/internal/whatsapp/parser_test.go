@@ -92,6 +92,53 @@ func TestParseWebhook_ValidPayload(t *testing.T) {
 	}
 }
 
+func TestParseMessage_EmptyBody(t *testing.T) {
+	order := ParseMessage("+447700900000", "")
+	if len(order.Items) != 0 {
+		t.Fatalf("expected 0 items for empty body, got %d", len(order.Items))
+	}
+	if order.Phone != "+447700900000" {
+		t.Errorf("expected phone preserved, got %q", order.Phone)
+	}
+}
+
+func TestParseMessage_WhitespaceOnly(t *testing.T) {
+	order := ParseMessage("+447700900000", "   \n  \n  ")
+	// Should produce fallback or empty items
+	if order.Phone != "+447700900000" {
+		t.Errorf("expected phone preserved, got %q", order.Phone)
+	}
+}
+
+func TestParseWebhook_MalformedJSON(t *testing.T) {
+	_, err := ParseWebhook([]byte(`{not valid json`))
+	if err == nil {
+		t.Error("expected error for malformed JSON, got nil")
+	}
+}
+
+func TestParseWebhook_EmptyEntry(t *testing.T) {
+	payload := []byte(`{"entry": []}`)
+	order, err := ParseWebhook(payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if order != nil {
+		t.Error("expected nil order for empty entry array")
+	}
+}
+
+func TestParseWebhook_NoMessages(t *testing.T) {
+	payload := []byte(`{"entry": [{"changes": [{"value": {}}]}]}`)
+	order, err := ParseWebhook(payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if order != nil {
+		t.Error("expected nil order when no messages present")
+	}
+}
+
 func TestParseWebhook_NoTextMessage(t *testing.T) {
 	payload := []byte(`{"entry": [{"changes": [{"value": {"messages": [{"from": "123", "type": "image"}]}}]}]}`)
 	order, err := ParseWebhook(payload)
