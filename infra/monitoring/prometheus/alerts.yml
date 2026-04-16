@@ -158,7 +158,7 @@ groups:
       # Default RabbitMQ 3.12 uses stomp-subscription-<random>; some configs use amq.gen-<random>.
       - alert: StompBrokerLag
         expr: |
-          sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq\.gen-.*"}) > 0
+          sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
         for: 5s
         labels:
           severity: warning
