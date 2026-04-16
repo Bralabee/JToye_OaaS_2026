@@ -150,9 +150,10 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
-    # No host port mapping — traffic routes through edge-go for --scale compatibility
-    # ports:
-    #   - "9090:9090"
+    # Port range allows --scale core-java=2 (each replica gets a unique host port)
+    # Replica 1 → localhost:9090, Replica 2 → localhost:9091
+    ports:
+      - "9090-9091:9090"
     depends_on:
       postgres:
         condition: service_healthy
