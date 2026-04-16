@@ -54,7 +54,17 @@ echo ""
 # 1. Health checks
 echo "--- Health Checks ---"
 test_endpoint "Edge gateway health" "$EDGE_URL/health"
-test_endpoint "RabbitMQ management API" "$RABBITMQ_API/api/overview" 200
+# RabbitMQ management API requires auth
+echo -n "Testing RabbitMQ management API... "
+response=$(curl -s -o /dev/null -w "%{http_code}" -u "${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}" \
+    --max-time $TIMEOUT "$RABBITMQ_API/api/overview" 2>/dev/null || echo "000")
+if [ "$response" = "200" ]; then
+    echo -e "${GREEN}PASS${NC} (HTTP $response)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}FAIL${NC} (Expected HTTP 200, got $response)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 # 2. Check STOMP plugin is enabled via port 61613
 echo ""
