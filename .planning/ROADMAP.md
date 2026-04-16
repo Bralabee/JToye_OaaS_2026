@@ -216,4 +216,4 @@ Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 1
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
 | 9. Repository Secrets + Alerting | 0/3 | Not started | - |
 | 10. Storefront Marketing Render + Missing Customer Routes | 0/3 | Not started | - |
-| 11. STOMP Broker Relay for Horizontal Scale | 3/3 | Complete   | 2026-04-16 |
+| 11. STOMP Broker Relay for Horizontal Scale | 3/3 | Complete    | 2026-04-16 |
