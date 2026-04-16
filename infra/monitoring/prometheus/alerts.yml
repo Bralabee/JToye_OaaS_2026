@@ -148,3 +148,22 @@ groups:
         annotations:
           summary: "Tenant context missing in requests"
           description: "{{ $value }} requests per second lack tenant context (potential security issue)"
+
+  - name: messaging_alerts
+    interval: 30s
+    rules:
+      # STOMP broker relay lag -- undelivered messages in subscription queues
+      # Queue name regex is runtime-adjustable: after first relay-mode startup,
+      # verify actual queue names at http://localhost:15672/#/queues and adjust if needed.
+      # Default RabbitMQ 3.12 uses stomp-subscription-<random>; some configs use amq.gen-<random>.
+      - alert: StompBrokerLag
+        expr: |
+          sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq\.gen-.*"}) > 0
+        for: 5s
+        labels:
+          severity: warning
+          component: messaging
+          service: rabbitmq
+        annotations:
+          summary: "STOMP broker message lag detected"
+          description: "Undelivered messages in STOMP subscription queues: {{ $value }}. Kitchen display clients may experience delayed order updates."
