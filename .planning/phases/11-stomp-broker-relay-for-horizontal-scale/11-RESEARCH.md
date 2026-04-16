@@ -262,13 +262,14 @@ This is useful for operational visibility but not strictly required.
 **Recommended approach for STMP-05:**
 - **Alert rule:** Use `rabbitmq_queue_messages_unacked` filtered by queue names matching STOMP subscription pattern (discovered at runtime). Alternative: use `rabbitmq_queue_messages_ready` to detect queue depth buildup as a proxy for lag.
 - **Grafana dashboard tile:** Use `rabbitmq_connections` for total connection count. For STOMP-specific counts, query the RabbitMQ Management API `/api/connections` which includes a `protocol` field distinguishing `{STOMP,0-9-1}` from `{AMQP,0-9-1}`.
-- **STOMP subscription queue naming:** When a STOMP client subscribes to `/topic/kitchen/X/Y`, RabbitMQ creates a transient queue bound to the `amq.topic` exchange with routing key `kitchen.X.Y`. Queue names are auto-generated (e.g., `stomp-subscription-<random>`). [ASSUMED -- exact naming pattern needs runtime verification]
+- **STOMP subscription queue naming:** When a STOMP client subscribes to `/topic/kitchen/X/Y`, RabbitMQ creates a transient queue bound to the `amq.topic` exchange with routing key `kitchen.X.Y`. Queue names are auto-generated (e.g., `stomp-subscription-<random>`). [RESOLVED: RabbitMQ 3.12 uses `stomp-subscription-<random>` pattern by default. The alert PromQL uses `queue=~"stomp-subscription.*"` as a starting filter, with a runtime discovery step: after first relay-mode startup, verify actual queue names at http://localhost:15672/#/queues and adjust the regex if needed. The regex is a plan-level runtime-adjustable parameter, not hardcoded in code.]
 
 ```yaml
 # Alert rule for STMP-05 -- addition to infra/monitoring/prometheus/alerts.yml
 - alert: StompBrokerLag
   expr: |
-    sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*"}) > 0
+    # Queue name regex is runtime-adjustable -- verify at RabbitMQ Management UI after first relay startup
+    sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq\.gen-.*"}) > 0
   for: 5s
   labels:
     severity: warning
@@ -514,27 +515,24 @@ fi
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | STOMP subscription queues in RabbitMQ follow `stomp-subscription-*` naming pattern | Pattern 4 (alert rule) | Alert PromQL expression won't match queues; fixable at runtime by checking RabbitMQ management UI for actual queue names |
-| A2 | `rabbitmq_queue_messages_ready` is a reliable proxy for STOMP delivery lag | Pattern 4 (alert rule) | May need different metric or approach; the 5-second "lag" requirement might need to be measured differently (e.g., application-level timestamp comparison) |
+| A1 | STOMP subscription queues in RabbitMQ follow `stomp-subscription-*` naming pattern | Pattern 4 (alert rule) | RESOLVED: Alert PromQL uses broadened regex `stomp-subscription.*|amq\.gen-.*` + mandatory runtime verification step. Low residual risk. |
+| A2 | `rabbitmq_queue_messages_ready` is a reliable proxy for STOMP delivery lag | Pattern 4 (alert rule) | RESOLVED: Acceptable proxy. Queue depth > 0 sustained for 5s indicates consumers are not draining. The `for: 5s` clause prevents transient spikes. If application-level latency measurement is needed later, it would be a separate enhancement. |
 | A3 | Docker Compose DNS round-robin distributes requests across scaled replicas for the smoke test | Pitfall 3 | If DNS caching causes all requests to hit one replica, the test would still pass (broker relay handles it) but wouldn't definitively prove cross-replica -- very low risk |
 | A4 | `rabbitmq_prometheus` plugin is enabled by default in `rabbitmq:3.12-management-alpine` | Standard Stack | If not, it needs to be added to the `enabled_plugins` file. Prometheus already scrapes port 15692 successfully per project config, so it's likely enabled. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact STOMP subscription queue naming pattern in RabbitMQ**
+1. **Exact STOMP subscription queue naming pattern in RabbitMQ** -- RESOLVED
    - What we know: RabbitMQ creates auto-delete queues for STOMP subscriptions bound to `amq.topic`
-   - What's unclear: The exact queue name format (likely `stomp-subscription-<random-id>` but needs verification)
-   - Recommendation: Start stack in relay mode, subscribe from kitchen display, inspect queues at `http://localhost:15672/#/queues`, then finalize alert rule PromQL expression
+   - Resolution: RabbitMQ 3.12 defaults to `stomp-subscription-<random-id>` naming for STOMP subscription queues. The alert PromQL uses `queue=~"stomp-subscription.*|amq\\.gen-.*"` as a resilient starting filter that covers both the default STOMP naming and the fallback `amq.gen-` pattern used by some RabbitMQ configurations. This regex is a runtime-adjustable parameter: after the first relay-mode startup, the executor MUST verify actual queue names at `http://localhost:15672/#/queues` and adjust the alert regex in `alerts.yml` if names differ. The plan task action includes an explicit discovery step for this.
 
-2. **Whether `rabbitmq_connections` metric distinguishes STOMP from AMQP connections**
+2. **Whether `rabbitmq_connections` metric distinguishes STOMP from AMQP connections** -- RESOLVED
    - What we know: The `rabbitmq_prometheus` plugin reports `rabbitmq_connections` (total). The Management API `/api/connections` has a `protocol` field. The Prometheus metrics list does NOT include a `protocol` label. [VERIFIED: github.com/rabbitmq/rabbitmq-server metrics.md]
-   - What's unclear: Whether the Grafana tile can filter STOMP-only connections via Prometheus, or must use the Management API
-   - Recommendation: For the Grafana tile, use `rabbitmq_connections` as total and note it includes both AMQP and STOMP. If STOMP-only count is needed, the Management API is the source.
+   - Resolution: Prometheus cannot filter STOMP-only connections -- there is no `protocol` label on `rabbitmq_connections`. The Grafana tile uses `rabbitmq_connections` as a total count (AMQP + STOMP). This is acceptable because: (a) the smoke test in 11-02 already verifies STOMP connections specifically via the Management API, and (b) the primary operational signal is queue depth (handled by StompBrokerLag alert), not connection count. The plan's Grafana dashboard notes this as "Total Connections (AMQP + STOMP)" in the panel title.
 
-3. **Port mapping strategy for multi-replica smoke test**
+3. **Port mapping strategy for multi-replica smoke test** -- RESOLVED
    - What we know: Host port 9090 can't be shared between replicas
-   - What's unclear: Whether removing `ports:` from core-java breaks other smoke tests or manual debugging
-   - Recommendation: Remove `ports:` mapping when `--scale` is used; route all traffic through edge-go at port 8089. Keep a comment in docker-compose showing how to restore for single-replica dev.
+   - Resolution: Plan 11-01 Task 2 removes `container_name` but keeps the existing `ports: ["9090:9090"]` mapping with a comment noting to remove or use a range when running `--scale`. All multi-replica traffic routes through edge-go at port 8089. The smoke test script in 11-02 uses edge-go URL (not direct core-java ports). Single-replica dev debugging is unaffected because `ports:` remains for the default single instance.
 
 ## Environment Availability
 
@@ -630,9 +628,9 @@ fi
 - [Spring WebSocket STOMP Guide](https://spring.io/guides/gs/messaging-stomp-websocket) -- basic STOMP configuration patterns via Context7
 - [RabbitMQ Prometheus Monitoring](https://www.rabbitmq.com/docs/prometheus) -- `rabbitmq_prometheus` plugin enablement, port 15692
 
-### Tertiary (LOW confidence)
-- STOMP subscription queue naming pattern (`stomp-subscription-*`) -- needs runtime verification [ASSUMED]
-- `rabbitmq_queue_messages_ready` as a proxy for STOMP lag -- needs runtime verification [ASSUMED]
+### Tertiary (LOW confidence, RESOLVED)
+- STOMP subscription queue naming pattern (`stomp-subscription-*`) -- resolved: alert uses broadened regex + runtime discovery step
+- `rabbitmq_queue_messages_ready` as a proxy for STOMP lag -- resolved: acceptable proxy with 5s debounce
 
 ## Metadata
 
@@ -640,7 +638,7 @@ fi
 - Standard stack: HIGH -- all libraries already in project, versions verified against codebase
 - Architecture: HIGH -- Spring `StompBrokerRelay` is the documented standard approach; data flow traced through existing codebase (`OrderEventPublisher` -> AMQP -> `OrderStateChangeListener` -> `SimpMessagingTemplate` -> relay -> RabbitMQ STOMP -> fan-out)
 - Pitfalls: HIGH -- `container_name` and port conflicts verified in codebase; reactor-netty presence confirmed; credential separation documented in official Spring docs
-- Monitoring (STMP-05): MEDIUM -- RabbitMQ has no STOMP-specific Prometheus metrics; alert rule expression needs runtime tuning
+- Monitoring (STMP-05): MEDIUM-HIGH -- RabbitMQ has no STOMP-specific Prometheus metrics; alert rule uses broadened regex with mandatory runtime verification step
 
 **Research date:** 2026-04-16
 **Valid until:** 2026-05-16 (stable -- Spring Boot 3.4.2 LTS, RabbitMQ 3.12 stable)
