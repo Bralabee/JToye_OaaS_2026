@@ -1,16 +1,16 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import Link from "next/link"
 import {
   Package, Clock, CheckCircle2, ChefHat, CircleDot,
-  XCircle, ArrowRight, Loader2, Store, Search
+  XCircle, ArrowRight, Loader2, Store
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
 
-interface OrderSummary {
+export interface OrderSummary {
   orderNumber: string
   status: string
   shopName: string
@@ -18,6 +18,61 @@ interface OrderSummary {
   itemCount: number
   createdAt: string
   updatedAt: string
+}
+
+export const ORDERS_PAGE_SIZE = 10
+
+export const ORDER_STATUS_OPTIONS = [
+  "ALL",
+  "PENDING",
+  "CONFIRMED",
+  "PREPARING",
+  "READY",
+  "COMPLETED",
+  "CANCELLED",
+] as const
+
+export type OrderStatusFilter = typeof ORDER_STATUS_OPTIONS[number]
+
+/**
+ * Pure filter + pagination derivation for the customer orders page.
+ * Extracted so it can be unit-tested without rendering the React component.
+ *
+ * - statusFilter === "ALL" disables the status filter.
+ * - dateFrom is an ISO yyyy-mm-dd string (from <input type="date">). Empty
+ *   string disables the date filter. Orders with createdAt earlier than
+ *   the start of the selected day are excluded.
+ * - pageSize must be > 0; callers should use ORDERS_PAGE_SIZE.
+ * - totalPages is clamped to at least 1 so the UI always has a label.
+ * - paged returns the slice for the requested page. An overflow page
+ *   (page > totalPages) returns an empty slice — the UI effect resets
+ *   `page` to 1 when the filters change.
+ */
+export function deriveOrdersView(
+  orders: OrderSummary[],
+  opts: {
+    statusFilter: OrderStatusFilter | string
+    dateFrom: string
+    page: number
+    pageSize: number
+  }
+): { filtered: OrderSummary[]; paged: OrderSummary[]; totalPages: number } {
+  const fromTs = opts.dateFrom ? new Date(opts.dateFrom).getTime() : null
+  const filtered = orders.filter((o) => {
+    if (opts.statusFilter !== "ALL" && o.status !== opts.statusFilter) return false
+    if (fromTs !== null && !Number.isNaN(fromTs)) {
+      const created = new Date(o.createdAt).getTime()
+      if (Number.isNaN(created) || created < fromTs) return false
+    }
+    return true
+  })
+  const pageSize = opts.pageSize > 0 ? opts.pageSize : 1
+  const start = Math.max(0, (opts.page - 1) * pageSize)
+  return {
+    filtered,
+    paged: filtered.slice(start, start + pageSize),
+    totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+  }
 }
 
 function formatPrice(pennies: number): string {
@@ -110,6 +165,9 @@ function CustomerOrdersContent() {
       return
     }
     try {
+      // NOTE: /public/orders?email= has a soft enumeration risk — tracked as a
+      // milestone-4+ follow-up. See
+      // .planning/phases/10-storefront-marketing-render-missing-customer-routes/10-RESEARCH.md §Pitfall 5
       const res = await publicApiClient.get<OrderSummary[]>(
         "/public/orders",
         { params: { email } }
@@ -135,8 +193,24 @@ function CustomerOrdersContent() {
     return () => clearInterval(interval)
   }, [orders, fetchOrders])
 
-  const activeOrders = orders.filter(o => !["COMPLETED", "CANCELLED"].includes(o.status))
-  const pastOrders = orders.filter(o => ["COMPLETED", "CANCELLED"].includes(o.status))
+  // Filter + pagination state (STFR-05)
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("ALL")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [page, setPage] = useState(1)
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, dateFrom])
+
+  const { paged, filtered, totalPages } = useMemo(
+    () => deriveOrdersView(orders, { statusFilter, dateFrom, page, pageSize: ORDERS_PAGE_SIZE }),
+    [orders, statusFilter, dateFrom, page]
+  )
+
+  const activeOrders = paged.filter(o => !["COMPLETED", "CANCELLED"].includes(o.status))
+  const pastOrders = paged.filter(o => ["COMPLETED", "CANCELLED"].includes(o.status))
+  const hasAnyActiveOnScreen = orders.some(o => !["COMPLETED", "CANCELLED"].includes(o.status))
 
   if (loading) {
     return (
@@ -154,6 +228,44 @@ function CustomerOrdersContent() {
         {orders.length} order{orders.length !== 1 ? "s" : ""}
         {email && <span className="text-slate-400"> &middot; {email}</span>}
       </p>
+
+      {/* Filters (STFR-05) */}
+      {orders.length > 0 && (
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</span>
+            <select
+              data-testid="orders-status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as OrderStatusFilter)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            >
+              {ORDER_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s === "ALL" ? "All statuses" : (STATUS_CONFIG[s]?.label ?? s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">From date</span>
+            <input
+              type="date"
+              data-testid="orders-date-from"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+          </label>
+        </div>
+      )}
+
+      {/* Filter result summary */}
+      {orders.length > 0 && (
+        <p className="mt-3 text-xs text-slate-400">
+          Showing {paged.length} of {filtered.length} filtered order{filtered.length !== 1 ? "s" : ""}
+        </p>
+      )}
 
       {/* Active orders */}
       {activeOrders.length > 0 && (
@@ -197,8 +309,39 @@ function CustomerOrdersContent() {
         </div>
       )}
 
+      {/* Pagination controls */}
+      {filtered.length > 0 && (
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            data-testid="orders-prev-page"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-slate-500" data-testid="orders-page-label">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            data-testid="orders-next-page"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages || totalPages === 0}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {filtered.length === 0 && orders.length > 0 && (
+        <p className="mt-8 text-center text-sm text-slate-500">No orders match the selected filters.</p>
+      )}
+
       {/* Auto-refresh indicator */}
-      {activeOrders.length > 0 && (
+      {hasAnyActiveOnScreen && (
         <p className="mt-6 text-center text-[10px] text-slate-400">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />

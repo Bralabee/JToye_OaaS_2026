@@ -172,8 +172,13 @@ Plans:
   3. Navigating directly to `/shop/[slug]/cart` renders the standalone cart page — populated from the same localStorage key as the modal cart, supporting quantity edit, checkout link, and graceful empty-cart + missing-shop states (Jest covers both states)
   4. Navigating to `/shop/orders` as a logged-in customer lists all of that customer's orders across every shop, with status filter, date filter, and pagination; unauthenticated visitors are redirected by `RequireCustomerAuth`
   5. A Playwright e2e walks shop discovery → shop detail → add to cart → cart page → Stripe test-mode checkout → confirmation screen in a single run against the full docker-compose stack and passes in CI
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 10-01-PLAN.md — MockMvc controller tests for /public/shops/{slug}/promotions + /announcements (STFR-01, STFR-02)
+- [ ] 10-02-PLAN.md — Shop detail page wiring to dedicated endpoints + discount badges + cart page Jest coverage (STFR-03, STFR-04)
+- [ ] 10-03-PLAN.md — Orders page filters/pagination + Playwright banner/badge extension + REQUIREMENTS.md closeout (STFR-05, STFR-06)
 
 ### Phase 11: STOMP Broker Relay for Horizontal Scale
 **Goal**: `core-java` can run with two or more replicas behind a load balancer without losing kitchen WebSocket broadcasts, and operators see STOMP broker lag in Prometheus/Grafana with alerting wired through the Phase 9 Alertmanager
@@ -204,5 +209,5 @@ Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 1
 | 7. Kitchen Display UI | 1/1 | Complete    | 2026-04-09 |
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
 | 9. Repository Secrets + Alerting | 0/? | Not started | - |
-| 10. Storefront Marketing Render + Missing Customer Routes | 0/? | Not started | - |
+| 10. Storefront Marketing Render + Missing Customer Routes | 0/3 | Not started | - |
 | 11. STOMP Broker Relay for Horizontal Scale | 0/? | Not started | - |
