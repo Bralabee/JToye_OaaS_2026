@@ -99,6 +99,8 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   4. `getSummary()` query plan uses an index (verified by `EXPLAIN ANALYZE` in the integration test)
   5. No regression in `OrderServiceTest` / `FinancialTransactionServiceTest` existing assertions
 **Plans**: 2 plans
+  - [ ] 14-01-PLAN.md — CQ-01 Stock Race Fix: V34 migration adding `@Version` to `products`, new `InsufficientStockException` → 409 via GlobalExceptionHandler, `StockService.decrementForOrder` with `@Retryable(ObjectOptimisticLockingFailureException.class, maxAttempts=3, backoff=50ms)` + `@Recover`, `OrderService.transitionOrder` rewire (save-after-decrement ordering fix), `adjustStockInBatch` + silent `Math.max(0,…)` clamp deleted, Testcontainers concurrent two-thread race test
+  - [ ] 14-02-PLAN.md — CQ-02 getSummary DB Aggregation: 2 JPQL constructor-target queries (`FinancialAggregateRow` scalar + `FinancialVatRow` GROUP BY vatRate) with `COALESCE(SUM(CASE WHEN…), 0L)`, `ORDER BY ft.vatRate` + Java `Comparator` defense-in-depth, golden-file parity test (1k rows), EXPLAIN ANALYZE Index Scan assertion (10k rows), Hibernate `getPrepareStatementCount() == 2` pin, cross-tenant isolation test
 **UI hint**: no
 
 ### Phase 15: K8s NetworkPolicies + Sealed Secrets
