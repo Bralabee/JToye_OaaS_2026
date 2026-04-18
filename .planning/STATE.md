@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: scoping
-stopped_at: v2.2 scoping in progress — requirements defined, roadmap next
-last_updated: "2026-04-18T00:00:00Z"
+status: planning
+stopped_at: Phase 12 planned (2 plans, 11 tasks) — ready to execute
+last_updated: "2026-04-18T13:30:00Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 6
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: Not started (defining requirements → roadmap)
-Plan: —
-Status: v2.2 scoping — PROJECT.md updated, REQUIREMENTS.md + ROADMAP.md next
-Last activity: 2026-04-18 — v2.2 scoping started
+Phase: 12 — Spring Security Response Headers + Frontend CSP (planned, ready to execute)
+Plan: 12-01 (Spring SEC-03, 4 tasks) + 12-02 (Next.js SEC-02, 7 tasks) — both Wave 1, fully parallel
+Status: Ready to execute
+Last activity: 2026-04-18 — Phase 12 plans approved (research + pattern map + validation + 2 plans, checker passed after 1 revision)
 
 Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complete — phases 12-17)
 
@@ -81,8 +81,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Complete v2.2 roadmap (phases 12–17 covering the 11 requirements)
-- Run `/gsd-discuss-phase 12` once roadmap is approved (first phase: Spring security headers + CSP)
+- Run `/gsd-execute-phase 12` — 2 plans ready (Spring headers + Next.js CSP)
 - Backfill `status: complete` frontmatter on the 5 quick-task SUMMARY.md files (Deferred Items below) during an early v2.2 housekeeping pass
 - Commit `frontend/.env.local.example` placeholder hardening change (block-secrets hook prevents Claude from staging it — needs a manual commit outside Claude)
 
