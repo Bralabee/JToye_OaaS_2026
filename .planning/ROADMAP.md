@@ -71,6 +71,8 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   4. Playwright e2e passes with no browser-console CSP violations across the full storefront + dashboard flow
   5. Header snapshot test committed to CI (fails if a header regresses)
 **Plans**: 2 plans
+  - [ ] 12-01-PLAN.md — Spring Security response headers (SEC-03): HttpSecurity.headers() DSL with X-Frame-Options/X-Content-Type-Options/Referrer-Policy + profile-gated HSTS + MockMvc tests + Java-side header snapshot
+  - [ ] 12-02-PLAN.md — Next.js CSP (SEC-02): next.config.mjs Report-Only CSP with Stripe/Keycloak/API/WS allowlist + Jest unit + snapshot + Playwright spec + port 3100 reconcile + manual enforce-cutover gate
 **UI hint**: no
 
 ### Phase 13: Guest Tracking Tenant Validation

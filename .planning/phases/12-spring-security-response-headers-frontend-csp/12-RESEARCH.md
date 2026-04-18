@@ -479,7 +479,7 @@ Specifically maps to:
 
 ---
 
-## 11. Open Questions for the Planner (would have been in CONTEXT.md)
+## 11. Open Questions (RESOLVED — defaults adopted in 12-01 and 12-02 objective blocks)
 
 These are the decisions a `/gsd-discuss-phase 12` would normally resolve. Phase 12 skipped that step, so the planner must pick defaults and note them explicitly.
 
