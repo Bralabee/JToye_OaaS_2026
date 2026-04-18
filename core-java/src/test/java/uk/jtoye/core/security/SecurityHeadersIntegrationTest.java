@@ -96,4 +96,33 @@ class SecurityHeadersIntegrationTest {
         mockMvc.perform(get("/api/v1/shops").secure(true))
                 .andExpect(header().doesNotExist("Strict-Transport-Security"));
     }
+
+    @Test
+    @WithMockUser
+    void headerSnapshotMatchesGolden() throws Exception {
+        // Regression guard: the curated list of SEC-03-scoped headers must exactly
+        // match the committed golden snapshot. Any add / remove / rename of one of
+        // these three headers in SecurityConfig's .headers(...) DSL fails this test,
+        // forcing a deliberate snapshot update rather than a silent regression.
+        var result = mockMvc.perform(get("/api/v1/shops")).andReturn();
+        var response = result.getResponse();
+
+        // Curate to SEC-03-scoped headers only — ignore noise like Cache-Control,
+        // Date, Content-Type, X-XSS-Protection (Spring 6 sets X-XSS-Protection: 0
+        // by default, deprecated per OWASP).
+        var interesting = java.util.List.of(
+                "Referrer-Policy",
+                "X-Content-Type-Options",
+                "X-Frame-Options"
+        );
+        var actual = interesting.stream()
+                .sorted()
+                .map(h -> h + ": " + response.getHeader(h))
+                .collect(java.util.stream.Collectors.joining("\n"));
+
+        var goldenPath = java.nio.file.Path.of("src/test/resources/security-headers-snapshot.txt");
+        var expected = java.nio.file.Files.readString(goldenPath).trim();
+
+        org.assertj.core.api.Assertions.assertThat(actual).isEqualTo(expected);
+    }
 }
