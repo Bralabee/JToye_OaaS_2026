@@ -3,9 +3,12 @@ package uk.jtoye.core.security;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -19,8 +22,10 @@ import uk.jtoye.core.shop.ShopRepository;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -43,6 +48,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+@ExtendWith(OutputCaptureExtension.class)
 class CrossTenantSpoofIntegrationTest {
 
     @Container
@@ -140,6 +146,62 @@ class CrossTenantSpoofIntegrationTest {
         // extends to the reviews path (RESEARCH.md Assumption A2 resolved).
         mockMvc.perform(get("/public/shops/{slug}/reviews", slugB)
                 .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString()))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void sameTenantJwtSucceeds() throws Exception {
+        // Same-tenant JWT should pass — proves we don't over-block the happy
+        // path for authenticated customers browsing their own tenant's shop
+        // (SC-2 regression guard).
+        mockMvc.perform(get("/public/shops/{slug}/products", slugA)
+                .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString()))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void anonymousGuestSucceeds() throws Exception {
+        // No JWT — anonymous guest is the canonical public-storefront path;
+        // must still work (SC-2 regression guard).
+        mockMvc.perform(get("/public/shops/{slug}/products", slugA))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void crossTenantRequestLogsSpoofEvent(CapturedOutput output) throws Exception {
+        mockMvc.perform(get("/public/shops/{slug}/products", slugB)
+                .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString()))))
+            .andExpect(status().isForbidden());
+
+        // Audit log format per D-08 — structured key=value, parseable by Loki.
+        // Tenant UUIDs appear in the log (not the response body — ASVS V4.1.5).
+        assertThat(output.getOut() + output.getErr())
+                .contains("event=tenant_spoof_attempt")
+                .contains("slugTenant=" + TENANT_B)
+                .contains("upstreamTenant=" + TENANT_A)
+                .contains("outcome=403");
+    }
+
+    @Test
+    void crossTenantJwtReturns403OnCreateOrder() throws Exception {
+        // Highest-severity path — POST /orders writes tenant-scoped rows
+        // (Order + OrderItem). The body must satisfy @Valid bean-level constraints
+        // (@NotEmpty items, @NotNull productId, @Min(1) quantity) so that the
+        // request reaches the service layer — the tenant-match gate must reject
+        // BEFORE the service attempts to load the (nonexistent) product or
+        // mint an Order. Using a random UUID for productId — under a successful
+        // cross-tenant flow this would eventually 404 at product lookup, but
+        // the gate short-circuits to 403 first.
+        UUID dummyProductId = UUID.randomUUID();
+        String minimalOrderJson = "{\"customerEmail\":\"t@example.com\"," +
+                "\"customerName\":\"T\",\"customerPhone\":\"+447000000000\"," +
+                "\"items\":[{\"productId\":\"" + dummyProductId + "\",\"quantity\":1}]," +
+                "\"idempotencyKey\":\"test-key-1\"}";
+
+        mockMvc.perform(post("/public/shops/{slug}/orders", slugB)
+                .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString())))
+                .contentType("application/json")
+                .content(minimalOrderJson))
             .andExpect(status().isForbidden());
     }
 }
