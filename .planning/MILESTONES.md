@@ -27,7 +27,7 @@ After the three phases merged, a P1 deep-audit pass (PR #40) added 4 alerts, red
 ### Stats
 
 - Phases: 3 | Plans: 9 | Requirements: 18/18
-- Tests: 474+ passing (341 Java + 76 Jest + 57 Go)
+- Tests: 516+ logical invocations across 66 files (390 Java @Test methods + 76 Jest it/test blocks + 50 top-level Go Test funcs / 54 with t.Run subtests) — verified at milestone close 2026-04-18. PR #40 commit message stated "474+" using a different counting method (class-level Java + total Go runs including table iterations); the 516/390/76/50 numbers are the canonical measure going forward.
 - Git: `9008b3a..9e491d5` on `main` (PRs #37, #38, #39, #40)
 - Audit: `milestones/v2.1-MILESTONE-AUDIT.md` — initial `gaps_found` (2 missing VERIFICATION.md), remediated to `passed` on 2026-04-18.
 

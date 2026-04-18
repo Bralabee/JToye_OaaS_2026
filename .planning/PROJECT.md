@@ -72,7 +72,7 @@ No active requirements — v2.1 shipped. Run `/gsd-new-milestone` to scope v2.2.
 
 ## Context
 
-- **Existing codebase:** 3-tier architecture (Next.js 16 frontend, Go 1.22 edge, Spring Boot 3.4.2 core) with Flyway V1–V33, 474+ tests passing (341 Java + 76 Jest + 57 Go)
+- **Existing codebase:** 3-tier architecture (Next.js 16 frontend, Go 1.22 edge, Spring Boot 3.4.2 core) with Flyway V1–V33, 516+ logical test invocations across 66 test files (390 Java `@Test` methods + 76 Jest `it/test` blocks + 50 top-level Go `Test*` funcs / 54 with `t.Run` subtests). Verified 2026-04-18 post-v2.1.
 - **Previous milestones:** Milestone 1 (batches 3–5 + Tier 2) shipped reliability + core features; Milestone 2 (v2.0 Tier 3) shipped API versioning, vendor marketing, KDS, test coverage closure; Milestone 3 (v2.1) closed the 3 highest-priority audit Work Orders + a deep-audit P1 pass
 - **v2.1 outcome:** 18/18 requirements complete, 3/3 phases verified after audit remediation. Alertmanager routes emails (not Slack — rescoped during phase 9). Secret-hygiene CI prevents future drift. Storefront is no longer half-dead — customers see promotions and have cart/orders routes. STOMP broker scales horizontally behind a config flag.
 - **Known concerns for v2.2 candidates:**
