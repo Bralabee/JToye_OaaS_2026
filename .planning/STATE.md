@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.1
-milestone_name: milestone
-status: audited-ready-to-complete
-stopped_at: All 3 milestone-3 phases complete, audit passed after remediation
+milestone: v2.2
+milestone_name: production-hardening-vendor-order-ops
+status: scoping
+stopped_at: v2.2 scoping in progress — requirements defined, roadmap next
 last_updated: "2026-04-18T00:00:00Z"
 last_activity: 2026-04-18
 progress:
-  total_phases: 11
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 6
+  completed_phases: 0
+  total_plans: 11
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Milestone v2.1 lifecycle — audit passed (after remediation), ready for complete-milestone
+**Current focus:** Milestone v2.2 — 8 P2 security/quality items from deep-audit + Work Order E (vendor order detail + Stripe refund flow)
 
 ## Current Position
 
-Phase: all milestone-3 phases complete (9, 10, 11)
+Phase: Not started (defining requirements → roadmap)
 Plan: —
-Status: Audited + ready for /gsd-complete-milestone v2.1
-Last activity: 2026-04-18
+Status: v2.2 scoping — PROJECT.md updated, REQUIREMENTS.md + ROADMAP.md next
+Last activity: 2026-04-18 — v2.2 scoping started
 
-Progress: [██████████] 100% (3/3 milestone-3 phases complete)
+Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -81,14 +81,17 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Run `/gsd-plan-phase 9` once roadmap is approved
+- Complete v2.2 roadmap (phases 12–17 covering the 11 requirements)
+- Run `/gsd-discuss-phase 12` once roadmap is approved (first phase: Spring security headers + CSP)
+- Backfill `status: complete` frontmatter on the 5 quick-task SUMMARY.md files (Deferred Items below) during an early v2.2 housekeeping pass
+- Commit `frontend/.env.local.example` placeholder hardening change (block-secrets hook prevents Claude from staging it — needs a manual commit outside Claude)
 
 ### Blockers/Concerns
 
-- `.env` still committed on `main` as of audit close — SECR work must remove it AND rotate all 5 credentials, not just one or the other (git history exposure)
-- Port conflicts from unrelated `dealflow_*` containers (5432) and MCP server (3000) blocked the post-audit smoke test; full-stack E2E during M3 must either stop those temporarily or use alternate ports
-- Storefront API base URL verification gap noted in handoff — worth tracing during STFR-03 to rule out silent path mismatch
-- Phase 11 must not start STMP-05 until Phase 9 SECR-04/SECR-05 are complete (shared Alertmanager route)
+- Port conflicts in dev env (frontend 3100 because MCP server holds 3000; Postgres 5432 shared with unrelated `dealflow_*` containers) — E2E smoke tests may need those containers stopped first
+- Stripe refund API (VOPS-02) requires phase-level research into idempotency keys + webhook `charge.refunded` handling — treat as a design-gate before writing the controller
+- K8s Sealed Secrets (INF-02) requires an operator install in the cluster + key rotation policy — not just a manifest change
+- `/public/orders?email=` enumeration risk (deferred from v2.1) — still open; not in v2.2 scope but should be noted as a known vulnerability
 
 ## Deferred Items
 

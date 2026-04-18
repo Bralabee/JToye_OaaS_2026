@@ -1,28 +1,40 @@
-# J'Toye OaaS — Post-v2.1 Shipped
+# J'Toye OaaS — Milestone v2.2: Production Hardening + Vendor Order Operations
 
 ## What This Is
 
-J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. As of v2.1 (shipped 2026-04-16), the platform has secret-hygiene CI enforcement, deployed Alertmanager routing 15 Prometheus rules to email, a customer-facing storefront that renders vendor promotions/announcements with working cart + order-history routes, and a horizontally-scalable kitchen display system backed by RabbitMQ STOMP relay.
+J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. As of v2.1 (shipped 2026-04-16), the platform has secret-hygiene CI enforcement, deployed Alertmanager routing 15 Prometheus rules to email, a customer-facing storefront that renders vendor promotions/announcements with working cart + order-history routes, and a horizontally-scalable kitchen display system backed by RabbitMQ STOMP relay. Milestone v2.2 closes the 8 highest-priority P2 security/quality items from the deep-audit backlog and ships the vendor-facing order detail + Stripe refund flow (Work Order E).
 
 ## Core Value
 
 Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
 
-## Current State
+## Current Milestone: v2.2 Production Hardening + Vendor Order Operations
 
-**Last shipped:** v2.1 Post-Audit Hardening + Storefront Completion (2026-04-16, archived 2026-04-18)
-**See:** `MILESTONES.md` and `milestones/v2.1-*` for full archive.
+**Goal:** Close the 8 highest-priority P2 security/quality items from the 2026-04-16 deep-audit HANDOFF, and ship the vendor-facing order detail + Stripe refund flow (Work Order E from the state-of-codebase doc) so vendors can operate orders end-to-end.
 
-**Current focus:** v2.2 not yet scoped. Known candidates from v2.1 deferred list:
-- 14 P2 items from deep-audit HANDOFF.md (stock race, K8s NetworkPolicies, K8s Sealed Secrets, CSP headers, Grafana JVM/DB/business dashboards, Alertmanager inhibition rules, etc.)
-- SECR-08 — Keycloak realm-export hardcoded dev secrets
-- `/public/orders?email=` enumeration risk
-- Alert runbook completion (9 stubs in `docs/runbooks/alerts.md`)
-- Phase 11 VALIDATION.md closure (nyquist_compliant: false)
+**Target features:**
 
-## Next Milestone Goals
+Security + quality hardening (8 items):
+- Application-layer tenant validation for guest tracking
+- Content Security Policy (CSP) headers for the Next.js frontend
+- Security response headers on Spring Boot (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
+- K8s NetworkPolicies for pod-to-pod isolation
+- K8s Sealed Secrets to replace plain Secret manifests
+- OpenAPI spec generation for the Go edge gateway
+- Stock race fix — validate stock at order confirmation, not creation
+- `getSummary()` DB aggregation rewrite (replace `findAll()` + in-memory sum)
 
-Run `/gsd-new-milestone` to scope. Likely frame: "v2.2 Production Hardening" — close the P2 items from the deep-audit HANDOFF that didn't fit into v2.1's bounded scope.
+Vendor operations (Work Order E):
+- `/dashboard/orders/[id]` order detail view
+- Refund flow wired to Stripe refund API
+- Refund state transition in the order state machine
+
+**Key context:**
+- Direct predecessor to v2.2 is v2.1, fully merged to main as of 2026-04-18 (tag `v2.1`, squashed PR #41)
+- 14 P2 items identified in HANDOFF.md — this milestone scopes to 8, the remaining 6 (Grafana dashboards, Alertmanager inhibition rules, frontend error logging, reactive state-machine fix, tenantId in DTOs, runbook completion) stay deferred to v2.3+
+- Starts from 516+ test invocations baseline (390 Java + 76 Jest + 50 Go). Every requirement must ship tests; total must grow, not regress.
+- Work Order E adds Stripe refund surface — upstream Stripe SDK already wired for payment intents (PaymentController), refund API is adjacent
+- No research needed — all 11 requirements have file:line evidence in HANDOFF.md + state-of-codebase doc; framework pitfalls (Stripe refunds, K8s sealed-secrets) will be covered in phase-level research
 
 ## Requirements
 
@@ -51,15 +63,33 @@ Run `/gsd-new-milestone` to scope. Likely frame: "v2.2 Production Hardening" —
 
 ### Active
 
-No active requirements — v2.1 shipped. Run `/gsd-new-milestone` to scope v2.2.
+**Security hardening (SEC):**
+- [ ] SEC-01: Application-layer tenant validation for guest tracking (blocks cross-tenant access on anonymous/session-based requests)
+- [ ] SEC-02: CSP headers on Next.js frontend responses (default-src, script-src, style-src, img-src, connect-src, frame-ancestors)
+- [ ] SEC-03: Security response headers on Spring Boot (X-Frame-Options DENY, HSTS, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin)
+
+**Code quality (CQ):**
+- [ ] CQ-01: Stock race fix — validate and decrement stock inside the OrderStateMachine `CONFIRM` transition with optimistic lock, not at order creation
+- [ ] CQ-02: `getSummary()` rewrite to use `SUM()` + `COUNT()` DB aggregation via JPQL or native query, replacing `findAll()` + in-memory reduction
+
+**Infrastructure (INF):**
+- [ ] INF-01: K8s NetworkPolicies for `frontend ↔ core-java`, `core-java ↔ db/redis/rabbitmq`, deny-all-else
+- [ ] INF-02: K8s Sealed Secrets to replace plain Secret manifests for all production-sensitive env vars
+
+**API documentation (DOC):**
+- [ ] DOC-01: Go edge gateway OpenAPI spec generated from Gin routes; served at `/openapi.json` with Swagger UI at `/docs`
+
+**Vendor operations (VOPS):**
+- [ ] VOPS-01: `/dashboard/orders/[id]` order detail view — all order fields, payment history, state transitions timeline, customer info, item lines
+- [ ] VOPS-02: Refund flow wired to Stripe refund API — `POST /api/v1/orders/{id}/refund` with amount + reason; partial and full refunds; Stripe webhook handling for `charge.refunded`
+- [ ] VOPS-03: Refund state transition added to Order state machine — `CONFIRMED/PREPARING/READY/COMPLETED → REFUNDED` via `REFUND_REQUESTED` event; idempotent; audited via Hibernate Envers
 
 ### Out of Scope
 
 - Tenant self-serve onboarding flow (Work Order D) — deferred to milestone 4
-- Vendor order detail view + refund flow (Work Order E) — deferred
 - Vendor finance + settings pages (Work Order F) — deferred
 - Log aggregation + Grafana dashboards + runbooks (Work Order G) — deferred
-- K8s sealed-secrets / external-secrets-operator (Work Order H) — deferred (SECR uses GitHub Secrets + k8s Secret resources as an interim)
+- ~~K8s sealed-secrets / external-secrets-operator (Work Order H)~~ — now in v2.2 scope as INF-02
 - Postgres PITR via WAL archiving (Work Order I) — deferred
 - Review module controller + moderation (Work Order J) — deferred
 - Edge OpenTelemetry + distributed rate limiter (Work Order K) — deferred
@@ -122,4 +152,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-18 after v2.1 milestone close*
+*Last updated: 2026-04-18 at start of milestone v2.2 (Production Hardening + Vendor Order Operations)*
