@@ -6,6 +6,7 @@ import { fontVariables, inter } from "./fonts";
 export const metadata: Metadata = {
   title: "J'Toye OaaS - Multi-Tenant Order Management",
   description: "Enterprise-grade order-as-a-service platform with tenant isolation",
+  icons: { icon: "/favicon.svg", apple: "/apple-touch-icon.svg" },
 };
 
 export default function RootLayout({
