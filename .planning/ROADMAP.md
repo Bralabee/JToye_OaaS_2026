@@ -85,6 +85,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. Cross-tenant spoof attempt is covered by an integration test that seeds two tenants + attempts the spoof + asserts 403
   4. `GuestTrackingService` (or equivalent) has explicit unit tests for tenant-match, tenant-mismatch, and missing-tenant paths
 **Plans**: 1 plan
+  - [ ] 13-01-PLAN.md — Service-layer tenant-match gate in PublicStorefrontService + ReviewService (resolvePublicShopForSlug helper, TenantAccessDeniedException → 403, CrossTenantSpoofIntegrationTest on Testcontainers Postgres, 4 unit tests on helper)
 **UI hint**: no
 
 ### Phase 14: Stock Race Fix + Summary Aggregation
