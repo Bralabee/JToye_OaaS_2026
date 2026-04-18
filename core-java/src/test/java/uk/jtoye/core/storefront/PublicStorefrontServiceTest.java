@@ -2,6 +2,7 @@ package uk.jtoye.core.storefront;
 
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
@@ -89,6 +92,14 @@ class PublicStorefrontServiceTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Clear ThreadLocal between tests — the new resolvePublicShopForSlug_*
+        // tests pre-populate TenantContext, and the helper is forbidden from
+        // clearing it (Plan D-09). Cleanup is the harness's responsibility.
+        TenantContext.clear();
     }
 
     @Test
@@ -365,5 +376,75 @@ class PublicStorefrontServiceTest {
         assertEquals("Sale Today", result.getAnnouncements().get(0).title());
         assertEquals("Everything 20% off!", result.getAnnouncements().get(0).body());
         verify(announcementRepository).findActiveByShopId(publishedShop.getId());
+    }
+
+    // ========================================================================
+    // SEC-01 (Phase 13) — resolvePublicShopForSlug helper coverage (SC-4)
+    //
+    // The helper is package-private (see PublicStorefrontService, Task 13-01-03)
+    // specifically so these unit tests can invoke it directly without reflection.
+    //
+    // Tests compile-fail today because the helper does not exist yet — this is
+    // the intentional RED state that Task 13-01-03 (GREEN) will turn green.
+    // ========================================================================
+
+    @Test
+    @DisplayName("resolvePublicShopForSlug — no upstream tenant → sets context from slug, returns shop")
+    void resolvePublicShopForSlug_whenNoUpstreamTenant_setsContextFromSlug() {
+        when(shopRepository.findBySlugAndPublishedTrue(publishedShop.getSlug()))
+                .thenReturn(Optional.of(publishedShop));
+
+        Shop result = service.resolvePublicShopForSlug(publishedShop.getSlug());
+
+        assertEquals(publishedShop, result);
+        assertEquals(Optional.of(tenantId), TenantContext.get(),
+                "TenantContext must be set to shop.tenantId on happy path");
+    }
+
+    @Test
+    @DisplayName("resolvePublicShopForSlug — upstream tenant matches slug tenant → proceeds")
+    void resolvePublicShopForSlug_whenUpstreamMatches_setsContextFromSlug() {
+        when(shopRepository.findBySlugAndPublishedTrue(publishedShop.getSlug()))
+                .thenReturn(Optional.of(publishedShop));
+        TenantContext.set(tenantId);  // JWT-authenticated caller for the SAME tenant
+
+        Shop result = service.resolvePublicShopForSlug(publishedShop.getSlug());
+
+        assertEquals(publishedShop, result);
+        assertEquals(Optional.of(tenantId), TenantContext.get());
+    }
+
+    @Test
+    @DisplayName("resolvePublicShopForSlug — upstream tenant differs from slug tenant → throws TenantAccessDeniedException")
+    void resolvePublicShopForSlug_whenUpstreamMismatches_throwsTenantAccessDeniedException() {
+        UUID otherTenant = UUID.randomUUID();
+        when(shopRepository.findBySlugAndPublishedTrue(publishedShop.getSlug()))
+                .thenReturn(Optional.of(publishedShop));
+        TenantContext.set(otherTenant);  // JWT-authenticated caller for a DIFFERENT tenant
+
+        TenantAccessDeniedException ex = assertThrows(TenantAccessDeniedException.class,
+                () -> service.resolvePublicShopForSlug(publishedShop.getSlug()));
+
+        // Per D-04 (ASVS V4.1.5) — message is generic; does NOT contain the tenant UUIDs.
+        assertFalse(ex.getMessage().contains(otherTenant.toString()),
+                "Exception message must not leak upstream tenant UUID");
+        assertFalse(ex.getMessage().contains(tenantId.toString()),
+                "Exception message must not leak slug tenant UUID");
+
+        // Per D-09 — helper must NOT clear; caller's pre-existing TenantContext is retained.
+        assertEquals(Optional.of(otherTenant), TenantContext.get(),
+                "helper must not clear or overwrite TenantContext on failure");
+    }
+
+    @Test
+    @DisplayName("resolvePublicShopForSlug — slug unknown → throws ResourceNotFoundException (preserves existing behavior)")
+    void resolvePublicShopForSlug_whenSlugUnknown_throwsResourceNotFoundException() {
+        when(shopRepository.findBySlugAndPublishedTrue("missing-slug"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.resolvePublicShopForSlug("missing-slug"));
+        assertTrue(TenantContext.get().isEmpty(),
+                "TenantContext must remain empty when slug is unknown");
     }
 }

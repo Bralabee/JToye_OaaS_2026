@@ -1,5 +1,6 @@
 package uk.jtoye.core.review;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
+import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -41,6 +43,14 @@ class ReviewServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Phase 13 SEC-01 — clear TenantContext before each test to prevent
+        // leakage from other unit-test classes that may run before this one
+        // (e.g., PublicStorefrontServiceTest sets TenantContext via the same
+        // helper). Without this, the tenant-match gate in resolvePublicShopForSlug
+        // trips on a stale ThreadLocal and throws TenantAccessDeniedException
+        // before order-validation logic runs — breaks createReview_rejectsNonCompletedOrder.
+        TenantContext.clear();
+
         shopId = UUID.randomUUID();
         orderId = UUID.randomUUID();
 
@@ -61,6 +71,17 @@ class ReviewServiceTest {
         order.setStatus(OrderStatus.COMPLETED);
         order.setCustomerEmail("test@example.com");
         order.setCustomerName("Test User");
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Phase 13 SEC-01 — ReviewService now sets TenantContext via
+        // resolvePublicShopForSlug on the happy path, and the helper is
+        // forbidden from clearing on failure (D-09). Without this cleanup,
+        // TenantContext leaks across tests (each @BeforeEach creates a shop
+        // with a fresh random tenantId, so the leaked value would trip the
+        // tenant-match gate on subsequent tests).
+        TenantContext.clear();
     }
 
     @Test
