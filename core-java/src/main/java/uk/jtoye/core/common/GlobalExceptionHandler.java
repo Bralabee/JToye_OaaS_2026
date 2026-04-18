@@ -9,6 +9,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
@@ -89,6 +90,19 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, message);
         problem.setTitle("Duplicate Entry");
         problem.setType(URI.create("https://jtoye.uk/errors/duplicate"));
+        return problem;
+    }
+
+    /**
+     * Map CQ-01 stock race exception to HTTP 409 Conflict (RFC 9110 §15.5.10).
+     * Thrown by StockService.decrementForOrder on exhaustion (insufficient stock
+     * OR @Recover after 3 optimistic-lock retries).
+     */
+    @ExceptionHandler(InsufficientStockException.class)
+    public ProblemDetail handleInsufficientStock(InsufficientStockException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Insufficient Stock");
+        problem.setType(URI.create("https://jtoye.uk/errors/insufficient-stock"));
         return problem;
     }
 
