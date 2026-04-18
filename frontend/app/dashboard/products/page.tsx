@@ -64,15 +64,15 @@ type ProductFormData = z.infer<typeof productSchema>
 
 function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
   return (
-    <div className="flex items-start gap-2 bg-white rounded-md px-2 py-1.5 border border-violet-100">
+    <div className="flex items-start gap-2 bg-surface-card rounded-sm px-2 py-1.5 border border-subtle">
       <div className="flex-1 min-w-0">
-        <span className="text-[10px] font-medium text-violet-500 uppercase">{label}</span>
-        <p className="text-xs text-slate-700 line-clamp-2">{value}</p>
+        <span className="text-[10px] font-semibold text-accent-editorial uppercase tracking-[0.08em]">{label}</span>
+        <p className="text-xs text-ink-primary line-clamp-2">{value}</p>
       </div>
       <button
         type="button"
         onClick={onAccept}
-        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 text-[10px] font-medium transition-colors"
+        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded-sm bg-accent-editorial text-ink-on-accent px-2 py-0.5 text-[10px] font-semibold transition-colors hover:brightness-95"
       >
         <Check className="h-2.5 w-2.5" />
         Apply
@@ -303,7 +303,7 @@ export default function ProductsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600 motion-reduce:animate-none" aria-label="Loading"></div>
       </div>
     )
   }
@@ -317,19 +317,19 @@ export default function ProductsPage() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-4xl font-bold text-slate-900">Products</h1>
-          <p className="mt-2 text-slate-600">
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Products</h1>
+          <p className="mt-2 text-ink-secondary">
             Manage your product catalog with allergen information
           </p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/products/import">
-            <Button variant="outline" className="gap-2">
+            <Button variant="secondary" className="gap-2">
               <Upload className="h-4 w-4" />
               Bulk Import
             </Button>
           </Link>
-          <Button onClick={openCreateDialog} className="gap-2">
+          <Button onClick={openCreateDialog} variant="primary" className="gap-2">
             <Plus className="h-4 w-4" />
             Add Product
           </Button>
@@ -351,7 +351,7 @@ export default function ProductsPage() {
               </CardDescription>
             </div>
             <div className="relative w-[220px]">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-ink-tertiary" aria-hidden="true" />
               <Input
                 placeholder="Search products..."
                 value={searchQuery}
@@ -363,14 +363,14 @@ export default function ProductsPage() {
           <CardContent>
             {products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Package className="mb-4 h-12 w-12 text-slate-300" />
-                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                <Package className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
+                <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
                   No products yet
                 </h3>
-                <p className="mb-4 text-sm text-slate-500">
+                <p className="mb-4 text-sm text-ink-tertiary">
                   Get started by creating your first product
                 </p>
-                <Button onClick={openCreateDialog} variant="outline">
+                <Button onClick={openCreateDialog} variant="secondary">
                   <Plus className="mr-2 h-4 w-4" />
                   Add Product
                 </Button>
@@ -407,13 +407,13 @@ export default function ProductsPage() {
                               <SafeImage
                                 src={product.imageUrl}
                                 alt={product.title}
-                                className="h-8 w-8 rounded-lg object-cover"
-                                fallbackClassName="h-8 w-8 rounded-lg bg-purple-100"
-                                fallbackIcon={<Package className="h-4 w-4 text-purple-600" />}
+                                className="h-8 w-8 rounded-sm object-cover"
+                                fallbackClassName="h-8 w-8 rounded-sm bg-accent-editorial-subtle"
+                                fallbackIcon={<Package className="h-4 w-4 text-accent-editorial" />}
                               />
                               <div>
-                                <div className="font-medium">{product.title}</div>
-                                <div className="line-clamp-1 text-xs text-slate-500">
+                                <div className="font-medium text-ink-primary">{product.title}</div>
+                                <div className="line-clamp-1 text-xs text-ink-tertiary">
                                   {product.ingredientsText}
                                 </div>
                               </div>
@@ -422,16 +422,16 @@ export default function ProductsPage() {
                           <TableCell>
                             <div className="flex items-center gap-1.5">
                               {product.category ? (
-                                <Badge variant="outline" className="text-xs">{product.category}</Badge>
+                                <Badge variant="subtle" size="sm">{product.category}</Badge>
                               ) : (
-                                <span className="text-xs text-slate-400">—</span>
+                                <span className="text-xs text-ink-tertiary">—</span>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
                               {allergenNames.length === 0 ? (
-                                <span className="text-sm text-slate-400">
+                                <span className="text-sm text-ink-tertiary">
                                   No allergens
                                 </span>
                               ) : (
@@ -442,10 +442,10 @@ export default function ProductsPage() {
                                   return (
                                     <Badge
                                       key={name}
-                                      variant="outline"
-                                      className="bg-orange-50 text-orange-700 border-orange-200"
+                                      variant="warning"
+                                      size="sm"
                                     >
-                                      <span className="mr-1">{allergen?.icon}</span>
+                                      <span className="mr-1" aria-hidden="true">{allergen?.icon}</span>
                                       {name}
                                     </Badge>
                                   )
@@ -453,7 +453,7 @@ export default function ProductsPage() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell numeric className="font-semibold text-ink-primary">
                             {product.pricePennies != null
                               ? `£${(product.pricePennies / 100).toFixed(2)}`
                               : "—"}
@@ -461,12 +461,12 @@ export default function ProductsPage() {
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               {product.available ? (
-                                <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
+                                <span title="Available"><Eye className="h-3.5 w-3.5 text-success" aria-label="Available" /></span>
                               ) : (
-                                <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
+                                <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-ink-tertiary" aria-label="Unavailable" /></span>
                               )}
                               {product.featured && (
-                                <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
+                                <span title="Featured"><Star className="h-3.5 w-3.5 text-warning fill-current" aria-label="Featured" /></span>
                               )}
                             </div>
                           </TableCell>
@@ -474,7 +474,7 @@ export default function ProductsPage() {
                             <div className="flex justify-end gap-2">
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="iconSm"
                                 onClick={async () => {
                                   try {
                                     const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
@@ -488,24 +488,25 @@ export default function ProductsPage() {
                                     toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
                                   }
                                 }}
-                                className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                                 title="Download allergen label"
+                                aria-label="Download allergen label"
                               >
                                 <FileText className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="iconSm"
                                 onClick={() => openEditDialog(product)}
-                                className="h-8 w-8 p-0"
+                                aria-label="Edit product"
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="iconSm"
                                 onClick={() => openDeleteDialog(product)}
-                                className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                className="text-danger hover:bg-danger-subtle"
+                                aria-label="Delete product"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -543,7 +544,7 @@ export default function ProductsPage() {
             </DialogDescription>
           </DialogHeader>
           <form id="product-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
+            <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Product Details</h4>
             <div className="space-y-2">
               <Label htmlFor="sku">SKU</Label>
               <Input
@@ -552,7 +553,7 @@ export default function ProductsPage() {
                 {...register("sku")}
               />
               {errors.sku && (
-                <p className="text-sm text-red-600">{errors.sku.message}</p>
+                <p className="text-sm text-danger">{errors.sku.message}</p>
               )}
             </div>
 
@@ -564,7 +565,7 @@ export default function ProductsPage() {
                 {...register("title")}
               />
               {errors.title && (
-                <p className="text-sm text-red-600">{errors.title.message}</p>
+                <p className="text-sm text-danger">{errors.title.message}</p>
               )}
             </div>
 
@@ -577,7 +578,7 @@ export default function ProductsPage() {
                 {...register("ingredientsText")}
               />
               {errors.ingredientsText && (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-danger">
                   {errors.ingredientsText.message}
                 </p>
               )}
@@ -594,13 +595,13 @@ export default function ProductsPage() {
                 {...register("pricePounds")}
               />
               {errors.pricePounds && (
-                <p className="text-sm text-red-600">{errors.pricePounds.message}</p>
+                <p className="text-sm text-danger">{errors.pricePounds.message}</p>
               )}
             </div>
 
             {/* Storefront Presentation */}
             <div className="space-y-3">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Storefront Presentation</h4>
+              <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Storefront Presentation</h4>
               <div className="space-y-2">
                 <Label htmlFor="description">Customer Description</Label>
                 <textarea
@@ -637,33 +638,33 @@ export default function ProductsPage() {
                   label="Product Image"
                 />
               ) : (
-                <div className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                  <ImageIcon className="h-4 w-4" />
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-subtle bg-surface-subtle px-3 py-3 text-sm text-ink-tertiary">
+                  <ImageIcon className="h-4 w-4" aria-hidden="true" />
                   <span>Save the product first, then add an image</span>
                 </div>
               )}
 
               {/* AI Suggestions Panel */}
               {aiSuggestions && aiSuggestions.confidence && aiSuggestions.confidence > 0.3 && (
-                <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-3">
+                <div className="rounded-md border border-subtle bg-accent-editorial-subtle p-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-violet-600" />
-                      <span className="text-sm font-semibold text-violet-800">AI Suggestions</span>
-                      <span className="text-xs text-violet-500">
+                      <Sparkles className="h-4 w-4 text-accent-editorial" aria-hidden="true" />
+                      <span className="text-sm font-semibold text-ink-primary">AI Suggestions</span>
+                      <span className="text-xs text-ink-secondary font-mono tabular-nums">
                         {Math.round((aiSuggestions.confidence || 0) * 100)}% confidence
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setAiSuggestions(null)}
-                      className="text-xs text-violet-400 hover:text-violet-600"
+                      className="text-xs text-ink-tertiary hover:text-ink-primary transition-colors"
                     >
                       Dismiss
                     </button>
                   </div>
                   {aiSuggestions.cuisineOrigin && (
-                    <p className="text-xs text-violet-600">Cuisine: {aiSuggestions.cuisineOrigin}</p>
+                    <p className="text-xs text-ink-secondary">Cuisine: {aiSuggestions.cuisineOrigin}</p>
                   )}
                   <div className="grid grid-cols-1 gap-2">
                     {aiSuggestions.identifiedName && (
@@ -720,8 +721,8 @@ export default function ProductsPage() {
                       />
                     )}
                     {aiSuggestions.allergenWarnings && aiSuggestions.allergenWarnings.length > 0 && (
-                      <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
-                        <AlertCircle className="inline h-3 w-3 mr-1" />
+                      <div className="text-xs text-ink-primary bg-warning-subtle rounded-sm px-2 py-1.5">
+                        <AlertCircle className="inline h-3 w-3 mr-1" aria-hidden="true" />
                         Allergen warnings: {aiSuggestions.allergenWarnings.join(", ")}
                       </div>
                     )}
@@ -807,25 +808,25 @@ export default function ProductsPage() {
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-orange-600" />
+                <AlertCircle className="h-4 w-4 text-brand-primary" aria-hidden="true" />
                 <Label>Allergens</Label>
               </div>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-ink-secondary">
                 Select all allergens present in this product
               </p>
-              <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 bg-slate-50">
+              <div className="grid grid-cols-2 gap-3 rounded-md border border-subtle p-4 bg-surface-subtle">
                 {ALLERGENS.map((allergen) => (
                   <label
                     key={allergen.bit}
-                    className="flex items-center gap-3 cursor-pointer rounded-md p-2 hover:bg-white transition-colors"
+                    className="flex items-center gap-3 cursor-pointer rounded-sm p-2 hover:bg-surface-card transition-colors"
                   >
                     <input
                       type="checkbox"
                       checked={hasAllergen(allergenMask, allergen.bit)}
                       onChange={() => toggleAllergenBit(allergen.bit)}
-                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      className="h-4 w-4 rounded border-border-tone text-brand-primary focus:ring-brand-primary"
                     />
-                    <span className="text-lg">{allergen.icon}</span>
+                    <span className="text-lg" aria-hidden="true">{allergen.icon}</span>
                     <span className="text-sm font-medium">{allergen.name}</span>
                   </label>
                 ))}

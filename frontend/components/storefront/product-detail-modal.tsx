@@ -2,11 +2,19 @@
 
 import { useState, useCallback } from "react"
 import {
-  X, ChevronLeft, ChevronRight, Star, Timer,
+  ChevronLeft, ChevronRight, Star, Timer,
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { BrandPlaceholder } from "@/components/storefront/brand-placeholder"
 import { PublicProduct } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 
@@ -66,231 +74,224 @@ export function ProductDetailModal({
     .map((t) => t.trim())
     .filter(Boolean) || []
 
-  if (!isOpen) return null
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden p-0 flex flex-col">
+        {/* Image carousel */}
+        {images.length > 0 ? (
+          <div className="relative aspect-[4/3] bg-surface-muted flex-shrink-0">
+            <SafeImage
+              src={images[currentImageIndex]}
+              alt={`${product.title} - image ${currentImageIndex + 1}`}
+              className="w-full h-full object-cover"
+              loading="eager"
+            />
 
-      {/* Modal */}
-      <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-        onClick={onClose}
-      >
-        <div
-          className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 z-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+            {/* Navigation arrows */}
+            {hasMultipleImages && (
+              <>
+                <button
+                  type="button"
+                  onClick={prevImage}
+                  aria-label="Previous image"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-ink-primary/40 backdrop-blur-sm hover:bg-ink-primary/60 text-ink-inverse rounded-full p-1.5 transition-colors"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={nextImage}
+                  aria-label="Next image"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-ink-primary/40 backdrop-blur-sm hover:bg-ink-primary/60 text-ink-inverse rounded-full p-1.5 transition-colors"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
 
-          {/* Image carousel */}
-          {images.length > 0 ? (
-            <div className="relative aspect-[4/3] bg-slate-100 flex-shrink-0">
-              <SafeImage
-                src={images[currentImageIndex]}
-                alt={`${product.title} - image ${currentImageIndex + 1}`}
-                className="w-full h-full object-cover"
-                loading="eager"
-              />
-
-              {/* Navigation arrows */}
-              {hasMultipleImages && (
-                <>
+            {/* Dot indicators */}
+            {hasMultipleImages && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {images.map((_, i) => (
                   <button
-                    onClick={prevImage}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentImageIndex(i)}
+                    aria-label={`Go to image ${i + 1}`}
+                    className={`h-2 w-2 rounded-full transition-colors ${
+                      i === currentImageIndex
+                        ? "bg-surface-card"
+                        : "bg-surface-card/40 hover:bg-surface-card/60"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Thumbnail strip */}
+            {hasMultipleImages && (
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {images.map((url, i) => (
                   <button
-                    onClick={nextImage}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentImageIndex(i)}
+                    aria-label={`Select image ${i + 1}`}
+                    className={`h-10 w-10 rounded-sm overflow-hidden ring-2 transition-all ${
+                      i === currentImageIndex
+                        ? "ring-surface-card scale-105"
+                        : "ring-transparent opacity-70 hover:opacity-100"
+                    }`}
                   >
-                    <ChevronRight className="h-5 w-5" />
+                    <SafeImage src={url} alt="" className="w-full h-full object-cover" />
                   </button>
-                </>
-              )}
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <BrandPlaceholder aspect="aspect-[4/3]" className="flex-shrink-0" />
+        )}
 
-              {/* Dot indicators */}
-              {hasMultipleImages && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  {images.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentImageIndex(i)}
-                      className={`h-2 w-2 rounded-full transition-colors ${
-                        i === currentImageIndex
-                          ? "bg-white"
-                          : "bg-white/40 hover:bg-white/60"
-                      }`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Thumbnail strip */}
-              {hasMultipleImages && (
-                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  {images.map((url, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentImageIndex(i)}
-                      className={`h-10 w-10 rounded-lg overflow-hidden ring-2 transition-all ${
-                        i === currentImageIndex
-                          ? "ring-white scale-105"
-                          : "ring-transparent opacity-70 hover:opacity-100"
-                      }`}
-                    >
-                      <SafeImage src={url} alt="" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="aspect-[4/3] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center flex-shrink-0">
-              <ShoppingBag className="h-16 w-16 text-slate-200" />
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {/* Title + price row */}
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Title + price row */}
+          <DialogHeader>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <DialogTitle className="font-display text-xl font-semibold tracking-tight flex items-center gap-2">
                   {product.featured && (
-                    <Star className="h-4 w-4 text-amber-500 fill-amber-500 flex-shrink-0" />
+                    <Star className="h-4 w-4 text-warning fill-current flex-shrink-0" aria-label="Featured" />
                   )}
-                  {product.title}
+                  <span className="min-w-0 break-words">{product.title}</span>
                   {outOfStock && (
-                    <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
+                    <Badge variant="danger" size="sm">Out of Stock</Badge>
                   )}
-                </h2>
+                </DialogTitle>
               </div>
-              <span className="text-xl font-bold text-slate-900 whitespace-nowrap">
+              <span className="font-mono tabular-nums text-xl font-semibold text-ink-primary whitespace-nowrap">
                 {formatPrice(product.pricePennies)}
               </span>
             </div>
+          </DialogHeader>
 
-            {/* Dietary tags */}
-            {dietaryTags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {dietaryTags.map((tag) => (
+          {/* Dietary tags */}
+          {(dietaryTags.length > 0 || product.preparationTimeMinutes) && (
+            <div className="flex flex-wrap gap-1.5">
+              {dietaryTags.map((tag) => (
+                <Badge key={tag} variant="success" size="sm">
+                  {getDietaryIcon(tag)}
+                  {tag}
+                </Badge>
+              ))}
+              {product.preparationTimeMinutes && (
+                <Badge variant="subtle" size="sm">
+                  <Timer className="h-3 w-3" />
+                  {product.preparationTimeMinutes} min
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* Description */}
+          {product.description && (
+            <div>
+              <h3 className="text-sm font-semibold text-ink-primary mb-1">About</h3>
+              <p className="text-sm text-ink-secondary leading-relaxed whitespace-pre-line">
+                {product.description}
+              </p>
+            </div>
+          )}
+
+          {/* Ingredients */}
+          {product.ingredientsText && (
+            <div>
+              <h3 className="text-sm font-semibold text-ink-primary mb-1">Ingredients</h3>
+              <p className="text-sm text-ink-tertiary leading-relaxed">
+                {product.ingredientsText}
+              </p>
+            </div>
+          )}
+
+          {/* Allergens */}
+          {allergenList.length > 0 && (
+            <div className="rounded-md bg-warning-subtle border border-subtle p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <AlertTriangle className="h-4 w-4 text-ink-primary" aria-hidden="true" />
+                <h3 className="text-sm font-semibold text-ink-primary">
+                  Allergen Information
+                </h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {allergenList.map((a) => (
                   <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-1 text-xs font-medium"
+                    key={a.bit}
+                    className="inline-flex items-center gap-1 bg-surface-card rounded-sm border border-subtle px-2 py-1 text-xs font-medium text-ink-primary"
                   >
-                    {getDietaryIcon(tag)}
-                    {tag}
+                    <span aria-hidden="true">{a.icon}</span>
+                    {a.name}
                   </span>
                 ))}
-                {product.preparationTimeMinutes && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2.5 py-1 text-xs font-medium">
-                    <Timer className="h-3 w-3" />
-                    {product.preparationTimeMinutes} min
-                  </span>
-                )}
               </div>
-            )}
-
-            {/* Description */}
-            {product.description && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 mb-1">About</h3>
-                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                  {product.description}
-                </p>
-              </div>
-            )}
-
-            {/* Ingredients */}
-            {product.ingredientsText && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 mb-1">Ingredients</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  {product.ingredientsText}
-                </p>
-              </div>
-            )}
-
-            {/* Allergens */}
-            {allergenList.length > 0 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  <h3 className="text-sm font-semibold text-amber-800">
-                    Allergen Information
-                  </h3>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {allergenList.map((a) => (
-                    <span
-                      key={a.bit}
-                      className="inline-flex items-center gap-1 bg-white rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700"
-                    >
-                      <span>{a.icon}</span>
-                      {a.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sticky add-to-cart footer */}
-          <div className="border-t border-slate-100 p-4 bg-white flex-shrink-0">
-            {outOfStock ? (
-              <button
-                disabled
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-300 text-slate-500 font-semibold py-3 px-4 cursor-not-allowed"
-              >
-                Out of Stock
-              </button>
-            ) : quantity === 0 ? (
-              <button
-                onClick={onAdd}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 transition-colors"
-              >
-                <ShoppingBag className="h-5 w-5" />
-                Add to cart &middot; {formatPrice(product.pricePennies)}
-              </button>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">In cart</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={onDecrement}
-                    className="h-10 w-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="text-lg font-bold w-8 text-center">{quantity}</span>
-                  <button
-                    onClick={onIncrement}
-                    className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition-colors"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-                <span className="text-sm font-semibold text-slate-900">
-                  {formatPrice(product.pricePennies * quantity)}
-                </span>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
-    </>
+
+        {/* Sticky add-to-cart footer */}
+        <div className="border-t border-subtle p-4 bg-surface-card flex-shrink-0">
+          {outOfStock ? (
+            <Button
+              disabled
+              variant="subtle"
+              size="lg"
+              className="w-full"
+            >
+              Out of Stock
+            </Button>
+          ) : quantity === 0 ? (
+            <Button
+              onClick={onAdd}
+              variant="primary"
+              size="lg"
+              className="w-full"
+            >
+              <ShoppingBag className="h-5 w-5" />
+              Add to cart &middot;{" "}
+              <span className="font-mono tabular-nums">{formatPrice(product.pricePennies)}</span>
+            </Button>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-ink-tertiary">In cart</span>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={onDecrement}
+                  variant="subtle"
+                  size="iconSm"
+                  aria-label="Decrease quantity"
+                  className="rounded-pill"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <span className="font-mono tabular-nums text-lg font-semibold w-8 text-center">
+                  {quantity}
+                </span>
+                <Button
+                  onClick={onIncrement}
+                  variant="primary"
+                  size="iconSm"
+                  aria-label="Increase quantity"
+                  className="rounded-pill"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <span className="font-mono tabular-nums text-sm font-semibold text-ink-primary">
+                {formatPrice(product.pricePennies * quantity)}
+              </span>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
