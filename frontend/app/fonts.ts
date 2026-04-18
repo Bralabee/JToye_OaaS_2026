@@ -23,7 +23,6 @@ export const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700", "800", "900"],
   style: ["normal", "italic"],
   axes: ["opsz", "SOFT", "WONK"],
 });
