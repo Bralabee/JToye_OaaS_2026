@@ -1,26 +1,28 @@
-# J'Toye OaaS — Milestone 3: Post-Audit Hardening + Storefront Completion
+# J'Toye OaaS — Post-v2.1 Shipped
 
 ## What This Is
 
-J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. This milestone closes the three highest-priority gaps identified by the 2026-04-14 state-of-codebase audit: repository secret exposure + missing alerting, the half-dead vendor marketing path (backend ships promotions that the storefront never renders, plus two missing customer routes), and the single-replica STOMP broker that silently breaks kitchen broadcasts the moment a second `core-java` replica starts.
+J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. As of v2.1 (shipped 2026-04-16), the platform has secret-hygiene CI enforcement, deployed Alertmanager routing 15 Prometheus rules to email, a customer-facing storefront that renders vendor promotions/announcements with working cart + order-history routes, and a horizontally-scalable kitchen display system backed by RabbitMQ STOMP relay.
 
 ## Core Value
 
 Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
 
-## Current Milestone: v2.1 Post-Audit Hardening + Storefront Completion
+## Current State
 
-**Goal:** Ship Work Orders A, B, C from `.planning/state-of-codebase/STATE-OF-CODEBASE-2026-04-14.md §11` — close the 3 immediate production blockers without adding new major surface area.
+**Last shipped:** v2.1 Post-Audit Hardening + Storefront Completion (2026-04-16, archived 2026-04-18)
+**See:** `MILESTONES.md` and `milestones/v2.1-*` for full archive.
 
-**Target features:**
-- Repository secret hygiene + Prometheus Alertmanager deployment with Slack routing
-- Storefront rendering of vendor promotions + announcements, plus the missing `/shop/[slug]/cart` and `/shop/orders` customer routes
-- `StompBrokerRelay` over RabbitMQ with a config flag (`stomp.broker.mode`) so `core-java` can scale horizontally without losing kitchen broadcasts
+**Current focus:** v2.2 not yet scoped. Known candidates from v2.1 deferred list:
+- 14 P2 items from deep-audit HANDOFF.md (stock race, K8s NetworkPolicies, K8s Sealed Secrets, CSP headers, Grafana JVM/DB/business dashboards, Alertmanager inhibition rules, etc.)
+- SECR-08 — Keycloak realm-export hardcoded dev secrets
+- `/public/orders?email=` enumeration risk
+- Alert runbook completion (9 stubs in `docs/runbooks/alerts.md`)
+- Phase 11 VALIDATION.md closure (nyquist_compliant: false)
 
-**Key context:**
-- All 34 audit findings are on `main` via PRs #30–#36; this milestone starts from a verified-green baseline (335 java / 69 frontend / 28 go tests, 0 npm vulns)
-- Source of truth is `.planning/state-of-codebase/STATE-OF-CODEBASE-2026-04-14.md` — every requirement below has a file:line in that document
-- Tier-2 backlog (Work Orders D–O) is explicitly deferred to milestone 4+
+## Next Milestone Goals
+
+Run `/gsd-new-milestone` to scope. Likely frame: "v2.2 Production Hardening" — close the P2 items from the deep-audit HANDOFF that didn't fit into v2.1's bounded scope.
 
 ## Requirements
 
@@ -42,31 +44,14 @@ Vendors can manage their business end-to-end — from marketing to kitchen fulfi
 - ✓ **[M2]** Real-time Kitchen Display System — STOMP WebSocket, tenant-scoped channels, audio alerts, age colouring — milestone 2, phases 5–7
 - ✓ **[M2]** Test coverage closure — PaymentController webhook, PublicStorefrontController, security filters, GDPR — milestone 2, phase 8
 - ✓ **[Post-audit]** edge-go security hardening, java data integrity, frontend HttpOnly cookies, optimistic locking V32, payment transactional outbox V31, Flyway V32 doc sync — PRs #30–#36
+- ✓ **[v2.1 SECR]** Alertmanager deployed with email receiver routing 15 Prometheus alert rules; gitleaks CI + allowlist; `.env` verified untracked (audit-doc premise was false) — phase 9, PR #37
+- ✓ **[v2.1 STFR]** Storefront renders vendor promotions + announcements; `/shop/[slug]/cart` + `/shop/orders` routes shipped; full browse→cart→Stripe checkout Playwright e2e — phase 10, PR #38
+- ✓ **[v2.1 STMP]** `StompBrokerRelay` behind `stomp.broker.mode` flag; RabbitMQ STOMP plugin; two-replica smoke test 6/6; StompBrokerLag alert + Grafana dashboard — phase 11, PR #39
+- ✓ **[v2.1 Deep audit P1]** 4 new Prometheus alerts, redis-exporter, error boundaries, STOMP tenant validation on ALL /topic/, JWT in CONNECT headers, Go edge tests (21→57) — PR #40
 
 ### Active
 
-**Work Order A — Repository secrets + alerting (SECR):**
-- [ ] SECR-01: `.env` removed from git tracking with gitignore entry
-- [ ] SECR-02: All 5 committed credentials rotated (Postgres, Keycloak admin, Redis, RabbitMQ, Keycloak client secret)
-- [ ] SECR-03: Rotated credentials pushed to GitHub Secrets + k8s secrets for staging/prod
-- [ ] SECR-04: Prometheus Alertmanager deployed in `infra/monitoring/docker-compose.monitoring.yml`
-- [ ] SECR-05: Alertmanager Slack webhook routing bound to the existing 13 Prometheus alert rules
-- [ ] SECR-06: End-to-end alert roundtrip verified (force `ServiceDown`, confirm Slack message)
-
-**Work Order B — Storefront marketing + missing customer routes (STFR):**
-- [ ] STFR-01: `GET /public/shops/{slug}/promotions` endpoint returning only active+unexpired tenant-scoped promotions
-- [ ] STFR-02: `GET /public/shops/{slug}/announcements` endpoint with the same active-only filter
-- [ ] STFR-03: `frontend/app/shop/[slug]/page.tsx` renders the announcement banner above the menu and discount badges on product cards
-- [ ] STFR-04: `frontend/app/shop/[slug]/cart/page.tsx` standalone cart route with empty-cart + missing-shop handling
-- [ ] STFR-05: `frontend/app/shop/orders/page.tsx` authenticated customer order-history route with filter + pagination
-- [ ] STFR-06: Playwright e2e covering browse → add → cart page → Stripe checkout → confirmation on the full customer flow
-
-**Work Order C — STOMP broker relay for horizontal scale (STMP):**
-- [ ] STMP-01: `WebSocketConfig.java` swaps `SimpleBroker` for `StompBrokerRelay` behind a `stomp.broker.mode` property (`in-memory` | `relay`)
-- [ ] STMP-02: RabbitMQ STOMP plugin enabled in docker-compose + k8s; port 61613 exposed; relay credentials stored as k8s secrets
-- [ ] STMP-03: Two-replica `core-java` broadcast verified — client on replica A receives order state change published on replica B
-- [ ] STMP-04: Playwright e2e asserts real-time kitchen update within 2s in relay mode
-- [ ] STMP-05: Prometheus alert on RabbitMQ STOMP exchange lag > 5s + Grafana tile for STOMP connection count
+No active requirements — v2.1 shipped. Run `/gsd-new-milestone` to scope v2.2.
 
 ### Out of Scope
 
@@ -87,14 +72,14 @@ Vendors can manage their business end-to-end — from marketing to kitchen fulfi
 
 ## Context
 
-- **Existing codebase:** 3-tier architecture (Next.js 16 frontend, Go 1.22 edge, Spring Boot 3.4.2 core) with Flyway V1–V32, 335 Java + 69 frontend + 28 Go tests
-- **Previous milestones:** Milestone 1 (batches 3–5 + Tier 2) shipped reliability + core features; Milestone 2 (v2.0 Tier 3) shipped API versioning, vendor marketing, KDS, test coverage closure
-- **Source-of-truth doc:** `.planning/state-of-codebase/STATE-OF-CODEBASE-2026-04-14.md` (676 lines, 12 sections, every finding file:line-backed)
-- **Known concerns:**
-  - `.env` committed at repo root (SECR addresses)
-  - Alertmanager not deployed — 13 Prometheus rules fire into the void (SECR addresses)
-  - Storefront never calls `/promotions` or `/announcements` — vendor marketing is half-dead (STFR addresses)
-  - `WebSocketConfig.java` uses `SimpleBroker` — kitchen broadcasts break silently on a second replica (STMP addresses)
+- **Existing codebase:** 3-tier architecture (Next.js 16 frontend, Go 1.22 edge, Spring Boot 3.4.2 core) with Flyway V1–V33, 516+ logical test invocations across 66 test files (390 Java `@Test` methods + 76 Jest `it/test` blocks + 50 top-level Go `Test*` funcs / 54 with `t.Run` subtests). Verified 2026-04-18 post-v2.1.
+- **Previous milestones:** Milestone 1 (batches 3–5 + Tier 2) shipped reliability + core features; Milestone 2 (v2.0 Tier 3) shipped API versioning, vendor marketing, KDS, test coverage closure; Milestone 3 (v2.1) closed the 3 highest-priority audit Work Orders + a deep-audit P1 pass
+- **v2.1 outcome:** 18/18 requirements complete, 3/3 phases verified after audit remediation. Alertmanager routes emails (not Slack — rescoped during phase 9). Secret-hygiene CI prevents future drift. Storefront is no longer half-dead — customers see promotions and have cart/orders routes. STOMP broker scales horizontally behind a config flag.
+- **Known concerns for v2.2 candidates:**
+  - 14 P2 deep-audit items in HANDOFF.md (stock race at confirmation vs creation, DB aggregation for getSummary, K8s NetworkPolicies, K8s Sealed Secrets, CSP headers, CSP-compatible frontend error logging, Grafana JVM/DB/business dashboards, Alertmanager inhibition rules, runbook completion, blocking reactive calls in state machine)
+  - SECR-08: Keycloak realm-export hardcoded dev secrets (allowlisted for now)
+  - `/public/orders?email=` enumeration risk
+  - Phase 11 VALIDATION.md draft (nyquist_compliant: false)
 
 ## Constraints
 
@@ -109,12 +94,15 @@ Vendors can manage their business end-to-end — from marketing to kitchen fulfi
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Scope milestone 3 to Work Orders A+B+C only | A is 2 days + standalone safety net, B is 1 week + closes marketing loop, C is 1 week + unblocks horizontal scale. Bundling A in hides its urgency; bundling D (tenant onboarding) in blows the milestone past 5 weeks. | — Pending |
-| Version as v2.1 (not v3.0) | Hardening + completion, no net-new major surface. v3.0 is reserved for tenant onboarding (Work Order D) which genuinely signals SaaS v1 self-serve. | — Pending |
-| Skip domain research for this milestone | State-of-codebase doc is already research-grade (5 specialist agents, 676 lines, file:line evidence). Re-researching would duplicate. Framework-specific pitfalls (StompBrokerRelay, Alertmanager) will be covered in phase-level research. | — Pending |
-| Continue phase numbering from 9 | Preserves M2 phase history (1–8) and matches `.planning/phases/` directory convention. Reset would require archiving with no archive path available. | — Pending |
-| SECR credential rotation via rotation + GitHub/k8s Secrets, not sealed-secrets | Work Order H (sealed-secrets or external-secrets-operator) is the long-term answer. This milestone uses plain GitHub + k8s Secrets to close the hole within 2 days. | — Pending |
-| STOMP broker behind config flag | `stomp.broker.mode` lets dev keep in-memory broker (zero RabbitMQ dependency for local) while staging/prod switch to relay. Prevents a hard cutover from regressing local dev loops. | — Pending |
+| Scope milestone 3 to Work Orders A+B+C only | A is 2 days + standalone safety net, B is 1 week + closes marketing loop, C is 1 week + unblocks horizontal scale. Bundling A in hides its urgency; bundling D (tenant onboarding) in blows the milestone past 5 weeks. | ✓ Good (v2.1 shipped as planned) |
+| Version as v2.1 (not v3.0) | Hardening + completion, no net-new major surface. v3.0 is reserved for tenant onboarding (Work Order D) which genuinely signals SaaS v1 self-serve. | ✓ Good (v2.1 shipped as planned) |
+| Skip domain research for this milestone | State-of-codebase doc is already research-grade (5 specialist agents, 676 lines, file:line evidence). Re-researching would duplicate. Framework-specific pitfalls (StompBrokerRelay, Alertmanager) will be covered in phase-level research. | ✓ Good (v2.1 shipped as planned) |
+| Continue phase numbering from 9 | Preserves M2 phase history (1–8) and matches `.planning/phases/` directory convention. Reset would require archiving with no archive path available. | ✓ Good (v2.1 shipped as planned) |
+| SECR credential rotation via rotation + GitHub/k8s Secrets, not sealed-secrets | Work Order H (sealed-secrets or external-secrets-operator) is the long-term answer. This milestone uses plain GitHub + k8s Secrets to close the hole within 2 days. | ✓ Good (v2.1 shipped as planned) |
+| STOMP broker behind config flag | `stomp.broker.mode` lets dev keep in-memory broker (zero RabbitMQ dependency for local) while staging/prod switch to relay. Prevents a hard cutover from regressing local dev loops. | ✓ Good (v2.1 shipped as planned) |
+| Phase 9 rescope mid-flight (Slack→email, rotation→verification) | User challenge 2026-04-15: no committed Slack dependency; `git ls-files --error-unmatch .env` confirmed original audit-doc claim was false. Converted SECR-01..03 from rotation to verification; added SECR-07 for gitleaks CI so future drift is caught at PR time. | ✓ Good (right-sized scope without losing safety) |
+| ALL /topic/ STOMP subscriptions require tenant segment | Future-proofs against new broadcast channels bypassing isolation. Originally only /topic/kitchen/ was guarded. | ✓ Good (P1 deep-audit, PR #40) |
+| JWT in STOMP CONNECT headers with session fallback | Backwards-compatible during rolling deploys — old clients still connect via session JWT until updated. | ✓ Good (P1 deep-audit, PR #40) |
 
 ## Evolution
 
@@ -134,4 +122,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-14 at start of milestone 3 (v2.1) from state-of-codebase audit input*
+*Last updated: 2026-04-18 after v2.1 milestone close*

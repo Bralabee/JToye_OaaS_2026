@@ -1,289 +1,478 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-04-07
+**Analysis Date:** 2026-04-18
 
 ## Directory Layout
 
 ```
 JToye_OaaS_2026/
-├── core-java/              # Spring Boot backend (Port 9090)
-│   ├── src/main/java/      # Source code (pkg: uk.jtoye.core)
-│   ├── src/main/resources/ # Config, migrations, OpenAPI schemas
-│   ├── src/test/java/      # 130+ unit and integration tests
-│   ├── build.gradle.kts    # Dependencies, Spring Boot 3, Java 21
-│   └── build-local/        # Build artifacts (redirected from 'build')
+├── core-java/                     # Spring Boot backend (port 9090)
+│   ├── src/main/java/uk/jtoye/core/
+│   │   ├── ai/                    # LLM integration (Ollama image analysis)
+│   │   ├── audit/                 # AuditService, Envers helpers
+│   │   ├── common/                # Shared utilities, constants
+│   │   ├── config/                # CacheConfig, CorsConfig, EnversConfig,
+│   │   │                          #   OpenApiConfig, RateLimitConfig,
+│   │   │                          #   RabbitMQConfig, ScheduledCleanupService,
+│   │   │                          #   BusinessMetricsService,
+│   │   │                          #   TenantAwareCacheKeyGenerator,
+│   │   │                          #   TenantCacheEvictor
+│   │   ├── controller/            # SecurityHealthController (cross-cutting)
+│   │   ├── customer/              # Customer domain
+│   │   ├── exception/             # GlobalExceptionHandler, ErrorResponse,
+│   │   │                          #   ResourceNotFoundException, InvalidStateTransitionException
+│   │   ├── finance/               # FinancialTransaction domain, VAT
+│   │   ├── gdpr/                  # Data export/deletion requests
+│   │   ├── notification/          # Email service, RabbitMQ publishers
+│   │   ├── order/                 # Order domain + Spring State Machine + SSE
+│   │   ├── payment/               # Stripe integration + PaymentEventOutbox
+│   │   │                          #   (PaymentController, PaymentService,
+│   │   │                          #    PaymentEventOutbox, PaymentEventOutboxFlusher,
+│   │   │                          #    PaymentEventPublisher, PaymentEventAuditListener,
+│   │   │                          #    StripeProperties)
+│   │   ├── product/               # Product domain, image gallery
+│   │   ├── review/                # Customer reviews
+│   │   ├── security/              # TenantContext, JwtTenantFilter, SecurityConfig,
+│   │   │                          #   TenantSetLocalAspect, TenantContextCleanupFilter,
+│   │   │                          #   RateLimitInterceptor
+│   │   ├── shop/                  # Shop domain (tenant-owned storefront)
+│   │   ├── storage/               # S3/MinIO file operations
+│   │   ├── storefront/            # Public (unauth) endpoints — v2.1 extended
+│   │   │                          #   PublicStorefrontController (promotions,
+│   │   │                          #   announcements, guest orders, tracking)
+│   │   │                          #   PublicStorefrontService + dto/
+│   │   ├── sync/                  # SyncController, batch sync from edge devices
+│   │   ├── tenant/                # Tenant provisioning (dev profile)
+│   │   ├── websocket/             # STOMP/WS — v2.1 relay-capable
+│   │   │                          #   WebSocketConfig (in-memory | relay modes)
+│   │   │                          #   TenantChannelInterceptor (P1 hardened)
+│   │   │                          #   JwtHandshakeInterceptor
+│   │   │                          #   (JWT in STOMP CONNECT headers)
+│   │   └── CoreApplication.java   # @SpringBootApplication entry point
+│   ├── src/main/resources/
+│   │   ├── application.yml        # Base config
+│   │   ├── application-{dev,test,staging,prod}.yml
+│   │   ├── db/migration/          # 33 Flyway migrations (V1 … V33)
+│   │   │                          # V33__fix_rls_policies.sql (latest, v2.1)
+│   │   └── logback-spring.xml
+│   ├── src/test/java/             # 341 passing tests (unit + integration)
+│   ├── build.gradle.kts           # Spring Boot 3.4.2, JDK 21
+│   └── build-local/               # Gradle output (redirected from build/)
 │
-├── edge-go/                # Go API gateway (Port 8080/8089)
-│   ├── cmd/edge/           # Main entry point
-│   ├── internal/           # Circuit breaker, JWT, WhatsApp, Core client
-│   ├── go.mod / go.sum     # Go 1.22, Gin, zap, Resilience4j equiv
-│   └── (26 unit tests)
+├── edge-go/                       # Go 1.22 API gateway (port 8080)
+│   ├── cmd/edge/main.go           # Gin router, middleware wiring
+│   ├── internal/
+│   │   ├── core/                  # HTTP client + sony/gobreaker circuit breaker
+│   │   ├── middleware/            # JWT validation (golang-jwt/jwt v5)
+│   │   └── whatsapp/              # Webhook parser
+│   ├── go.mod / go.sum            # Gin, zap, gobreaker
+│   ├── Dockerfile                 # multi-stage, scratch runtime
+│   └── (57 passing tests — up from 21 in v2.0; P1 audit hardening)
 │
-├── frontend/               # Next.js 16 UI (Port 3000)
-│   ├── app/                # App router: dashboard, shop, auth flows
-│   │   ├── dashboard/      # Admin dashboards (shops, products, orders, customers)
-│   │   ├── shop/           # Customer storefront pages
-│   │   ├── auth/           # Auth UI (login, callback)
-│   │   └── api/auth/       # NextAuth.js route handlers
-│   ├── components/         # React components (dashboard, storefront, UI lib)
-│   ├── lib/                # Utilities, API client, auth helpers
-│   ├── types/              # TypeScript type definitions
-│   ├── package.json        # React 19, Next.js 16, NextAuth v5, Tailwind
-│   └── (43 unit tests + E2E)
+├── frontend/                      # Next.js 16 UI (port 3000, dev 3100)
+│   ├── app/                       # App Router
+│   │   ├── dashboard/             # Admin UI (shops, products, orders, customers,
+│   │   │                          #   promotions, announcements, kitchen, finance)
+│   │   ├── shop/                  # Customer storefront
+│   │   │   ├── [slug]/page.tsx    # Shop detail + product browse
+│   │   │   ├── [slug]/cart/       # Cart page (v2.1 — standalone route)
+│   │   │   │   └── page.tsx
+│   │   │   ├── [slug]/checkout/   # Stripe checkout
+│   │   │   ├── [slug]/orders/     # Order tracking by number
+│   │   │   ├── orders/            # v2.1 — customer order history by email
+│   │   │   │   └── page.tsx       #       (previously 404'd)
+│   │   │   ├── auth/              # Customer auth (email + magic link)
+│   │   │   ├── error.tsx          # v2.1 P1 — route error boundary
+│   │   │   └── layout.tsx
+│   │   ├── auth/                  # Admin auth (Keycloak OIDC via NextAuth)
+│   │   ├── track/                 # Public order tracking landing
+│   │   ├── api/auth/              # NextAuth v5 route handlers
+│   │   ├── error.tsx              # v2.1 P1 — root error boundary
+│   │   └── page.tsx               # Root redirect (auth-aware)
+│   ├── components/
+│   │   ├── dashboard/             # Admin UI: sidebar, shell, data tables
+│   │   ├── storefront/            # cart-provider, product-detail-modal,
+│   │   │                          #   storefront-nav, require-customer-auth
+│   │   ├── ui/                    # Radix-based primitives
+│   │   └── providers.tsx
+│   ├── lib/
+│   │   ├── api-client.ts          # Axios + JWT interceptor, 401 redirect
+│   │   ├── public-api-client.ts   # Unauthenticated client (storefront)
+│   │   ├── customer-auth.ts       # Storefront customer auth helpers
+│   │   ├── order-history.ts       # Order lookup by email
+│   │   ├── env-validation.ts      # Runtime env var validation
+│   │   └── utils.ts
+│   ├── hooks/                     # React hooks (use-toast, etc.)
+│   ├── types/                     # TypeScript type definitions
+│   ├── e2e/                       # Playwright end-to-end suites
+│   │   ├── kitchen-flow.spec.ts   # Kitchen display workflow
+│   │   ├── storefront-flows.spec.ts  # v2.1 — browse→cart→checkout flows
+│   │   └── stomp-relay.spec.ts    # v2.1 — cross-replica broadcast verification
+│   ├── __tests__/                 # Jest unit tests (76 passing)
+│   ├── auth.ts                    # NextAuth v5 config
+│   ├── middleware.ts              # Route-level auth gating
+│   ├── next.config.mjs            # standalone output, image remotePatterns
+│   ├── instrumentation.ts         # Next.js instrumentation hook
+│   ├── jest.config.js / jest.setup.js
+│   ├── playwright.config.ts
+│   ├── package.json               # React 19, Next 16.2.2, NextAuth v5, Tailwind
+│   └── tsconfig.json
 │
-├── infra/                  # Docker Compose definitions
-│   ├── docker-compose.yml  # PostgreSQL, Redis, RabbitMQ, Keycloak
-│   └── keycloak/           # Keycloak realm config (jtoye-dev)
+├── infra/                         # Local + dev infrastructure
+│   ├── docker-compose.yml         # PostgreSQL, Redis, RabbitMQ, Keycloak
+│   ├── docker-compose.hostnet.yml # Host-network variant for Linux
+│   ├── keycloak/                  # Realm config (jtoye-dev)
+│   ├── rabbitmq/                  # v2.1 new
+│   │   └── enabled_plugins        # [management, prometheus, stomp] — STOMP is v2.1
+│   ├── monitoring/                # v2.1 new observability tier
+│   │   ├── docker-compose.monitoring.yml  # Prometheus + Alertmanager + Grafana
+│   │   ├── prometheus/
+│   │   │   ├── prometheus.yml     # Scrape targets (Core, Edge, RabbitMQ, Redis)
+│   │   │   └── alerts.yml         # 14 alert rules incl. StompBrokerLag,
+│   │   │                          #   ServiceDown, RedisDown, HighErrorRate
+│   │   ├── alertmanager/          # v2.1 new
+│   │   │   ├── alertmanager.yml.tmpl   # Env-var templated receiver config
+│   │   │   └── entrypoint.sh      # Renders template → alertmanager.yml on start
+│   │   ├── grafana/
+│   │   │   ├── provisioning/      # Datasources + dashboard providers
+│   │   │   └── dashboards/
+│   │   │       └── stomp-dashboard.json  # v2.1 — STOMP broker metrics
+│   │   ├── scripts/
+│   │   │   └── smoke-test-alertmanager.sh  # v2.1 — verifies alert delivery
+│   │   └── README.md              # Monitoring stack runbook
+│   ├── db/                        # DB init helpers
+│   ├── load-testing/              # k6 scripts (private / gitignored)
+│   └── secrets/                   # Local secret material (gitignored)
 │
-├── k8s/                    # Kubernetes manifests (22 resources)
-│   ├── core-deployment.yaml
+├── k8s/                           # Kubernetes manifests
+│   ├── core-deployment.yaml       # Replicas 3-10 via HPA
 │   ├── edge-deployment.yaml
 │   ├── frontend-deployment.yaml
-│   ├── postgres-configmap.yaml
+│   ├── postgres-configmap.yaml    # RLS policy init
 │   ├── redis-statefulset.yaml
 │   ├── rabbitmq-statefulset.yaml
-│   ├── ingress.yaml
-│   └── hpa.yaml            # HorizontalPodAutoscaler (3-10 replicas)
+│   ├── ingress.yaml               # TLS, path routing (/api → core, / → frontend)
+│   └── hpa.yaml                   # HorizontalPodAutoscaler
 │
-├── docs/                   # Documentation
-│   ├── guides/             # QUICK_START.md, ENVIRONMENT_SETUP.md
-│   ├── config/             # CONFIGURATION.md (env vars, profiles)
-│   ├── reports/            # PRODUCTION_READINESS_REPORT.md, SECURITY_AUDIT_REPORT.md
-│   ├── AI_CONTEXT.md       # System architecture for Claude
+├── docs/                          # Documentation
+│   ├── guides/                    # QUICK_START.md, ENVIRONMENT_SETUP.md
+│   ├── config/                    # CONFIGURATION.md (env vars, profiles)
+│   ├── reports/                   # Production readiness, security audit
+│   ├── runbooks/                  # Alert response runbooks (mostly stubs; ServiceDown filled)
+│   ├── AI_CONTEXT.md              # System architecture context
 │   └── DOCUMENTATION_INDEX.md
 │
-├── .github/                # CI/CD workflows (GitHub Actions)
-│   └── workflows/          # test.yml, build.yml, deploy.yml
+├── .github/                       # CI/CD
+│   └── workflows/
+│       ├── ci-cd.yaml             # Build + test pipeline
+│       └── gitleaks.yml           # v2.1 new — secret scanning on every push/PR
 │
-├── .planning/              # GSD codebase mapping output
-│   └── codebase/           # ARCHITECTURE.md, STRUCTURE.md, etc.
+├── .planning/                     # GSD artefacts
+│   ├── codebase/                  # Codebase maps (this file)
+│   ├── milestones/                # v2.1 — shipped milestone archives
+│   │   ├── v2.1-ROADMAP.md
+│   │   ├── v2.1-REQUIREMENTS.md
+│   │   ├── v2.1-MILESTONE-AUDIT.md
+│   │   └── v2.1-phases/           # Archived phase plans
+│   │       ├── 09-repository-secrets-alerting/
+│   │       ├── 10-storefront-marketing-render-missing-customer-routes/
+│   │       └── 11-stomp-broker-relay-for-horizontal-scale/
+│   ├── phases/                    # v2.1 — EMPTY (all phases moved to milestones/v2.1-phases/)
+│   ├── housekeeping/
+│   ├── quick/                     # /gsd-quick task archives
+│   ├── research/
+│   ├── state-of-codebase/
+│   ├── DEEP-AUDIT-2026-04-16.md
+│   ├── MILESTONES.md              # Chronological shipped-milestone log
+│   ├── PROJECT.md
+│   ├── ROADMAP.md
+│   └── STATE.md
 │
-├── scripts/                # Build and deployment scripts
-│   ├── run-app.sh          # Start Spring Boot locally
-│   ├── build-images.sh     # Docker multi-platform builds
-│   ├── deploy.sh           # Kubernetes deployment script
-│   └── smoke-test.sh       # Smoke test suite
+├── scripts/                       # Build, deploy, smoke tests
+│   ├── run-app.sh                 # Start Spring Boot locally
+│   ├── start-dev.sh / stop-dev.sh # Dev stack lifecycle
+│   ├── build-images.sh            # Docker multi-platform builds
+│   ├── deploy.sh                  # Kubernetes deployment
+│   ├── smoke-test.sh              # Generic smoke tests
+│   ├── smoke-test-stomp-relay.sh  # v2.1 — verifies 2 STOMP connections from scaled replicas
+│   ├── pre-commit-gitleaks.sh     # v2.1 — local secret-scan hook
+│   ├── verify-env.sh              # Environment sanity check
+│   ├── fix-bridge-network.sh
+│   └── fix-testcontainers-docker.sh
 │
+├── backups/                       # Local DB snapshots (gitignored)
+├── build/                         # Gradle-generated (gitignored)
+├── logs/                          # Runtime logs (gitignored)
 ├── docker-compose.full-stack.yml  # All-in-one local dev environment
-├── build.gradle.kts        # Root Gradle config
-├── README.md               # Project overview, quick start
-├── CHANGELOG.md            # Version history and features
-└── LICENSE                 # MIT
+├── build.gradle.kts               # Root Gradle config
+├── settings.gradle.kts
+├── .env / .env.example            # Environment configuration
+├── .gitleaks.toml                 # v2.1 new — gitleaks allowlist + rules
+├── CLAUDE.md                      # Claude agent project instructions
+├── HANDOFF.md                     # Session handoff notes
+├── README.md
+├── CHANGELOG.md
+└── LICENSE
 ```
 
 ## Directory Purposes
 
-**core-java/src/main/java/uk/jtoye/core/:**
+**`core-java/src/main/java/uk/jtoye/core/`:**
+Domain-driven layout. Each domain folder (shop, order, product, customer, review, finance, payment, gdpr, storefront, sync, tenant) contains:
+- `*Controller.java` — REST endpoints with `@RequestMapping`, Swagger annotations
+- `*Service.java` — `@Service`/`@Transactional` business logic, caching, state machines
+- `*Repository.java` — `JpaRepository` extensions with `@Query`
+- `*Entity.java` — JPA entities, often `@Audited` via Envers
+- `*Mapper.java` — MapStruct DTO mappers
+- `dto/` — request/response DTOs with Jakarta Validation
 
-Domain-driven structure. Each domain folder (shop, order, product, customer, finance, etc.) contains:
-- `*Controller.java` - REST endpoint handlers with @RequestMapping, Swagger annotations
-- `*Service.java` - @Service with @Transactional, business logic, caching, state machines
-- `*Repository.java` - JpaRepository extensions with @Query custom methods
-- `*Entity.java` - JPA entity with @Entity, @Table, @Audited for Envers
-- `*Mapper.java` - MapStruct mappers for DTO conversion
-- `dto/` subdirectory - Request/Response DTOs (@Valid annotations)
+Cross-cutting packages:
+- `security/` — TenantContext, JwtTenantFilter, SecurityConfig, TenantSetLocalAspect, TenantContextCleanupFilter, RateLimitInterceptor
+- `config/` — CacheConfig, CorsConfig, EnversConfig, OpenApiConfig, RateLimitConfig, RabbitMQConfig, TenantAwareCacheKeyGenerator, TenantCacheEvictor, BusinessMetricsService, ScheduledCleanupService, DatabaseConfigurationValidator
+- `exception/` — GlobalExceptionHandler, ErrorResponse, domain exceptions
+- `websocket/` (v2.1) — WebSocketConfig, TenantChannelInterceptor, JwtHandshakeInterceptor
+- `audit/`, `storage/`, `notification/`, `ai/`, `controller/` (SecurityHealthController)
 
-Common folders:
-- `security/` - TenantContext, JwtTenantFilter, TenantFilter, SecurityConfig, JwtDecoder
-- `config/` - CacheConfig, RateLimitConfig, OpenApiConfig, EnversConfig, CorsConfig, RabbitMQConfig, ScheduledCleanupService, BusinessMetricsService
-- `exception/` - ResourceNotFoundException, InvalidStateTransitionException, ErrorResponse
-- `common/` - Shared utility classes, constants
-- `audit/` - AuditService for Envers interaction
-- `storage/` - StorageService for S3/MinIO file operations
-- `notification/` - EmailNotificationService, RabbitMQ message publishing
-- `controller/` - SecurityHealthController (non-domain specific)
+**`core-java/src/main/resources/`:**
+- `application.yml` — base config (active profile via `SPRING_PROFILES_ACTIVE`)
+- `application-{dev,test,staging,prod}.yml`
+- `db/migration/V{n}__*.sql` — 33 Flyway migrations as of v2.1; latest is `V33__fix_rls_policies.sql`
 
-**core-java/src/main/resources/:**
-- `application.yml` - Spring Boot config (profiles: dev, test, prod)
-- `application-{profile}.yml` - Profile-specific overrides (DB URL, Redis, Keycloak issuer)
-- `db/migration/` - 28 Flyway SQL migrations (V1__*.sql through V28__*.sql) for schema, RLS policies, initial data
-- `logback-spring.xml` - Logging configuration
+**`core-java/src/test/java/`:**
+Mirror of main source tree. Conventions:
+- `*ControllerTest.java` — MockMvc integration tests
+- `*ServiceTest.java` — unit tests with mocked repositories
+- `*RepositoryTest.java` — `@DataJpaTest` with H2
+- `integration/` — Testcontainers, tagged `@Tag("testcontainers")`
 
-**core-java/src/test/java/:**
-Mirror of main structure: test files co-located by package. Examples:
-- `*ControllerTest.java` - MockMvc integration tests
-- `*ServiceTest.java` - Unit tests with mocked repositories
-- `*RepositoryTest.java` - @DataJpaTest with H2 in-memory DB
-- `integration/` - Testcontainers-based tests marked @Tag("testcontainers")
+**`edge-go/internal/`:**
+- `core/` — HTTP client, circuit breaker (`sony/gobreaker`), health check plumbing
+- `middleware/` — JWT validation against Keycloak JWKS
+- `whatsapp/` — WhatsApp webhook parser/handler
+- Tests co-located (`*_test.go`) — 57 passing
 
-**edge-go/internal/:**
-- `core/` - HTTP client to Spring Boot API, circuit breaker, health checks
-- `middleware/` - JWT validation from Keycloak JWKS
-- `whatsapp/` - Webhook parser, message handling
-- `main.go` - Gin router setup, middleware chain, request forwarding
+**`frontend/app/`:**
+Next.js App Router. Each directory with `page.tsx` is a route; `[name]` segments are dynamic.
+- `dashboard/` — admin UI (B2B)
+- `shop/` — customer storefront (B2C)
+  - `[slug]/page.tsx` — shop detail + browse
+  - `[slug]/cart/page.tsx` — **v2.1 new** standalone cart
+  - `[slug]/checkout/page.tsx` — Stripe checkout
+  - `[slug]/orders/[orderNumber]/page.tsx` — order tracking
+  - `orders/page.tsx` — **v2.1 new** customer-wide order history by email
+  - `auth/` — customer auth flow
+  - `error.tsx` — **v2.1 new** route-scoped error boundary
+- `auth/` — admin Keycloak/OIDC flow
+- `track/` — public order tracking landing
+- `api/auth/[...nextauth]/` — NextAuth v5 handler
+- `error.tsx` — **v2.1 new** root error boundary
 
-**frontend/app/:**
-Next.js App Router structure. Page routes are directories with `page.tsx`:
-- `dashboard/` - Admin interface (shops, products, orders, customers CRUD)
-  - `shops/page.tsx` - Shop list/create
-  - `products/page.tsx` - Product catalog management
-  - `orders/page.tsx` - Order workflow with SSE real-time updates
-  - `customers/page.tsx` - Customer directory
-- `shop/` - Public storefront (customer-facing, dynamic by shop slug)
-  - `[slug]/page.tsx` - Shop detail, product browsing
-  - `[slug]/cart/page.tsx` - Shopping cart
-  - `[slug]/checkout/page.tsx` - Order placement
-  - `[slug]/orders/[orderNumber]/page.tsx` - Order status tracking
-- `auth/` - Authentication flows
-  - `signin/page.tsx` - Keycloak login form
-  - `callback/page.tsx` - OAuth callback handler
-- `api/auth/[...nextauth]/` - NextAuth.js route handler, token refresh
+**`frontend/components/`:**
+- `dashboard/` — admin shell, sidebar, data tables
+- `storefront/` — cart provider, product-detail modal, nav, require-customer-auth wrapper
+- `ui/` — Radix + Tailwind primitives (Button, Input, Modal, etc.)
 
-**frontend/components/:**
-- `dashboard/` - Admin UI components (sidebar, layout, data tables)
-- `storefront/` - Customer UI components (product cards, cart, checkout)
-- `ui/` - Reusable UI primitives (Button, Input, Modal, Badge, etc.)
+**`frontend/lib/`:**
+- `api-client.ts` — authenticated axios, JWT interceptor, 401→signin
+- `public-api-client.ts` — unauthenticated client for storefront
+- `customer-auth.ts`, `order-history.ts`, `env-validation.ts`, `utils.ts`
 
-**frontend/lib/:**
-- `api-client.ts` - Axios instance with JWT interceptor and 401 redirect
-- `public-api-client.ts` - Public API client (no auth, for storefront)
-- `customer-auth.ts` - Customer authentication helpers
-- `order-history.ts` - Order lookup by email
-- `env-validation.ts` - Runtime env var validation
-- `utils.ts` - Shared helpers (classname merging, formatting)
+**`frontend/e2e/`:**
+- `kitchen-flow.spec.ts` — kitchen display happy path
+- `storefront-flows.spec.ts` — **v2.1 extended** browse→cart→Stripe checkout
+- `stomp-relay.spec.ts` — **v2.1 new** cross-replica broadcast verification (requires `--scale core-java=2`)
 
-**infra/:**
-- `docker-compose.yml` - PostgreSQL (5433), Redis (6379), RabbitMQ (5672), Keycloak (8085)
-- `keycloak/realm-config.json` - jtoye-dev realm, client definitions, users (tenant-a-user, tenant-b-user)
+**`infra/monitoring/`** (v2.1 new observability tier):
+- `docker-compose.monitoring.yml` — Prometheus, Alertmanager, Grafana services
+- `prometheus/prometheus.yml` — scrape config
+- `prometheus/alerts.yml` — 14 alert rules (ServiceDown, StompBrokerLag, RedisDown, HighErrorRate, etc.)
+- `alertmanager/alertmanager.yml.tmpl` — receiver config template (SMTP vars)
+- `alertmanager/entrypoint.sh` — renders template on container start
+- `grafana/provisioning/` — auto-load datasources + dashboard providers
+- `grafana/dashboards/stomp-dashboard.json` — STOMP broker metrics visualisation
+- `scripts/smoke-test-alertmanager.sh` — verifies alert fire → receiver path
 
-**k8s/:**
-- `core-deployment.yaml` - Spring Boot service, replicas 3-10 (HPA), liveness/readiness probes
-- `postgres-configmap.yaml` - RLS policy initialization, Flyway migrations
-- `ingress.yaml` - TLS termination, path-based routing (/api → core, / → frontend)
-- All resources in default namespace or jtoye namespace (check KUSTOMIZATION)
+**`infra/rabbitmq/enabled_plugins`** (v2.1 new):
+Enables `rabbitmq_stomp` (port 61613) alongside management + prometheus, so Core's `StompBrokerRelay` can connect.
+
+**`k8s/`:**
+- `core-deployment.yaml` — Spring Boot with liveness/readiness, replicas via HPA
+- `postgres-configmap.yaml` — RLS policy bootstrap
+- `ingress.yaml` — TLS termination, path-based routing
+
+**`.planning/`:**
+GSD workflow state. Note the v2.1 reorganisation: `phases/` is now **empty** — all shipped phase folders moved to `milestones/v2.1-phases/`. New phases will populate `phases/` again when v2.2 work begins.
 
 ## Key File Locations
 
 **Entry Points:**
-- Backend: `core-java/src/main/java/uk/jtoye/core/CoreApplication.java` (@SpringBootApplication, main method)
-- Frontend: `frontend/app/page.tsx` (root path, redirects to dashboard)
-- Edge Gateway: `edge-go/cmd/edge/main.go` (Gin router initialization, all middleware)
+- Backend: `core-java/src/main/java/uk/jtoye/core/CoreApplication.java`
+- Frontend: `frontend/app/page.tsx`
+- Edge Gateway: `edge-go/cmd/edge/main.go`
 
 **Configuration:**
 - Spring profiles: `core-java/src/main/resources/application*.yml`
-- Environment vars: `.env`, `.env.example` (root level)
-- Database migrations: `core-java/src/main/resources/db/migration/V*.sql`
-- Kubernetes configs: `k8s/*.yaml`
-- Docker Compose: `docker-compose.full-stack.yml`
+- Environment vars: `.env`, `.env.example` (root); `frontend/.env.local.example`
+- DB migrations: `core-java/src/main/resources/db/migration/V*.sql` (through V33)
+- Kubernetes: `k8s/*.yaml`
+- Docker Compose: `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, `infra/monitoring/docker-compose.monitoring.yml`
 
 **Core Logic:**
 - Order state machine: `core-java/src/main/java/uk/jtoye/core/order/OrderStateMachineConfig.java`
-- Multi-tenant isolation: `core-java/src/main/java/uk/jtoye/core/security/TenantContext.java`, `JwtTenantFilter.java`
-- Caching strategy: `core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java`
-- Rate limiting: Edge Go `cmd/edge/main.go` (token bucket), Core `core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java`
-- Audit trail: `core-java/src/main/java/uk/jtoye/core/audit/AuditService.java`, Hibernate Envers config
+- Multi-tenant isolation: `core-java/src/main/java/uk/jtoye/core/security/TenantContext.java`, `JwtTenantFilter.java`, `TenantSetLocalAspect.java`
+- WebSocket/STOMP: `core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java`, `TenantChannelInterceptor.java`
+- Public storefront: `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java`, `PublicStorefrontService.java`
+- Stripe outbox: `core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutbox.java`, `PaymentEventOutboxFlusher.java`
+- Caching: `core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java`, `TenantAwareCacheKeyGenerator.java`, `TenantCacheEvictor.java`
+- Rate limiting: `edge-go/cmd/edge/main.go` (token bucket), `core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java` (Bucket4j)
+- Audit trail: `core-java/src/main/java/uk/jtoye/core/audit/AuditService.java` + Envers
 
 **Testing:**
-- Backend unit tests: `core-java/src/test/java/uk/jtoye/core/` (mirrors main structure)
-- Backend integration tests: `core-java/src/test/java/uk/jtoye/core/integration/` (marked @Tag("testcontainers"))
-- Frontend unit tests: `frontend/**/__tests__/` (Jest with jsdom)
-- Frontend E2E tests: `frontend/e2e/` (Playwright, run against deployed app)
+- Backend: `core-java/src/test/java/uk/jtoye/core/` (341 tests)
+- Frontend unit: `frontend/__tests__/`, `frontend/components/**/__tests__/`, `frontend/lib/__tests__/` (76 Jest tests)
+- Frontend E2E: `frontend/e2e/` (Playwright — 3 suites)
+- Go: colocated `*_test.go` (57 tests)
+
+**Observability & Ops (v2.1 new):**
+- Alertmanager: `infra/monitoring/alertmanager/`
+- Prometheus alerts: `infra/monitoring/prometheus/alerts.yml`
+- Grafana STOMP dashboard: `infra/monitoring/grafana/dashboards/stomp-dashboard.json`
+- Alertmanager smoke test: `infra/monitoring/scripts/smoke-test-alertmanager.sh`
+- STOMP relay smoke test: `scripts/smoke-test-stomp-relay.sh`
+- Secret scanning: `.gitleaks.toml`, `scripts/pre-commit-gitleaks.sh`, `.github/workflows/gitleaks.yml`
 
 ## Naming Conventions
 
-**Files:**
-- Entities: PascalCase, no suffix (e.g., `Shop.java`, `Order.java`)
-- Controllers: PascalCase + "Controller" (e.g., `ShopController.java`)
-- Services: PascalCase + "Service" (e.g., `ShopService.java`)
-- Repositories: PascalCase + "Repository" (e.g., `ShopRepository.java`)
-- Mappers: PascalCase + "Mapper" (e.g., `ShopMapper.java`)
-- DTOs: PascalCase + "Dto" or "Request"/"Response" (e.g., `ShopDto.java`, `CreateShopRequest.java`)
-- Test files: Test class name + "Test" (e.g., `ShopServiceTest.java`, `ShopControllerTest.java`)
-- SQL migrations: `V{number}__{description}.sql` (e.g., `V1__initial_schema.sql`)
+**Java Files:**
+- Entities: PascalCase, no suffix (`Shop.java`, `Order.java`)
+- Controllers: `<Entity>Controller.java`
+- Services: `<Entity>Service.java`
+- Repositories: `<Entity>Repository.java`
+- Mappers: `<Entity>Mapper.java`
+- DTOs: `<Entity>Dto.java`, `Create<Entity>Request.java`, `<Entity>Response.java`
+- Tests: `<Class>Test.java`
+- SQL migrations: `V{number}__{description}.sql`
 
 **Java Packages:**
-- Domain-first: `uk.jtoye.core.{domain}.{sublayer}` (e.g., `uk.jtoye.core.shop`, `uk.jtoye.core.order.dto`)
-- Cross-domain: `uk.jtoye.core.{concern}` (e.g., `uk.jtoye.core.security`, `uk.jtoye.core.config`)
+- Domain-first: `uk.jtoye.core.{domain}.{sublayer}` — e.g. `uk.jtoye.core.shop`, `uk.jtoye.core.order.dto`
+- Cross-cutting: `uk.jtoye.core.{concern}` — e.g. `uk.jtoye.core.security`, `uk.jtoye.core.config`, `uk.jtoye.core.websocket`
 
 **TypeScript/JavaScript:**
-- Pages: `page.tsx` (Next.js convention, no prefixes)
-- Components: PascalCase + `.tsx` (e.g., `ShopCard.tsx`, `ProductTable.tsx`)
-- Utilities/Hooks: camelCase (e.g., `api-client.ts`, `useCart.ts`)
-- Tests: `*.test.ts` or `*.spec.ts` (Jest convention)
+- Pages: `page.tsx` (Next.js convention)
+- Components: PascalCase `.tsx` (e.g. `CartProvider.tsx`, `SafeImage.tsx`)
+- Utilities/hooks: kebab-case `.ts` (e.g. `api-client.ts`, `use-toast.ts`)
+- Tests: `*.test.ts(x)` or `*.spec.ts(x)`; E2E lives in `frontend/e2e/*.spec.ts`
+
+**Go:**
+- Packages: `internal/<domain>/`
+- Files: snake_case (`jwt_middleware.go`), tests `*_test.go`
+- Exported identifiers: PascalCase
 
 **Directories:**
-- Domains: plural lowercase (e.g., `shops/`, `products/`, `orders/`)
-- Dynamic routes: `[paramName]` (Next.js and Spring param conventions)
-- API routes: `/api/{resource}/{action}`
+- Domains: plural lowercase (`shops/`, `products/`, `orders/`)
+- Dynamic routes: `[paramName]` (Next.js)
+- API routes: `/api/v1/{resource}` (authenticated), `/public/{resource}` (unauthenticated)
 
 ## Where to Add New Code
 
-**New REST Endpoint:**
+**New REST Endpoint (authenticated):**
 1. Create domain folder: `core-java/src/main/java/uk/jtoye/core/{newdomain}/`
-2. Add Entity: `{Domain}.java` with @Entity, @Table, @Audited
-3. Add Repository: `{Domain}Repository.java` extends JpaRepository, add @Query methods if needed
-4. Add Service: `{Domain}Service.java` with @Service, @Transactional, business logic, caching
-5. Add Mapper: `{Domain}Mapper.java` extends MapStruct Mapper
-6. Add DTO classes: `{newdomain}/dto/{Domain}Dto.java`, `Create{Domain}Request.java`
-7. Add Controller: `{Domain}Controller.java` with @RestController, @RequestMapping, endpoint methods
-8. Add tests: `core-java/src/test/java/uk/jtoye/core/{newdomain}/` mirror of main
-9. Add database migration: `core-java/src/main/resources/db/migration/V{N}__{description}.sql` (include RLS policy)
-10. Document in OpenAPI: @Tag, @Operation, @ApiResponse on controller
+2. Add Entity (`@Entity`, `@Table`, `@Audited` if auditable)
+3. Add Repository (`JpaRepository` extension, `@Query` where needed)
+4. Add Service (`@Service`, `@Transactional`, `@Cacheable` via `tenantAwareCacheKeyGenerator`)
+5. Add Mapper (MapStruct `@Mapper(componentModel="spring")`)
+6. Add DTOs under `{newdomain}/dto/` with Jakarta Validation
+7. Add Controller under `@RequestMapping("/api/v1/{resource}")` with Swagger annotations
+8. Add mirrored tests in `core-java/src/test/java/uk/jtoye/core/{newdomain}/`
+9. Add Flyway migration `V{next}__{description}.sql` including RLS policy for new tenant-scoped tables
+10. Document with `@Tag`, `@Operation`, `@ApiResponse` for OpenAPI
+
+**New Public (Unauthenticated) Endpoint:**
+1. Add method to `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java` under `/public/**`
+2. Implement in `PublicStorefrontService` — explicitly guard against leaking non-published content
+3. Ensure `SecurityConfig` permits the path (it already opens `/public/**`)
+4. Add Playwright coverage in `frontend/e2e/storefront-flows.spec.ts`
+
+**New WebSocket Topic:**
+1. Choose destination format `/topic/{feature}/{tenantId}/{subScope}` — the tenant UUID **must** be at segment index 3 so `TenantChannelInterceptor.validateSubscription` accepts it
+2. Publish via `SimpMessagingTemplate.convertAndSend(...)` from a service; `OrderEventPublisher` is the reference implementation
+3. If running with `stomp.broker.mode=relay`, no extra work — the relay forwards automatically
+4. Add unit + Playwright coverage; use `frontend/e2e/stomp-relay.spec.ts` as template for cross-replica assertions
 
 **New Frontend Page:**
-1. Create directory: `frontend/app/{feature}/` or nest under existing feature
-2. Add `page.tsx` with export default Page component
-3. Create dynamic route as `[paramName]` if needed
-4. Add components: `frontend/components/{feature}/` for feature-specific UI
-5. Add utilities: `frontend/lib/{feature}-*.ts` for API calls, business logic
-6. Add tests: `frontend/app/{feature}/__tests__/` or `components/{feature}/__tests__/`
-7. Update layout if needed: `layout.tsx` for nested routes with shared structure
+1. Create directory under `frontend/app/{feature}/` (or nested); add `page.tsx`
+2. Use `[paramName]` for dynamic segments
+3. Feature-specific components → `frontend/components/{feature}/`
+4. Shared API helpers → `frontend/lib/{feature}-*.ts` (auth-required uses `api-client.ts`, public uses `public-api-client.ts`)
+5. Add unit tests under `__tests__/`; E2E under `frontend/e2e/`
+6. Add error boundary (`error.tsx`) if the route handles user-visible failure paths
 
 **New Service/Utility:**
-- Shared backend logic: Add to `core-java/src/main/java/uk/jtoye/core/common/` or domain-specific `service/`
-- Shared frontend logic: Add to `frontend/lib/` as utility functions or hooks
-- Do not create new top-level packages; nest under domains or config
+- Shared backend logic: `core-java/src/main/java/uk/jtoye/core/common/` or domain-specific `service/`
+- Shared frontend logic: `frontend/lib/` (utilities) or `frontend/hooks/` (hooks)
+- Do not introduce new top-level Java packages; nest under an existing domain or `config/`
 
 **Database Schema Change:**
-1. Create migration: `core-java/src/main/resources/db/migration/V{N}__{description}.sql`
-2. Include table creation, columns, indexes
-3. Add RLS policies for multi-tenant tables: `CREATE POLICY tenant_isolation ON {table} USING (tenant_id = current_setting('app.current_tenant_id')::uuid)`
-4. If audited entity: Envers will auto-create `{table}_aud` and trigger functions
-5. Migration runs automatically on startup via Flyway
+1. New migration: `core-java/src/main/resources/db/migration/V{next}__{description}.sql` (next is V34 as of v2.1)
+2. For tenant-scoped tables include:
+   ```sql
+   ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY tenant_isolation ON {table}
+     USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+   ```
+3. Audited entity → Envers creates `{table}_aud` automatically
+4. Migration runs on startup via Flyway — no manual execution
+
+**New Prometheus Alert:**
+1. Add rule group to `infra/monitoring/prometheus/alerts.yml`
+2. Confirm severity label (`critical` or `warning`) — Alertmanager routes on this
+3. Add runbook entry in `docs/runbooks/alerts.md`
+4. Extend `infra/monitoring/scripts/smoke-test-alertmanager.sh` if end-to-end validation is needed
 
 **Configuration Change:**
-- Spring property: Update `core-java/src/main/resources/application.yml` or environment variable
-- Frontend env: Update `frontend/.env.local` (development) or CI/CD secrets for production
-- Go edge config: Add to `edge-go/cmd/edge/main.go` getEnv() calls
-- Kubernetes: Update ConfigMap in `k8s/` and redeploy
+- Spring property: edit `core-java/src/main/resources/application*.yml` or env var
+- Frontend env: `frontend/.env.local` (dev) or CI/CD secret (prod); `frontend/.env.local.example` documents shape
+- Go edge: env var read in `edge-go/cmd/edge/main.go`
+- Kubernetes: update ConfigMap in `k8s/` and redeploy
 
 ## Special Directories
 
-**build/ (build-local/):**
-- Purpose: Gradle build output directory
-- Generated: Yes (redirected from 'build' to 'build-local' to avoid permission issues)
-- Committed: No (.gitignore excludes)
+**`build/`, `build-local/`:**
+- Gradle output (redirected from `build/` to `build-local/` to dodge permission issues in some dev environments)
+- Generated: Yes | Committed: No (gitignored)
 
-**node_modules/:**
-- Purpose: npm package dependencies
-- Generated: Yes (npm install)
-- Committed: No (package-lock.json locked, .gitignore excludes)
+**`node_modules/`, `.next/`:**
+- npm packages and Next.js build cache
+- Generated: Yes | Committed: No
 
-**.next/:**
-- Purpose: Next.js build output and cache
-- Generated: Yes (npm run build or dev mode)
-- Committed: No (.gitignore excludes)
+**`coverage/`, `test-results/`, `playwright-report/`:**
+- Test coverage and report outputs
+- Generated: Yes | Committed: No
 
-**coverage/:**
-- Purpose: Test coverage reports (Jest, Go)
-- Generated: Yes (npm run test:coverage, go test -cover)
-- Committed: No (.gitignore excludes)
+**`logs/`:**
+- Runtime logs (Spring Boot, Edge Go)
+- Generated: Yes | Committed: No
 
-**logs/:**
-- Purpose: Application runtime logs
-- Generated: Yes (Spring Boot, Go edge logging)
-- Committed: No (.gitignore excludes)
+**`.gradle/`, `.gradle-docker/`, `.gradle-local/`:**
+- Gradle wrapper + caches
+- Committed: Partial (`gradlew` executable, caches gitignored)
 
-**.gradle/, .gradle-docker/, .gradle-local/:**
-- Purpose: Gradle cache and wrapper directories
-- Generated: Yes (Gradle daemon, dependency caches)
-- Committed: Partial (gradlew executable committed, caches excluded)
+**`backups/`:**
+- Local DB snapshots
+- Generated: Yes | Committed: No
 
-**backups/:**
-- Purpose: Database backups, snapshots
-- Generated: Yes (manual or scheduled backup scripts)
+**`infra/secrets/`, `infra/load-testing/`, `infra/backups/`:**
+- Private local material; directory-level perms `drwx------`
 - Committed: No
+
+**`.planning/phases/`:**
+- Currently **empty** after v2.1 archive (all content in `.planning/milestones/v2.1-phases/`)
+- Future phase plans will repopulate this directory for v2.2
+
+**`.planning/milestones/v2.1-phases/`:**
+- Read-only archive of shipped phases (09, 10, 11) — SUMMARY.md, VERIFICATION.md, etc.
+- Referenced from `.planning/MILESTONES.md` chronological log
 
 ---
 
-*Structure analysis: 2026-04-07*
+*Structure analysis: 2026-04-18*
