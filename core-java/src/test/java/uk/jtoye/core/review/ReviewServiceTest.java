@@ -43,6 +43,14 @@ class ReviewServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Phase 13 SEC-01 — clear TenantContext before each test to prevent
+        // leakage from other unit-test classes that may run before this one
+        // (e.g., PublicStorefrontServiceTest sets TenantContext via the same
+        // helper). Without this, the tenant-match gate in resolvePublicShopForSlug
+        // trips on a stale ThreadLocal and throws TenantAccessDeniedException
+        // before order-validation logic runs — breaks createReview_rejectsNonCompletedOrder.
+        TenantContext.clear();
+
         shopId = UUID.randomUUID();
         orderId = UUID.randomUUID();
 
