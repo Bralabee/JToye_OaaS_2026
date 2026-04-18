@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,9 +14,11 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.client.RestOperations;
 
 import java.time.Duration;
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -47,7 +50,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtTenantFilter jwtTenantFilter, TenantFilter tenantFilter) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   JwtTenantFilter jwtTenantFilter,
+                                                   TenantFilter tenantFilter,
+                                                   Environment env) throws Exception {
         http
             // CSRF protection disabled: this is a stateless JWT bearer-token API.
             // All authenticated requests must carry an Authorization: Bearer <jwt>
@@ -67,6 +73,24 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+
+        // Browser security headers per ASVS 14.4.1-14.4.7 (SEC-03).
+        // HSTS gated by prod profile at runtime — dev HTTP traffic never sees it.
+        // Pattern: 12-RESEARCH.md §4.2 Pattern A (single bean + runtime env check).
+        boolean isProd = Arrays.asList(env.getActiveProfiles()).contains("prod");
+        http.headers(headers -> {
+            headers.frameOptions(frame -> frame.deny())
+                   .contentTypeOptions(Customizer.withDefaults())
+                   .referrerPolicy(r -> r.policy(
+                       ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+            if (isProd) {
+                headers.httpStrictTransportSecurity(hsts -> hsts
+                    .includeSubDomains(true)
+                    .maxAgeInSeconds(31_536_000L));
+            } else {
+                headers.httpStrictTransportSecurity(hsts -> hsts.disable());
+            }
+        });
 
         // Ensure dev header-based tenant mapping runs early (before auth)
         http.addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class);

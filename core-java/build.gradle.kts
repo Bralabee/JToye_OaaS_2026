@@ -96,6 +96,10 @@ tasks.test {
             excludeTags("testcontainers")
         }
     }
-    // Docker Engine 29+ requires API >= 1.40; Testcontainers 1.21.x defaults to 1.32
+    // Docker Engine 29+ requires API >= 1.40; Testcontainers 1.21.x defaults to 1.32.
+    // docker-java's DefaultDockerClientConfig reads either DOCKER_API_VERSION env var
+    // OR the "api.version" system property — set both so whichever code path the
+    // selected DockerClientProviderStrategy uses, it negotiates an API the daemon accepts.
     environment("DOCKER_API_VERSION", "1.45")
+    systemProperty("api.version", "1.45")
 }

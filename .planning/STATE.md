@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: scoping
-stopped_at: v2.2 scoping in progress — requirements defined, roadmap next
-last_updated: "2026-04-18T00:00:00Z"
+status: shipped
+stopped_at: Phase 12 shipped — PR #44 opened against main; UAT 10/10 pass. Manual gate 12-02-07 queued post-merge for staging observation + enforce cutover.
+last_updated: "2026-04-18T14:40:00Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 11
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 18
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: Not started (defining requirements → roadmap)
-Plan: —
-Status: v2.2 scoping — PROJECT.md updated, REQUIREMENTS.md + ROADMAP.md next
-Last activity: 2026-04-18 — v2.2 scoping started
+Phase: 12 — Spring Security Response Headers + Frontend CSP (in progress)
+Plan: 12-01 COMPLETE; 12-02 OPERATIONALLY COMPLETE — Tasks 01-06 shipped (Next.js CSP-Report-Only + Jest CI gate + Playwright local/staging spec); Task 12-02-07 manual cutover gate pending human verification
+Status: Both phase-12 plans' executable work done on branch `feature/phase-12-security-headers-csp`; next up is the 12-02-07 human gate (≥1-week staging observation) OR proceeding to Phase 13/next phase
+Last activity: 2026-04-18 — Completed plan 12-02 Tasks 01-06 on branch `feature/phase-12-security-headers-csp`: commits 9163143 (RED CSP tests), 0a19c4c (GREEN next.config.mjs headers()), fddbc4e (snapshot + .snap), 445f169 (playwright baseURL param), 30d94ee (Playwright CSP spec), 8baf065 (CI wiring)
 
-Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [██░░░░░░░░] 18% (2/11 plans complete; 0/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -54,10 +54,17 @@ Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complet
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
 
+**Milestone v2.2 (executing):**
+
+| Phase | Plan | Duration | Tasks | Files | Tests added |
+|-------|------|----------|-------|-------|-------------|
+| 12    | 01   | ~90min   | 4     | 6     | 8 Java      |
+| 12    | 02   | ~5min    | 6     | 7     | 8 Jest + 3 Playwright |
+
 **Recent Trend:**
 
-- Last 5 plans: M2 phase 8 closure
-- Trend: green; milestone 2 complete, milestone 3 roadmap ready
+- Last plan: 12-02 Next.js CSP (SEC-02) — 6 autonomous tasks committed (Tasks 01-06), Task 07 is a human-verified cutover gate; 8 new Jest tests (7 CSP + 1 snapshot), 3 new Playwright tests, 1 CI step wired; full Jest suite (84 tests, 1 snapshot) passes exit 0 under --ci
+- Trend: milestone v2.2 execution continues green; 2/11 plans complete; Phase 12 operationally complete pending 12-02-07 staging-observation gate
 
 *Updated after each plan completion*
 
@@ -81,10 +88,10 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Complete v2.2 roadmap (phases 12–17 covering the 11 requirements)
-- Run `/gsd-discuss-phase 12` once roadmap is approved (first phase: Spring security headers + CSP)
+- **Plan 12-02 Task 07 manual gate (human-verify):** after ≥1-week staging observation of Report-Only CSP, flip header key in `frontend/next.config.mjs` from `Content-Security-Policy-Report-Only` to `Content-Security-Policy` (enforce), regenerate header snapshot via `npm test -- __tests__/header-snapshot.test.ts -u`, commit both files in one PR. Verification steps (Stripe 3DS, NextAuth signin, CSP-no-violations Playwright spec against staging) documented in 12-02-PLAN.md Task 07 + 12-02-SUMMARY.md
 - Backfill `status: complete` frontmatter on the 5 quick-task SUMMARY.md files (Deferred Items below) during an early v2.2 housekeeping pass
 - Commit `frontend/.env.local.example` placeholder hardening change (block-secrets hook prevents Claude from staging it — needs a manual commit outside Claude)
+- Advance to next Phase 13+ plan now that Phase 12 operational work (both plans) is complete
 
 ### Blockers/Concerns
 
@@ -109,6 +116,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-18T00:00:00Z
-Stopped at: Milestone v2.1 close in progress (audit passed, archive next)
-Resume file: .planning/ROADMAP.md
+Last session: 2026-04-18T14:10:00Z
+Stopped at: Phase 12 plan 02 operationally complete (6/7 tasks; Task 07 human-gate pending); branch `feature/phase-12-security-headers-csp` has 6 new commits (9163143, 0a19c4c, fddbc4e, 445f169, 30d94ee, 8baf065) ready for PR
+Resume file: .planning/phases/12-spring-security-response-headers-frontend-csp/12-02-SUMMARY.md
