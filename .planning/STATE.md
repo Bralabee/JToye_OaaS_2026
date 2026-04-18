@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: Completed 12-02-PLAN.md Tasks 01-06 (Next.js CSP Report-Only + Jest CI gate + Playwright spec); Task 12-02-07 manual gate (Report-Only -> enforce cutover) pending human verification
-last_updated: "2026-04-18T14:10:00Z"
+status: shipped
+stopped_at: Phase 12 shipped — PR #44 opened against main; UAT 10/10 pass. Manual gate 12-02-07 queued post-merge for staging observation + enforce cutover.
+last_updated: "2026-04-18T14:40:00Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 6
