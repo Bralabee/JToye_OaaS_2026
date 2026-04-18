@@ -2,7 +2,7 @@
 
 **Plan:** `.planning/phases/09-repository-secrets-alerting/09-03-PLAN.md`
 **Executed:** 2026-04-15 (main context, inline — mechanical file edits only)
-**Status:** COMPLETE except SECR-06 live test (PARTIAL, blocked by port conflicts)
+**Status:** COMPLETE — SECR-06 live test verified 2026-04-15 (see "SECR-06 live test — reconciled" section below; REQUIREMENTS.md §SECR-06 is the authoritative record)
 **Branch:** `feat/phase-9-alertmanager-gitleaks`
 
 ## Tasks completed
@@ -10,13 +10,15 @@
 | # | Task | Disposition | Evidence |
 |---|------|-------------|----------|
 | 1 | `infra/monitoring/scripts/smoke-test-alertmanager.sh` — synthetic + real ServiceDown test against Mailhog | COMPLETE (script committed) | 116-line POSIX shell script, `chmod +x`, asserts delivery via Mailhog `/api/v2/messages` count |
-| 2 | Human-verify checkpoint — run the smoke test, confirm Slack delivery | **CHECKPOINT BLOCKED** — user action required (see below) | Dealflow containers hold the ports the J'Toye full stack needs; running the smoke test requires stopping them first |
+| 2 | Human-verify checkpoint — run the smoke test, confirm email delivery (rescoped from Slack) | **COMPLETE 2026-04-15** — smoke test ran after stopping dealflow containers; both synthetic `SmokeTestSynthetic` alert and real `ServiceDown` (`docker stop jtoye-core-java`) delivered to Mailhog. See REQUIREMENTS.md §SECR-06 for the authoritative run log. | Mailhog received `[FIRING:1] SmokeTestSynthetic` + `[FIRING:3] ServiceDown`; route tree grouping + email subject template verified end-to-end |
 | 3 | `docs/runbooks/alerts.md` skeleton with `ServiceDown` filled as example | COMPLETE | 100+ lines; ServiceDown fully documented; other 9 alerts are TODO HTML-comment stubs |
 | 4 | `infra/monitoring/README.md` — document Alertmanager addition | COMPLETE | New "4. Alertmanager (Port 9093)" section added under Components |
 | 5 | Rewrite `REQUIREMENTS.md` SECR-01..06 + add SECR-07 + update traceability + bump coverage 17→18 | COMPLETE | SECR section fully rewritten with re-scope rationale; traceability table filled with dispositions |
 | 6 | Append "verified incorrect" footnote to `STATE-OF-CODEBASE-2026-04-14.md` §9 Blocker 5 and §11 Work Order A | COMPLETE | Two blockquote footnotes added; original prose preserved verbatim per plan |
 
-## SECR-06 live test — why PARTIAL
+## SECR-06 live test — reconciled (was PARTIAL at commit time, subsequently verified 2026-04-15)
+
+> **2026-04-18 reconciliation note:** This section originally documented why the live test was PARTIAL at the time this SUMMARY was written. The test subsequently ran successfully the same day after the dealflow containers were stopped — see REQUIREMENTS.md §SECR-06 for the authoritative run log (synthetic + real ServiceDown email deliveries both verified). The paragraphs below are preserved for historical context.
 
 Running `./infra/monitoring/scripts/smoke-test-alertmanager.sh` requires:
 1. Mailhog on port 8025 + 1025 (from `docker-compose.full-stack.yml`)
