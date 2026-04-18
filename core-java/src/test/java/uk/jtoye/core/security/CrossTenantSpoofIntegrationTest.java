@@ -96,16 +96,24 @@ class CrossTenantSpoofIntegrationTest {
     }
 
     private String createPublishedShop(UUID tenantId, String name) {
+        // Slug must be globally unique (shops.slug UNIQUE constraint) AND stable
+        // across @BeforeEach runs in the same Spring context — use the LAST 8 hex
+        // chars of the tenant UUID so TENANT_A (ends 0001) and TENANT_B (ends 0002)
+        // get distinct slugs (substring(0, 8) would collide on both leading zeros).
+        String tenantSuffix = tenantId.toString().replace("-", "");
+        tenantSuffix = tenantSuffix.substring(tenantSuffix.length() - 8);
+        String slug = "shop-" + tenantSuffix;
+
+        // Idempotent-insert: @BeforeEach runs per test method and there's no
+        // @Transactional rollback — skip if a shop with this slug already exists.
         TenantContext.set(tenantId);
         try {
+            if (shopRepository.findBySlugAndPublishedTrue(slug).isPresent()) {
+                return slug;
+            }
             Shop shop = new Shop();
             shop.setTenantId(tenantId);
             shop.setName(name);
-            // Use the LAST 12 chars of the UUID — TENANT_A and TENANT_B only differ
-            // in their final hex digit, so substring(0, 8) collides for both tenants.
-            String tenantSuffix = tenantId.toString().replace("-", "");
-            tenantSuffix = tenantSuffix.substring(tenantSuffix.length() - 8);
-            String slug = "shop-" + tenantSuffix;
             shop.setSlug(slug);
             shop.setPublished(true);
             // Non-null columns with defaults (see Shop.java:64-68) — values accepted as-is.
@@ -121,6 +129,16 @@ class CrossTenantSpoofIntegrationTest {
         // Caller holds JWT for TENANT_A, tries to list TENANT_B's products via public endpoint.
         // Must be rejected with 403 BEFORE the service overwrites TenantContext with tenant B.
         mockMvc.perform(get("/public/shops/{slug}/products", slugB)
+                .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString()))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void crossTenantJwtReturns403OnReviews() throws Exception {
+        // Symmetric check — ReviewService.getShopReviews must reject cross-tenant
+        // JWT the same way as PublicStorefrontService. Confirms SEC-01 coverage
+        // extends to the reviews path (RESEARCH.md Assumption A2 resolved).
+        mockMvc.perform(get("/public/shops/{slug}/reviews", slugB)
                 .with(jwt().jwt(j -> j.claim("tenant_id", TENANT_A.toString()))))
             .andExpect(status().isForbidden());
     }
