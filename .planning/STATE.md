@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: planning
-stopped_at: Phase 12 planned (2 plans, 11 tasks) — ready to execute
-last_updated: "2026-04-18T13:30:00Z"
+status: executing
+stopped_at: Completed 12-01-PLAN.md (SEC-03 Spring headers, 4 tasks, 8 new tests, ~90min); next 12-02 (Next.js CSP)
+last_updated: "2026-04-18T13:57:00Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 11
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 9
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 12 — Spring Security Response Headers + Frontend CSP (planned, ready to execute)
-Plan: 12-01 (Spring SEC-03, 4 tasks) + 12-02 (Next.js SEC-02, 7 tasks) — both Wave 1, fully parallel
-Status: Ready to execute
-Last activity: 2026-04-18 — Phase 12 plans approved (research + pattern map + validation + 2 plans, checker passed after 1 revision)
+Phase: 12 — Spring Security Response Headers + Frontend CSP (in progress)
+Plan: 12-01 COMPLETE (SEC-03 Spring headers, 4 tasks, 8 tests, 4 commits); 12-02 next (Next.js SEC-02, 7 tasks)
+Status: Plan 12-01 complete; ready for 12-02 (independent, can parallel)
+Last activity: 2026-04-18 — Completed plan 12-01 on branch `feature/phase-12-security-headers-csp`: commits f428184, 68e903b, 953a25b, 09149c6
 
-Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [█░░░░░░░░░] 9% (1/11 plans complete; 0/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -54,10 +54,16 @@ Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complet
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
 
+**Milestone v2.2 (executing):**
+
+| Phase | Plan | Duration | Tasks | Files | Tests added |
+|-------|------|----------|-------|-------|-------------|
+| 12    | 01   | ~90min   | 4     | 6     | 8           |
+
 **Recent Trend:**
 
-- Last 5 plans: M2 phase 8 closure
-- Trend: green; milestone 2 complete, milestone 3 roadmap ready
+- Last plan: 12-01 Spring Security response headers (SEC-03) — 4 tasks committed, 8 tests, all green, no regressions in the 390-test baseline
+- Trend: milestone v2.2 execution starts green; 1/11 plans complete
 
 *Updated after each plan completion*
 

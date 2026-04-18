@@ -70,8 +70,8 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. Next.js responses (homepage, `/shop/[slug]`, `/dashboard`) include a `Content-Security-Policy` header whose `default-src 'self'`, `script-src` allows the minimum set needed for NextAuth + Stripe, `frame-ancestors 'none'`
   4. Playwright e2e passes with no browser-console CSP violations across the full storefront + dashboard flow
   5. Header snapshot test committed to CI (fails if a header regresses)
-**Plans**: 2 plans
-  - [ ] 12-01-PLAN.md — Spring Security response headers (SEC-03): HttpSecurity.headers() DSL with X-Frame-Options/X-Content-Type-Options/Referrer-Policy + profile-gated HSTS + MockMvc tests + Java-side header snapshot
+**Plans**: 2 plans (1 complete, 1 pending)
+  - [x] 12-01-PLAN.md — Spring Security response headers (SEC-03): HttpSecurity.headers() DSL with X-Frame-Options/X-Content-Type-Options/Referrer-Policy + profile-gated HSTS + MockMvc tests + Java-side header snapshot — **DONE 2026-04-18, see 12-01-SUMMARY.md (commits f428184, 68e903b, 953a25b, 09149c6)**
   - [ ] 12-02-PLAN.md — Next.js CSP (SEC-02): next.config.mjs Report-Only CSP with Stripe/Keycloak/API/WS allowlist + Jest unit + snapshot + Playwright spec + port 3100 reconcile + manual enforce-cutover gate
 **UI hint**: no
 
