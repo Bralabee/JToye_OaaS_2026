@@ -8,7 +8,9 @@ export default defineConfig({
   retries: 0,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
-    baseURL: "http://localhost:3000",
+    // Dev env uses port 3100 (MCP server holds 3000); override via
+    // `PLAYWRIGHT_BASE_URL=http://localhost:3100 npx playwright test` locally.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
