@@ -1,9 +1,10 @@
 ---
 phase: 14-stock-race-fix-summary-aggregation
-nyquist_compliant: false
+nyquist_compliant: partial
 validated_against_research: true
 research_version: 14-RESEARCH.md (2026-04-18, HIGH confidence)
 generated: 2026-04-18
+updated: 2026-04-19 — Plan 14-01 complete (CQ-01); Plan 14-02 pending (CQ-02)
 ---
 
 # Phase 14 Validation Architecture
@@ -42,11 +43,11 @@ Per-task automated verification map for the two parallel plans in Wave 1 (14-01 
 
 | Task | Status | Verification Command | Acceptance Grep / State |
 |------|--------|----------------------|-------------------------|
-| 14-01-01 Wave 0 — V34 migration + @Version + InsufficientStockException + GEH 409 + RetryConfig + spring-retry dep + handler test | ⏳ pending | `./gradlew :core-java:compileJava :core-java:compileTestJava && ./gradlew :core-java:test --tests "uk.jtoye.core.common.InsufficientStockExceptionHandlerTest"` | `grep "@Version" Product.java → ≥1`; `grep "HttpStatus.CONFLICT.*InsufficientStock\|@ExceptionHandler(InsufficientStockException.class)" GlobalExceptionHandler.java → 1`; `grep "@EnableRetry" RetryConfig.java → 1`; `grep "spring-retry" build.gradle.kts → 1`; `V34__product_optimistic_locking.sql` exists with `DEFAULT 0`; handler test PASS |
-| 14-01-02 RED — Concurrent-CONFIRM Testcontainers integration test | ⏳ pending RED | `./gradlew :core-java:test --tests "uk.jtoye.core.order.ConcurrentStockDecrementIntegrationTest" -PincludeIntegration` | Test FAILS on pre-Task-04 tree with `expected:<1> but was:<2> successes` — failure output recorded in RED commit body; `grep "CountDownLatch\|InsufficientStockException\|@DynamicPropertySource\|TenantContext.clear" → all present` |
-| 14-01-03 GREEN — StockService with @Retryable + @Recover + unit tests | ⏳ pending | `./gradlew :core-java:test --tests "uk.jtoye.core.order.StockServiceTest"` | StockServiceTest: 5 @Test methods PASS; `grep "@Retryable\|maxAttempts = 3\|delay = 50\|@Recover\|getQuantityInStock() == null" StockService.java` → all present; Task 14-01-02 integration test STILL RED (expected — not wired) |
-| 14-01-04 GREEN — Wire StockService into OrderService + fix save-before-decrement + delete adjustStockInBatch | ⏳ pending | `./gradlew :core-java:test --tests "uk.jtoye.core.order.*" -PincludeIntegration` | ConcurrentStockDecrementIntegrationTest RED→GREEN flip; `grep -c "adjustStockInBatch" OrderService.java → 0`; `grep -c "Math.max" OrderService.java → 0`; OrderServiceTest all PASS; line-order check: `stockService.decrementForOrder` precedes final `orderRepository.save(order)` in `transitionOrder` |
-| 14-01-05 Regression pin — code-search location test + CHANGELOG + full suite | ⏳ pending | `./gradlew :core-java:test -PincludeIntegration --tests "uk.jtoye.core.order.*" --tests "uk.jtoye.core.common.InsufficientStockExceptionHandlerTest"` + manual full sweep | StockDecrementLocationTest: 2 @Test methods PASS; `grep "CQ-01 stock race\|V34" CHANGELOG.md → ≥1`; full sweep: ZERO new failures (RabbitMQ PLAIN auth failures acceptable per Phase 13 deferred-items.md) |
+| 14-01-01 Wave 0 — V34 migration + @Version + InsufficientStockException + GEH 409 + RetryConfig + spring-retry dep + handler test | ✓ PASS (commit ec89443) | `./gradlew :core-java:compileJava :core-java:compileTestJava && ./gradlew :core-java:test --tests "uk.jtoye.core.common.InsufficientStockExceptionHandlerTest"` | All grep criteria verified; handler test PASS |
+| 14-01-02 RED — Concurrent-CONFIRM Testcontainers integration test | ✓ RED recorded (commit c062f3a) | `./gradlew :core-java:test --tests "uk.jtoye.core.order.ConcurrentStockDecrementIntegrationTest" -PincludeIntegration` | RED on pre-fix tree with `ObjectOptimisticLockingFailureException` (not the expected `InsufficientStockException` — because @Version fired from Task 01 but StockService wrapping was missing) — recorded in RED commit body |
+| 14-01-03 GREEN — StockService with @Retryable + @Recover + unit tests | ✓ PASS (commit ad02c98) | `./gradlew :core-java:test --tests "uk.jtoye.core.order.StockServiceTest"` | StockServiceTest: 5/5 @Test PASS; all grep criteria verified; integration test STILL RED (expected) |
+| 14-01-04 GREEN — Wire StockService into OrderService + fix save-before-decrement + delete adjustStockInBatch | ✓ PASS (commits fe27915 + 20ebf24 fix) | `./gradlew :core-java:test --tests "uk.jtoye.core.order.*" -PincludeIntegration` | ConcurrentStockDecrementIntegrationTest RED→GREEN flip confirmed; all grep criteria verified; 20ebf24 adds Propagation.REQUIRES_NEW (without it the retry never fires because saveAll's commit happens at outer-TX boundary) and broadens @Recover first param to `Throwable` (exact subtype had "Cannot locate recovery method" under generic erasure) |
+| 14-01-05 Regression pin — code-search location test + CHANGELOG + full suite | ✓ PASS (commit c77fbdd) | `./gradlew :core-java:test -PincludeIntegration --tests "uk.jtoye.core.order.*" --tests "uk.jtoye.core.common.InsufficientStockExceptionHandlerTest"` | StockDecrementLocationTest: 2/2 PASS; CHANGELOG.md [Unreleased] entry added; full order-package sweep: 61/67 PASS — 6 failures all in `OrderControllerIntegrationTest` with the pre-existing RabbitMQ PLAIN auth cascade documented in `.planning/phases/14-stock-race-fix-summary-aggregation/deferred-items.md` (same root cause as Phase 13 deferred §1). Zero NEW failures |
 
 ### Plan 14-02 (CQ-02)
 

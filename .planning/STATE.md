@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: in-progress
-stopped_at: Phase 13 plan 01 complete — SEC-01 shipped on branch `feature/phase-13-guest-tracking-tenant-validation` (5 atomic commits 1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2). TDD RED-RED-GREEN-GREEN-pin sequence; VALIDATION.md nyquist_compliant: true. Ready for PR.
-last_updated: "2026-04-18T23:13:00Z"
-last_activity: 2026-04-18
+stopped_at: Phase 14 plan 01 complete — CQ-01 stock race fix shipped on branch `feature/phase-14-stock-race-summary-aggregation` (6 atomic commits ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd). TDD infra→RED→GREEN-unit→GREEN-wire→bug-fix→pin sequence; VALIDATION.md nyquist_compliant: partial until Plan 14-02. Ready for Plan 14-02 (CQ-02).
+last_updated: "2026-04-19T00:15:00Z"
+last_activity: 2026-04-19
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 11
-  completed_plans: 3
-  percent: 27
+  completed_plans: 4
+  percent: 36
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 13 — Guest Tracking Tenant Validation (COMPLETE, ready for PR)
-Plan: 13-01 COMPLETE — 5 atomic TDD commits on `feature/phase-13-guest-tracking-tenant-validation`; VALIDATION.md flipped to `nyquist_compliant: true`; SUMMARY.md at .planning/phases/13-guest-tracking-tenant-validation/13-01-SUMMARY.md
-Status: Phase 13 SEC-01 application-layer tenant-match gate shipped on all 5 vulnerable call sites (PublicStorefrontService ×3 + ReviewService ×2). 6 new MockMvc+Testcontainers @Test methods + 4 new unit tests green. Ready for PR. Phase 12 Task 12-02-07 human gate still pending (post-merge staging observation).
-Last activity: 2026-04-18 — Completed plan 13-01 on branch `feature/phase-13-guest-tracking-tenant-validation`: commits 1f0b9aa (RED integration), 1e7f357 (RED unit), e978939 (GREEN storefront), 9c5309b (GREEN reviews), 300cae2 (regression pin + VALIDATION.md)
+Phase: 14 — Stock Race Fix + Summary Aggregation (Plan 14-01 COMPLETE, Plan 14-02 pending)
+Plan: 14-01 COMPLETE — 6 atomic commits on `feature/phase-14-stock-race-summary-aggregation`; SUMMARY.md at .planning/phases/14-stock-race-fix-summary-aggregation/14-01-SUMMARY.md
+Status: Phase 14 Plan 01 CQ-01 optimistic-lock-gated stock decrement shipped — V34 migration + @Version on Product + StockService with @Retryable(3×50ms) + @Recover + Propagation.REQUIRES_NEW + OrderService delegation with ordering fix (save AFTER stock) + InsufficientStockException → HTTP 409 ProblemDetail. Integration test pinned: two concurrent CONFIRMs on last-in-stock product produce exactly 1 success + 1 InsufficientStockException (no oversell). 5 new Phase 14 tests all green; 2 existing OrderServiceTest batching tests refactored to delegation tests (39/39 PASS). Plan 14-02 (CQ-02 getSummary DB aggregation) is independent and can run in parallel. Phase 12 Task 12-02-07 human gate still pending.
+Last activity: 2026-04-19 — Completed plan 14-01 on branch `feature/phase-14-stock-race-summary-aggregation`: commits ec89443 (Wave 0 infra), c062f3a (RED integration), ad02c98 (GREEN StockService unit), fe27915 (GREEN wire), 20ebf24 (fix — REQUIRES_NEW + Throwable @Recover), c77fbdd (regression pin + CHANGELOG)
 
-Progress: [███░░░░░░░] 27% (3/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [████░░░░░░] 36% (4/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -61,11 +61,12 @@ Progress: [███░░░░░░░] 27% (3/11 plans complete; 1/6 milesto
 | 12    | 01   | ~90min   | 4     | 6     | 8 Java      |
 | 12    | 02   | ~5min    | 6     | 7     | 8 Jest + 3 Playwright |
 | 13    | 01   | ~45min   | 5     | 8     | 10 Java (6 integration + 4 unit) |
+| 14    | 01   | ~20min   | 5     | 17    | 8 Java (5 StockService unit + 1 Concurrent integration + 2 StockDecrementLocation + 1 Handler + 2 refactored OrderService) |
 
 **Recent Trend:**
 
-- Last plan: 13-01 Guest Tracking Tenant Validation (SEC-01) — 5 atomic TDD commits (RED-RED-GREEN-GREEN-pin); TenantAccessDeniedException + resolvePublicShopForSlug helper in PublicStorefrontService + ReviewService; 6 MockMvc+Testcontainers integration tests against real Postgres (not H2 — Phase 12 Deviation #4 pattern reused); 4 resolvePublicShopForSlug_* unit tests; OutputCaptureExtension pins the audit-log format
-- Trend: milestone v2.2 execution continues green; 3/11 plans complete; Phase 13 ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
+- Last plan: 14-01 Stock Race Fix (CQ-01) — 6 atomic commits (infra→RED→GREEN-unit→GREEN-wire→bug-fix→pin); V34 migration + @Version on Product + StockService with @Retryable + @Recover + Propagation.REQUIRES_NEW (REQUIRES_NEW was the critical non-plan fix — without it outer @Transactional swallows the flush out of the retry boundary); Testcontainers Postgres 15 concurrent CONFIRM race test; RFC 7807 ProblemDetail 409 contract; save-before-decrement ordering bug fix (RESEARCH §11 Q7)
+- Trend: milestone v2.2 execution continues green; 4/11 plans complete; Plan 14-02 (CQ-02) ready to start; Phase 13 still ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
 
 *Updated after each plan completion*
 
