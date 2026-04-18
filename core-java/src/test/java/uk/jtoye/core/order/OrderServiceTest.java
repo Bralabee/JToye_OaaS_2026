@@ -74,6 +74,9 @@ class OrderServiceTest {
     @Mock
     private FinancialTransactionService financialTransactionService;
 
+    @Mock
+    private StockService stockService;
+
     @InjectMocks
     private OrderService orderService;
 
@@ -895,70 +898,49 @@ class OrderServiceTest {
     }
 
     // ========================================
-    // NEW TESTS: Stock adjust batching (Fix #1)
+    // NEW TESTS: Stock service delegation (CQ-01 — Phase 14 replaces the
+    // batching helper with StockService.decrementForOrder / restoreForOrder).
+    // Batching + retry + version behaviour is now pinned by StockServiceTest
+    // and ConcurrentStockDecrementIntegrationTest — these tests verify only
+    // that OrderService.transitionOrder delegates to the right helper.
     // ========================================
 
     @Test
-    @DisplayName("confirmOrder - Batches product loads and saves when decrementing stock")
-    void testConfirmOrder_BatchesStockDecrement() {
-        // Given: a 5-item order on PENDING status transitioning to CONFIRMED
+    @DisplayName("confirmOrder - Delegates stock decrement to StockService.decrementForOrder")
+    void testConfirmOrder_DelegatesToStockService() {
+        // Given: a multi-item order on PENDING status transitioning to CONFIRMED
         UUID p1 = UUID.randomUUID();
         UUID p2 = UUID.randomUUID();
-        UUID p3 = UUID.randomUUID();
-        UUID p4 = UUID.randomUUID();
-        UUID p5 = UUID.randomUUID();
-
-        Product prod1 = stockedProduct(p1, "SKU-1", 10);
-        Product prod2 = stockedProduct(p2, "SKU-2", 10);
-        Product prod3 = stockedProduct(p3, "SKU-3", 10);
-        Product prod4 = stockedProduct(p4, "SKU-4", 10);
-        Product prod5 = stockedProduct(p5, "SKU-5", 10);
 
         testOrder.setStatus(OrderStatus.PENDING);
         testOrder.addItem(orderItem(p1, 1));
         testOrder.addItem(orderItem(p2, 2));
-        testOrder.addItem(orderItem(p3, 3));
-        testOrder.addItem(orderItem(p4, 4));
-        testOrder.addItem(orderItem(p5, 5));
 
         when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
         when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
                 .thenReturn(OrderStatus.CONFIRMED);
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
-        when(productRepository.findAllById(anyList()))
-                .thenReturn(List.of(prod1, prod2, prod3, prod4, prod5));
 
         // When
         orderService.confirmOrder(orderId);
 
-        // Then: findAllById exactly once, saveAll exactly once, no findById/save per item
-        ArgumentCaptor<Iterable<UUID>> idsCaptor = ArgumentCaptor.forClass(Iterable.class);
-        verify(productRepository, times(1)).findAllById(idsCaptor.capture());
-        verify(productRepository, times(1)).saveAll(any());
-        verify(productRepository, never()).findById(any(UUID.class));
-        verify(productRepository, never()).save(any(Product.class));
-
-        // Verify all 5 product IDs were requested in the batch
-        Set<UUID> requestedIds = new HashSet<>();
-        idsCaptor.getValue().forEach(requestedIds::add);
-        assertEquals(Set.of(p1, p2, p3, p4, p5), requestedIds);
-
-        // Verify stock was decremented correctly
-        assertEquals(9, prod1.getQuantityInStock());
-        assertEquals(8, prod2.getQuantityInStock());
-        assertEquals(7, prod3.getQuantityInStock());
-        assertEquals(6, prod4.getQuantityInStock());
-        assertEquals(5, prod5.getQuantityInStock());
+        // Then: OrderService delegated to StockService — actual retry/version
+        // behaviour is covered by StockServiceTest + ConcurrentStockDecrementIntegrationTest.
+        verify(stockService, times(1)).decrementForOrder(anyList());
+        verify(stockService, never()).restoreForOrder(anyList());
+        // ProductRepository must NOT be touched directly by OrderService — that
+        // was the pre-Phase-14 anti-pattern (adjustStockInBatch) that masked
+        // oversells via Math.max(0, ...).
+        verify(productRepository, never()).findAllById(anyList());
+        verify(productRepository, never()).saveAll(any());
     }
 
     @Test
-    @DisplayName("cancelOrder (after CONFIRMED) - Batches product loads and saves when restoring stock")
-    void testCancelOrder_BatchesStockRestore() {
+    @DisplayName("cancelOrder (after CONFIRMED) - Delegates stock restore to StockService.restoreForOrder")
+    void testCancelOrder_DelegatesRestoreToStockService() {
         // Given: a confirmed order being cancelled
         UUID p1 = UUID.randomUUID();
         UUID p2 = UUID.randomUUID();
-        Product prod1 = stockedProduct(p1, "SKU-1", 5);
-        Product prod2 = stockedProduct(p2, "SKU-2", 7);
 
         testOrder.setStatus(OrderStatus.CONFIRMED);
         testOrder.addItem(orderItem(p1, 2));
@@ -968,18 +950,15 @@ class OrderServiceTest {
         when(stateMachineService.sendEvent(orderId, OrderStatus.CONFIRMED, OrderEvent.CANCEL))
                 .thenReturn(OrderStatus.CANCELLED);
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
-        when(productRepository.findAllById(anyList())).thenReturn(List.of(prod1, prod2));
 
         // When
         orderService.cancelOrder(orderId);
 
-        // Then: one batch read + one batch save; stock restored
-        verify(productRepository, times(1)).findAllById(anyList());
-        verify(productRepository, times(1)).saveAll(any());
-        verify(productRepository, never()).findById(any(UUID.class));
-        verify(productRepository, never()).save(any(Product.class));
-        assertEquals(7, prod1.getQuantityInStock()); // 5 + 2
-        assertEquals(10, prod2.getQuantityInStock()); // 7 + 3
+        // Then: restore delegation; decrement must NOT fire on the cancel path.
+        verify(stockService, times(1)).restoreForOrder(anyList());
+        verify(stockService, never()).decrementForOrder(anyList());
+        verify(productRepository, never()).findAllById(anyList());
+        verify(productRepository, never()).saveAll(any());
     }
 
     private Product stockedProduct(UUID id, String sku, int stock) {
