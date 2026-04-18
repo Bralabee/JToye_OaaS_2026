@@ -212,7 +212,7 @@ export default function CustomersPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600 motion-reduce:animate-none" aria-label="Loading"></div>
       </div>
     )
   }
@@ -226,12 +226,12 @@ export default function CustomersPage() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-4xl font-bold text-slate-900">Customers</h1>
-          <p className="mt-2 text-slate-600">
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Customers</h1>
+          <p className="mt-2 text-ink-secondary">
             Manage customer information and allergen restrictions
           </p>
         </div>
-        <Button onClick={openCreateDialog} className="gap-2">
+        <Button onClick={openCreateDialog} variant="primary" className="gap-2">
           <Plus className="h-4 w-4" />
           Add Customer
         </Button>
@@ -253,14 +253,14 @@ export default function CustomersPage() {
           <CardContent>
             {customers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Users className="mb-4 h-12 w-12 text-slate-300" />
-                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                <Users className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
+                <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
                   No customers yet
                 </h3>
-                <p className="mb-4 text-sm text-slate-500">
+                <p className="mb-4 text-sm text-ink-tertiary">
                   Get started by adding your first customer
                 </p>
-                <Button onClick={openCreateDialog} variant="outline">
+                <Button onClick={openCreateDialog} variant="secondary">
                   <Plus className="mr-2 h-4 w-4" />
                   Add Customer
                 </Button>
@@ -291,22 +291,22 @@ export default function CustomersPage() {
                         >
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-white font-semibold">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-primary-subtle text-brand-primary font-display font-semibold">
                                 {customer.name.charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <div className="font-medium">{customer.name}</div>
+                                <div className="font-medium text-ink-primary">{customer.name}</div>
                               </div>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="space-y-1">
-                              <div className="flex items-center gap-2 text-sm text-slate-600">
+                              <div className="flex items-center gap-2 text-sm text-ink-secondary">
                                 <Mail className="h-3 w-3" />
                                 {customer.email}
                               </div>
                               {customer.phone && (
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <div className="flex items-center gap-2 text-sm text-ink-secondary">
                                   <Phone className="h-3 w-3" />
                                   {customer.phone}
                                 </div>
@@ -316,7 +316,7 @@ export default function CustomersPage() {
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
                               {allergenNames.length === 0 ? (
-                                <span className="text-sm text-slate-400">
+                                <span className="text-sm text-ink-tertiary">
                                   No restrictions
                                 </span>
                               ) : (
@@ -327,10 +327,10 @@ export default function CustomersPage() {
                                   return (
                                     <Badge
                                       key={name}
-                                      variant="outline"
-                                      className="bg-red-50 text-red-700 border-red-200"
+                                      variant="danger"
+                                      size="sm"
                                     >
-                                      <span className="mr-1">{allergen?.icon}</span>
+                                      <span className="mr-1" aria-hidden="true">{allergen?.icon}</span>
                                       {name}
                                     </Badge>
                                   )
@@ -338,7 +338,7 @@ export default function CustomersPage() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-slate-600">
+                          <TableCell className="text-ink-secondary">
                             <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4" />
                               {formatDistanceToNow(new Date(customer.createdAt), {
@@ -351,26 +351,27 @@ export default function CustomersPage() {
                               <Link href={`/dashboard/orders?customer=${customer.id}`}>
                                 <Button
                                   variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                  size="iconSm"
                                   title="View orders"
+                                  aria-label="View orders"
                                 >
                                   <ShoppingCart className="h-4 w-4" />
                                 </Button>
                               </Link>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="iconSm"
                                 onClick={() => openEditDialog(customer)}
-                                className="h-8 w-8 p-0"
+                                aria-label="Edit customer"
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="iconSm"
                                 onClick={() => openDeleteDialog(customer)}
-                                className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                className="text-danger hover:bg-danger-subtle"
+                                aria-label="Delete customer"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -416,7 +417,7 @@ export default function CustomersPage() {
                 {...register("name")}
               />
               {errors.name && (
-                <p className="text-sm text-red-600">{errors.name.message}</p>
+                <p className="text-sm text-danger">{errors.name.message}</p>
               )}
             </div>
 
@@ -429,7 +430,7 @@ export default function CustomersPage() {
                 {...register("email")}
               />
               {errors.email && (
-                <p className="text-sm text-red-600">{errors.email.message}</p>
+                <p className="text-sm text-danger">{errors.email.message}</p>
               )}
             </div>
 
@@ -441,31 +442,31 @@ export default function CustomersPage() {
                 {...register("phone")}
               />
               {errors.phone && (
-                <p className="text-sm text-red-600">{errors.phone.message}</p>
+                <p className="text-sm text-danger">{errors.phone.message}</p>
               )}
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertCircle className="h-4 w-4 text-danger" />
                 <Label>Allergen Restrictions</Label>
               </div>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-ink-secondary">
                 Select all allergens this customer must avoid
               </p>
-              <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 bg-slate-50">
+              <div className="grid grid-cols-2 gap-3 rounded-md border border-subtle p-4 bg-surface-subtle">
                 {ALLERGENS.map((allergen) => (
                   <label
                     key={allergen.bit}
-                    className="flex items-center gap-3 cursor-pointer rounded-md p-2 hover:bg-white transition-colors"
+                    className="flex items-center gap-3 cursor-pointer rounded-sm p-2 hover:bg-surface-card transition-colors"
                   >
                     <input
                       type="checkbox"
                       checked={hasAllergen(allergenRestrictions, allergen.bit)}
                       onChange={() => toggleAllergenBit(allergen.bit)}
-                      className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      className="h-4 w-4 rounded border-border-tone text-danger focus:ring-danger"
                     />
-                    <span className="text-lg">{allergen.icon}</span>
+                    <span className="text-lg" aria-hidden="true">{allergen.icon}</span>
                     <span className="text-sm font-medium">{allergen.name}</span>
                   </label>
                 ))}

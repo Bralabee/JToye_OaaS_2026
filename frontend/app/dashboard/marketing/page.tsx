@@ -67,16 +67,18 @@ function getAnnouncementStatus(ann: Announcement): ItemStatus {
   return "active"
 }
 
-function statusBadgeClass(status: ItemStatus): string {
+type StatusBadgeVariant = "success" | "warning" | "subtle" | "danger"
+
+function statusBadgeVariant(status: ItemStatus): StatusBadgeVariant {
   switch (status) {
     case "active":
-      return "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+      return "success"
     case "upcoming":
-      return "bg-amber-100 text-amber-700 hover:bg-amber-100"
+      return "warning"
     case "expired":
-      return "bg-slate-100 text-slate-500 hover:bg-slate-100"
+      return "subtle"
     case "disabled":
-      return "bg-red-100 text-red-700 hover:bg-red-100"
+      return "danger"
   }
 }
 
@@ -501,7 +503,7 @@ export default function MarketingPage() {
   if (activeTab === "promotions" && promoLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600 motion-reduce:animate-none" aria-label="Loading"></div>
       </div>
     )
   }
@@ -509,7 +511,7 @@ export default function MarketingPage() {
   if (activeTab === "announcements" && announcementsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600 motion-reduce:animate-none" aria-label="Loading"></div>
       </div>
     )
   }
@@ -521,28 +523,34 @@ export default function MarketingPage() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <h1 className="text-4xl font-bold text-slate-900">Marketing</h1>
-        <p className="mt-2 text-slate-600">Manage promotions and announcements</p>
+        <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Marketing</h1>
+        <p className="mt-2 text-ink-secondary">Manage promotions and announcements</p>
       </motion.div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-subtle" role="tablist">
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "promotions"}
           onClick={() => setActiveTab("promotions")}
-          className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`px-4 py-2.5 text-sm font-medium transition-colors duration-fast motion-reduce:transition-none ${
             activeTab === "promotions"
-              ? "border-b-2 border-blue-600 text-blue-600"
-              : "text-slate-500 hover:text-slate-700"
+              ? "border-b-2 border-brand-primary text-brand-primary"
+              : "text-ink-tertiary hover:text-ink-primary"
           }`}
         >
           Promotions
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "announcements"}
           onClick={() => setActiveTab("announcements")}
-          className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`px-4 py-2.5 text-sm font-medium transition-colors duration-fast motion-reduce:transition-none ${
             activeTab === "announcements"
-              ? "border-b-2 border-blue-600 text-blue-600"
-              : "text-slate-500 hover:text-slate-700"
+              ? "border-b-2 border-brand-primary text-brand-primary"
+              : "text-ink-tertiary hover:text-ink-primary"
           }`}
         >
           Announcements
@@ -585,11 +593,11 @@ export default function MarketingPage() {
             <CardContent>
               {promotions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Megaphone className="mb-4 h-12 w-12 text-slate-300" />
-                  <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  <Megaphone className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
+                  <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
                     No promotions yet
                   </h3>
-                  <p className="mb-4 text-sm text-slate-500">
+                  <p className="mb-4 text-sm text-ink-tertiary">
                     Create your first promotion to attract more customers
                   </p>
                   <Button onClick={openCreatePromo} variant="outline">
@@ -623,31 +631,31 @@ export default function MarketingPage() {
                           >
                             <TableCell className="font-medium">{promo.label}</TableCell>
                             <TableCell>{formatDiscount(promo)}</TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               {shopName(promo.shopId)}
                             </TableCell>
                             <TableCell>
-                              <Badge className={statusBadgeClass(status)}>
+                              <Badge variant={statusBadgeVariant(status)} size="sm">
                                 {statusLabel(status)}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               <div className="flex items-center gap-2">
                                 <Calendar className="h-4 w-4" />
                                 <div>
                                   <div>{formatDate(promo.validFrom)}</div>
-                                  <div className="text-xs text-slate-400">
+                                  <div className="text-xs text-ink-tertiary">
                                     {formatDateRelative(promo.validFrom)}
                                   </div>
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               <div className="flex items-center gap-2">
                                 <Calendar className="h-4 w-4" />
                                 <div>
                                   <div>{formatDate(promo.validUntil)}</div>
-                                  <div className="text-xs text-slate-400">
+                                  <div className="text-xs text-ink-tertiary">
                                     {formatDateRelative(promo.validUntil)}
                                   </div>
                                 </div>
@@ -657,20 +665,21 @@ export default function MarketingPage() {
                               <div className="flex justify-end gap-2">
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="iconSm"
                                   onClick={() => openEditPromo(promo)}
-                                  className="h-8 w-8 p-0"
+                                  aria-label="Edit promotion"
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="iconSm"
                                   onClick={() => {
                                     setDeletingPromotion(promo)
                                     setPromoDeleteDialogOpen(true)
                                   }}
-                                  className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  className="text-danger hover:bg-danger-subtle"
+                                  aria-label="Delete promotion"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -732,11 +741,11 @@ export default function MarketingPage() {
             <CardContent>
               {announcements.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Megaphone className="mb-4 h-12 w-12 text-slate-300" />
-                  <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  <Megaphone className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
+                  <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
                     No announcements yet
                   </h3>
-                  <p className="mb-4 text-sm text-slate-500">
+                  <p className="mb-4 text-sm text-ink-tertiary">
                     Share news and updates with your customers
                   </p>
                   <Button onClick={openCreateAnnouncement} variant="outline">
@@ -769,69 +778,70 @@ export default function MarketingPage() {
                             className="group"
                           >
                             <TableCell className="font-medium">{ann.title}</TableCell>
-                            <TableCell className="max-w-[200px] truncate text-slate-600">
+                            <TableCell className="max-w-[200px] truncate text-ink-secondary">
                               {ann.body
                                 ? ann.body.length > 80
                                   ? ann.body.slice(0, 80) + "..."
                                   : ann.body
                                 : ""}
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               {shopName(ann.shopId)}
                             </TableCell>
                             <TableCell>
-                              <Badge className={statusBadgeClass(status)}>
+                              <Badge variant={statusBadgeVariant(status)} size="sm">
                                 {statusLabel(status)}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               {ann.validFrom ? (
                                 <div className="flex items-center gap-2">
                                   <Calendar className="h-4 w-4" />
                                   <div>
                                     <div>{formatDate(ann.validFrom)}</div>
-                                    <div className="text-xs text-slate-400">
+                                    <div className="text-xs text-ink-tertiary">
                                       {formatDateRelative(ann.validFrom)}
                                     </div>
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-slate-400">Always</span>
+                                <span className="text-ink-tertiary">Always</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="text-ink-secondary">
                               {ann.validUntil ? (
                                 <div className="flex items-center gap-2">
                                   <Calendar className="h-4 w-4" />
                                   <div>
                                     <div>{formatDate(ann.validUntil)}</div>
-                                    <div className="text-xs text-slate-400">
+                                    <div className="text-xs text-ink-tertiary">
                                       {formatDateRelative(ann.validUntil)}
                                     </div>
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-slate-400">No end</span>
+                                <span className="text-ink-tertiary">No end</span>
                               )}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="iconSm"
                                   onClick={() => openEditAnnouncement(ann)}
-                                  className="h-8 w-8 p-0"
+                                  aria-label="Edit announcement"
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="iconSm"
                                   onClick={() => {
                                     setDeletingAnnouncement(ann)
                                     setAnnouncementDeleteDialogOpen(true)
                                   }}
-                                  className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  className="text-danger hover:bg-danger-subtle"
+                                  aria-label="Delete announcement"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -879,7 +889,7 @@ export default function MarketingPage() {
                   {...promoForm.register("label")}
                 />
                 {promoForm.formState.errors.label && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {promoForm.formState.errors.label.message}
                   </p>
                 )}
@@ -899,7 +909,7 @@ export default function MarketingPage() {
                   ))}
                 </select>
                 {promoForm.formState.errors.shopId && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {promoForm.formState.errors.shopId.message}
                   </p>
                 )}
@@ -941,14 +951,14 @@ export default function MarketingPage() {
                     placeholder="15"
                     {...promoForm.register("discountPercent")}
                   />
-                  <span className="absolute right-3 top-2.5 text-sm text-slate-400">%</span>
+                  <span className="absolute right-3 top-2.5 text-sm text-ink-tertiary">%</span>
                 </div>
               </div>
             ) : (
               <div className="space-y-1.5">
                 <Label htmlFor="promo-amount">Discount Amount *</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-sm text-slate-400">
+                  <span className="absolute left-3 top-2.5 text-sm text-ink-tertiary">
                     {"\u00A3"}
                   </span>
                   <Input
@@ -965,7 +975,7 @@ export default function MarketingPage() {
             )}
 
             {promoForm.formState.errors.discountPercent && (
-              <p className="text-xs text-red-600">
+              <p className="text-xs text-danger">
                 {promoForm.formState.errors.discountPercent.message}
               </p>
             )}
@@ -989,7 +999,7 @@ export default function MarketingPage() {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 {promoForm.formState.errors.validFrom && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {promoForm.formState.errors.validFrom.message}
                   </p>
                 )}
@@ -1003,7 +1013,7 @@ export default function MarketingPage() {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 {promoForm.formState.errors.validUntil && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {promoForm.formState.errors.validUntil.message}
                   </p>
                 )}
@@ -1015,7 +1025,7 @@ export default function MarketingPage() {
                 type="checkbox"
                 id="promo-active"
                 {...promoForm.register("active")}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-border-tone"
               />
               <Label htmlFor="promo-active" className="text-sm font-normal">
                 Active (visible to customers)
@@ -1098,7 +1108,7 @@ export default function MarketingPage() {
                   {...annForm.register("title")}
                 />
                 {annForm.formState.errors.title && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {annForm.formState.errors.title.message}
                   </p>
                 )}
@@ -1118,7 +1128,7 @@ export default function MarketingPage() {
                   ))}
                 </select>
                 {annForm.formState.errors.shopId && (
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-danger">
                     {annForm.formState.errors.shopId.message}
                   </p>
                 )}
@@ -1139,7 +1149,7 @@ export default function MarketingPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="ann-from">Valid From</Label>
-                <p className="text-xs text-slate-400">Leave blank for immediate start</p>
+                <p className="text-xs text-ink-tertiary">Leave blank for immediate start</p>
                 <input
                   id="ann-from"
                   type="datetime-local"
@@ -1149,7 +1159,7 @@ export default function MarketingPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ann-until">Valid Until</Label>
-                <p className="text-xs text-slate-400">Leave blank for no expiry</p>
+                <p className="text-xs text-ink-tertiary">Leave blank for no expiry</p>
                 <input
                   id="ann-until"
                   type="datetime-local"
@@ -1164,7 +1174,7 @@ export default function MarketingPage() {
                 type="checkbox"
                 id="ann-active"
                 {...annForm.register("active")}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-border-tone"
               />
               <Label htmlFor="ann-active" className="text-sm font-normal">
                 Active (visible to customers)
