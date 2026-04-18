@@ -52,7 +52,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 ### 🚧 v2.2 Phases (in progress)
 
 - [🟡] **Phase 12: Spring Security Response Headers + Frontend CSP** - X-Frame-Options, HSTS (prod-only), X-Content-Type-Options, Referrer-Policy on Spring; CSP on Next.js (SEC-02, SEC-03) — 12-01 DONE, 12-02 operationally complete (Tasks 01-06 shipped; Task 07 manual cutover gate pending human verification)
-- [ ] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01)
+- [🟡] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01) — 13-01 DONE 2026-04-18, ready for PR
 - [ ] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02)
 - [ ] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets controller with kubeseal conversion of the existing Secret manifests (INF-01, INF-02)
 - [ ] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01)
@@ -85,7 +85,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. Cross-tenant spoof attempt is covered by an integration test that seeds two tenants + attempts the spoof + asserts 403
   4. `GuestTrackingService` (or equivalent) has explicit unit tests for tenant-match, tenant-mismatch, and missing-tenant paths
 **Plans**: 1 plan
-  - [ ] 13-01-PLAN.md — Service-layer tenant-match gate in PublicStorefrontService + ReviewService (resolvePublicShopForSlug helper, TenantAccessDeniedException → 403, CrossTenantSpoofIntegrationTest on Testcontainers Postgres, 4 unit tests on helper)
+  - [x] 13-01-PLAN.md — Service-layer tenant-match gate in PublicStorefrontService + ReviewService (resolvePublicShopForSlug helper, TenantAccessDeniedException → 403, CrossTenantSpoofIntegrationTest on Testcontainers Postgres, 4 unit tests on helper) — **DONE 2026-04-18, see 13-01-SUMMARY.md (commits 1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2)**
 **UI hint**: no
 
 ### Phase 14: Stock Race Fix + Summary Aggregation
@@ -165,7 +165,7 @@ Suggested wave layout:
 | 10. Storefront Marketing + Missing Customer Routes | v2.1 | 3/3 | Complete | 2026-04-16 |
 | 11. STOMP Broker Relay for Horizontal Scale | v2.1 | 3/3 | Complete | 2026-04-16 |
 | 12. Spring Security Response Headers + Frontend CSP | v2.2 | 0/2 | Not started | - |
-| 13. Guest Tracking Tenant Validation | v2.2 | 0/1 | Not started | - |
+| 13. Guest Tracking Tenant Validation | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-18 |
 | 14. Stock Race Fix + Summary Aggregation | v2.2 | 0/2 | Not started | - |
 | 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 0/2 | Not started | - |
 | 16. Go Edge OpenAPI | v2.2 | 0/1 | Not started | - |
