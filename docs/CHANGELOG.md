@@ -5,6 +5,12 @@ All notable changes to the J'Toye OaaS 2026 project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CQ-01 stock race**: stock decrement on order CONFIRM is now gated by `@Version` optimistic lock (V34 migration added `version` column to `products`) with `@Retryable(ObjectOptimisticLockingFailureException.class, maxAttempts=3, backoff=50ms)` on `StockService.decrementForOrder`, which uses `Propagation.REQUIRES_NEW` so commits happen inside the retry boundary and re-reads the latest version on each retry. Two concurrent CONFIRMs on the last-in-stock product now produce exactly one success and one `InsufficientStockException` (HTTP 409 `ProblemDetail`) — previously both succeeded via a silent `Math.max(0, stock - qty)` clamp in `OrderService.adjustStockInBatch` that hid the oversell. Also fixed a latent ordering bug: `orderRepository.save(order)` now runs AFTER the stock decrement, so a failure rolls the order back to PENDING instead of leaving a ghost CONFIRMED row. Pinned by `ConcurrentStockDecrementIntegrationTest` (Testcontainers Postgres + `CountDownLatch` two-thread race) and `StockDecrementLocationTest` (source-level regression guard).
+
 ## [2.0.0] - 2026-04-10 (Milestone 2: Tier 3 Enhancements)
 
 ### Breaking
