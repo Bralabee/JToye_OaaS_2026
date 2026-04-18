@@ -7,6 +7,7 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.product.Product;
@@ -68,9 +69,18 @@ public class StockService {
             retryFor = ObjectOptimisticLockingFailureException.class,
             maxAttempts = 3,
             backoff = @Backoff(delay = 50))
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void decrementForOrder(List<OrderItem> items) {
         if (items == null || items.isEmpty()) return;
+        // REQUIRES_NEW is critical: the caller (OrderService.transitionOrder) is
+        // itself @Transactional. Without a new transaction this method would just
+        // join the outer one, which means saveAll would only queue UPDATEs and the
+        // flush+commit (where Hibernate raises ObjectOptimisticLockingFailureException
+        // on a version mismatch) would happen OUTSIDE the @Retryable proxy scope —
+        // after decrementForOrder() returns — so the retry would never fire. With
+        // REQUIRES_NEW, commit happens on method return inside the @Retryable
+        // boundary and optimistic-lock failures route to the retry + @Recover path.
+        //
         // Re-read inside retry boundary — retry re-invokes the whole method so
         // findAllById reloads the current versions from the DB.
         List<UUID> productIds = items.stream()
@@ -101,21 +111,27 @@ public class StockService {
 
     /**
      * Retry exhaustion handler — signature must match the @Retryable method's
-     * parameters preceded by the exception type for Spring Retry to resolve it.
+     * parameters preceded by the exception type. Use {@code Throwable} as the
+     * exception type so Spring's recovery method resolver (which matches by
+     * assignability) reliably finds this method — ObjectOptimisticLockingFailureException
+     * with a {@code List<OrderItem>} parameter produced "Cannot locate recovery
+     * method" under generic erasure when method signatures disagreed on the
+     * exception type by one level of specificity.
      */
     @Recover
-    public void recoverFromOptimisticLock(ObjectOptimisticLockingFailureException ex,
-                                          List<OrderItem> items) {
-        log.warn("Stock conflict after 3 retries for items {}", items, ex);
+    public void recoverFromOptimisticLock(Throwable ex, List<OrderItem> items) {
+        log.warn("Stock conflict after 3 retries for {} items", items == null ? 0 : items.size(), ex);
         throw new InsufficientStockException(
                 "Stock conflict after 3 retries — concurrent orders depleted inventory");
     }
 
     /**
      * Cancel-path stock restore. No @Retryable — restore is additive; a
-     * collision just re-reads and adds. Not the primary correctness path.
+     * collision just re-reads and adds. Uses REQUIRES_NEW for symmetry with
+     * decrementForOrder so a restore failure surfaces immediately rather than
+     * at outer-commit time.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void restoreForOrder(List<OrderItem> items) {
         if (items == null || items.isEmpty()) return;
         List<UUID> productIds = items.stream()
