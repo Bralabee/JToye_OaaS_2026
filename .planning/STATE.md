@@ -90,8 +90,22 @@ Recent decisions affecting current work:
 - Storefront API base URL verification gap noted in handoff — worth tracing during STFR-03 to rule out silent path mismatch
 - Phase 11 must not start STMP-05 until Phase 9 SECR-04/SECR-05 are complete (shared Alertmanager route)
 
+## Deferred Items
+
+Items acknowledged and deferred at milestone v2.1 close on 2026-04-18:
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260414-fe3-frontend-security-and-tests | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-inf-infrastructure-hardening | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-j9c-edge-go-security-hardening-batch-phase-1 | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-jkp-java-core-data-integrity-batch-phase-2-o | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-ltc-low-touch-cleanup | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+
+All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work is done; only tooling metadata is missing. Consider adding `status: complete` frontmatter during v2.2 planning cleanup.
+
 ## Session Continuity
 
-Last session: 2026-04-14T00:00:00.000Z
-Stopped at: Milestone 3 roadmap created, Phase 9 not started
+Last session: 2026-04-18T00:00:00Z
+Stopped at: Milestone v2.1 close in progress (audit passed, archive next)
 Resume file: .planning/ROADMAP.md
