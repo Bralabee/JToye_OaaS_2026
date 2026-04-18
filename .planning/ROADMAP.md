@@ -22,8 +22,8 @@ Milestone 2 phases 1–8 are complete. Milestone 3 adds phases 9–11.
 - [x] **Phase 6: KDS Event Pipeline** - Route WebSocket events through RabbitMQ consumer for single event pipeline (completed 2026-04-08)
 - [x] **Phase 7: Kitchen Display UI** - Real-time order card feed with status bumping, age indicators, and audio alerts (completed 2026-04-09)
 - [x] **Phase 8: Test Coverage Closure** - Tests for PaymentController, PublicStorefrontController, security filters, and GdprController (completed 2026-04-09)
-- [ ] **Phase 9: Repository Secrets + Alerting** - Remove committed .env, rotate 5 credentials, deploy Alertmanager with Slack routing for 13 existing alert rules
-- [ ] **Phase 10: Storefront Marketing Render + Missing Customer Routes** - Public promotions/announcements endpoints, storefront render, standalone cart page, customer order history, full-flow Playwright e2e
+- [x] **Phase 9: Repository Secrets + Alerting** - Verified `.env` not tracked, deployed Alertmanager with email/Mailhog routing for 10 alert rules, gitleaks CI enforcement (completed 2026-04-15, re-scoped from original audit-doc premise)
+- [x] **Phase 10: Storefront Marketing Render + Missing Customer Routes** - Public promotions/announcements endpoints, storefront render, standalone cart page, customer order history, full-flow Playwright e2e (completed 2026-04-16)
 - [x] **Phase 11: STOMP Broker Relay for Horizontal Scale** - Swap SimpleBroker for StompBrokerRelay behind stomp.broker.mode flag, enable RabbitMQ STOMP plugin, two-replica broadcast verification (completed 2026-04-16)
 
 ## Phase Details
@@ -214,6 +214,6 @@ Milestone 3: phase 9 first (standalone safety net, 2 days), then phases 10 and 1
 | 6. KDS Event Pipeline | 1/1 | Complete    | 2026-04-08 |
 | 7. Kitchen Display UI | 1/1 | Complete    | 2026-04-09 |
 | 8. Test Coverage Closure | 2/2 | Complete    | 2026-04-09 |
-| 9. Repository Secrets + Alerting | 0/3 | Not started | - |
-| 10. Storefront Marketing Render + Missing Customer Routes | 0/3 | Not started | - |
+| 9. Repository Secrets + Alerting | 3/3 | Complete    | 2026-04-15 |
+| 10. Storefront Marketing Render + Missing Customer Routes | 3/3 | Complete    | 2026-04-16 |
 | 11. STOMP Broker Relay for Horizontal Scale | 3/3 | Complete    | 2026-04-16 |
