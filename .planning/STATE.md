@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: milestone
-status: executing
-stopped_at: Milestone 3 roadmap created, Phase 9 not started
-last_updated: "2026-04-16T10:31:40.495Z"
-last_activity: 2026-04-16
+status: audited-ready-to-complete
+stopped_at: All 3 milestone-3 phases complete, audit passed after remediation
+last_updated: "2026-04-18T00:00:00Z"
+last_activity: 2026-04-18
 progress:
   total_phases: 11
   completed_phases: 3
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 11 — STOMP Broker Relay for Horizontal Scale
+**Current focus:** Milestone v2.1 lifecycle — audit passed (after remediation), ready for complete-milestone
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Status: Executing Phase 11
-Last activity: 2026-04-16
+Phase: all milestone-3 phases complete (9, 10, 11)
+Plan: —
+Status: Audited + ready for /gsd-complete-milestone v2.1
+Last activity: 2026-04-18
 
-Progress: [░░░░░░░░░░] 0% (0/3 milestone-3 phases complete)
+Progress: [██████████] 100% (3/3 milestone-3 phases complete)
 
 ## Performance Metrics
 
@@ -90,8 +90,22 @@ Recent decisions affecting current work:
 - Storefront API base URL verification gap noted in handoff — worth tracing during STFR-03 to rule out silent path mismatch
 - Phase 11 must not start STMP-05 until Phase 9 SECR-04/SECR-05 are complete (shared Alertmanager route)
 
+## Deferred Items
+
+Items acknowledged and deferred at milestone v2.1 close on 2026-04-18:
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260414-fe3-frontend-security-and-tests | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-inf-infrastructure-hardening | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-j9c-edge-go-security-hardening-batch-phase-1 | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-jkp-java-core-data-integrity-batch-phase-2-o | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+| quick_task | 260414-ltc-low-touch-cleanup | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
+
+All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work is done; only tooling metadata is missing. Consider adding `status: complete` frontmatter during v2.2 planning cleanup.
+
 ## Session Continuity
 
-Last session: 2026-04-14T00:00:00.000Z
-Stopped at: Milestone 3 roadmap created, Phase 9 not started
+Last session: 2026-04-18T00:00:00Z
+Stopped at: Milestone v2.1 close in progress (audit passed, archive next)
 Resume file: .planning/ROADMAP.md

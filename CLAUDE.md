@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.22, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 474+ tests passing (341 Java + 76 Jest + 57 Go)
+- **Testing**: All new code requires tests — project standard is 516+ logical invocations passing (390 Java `@Test` methods across 48 files + 76 Jest `it/test` blocks across 13 files + 50 top-level Go `Test*` funcs / 54 with `t.Run` subtests across 5 files). Verified 2026-04-18 post-v2.1.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
