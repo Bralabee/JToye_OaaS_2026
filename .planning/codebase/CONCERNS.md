@@ -1,284 +1,255 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-04-07
+**Analysis Date:** 2026-04-18
 
-## Tech Debt
+**Scope:** Post-v2.1 (tag `v2.1`, shipped 2026-04-16, archived 2026-04-18). Milestone v2.1 closed all 18 v1 Work Order requirements (SECR×7, STFR×6, STMP×5) plus the P0/P1 deep-audit items from `.planning/DEEP-AUDIT-2026-04-16.md`. Remaining concerns are the v2.2+ backlog: the 14 P2 audit items, the 5 deferred items called out in `MILESTONES.md:36-41`, and Work Orders D–O from the 2026-04-14 state-of-codebase.
 
-**Broad Exception Handling:**
-- Issue: Multiple services catch `catch (Exception e)` broadly instead of specific exception types
-- Files: `core-java/src/main/java/uk/jtoye/core/storage/StorageService.java:143`, `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:101`, `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java:144,186,227,257`, `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java:92,170,197,250`, `core-java/src/main/java/uk/jtoye/core/order/OrderEventPublisher.java:38`
-- Impact: Masks specific errors, makes debugging harder, hides transient vs permanent failures, prevents proper circuit breaker behavior
-- Fix approach: Replace broad `Exception` catches with specific types (IOError, StripeException, etc.). Log full stack traces for unexpected errors.
-
-**Rate Limiter Hardcoded in Edge Service:**
-- Issue: Rate limiting values (20 RPS, 40 burst) hardcoded in Go code at `edge-go/cmd/edge/main.go:82`
-- Files: `edge-go/cmd/edge/main.go:82`, environment config not wired (`WHATSAPP_RATE_LIMIT_RPS`, `WHATSAPP_RATE_LIMIT_BURST`)
-- Impact: Cannot adjust rate limits without recompiling/redeploying edge service
-- Fix approach: Extract `20` and `40` to environment variables with fallback defaults, parse and validate at startup
-
-**Email Notification Infrastructure Missing:**
-- Issue: Email service infrastructure in place (`core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java`) but no SMTP provider configured
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java` calls email service; service has extension points but no transport
-- Impact: Order notifications will silently fail to send. Customers won't receive order status updates.
-- Fix approach: Choose SMTP provider (SendGrid, SES, Mailhog), configure `spring.mail.*` properties, add provider decision to onboarding docs
-
-**WhatsApp Order Creation Not Wired:**
-- Issue: Parser exists in `edge-go/internal/whatsapp` but POST /orders endpoint doesn't call it. No shop assignment strategy.
-- Files: `edge-go/cmd/edge/main.go`, `edge-go/internal/whatsapp` (parser only)
-- Impact: WhatsApp orders cannot be created. Feature advertised but non-functional.
-- Fix approach: Wire WhatsApp parser to POST /orders, implement shop assignment (geography, tags, manual mapping), add idempotency key
-
-## Known Bugs
-
-**Broad Exception Catches in Order Event Publishing:**
-- Symptoms: Order state changes may fail silently if `RabbitTemplate.convertAndSend()` throws unexpected exception
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderEventPublisher.java:38`
-- Trigger: Network issue, RabbitMQ misconfiguration, or serialization error while publishing order state change event
-- Workaround: Check RabbitMQ logs and Core API logs separately; may not correlate
-
-**Image Analysis Service Fails Silently on Parse Error:**
-- Symptoms: Product image analysis returns confidence 0 instead of error, falls back to user description
-- Files: `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java:144,186,227,257`
-- Trigger: LLM returns malformed JSON, network timeout, or model unavailable
-- Workaround: Check logs; currently only logged, not surfaced to UI
-
-**BulkImportService Error Handling in Batch Processing:**
-- Symptoms: Partial batch imports may succeed even if some rows fail silently
-- Files: `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java:92,170,197,250`
-- Trigger: CSV parsing fails on row N; rows 1 to N-1 imported but N onwards silently dropped
-- Workaround: None; reimport with corrected CSV
-
-## Security Considerations
-
-**Stripe Webhook Signature Verification:**
-- Risk: Incorrect signature handling could accept forged Stripe webhook events
-- Files: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:94-104`
-- Current mitigation: Uses `Webhook.constructEvent()` from official Stripe SDK; signature verified against `stripe.webhook.secret`
-- Recommendations: 
-  - Ensure `stripe.webhook.secret` is NOT logged or exposed in error messages
-  - Add replay attack protection: reject events with `created` timestamp > 5 minutes old
-  - Monitor webhook processing latency to detect DDoS (high volume, low-latency, repeated event IDs)
-
-**Tenant Context Isolation in Async Email Processing:**
-- Risk: Email notifications run async; if tenant context lost, notifications could leak between tenants
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java:47-54,56-60`
-- Current mitigation: `TenantContext.set()` before email send, `.clear()` in finally block; explicit session-level config set
-- Recommendations:
-  - Unit test `TenantContext` clearing in exception scenarios (e.g., email service throws)
-  - Consider passing tenantId as method parameter to `EmailNotificationService` to avoid ThreadLocal dependency
-  - Add audit logging of tenant context switches in security-sensitive paths
-
-**JWT Token Validation:**
-- Risk: Missing or invalid tenant claim in JWT allows default/null tenant assignment
-- Files: `core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java`, `core-java/src/main/java/uk/jtoye/core/config/OpenApiConfig.java:79`
-- Current mitigation: JWT token required on all endpoints except `/health`; tenant claim extraction in aspect
-- Recommendations:
-  - Add explicit validation: reject requests with missing/empty tenant claim
-  - Log failed token extractions (malformed, missing claims) for security audits
-  - Consider implementing rate limiting per tenant, not globally
-
-**RLS Policy Edge Cases:**
-- Risk: RLS policies bypass if Keycloak tenant claim name changes or token parsing fails silently
-- Files: All repository queries depend on RLS; `core-java/src/main/java/uk/jtoye/core/security/TenantSetLocalAspect.java` sets context
-- Current mitigation: Aspect sets tenant context before each request; SQL `SET app.current_tenant_id` at session level
-- Recommendations:
-  - Add integration test that verifies queries fail if tenant context NOT set (break the safety net to ensure it works)
-  - Monitor slow queries that bypass RLS (would indicate missing tenant filter)
-  - Document RLS policy schema in README for future maintainers
-
-## Performance Bottlenecks
-
-**N+1 Query Risk in Order with Items:**
-- Problem: `Order.java:102` has `@OneToMany` for items; if service loads orders in list without JOIN FETCH, will trigger N queries
-- Files: `core-java/src/main/java/uk/jtoye/core/order/Order.java:102`, repository queries in `core-java/src/main/java/uk/jtoye/core/order/OrderService.java`
-- Cause: Lazy loading default; if pagination or filtering loops over orders, each `.getItems()` triggers DB hit
-- Improvement path:
-  - Add custom query with `LEFT JOIN FETCH orderItems` for list endpoints
-  - Use `@EntityGraph` on repository methods that return paginated results
-  - Profile with Spring Boot actuator + Micrometer to detect slow pages
-
-**Image Analysis with Ollama Over Network:**
-- Problem: Every product image upload triggers HTTP call to Ollama LLM; if model runs locally but on different container, network latency adds 2-5s per image
-- Files: `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java`
-- Cause: Synchronous wait for LLM response during upload; no caching of similar images
-- Improvement path:
-  - Make analysis async: return early, process in background, notify via SSE
-  - Cache analysis results by image hash or filename pattern
-  - Add timeout to Ollama calls (currently `WebClient` default may be infinite)
-
-**Storage Service S3 Operations Without Connection Pooling Limits:**
-- Problem: Each upload/delete hits S3 synchronously; if workload spikes, can exhaust thread pool
-- Files: `core-java/src/main/java/uk/jtoye/core/storage/StorageService.java:84-92,138-141`
-- Cause: `S3Client.putObject()` blocks; default `S3AsyncClient` not used
-- Improvement path:
-  - Switch to `S3AsyncClient` for non-blocking S3 calls
-  - Add circuit breaker to S3 operations (already done for Stripe, missing here)
-  - Set connection pool limits in S3Client builder
-
-**Large File Bulk Import Processing:**
-- Problem: `BulkImportService.java` loads entire CSV into memory before parsing; no streaming approach
-- Files: `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java`
-- Cause: File read entirely before processing; multiple passes over data
-- Improvement path:
-  - Stream CSV line-by-line instead of loading all into memory
-  - Process in batches (100-row chunks) to allow transaction commits and progress checkpoints
-  - Add cancel/resume for long-running imports
-
-## Fragile Areas
-
-**ImageAnalysisService LLM Prompt Reliability:**
-- Files: `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java:37-82`
-- Why fragile: Hard-coded prompt with cultural examples and JSON schema. If Ollama/Claude model updates, behavior may change. No schema versioning.
-- Safe modification: 
-  - Externalize prompt to config file with version tracking
-  - Add schema validation with `@JsonSchema` after parsing
-  - Add tests with real food images (Nigerian dishes, etc.) to detect model drift
-  - Create separate test suite for image analysis using fixed test images
-  
-**RabbitMQ Event Publishing in Transaction Boundaries:**
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderEventPublisher.java`, `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java`
-- Why fragile: Order state updated in DB, then event published to RabbitMQ. If event fails to send, DB transaction already committed—event lost.
-- Safe modification:
-  - Use RabbitMQ publisher confirms (add `spring.rabbitmq.publisher-confirms=true`)
-  - Wrap event publish in retry logic with exponential backoff
-  - Consider outbox pattern: save event to DB in same transaction, publish from separate poller
-  - Add integration test: verify order state + event both succeed or both fail
-
-**Stripe Webhook Handler Idempotency:**
-- Files: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:108-113`
-- Why fragile: No idempotency key tracking; if webhook delivered twice (Stripe retries), order may be double-processed
-- Safe modification:
-  - Store received Stripe event IDs in DB with timestamp
-  - Check `event.id` before processing; if seen before, skip and return 200 OK
-  - Add test case: send same webhook twice, verify payment marked CAPTURED only once
-
-**Order Status State Machine Transitions:**
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderStateMachineService.java`
-- Why fragile: Complex state transitions (DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED) with multiple entry points (UI, Stripe webhook, admin)
-- Safe modification:
-  - Document all valid transitions in README or code
-  - Add guard clauses: reject invalid transitions with descriptive error
-  - Unit test every transition pair (matrix of 6×6 = 36 cases)
-  - Add @CircuitBreaker around state changes to prevent cascading failures
-
-## Scaling Limits
-
-**RabbitMQ Dead Letter Queue Management:**
-- Current capacity: DLQ created but no cleanup policy; messages accumulate indefinitely
-- Limit: After extended outage, DLQ may grow to GBs; no alerts configured
-- Scaling path:
-  - Configure message TTL on DLQ (e.g., 7 days)
-  - Add metrics to count DLQ depth
-  - Create admin endpoint to review/replay/discard DLQ messages
-  - Set up alerts when DLQ depth > 1000
-
-**Rate Limiting Per Tenant vs Global:**
-- Current capacity: Edge service uses global rate limiter (20 RPS across all tenants)
-- Limit: Single high-volume tenant exhausts limit for others; no tenant isolation
-- Scaling path:
-  - Implement token bucket per tenant-ID extracted from JWT
-  - Set soft limit (warn at 80%, block at 100%)
-  - Add metrics per tenant to detect abuse patterns
-  - Allow tier-based rate limits (paid tiers get higher limits)
-
-**Redis Caching Eviction:**
-- Current capacity: Default Redis eviction policy may be `noeviction` (blocking inserts on full)
-- Limit: If cache fills without eviction, new caching attempts block the app
-- Scaling path:
-  - Set explicit `maxmemory-policy=allkeys-lru` in Redis config
-  - Monitor cache hit/miss ratios with Micrometer
-  - Adjust TTLs for high-churn data (orders, customer sessions)
-
-**Frontend SSE Connection Limits:**
-- Current capacity: Each browser holds open SSE connection; Jetty has max threads per request
-- Limit: If >500 concurrent users open storefront, SSE connection pool exhausted
-- Scaling path:
-  - Implement WebSocket instead of SSE for multiplexed connections
-  - Add connection rate limiting per IP
-  - Graceful degradation: if SSE unavailable, fall back to polling with backoff
-
-## Dependencies at Risk
-
-**Stripe SDK Version (28.2.0):**
-- Risk: If Stripe API changes, old SDK version may break
-- Impact: Payment creation and webhook handling fail; orders cannot be paid
-- Migration plan: Monitor Stripe API changelog; upgrade SDK quarterly; test webhook event parsing with new event types
-
-**Spring Boot 3.4.2 with Java 21 Toolchain:**
-- Risk: Java 21 language features (records, sealed classes) not compatible with older Spring Boot versions if downgrade needed
-- Impact: Lock-in to Java 21; cannot use lower versions
-- Migration plan: None needed if staying on Spring Boot 3.x; Java 21 is LTS. Monitor deprecations in Spring Boot release notes.
-
-**Resilience4j Circuit Breaker (2.2.0):**
-- Risk: Custom timeout handling in circuit breaker may differ from Spring Boot defaults
-- Impact: Unexpected circuit breaker state (open/closed) during deployment
-- Migration plan: Document all circuit breakers in README; verify timeout values match SLA for each external service
-
-**Hibernate Envers for Auditing:**
-- Risk: Complex schema with audit tables; migration/backup complexity scales with data
-- Impact: Schema migrations become slow; audit data not easily queryable without special tools
-- Migration plan: Consider replacing with simple audit log table if audit queries become bottleneck; Envers good for now at current scale
-
-## Missing Critical Features
-
-**No Email Provider Implementation:**
-- Problem: Email notification service exists but has no SMTP backend; customers won't be notified of orders
-- Blocks: Customer engagement, order tracking, payment confirmations
-- Decision needed: SendGrid (pay-per-send, fast setup), AWS SES (cheap, requires verification), Mailhog (dev-only, free)
-
-**No Delivery Management System:**
-- Problem: Orders have no delivery address, time slots, or courier integration
-- Blocks: Delivery-based businesses cannot use platform
-- Decision needed: Build in-house, integrate Deliveroo API, or MVP with simple postcode radius
-
-**No Self-Service Tenant Signup:**
-- Problem: All tenants created manually via SQL + Keycloak admin panel
-- Blocks: Cannot scale to 100s of shops
-- Decision needed: Build signup flow, Stripe billing integration, automated tenant provisioning
-
-**No Payment Processing UI:**
-- Problem: Stripe integration in backend; frontend has no payment form
-- Blocks: Customers cannot pay; only "cash on delivery" works
-- Decision needed: Use Stripe hosted checkout vs embedded form; PCI compliance
-
-## Test Coverage Gaps
-
-**ImageAnalysisService with Multiple LLM Providers:**
-- What's not tested: Fallback from Anthropic to Ollama on API key missing; different response formats between providers
-- Files: `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java`
-- Risk: Provider switch in prod may fail silently with confusing error messages
-- Priority: High — image analysis is customer-facing
-
-**BulkImportService Error Recovery:**
-- What's not tested: CSV with 10,000 rows where row 5,000 is malformed; does import stop or continue?
-- Files: `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java`
-- Risk: Unpredictable behavior with large imports; data loss without visibility
-- Priority: High — bulk import used for initial product onboarding
-
-**RabbitMQ Event Publishing Failure Scenarios:**
-- What's not tested: RabbitMQ unavailable during order state change; does order save anyway? Is event lost?
-- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderEventPublisher.java`
-- Risk: Notifications never sent; no retry mechanism; customer left in limbo
-- Priority: High — core business flow
-
-**Stripe Webhook Signature Verification:**
-- What's not tested: Malformed webhook payload; wrong signature; replay attack (duplicate event_id)
-- Files: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java`
-- Risk: Forged payments accepted; order paid twice
-- Priority: Critical — payment system
-
-**RLS Policy Enforcement:**
-- What's not tested: Can tenant-A query tenant-B's orders if they somehow obtain the UUID? RLS block it?
-- Files: All repositories; depends on database RLS policies
-- Risk: Data leakage between tenants
-- Priority: Critical — data isolation
-
-**Frontend Complex Page Component Logic:**
-- What's not tested: Dashboard orders page (935 lines, `frontend/app/dashboard/orders/page.tsx`) with filtering, sorting, pagination all together
-- Files: `frontend/app/dashboard/orders/page.tsx`, `frontend/app/dashboard/products/page.tsx` (889 lines), `frontend/app/dashboard/shops/page.tsx` (600 lines)
-- Risk: UI state bugs under edge cases (empty list + filter + sort all active at once)
-- Priority: Medium — impacts UX but not data integrity
+**Status legend:** Every claim cites `file:line` or references a planning artifact. Items marked `(unverified)` are inferred from planning docs without spot-checking source; caller should verify before acting.
 
 ---
 
-*Concerns audit: 2026-04-07*
+## Blockers (open)
+
+None. The 5 production blockers from `STATE-OF-CODEBASE-2026-04-14.md:451-504` were all closed by v2.1:
+
+- Blocker 1 (tenant onboarding) — deferred to v2.2+ as Work Order D, not a blocker for next production push (manual provisioning still works) (`STATE-OF-CODEBASE-2026-04-14.md:455-461`).
+- Blocker 2 (marketing on storefront) — closed by STFR-01/02 in phase 10 (`MILESTONES.md:22`, `v2.1-MILESTONE-AUDIT.md:82-88`).
+- Blocker 3 (cart + order-history routes) — closed by STFR-03/04/05/06 in phase 10 (`MILESTONES.md:22`, `v2.1-MILESTONE-AUDIT.md:84-89`).
+- Blocker 4 (STOMP in-memory) — closed by STMP-01..05 in phase 11 (`MILESTONES.md:23`, `v2.1-MILESTONE-AUDIT.md:93-99`).
+- Blocker 5 (`.env` committed + Alertmanager missing) — footnote in `STATE-OF-CODEBASE-2026-04-14.md:490-502` proved `.env` was never committed; Alertmanager delivered by SECR-04 in phase 9 (`v2.1-MILESTONE-AUDIT.md:68-80`).
+
+The v2.1 milestone audit initially flagged 2 missing VERIFICATION.md files as blockers (`v2.1-MILESTONE-AUDIT.md:103-119`); both remediated 2026-04-18 (`v2.1-MILESTONE-AUDIT.md:170-188`).
+
+---
+
+## P1/P2 Tech Debt (tracked)
+
+All 14 items from `HANDOFF.md:29-42`, evidence cross-referenced against `DEEP-AUDIT-2026-04-16.md`.
+
+### CQ-01: Stock race at confirmation vs creation
+- Issue: Stock validated at order creation but decremented at confirmation — race window allows two orders to pass validation then exceed available stock (`DEEP-AUDIT-2026-04-16.md:240`).
+- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderService.java:117-128`
+- Impact: Overselling when two concurrent confirmations hit the same low-stock SKU. No data corruption (negative stock caught elsewhere) but customer-visible "out of stock after payment" failure.
+- Fix approach: Re-validate stock inside the `confirmOrder` transaction with `SELECT … FOR UPDATE` on `products.stock_quantity`, or move stock decrement into creation (reservation model). Covered by `adjustStockInBatch` at `OrderService.java:350-400` — wire it into confirmation path.
+
+### CQ-02: FinancialTransactionService.getSummary() loads all rows into memory
+- Issue: `getSummary()` calls `findAll()` and aggregates in memory; OOM risk on high-volume tenants (`DEEP-AUDIT-2026-04-16.md:67,242`).
+- Files: `core-java/src/main/java/uk/jtoye/core/finance/FinancialTransactionService.java:111-149`
+- Impact: API `/api/v1/financial-transactions/summary` unbounded memory growth. Dashboard home card breaks for long-lived tenants.
+- Fix approach: Push aggregation into PostgreSQL via JPQL `SELECT new SummaryDto(SUM(...), COUNT(...), ...)`. Add index on `(tenant_id, created_at)` if not present.
+
+### INFRA-17: K8s NetworkPolicies missing
+- Issue: No NetworkPolicies — lateral movement between pods unrestricted (`DEEP-AUDIT-2026-04-16.md:140,255`).
+- Files: `k8s/base/` (no `*.yaml` with `kind: NetworkPolicy`) (unverified — inferred from audit)
+- Impact: Compromised frontend pod can reach postgres/keycloak/redis directly. Defense-in-depth gap.
+- Fix approach: Write per-deployment NetworkPolicy manifests. Default-deny ingress + allowlist specific pod labels. Test with `kubectl exec` cross-pod connectivity attempts.
+
+### INFRA-11a: K8s Sealed Secrets not deployed
+- Issue: K8s secrets use `stringData` (plain base64), not sealed (`DEEP-AUDIT-2026-04-16.md:141`, `STATE-OF-CODEBASE-2026-04-14.md:310-315`).
+- Files: `k8s/base/secrets-template.yaml` (unverified path)
+- Impact: Secrets committable in plain text after base64 decode. Git-tracked secret rotation is manual and error-prone.
+- Fix approach: Install `sealed-secrets-controller` in cluster, re-encrypt existing secrets with `kubeseal`, update Kustomize overlays. Documented as "recommended but not deployed" in `STATE-OF-CODEBASE-2026-04-14.md:313`. See also Work Order H.
+
+### AUTH/TENANT: Application-layer tenant validation for guest tracking
+- Issue: Guest order tracking relies entirely on RLS — no app-layer validation (`DEEP-AUDIT-2026-04-16.md:123-126`).
+- Files: `PublicStorefrontController` (guest `/public/orders/{orderNumber}` path, unverified exact line)
+- Impact: If RLS bypassed (e.g., connection pool uses superuser per AUTH-02), guest can read arbitrary orders by guessing order number.
+- Fix approach: Add explicit `tenant_id` match check in service layer before returning order. Also requires email-match check to raise enumeration difficulty (see deferred `/public/orders?email=` below).
+
+### SEC: No security headers on Spring responses
+- Issue: Spring responses lack security headers (`DEEP-AUDIT-2026-04-16.md:212`, `HANDOFF.md:34`).
+- Files: `core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java` (unverified — needs header configuration added)
+- Impact: No `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`. Clickjacking / MIME-sniffing exposure.
+- Fix approach: Configure Spring Security `HeadersConfigurer` in `SecurityConfig`. HSTS 31536000, nosniff, strict-origin-when-cross-origin, strict permissions.
+
+### DTO: Remove `tenantId` from response DTOs
+- Issue: `tenantId` field exposed in OrderDto/CustomerDto responses (`DEEP-AUDIT-2026-04-16.md:68`).
+- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderDto.java`, `core-java/src/main/java/uk/jtoye/core/customer/CustomerDto.java` (lines unspecified in audit)
+- Impact: Info leak — tenant UUID visible to authenticated users. Not immediately exploitable (all API calls already require tenant match) but violates least-exposure principle.
+- Fix approach: Remove `tenantId` from DTOs; update MapStruct mappers; update tests. Keep internal Entity field.
+
+### Reactive: Blocking `.block()` calls in state machine
+- Issue: `.block()` used on reactive streams in state machine (`DEEP-AUDIT-2026-04-16.md:70`).
+- Files: `core-java/src/main/java/uk/jtoye/core/order/OrderStateMachineService.java:52-116`
+- Impact: Reactor thread pool blocked → throughput degradation under load. Thread starvation possible if state transitions spike.
+- Fix approach: Convert state machine calls to imperative path (remove reactive dependency), or make entire transition chain `Mono<OrderDto>` and propagate to controller. Prefer imperative — state machine is not a hot path.
+
+### CSP: No Content-Security-Policy headers
+- Issue: No CSP headers on any response (`HANDOFF.md:37`, `DEEP-AUDIT-2026-04-16.md:221`).
+- Files: `frontend/next.config.mjs` (no `headers()` config for CSP, unverified), `core-java/.../SecurityConfig.java` (no CSP header)
+- Impact: XSS mitigation missing. Audit confirms no `dangerouslySetInnerHTML` usage (`DEEP-AUDIT-2026-04-16.md:82`) but defense-in-depth still wanted.
+- Fix approach: Add Next.js `headers()` entry in `next.config.mjs` with CSP `default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; frame-src https://js.stripe.com; img-src 'self' data: <minio-host>;`. Parallel header in Spring for API responses.
+
+### ERR: Frontend API error logging
+- Issue: Frontend silently swallows API errors in 4 catch blocks returning empty (`DEEP-AUDIT-2026-04-16.md:71`).
+- Files: `frontend/app/shop/[slug]/page.tsx` (lines unspecified)
+- Impact: Silent failures — customer sees empty storefront, vendor sees nothing in logs. Debugging productivity loss.
+- Fix approach: Log errors before returning empty (`console.error` minimum; wire to frontend error tracking — Sentry or similar). Also add a `window.onunhandledrejection` handler (`DEEP-AUDIT-2026-04-16.md:72`).
+
+### Edge: OpenAPI spec generation for Go gateway
+- Issue: Go gateway has no OpenAPI specification (`HANDOFF.md:39`).
+- Files: `edge-go/` (no `openapi.yaml` or swagger annotations, unverified)
+- Impact: No machine-readable contract for the edge surface. External consumers (storefront, mobile) rely on tribal knowledge. Contract drift risk vs Core Java Swagger.
+- Fix approach: Use `swaggo/swag` to annotate Gin handlers and generate `docs/openapi.yaml` at build. Or hand-author openapi.yaml and validate with `oasdiff` in CI.
+
+### INFRA-10: Grafana dashboards missing (JVM, DB, business)
+- Issue: Only STOMP dashboard exists; no dashboards for JVM health, database, business metrics, application overview (`DEEP-AUDIT-2026-04-16.md:271`).
+- Files: `infra/monitoring/grafana/dashboards/` — only STOMP dashboard auto-provisioned (`DEEP-AUDIT-2026-04-16.md:148`)
+- Impact: On-call engineer has no single-pane-of-glass for service health. Incident response slower.
+- Fix approach: Import community dashboards (JVM Micrometer 4701, Postgres 9628) into `infra/monitoring/grafana/provisioning/dashboards/`. Custom business dashboard keyed off `BusinessMetricsService` metrics.
+
+### INFRA-11b: Alertmanager inhibition rules missing
+- Issue: No inhibition rules — database-down cascade triggers noisy pool/connection alerts (`DEEP-AUDIT-2026-04-16.md:272`).
+- Files: `infra/monitoring/alertmanager/alertmanager.yml` (unverified — needs `inhibit_rules:` block)
+- Impact: Alert fatigue during outages. Operators see 5 alerts for one root cause (DB down → connection pool exhausted → high error rate → service down → no orders).
+- Fix approach: Add `inhibit_rules` that silence downstream alerts when `DatabaseDown` or `ServiceDown` fires. Match on shared labels (`service`, `tenant_id`).
+
+### Alert runbook documentation incomplete
+- Issue: `docs/runbooks/alerts.md` has 9 TODO stubs, only `ServiceDown` filled (`v2.1-MILESTONE-AUDIT.md:140`).
+- Files: `docs/runbooks/alerts.md:81-121` (verified — file is 121 lines; `HighErrorRate`, `HighResponseTime`, `DatabaseConnectionPoolExhausted`, `DatabaseDown`, `TooManyDatabaseConnections`, `HighMemoryUsage`, `FrequentGarbageCollection`, `NoOrdersCreated`, `TenantIsolationFailure` all contain `<!-- TODO: fill in -->`)
+- Impact: Alerts route to email but operator has no first-response guidance. Triage time extended.
+- Fix approach: Fill in each TODO with: symptom description, immediate checks (kubectl commands, log queries), common causes, rollback decision tree. Populate incrementally as first incidents surface.
+
+---
+
+## Deferred Requirements from v2.1
+
+### SECR-08: Keycloak realm-export dev secrets
+- Issue: `infra/keycloak/realm-export.json` contains PBKDF2 password hashes for `demo-admin`/`demo-customer`/`demo-vendor` and plaintext OIDC client secrets for `core-api` and `frontend` clients (`v2.1-phases/09-repository-secrets-alerting/deferred-items.md:7-13`).
+- Files: `infra/keycloak/realm-export.json` (entire file)
+- Impact: Dev-only today, but nothing prevents staging/prod import. If imported outside dev, dev secrets become prod secrets — instant incident.
+- Fix approach: Rewrite realm export to use `${VAR}` substitution (Keycloak 24 supports via `--spi-...` or pre-process at container start). Add required env vars to `.env.example`. Rotate the in-git dev secrets. Smoke-test local dev bootstrap. Tracked as proposed SECR-08 for milestone v2.2+ (`deferred-items.md:26-28`). Currently allowlisted in `.gitleaks.toml`.
+
+### `/public/orders?email=` enumeration risk
+- Issue: Customer order tracking endpoint allows email-based lookup; enumeration possible if no rate limiting / validation (`MILESTONES.md:37`, `v2.1-MILESTONE-AUDIT.md:141`).
+- Files: `PublicStorefrontController` — `/public/orders?email=` endpoint (unverified line) — deferred per Pitfall 5 of plan 10-03
+- Impact: Attacker can enumerate customer emails by guessing and observing 200 vs 404 responses. Confirms existence of customer in the system per tenant.
+- Fix approach: Return uniform response regardless of hit/miss (same 200 with empty list). Add per-IP rate limit on endpoint. Require order number + email pair (AND, not OR). Related to app-layer tenant validation gap above.
+
+### 9 alert runbook stubs
+- See "Alert runbook documentation incomplete" under P2 tech debt above — same item, tracked from deferred-items angle.
+
+### Phase 11 VALIDATION.md is draft
+- Issue: `nyquist_compliant: false`, `wave_0_complete: false` in frontmatter (`v2.1-MILESTONE-AUDIT.md:144`).
+- Files: `.planning/milestones/v2.1-phases/11-stomp-broker-relay-for-horizontal-scale/11-VALIDATION.md:4-6` (verified: `status: draft`, `nyquist_compliant: false`, `wave_0_complete: false`)
+- Impact: Nyquist workflow incomplete for Phase 11. Not a code defect — a process gap.
+- Fix approach: Run `/gsd-validate-phase 11` to close the gap; set frontmatter to compliant after validation waves complete. Also — `stomp-relay.spec.ts` Playwright e2e gated behind `RELAY_E2E=true` env flag, not running in default CI (`v2.1-MILESTONE-AUDIT.md:142`) — enable in CI before v2.2 close.
+
+### 5 quick-task metadata entries
+- Issue: Work shipped via PR #40 but the 5 `.planning/quick/260414-*` SUMMARY.md files lack `status: complete` frontmatter (`MILESTONES.md:41`).
+- Files (verified exist, no `status:` frontmatter):
+  - `.planning/quick/260414-fe3-frontend-security-and-tests/SUMMARY.md`
+  - `.planning/quick/260414-inf-infrastructure-hardening/SUMMARY.md`
+  - `.planning/quick/260414-j9c-edge-go-security-hardening-batch-phase-1/SUMMARY.md`
+  - `.planning/quick/260414-jkp-java-core-data-integrity-batch-phase-2-o/SUMMARY.md`
+  - `.planning/quick/260414-ltc-low-touch-cleanup/SUMMARY.md`
+- Impact: Planning-metadata drift only. GSD workflow queries for incomplete work will re-surface these.
+- Fix approach: Add `status: complete` + `completed_at: 2026-04-16` frontmatter to each SUMMARY.md. Pure doc sync task.
+
+---
+
+## Out-of-Scope Items (v2.2+)
+
+Work Orders D–O from `STATE-OF-CODEBASE-2026-04-14.md:634-647`. Sorted roughly by business priority.
+
+### Work Order D: Tenant onboarding flow
+- Problem: No production tenant provisioning; `DevTenantService` is dev-only. Every new vendor requires manual DB insert + Keycloak admin + shop provisioning (`STATE-OF-CODEBASE-2026-04-14.md:151-152,455-461`).
+- Blocks: Self-serve SaaS signup. Cannot scale past hand-provisioned pilot.
+- Scope: `TenantService` (create → Keycloak admin API → user + role → shop shell), `POST /api/v1/tenants`, `frontend/app/(auth)/register/page.tsx`, Stripe Customer billing hook, welcome email template.
+- Effort: 1–2 weeks.
+
+### Work Order E: Order detail view + refund flow
+- Problem: Vendor dashboard has no order detail view; cannot refund or edit individual orders (`STATE-OF-CODEBASE-2026-04-14.md:78,186,214`).
+- Blocks: Support staff cannot handle customer queries. Refunds impossible via UI.
+- Files (affected): `frontend/app/dashboard/orders/page.tsx` (935 lines — add detail view; CONCERNS.md:277-280 prior version flagged this page's complexity)
+- Effort: 1 week.
+
+### Work Order F: Finance + settings pages
+- Problem: `/dashboard/finance` and `/dashboard/settings` are placeholder shells (`STATE-OF-CODEBASE-2026-04-14.md:81-82,189,215-216`).
+- Blocks: Vendors cannot see P&L, payout status, transaction list; cannot change VAT, display name, payment methods, webhooks from UI.
+- Effort: 1–2 weeks.
+
+### Work Order G: Log aggregation
+- Problem: No log aggregation — container stdout only (`STATE-OF-CODEBASE-2026-04-14.md:128,306,338`).
+- Blocks: Cannot trace cross-service requests; no incident forensics; no alerting on log patterns.
+- Scope: Deploy Loki (lightweight) or ELK (heavier, more features) in `infra/monitoring/`. Add Promtail/Fluentbit sidecars.
+- Effort: 1 week.
+
+### Work Order H: K8s Sealed-Secrets
+- See INFRA-11a under P2 tech debt above — same item from backlog view. Effort: 3–5 days.
+
+### Work Order I: Postgres PITR
+- Problem: Backup is daily `pg_dump` only — no Point-In-Time Recovery, no tested restore (`STATE-OF-CODEBASE-2026-04-14.md:130,318-322`).
+- Blocks: Data loss window up to 24h. No ability to recover to arbitrary timestamp.
+- Scope: WAL archiving to S3. Restore-test procedure in runbook. Add backup verification via `pg_restore -l` integrity check (addresses INFRA-12, `DEEP-AUDIT-2026-04-16.md:273`).
+- Effort: 3–5 days.
+
+### Work Order J: Review module
+- Problem: `ReviewService` exists, no controller exposed; no storefront display; no moderation (`STATE-OF-CODEBASE-2026-04-14.md:67,167`).
+- Blocks: Customer review feature shipped in DB (V27 migration) but user-invisible.
+- Scope: `ReviewController` + storefront integration + moderation UI. Also fixes TENANT-04 RLS (already closed in P0 wave, but re-verify).
+- Effort: 1 week.
+
+### Work Order K: Edge OpenTelemetry + distributed rate limiter
+- Problem: Edge gateway has no metrics/observability hook; rate limiter is per-instance (in-memory token bucket — 10x effective limit at 10 pods) (`STATE-OF-CODEBASE-2026-04-14.md:260-262`).
+- Blocks: Horizontal scaling of edge-go breaks rate limiting correctness. No cross-service tracing into edge.
+- Scope: OpenTelemetry SDK + exporter to Zipkin/Tempo. Redis-backed distributed rate limiter.
+- Effort: 1 week.
+
+### Work Order L: Search performance verification
+- Problem: Full-text product search uses PG `tsvector` (V25) but not perf-verified; could N-query at scale (`STATE-OF-CODEBASE-2026-04-14.md:56,165`).
+- Blocks: Nothing today, but unknown scaling cliff.
+- Scope: Load test with 10k products per tenant × 100 tenants; profile query plans; add missing indexes.
+- Effort: 3 days.
+
+### Work Order M: Bulk product import integration
+- Problem: Upload UI exists; endpoint integration unclear (`STATE-OF-CODEBASE-2026-04-14.md:77,218`).
+- Files: `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java` (prior concerns also flagged silent partial-failure and OOM-on-large-file at lines 92,170,197,250)
+- Blocks: Vendor onboarding requires manual product entry.
+- Effort: 3 days.
+
+### Work Order N: Billing subscription management
+- Problem: No Stripe Customer / Subscription management for vendors. Coupled with Work Order D.
+- Blocks: Cannot monetize; cannot enforce tier limits.
+- Effort: 1 week.
+
+### Work Order O: WhatsApp order idempotency
+- Problem: No order idempotency key from WhatsApp webhook id → retry after partial failure could double-book (`STATE-OF-CODEBASE-2026-04-14.md:235,259`).
+- Files: `edge-go/cmd/edge/main.go:336-355`
+- Blocks: WhatsApp flow MVP-ready but not production-safe under retry.
+- Effort: 2 days.
+
+---
+
+## Architectural Anxieties
+
+### Dev environment port conflicts (already workarounded)
+- Issue: Port 3000 held by MCP server — frontend runs on 3100. Port 5432 held by unrelated `dealflow_postgres` container — full-stack bringup blocked by port collision (`STATE-OF-CODEBASE-2026-04-14.md:411,486-494`).
+- Files: `frontend/.env.local.example` (NEXT_PUBLIC_API_URL and related configured for 3100), `HANDOFF.md:55` (confirms frontend port 3100)
+- Impact: Every new developer hits this if they run MCP server or dealflow. Keycloak redirect URIs + CORS allow-list must include `http://localhost:3100` (per memory `feedback_port3100.md`).
+- Fix approach: Document port-conflict mitigation in README setup. Longer-term: dev-compose on a non-default subnet with exposed ports in 3100+/5532+ range. Low priority — workaround is known.
+
+### Blocking reactive calls in state machine
+- Listed as separate P2 item above (`OrderStateMachineService.java:52-116`). Architectural anxiety: if reactive framework is not used anywhere else as a hot path, consider removing reactor dependency entirely rather than patching blocking calls.
+
+### STOMP broker mode flag surface area
+- Issue: `stomp.broker.mode` flag (`in-memory` | `relay`) introduced in Phase 11. Local dev defaults differ from staging/prod (`MILESTONES.md:23`, `v2.1-MILESTONE-AUDIT.md:91-99`).
+- Files: `core-java/src/main/java/uk/jtoye/core/ws/WebSocketConfig.java` (unverified)
+- Impact: Two code paths means two failure modes. Relay mode adds RabbitMQ STOMP plugin as a dependency at port 61613; if plugin disabled in a prod cluster, kitchen silently degrades.
+- Fix approach: Add Prometheus alert on relay-mode misconfiguration (probe port 61613 from core-java startup, fail fast). Document the flag contract in the CLAUDE.md architecture section.
+
+### `payment_event_outbox` flusher is single-instance
+- Issue: `PaymentEventOutboxFlusher` is method-level `@Scheduled`, not DB-recovery-driven. If the flushing instance dies mid-flush, PENDING rows stuck until restart (`STATE-OF-CODEBASE-2026-04-14.md:165`).
+- Files: `core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutboxFlusher.java:55-105`
+- Impact: Payment events delayed during core-java restart. Outbox is a transactional guarantee that still relies on availability.
+- Fix approach: Add Shedlock or similar distributed lock so multiple replicas can coordinate flush. Or migrate to Debezium CDC for DB-driven delivery.
+
+### Go edge rate limiter in-memory
+- Issue: Same as Work Order K (distributed rate limiter). Callout here for architectural view: horizontal scaling of edge-go breaks correctness, not just observability (`STATE-OF-CODEBASE-2026-04-14.md:261`).
+
+### Merge freeze nuances
+- No open merge freeze. `main` is at `9e491d5` (PR #40 merged 2026-04-16). Branch `feature/deep-audit-p1-fixes` from HANDOFF.md has been merged (`HANDOFF.md:3-4`). `.planning/MILESTONES.md` records clean close at `9008b3a..9e491d5`.
+
+---
+
+*Concerns audit: 2026-04-18*
