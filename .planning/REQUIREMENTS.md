@@ -14,8 +14,8 @@ v2.2 scopes 11 requirements across 5 categories. All have file:line evidence in 
 Close the immediate application-security gaps flagged during the 2026-04-16 deep audit.
 
 - [ ] **SEC-01**: Application-layer tenant validation for guest tracking. Today guest/session requests (anonymous cart population, unauthenticated product listing) go through `TenantFilter` which populates `TenantContext` from the path slug without validating the request belongs to the tenant it claims. Add an explicit application-layer check in `GuestTrackingService` (or equivalent) that compares session-bound tenant against the path slug and rejects mismatches with 403. Tests cover: legitimate single-tenant browse, cross-tenant spoof attempt (403), no-tenant request (TenantContext unset → 401/400). Source: HANDOFF.md P2 "Add application-layer tenant validation for guest tracking".
-- [ ] **SEC-02**: CSP (Content Security Policy) headers on Next.js frontend responses via `next.config.mjs` or middleware. Minimum directives: `default-src 'self'`, `script-src 'self' 'nonce-<random>'` (or `'unsafe-inline'` only if NextAuth requires it — verify), `style-src 'self' 'unsafe-inline'` (Tailwind), `img-src 'self' data: https:` (S3/MinIO + product images), `connect-src 'self' <api-origin> <ws-origin>`, `frame-ancestors 'none'`. Tests cover: response header presence on homepage, storefront, dashboard; CSP violations surface in browser console during Playwright run (no regressions). Source: HANDOFF.md P2 "Add CSP headers".
-- [ ] **SEC-03**: Security response headers on Spring Boot responses via `HttpSecurity.headers()` or a `WebMvcConfigurer` filter: `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=31536000; includeSubDomains` (prod profile only; dev profile omits to allow http), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`. Tests cover: header presence on `/api/v1/shops` 200 response, header presence on 4xx responses, HSTS absent in `dev` profile and present in `prod` profile. Source: HANDOFF.md P2 "Add security headers to Spring responses".
+- [🟡] **SEC-02**: CSP (Content Security Policy) headers on Next.js frontend responses via `next.config.mjs` or middleware. Minimum directives: `default-src 'self'`, `script-src 'self' 'nonce-<random>'` (or `'unsafe-inline'` only if NextAuth requires it — verify), `style-src 'self' 'unsafe-inline'` (Tailwind), `img-src 'self' data: https:` (S3/MinIO + product images), `connect-src 'self' <api-origin> <ws-origin>`, `frame-ancestors 'none'`. Tests cover: response header presence on homepage, storefront, dashboard; CSP violations surface in browser console during Playwright run (no regressions). Source: HANDOFF.md P2 "Add CSP headers". **Operationally complete 2026-04-18 (Plan 12-02 Tasks 01-06 shipped: Content-Security-Policy-Report-Only via next.config.mjs async headers() + Jest CI gate + Playwright local/staging spec). Enforce cutover (Task 12-02-07) pending ≥1-week staging observation.**
+- [x] **SEC-03**: Security response headers on Spring Boot responses via `HttpSecurity.headers()` or a `WebMvcConfigurer` filter: `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=31536000; includeSubDomains` (prod profile only; dev profile omits to allow http), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`. Tests cover: header presence on `/api/v1/shops` 200 response, header presence on 4xx responses, HSTS absent in `dev` profile and present in `prod` profile. Source: HANDOFF.md P2 "Add security headers to Spring responses". **DONE 2026-04-18 in Plan 12-01 (commits f428184, 68e903b, 953a25b, 09149c6).**
 
 ### Code quality (CQ)
 
@@ -105,8 +105,8 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SEC-01 | Phase 13 | Pending |
-| SEC-02 | Phase 12 | Pending |
-| SEC-03 | Phase 12 | Pending |
+| SEC-02 | Phase 12 (Plan 12-02) | Operationally Complete (2026-04-18) — Tasks 01-06 shipped; Task 12-02-07 human-verify cutover gate pending |
+| SEC-03 | Phase 12 (Plan 12-01) | Complete (2026-04-18) |
 | CQ-01 | Phase 14 | Pending |
 | CQ-02 | Phase 14 | Pending |
 | INF-01 | Phase 15 | Pending |
