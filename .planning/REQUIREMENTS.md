@@ -104,22 +104,22 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | TBD | Pending |
-| SEC-02 | TBD | Pending |
-| SEC-03 | TBD | Pending |
-| CQ-01 | TBD | Pending |
-| CQ-02 | TBD | Pending |
-| INF-01 | TBD | Pending |
-| INF-02 | TBD | Pending |
-| DOC-01 | TBD | Pending |
-| VOPS-01 | TBD | Pending |
-| VOPS-02 | TBD | Pending |
-| VOPS-03 | TBD | Pending |
+| SEC-01 | Phase 13 | Pending |
+| SEC-02 | Phase 12 | Pending |
+| SEC-03 | Phase 12 | Pending |
+| CQ-01 | Phase 14 | Pending |
+| CQ-02 | Phase 14 | Pending |
+| INF-01 | Phase 15 | Pending |
+| INF-02 | Phase 15 | Pending |
+| DOC-01 | Phase 16 | Pending |
+| VOPS-01 | Phase 17 | Pending |
+| VOPS-02 | Phase 17 | Pending |
+| VOPS-03 | Phase 17 | Pending |
 
 **Coverage:**
 - v1 requirements: 11 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + VOPS ×3)
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 11 (pre-roadmap state)
+- Mapped to phases: 11 (phases 12–17)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-18*

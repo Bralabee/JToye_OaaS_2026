@@ -7,9 +7,9 @@ stopped_at: v2.2 scoping in progress — requirements defined, roadmap next
 last_updated: "2026-04-18T00:00:00Z"
 last_activity: 2026-04-18
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 11
   completed_plans: 0
   percent: 0
 ---
@@ -30,7 +30,7 @@ Plan: —
 Status: v2.2 scoping — PROJECT.md updated, REQUIREMENTS.md + ROADMAP.md next
 Last activity: 2026-04-18 — v2.2 scoping started
 
-Progress: [░░░░░░░░░░] 0% (0/TBD milestone-v2.2 phases complete)
+Progress: [░░░░░░░░░░] 0% (0/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
