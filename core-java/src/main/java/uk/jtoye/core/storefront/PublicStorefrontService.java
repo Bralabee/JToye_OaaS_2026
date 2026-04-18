@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
@@ -88,8 +89,9 @@ public class PublicStorefrontService {
      * Get server-driven config for a shop: announcements, featured products, promotions.
      */
     public ShopConfigDto getShopConfig(String slug) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+        // SEC-01 tenant-match gate applied up-front (Phase 13). Helper sets
+        // TenantContext only on success; caller still owns cleanup in finally.
+        Shop shop = resolvePublicShopForSlug(slug);
 
         ShopConfigDto config = new ShopConfigDto();
         // Announcements from shop_announcements table (V29) — query active within date window
@@ -98,8 +100,7 @@ public class PublicStorefrontService {
                 .toList();
         config.setAnnouncements(announcements);
 
-        // Fetch featured products
-        TenantContext.set(shop.getTenantId());
+        // Fetch featured products (TenantContext was set by the helper above).
         try {
             List<PublicProductDto> featured = List.of();
             if (shop.getFeaturedProductIds() != null && !shop.getFeaturedProductIds().isEmpty()) {
@@ -207,11 +208,8 @@ public class PublicStorefrontService {
     public Map<String, List<PublicProductDto>> getShopProducts(String slug) {
         log.debug("Fetching products for shop: {}", slug);
 
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-
-        // Set tenant context so product queries work through RLS
-        TenantContext.set(shop.getTenantId());
+        // SEC-01 gate + TenantContext set atomically (Phase 13).
+        Shop shop = resolvePublicShopForSlug(slug);
         try {
             // Filter: products assigned to this shop OR unassigned (shop_id IS NULL = tenant-wide)
             List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
@@ -316,14 +314,14 @@ public class PublicStorefrontService {
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
         log.debug("Creating guest order for shop: {}", slug);
 
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+        // SEC-01 tenant-match gate BEFORE any write (Phase 13) — rejects
+        // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
+        Shop shop = resolvePublicShopForSlug(slug);
 
         // Enforce opening hours — reject orders when shop is closed
         validateShopIsOpen(shop);
 
         UUID tenantId = shop.getTenantId();
-        TenantContext.set(tenantId);
         try {
             // Idempotency check — return existing order if same key was already submitted
             String idempotencyKey = request.getIdempotencyKey();
@@ -480,6 +478,49 @@ public class PublicStorefrontService {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Resolve a public shop by slug with an application-layer tenant-match gate (SEC-01).
+     *
+     * <p>Loads the shop via {@link ShopRepository#findBySlugAndPublishedTrue(String)}.
+     * If an upstream TenantContext is present (populated by {@code JwtTenantFilter}
+     * from a JWT {@code tenant_id} claim) and it differs from {@code shop.getTenantId()},
+     * throws {@link TenantAccessDeniedException} (mapped to HTTP 403 by
+     * {@code GlobalExceptionHandler.handleAccessDenied}). On the happy path,
+     * sets {@code TenantContext} to the slug-derived tenant and returns the shop.
+     *
+     * <p>Per ASVS V4.1.5, the thrown exception message does NOT contain tenant
+     * UUIDs; those appear only in the structured SLF4J WARN log emitted here
+     * ({@code event=tenant_spoof_attempt ...}).
+     *
+     * <p>Caller contract: callers retain responsibility for their existing
+     * {@code finally { TenantContext.clear(); }} blocks. This helper only
+     * SETS on success and MUST NOT clear on any path.
+     *
+     * <p>Package-private (NOT {@code private}) for direct unit test access within
+     * {@code uk.jtoye.core.storefront} — see
+     * {@code PublicStorefrontServiceTest.resolvePublicShopForSlug_*}.
+     *
+     * @throws ResourceNotFoundException if the slug is unknown or the shop is unpublished
+     * @throws TenantAccessDeniedException if an upstream tenant contradicts the slug tenant
+     */
+    Shop resolvePublicShopForSlug(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        Optional<UUID> upstreamTenant = TenantContext.get();
+        if (upstreamTenant.isPresent() && !upstreamTenant.get().equals(shop.getTenantId())) {
+            // Structured audit log — parseable by Loki/ELK, alertable via Alertmanager (Phase 9).
+            // Tenant UUIDs are NOT leaked to the 403 response body (ASVS V4.1.5).
+            log.warn("event=tenant_spoof_attempt slug={} slugTenant={} upstreamTenant={} outcome=403",
+                    slug, shop.getTenantId(), upstreamTenant.get());
+            throw new TenantAccessDeniedException(
+                    "Tenant mismatch between authenticated identity and requested shop");
+        }
+
+        TenantContext.set(shop.getTenantId());
+        return shop;
     }
 
     private String generateOrderNumber(UUID tenantId) {

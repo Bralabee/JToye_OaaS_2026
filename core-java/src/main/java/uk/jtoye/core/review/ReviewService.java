@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -16,6 +17,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -35,10 +37,16 @@ public class ReviewService {
     }
 
     public Page<ReviewDto> getShopReviews(String shopSlug, Pageable pageable) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(shopSlug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopSlug));
-        return reviewRepository.findByShopIdOrderByCreatedAtDesc(shop.getId(), pageable)
-                .map(this::toDto);
+        // SEC-01 (Phase 13) — same tenant-match gate as PublicStorefrontService.
+        // Defense-in-depth even on read-only path; the helper sets TenantContext
+        // so the caller owns the finally-clear.
+        Shop shop = resolvePublicShopForSlug(shopSlug);
+        try {
+            return reviewRepository.findByShopIdOrderByCreatedAtDesc(shop.getId(), pageable)
+                    .map(this::toDto);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     public ShopRatingSummary getShopRating(UUID shopId) {
@@ -49,11 +57,11 @@ public class ReviewService {
 
     @Transactional
     public ReviewDto createReview(String shopSlug, String customerEmail, CreateReviewRequest request) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(shopSlug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopSlug));
+        // SEC-01 (Phase 13) — tenant-match gate BEFORE the Review row is written.
+        // High-severity path (WRITE under setTenantId below).
+        Shop shop = resolvePublicShopForSlug(shopSlug);
 
         UUID tenantId = shop.getTenantId();
-        TenantContext.set(tenantId);
         try {
             Order order = orderRepository.findById(request.getOrderId())
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
@@ -92,6 +100,38 @@ public class ReviewService {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Resolve a public shop by slug with tenant-match gate — duplicate of
+     * {@code PublicStorefrontService#resolvePublicShopForSlug} scoped to
+     * ReviewService.
+     *
+     * <p>Intentional duplication per Phase 13 D-07: pulling a shared utility
+     * would cross service boundaries (storefront ↔ review) without providing
+     * meaningful reuse at 2 consumers. Consolidate if a third {@code /public/**}
+     * service acquires the same pattern.
+     *
+     * <p>The SLF4J WARN log uses {@code source=reviews} as a discriminator so
+     * the log aggregator (Phase 9 Loki) can separate review-layer spoof attempts
+     * from storefront-layer attempts without requiring the HTTP request URI.
+     *
+     * @see uk.jtoye.core.storefront.PublicStorefrontService#resolvePublicShopForSlug
+     */
+    private Shop resolvePublicShopForSlug(String slug) {
+        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+
+        Optional<UUID> upstreamTenant = TenantContext.get();
+        if (upstreamTenant.isPresent() && !upstreamTenant.get().equals(shop.getTenantId())) {
+            log.warn("event=tenant_spoof_attempt slug={} slugTenant={} upstreamTenant={} outcome=403 source=reviews",
+                    slug, shop.getTenantId(), upstreamTenant.get());
+            throw new TenantAccessDeniedException(
+                    "Tenant mismatch between authenticated identity and requested shop");
+        }
+
+        TenantContext.set(shop.getTenantId());
+        return shop;
     }
 
     private ReviewDto toDto(Review review) {

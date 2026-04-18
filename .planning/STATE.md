@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: shipped
-stopped_at: Phase 12 shipped — PR #44 opened against main; UAT 10/10 pass. Manual gate 12-02-07 queued post-merge for staging observation + enforce cutover.
-last_updated: "2026-04-18T14:40:00Z"
+status: in-progress
+stopped_at: Phase 13 plan 01 complete — SEC-01 shipped on branch `feature/phase-13-guest-tracking-tenant-validation` (5 atomic commits 1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2). TDD RED-RED-GREEN-GREEN-pin sequence; VALIDATION.md nyquist_compliant: true. Ready for PR.
+last_updated: "2026-04-18T23:13:00Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 11
-  completed_plans: 2
-  percent: 18
+  completed_plans: 3
+  percent: 27
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 12 — Spring Security Response Headers + Frontend CSP (in progress)
-Plan: 12-01 COMPLETE; 12-02 OPERATIONALLY COMPLETE — Tasks 01-06 shipped (Next.js CSP-Report-Only + Jest CI gate + Playwright local/staging spec); Task 12-02-07 manual cutover gate pending human verification
-Status: Both phase-12 plans' executable work done on branch `feature/phase-12-security-headers-csp`; next up is the 12-02-07 human gate (≥1-week staging observation) OR proceeding to Phase 13/next phase
-Last activity: 2026-04-18 — Completed plan 12-02 Tasks 01-06 on branch `feature/phase-12-security-headers-csp`: commits 9163143 (RED CSP tests), 0a19c4c (GREEN next.config.mjs headers()), fddbc4e (snapshot + .snap), 445f169 (playwright baseURL param), 30d94ee (Playwright CSP spec), 8baf065 (CI wiring)
+Phase: 13 — Guest Tracking Tenant Validation (COMPLETE, ready for PR)
+Plan: 13-01 COMPLETE — 5 atomic TDD commits on `feature/phase-13-guest-tracking-tenant-validation`; VALIDATION.md flipped to `nyquist_compliant: true`; SUMMARY.md at .planning/phases/13-guest-tracking-tenant-validation/13-01-SUMMARY.md
+Status: Phase 13 SEC-01 application-layer tenant-match gate shipped on all 5 vulnerable call sites (PublicStorefrontService ×3 + ReviewService ×2). 6 new MockMvc+Testcontainers @Test methods + 4 new unit tests green. Ready for PR. Phase 12 Task 12-02-07 human gate still pending (post-merge staging observation).
+Last activity: 2026-04-18 — Completed plan 13-01 on branch `feature/phase-13-guest-tracking-tenant-validation`: commits 1f0b9aa (RED integration), 1e7f357 (RED unit), e978939 (GREEN storefront), 9c5309b (GREEN reviews), 300cae2 (regression pin + VALIDATION.md)
 
-Progress: [██░░░░░░░░] 18% (2/11 plans complete; 0/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [███░░░░░░░] 27% (3/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -60,11 +60,12 @@ Progress: [██░░░░░░░░] 18% (2/11 plans complete; 0/6 milesto
 |-------|------|----------|-------|-------|-------------|
 | 12    | 01   | ~90min   | 4     | 6     | 8 Java      |
 | 12    | 02   | ~5min    | 6     | 7     | 8 Jest + 3 Playwright |
+| 13    | 01   | ~45min   | 5     | 8     | 10 Java (6 integration + 4 unit) |
 
 **Recent Trend:**
 
-- Last plan: 12-02 Next.js CSP (SEC-02) — 6 autonomous tasks committed (Tasks 01-06), Task 07 is a human-verified cutover gate; 8 new Jest tests (7 CSP + 1 snapshot), 3 new Playwright tests, 1 CI step wired; full Jest suite (84 tests, 1 snapshot) passes exit 0 under --ci
-- Trend: milestone v2.2 execution continues green; 2/11 plans complete; Phase 12 operationally complete pending 12-02-07 staging-observation gate
+- Last plan: 13-01 Guest Tracking Tenant Validation (SEC-01) — 5 atomic TDD commits (RED-RED-GREEN-GREEN-pin); TenantAccessDeniedException + resolvePublicShopForSlug helper in PublicStorefrontService + ReviewService; 6 MockMvc+Testcontainers integration tests against real Postgres (not H2 — Phase 12 Deviation #4 pattern reused); 4 resolvePublicShopForSlug_* unit tests; OutputCaptureExtension pins the audit-log format
+- Trend: milestone v2.2 execution continues green; 3/11 plans complete; Phase 13 ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
 
 *Updated after each plan completion*
 
@@ -116,6 +117,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-18T14:10:00Z
-Stopped at: Phase 12 plan 02 operationally complete (6/7 tasks; Task 07 human-gate pending); branch `feature/phase-12-security-headers-csp` has 6 new commits (9163143, 0a19c4c, fddbc4e, 445f169, 30d94ee, 8baf065) ready for PR
+Last session: 2026-04-18T23:13:00Z
+Stopped at: Phase 13 plan 01 COMPLETE — branch `feature/phase-13-guest-tracking-tenant-validation` has 5 new commits (1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2) + SUMMARY.md ready for PR. Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover) still pending as a human-verification item.
 Resume file: .planning/phases/12-spring-security-response-headers-frontend-csp/12-02-SUMMARY.md
