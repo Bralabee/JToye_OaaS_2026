@@ -1,0 +1,74 @@
+---
+# 10-frontend.yaml
+#
+# Allow-list for Next.js frontend pods (`app=frontend`).
+#
+# Ingress:
+#   - From ingress-nginx controller only, on port 3000.
+# Egress:
+#   - DNS to kube-dns.
+#   - core-java on port 9090 (server-side API calls from Next.js).
+#   - Public 443/TCP for Keycloak (NextAuth), image CDNs, and S3 public URLs.
+#     Stripe is NOT called from the frontend (server-side-only).
+#
+# Enforces STRIDE T-15-01 (frontend cannot reach Postgres / Redis / RabbitMQ).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-allow
+  labels:
+    app.kubernetes.io/name: frontend-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # DNS - required for every pod
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # core-java in the same namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Public 443 for Keycloak (auth.jtoye.co.uk) + image CDNs + S3 public URLs
+    # See 15-RESEARCH.md §4 — Stripe CIDR tradeoff; we use 0.0.0.0/0 with narrow
+    # port scoping. A future egress-proxy pod is the defense-in-depth option.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Block re-entry to cluster-internal ranges via egress (defense vs
+              # SSRF-style pivots). Adjust `except` list to match your CNI.
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

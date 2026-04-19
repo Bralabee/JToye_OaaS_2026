@@ -1,0 +1,45 @@
+---
+# 50-observability.yaml
+#
+# This file reserves the policy slot for observability workloads (Prometheus,
+# Grafana, Alertmanager) that we expect to run in a `monitoring` or
+# `jtoye-infrastructure` namespace. We do NOT ship those workloads from this
+# repo, so this file intentionally contains only a documentation-style
+# placeholder policy naming the expected labels.
+#
+# The Prometheus scrape ingress rules for core-java (:9090) and edge-go (:8080)
+# are already in 20-core-java.yaml and 30-edge-go.yaml respectively — that's
+# where they live because the rule is attached to the TARGET pod, not the
+# scraper pod.
+#
+# If a future phase ships Grafana / Prometheus / Alertmanager manifests in
+# the jtoye-production namespace, replace the contents of this file with
+# concrete policies.
+
+# -----------------------------------------------------------------------------
+# Placeholder policy — matches no pods today (app=nonexistent-placeholder).
+# Intentionally inert so kustomize + kubectl --dry-run validate it cleanly
+# while leaving the file available for future population.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-placeholder
+  labels:
+    app.kubernetes.io/name: observability-placeholder
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+  annotations:
+    jtoye.co.uk/placeholder: "true"
+    jtoye.co.uk/notes: |
+      No observability pods are shipped from this kustomization yet.
+      Replace with concrete policies when Grafana/Prometheus/Alertmanager
+      move into this namespace. Prometheus-scrape ingress rules for
+      core-java + edge-go live in 20-core-java.yaml + 30-edge-go.yaml.
+spec:
+  podSelector:
+    matchLabels:
+      app: nonexistent-placeholder
+  policyTypes:
+    - Ingress
+    - Egress

@@ -1,0 +1,29 @@
+---
+# 00-default-deny.yaml
+#
+# Baseline: every pod in this namespace is subject to NetworkPolicy.
+# No ingress or egress is allowed unless explicitly permitted by a
+# subsequent NetworkPolicy (files 10-*, 20-*, 30-*, 40-*, 50-*).
+#
+# A pod WITH this policy selecting it + no matching allow-rule is fully
+# isolated. K8s NetworkPolicy semantics are OR-combined, so any other
+# policy with a matching allow-rule will open the relevant port.
+#
+# Note on health probes: K8s >= 1.21 automatically exempts the node's
+# kubelet from NetworkPolicy when performing liveness/readiness probes.
+# No explicit rule needed.
+#
+# Enforces STRIDE T-15-01..04 (default-deny lateral movement).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

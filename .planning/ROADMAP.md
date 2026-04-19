@@ -54,7 +54,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [🟡] **Phase 12: Spring Security Response Headers + Frontend CSP** - X-Frame-Options, HSTS (prod-only), X-Content-Type-Options, Referrer-Policy on Spring; CSP on Next.js (SEC-02, SEC-03) — 12-01 DONE, 12-02 operationally complete (Tasks 01-06 shipped; Task 07 manual cutover gate pending human verification)
 - [🟡] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01) — 13-01 DONE 2026-04-18, ready for PR
 - [x] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02) — **DONE 2026-04-19, both plans shipped on feature/phase-14-stock-race-summary-aggregation, ready for PR**
-- [ ] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets controller with kubeseal conversion of the existing Secret manifests (INF-01, INF-02)
+- [🟡] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets runbook + batch `kubeseal` conversion script (INF-01, INF-02) — **DRAFTING COMPLETE 2026-04-18 on `feature/phase-15-k8s-networkpolicies-sealed-secrets` (6 commits). 6 NetworkPolicy manifests + offline validator + runbook + `seal-secrets.sh` + `secrets-template.yaml` legacy flag. Cluster-admin rollout pending — 4-step checklist in 15-01-SUMMARY.md. Actual layout: `k8s/staging/` + `k8s/production/` (not `k8s/overlays/*`).**
 - [ ] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01)
 - [ ] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe, refund state transition in Order state machine with Flyway V34 migration and RabbitMQ `order.refunded` event (VOPS-01, VOPS-02, VOPS-03)
 
@@ -113,7 +113,8 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. `k8s/base/secrets-template.yaml` replaced by `SealedSecret` manifests encrypted via `kubeseal` against the staging cluster public key; documentation for key rotation committed at `docs/runbooks/sealed-secrets.md`
   4. Dev/local docker-compose workflow unchanged (dev uses `.env` files, not k8s)
   5. CI validation: `kubeseal --dry-run` round-trips a plaintext Secret to SealedSecret and back without error
-**Plans**: 2 plans
+**Plans**: 1 plan (consolidated — both requirements ship in one atomic DRAFT-ONLY plan)
+  - [🟡] 15-01-PLAN.md — K8s NetworkPolicies (default-deny + 5 tier allow-lists, offline YAML + label-reference validator, live `kubectl --dry-run=server` documented for cluster admin) + Sealed Secrets runbook (`docs/runbooks/sealed-secrets.md`) + batch conversion script (`k8s/scripts/seal-secrets.sh`) + `secrets-template.yaml` legacy-flag header — **DRAFTING COMPLETE 2026-04-18, see 15-01-SUMMARY.md (commits 69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit). Cluster-admin rollout pending: operator install, public-key export, plaintext→SealedSecret conversion, `kubectl apply -k` + functional verification — all 4 steps enumerated in SUMMARY.md.**
 **UI hint**: no
 
 ### Phase 16: Go Edge OpenAPI
@@ -169,6 +170,6 @@ Suggested wave layout:
 | 12. Spring Security Response Headers + Frontend CSP | v2.2 | 0/2 | Not started | - |
 | 13. Guest Tracking Tenant Validation | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-18 |
 | 14. Stock Race Fix + Summary Aggregation | v2.2 | 0/2 | Not started | - |
-| 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 0/2 | Not started | - |
+| 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
 | 16. Go Edge OpenAPI | v2.2 | 0/1 | Not started | - |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 0/3 | Not started | - |

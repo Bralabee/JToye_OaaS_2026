@@ -1,0 +1,111 @@
+---
+# 40-datastores.yaml
+#
+# Policies for workloads we DO ship that interact with datastores or that
+# belong in the "infrastructure adjacency" bucket.
+#
+# NOTE: Postgres, Redis, RabbitMQ, MinIO, Alertmanager themselves live in the
+# `jtoye-infrastructure` namespace and are NOT managed by this kustomization.
+# This file's job is to:
+#   1. Constrain the `pg-backup` CronJob workload we DO ship.
+#   2. Document the expected policy shape for the infra-namespace maintainer
+#      (see comments at bottom) so the other team mirrors the boundary.
+#
+# Enforces STRIDE T-15-03 (pg-backup has no ingress surface).
+
+# -----------------------------------------------------------------------------
+# pg-backup CronJob pod policy
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pg-backup-allow
+  labels:
+    app.kubernetes.io/name: pg-backup-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pg-backup
+  policyTypes:
+    - Ingress
+    - Egress
+  # No ingress: key => no pod-to-pod nor external can talk TO pg-backup.
+  # Kubelet health checks are exempt per K8s >= 1.21 semantics.
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres + MinIO in the infra namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 9000
+    # S3 public endpoint (for external S3, optional)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+# -----------------------------------------------------------------------------
+# Notes for jtoye-infrastructure namespace maintainer (not applied by this
+# kustomization — copy into that namespace's kustomization):
+#
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: postgres-only-from-jtoye-app
+#   namespace: jtoye-infrastructure
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: postgresql-primary
+#   policyTypes: [Ingress]
+#   ingress:
+#     - from:
+#         - namespaceSelector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: jtoye-production
+#           podSelector:
+#             matchExpressions:
+#               - key: app
+#                 operator: In
+#                 values: [core-java, pg-backup]
+#         - namespaceSelector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: jtoye-staging
+#           podSelector:
+#             matchExpressions:
+#               - key: app
+#                 operator: In
+#                 values: [core-java, pg-backup]
+#       ports:
+#         - protocol: TCP
+#           port: 5432
+#
+# Mirror for redis (6379), rabbitmq (5672, 61613), minio (9000),
+# alertmanager (9093). All accept ONLY from app=core-java and, where
+# relevant, pg-backup.
+# -----------------------------------------------------------------------------
