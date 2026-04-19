@@ -219,6 +219,7 @@ const config: Config = {
       },
     },
   },
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Tailwind config must run as CJS at build time; ESM import breaks Tailwind's plugin resolution in Next 16.
   plugins: [require("tailwindcss-animate")],
 };
 export default config;

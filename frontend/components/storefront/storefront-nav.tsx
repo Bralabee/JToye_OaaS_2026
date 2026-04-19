@@ -59,6 +59,7 @@ export function StorefrontNav() {
 
   useEffect(() => {
     // Check on mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async session hydration from a Keycloak redirect; state update is indirect via an async fetch, not a synchronous cascade
     checkSession()
 
     // Re-check when page gains focus (covers OAuth redirect return)

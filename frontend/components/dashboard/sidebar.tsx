@@ -66,6 +66,7 @@ export function Sidebar() {
   useEffect(() => {
     const saved = localStorage.getItem("theme")
     const isDark = saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- single-shot theme hydration on mount from localStorage; ran once per session, no cascade risk
     setDark(isDark)
     document.documentElement.classList.toggle("dark", isDark)
   }, [])
