@@ -1,185 +1,160 @@
-# Handoff: v2.1 Shipped + v2.2 Scoped — Ready for Phase 12
+# Handoff: Dashboard SSE Auth Fix + Dev Polish + Phase 17 Ready
 
-**Generated**: 2026-04-18 (session transition point)
-**Branch**: `main` (clean — all session work merged)
-**Status**: v2.1 milestone closed and tagged. v2.2 scoped with 6 phases mapped to 11 requirements. Ready to start execution on Phase 12.
-
----
-
-## Goal (what the next session should do)
-
-Start execution on **Phase 12 — Spring Security Response Headers + Frontend CSP** (first phase of milestone v2.2).
-
-Run `/gsd-discuss-phase 12` on a new feature branch to gather context and clarify approach, then `/gsd-plan-phase 12` to produce the plan, then execute.
+**Generated**: 2026-04-19 (session wrap-up)
+**Branch**: `main` (clean — all in-session work merged)
+**Main tip**: `0d6f863` `fix(dashboard): authenticate orders SSE stream + bind NextAuth to :3100 (#53)`
+**Dev server**: running on http://localhost:3100 (started via `npm run dev` — dev script now cross-env wrapped)
+**docker-compose**: unchanged this session — all services still up (postgres :5433, redis :6379, keycloak :8085, rabbitmq :5672/:15672/:61613, minio :9000/:9001, core-java :9090, edge-go :8089, observability stack). No backend rebuild needed for this session's work.
 
 ---
 
-## Completed (This Session)
+## Current goal
 
-### v2.1 Milestone Lifecycle (PR #41, squashed to `39d2c3d`)
-
-- Ran `/gsd-autonomous` → initial audit status `gaps_found` (2 missing VERIFICATION.md, 6 stale checkboxes, SECR-06 contradiction)
-- Remediation:
-  - Wrote retroactive `09-VERIFICATION.md` (passed 6/6) sourced from SUMMARIES + codebase
-  - Wrote retroactive `10-VERIFICATION.md` (passed 5/5) sourced from SUMMARIES + codebase
-  - Synced `ROADMAP.md` + `REQUIREMENTS.md` + `STATE.md` stale checkboxes
-  - Reconciled `09-03-SUMMARY.md` SECR-06 PARTIAL/VERIFIED contradiction
-- Created `.planning/milestones/v2.1-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/MILESTONES.md`
-- Collapsed live `ROADMAP.md` to milestone grouping
-- Evolved `PROJECT.md` to brownfield format (Active → Validated)
-- `git rm .planning/REQUIREMENTS.md` (content in archive)
-- Tagged `v2.1` + pushed
-- Moved phase dirs 9/10/11 to `.planning/milestones/v2.1-phases/` (31 file renames)
-
-### Codebase Map Refresh (committed as `36293e4`, inside PR #41)
-
-- Refreshed all 7 docs in `.planning/codebase/` via 4 parallel `gsd-codebase-mapper` agents
-- Total: 2,106 lines (ARCHITECTURE 388, STRUCTURE 478, TESTING 257, INTEGRATIONS 276, CONVENTIONS 233, CONCERNS 255, STACK 219)
-- Captured v2.1 additions (Flyway V33, STOMP relay plugin, Alertmanager, gitleaks CI, cart/orders routes)
-- **Verified test counts** and found drift vs CLAUDE.md claims (see below)
-
-### Docs Freshness Fix (committed as `8e9b426`, inside PR #41)
-
-- Fixed stale test counts in CLAUDE.md + PROJECT.md + MILESTONES.md
-- CLAUDE.md claimed `474+ tests (341 Java + 76 Jest + 57 Go)` at merge time
-- Actual verified counts (2026-04-18): **516 logical invocations across 66 test files**
-  - **390 Java** `@Test` methods across 48 files (Java grew 341→390 after v2.1 test additions; PR #40 under-counted)
-  - **76 Jest** `it/test` blocks across 13 files (matched)
-  - **50 top-level Go `Test*` funcs / 54 with `t.Run` subtests** across 5 files (PR #40's "57" was table-driven iteration count, not unique funcs)
-- HANDOFF.md (prior) + `.planning/milestones/v2.1-phases/10-RESEARCH.md` preserved PR-time numbers as-written (historical records)
-
-### v2.2 Scoping (PR #42, squashed to `81c90cf`)
-
-- Chose scope: **8 P2 deep-audit items + Work Order E** (vendor order detail + Stripe refund)
-- Wrote new `.planning/REQUIREMENTS.md`: 11 requirements across 5 categories (SEC ×3, CQ ×2, INF ×2, DOC ×1, VOPS ×3)
-- Wrote new `.planning/ROADMAP.md`: 6 phases (12–17) with full phase details, success criteria, dependency notes, wave layout
-- Updated `PROJECT.md` Current Milestone section + Active requirements
-- Updated `STATE.md` progress counters (0/6), blockers, pending todos
-- All 11 requirements mapped to exactly one phase each ✓
+Phase 17 — Vendor Order Detail + Stripe Refund Flow (VOPS-01..03). Research landed in PR #51. Implementation still pending. Run `/gsd-plan-phase 17` on a fresh feature branch when ready.
 
 ---
 
-## Current State
+## Completed (this session)
 
-### Git
+### 1. Root-caused and fixed the dashboard `401` on `/api/v1/orders/stream` (PR #53 → merged `0d6f863`)
 
-- **Branch:** `main`
-- **HEAD:** `81c90cf Milestone v2.2 scoping: Production Hardening + Vendor Order Operations (#42)`
-- **Tag:** `v2.1` exists locally + on origin
-- **Local branches:** only `main` (feature branches were auto-cleaned when PRs merged via `--delete-branch`)
-- **Remote branches:** only `main`
-- **Uncommitted change:** `frontend/.env.local.example` — placeholder hardening (`core-api-secret-2026` → `CHANGE_ME`). **Block-secrets hook prevents Claude from staging it via git add or Edit.** Commit manually outside Claude.
+- **Root cause, proven forensically**:
+  - `/orders/stream` shipped in commit 879418a (2026-04-01) with the frontend calling `new EventSource(...)`. Browser `EventSource` cannot attach `Authorization: Bearer <jwt>` (W3C spec limitation).
+  - `SecurityConfig` (line 69-72) never permitAll'd `/orders/stream`; it remained JWT-protected.
+  - No codebase-side query-string bearer resolver (`grep BearerTokenResolver` → 0 matches).
+  - No Next.js rewrite proxy for the endpoint.
+  - `OrderSseServiceTest.java` is unit-only — no HTTP integration test ever exercised the endpoint with auth. The 401 was latent, not a regression.
+- **Fix**: replaced raw `EventSource` with `@microsoft/fetch-event-source` which runs on `fetch()` and accepts auth headers. Reads `session.accessToken` from NextAuth the same way `api-client.ts` axios interceptor does.
+- **Also in #53**: baked `NEXTAUTH_URL=http://localhost:3100` into the `dev` script so `npm run dev` emits the right OAuth callback. Previously `.env.local:11` had a stale `:3000` value (written before the dev port moved when MCP server claimed :3000), producing `chrome-error://chromewebdata/` after Keycloak sign-in.
+- **Verified end-to-end**:
+  - Fresh Playwright context across all 8 dashboard routes: 23/23 backend calls → 200. Zero 4xx.
+  - `curl -H 'Authorization: Bearer <jwt>' /api/v1/orders/stream` → connection held (SSE streaming).
+  - `curl` without token → `HTTP/1.1 401 Bearer` (auth still enforced).
+  - `/dashboard/orders` renders all 20 rows (53 orders total).
 
-### Recent commits (last 5 on main)
+### 2. Dev script hardening (this PR)
 
-```
-81c90cf Milestone v2.2 scoping: Production Hardening + Vendor Order Operations (#42)
-39d2c3d Milestone v2.1 lifecycle: audit, remediation, archive, tag (#41)
-9e491d5 fix: deep audit P1 — security hardening, monitoring gaps, Go tests (#40)
-f99a33b Phase 11: STOMP broker relay + deep audit P0 security fixes (#39)
-0a87098 Phase 10 — Storefront marketing render + cart tests + orders filter (STFR-01..06) (#38)
-```
+- Wrap dev env override with `cross-env` so the `NEXTAUTH_URL=… next dev` syntax works on Windows cmd.exe in addition to POSIX shells. Added `cross-env@^10.1.0` as `devDependency`.
+- Set `SessionProvider refetchOnWindowFocus={false}` in `frontend/components/providers.tsx` to stop NextAuth re-polling `/api/auth/session` on tab focus, which was racing with in-flight `getSession()` calls from the axios interceptor and throwing spurious `ClientFetchError` into the console. The axios 401 handler still refreshes on real expiry; user-visible freshness unaffected.
 
-### Environment
+### 3. Memory rule preserved (binding)
 
-- **JDK 21**: `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
-- **Frontend port**: 3100 (port 3000 held by MCP server)
-- **Postgres port**: 5432 (shared with unrelated `dealflow_*` containers — stop those before E2E smoke tests)
-- **Docker stack**: `docker compose -f docker-compose.full-stack.yml up -d`
-- **Monitoring**: `docker compose -f infra/monitoring/docker-compose.monitoring.yml --env-file .env up -d`
-- No conda env in use (project is Java/TS/Go, not Python)
-
-### Test Baseline (verified 2026-04-18)
-
-- Java: **390** `@Test` methods / 48 files
-- Jest: **76** `it/test` blocks / 13 files
-- Go: **50** top-level `Test*` funcs / 54 with subtests / 5 files
-- Total: **516 logical invocations / 66 test files**
-- All green at session end.
+`feedback_design_direction.md` still indexed in MEMORY.md. Any future UI refresh must start with `/gsd-sketch` for explicit user approval. Do not autonomously ship visuals.
 
 ---
 
-## Remaining Work (Next Session)
+## Remaining work
 
-### Primary: Start v2.2 Phase 12
+### Immediate — Phase 17 implementation (VOPS-01..03)
 
-**Phase 12 — Spring Security Response Headers + Frontend CSP**
+Research is done. Next session should:
 
-- Requirements: SEC-02, SEC-03
-- UI hint: no
-- Depends on: nothing (standalone; runs as Wave 1)
-- Goal: Every HTTP response from Spring Boot and Next.js carries baseline browser-security headers (X-Frame-Options DENY, HSTS prod-only, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin) + a minimal CSP on Next.js blocking inline-script XSS
+1. `git checkout -b feature/phase-17-implementation main`. Do NOT reuse the `feature/phase-17-vendor-order-detail-stripe-refund` name — it was deleted after PR #51 merged.
+2. `/gsd-plan-phase 17` — turn the 5 research gate items into an implementation plan.
+3. Build order (per PR #51 research):
+   - Flyway V35 migration: `refunds` table (+FK to `orders`, amounts in pennies, `stripe_refund_id` nullable, `status` enum).
+   - `Refund` entity + `RefundRepository` + `RefundService`.
+   - `POST /api/v1/orders/{id}/refund` controller with `Idempotency-Key` header.
+   - `OrderStateMachine` additions: `REFUND_REQUESTED` event transitioning `CONFIRMED|PREPARING|READY|COMPLETED → REFUNDED`; idempotent on second call.
+   - Stripe webhook handler for `charge.refunded` / `refund.updated`.
+   - RabbitMQ `order.refunded` event publishing.
+   - Frontend: `/dashboard/orders/[id]` detail view + refund dialog (existing stack, not the reverted design).
+   - E2E: vendor → `/dashboard/orders` → click row → click refund → confirm → Stripe test-mode success → UI updates to `REFUNDED`.
 
-**Resume instructions (with expected outcomes):**
+### Non-blocking cleanup candidates
 
-1. `git checkout -b feature/phase-12-security-headers`
-   - Expected: creates branch, HEAD moves off main (the block-main-branch hook will block further git operations on main until you're on a feature branch)
-2. `/gsd-discuss-phase 12`
-   - Expected: interactive gray-area gathering; produces `.planning/phases/12-spring-security-response-headers-frontend-csp/12-CONTEXT.md`
-3. `/gsd-plan-phase 12`
-   - Expected: 2 plans (targeted per success criteria); produces `12-01-PLAN.md` and `12-02-PLAN.md`
-4. `/gsd-execute-phase 12`
-   - Expected: atomic commits per task; produces `12-01-SUMMARY.md` + `12-02-SUMMARY.md` + `12-VERIFICATION.md`
+- `.planning/research/DESIGN-SPEC.md` + `HANDOFF-DESIGN-OVERHAUL.md` remain on disk as historical artifacts. User did not ask to delete them. Keep as reference only; **do not re-propose the direction**.
+- If the user ever wants the INFRASTRUCTURE pieces that died with the revert, cherry-pick onto a small non-visual PR — they are legitimate improvements the user did NOT object to, only the visuals:
+  - ESLint 9 flat config (`eslint.config.mjs`) replacing the removed `next lint`
+  - `types/jest-dom.d.ts` for matcher types (kills the 36 baseline `__tests__` tsc errors)
+  - `metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100")` in `app/layout.tsx` metadata
+  - csp-headers.test / header-snapshot.test type cleanup (replace `any` with proper `HeaderRoute` alias)
+- `next lint` is still broken at baseline until the ESLint flat config is reintroduced (Next.js 16 removed the command).
+- `middleware` → `proxy` filename deprecation warning in `next build` — Next.js 16 rename, unrelated follow-up.
+- `.env.local` still has `NEXTAUTH_URL=http://localhost:3000`. Harmless now because the `dev` script override takes precedence (npm-set env > .env file per Next.js docs). User explicitly declined to edit that file; left as-is.
 
-### Loose ends to close
+### Not outstanding (done via parallel sessions)
 
-1. **`frontend/.env.local.example`** — placeholder hardening change (`core-api-secret-2026` → `CHANGE_ME`) still uncommitted. Block-secrets hook regex matches `\.env(\..+)?$` — it treats `.env.local.example` as a secret path despite it being a public template. Commit outside Claude:
-   ```bash
-   git checkout -b chore/env-example-placeholder-hardening
-   git add -f frontend/.env.local.example
-   git commit -m "chore: use CHANGE_ME placeholder in env example"
-   git push -u origin chore/env-example-placeholder-hardening
-   gh pr create --fill
-   ```
-2. **5 quick-task SUMMARY.md files** need `status: complete` frontmatter backfill — they're under `.planning/quick/260414-*/SUMMARY.md`. Shipped in PR #40 but audit-open tool reports them as `unknown`. Low priority; pick up during any v2.2 housekeeping pass.
-
-### Deferred Requirements (v2.3+ candidates, not v2.2 scope)
-
-- 6 remaining P2 items from deep-audit: FE-LOG-01, REACTIVE-01, DTO-01, OBS-01, OBS-02, RUNBOOK-01
-- SECR-08 — Keycloak realm-export hardcoded dev secrets
-- STFR-ENUM-01 — `/public/orders?email=` enumeration risk (known open vulnerability)
-- NYQUIST-11 — Phase 11 VALIDATION.md closure
-- Work Orders D/F/G/I/J/K/L/M/N/O
+- **Phase 14** — Stock race fix + `getSummary` DB aggregation (CQ-01 + CQ-02) — merged as PR #46.
+- **Phase 15** — K8s NetworkPolicies + Sealed Secrets drafting (INF-01 + INF-02) — merged as PR #47.
+- **Phase 16** — Go Edge OpenAPI + Swagger UI (DOC-01) — merged as PR #48.
+- **CSP dev fix** — PR #50 dropped `upgrade-insecure-requests` in dev so MinIO HTTP images load.
+- **Phase 17 research** — PR #51 defined the 5 design-gate items for Stripe refunds.
+- **Design overhaul** — PR #49 merged then reverted via PR #52 per user feedback.
 
 ---
 
-## Failed Approaches / Known Hook Pitfalls
-
-1. **`git add frontend/.env.local.example`** — blocked by `block-secrets.sh` hook regex `\.env(\..+)?$`. Even `git add -f` is blocked. Hook's own guidance: *"bypass by creating the file outside Claude."* Not a fault to work around in-session; must be done by the user directly.
-
-2. **`git` commands while HEAD is on main** — blocked by `block-main-branch.sh` hook. `gh pr merge --squash --auto --delete-branch` auto-switches local HEAD to main after merging, which then blocks all subsequent `git branch -d`, `git push`, etc. Work around by creating a feature branch first before trying to clean up.
-
-3. **`gsd-sdk` binary doesn't exist** in this installation. Use `node /home/sanmi/.claude/get-shit-done/bin/gsd-tools.cjs <subcommand>` instead. Some GSD workflow steps reference `gsd-sdk query foo.bar` — these may silently fail; fall back to direct file reads + manual aggregation when they do.
-
-4. **`gh pr merge --auto` bypasses CI gating** — no required status checks are configured on `main`, so `--auto` merges immediately rather than waiting. If you want CI-gated merges, configure branch protection rules in GitHub repo settings first.
-
-5. **Autonomous milestone workflow's "exit cleanly when no incomplete phases"** — doesn't handle the "all phases done but state docs stale" case. This session caught and remediated that drift manually during v2.1 close. Expect similar drift detection during future audits.
-
----
-
-## Key Decisions
+## Key decisions (this session)
 
 | Decision | Rationale |
-|----------|-----------|
-| Squash-merge strategy for lifecycle PRs | Keeps main history linear; each PR is one logical "what we did" unit. |
-| Retroactively generate VERIFICATION.md rather than skip audit | 18/18 requirements were implemented but 2 phases lacked verification reports — retroactive reports close the audit trail without requiring re-verification runs. |
-| v2.2 scopes 8 of 14 P2 items + Work Order E (not all 14) | Bounds the milestone at ~3 weeks; deferring 6 items keeps a clean v2.3 scope. |
-| Phase 17 depends on Phase 14 (not parallel) | Both touch `OrderStateMachine`; sequencing avoids merge conflicts on that file. |
-| Test counts: 516/390/76/50 canonical going forward | PR #40's "474+" claim used a different granularity (class count vs method count; table-driven Go iterations). Reconciled in MILESTONES.md with both numbers documented. |
-| Codebase map refreshed once per milestone | Source code only changes during phase execution; refreshing after v2.1 close captured all v2.1 additions in one pass, avoiding per-phase map churn. |
+|---|---|
+| Fix SSE with `@microsoft/fetch-event-source` rather than query-string token | Query strings leak into logs, proxies, and referers. Header-based auth matches the rest of `api-client.ts`. No Spring Security changes → zero backend blast radius. |
+| Bake `NEXTAUTH_URL` into the `dev` script instead of editing `.env.local` | User explicitly refused to edit `.env.local`. `npm run dev` process env overrides `.env.local` per Next.js precedence. Version-controlled fix survives fresh clones. |
+| Add `cross-env` wrapper | POSIX inline env var syntax breaks on Windows cmd.exe. Project deploys across dev/staging/test/prod; dev script must work everywhere. |
+| `refetchOnWindowFocus={false}` on `SessionProvider` | Stops spurious `ClientFetchError` console spam. Real session expiry still handled by the axios 401 refresh path. |
+| Leave `.env.local` untouched | User explicitly said "I'm not running no sed command." Rule respected. |
+
+---
+
+## Environment state
+
+- **Repo**: `/home/sanmi/IdeaProjects/JToye_OaaS_2026` (primary; no worktrees)
+- **Branch**: `main`
+- **Tip**: `0d6f863 fix(dashboard): authenticate orders SSE stream + bind NextAuth to :3100 (#53)`
+- **Open PRs**: `chore/dev-polish-and-handoff` (this PR — cross-env + SessionProvider polish + this HANDOFF update)
+- **Local branches**: only `main` + the feature branch above
+- **Dev port**: 3100 (MCP holds 3000)
+- **Running services**: same as prior session — all docker-compose services healthy, dev server on :3100
+- **Test baseline**: `Run Tests` CI job on PR #53 passed in 2m17s. Security scan + gitleaks passed.
+
+---
+
+## Resume instructions
+
+### For the human / next session
+
+1. **Verify state** (<30s):
+   ```bash
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+   git status                      # expect clean
+   git log --oneline -3            # tip should be SSE fix or later
+   ss -ltn | grep 3100             # dev server listening
+   curl -s http://localhost:3100/shop | grep -oE "from-orange|bg-slate-50" | head
+   ```
+
+2. **If starting Phase 17 implementation**:
+   ```bash
+   git checkout -b feature/phase-17-implementation
+   find .planning -iname "*phase-17*" -o -iname "*refund*" | head
+   /gsd-plan-phase 17
+   ```
+
+3. **If the SSE 401 reappears on `/dashboard/orders`**:
+   - Check that the dev server was started with `npm run dev` (not raw `next dev`), so `NEXTAUTH_URL` is set correctly.
+   - Clear `localhost:3100` site data in the browser — stale NextAuth cookies from the old `:3000` callback attempts will keep throwing session errors.
+   - Confirm `frontend/app/dashboard/orders/page.tsx:8` still imports `fetchEventSource`.
+
+4. **If the user asks for a UI refresh** — STOP and read `feedback_design_direction.md` memory. Do not autonomously ship visuals. Use `/gsd-sketch` for throwaway HTML variants, get explicit user sign-off, then move to production code.
+
+### For a fresh Claude session
+
+Paste this into the new session:
+
+```
+Resuming J'Toye OaaS work. Context:
+- Main tip: 0d6f863 (PR #53 dashboard SSE auth fix merged).
+- User rejected editorial/serif direction; see feedback_design_direction.md memory.
+- Dev server runs via `npm run dev` (NEXTAUTH_URL is baked into the dev script via cross-env).
+- Go-forward priority: Phase 17 (Stripe refund flow) — research shipped via PR #51, implementation pending.
+- Read /home/sanmi/IdeaProjects/JToye_OaaS_2026/HANDOFF.md for full state.
+- Do NOT autonomously ship any visual redesign. Sketch-first is mandatory.
+```
 
 ---
 
 ## References
 
-- `.planning/ROADMAP.md` — v2.2 phase details
-- `.planning/REQUIREMENTS.md` — 11 requirements with traceability to phases 12–17
-- `.planning/PROJECT.md` — project context + Active requirements + Key Decisions
-- `.planning/STATE.md` — blockers + pending todos + accumulated context
-- `.planning/MILESTONES.md` — v2.0 + v2.1 shipped records
-- `.planning/codebase/` — 7 structured codebase docs (2,106 lines, fresh as of 2026-04-18)
-- `.planning/milestones/v2.1-*` — full v2.1 archive (ROADMAP, REQUIREMENTS, AUDIT, phases)
-
----
-
-*Any agent (Claude, Cursor, Antigravity, …) can resume from this handoff by reading the "Resume instructions" under Primary, verifying git state matches (`git log --oneline -3` should show `81c90cf / 39d2c3d / 9e491d5`), and proceeding.*
+- **Binding design rule**: `feedback_design_direction.md` (memory) — reject editorial directions; sketch-first for bold moves.
+- Project guide: `CLAUDE.md` (project root).
+- Phase 17 research: `.planning/research/phase-17-*` (see PR #51 for exact file list).
+- Memory index: `/home/sanmi/.claude/projects/-home-sanmi-IdeaProjects-JToye-OaaS-2026/memory/MEMORY.md`.
