@@ -29,7 +29,7 @@ describe('Security headers snapshot (regression guard)', () => {
   })
 
   it('matches snapshot', async () => {
-    const mod: any = await import('../next.config.mjs')
+    const mod = (await import('../next.config.mjs')) as { default: { headers: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>> } }
     const routes = await mod.default.headers()
 
     // Normalize: sort headers by key for deterministic output

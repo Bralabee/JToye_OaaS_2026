@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import Image from "next/image"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
+import { BRAND } from "@/lib/brand"
 
 export const metadata: Metadata = {
-  title: "J'Toye — Discover Local Vendors",
+  title: `${BRAND.name} — Discover Local Vendors`,
   description: "Browse and order from independent food vendors near you",
 }
 
@@ -13,19 +15,24 @@ export default function StorefrontLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Compact, clean header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+    <div className="min-h-screen bg-surface-canvas text-ink-primary flex flex-col">
+      {/* Compact editorial header */}
+      <header className="sticky top-0 z-40 bg-surface-card/90 backdrop-blur-sm border-b border-subtle">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between">
             <Link
               href="/shop"
-              className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
+              className="flex items-center gap-2"
+              aria-label={`${BRAND.fullName} storefront home`}
             >
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-sm font-bold text-white">
-                J
-              </span>
-              <span>J&apos;Toye</span>
+              <Image
+                src={BRAND.marks.wordmark}
+                alt={BRAND.fullName}
+                width={96}
+                height={24}
+                priority
+                className="h-6 w-auto"
+              />
             </Link>
             <StorefrontNav />
           </div>
@@ -36,13 +43,13 @@ export default function StorefrontLayout({
       <main className="flex-1">{children}</main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
+      <footer className="border-t border-subtle bg-surface-card">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-sm text-slate-500">
-              &copy; {new Date().getFullYear()} J&apos;Toye OaaS. All rights reserved.
+            <p className="text-sm text-ink-tertiary">
+              &copy; {new Date().getFullYear()} {BRAND.fullName}. All rights reserved.
             </p>
-            <div className="flex gap-6 text-sm text-slate-500">
+            <div className="flex gap-6 text-sm text-ink-tertiary">
               <span>Allergen info available on all products</span>
             </div>
           </div>

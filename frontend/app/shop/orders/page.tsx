@@ -9,6 +9,9 @@ import {
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { BrandPlaceholder } from "@/components/storefront/brand-placeholder"
 
 export interface OrderSummary {
   orderNumber: string
@@ -85,13 +88,15 @@ function formatDate(iso: string): string {
   })
 }
 
-const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
-  PENDING: { icon: Clock, color: "text-amber-500 bg-amber-50", label: "Received" },
-  CONFIRMED: { icon: CircleDot, color: "text-blue-500 bg-blue-50", label: "Confirmed" },
-  PREPARING: { icon: ChefHat, color: "text-orange-500 bg-orange-50", label: "Preparing" },
-  READY: { icon: Package, color: "text-emerald-500 bg-emerald-50", label: "Ready" },
-  COMPLETED: { icon: CheckCircle2, color: "text-slate-400 bg-slate-50", label: "Completed" },
-  CANCELLED: { icon: XCircle, color: "text-red-500 bg-red-50", label: "Cancelled" },
+type StatusBadgeVariant = "warning" | "info" | "brand" | "success" | "subtle" | "danger"
+
+const STATUS_CONFIG: Record<string, { icon: typeof Clock; variant: StatusBadgeVariant; label: string }> = {
+  PENDING: { icon: Clock, variant: "warning", label: "Received" },
+  CONFIRMED: { icon: CircleDot, variant: "info", label: "Confirmed" },
+  PREPARING: { icon: ChefHat, variant: "brand", label: "Preparing" },
+  READY: { icon: Package, variant: "success", label: "Ready" },
+  COMPLETED: { icon: CheckCircle2, variant: "subtle", label: "Completed" },
+  CANCELLED: { icon: XCircle, variant: "danger", label: "Cancelled" },
 }
 
 function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?: string; email?: string }) {
@@ -104,32 +109,33 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
     : `/track?order=${order.orderNumber}${email ? `&email=${encodeURIComponent(email)}` : ""}`
 
   return (
-    <Link href={trackUrl} className="block group">
-      <div className={`rounded-xl bg-white border ${isActive ? "border-orange-200 shadow-sm" : "border-slate-100"} p-4 transition-all group-hover:shadow-md group-hover:-translate-y-0.5`}>
+    <Link href={trackUrl} className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus rounded-md">
+      <Card variant={isActive ? "lifted" : "default"} className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${cfg.color}`}>
+              <Badge variant={cfg.variant} size="sm">
                 <Icon className="h-3 w-3" />
                 {cfg.label}
-                {isActive && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
-              </span>
+                {isActive && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse motion-reduce:animate-none" />}
+              </Badge>
             </div>
-            <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
+            <p className="font-display text-sm font-semibold text-ink-primary">{order.shopName}</p>
+            <p className="text-xs text-ink-tertiary mt-0.5">
+              {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot;{" "}
+              <span className="font-mono tabular-nums font-semibold text-ink-primary">{formatPrice(order.totalAmountPennies)}</span>
             </p>
-            <p className="text-[10px] text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
+            <p className="text-[10px] text-ink-tertiary mt-1">{formatDate(order.createdAt)}</p>
           </div>
-          <div className="flex items-center gap-1 text-slate-400 group-hover:text-orange-500 transition-colors mt-1">
+          <div className="flex items-center gap-1 text-ink-tertiary group-hover:text-brand-primary transition-colors mt-1">
             <span className="text-xs font-medium">{isActive ? "Track" : "View"}</span>
             <ArrowRight className="h-4 w-4" />
           </div>
         </div>
 
         {/* Mini order number */}
-        <p className="mt-2 text-[9px] font-mono text-slate-300 truncate">{order.orderNumber}</p>
-      </div>
+        <p className="mt-2 text-[9px] font-mono tabular-nums text-ink-tertiary truncate">{order.orderNumber}</p>
+      </Card>
     </Link>
   )
 }
@@ -215,30 +221,30 @@ function CustomerOrdersContent() {
   if (loading) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
-        <p className="mt-3 text-sm text-slate-500">Loading your orders...</p>
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-primary motion-reduce:animate-none" />
+        <p className="mt-3 text-sm text-ink-tertiary">Loading your orders...</p>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-lg px-4 sm:px-6 py-6">
-      <h1 className="text-xl font-bold text-slate-900">My Orders</h1>
-      <p className="text-sm text-slate-500 mt-1">
+      <h1 className="font-display text-2xl font-semibold tracking-tight text-ink-primary">My Orders</h1>
+      <p className="text-sm text-ink-tertiary mt-1">
         {orders.length} order{orders.length !== 1 ? "s" : ""}
-        {email && <span className="text-slate-400"> &middot; {email}</span>}
+        {email && <span className="text-ink-tertiary"> &middot; {email}</span>}
       </p>
 
       {/* Filters (STFR-05) */}
       {orders.length > 0 && (
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Status</span>
             <select
               data-testid="orders-status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as OrderStatusFilter)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              className="mt-1 flex h-10 w-full rounded-md border border-border-tone bg-surface-card px-3 py-2 text-sm text-ink-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas"
             >
               {ORDER_STATUS_OPTIONS.map((s) => (
                 <option key={s} value={s}>
@@ -248,13 +254,13 @@ function CustomerOrdersContent() {
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">From date</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">From date</span>
             <input
               type="date"
               data-testid="orders-date-from"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              className="mt-1 flex h-10 w-full rounded-md border border-border-tone bg-surface-card px-3 py-2 text-sm text-ink-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas"
             />
           </label>
         </div>
@@ -262,7 +268,7 @@ function CustomerOrdersContent() {
 
       {/* Filter result summary */}
       {orders.length > 0 && (
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-ink-tertiary">
           Showing {paged.length} of {filtered.length} filtered order{filtered.length !== 1 ? "s" : ""}
         </p>
       )}
@@ -270,7 +276,7 @@ function CustomerOrdersContent() {
       {/* Active orders */}
       {activeOrders.length > 0 && (
         <section className="mt-6">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+          <h2 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em] mb-3">
             Active ({activeOrders.length})
           </h2>
           <div className="space-y-3">
@@ -284,7 +290,7 @@ function CustomerOrdersContent() {
       {/* Past orders */}
       {pastOrders.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+          <h2 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em] mb-3">
             Past ({pastOrders.length})
           </h2>
           <div className="space-y-3">
@@ -297,11 +303,11 @@ function CustomerOrdersContent() {
 
       {orders.length === 0 && (
         <div className="mt-12 text-center">
-          <Package className="mx-auto h-12 w-12 text-slate-200" />
-          <p className="mt-3 text-sm text-slate-500">No orders found for this email.</p>
+          <BrandPlaceholder aspect="aspect-[4/3]" className="mx-auto max-w-xs rounded-md" />
+          <p className="mt-4 text-sm text-ink-secondary">No orders yet.</p>
           <Link
             href="/shop"
-            className="mt-4 inline-flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700"
+            className="mt-4 inline-flex items-center gap-2 text-sm text-brand-primary hover:underline underline-offset-4"
           >
             <Store className="h-4 w-4" />
             Browse shops
@@ -317,19 +323,19 @@ function CustomerOrdersContent() {
             data-testid="orders-prev-page"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-md border border-border-tone px-3 py-1.5 text-xs font-medium text-ink-primary transition-colors hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
-          <span className="text-xs text-slate-500" data-testid="orders-page-label">
-            Page {page} of {totalPages}
+          <span className="text-xs text-ink-tertiary" data-testid="orders-page-label">
+            Page <span className="font-mono tabular-nums">{page}</span> of <span className="font-mono tabular-nums">{totalPages}</span>
           </span>
           <button
             type="button"
             data-testid="orders-next-page"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages || totalPages === 0}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-md border border-border-tone px-3 py-1.5 text-xs font-medium text-ink-primary transition-colors hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>
@@ -337,14 +343,14 @@ function CustomerOrdersContent() {
       )}
 
       {filtered.length === 0 && orders.length > 0 && (
-        <p className="mt-8 text-center text-sm text-slate-500">No orders match the selected filters.</p>
+        <p className="mt-8 text-center text-sm text-ink-tertiary">No orders match the selected filters.</p>
       )}
 
       {/* Auto-refresh indicator */}
       {hasAnyActiveOnScreen && (
-        <p className="mt-6 text-center text-[10px] text-slate-400">
+        <p className="mt-6 text-center text-[10px] text-ink-tertiary">
           <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse motion-reduce:animate-none" />
             Live updates every 15 seconds
           </span>
         </p>

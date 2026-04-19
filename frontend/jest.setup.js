@@ -42,12 +42,40 @@ jest.mock('next/navigation', () => ({
 }))
 
 // Mock framer-motion
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => <div {...props}>{children}</div>,
-    tr: ({ children, ...props }) => <tr {...props}>{children}</tr>,
-  },
-}))
+jest.mock('framer-motion', () => {
+  const React = require('react')
+  // Proxy that returns a stub component for any HTML tag (motion.div, motion.main, motion.span, ...)
+  // Strips motion-only props so React doesn't warn about unknown DOM attributes.
+  const MOTION_ONLY_PROPS = new Set([
+    'initial', 'animate', 'exit', 'variants', 'transition', 'whileHover',
+    'whileTap', 'whileFocus', 'whileInView', 'layout', 'layoutId', 'drag',
+    'dragConstraints', 'dragElastic', 'dragMomentum', 'onAnimationStart',
+    'onAnimationComplete', 'viewport', 'custom',
+  ])
+  const stripMotionProps = (props) => {
+    const out = {}
+    for (const key of Object.keys(props)) {
+      if (!MOTION_ONLY_PROPS.has(key)) out[key] = props[key]
+    }
+    return out
+  }
+  const motion = new Proxy({}, {
+    get: (_target, tag) => {
+      const Comp = React.forwardRef(({ children, ...props }, ref) =>
+        React.createElement(tag, { ...stripMotionProps(props), ref }, children)
+      )
+      Comp.displayName = `motion.${String(tag)}`
+      return Comp
+    },
+  })
+  return {
+    motion,
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: () => ({ get: () => 0, set: () => {} }),
+  }
+})
 
 // Mock environment variables
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8080/api'
