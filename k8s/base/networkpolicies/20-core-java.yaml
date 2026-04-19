@@ -1,0 +1,101 @@
+---
+# 20-core-java.yaml
+#
+# Allow-list for Spring Boot core-java pods (`app=core-java`).
+#
+# Ingress:
+#   - From frontend on port 9090.
+#   - From edge-go on port 9090.
+#   - From monitoring / jtoye-infrastructure namespace (Prometheus scrape)
+#     on port 9090 (actuator/prometheus).
+# Egress:
+#   - DNS to kube-dns.
+#   - jtoye-infrastructure namespace on Postgres (5432), Redis (6379),
+#     RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), MinIO (9000), Alertmanager (9093).
+#   - Public 443/TCP for Keycloak (auth.jtoye.co.uk), Stripe (api.stripe.com),
+#     Ollama remote (if configured), S3 public endpoints, image CDNs.
+#     See 15-RESEARCH.md §4 for the Stripe CIDR tradeoff rationale.
+#
+# Enforces STRIDE T-15-04 (DNS egress scoped) + narrows remote egress to 443 only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-java-allow
+  labels:
+    app.kubernetes.io/name: core-java-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: core-java
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same-namespace frontend + edge-go
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: edge-go
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Prometheus scrape — monitoring or jtoye-infrastructure namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # In-cluster infrastructure namespace: Postgres, Redis, RabbitMQ, MinIO, Alertmanager
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
+        - protocol: TCP
+          port: 5432   # Postgres
+        - protocol: TCP
+          port: 6379   # Redis
+        - protocol: TCP
+          port: 5672   # RabbitMQ AMQP
+        - protocol: TCP
+          port: 61613  # RabbitMQ STOMP
+        - protocol: TCP
+          port: 9000   # MinIO
+        - protocol: TCP
+          port: 9093   # Alertmanager
+    # Public internet for Keycloak, Stripe, Ollama remote, S3 public, CDNs
+    # See 15-RESEARCH.md §4 Stripe CIDR tradeoff.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,85 @@
+---
+# 30-edge-go.yaml
+#
+# Allow-list for Go edge gateway pods (`app=edge-go`).
+#
+# Ingress:
+#   - From ingress-nginx controller on port 8080.
+#   - From monitoring / jtoye-infrastructure namespace (Prometheus scrape)
+#     on port 8080 (/metrics).
+# Egress:
+#   - DNS to kube-dns.
+#   - core-java on port 9090 (proxied requests).
+#   - Public 443/TCP for Keycloak JWKS fetch.
+#
+# The edge pod deliberately does NOT have direct database, cache, or
+# message-bus egress. Anything it needs goes through core-java.
+#
+# Enforces STRIDE T-15-02 (edge cannot pivot to datastores).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-go-allow
+  labels:
+    app.kubernetes.io/name: edge-go-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: edge-go
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Prometheus scrape
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # core-java
+    - to:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Public 443 for Keycloak JWKS only (auth.jtoye.co.uk)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

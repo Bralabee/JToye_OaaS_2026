@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: in-progress
-stopped_at: Phase 14 COMPLETE — CQ-01 + CQ-02 shipped on branch `feature/phase-14-stock-race-summary-aggregation`. Plan 14-01 (6 commits ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd) + Plan 14-02 (3 commits 635cc22, 06964ac, 83fa33a). getSummary now issues 2 JPQL aggregate queries with SUM/CASE WHEN + GROUP BY vatRate, replacing findAll()+4-stream-reduce. Output parity pinned by 1k-row golden fixture; index usability pinned by EXPLAIN ANALYZE with enable_seqscan=off; query count pinned to exactly 2 prepared statements; cross-tenant disjointness pinned via raw-SQL + reflection-based @Query inspection. Branch ready for PR to main. Phase 12 Task 12-02-07 human gate still pending.
-last_updated: "2026-04-19T00:55:00Z"
-last_activity: 2026-04-19
+stopped_at: Phase 15 DRAFTING COMPLETE — INF-01 + INF-02 drafted on branch `feature/phase-15-k8s-networkpolicies-sealed-secrets`. 6 commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit). NetworkPolicies (default-deny baseline + 4 tier allow-lists + pg-backup + placeholder) wired into `k8s/base/kustomization.yaml` — inherited by `k8s/staging/` + `k8s/production/` overlays (actual layout, not `k8s/overlays/*` as ROADMAP originally said). Offline validator passes: 6 files, 13 podSelector refs, all resolve. SealedSecrets is DRAFT-ONLY — docs/runbooks/sealed-secrets.md (11-section runbook), k8s/scripts/seal-secrets.sh (batch kubeseal with yq multi-doc split), secrets-template.yaml flagged LEGACY. Cluster-admin rollout pending (4-step checklist in 15-01-SUMMARY.md). Phase 14 ready for PR; Phase 13 ready for PR; Phase 12 Task 12-02-07 human gate still pending.
+last_updated: "2026-04-18T21:00:00Z"
+last_activity: 2026-04-18
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 11
-  completed_plans: 5
-  percent: 45
+  completed_phases: 2
+  total_plans: 10
+  completed_plans: 6
+  percent: 60
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 14 — Stock Race Fix + Summary Aggregation (COMPLETE — both plans shipped)
-Plan: 14-02 COMPLETE — 3 atomic commits on `feature/phase-14-stock-race-summary-aggregation`; SUMMARY.md at .planning/phases/14-stock-race-fix-summary-aggregation/14-02-SUMMARY.md
-Status: Phase 14 COMPLETE — CQ-02 getSummary DB aggregation shipped. FinancialTransactionService.getSummary() rewritten with 2 JPQL constructor-expression queries (scalar aggregate + GROUP BY vatRate) replacing findAll()+4-stream-reduce. FinancialAggregateRow + FinancialVatRow DTOs added. Output parity pinned by FinancialSummaryGoldenFileTest against a committed 1000-row deterministic golden fixture (byte-for-byte VAT math via SQL CASE WHEN mirroring entity.calculateVatAmount). Query count pinned to exactly 2 prepared statements by FinancialSummaryQueryCountTest (Hibernate Statistics getPrepareStatementCount — the RED→GREEN delta). Index usability pinned by FinancialSummaryQueryPlanTest using EXPLAIN ANALYZE with enable_seqscan=off at 10k tenant-A + 2k decoy-tenant rows. Cross-tenant regression pinned by FinancialSummaryCrossTenantIsolationTest (raw-SQL per-tenant disjointness + reflection-based JPQL no-explicit-tenant-WHERE assertion). Full :core-java:test sweep: 415 tests / 37 pre-existing RabbitMQ PLAIN auth failures (all unchanged) / 1 skipped / zero new regressions. Branch ready for PR to main.
-Last activity: 2026-04-19 — Completed plan 14-02 on branch `feature/phase-14-stock-race-summary-aggregation`: commits 635cc22 (RED tests), 06964ac (GREEN — DTOs + JPQL + service rewrite), 83fa33a (regression pin — cross-tenant + CHANGELOG)
+Phase: 15 — K8s NetworkPolicies + Sealed Secrets (DRAFTING COMPLETE — cluster rollout pending)
+Plan: 15-01 DRAFTING COMPLETE — 6 atomic commits on `feature/phase-15-k8s-networkpolicies-sealed-secrets`; SUMMARY.md at .planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md
+Status: Phase 15 DRAFT-ONLY COMPLETE — INF-01 + INF-02 shipped as documentation + manifests + scripts, with the cluster-admin operator install + first kubeseal conversion flagged as a 4-step rollout checklist in the SUMMARY. NetworkPolicies: 6 manifests under k8s/base/networkpolicies/ (default-deny baseline + frontend/core-java/edge-go/datastores allow-lists + inert observability placeholder) wired into k8s/base/kustomization.yaml so both staging + production overlays inherit them automatically. Egress rules scope public 443 via ipBlock 0.0.0.0/0 with RFC1918 in except[] (SSRF defense + Stripe-CIDR volatility accepted — rationale in README + research). Offline validator k8s/scripts/validate-networkpolicies.py passes: 6 files, 13 podSelector matchLabels references, all resolve to real workload labels. Sealed Secrets: docs/runbooks/sealed-secrets.md is an 11-section operational runbook (helm install, public-key fetch, interactive + batch conversion, overlay wiring, dev/local .env fallback, 30-day automatic + emergency key rotation with full re-seal, rollback on decryption failure, mandatory off-cluster key backup, cheatsheet). k8s/scripts/seal-secrets.sh batches plaintext-Secret → SealedSecret with yq multi-doc split + kubeseal + namespace override + kind validation. k8s/base/secrets-template.yaml flagged LEGACY via new header pointing to runbook. ROADMAP traceability corrected: actual layout is k8s/staging + k8s/production (flat), not k8s/overlays/*. Cluster rollout requires cluster-admin access not available in this environment.
+Last activity: 2026-04-18 — Completed plan 15-01 on branch `feature/phase-15-k8s-networkpolicies-sealed-secrets`: commits 69710e7 (research), 1ec1187 (6 NetworkPolicy manifests + kustomization wiring), 5ac74b2 (offline validator script), a3755b5 (sealed-secrets runbook + seal-secrets.sh), f59a0fb (secrets-template.yaml legacy header) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE.
 
-Progress: [████▌░░░░░] 45% (5/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [██████░░░░] 60% (6/10 plans complete; 2/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
@@ -63,11 +63,12 @@ Progress: [████▌░░░░░] 45% (5/11 plans complete; 1/6 milesto
 | 13    | 01   | ~45min   | 5     | 8     | 10 Java (6 integration + 4 unit) |
 | 14    | 01   | ~20min   | 5     | 17    | 8 Java (5 StockService unit + 1 Concurrent integration + 2 StockDecrementLocation + 1 Handler + 2 refactored OrderService) |
 | 14    | 02   | ~40min   | 3     | 12    | 6 Java (1 Golden-file + 1 QueryPlan + 1 QueryCount + 1 CrossTenant + 2 rewritten GetSummary) + committed 1k-row JSON fixture |
+| 15    | 01   | ~60min   | 6     | 14    | Offline validator (k8s/scripts/validate-networkpolicies.py: 6 manifests, 13 podSelector refs resolved against workload labels). No code-level tests — phase is infra-docs-only. |
 
 **Recent Trend:**
 
-- Last plan: 14-02 getSummary DB Aggregation (CQ-02) — 3 atomic commits (RED→GREEN→pin); 2 JPQL constructor-expression queries replace findAll()+reduce; COALESCE(SUM(...), 0L) empty-safety; qualified-enum literals in JPQL CASE WHEN; Hibernate Statistics query-count pin; EXPLAIN ANALYZE + enable_seqscan=off index-usability pin (deviation — planner legitimately prefers Seq Scan at 12k total rows / 145 pages Testcontainers scale); reflection-based JPQL @Query inspection for no-explicit-tenant-WHERE (STRIDE T-14-04 mitigation); superuser-RLS-bypass environmental caveat documented in deferred-items.md §2.
-- Trend: milestone v2.2 execution continues green; 5/11 plans complete (Phase 14 COMPLETE — both plans shipped); branch `feature/phase-14-stock-race-summary-aggregation` ready for PR to main; Phase 13 still ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
+- Last plan: 15-01 K8s NetworkPolicies + Sealed Secrets (INF-01 + INF-02) — 6 atomic commits drafting 6 NetworkPolicy manifests (default-deny + 4 tier allow-lists + pg-backup + observability placeholder) wired into base kustomization, offline Python validator, sealed-secrets operational runbook with emergency key rotation + re-seal + off-cluster key-backup procedure, batch `kubeseal` conversion script with yq multi-doc split, and LEGACY flag header on secrets-template.yaml. Cluster-admin operator install + first conversion remains a 4-step checklist in the SUMMARY — phase is implementation-complete but not operationally rolled out. Stripe-CIDR egress tradeoff (0.0.0.0/0:443 with RFC1918 in except[]) documented with defense-in-depth egress-proxy option flagged as v2.3+ work.
+- Trend: milestone v2.2 execution continues green; 6/10 plans complete (phases 13 + 14 complete, 15 implementation-complete, 12 operationally complete). Multiple branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets. Phase 12 Task 12-02-07 staging-observation gate still pending.
 
 *Updated after each plan completion*
 
@@ -95,6 +96,7 @@ Recent decisions affecting current work:
 - Backfill `status: complete` frontmatter on the 5 quick-task SUMMARY.md files (Deferred Items below) during an early v2.2 housekeeping pass
 - Commit `frontend/.env.local.example` placeholder hardening change (block-secrets hook prevents Claude from staging it — needs a manual commit outside Claude)
 - Advance to next Phase 13+ plan now that Phase 12 operational work (both plans) is complete
+- **Phase 15 cluster-admin rollout (4 steps):** (1) `helm install sealed-secrets-controller sealed-secrets/sealed-secrets -n kube-system`; (2) `kubeseal --fetch-cert > k8s/certs/<env>/sealed-secrets-pub.pem` per cluster; (3) `./k8s/scripts/seal-secrets.sh --cert <cert> --namespace jtoye-production --input <plaintext> --output k8s/production/sealed-secrets/`; (4) `kubectl apply -k k8s/staging/` + functional verification (frontend cannot nc postgres, frontend can wget core-java). Full details: `.planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md` + `docs/runbooks/sealed-secrets.md`.
 
 ### Blockers/Concerns
 
@@ -119,6 +121,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-19T00:55:00Z
-Stopped at: Phase 14 COMPLETE — branch `feature/phase-14-stock-race-summary-aggregation` has 9 commits total (14-01: ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd, 98176a5; 14-02: 635cc22, 06964ac, 83fa33a) + 14-02-SUMMARY.md ready for PR to main. Both CQ-01 (stock race) and CQ-02 (getSummary DB aggregation) shipped. Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover) and Phase 13 PR still pending.
-Resume file: .planning/phases/14-stock-race-fix-summary-aggregation/14-02-SUMMARY.md
+Last session: 2026-04-18T21:00:00Z
+Stopped at: Phase 15 DRAFTING COMPLETE — branch `feature/phase-15-k8s-networkpolicies-sealed-secrets` has 6 atomic commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit for SUMMARY + CHANGELOG + ROADMAP + REQUIREMENTS + STATE) + 15-01-SUMMARY.md ready for PR to main. Both INF-01 (NetworkPolicies) and INF-02 (Sealed Secrets) drafted. Cluster-admin operator install + first kubeseal conversion is a 4-step rollout checklist documented in SUMMARY + runbook — cannot be done from this environment. Also pending: Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover), Phase 13 PR, Phase 14 PR.
+Resume file: .planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md
