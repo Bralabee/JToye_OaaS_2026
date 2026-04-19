@@ -71,6 +71,8 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
         working-directory: edge-go
         env:
+          # -race requires cgo; GitHub Actions Go setup defaults to CGO_ENABLED=0.
+          CGO_ENABLED: 1
           # swag is installed to $(go env GOPATH)/bin; make sure the
           # OpenAPI freshness test can find it.
           PATH: ${{ env.PATH }}:/home/runner/go/bin
