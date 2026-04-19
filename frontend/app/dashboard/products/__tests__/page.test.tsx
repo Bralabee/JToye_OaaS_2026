@@ -25,7 +25,7 @@ describe('Products Page', () => {
 
     const spinner = container.querySelector('.animate-spin')
     expect(spinner).toBeInTheDocument()
-    expect(spinner).toHaveClass('border-blue-600')
+    expect(spinner).toHaveClass('border-brand-primary')
   })
 
   it('should render products heading after loading', async () => {

@@ -303,7 +303,7 @@ export default function ProductsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600 motion-reduce:animate-none" aria-label="Loading"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
       </div>
     )
   }
