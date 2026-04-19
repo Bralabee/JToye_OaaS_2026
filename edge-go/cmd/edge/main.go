@@ -1,12 +1,32 @@
+// Package main is the J'Toye edge gateway. It sits between the public
+// internet and the core-java API, enforcing authentication, rate limiting,
+// and circuit-breaker protection, plus handling async channels (WhatsApp
+// webhooks) that Core doesn't front-door directly.
+//
+// swaggo/swag parses this file's top-level doc comments to generate the
+// OpenAPI (Swagger 2.0) spec served at /openapi.json + /docs. See
+// .planning/phases/16-go-edge-openapi/16-RESEARCH.md for the rationale on
+// picking swag v1 (Swagger 2.0) over swag v2 (OpenAPI 3.x draft).
+//
+// @title                       J'Toye Edge Gateway API
+// @version                     1.0
+// @description                 Edge gateway for J'Toye OaaS multi-tenant retail platform. Routes authenticated traffic to core-java with rate limiting + circuit breakers, plus handles WhatsApp order-intake webhooks with HMAC-SHA256 signature verification.
+// @termsOfService              https://github.com/jtoye/oaas
+// @contact.name                J'Toye Platform Team
+// @contact.url                 https://github.com/jtoye/oaas
+// @license.name                Proprietary
+// @BasePath                    /
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Keycloak-issued JWT. Prefix the value with `Bearer `.
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,7 +38,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jtoye/edge/internal/core"
 	"github.com/jtoye/edge/internal/middleware"
-	"github.com/jtoye/edge/internal/whatsapp"
 	"go.uber.org/zap"
 )
 
@@ -115,6 +134,15 @@ func main() {
 	// Initialize JWT middleware
 	jwtMiddleware := middleware.NewJWTMiddleware(jwksURL, keycloakIssuer, logger)
 
+	// Handler bundle — holds per-process deps the Gin handlers need. See
+	// handlers.go for the actual swaggo-annotated route functions.
+	h := &edgeHandlers{
+		coreClient:    coreClient,
+		logger:        logger,
+		jwksURL:       jwksURL,
+		defaultShopID: defaultShopID,
+	}
+
 	// Setup Gin
 	r := gin.Default()
 
@@ -124,242 +152,25 @@ func main() {
 	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
 	r.Use(rateLimiter(ctx, rps, burst))
 
-	// Liveness probe: does not depend on any downstream. A failing
-	// /health should cause the kubelet to restart the pod, so it must
-	// not report DOWN just because Core or Keycloak is having a bad day.
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"edge":   "OK",
-			"uptime": time.Now().Unix(), // Placeholder
-		})
-	})
+	// Public probes. Liveness must not depend on any downstream — a failing
+	// /health causes the kubelet to restart the pod, so it must not report
+	// DOWN just because Core or Keycloak is having a bad day. Readiness
+	// checks downstream and returns 503 when any dep is unhealthy so the
+	// pod is pulled from the Service without being restarted.
+	r.GET("/health", h.Health)
+	r.GET("/ready", h.Ready)
 
-	// Readiness probe: checks downstream dependencies (Core API and
-	// Keycloak JWKS). A failing /ready should cause the kubelet to pull
-	// the pod out of the Service endpoint set until things recover,
-	// without restarting it.
-	r.GET("/ready", func(c *gin.Context) {
-		readyCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-		defer cancel()
-
-		coreHealthy := coreClient.HealthCheck(readyCtx) == nil
-
-		jwksHealthy := true
-		jwksReq, err := http.NewRequestWithContext(readyCtx, http.MethodGet, jwksURL, nil)
-		if err != nil {
-			jwksHealthy = false
-		} else {
-			jwksResp, jerr := (&http.Client{Timeout: 2 * time.Second}).Do(jwksReq)
-			if jerr != nil || jwksResp == nil || jwksResp.StatusCode != http.StatusOK {
-				jwksHealthy = false
-			}
-			if jwksResp != nil {
-				jwksResp.Body.Close()
-			}
-		}
-
-		status := gin.H{
-			"edge": "OK",
-			"core": map[string]bool{"healthy": coreHealthy},
-			"jwks": map[string]bool{"healthy": jwksHealthy},
-		}
-
-		if !coreHealthy || !jwksHealthy {
-			c.JSON(http.StatusServiceUnavailable, status)
-			return
-		}
-		c.JSON(http.StatusOK, status)
-	})
+	// Documentation routes (/openapi.json + /docs) are registered here. The
+	// registration is wired up in docs.go (added in task 16-03) via
+	// registerDocRoutes(r). Kept public (before the protected group) so
+	// partners can fetch the spec without auth.
+	registerDocRoutes(r)
 
 	// Protected routes (require JWT)
 	protected := r.Group("/")
 	protected.Use(jwtMiddleware.Validate())
-
-	protected.POST("/api/v1/sync/batch", func(c *gin.Context) {
-		var payload struct {
-			Items []map[string]interface{} `json:"items"`
-		}
-
-		if err := c.ShouldBindJSON(&payload); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-			return
-		}
-
-		// Extract tenant and token from context
-		tenantID, _ := c.Get("tenant_id")
-		token, ok := extractBearerToken(c)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
-			return
-		}
-
-		if tenantID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
-			return
-		}
-
-		// Forward to Core API with circuit breaker
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-
-		resp, err := coreClient.SyncBatch(ctx, token, tenantID.(string), payload.Items)
-		if err != nil {
-			logger.Error("Batch sync failed", zap.Error(err))
-			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to sync with core API"})
-			return
-		}
-
-		c.JSON(http.StatusAccepted, resp)
-	})
-
-	protected.POST("/api/v1/webhooks/whatsapp", func(c *gin.Context) {
-		// WhatsApp uses SHA256 HMAC for signature verification
-		// The signature is sent in the 'X-Hub-Signature-256' header
-		signature := c.GetHeader("X-Hub-Signature-256")
-		appSecret := os.Getenv("WHATSAPP_APP_SECRET")
-
-		// Fail-closed: refuse to accept webhooks if the signing secret is
-		// not configured. Previously an unset secret would silently skip
-		// signature verification, allowing anyone to inject orders.
-		if appSecret == "" {
-			logger.Error("WHATSAPP_APP_SECRET not configured; refusing webhook")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook signing not configured"})
-			return
-		}
-
-		if signature == "" {
-			logger.Warn("Missing WhatsApp webhook signature")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature"})
-			return
-		}
-
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
-			return
-		}
-		// Restore body for further processing
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		if !verifyWhatsAppSignature(body, signature, appSecret) {
-			logger.Warn("Invalid WhatsApp webhook signature", zap.String("signature", signature))
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-			return
-		}
-
-		// Parse WhatsApp message into structured order
-		parsedOrder, err := whatsapp.ParseWebhook(body)
-		if err != nil {
-			logger.Error("Failed to parse WhatsApp webhook", zap.Error(err))
-			c.Status(http.StatusOK) // Still 200 to prevent retries
-			return
-		}
-		if parsedOrder == nil || len(parsedOrder.Items) == 0 {
-			logger.Info("WhatsApp webhook had no order items")
-			c.Status(http.StatusOK)
-			return
-		}
-
-		// Extract auth context. The route sits behind the JWT middleware, so
-		// a missing/blank bearer here is a programming error — reject rather
-		// than forward an unauthenticated request to Core.
-		tenantID, _ := c.Get("tenant_id")
-		token, ok := extractBearerToken(c)
-		if !ok {
-			logger.Warn("WhatsApp webhook rejected: missing bearer token")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
-			return
-		}
-		tenantStr := ""
-		if tenantID != nil {
-			tenantStr = tenantID.(string)
-		}
-		if tenantStr == "" {
-			logger.Warn("WhatsApp webhook rejected: tenant_id missing from JWT")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-		defer cancel()
-
-		// Resolve product queries to UUIDs via Core API search.
-		// Require a confident match: either a single search hit, or an
-		// exact (case-insensitive) name match within a multi-hit result.
-		// Ambiguous queries are skipped with a warning instead of silently
-		// binding to products[0] — which previously let "bread" pick an
-		// arbitrary bread-adjacent SKU.
-		var orderItems []core.OrderItemRequest
-		for _, item := range parsedOrder.Items {
-			products, err := coreClient.SearchProducts(ctx, token, tenantStr, item.ProductQuery)
-			if err != nil {
-				logger.Warn("Product search failed", zap.String("query", item.ProductQuery), zap.Error(err))
-				continue
-			}
-			if len(products) == 0 {
-				logger.Warn("No product found for query", zap.String("query", item.ProductQuery))
-				continue
-			}
-
-			var matched *core.ProductSearchResult
-			if len(products) == 1 {
-				matched = &products[0]
-			} else {
-				// Prefer an exact case-insensitive title equality.
-				query := strings.TrimSpace(item.ProductQuery)
-				for i := range products {
-					if strings.EqualFold(strings.TrimSpace(products[i].Title), query) {
-						matched = &products[i]
-						break
-					}
-				}
-			}
-			if matched == nil {
-				logger.Warn("Ambiguous product query; skipping",
-					zap.String("query", item.ProductQuery),
-					zap.Int("candidates", len(products)))
-				continue
-			}
-
-			orderItems = append(orderItems, core.OrderItemRequest{
-				ProductID: matched.ID,
-				Quantity:  item.Quantity,
-			})
-		}
-
-		if len(orderItems) == 0 {
-			logger.Warn("No products resolved from WhatsApp order", zap.String("phone", parsedOrder.Phone))
-			c.Status(http.StatusOK)
-			return
-		}
-
-		// Create order via Core API
-		if defaultShopID == "" {
-			logger.Error("WHATSAPP_DEFAULT_SHOP_ID not configured, cannot create order")
-			c.Status(http.StatusOK)
-			return
-		}
-
-		createReq := &core.CreateOrderRequest{
-			ShopID:        defaultShopID,
-			CustomerPhone: parsedOrder.Phone,
-			Notes:         "WhatsApp order: " + parsedOrder.Raw,
-			Items:         orderItems,
-		}
-
-		orderResp, err := coreClient.CreateOrder(ctx, token, tenantStr, createReq)
-		if err != nil {
-			logger.Error("Failed to create order from WhatsApp", zap.Error(err))
-			c.Status(http.StatusOK) // Still 200 to prevent retries
-			return
-		}
-
-		logger.Info("WhatsApp order created",
-			zap.String("orderNumber", orderResp.OrderNumber),
-			zap.String("phone", parsedOrder.Phone),
-			zap.Int("items", len(orderItems)))
-		c.Status(http.StatusOK)
-	})
+	protected.POST("/api/v1/sync/batch", h.SyncBatch)
+	protected.POST("/api/v1/webhooks/whatsapp", h.WhatsAppWebhook)
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))
 

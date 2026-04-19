@@ -1,0 +1,289 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Edge gateway for J'Toye OaaS multi-tenant retail platform. Routes authenticated traffic to core-java with rate limiting + circuit breakers, plus handles WhatsApp order-intake webhooks with HMAC-SHA256 signature verification.",
+        "title": "J'Toye Edge Gateway API",
+        "termsOfService": "https://github.com/jtoye/oaas",
+        "contact": {
+            "name": "J'Toye Platform Team",
+            "url": "https://github.com/jtoye/oaas"
+        },
+        "license": {
+            "name": "Proprietary"
+        },
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/v1/sync/batch": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards an opaque list of domain items to the Core Java\nAPI's /api/v1/sync/batch endpoint, wrapped in a circuit\nbreaker so edge degrades gracefully when Core is down. The\ncaller must present a Keycloak JWT — the tenant_id claim\nis extracted and used to scope the write.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sync"
+                ],
+                "summary": "Batch-sync edge-collected items into Core",
+                "parameters": [
+                    {
+                        "description": "Batch payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.SyncBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Batch accepted by Core",
+                        "schema": {
+                            "$ref": "#/definitions/main.SyncBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid body or missing tenant_id claim",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or malformed Bearer token",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Core API unreachable or tripped the circuit breaker",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhooks/whatsapp": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Accepts WhatsApp message-events, verifies the HMAC-SHA256\nsignature in `X-Hub-Signature-256` against\n`WHATSAPP_APP_SECRET`, parses the message body into an\norder, resolves each product-name query to a product UUID\nvia the Core search endpoint, and creates an order scoped\nto the vendor identified by `WHATSAPP_DEFAULT_SHOP_ID`. The\nendpoint is fail-closed: if the secret is not configured\nor the signature is invalid/absent the webhook is rejected.\n\nProcessing outcomes (bad payload, ambiguous product, missing\ndefault shop, Core error) always return HTTP 200 to prevent\nWhatsApp from entering its 3-day exponential retry loop.\nReal error signals are in the structured logs.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "webhooks"
+                ],
+                "summary": "WhatsApp order-intake webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "HMAC-SHA256 of the raw body, prefixed with 'sha256='",
+                        "name": "X-Hub-Signature-256",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "WhatsApp message-event payload (shape defined by Meta)",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webhook received (processing outcome in logs)",
+                        "schema": {
+                            "$ref": "#/definitions/main.WebhookAck"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid signature / bearer token",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "WHATSAPP_APP_SECRET not configured",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns 200 whenever the edge process is alive. Does not\ntouch any downstream dependency, so it never fails because\nCore or Keycloak is having a bad day. Used by kubelet as\nthe liveness probe — a failing /health causes the pod to\nbe restarted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ready": {
+            "get": {
+                "description": "Checks downstream dependencies (Core API /health + Keycloak\nJWKS). Returns 503 with a per-component health map when any\ndependency is unhealthy so kubelet pulls the pod out of the\nService endpoint set without restarting it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "All downstream dependencies healthy",
+                        "schema": {
+                            "$ref": "#/definitions/main.ReadyResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "One or more dependencies unhealthy",
+                        "schema": {
+                            "$ref": "#/definitions/main.ReadyResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.ComponentHealth": {
+            "type": "object",
+            "properties": {
+                "healthy": {
+                    "description": "Whether the downstream passed its readiness check.",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "main.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Human-readable error message.",
+                    "type": "string",
+                    "example": "invalid request body"
+                }
+            }
+        },
+        "main.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "edge": {
+                    "description": "Edge liveness indicator. Always \"OK\" when the process is up.",
+                    "type": "string",
+                    "example": "OK"
+                },
+                "uptime": {
+                    "description": "Unix timestamp (seconds) at the moment the probe was served.",
+                    "type": "integer",
+                    "example": 1713484800
+                }
+            }
+        },
+        "main.ReadyResponse": {
+            "type": "object",
+            "properties": {
+                "core": {
+                    "description": "Core Java API health (via its /health endpoint).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.ComponentHealth"
+                        }
+                    ]
+                },
+                "edge": {
+                    "description": "Edge self-status. Always \"OK\" when the process is up.",
+                    "type": "string",
+                    "example": "OK"
+                },
+                "jwks": {
+                    "description": "Keycloak JWKS endpoint health.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.ComponentHealth"
+                        }
+                    ]
+                }
+            }
+        },
+        "main.SyncBatchRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "Opaque list of sync items. Each map is forwarded to Core as-is.",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
+        "main.SyncBatchResponse": {
+            "type": "object",
+            "properties": {
+                "processed_count": {
+                    "description": "Number of items Core accepted for processing.",
+                    "type": "integer",
+                    "example": 42
+                },
+                "status": {
+                    "description": "Processing status. \"accepted\" when Core queued the batch.",
+                    "type": "string",
+                    "example": "accepted"
+                }
+            }
+        },
+        "main.WebhookAck": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "description": "True after receipt. Processing result is available in logs only.",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Keycloak-issued JWT. Prefix the value with `Bearer `.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
