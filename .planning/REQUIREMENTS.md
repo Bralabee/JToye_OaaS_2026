@@ -35,7 +35,7 @@ Close K8s-level security gaps.
 
 Fill the last surface-area documentation gap.
 
-- [ ] **DOC-01**: OpenAPI spec for the Go edge gateway. Use `swaggo/swag` or `go-swagger` to annotate Gin handlers (`cmd/edge/main.go` and `internal/`) and generate a `/openapi.json` endpoint + Swagger UI at `/docs`. Covers all edge routes: `/health`, `/ready`, `/sync/batch`, `/orders`, `/whatsapp`, `/products/search` (if present). Tests cover: spec is valid OpenAPI 3.0 per `openapi-spec-validator` npm tool in CI; every Gin route has a corresponding `@Summary`/`@Router` annotation (line-count assertion). Source: HANDOFF.md P2 "Generate OpenAPI for Go gateway".
+- [x] **DOC-01**: OpenAPI spec for the Go edge gateway. Use `swaggo/swag` or `go-swagger` to annotate Gin handlers (`cmd/edge/main.go` and `internal/`) and generate a `/openapi.json` endpoint + Swagger UI at `/docs`. Covers all edge routes: `/health`, `/ready`, `/sync/batch`, `/orders`, `/whatsapp`, `/products/search` (if present). Tests cover: spec is valid OpenAPI 3.0 per `openapi-spec-validator` npm tool in CI; every Gin route has a corresponding `@Summary`/`@Router` annotation (line-count assertion). Source: HANDOFF.md P2 "Generate OpenAPI for Go gateway". **DONE 2026-04-19 in Plan 16-01 (commits aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 Gin routes annotated (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp — the only routes actually on the edge; HANDOFF's reference to /orders and /products/search was stale and those are direct core-java surface). Generated Swagger 2.0 spec at `edge-go/docs/swagger.json` (7 response-type definitions, BearerAuth security scheme); served at GET /openapi.json (embedded, no disk read) + Swagger UI at GET /docs/* with GET /docs → 301 /docs/index.html redirect. CI installs `swag@v1.16.3` before `go test` so `TestOpenAPISpec_Fresh` runs (regenerate-and-diff), then invokes `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity. Swagger 2.0 (not OpenAPI 3.0) is an explicit tradeoff: swaggo/swag v1 emits 2.0, swag v2 is alpha; the npm validator accepts both — documented in 16-01-SUMMARY.md + 16-RESEARCH.md; v2.3 upgrade to swag v2 when stable. Pinned swaggo at older versions (swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1) so `go` directive stays at 1.22 per CLAUDE.md.**
 
 ### Vendor operations (VOPS) — Work Order E
 
@@ -111,7 +111,7 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | CQ-02 | Phase 14 (Plan 14-02) | Complete (2026-04-19) |
 | INF-01 | Phase 15 (Plan 15-01) | Drafting Complete (2026-04-18) — cluster rollout pending |
 | INF-02 | Phase 15 (Plan 15-01) | Drafting Complete (2026-04-18) — operator install + first conversion pending |
-| DOC-01 | Phase 16 | Pending |
+| DOC-01 | Phase 16 (Plan 16-01) | Complete (2026-04-19) |
 | VOPS-01 | Phase 17 | Pending |
 | VOPS-02 | Phase 17 | Pending |
 | VOPS-03 | Phase 17 | Pending |
