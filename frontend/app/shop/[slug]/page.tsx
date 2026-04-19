@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useRef, useMemo, use } from "react"
 import Link from "next/link"
-import { motion } from "framer-motion"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
-  Flame, Leaf, Star, Timer, AlertTriangle,
-  ShoppingBag, Plus as PlusIcon, Minus, Megaphone,
+  Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
+  ShoppingBag, Plus as PlusIcon, Minus
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
@@ -21,38 +20,14 @@ import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@/components/ui/table"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
-import { BrandPlaceholder } from "@/components/storefront/brand-placeholder"
-import {
-  fadeIn,
-  fadeUp,
-  listStagger,
-  listItem,
-  useReducedMotionSafe,
-} from "@/lib/motion"
-import { cn } from "@/lib/utils"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
 
 function isOpenNow(hours: Record<string, string> | null): boolean {
-  if (!hours || Object.keys(hours).length === 0) return true
+  if (!hours || Object.keys(hours).length === 0) return true  // No hours = always open (matches backend)
   const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
   const now = new Date(new Date().toLocaleString("en-GB", { timeZone: "Europe/London" }))
   const dayKey = days[now.getDay()]
@@ -65,7 +40,6 @@ function isOpenNow(hours: Record<string, string> | null): boolean {
     nowMinutes < parseInt(match[3]) * 60 + parseInt(match[4])
 }
 
-const DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
 const DAY_LABELS: Record<string, string> = {
   mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday",
   fri: "Friday", sat: "Saturday", sun: "Sunday",
@@ -73,49 +47,12 @@ const DAY_LABELS: Record<string, string> = {
 
 function DietaryBadge({ tag }: { tag: string }) {
   const t = tag.toLowerCase().trim()
-  if (t.includes("vegan")) {
-    return (
-      <Badge variant="success" size="sm" className="rounded-pill">
-        <Leaf className="h-3 w-3" strokeWidth={1.5} />
-        Vegan
-      </Badge>
-    )
-  }
-  if (t.includes("vegetarian")) {
-    return (
-      <Badge variant="success" size="sm" className="rounded-pill">
-        <Leaf className="h-3 w-3" strokeWidth={1.5} />
-        Vegetarian
-      </Badge>
-    )
-  }
-  if (t.includes("spicy") || t.includes("hot")) {
-    return (
-      <Badge variant="warning" size="sm" className="rounded-pill">
-        <Flame className="h-3 w-3" strokeWidth={1.5} />
-        Spicy
-      </Badge>
-    )
-  }
-  if (t.includes("gluten")) {
-    return (
-      <Badge variant="editorial" size="sm" className="rounded-pill">
-        GF
-      </Badge>
-    )
-  }
-  if (t.includes("halal")) {
-    return (
-      <Badge variant="info" size="sm" className="rounded-pill">
-        Halal
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant="subtle" size="sm" className="rounded-pill">
-      {tag.trim()}
-    </Badge>
-  )
+  if (t.includes("vegan")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200"><Leaf className="h-2.5 w-2.5" />Vegan</span>
+  if (t.includes("vegetarian")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 ring-1 ring-green-200"><Leaf className="h-2.5 w-2.5" />Vegetarian</span>
+  if (t.includes("spicy")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-red-200"><Flame className="h-2.5 w-2.5" />Spicy</span>
+  if (t.includes("gluten")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">GF</span>
+  if (t.includes("halal")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 ring-1 ring-teal-200">Halal</span>
+  return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
 }
 
 function ProductCard({ product, promo }: { product: PublicProduct; promo?: PublicPromotion }) {
@@ -146,149 +83,119 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
 
   return (
     <>
-      <Card
-        variant="lifted"
-        className={cn(
-          "group overflow-hidden cursor-pointer rounded-xl border-border-tone-subtle",
-          "focus-within:ring-2 focus-within:ring-border-tone-focus focus-within:ring-offset-2 focus-within:ring-offset-surface-canvas",
-        )}
+      <article
+        className="group bg-white rounded-xl border border-slate-100 overflow-hidden transition-all hover:shadow-md hover:border-slate-200 cursor-pointer active:scale-[0.99]"
         onClick={() => setModalOpen(true)}
-        role="button"
-        tabIndex={0}
-        aria-label={`View ${product.title}`}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault()
-            setModalOpen(true)
-          }
-        }}
       >
-        {/* Product image — 1:1 per spec */}
-        <div className="relative aspect-square overflow-hidden bg-surface-muted">
-          {primaryImage ? (
+        <div className="flex gap-0">
+          {/* Content */}
+          <div className="flex-1 p-3 sm:p-4 min-w-0">
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold text-slate-900 leading-tight truncate">
+                {product.featured && <Star className="inline h-3 w-3 text-amber-500 fill-amber-500 mr-1 -mt-0.5" />}
+                {product.title}
+                {outOfStock && (
+                  <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0 align-middle">Out of Stock</Badge>
+                )}
+              </h4>
+              {product.description && (
+                <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                  {product.description}
+                </p>
+              )}
+            </div>
+
+            {/* Dietary tags */}
+            {dietaryTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {dietaryTags.map((tag) => (
+                  <DietaryBadge key={tag} tag={tag} />
+                ))}
+              </div>
+            )}
+
+            {/* Bottom row */}
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-900">
+                  {formatPrice(product.pricePennies)}
+                </span>
+                {product.preparationTimeMinutes && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
+                    <Timer className="h-2.5 w-2.5" />
+                    {product.preparationTimeMinutes}min
+                  </span>
+                )}
+                {allergenList.length > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600">
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    {allergenList.length}
+                  </span>
+                )}
+              </div>
+              {/* Add to cart / quantity controls */}
+              {outOfStock ? (
+                <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 cursor-not-allowed">
+                  Unavailable
+                </span>
+              ) : quantity === 0 ? (
+                <button
+                  onClick={(e) => handleAddToCart(e)}
+                  className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+                >
+                  <PlusIcon className="h-3 w-3" />
+                  Add
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-0 rounded-full bg-orange-500 text-white" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => updateQuantity(product.id, quantity - 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
+                  <button
+                    onClick={() => updateQuantity(product.id, quantity + 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                  >
+                    <PlusIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Product image with multi-image indicator */}
+          <div className="relative w-24 sm:w-28 flex-shrink-0">
             <SafeImage
               src={primaryImage}
               alt={product.title}
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-moderate ease-standard group-hover:scale-[1.02]"
+              className="absolute inset-0 w-full h-full object-cover"
+              fallbackClassName="w-full h-full bg-gradient-to-br from-slate-100 to-slate-50"
+              fallbackIcon={<Store className="h-8 w-8 text-slate-200" />}
               loading="lazy"
             />
-          ) : (
-            <BrandPlaceholder
-              aspect="aspect-square"
-              className="absolute inset-0"
-            />
-          )}
-          {product.featured && (
-            <div className="absolute left-3 top-3">
-              <Badge variant="editorial" size="sm" className="rounded-pill">
-                <Star className="h-3 w-3" strokeWidth={1.5} />
-                Popular
-              </Badge>
-            </div>
-          )}
-          {promo && (
-            <div className="absolute right-3 top-3">
-              <Badge variant="danger" size="sm" className="rounded-pill">
+            {hasMultipleImages && (
+              <span className="absolute top-1.5 right-1.5 bg-black/50 backdrop-blur-sm text-white text-[10px] font-medium rounded-md px-1.5 py-0.5">
+                +{images.length - 1}
+              </span>
+            )}
+            {promo && (
+              <Badge
+                variant="destructive"
+                className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0 shadow-md"
+              >
                 {promo.discountType === "PERCENTAGE"
                   ? `${promo.discountPercent}% off`
                   : `£${((promo.discountAmountPennies ?? 0) / 100).toFixed(2)} off`}
               </Badge>
-            </div>
-          )}
-          {hasMultipleImages && (
-            <span className="absolute bottom-3 right-3 rounded-pill bg-surface-card/80 backdrop-blur-sm px-2 py-0.5 text-caption text-ink-secondary">
-              +{images.length - 1}
-            </span>
-          )}
-          {outOfStock && (
-            <div className="absolute inset-0 flex items-center justify-center bg-surface-canvas/70">
-              <Badge variant="danger" size="md">Out of stock</Badge>
-            </div>
-          )}
-        </div>
-
-        <CardContent className="p-5 pt-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="font-display text-heading-sm font-semibold tracking-tight text-ink-primary line-clamp-1">
-              {product.title}
-            </h3>
-            <span className="font-mono text-body-lg font-semibold text-ink-primary tabular-nums whitespace-nowrap">
-              {formatPrice(product.pricePennies)}
-            </span>
-          </div>
-
-          {product.description && (
-            <p className="text-body-sm text-ink-secondary line-clamp-2">
-              {product.description}
-            </p>
-          )}
-
-          {(dietaryTags.length > 0 || allergenList.length > 0 || product.preparationTimeMinutes) && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {dietaryTags.map((tag) => (
-                <DietaryBadge key={tag} tag={tag} />
-              ))}
-              {product.preparationTimeMinutes && (
-                <Badge variant="subtle" size="sm" className="rounded-pill">
-                  <Timer className="h-3 w-3" strokeWidth={1.5} />
-                  {product.preparationTimeMinutes} min
-                </Badge>
-              )}
-              {allergenList.length > 0 && (
-                <Badge variant="warning" size="sm" className="rounded-pill">
-                  <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />
-                  {allergenList.length} allergen{allergenList.length === 1 ? "" : "s"}
-                </Badge>
-              )}
-            </div>
-          )}
-
-          <div className="pt-2">
-            {outOfStock ? (
-              <Button variant="subtle" size="sm" disabled className="w-full">
-                Unavailable
-              </Button>
-            ) : quantity === 0 ? (
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full"
-                onClick={(e) => handleAddToCart(e)}
-              >
-                <PlusIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Add to cart
-              </Button>
-            ) : (
-              <div
-                className="flex items-center justify-between rounded-md bg-brand-primary text-ink-on-brand"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() => updateQuantity(product.id, quantity - 1)}
-                  className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-brand-primary-hover transition-colors duration-fast focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus"
-                  aria-label="Decrease quantity"
-                >
-                  <Minus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
-                <span className="font-mono tabular-nums text-sm font-semibold">
-                  {quantity} in cart
-                </span>
-                <button
-                  type="button"
-                  onClick={() => updateQuantity(product.id, quantity + 1)}
-                  className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-brand-primary-hover transition-colors duration-fast focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus"
-                  aria-label="Increase quantity"
-                >
-                  <PlusIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
-              </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </article>
 
-      {/* Detail modal — logic preserved */}
+      {/* Detail modal */}
       <ProductDetailModal
         product={product}
         isOpen={modalOpen}
@@ -302,48 +209,6 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
   )
 }
 
-function HoursDialog({ hours }: { hours: Record<string, string> }) {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5">
-          <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
-          Opening hours
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Opening hours</DialogTitle>
-        </DialogHeader>
-        <Table>
-          <TableBody>
-            {DAY_ORDER.map((day) => {
-              const value = hours[day]
-              const closed = !value || value.toLowerCase() === "closed"
-              return (
-                <TableRow key={day}>
-                  <TableCell className="py-2 text-ink-secondary">
-                    {DAY_LABELS[day]}
-                  </TableCell>
-                  <TableCell
-                    numeric
-                    className={cn(
-                      "py-2",
-                      closed ? "text-ink-tertiary" : "text-ink-primary",
-                    )}
-                  >
-                    {closed ? "Closed" : value}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 export default function ShopDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const [shop, setShop] = useState<PublicShop | null>(null)
@@ -351,17 +216,12 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const [reviews, setReviews] = useState<Review[]>([])
   const [reviewCount, setReviewCount] = useState(0)
   const [avgRating, setAvgRating] = useState(0)
-  const [, setShopConfig] = useState<ShopConfig | null>(null)
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null)
   const [promotions, setPromotions] = useState<PublicPromotion[]>([])
   const [announcements, setAnnouncements] = useState<PublicAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
-
-  const heroVariants = useReducedMotionSafe(fadeIn)
-  const contentVariants = useReducedMotionSafe(fadeUp)
-  const gridVariants = useReducedMotionSafe(listStagger)
-  const itemVariants = useReducedMotionSafe(listItem)
 
   useEffect(() => {
     async function load() {
@@ -417,15 +277,15 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 
   if (loading) {
     return (
-      <div className="bg-surface-canvas animate-pulse">
-        <div className="aspect-[21/9] max-h-[480px] bg-surface-muted" />
-        <div className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 py-10 space-y-6">
-          <div className="h-10 w-1/2 rounded bg-surface-muted" />
-          <div className="h-4 w-2/3 rounded bg-surface-muted/70" />
-          <div className="h-10 w-full rounded bg-surface-muted/70" />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-80 rounded-xl bg-surface-muted/70" />
+      <div className="animate-pulse">
+        <div className="h-48 sm:h-64 bg-slate-200" />
+        <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
+          <div className="h-6 bg-slate-200 rounded w-1/3" />
+          <div className="h-4 bg-slate-100 rounded w-2/3" />
+          <div className="h-10 bg-slate-100 rounded" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 bg-slate-100 rounded-xl" />
             ))}
           </div>
         </div>
@@ -435,369 +295,271 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 
   if (!shop) {
     return (
-      <div className="bg-surface-canvas min-h-[60vh]">
-        <div className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 py-24 text-center">
-          <div className="mx-auto mb-6">
-            <BrandPlaceholder
-              aspect="h-24 w-24"
-              className="mx-auto rounded-pill"
-            />
-          </div>
-          <h1 className="font-display text-heading-xl text-ink-primary">
-            Shop not found
-          </h1>
-          <p className="mt-3 text-body text-ink-tertiary">
-            This shop may no longer be available.
-          </p>
-          <div className="mt-6">
-            <Button variant="secondary" size="md" asChild>
-              <Link href="/shop">
-                <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-                Back to all shops
-              </Link>
-            </Button>
-          </div>
-        </div>
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <Store className="mx-auto h-12 w-12 text-slate-300" />
+        <h2 className="mt-4 text-lg font-semibold text-slate-900">Shop not found</h2>
+        <p className="mt-1 text-sm text-slate-500">This shop may no longer be available.</p>
+        <Link
+          href="/shop"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to all shops
+        </Link>
       </div>
     )
   }
 
   const open = isOpenNow(shop.openingHours)
-  const hasHours = shop.openingHours && Object.keys(shop.openingHours).length > 0
 
   return (
-    <div className="bg-surface-canvas">
-      {/* Hero banner — 21:9 full-bleed */}
-      <motion.section
-        variants={heroVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative w-full"
-      >
-        <div className="relative aspect-[21/9] max-h-[480px] w-full overflow-hidden bg-surface-muted">
-          {shop.bannerUrl ? (
-            <>
+    <div>
+      {/* Hero banner */}
+      <div className="relative h-48 sm:h-64 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500">
+        {shop.bannerUrl && (
+          <SafeImage
+            src={shop.bannerUrl}
+            alt={`${shop.name} banner`}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+
+        {/* Back button */}
+        <div className="absolute top-4 left-4">
+          <Link
+            href="/shop"
+            className="inline-flex items-center gap-1 rounded-full bg-black/30 backdrop-blur-sm px-3 py-1.5 text-sm text-white hover:bg-black/50 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
+        </div>
+
+        {/* Shop info overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
+          <div className="mx-auto max-w-4xl flex items-end gap-4">
+            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white shadow-lg ring-2 ring-white overflow-hidden flex-shrink-0">
               <SafeImage
-                src={shop.bannerUrl}
-                alt={`${shop.name} banner`}
-                className="absolute inset-0 h-full w-full object-cover"
+                src={shop.logoUrl}
+                alt={shop.name}
+                className="h-full w-full object-cover"
+                fallbackIcon={<Store className="h-8 w-8 text-orange-500" />}
                 loading="eager"
               />
-              {/* Single legibility gradient — the spec's one allowed exception */}
-              <div
-                aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-b from-transparent to-surface-canvas"
-              />
-            </>
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/brand/mark.svg"
-                alt=""
-                aria-hidden="true"
-                className="h-24 w-24 opacity-[0.08]"
-              />
             </div>
-          )}
-        </div>
-
-        {/* Back link floating top-left */}
-        <div className="absolute left-4 top-4 sm:left-6 sm:top-6">
-          <Button variant="secondary" size="sm" asChild className="backdrop-blur-sm bg-surface-card/80">
-            <Link href="/shop">
-              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-              Back
-            </Link>
-          </Button>
-        </div>
-      </motion.section>
-
-      {/* Header card — overlaps banner bottom */}
-      <motion.section
-        variants={contentVariants}
-        initial="hidden"
-        animate="visible"
-        className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 -mt-12 sm:-mt-16 relative z-10"
-      >
-        <Card variant="lifted" className="rounded-xl overflow-hidden">
-          <CardContent className="p-6 sm:p-8">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              {/* Logo */}
-              <div className="h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-xl border border-border-tone-subtle bg-surface-card">
-                <SafeImage
-                  src={shop.logoUrl}
-                  alt={`${shop.name} logo`}
-                  className="h-full w-full object-cover"
-                  fallbackIcon={<Store className="h-8 w-8 text-ink-tertiary" strokeWidth={1.5} />}
-                  loading="eager"
-                />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h1 className="font-display text-display-lg font-medium tracking-tight text-ink-primary line-clamp-2">
-                  {shop.name}
-                </h1>
-                {shop.description && (
-                  <p className="mt-3 max-w-prose text-body-lg text-ink-secondary line-clamp-3">
-                    {shop.description}
-                  </p>
-                )}
-
-                {/* Status badges */}
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={open ? "success" : "subtle"}
-                    size="md"
-                    className="rounded-pill"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        open ? "bg-success" : "bg-ink-tertiary",
-                      )}
-                    />
-                    {open ? "Open now" : "Closed"}
-                  </Badge>
-                  {shop.deliveryFeePennies > 0 ? (
-                    <Badge variant="subtle" size="md" className="rounded-pill">
-                      Delivery {formatPrice(shop.deliveryFeePennies)}
-                    </Badge>
-                  ) : (
-                    <Badge variant="brand" size="md" className="rounded-pill">
-                      Free delivery
-                    </Badge>
-                  )}
-                  {shop.minimumOrderPennies > 0 && (
-                    <Badge variant="subtle" size="md" className="rounded-pill">
-                      Min {formatPrice(shop.minimumOrderPennies)}
-                    </Badge>
-                  )}
-                  {shop.freeDeliveryThresholdPennies && (
-                    <Badge variant="editorial" size="md" className="rounded-pill">
-                      Free over {formatPrice(shop.freeDeliveryThresholdPennies)}
-                    </Badge>
-                  )}
-                  {reviewCount > 0 && (
-                    <Badge variant="subtle" size="md" className="rounded-pill">
-                      <Star className="h-3 w-3 fill-accent-editorial text-accent-editorial" strokeWidth={1.5} />
-                      <span className="font-mono tabular-nums">
-                        {avgRating}
-                      </span>
-                      <span className="text-ink-tertiary">({reviewCount})</span>
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Contact row */}
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-caption text-ink-tertiary">
-                  {shop.address && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      {shop.address}
-                    </span>
-                  )}
-                  {shop.phone && (
-                    <a
-                      href={`tel:${shop.phone}`}
-                      className="inline-flex items-center gap-1.5 hover:text-ink-primary transition-colors duration-fast"
-                    >
-                      <Phone className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      {shop.phone}
-                    </a>
-                  )}
-                  {shop.email && (
-                    <a
-                      href={`mailto:${shop.email}`}
-                      className="inline-flex items-center gap-1.5 hover:text-ink-primary transition-colors duration-fast"
-                    >
-                      <Mail className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      {shop.email}
-                    </a>
-                  )}
-                  {hasHours && shop.openingHours && (
-                    <HoursDialog hours={shop.openingHours} />
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.section>
-
-      {/* Announcements & Promotions */}
-      {(announcements.length > 0 || promotions.length > 0) && (
-        <section className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 mt-6 space-y-3">
-          {announcements.length > 0 && (
-            <Card variant="flat" className="rounded-lg border-border-tone-subtle bg-info-subtle">
-              <CardContent className="flex items-start gap-3 p-4">
-                <Megaphone
-                  className="h-5 w-5 flex-shrink-0 text-info"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-                <div className="min-w-0">
-                  <p className="font-display text-heading-sm font-semibold text-ink-primary">
-                    {announcements[0].title}
-                  </p>
-                  {announcements[0].body && (
-                    <p className="mt-1 text-body-sm text-ink-secondary">
-                      {announcements[0].body}
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {promotions.map((promo, i) => (
-            <Card
-              key={i}
-              variant="flat"
-              className="rounded-lg border-border-tone-subtle bg-accent-editorial-subtle"
-            >
-              <CardContent className="flex items-center justify-between gap-3 p-4">
-                <span className="text-body-sm font-medium text-ink-primary">
-                  {promo.label}
+            <div className="min-w-0 pb-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+                {shop.name}
+              </h1>
+              <div className="mt-1 flex items-center gap-3 text-sm text-white/80">
+                <span className={`inline-flex items-center gap-1 text-xs font-medium ${open ? "text-emerald-300" : "text-slate-300"}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`} />
+                  {open ? "Open now" : "Closed"}
                 </span>
-                {promo.discountType === "PERCENTAGE" && promo.discountPercent !== null && (
-                  <Badge variant="editorial" size="md" className="rounded-pill">
-                    {promo.discountPercent}% off
-                  </Badge>
+                {reviewCount > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-300">
+                    <Star className="h-3 w-3 fill-amber-300" />
+                    {avgRating} ({reviewCount})
+                  </span>
                 )}
-                {promo.discountType === "FLAT_AMOUNT" && promo.discountAmountPennies !== null && (
-                  <Badge variant="editorial" size="md" className="rounded-pill">
-                    £{(promo.discountAmountPennies / 100).toFixed(2)} off
-                  </Badge>
+                {shop.deliveryInfo && (
+                  <span className="text-xs truncate">{shop.deliveryInfo}</span>
                 )}
-              </CardContent>
-            </Card>
-          ))}
-        </section>
-      )}
-
-      {/* Reviews */}
-      {reviews.length > 0 && (
-        <section className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 mt-10">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-heading-lg font-semibold tracking-tight text-ink-primary">
-              Customer reviews
-            </h2>
-            <div className="inline-flex items-center gap-2 text-body-sm">
-              <Star className="h-4 w-4 fill-accent-editorial text-accent-editorial" strokeWidth={1.5} />
-              <span className="font-mono tabular-nums font-semibold text-ink-primary">
-                {avgRating}
-              </span>
-              <span className="text-ink-tertiary">({reviewCount})</span>
+              </div>
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {reviews.slice(0, 3).map((review) => (
-              <Card key={review.id} variant="flat" className="rounded-lg">
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-caption font-medium text-ink-primary">
-                      {review.customerName || "Anonymous"}
+        </div>
+      </div>
+
+      {/* Shop details bar */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+            {shop.address && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                {shop.address}
+              </span>
+            )}
+            {shop.phone && (
+              <a href={`tel:${shop.phone}`} className="inline-flex items-center gap-1 hover:text-slate-700">
+                <Phone className="h-3.5 w-3.5 text-slate-400" />
+                {shop.phone}
+              </a>
+            )}
+            {shop.email && (
+              <a href={`mailto:${shop.email}`} className="inline-flex items-center gap-1 hover:text-slate-700">
+                <Mail className="h-3.5 w-3.5 text-slate-400" />
+                {shop.email}
+              </a>
+            )}
+            {shop.minimumOrderPennies > 0 && (
+              <span className="font-medium text-slate-600">
+                Min order {formatPrice(shop.minimumOrderPennies)}
+              </span>
+            )}
+            {shop.deliveryFeePennies > 0 ? (
+              <span className="text-slate-600">
+                Delivery {formatPrice(shop.deliveryFeePennies)}
+                {shop.freeDeliveryThresholdPennies && (
+                  <span className="text-emerald-600 font-medium ml-1">
+                    Free over {formatPrice(shop.freeDeliveryThresholdPennies)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-emerald-600 font-medium">Free delivery</span>
+            )}
+          </div>
+
+          {shop.description && (
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              {shop.description}
+            </p>
+          )}
+
+          {/* Opening hours (collapsible on mobile) */}
+          {shop.openingHours && Object.keys(shop.openingHours).length > 0 && (
+            <details className="mt-3 group">
+              <summary className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                <Clock className="h-3.5 w-3.5" />
+                <span>Opening hours</span>
+                <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
+                  <div key={day} className="flex justify-between gap-2">
+                    <span className="text-slate-500">{DAY_LABELS[day]}</span>
+                    <span className="font-medium text-slate-700">
+                      {shop.openingHours?.[day] || "Closed"}
                     </span>
-                    <div className="flex items-center gap-0.5" aria-label={`${review.foodRating} out of 5 stars`}>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+
+      {/* Announcements & Promotions (dedicated public endpoints) */}
+      {(announcements.length > 0 || promotions.length > 0) && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
+            {announcements.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <span className="text-blue-500 text-sm mt-0.5">&#x1f4e2;</span>
+                <div className="text-sm text-blue-800">
+                  <p className="font-semibold">{announcements[0].title}</p>
+                  {announcements[0].body && (
+                    <p className="mt-0.5 text-blue-700">{announcements[0].body}</p>
+                  )}
+                </div>
+              </div>
+            )}
+            {promotions.map((promo, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                <span className="text-sm font-medium text-amber-800">{promo.label}</span>
+                {promo.discountType === "PERCENTAGE" && promo.discountPercent !== null && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                    {promo.discountPercent}% off
+                  </span>
+                )}
+                {promo.discountType === "FLAT_AMOUNT" && promo.discountAmountPennies !== null && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                    £{(promo.discountAmountPennies / 100).toFixed(2)} off
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Customer reviews */}
+      {reviews.length > 0 && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-900">
+                Customer reviews ({reviewCount})
+              </h2>
+              <div className="flex items-center gap-1 text-sm">
+                <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                <span className="font-bold text-slate-900">{avgRating}</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {reviews.slice(0, 3).map((review) => (
+                <div key={review.id} className="rounded-lg bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-700">{review.customerName || "Anonymous"}</span>
+                    <div className="flex items-center gap-0.5">
                       {[1, 2, 3, 4, 5].map((s) => (
-                        <Star
-                          key={s}
-                          className={cn(
-                            "h-3 w-3",
-                            s <= review.foodRating
-                              ? "fill-accent-editorial text-accent-editorial"
-                              : "text-ink-quaternary",
-                          )}
-                          strokeWidth={1.5}
-                        />
+                        <Star key={s} className={`h-3 w-3 ${s <= review.foodRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
                       ))}
                     </div>
                   </div>
                   {review.comment && (
-                    <p className="text-body-sm text-ink-secondary line-clamp-3">
-                      {review.comment}
-                    </p>
+                    <p className="mt-1 text-xs text-slate-600 line-clamp-2">{review.comment}</p>
                   )}
                   {review.photoUrls && review.photoUrls.length > 0 && (
-                    <div className="flex gap-1.5 pt-1">
+                    <div className="mt-2 flex gap-1.5">
                       {review.photoUrls.slice(0, 3).map((url, i) => (
-                        <SafeImage
-                          key={i}
-                          src={url}
-                          alt="Review photo"
-                          className="h-12 w-12 rounded-md object-cover"
-                        />
+                        <SafeImage key={i} src={url} alt="Review photo" className="h-12 w-12 rounded-md object-cover" />
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Sticky category navigation */}
-      {categories.length > 1 && (
-        <nav
-          className="sticky top-16 z-40 mt-10 border-b border-border-tone-subtle bg-surface-canvas/90 backdrop-blur-sm"
-          aria-label="Menu categories"
-        >
-          <div className="mx-auto max-w-content px-4 sm:px-6 lg:px-8">
-            <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide -mx-4 px-4">
-              {categories.map((cat) => {
-                const active = activeCategory === cat
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => scrollToCategory(cat)}
-                    className="focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas rounded-pill"
-                    aria-current={active ? "true" : undefined}
-                  >
-                    <Badge
-                      variant={active ? "brand" : "subtle"}
-                      size="md"
-                      className="cursor-pointer rounded-pill px-3 whitespace-nowrap"
-                    >
-                      {cat}
-                    </Badge>
-                  </button>
-                )
-              })}
+                </div>
+              ))}
             </div>
           </div>
-        </nav>
+        </div>
+      )}
+
+      {/* Category navigation (sticky) */}
+      {categories.length > 1 && (
+        <div className="sticky top-14 z-40 bg-white border-b border-slate-200 shadow-sm">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6">
+            <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => scrollToCategory(cat)}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    activeCategory === cat
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
       )}
 
       {/* Menu */}
-      <section className="mx-auto max-w-content px-4 sm:px-6 lg:px-8 py-10 pb-32">
-        {/* Featured */}
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6">
+        {/* Featured section */}
         {featuredProducts.length > 0 && (
-          <div className="mb-10">
-            <div className="mb-4 flex items-center gap-2">
-              <Star className="h-4 w-4 text-accent-editorial" strokeWidth={1.5} />
-              <h2 className="font-display text-heading-lg font-semibold tracking-tight text-ink-primary">
-                Popular
-              </h2>
-            </div>
-            <motion.div
-              variants={gridVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
-            >
+          <section className="mb-8">
+            <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-900 mb-3">
+              <Star className="h-4 w-4 text-amber-500" />
+              Popular
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {featuredProducts.map((product) => (
-                <motion.div key={product.id} variants={itemVariants}>
-                  <ProductCard
-                    product={product}
-                    promo={product.category ? promotionsByCategory.get(product.category) : undefined}
-                  />
-                </motion.div>
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  promo={product.category ? promotionsByCategory.get(product.category) : undefined}
+                />
               ))}
-            </motion.div>
-          </div>
+            </div>
+          </section>
         )}
 
         {/* Category sections */}
@@ -805,44 +567,34 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           <section
             key={category}
             ref={(el) => { categoryRefs.current[category] = el }}
-            className="mb-12 scroll-mt-32"
+            className="mb-8 scroll-mt-28"
           >
-            <h2 className="mb-4 font-display text-heading-lg font-semibold tracking-tight text-ink-primary">
-              {category}
-            </h2>
-            <motion.div
-              variants={gridVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
-            >
+            <h2 className="text-base font-bold text-slate-900 mb-3">{category}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {products[category].map((product) => (
-                <motion.div key={product.id} variants={itemVariants}>
-                  <ProductCard
-                    product={product}
-                    promo={promotionsByCategory.get(category)}
-                  />
-                </motion.div>
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  promo={promotionsByCategory.get(category)}
+                />
               ))}
-            </motion.div>
+            </div>
           </section>
         ))}
 
         {/* Empty state */}
         {categories.length === 0 && (
-          <div className="mx-auto flex max-w-prose flex-col items-center gap-4 py-24 text-center">
-            <BrandPlaceholder aspect="h-24 w-24" className="rounded-pill" />
-            <div>
-              <h2 className="font-display text-heading-lg text-ink-primary">
-                Menu coming soon
-              </h2>
-              <p className="mt-2 text-body text-ink-tertiary">
-                This shop hasn&apos;t added any products yet.
-              </p>
-            </div>
+          <div className="text-center py-16">
+            <Store className="mx-auto h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-base font-medium text-slate-900">
+              Menu coming soon
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              This shop hasn&apos;t added any products yet.
+            </p>
           </div>
         )}
-      </section>
+      </div>
 
       {/* Floating cart bar */}
       <FloatingCartBar slug={slug} minimumOrderPennies={shop.minimumOrderPennies} />
@@ -858,34 +610,29 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
   const belowMinimum = minimumOrderPennies > 0 && totalPennies < minimumOrderPennies
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4 sm:px-6 sm:pb-6">
-      <div className="mx-auto max-w-content">
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4">
+      <div className="mx-auto max-w-4xl">
         <Link
           href={`/shop/${slug}/cart`}
-          className={cn(
-            "flex items-center justify-between gap-4 rounded-xl px-5 py-3.5 shadow-float",
-            "transition-transform duration-fast active:scale-[0.99]",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-border-tone-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+          className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
             belowMinimum
-              ? "bg-surface-strong text-ink-primary"
-              : "bg-brand-primary text-ink-on-brand",
-          )}
+              ? "bg-slate-700 hover:bg-slate-800"
+              : "bg-orange-500 hover:bg-orange-600"
+          } text-white`}
         >
           <div className="flex items-center gap-3">
             <div className="relative">
-              <ShoppingBag className="h-5 w-5" strokeWidth={1.5} />
-              <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-pill bg-surface-card text-[10px] font-bold text-brand-primary">
+              <ShoppingBag className="h-5 w-5" />
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-orange-600">
                 {itemCount}
               </span>
             </div>
-            <span className="text-body-sm font-medium">View basket</span>
+            <span className="text-sm font-medium">View basket</span>
           </div>
           <div className="text-right">
-            <span className="font-mono tabular-nums text-body font-semibold">
-              {formatPrice(totalPennies)}
-            </span>
+            <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
             {belowMinimum && (
-              <p className="text-caption opacity-80">
+              <p className="text-[10px] text-slate-300">
                 Min {formatPrice(minimumOrderPennies)}
               </p>
             )}

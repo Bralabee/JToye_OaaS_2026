@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="J'Toye apple touch icon">
-  <title>J'Toye</title>
-  <rect width="180" height="180" rx="40" ry="40" fill="hsl(1, 35%, 42%)"/>
-  <!-- Mark scaled to 60% (~108px) centered; source 32x32, scale 3.375, translate to center: (180-108)/2 = 36 -->
-  <g transform="translate(36,36) scale(3.375)" fill="hsl(36, 33%, 97%)">
-    <path d="M9 5h11v3H16.5v13.2c0 3.2-2.2 5.4-5.6 5.4-2.5 0-4.4-1.1-5.4-3l2.5-1.8c.6 1.1 1.6 1.8 2.9 1.8 1.8 0 2.6-1.1 2.6-2.8V8H9V5z"/>
-    <path d="M22.6 5.4c1 0 1.8.8 1.8 1.9 0 .7-.3 1.5-.9 2.6l-1.6 2.9h-1.7l1-3c-.7-.2-1.2-.9-1.2-1.7 0-1 .7-1.7 1.6-1.7z"/>
-  </g>
-</svg>
