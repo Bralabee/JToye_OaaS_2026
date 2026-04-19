@@ -1,0 +1,219 @@
+basePath: /
+definitions:
+  main.ComponentHealth:
+    properties:
+      healthy:
+        description: Whether the downstream passed its readiness check.
+        example: true
+        type: boolean
+    type: object
+  main.ErrorResponse:
+    properties:
+      error:
+        description: Human-readable error message.
+        example: invalid request body
+        type: string
+    type: object
+  main.HealthResponse:
+    properties:
+      edge:
+        description: Edge liveness indicator. Always "OK" when the process is up.
+        example: OK
+        type: string
+      uptime:
+        description: Unix timestamp (seconds) at the moment the probe was served.
+        example: 1713484800
+        type: integer
+    type: object
+  main.ReadyResponse:
+    properties:
+      core:
+        allOf:
+        - $ref: '#/definitions/main.ComponentHealth'
+        description: Core Java API health (via its /health endpoint).
+      edge:
+        description: Edge self-status. Always "OK" when the process is up.
+        example: OK
+        type: string
+      jwks:
+        allOf:
+        - $ref: '#/definitions/main.ComponentHealth'
+        description: Keycloak JWKS endpoint health.
+    type: object
+  main.SyncBatchRequest:
+    properties:
+      items:
+        description: Opaque list of sync items. Each map is forwarded to Core as-is.
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
+  main.SyncBatchResponse:
+    properties:
+      processed_count:
+        description: Number of items Core accepted for processing.
+        example: 42
+        type: integer
+      status:
+        description: Processing status. "accepted" when Core queued the batch.
+        example: accepted
+        type: string
+    type: object
+  main.WebhookAck:
+    properties:
+      accepted:
+        description: True after receipt. Processing result is available in logs only.
+        example: true
+        type: boolean
+    type: object
+info:
+  contact:
+    name: J'Toye Platform Team
+    url: https://github.com/jtoye/oaas
+  description: Edge gateway for J'Toye OaaS multi-tenant retail platform. Routes authenticated
+    traffic to core-java with rate limiting + circuit breakers, plus handles WhatsApp
+    order-intake webhooks with HMAC-SHA256 signature verification.
+  license:
+    name: Proprietary
+  termsOfService: https://github.com/jtoye/oaas
+  title: J'Toye Edge Gateway API
+  version: "1.0"
+paths:
+  /api/v1/sync/batch:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Forwards an opaque list of domain items to the Core Java
+        API's /api/v1/sync/batch endpoint, wrapped in a circuit
+        breaker so edge degrades gracefully when Core is down. The
+        caller must present a Keycloak JWT — the tenant_id claim
+        is extracted and used to scope the write.
+      parameters:
+      - description: Batch payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/main.SyncBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Batch accepted by Core
+          schema:
+            $ref: '#/definitions/main.SyncBatchResponse'
+        "400":
+          description: Invalid body or missing tenant_id claim
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "401":
+          description: Missing or malformed Bearer token
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "502":
+          description: Core API unreachable or tripped the circuit breaker
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Batch-sync edge-collected items into Core
+      tags:
+      - sync
+  /api/v1/webhooks/whatsapp:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Accepts WhatsApp message-events, verifies the HMAC-SHA256
+        signature in `X-Hub-Signature-256` against
+        `WHATSAPP_APP_SECRET`, parses the message body into an
+        order, resolves each product-name query to a product UUID
+        via the Core search endpoint, and creates an order scoped
+        to the vendor identified by `WHATSAPP_DEFAULT_SHOP_ID`. The
+        endpoint is fail-closed: if the secret is not configured
+        or the signature is invalid/absent the webhook is rejected.
+
+        Processing outcomes (bad payload, ambiguous product, missing
+        default shop, Core error) always return HTTP 200 to prevent
+        WhatsApp from entering its 3-day exponential retry loop.
+        Real error signals are in the structured logs.
+      parameters:
+      - description: HMAC-SHA256 of the raw body, prefixed with 'sha256='
+        in: header
+        name: X-Hub-Signature-256
+        required: true
+        type: string
+      - description: WhatsApp message-event payload (shape defined by Meta)
+        in: body
+        name: payload
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook received (processing outcome in logs)
+          schema:
+            $ref: '#/definitions/main.WebhookAck'
+        "401":
+          description: Missing or invalid signature / bearer token
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: WHATSAPP_APP_SECRET not configured
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: WhatsApp order-intake webhook
+      tags:
+      - webhooks
+  /health:
+    get:
+      description: |-
+        Returns 200 whenever the edge process is alive. Does not
+        touch any downstream dependency, so it never fails because
+        Core or Keycloak is having a bad day. Used by kubelet as
+        the liveness probe — a failing /health causes the pod to
+        be restarted.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.HealthResponse'
+      summary: Liveness probe
+      tags:
+      - health
+  /ready:
+    get:
+      description: |-
+        Checks downstream dependencies (Core API /health + Keycloak
+        JWKS). Returns 503 with a per-component health map when any
+        dependency is unhealthy so kubelet pulls the pod out of the
+        Service endpoint set without restarting it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: All downstream dependencies healthy
+          schema:
+            $ref: '#/definitions/main.ReadyResponse'
+        "503":
+          description: One or more dependencies unhealthy
+          schema:
+            $ref: '#/definitions/main.ReadyResponse'
+      summary: Readiness probe
+      tags:
+      - health
+securityDefinitions:
+  BearerAuth:
+    description: Keycloak-issued JWT. Prefix the value with `Bearer `.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

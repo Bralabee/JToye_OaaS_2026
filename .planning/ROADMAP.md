@@ -55,7 +55,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [🟡] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01) — 13-01 DONE 2026-04-18, ready for PR
 - [x] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02) — **DONE 2026-04-19, both plans shipped on feature/phase-14-stock-race-summary-aggregation, ready for PR**
 - [🟡] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets runbook + batch `kubeseal` conversion script (INF-01, INF-02) — **DRAFTING COMPLETE 2026-04-18 on `feature/phase-15-k8s-networkpolicies-sealed-secrets` (6 commits). 6 NetworkPolicy manifests + offline validator + runbook + `seal-secrets.sh` + `secrets-template.yaml` legacy flag. Cluster-admin rollout pending — 4-step checklist in 15-01-SUMMARY.md. Actual layout: `k8s/staging/` + `k8s/production/` (not `k8s/overlays/*`).**
-- [ ] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01)
+- [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
 - [ ] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe, refund state transition in Order state machine with Flyway V34 migration and RabbitMQ `order.refunded` event (VOPS-01, VOPS-02, VOPS-03)
 
 ## Phase Details
@@ -127,6 +127,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. `GET /docs` renders Swagger UI with all routes browsable
   4. Go edge test suite grows to include a spec-freshness test (regenerate spec in CI, diff vs committed copy, fail on drift)
 **Plans**: 1 plan
+  - [x] 16-01-PLAN.md — swaggo annotations on 4 Gin handlers + generated Swagger 2.0 spec at `edge-go/docs/` + `/openapi.json` + Swagger UI at `/docs` + in-process freshness test + CI validation via `@seriousme/openapi-schema-validator` — **DONE 2026-04-19, see 16-01-SUMMARY.md. Swagger 2.0 vs OpenAPI 3.0 tradeoff: `swaggo/swag v1` emits 2.0; npm validator accepts both; v2.3 upgrade path to `swag v2` (OpenAPI 3.1) when stable. Pinned swaggo deps at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` to keep edge-go on Go 1.22 (CLAUDE.md constraint).**
 **UI hint**: no
 
 ### Phase 17: Vendor Order Detail + Stripe Refund Flow
@@ -171,5 +172,5 @@ Suggested wave layout:
 | 13. Guest Tracking Tenant Validation | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-18 |
 | 14. Stock Race Fix + Summary Aggregation | v2.2 | 0/2 | Not started | - |
 | 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
-| 16. Go Edge OpenAPI | v2.2 | 0/1 | Not started | - |
+| 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 0/3 | Not started | - |

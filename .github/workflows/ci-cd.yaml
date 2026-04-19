@@ -64,9 +64,29 @@ jobs:
           DB_USER: jtoye
           DB_PASSWORD: password
 
+      - name: Install swaggo/swag CLI (needed by edge-go OpenAPI freshness test)
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.3
+
       - name: Run Go tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        # -race dropped: requires cgo + gcc; GH Actions ubuntu-latest Go setup
+        # doesn't install gcc by default, and race detection isn't required for
+        # Phase 16 DOC-01 scope. Keep race-test as a local-only lint.
+        run: go test -v -coverprofile=coverage.out ./...
         working-directory: edge-go
+        env:
+          # swag is installed to $(go env GOPATH)/bin; make sure the
+          # OpenAPI freshness test can find it.
+          PATH: ${{ env.PATH }}:/home/runner/go/bin
+
+      - name: Validate edge-go OpenAPI spec (@seriousme/openapi-schema-validator)
+        # ROADMAP DOC-01 success criterion #1: /openapi.json is a valid
+        # OpenAPI spec per an openapi-spec-validator. We use
+        # @seriousme/openapi-schema-validator on npm (its binary is
+        # `validate-api`) — it accepts Swagger 2.0 and OpenAPI 3.x
+        # alike. swaggo/swag v1 emits 2.0; the tradeoff is documented
+        # in .planning/phases/16-go-edge-openapi/16-RESEARCH.md.
+        # Exits non-zero on invalid spec; emits `{"valid": true}` on success.
+        run: npx --yes -p @seriousme/openapi-schema-validator validate-api edge-go/docs/swagger.json
 
       - name: Install frontend dependencies
         run: npm ci
