@@ -11,6 +11,14 @@ resources:
   - frontend-deployment.yaml
   - ingress.yaml
   - pg-backup-cronjob.yaml
+  # NetworkPolicies (Phase 15 / INF-01) — default-deny baseline + tier allow-lists.
+  # See k8s/base/networkpolicies/README.md for the flow matrix and rollback steps.
+  - networkpolicies/00-default-deny.yaml
+  - networkpolicies/10-frontend.yaml
+  - networkpolicies/20-core-java.yaml
+  - networkpolicies/30-edge-go.yaml
+  - networkpolicies/40-datastores.yaml
+  - networkpolicies/50-observability.yaml
 
 # Common labels applied to all resources
 commonLabels:
