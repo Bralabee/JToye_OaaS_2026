@@ -21,8 +21,8 @@ Close the immediate application-security gaps flagged during the 2026-04-16 deep
 
 Fix two known correctness bugs that were deferred from deep-audit P1.
 
-- [ ] **CQ-01**: Stock race condition fix. Currently `OrderService.createOrder()` reads `product.stock`, checks availability, and creates the order — but the stock decrement happens later (or not at all in some paths), allowing two concurrent orders to both pass the check and oversell. Fix: move the stock decrement into the `OrderStateMachine` `CONFIRM` transition, gated by optimistic lock on the Product entity (@Version already exists per V32 migration). Tests cover: serialized orders decrement once each; two concurrent confirmations on last-item-in-stock — only one succeeds, other gets `InsufficientStockException`; Testcontainers test exercises the real Postgres optimistic lock path. Source: HANDOFF.md P2 "Fix stock race condition — validate at confirmation, not creation (CQ-01)".
-- [ ] **CQ-02**: `getSummary()` DB aggregation. Today `FinancialTransactionService.getSummary()` (or equivalent OrderService / ShopService summary method — grep to locate) calls `findAll()` and reduces in-memory. Replace with a JPQL or native-query `SUM()`/`COUNT()`/`GROUP BY` that returns aggregated rows directly. Tests cover: matching output vs old implementation on a seeded dataset; query plan uses indexes (verify with `EXPLAIN ANALYZE` in the integration test); performance measurable improvement on a 10k-row fixture. Source: HANDOFF.md P2 "Fix getSummary() to use DB aggregation instead of findAll() (CQ-02)".
+- [x] **CQ-01**: Stock race condition fix. Currently `OrderService.createOrder()` reads `product.stock`, checks availability, and creates the order — but the stock decrement happens later (or not at all in some paths), allowing two concurrent orders to both pass the check and oversell. Fix: move the stock decrement into the `OrderStateMachine` `CONFIRM` transition, gated by optimistic lock on the Product entity (@Version already exists per V32 migration). Tests cover: serialized orders decrement once each; two concurrent confirmations on last-item-in-stock — only one succeeds, other gets `InsufficientStockException`; Testcontainers test exercises the real Postgres optimistic lock path. Source: HANDOFF.md P2 "Fix stock race condition — validate at confirmation, not creation (CQ-01)". **Shipped:** Phase 14 Plan 01 (2026-04-19) — see 14-01-SUMMARY.md.
+- [x] **CQ-02**: `getSummary()` DB aggregation. Today `FinancialTransactionService.getSummary()` (or equivalent OrderService / ShopService summary method — grep to locate) calls `findAll()` and reduces in-memory. Replace with a JPQL or native-query `SUM()`/`COUNT()`/`GROUP BY` that returns aggregated rows directly. Tests cover: matching output vs old implementation on a seeded dataset; query plan uses indexes (verify with `EXPLAIN ANALYZE` in the integration test); performance measurable improvement on a 10k-row fixture. Source: HANDOFF.md P2 "Fix getSummary() to use DB aggregation instead of findAll() (CQ-02)". **Shipped:** Phase 14 Plan 02 (2026-04-19) — see 14-02-SUMMARY.md.
 
 ### Infrastructure (INF)
 
@@ -107,8 +107,8 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | SEC-01 | Phase 13 (Plan 13-01) | Complete (2026-04-18) |
 | SEC-02 | Phase 12 (Plan 12-02) | Operationally Complete (2026-04-18) — Tasks 01-06 shipped; Task 12-02-07 human-verify cutover gate pending |
 | SEC-03 | Phase 12 (Plan 12-01) | Complete (2026-04-18) |
-| CQ-01 | Phase 14 | Pending |
-| CQ-02 | Phase 14 | Pending |
+| CQ-01 | Phase 14 (Plan 14-01) | Complete (2026-04-19) |
+| CQ-02 | Phase 14 (Plan 14-02) | Complete (2026-04-19) |
 | INF-01 | Phase 15 | Pending |
 | INF-02 | Phase 15 | Pending |
 | DOC-01 | Phase 16 | Pending |

@@ -7,14 +7,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
+import uk.jtoye.core.finance.dto.FinancialVatRow;
 import uk.jtoye.core.security.TenantContext;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Service for financial transaction management operations.
@@ -106,44 +108,51 @@ public class FinancialTransactionService {
     /**
      * Get a financial summary for the current tenant.
      * Aggregates revenue, expenses, VAT breakdown, and transaction count.
+     *
+     * <p>CQ-02 (Phase 14 Plan 02) — now issues exactly 2 SQL statements
+     * (scalar aggregate + per-VAT-rate breakdown) via the repository's
+     * JPQL {@code SELECT new ...} constructor-expression queries, instead
+     * of pulling every row into JVM heap and reducing in-memory. Scales
+     * linearly in DB time, flat in JVM memory. RLS continues to append
+     * the tenant predicate at the SQL rewriter stage — no explicit WHERE
+     * needed, no risk of cross-tenant leak.
+     *
+     * <p>VAT math mirrors {@link FinancialTransaction#calculateVatAmount()}
+     * byte-for-byte (multiply before divide, integer division truncating
+     * toward zero) so the rewrite produces output identical to the legacy
+     * {@code findAll() + 4 stream reductions} — pinned by
+     * {@code FinancialSummaryGoldenFileTest}.
+     *
+     * <p>The {@link FinancialSummaryDto.VatBreakdown} list is sorted by
+     * {@link VatRate#name()} as defence-in-depth: the JPQL already
+     * {@code ORDER BY ft.vatRate}, but a belt-and-braces Java sort
+     * guarantees stable ordering regardless of Hibernate enum-rendering
+     * quirks across Postgres / H2 dialects.
      */
     @Transactional(readOnly = true)
     public FinancialSummaryDto getSummary() {
-        log.debug("Generating financial summary for current tenant");
-        List<FinancialTransaction> transactions = financialTransactionRepository.findAll();
+        log.debug("Generating financial summary for current tenant via DB-side aggregation");
 
-        long totalRevenue = transactions.stream()
-                .mapToLong(FinancialTransaction::getAmountPennies)
-                .filter(a -> a > 0)
-                .sum();
+        FinancialAggregateRow aggregate = financialTransactionRepository.aggregateForCurrentTenant();
+        List<FinancialVatRow> vatRows = financialTransactionRepository.aggregateByVatRate();
 
-        long totalExpenses = transactions.stream()
-                .mapToLong(FinancialTransaction::getAmountPennies)
-                .filter(a -> a < 0)
-                .map(Math::abs)
-                .sum();
-
-        long totalVat = transactions.stream()
-                .mapToLong(FinancialTransaction::calculateVatAmount)
-                .sum();
-
-        List<FinancialSummaryDto.VatBreakdown> vatBreakdown = transactions.stream()
-                .collect(Collectors.groupingBy(FinancialTransaction::getVatRate))
-                .entrySet().stream()
-                .map(entry -> new FinancialSummaryDto.VatBreakdown(
-                        entry.getKey(),
-                        entry.getValue().stream().mapToLong(FinancialTransaction::getAmountPennies).sum(),
-                        entry.getValue().stream().mapToLong(FinancialTransaction::calculateVatAmount).sum(),
-                        entry.getValue().size()
-                ))
+        List<FinancialSummaryDto.VatBreakdown> vatBreakdown = vatRows.stream()
+                .sorted(Comparator.comparing(row -> row.vatRate().name()))
+                .map(row -> new FinancialSummaryDto.VatBreakdown(
+                        row.vatRate(),
+                        row.totalAmountPennies(),
+                        row.totalVatPennies(),
+                        (int) row.count()))
                 .toList();
 
+        long net = aggregate.totalRevenuePennies() - aggregate.totalExpensesPennies();
+
         return new FinancialSummaryDto(
-                totalRevenue,
-                totalExpenses,
-                totalRevenue - totalExpenses,
-                totalVat,
-                transactions.size(),
+                aggregate.totalRevenuePennies(),
+                aggregate.totalExpensesPennies(),
+                net,
+                aggregate.totalVatPennies(),
+                (int) aggregate.transactionCount(),
                 vatBreakdown
         );
     }

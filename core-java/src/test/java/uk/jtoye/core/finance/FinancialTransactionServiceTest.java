@@ -13,8 +13,10 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
+import uk.jtoye.core.finance.dto.FinancialVatRow;
 import uk.jtoye.core.security.TenantContext;
 
 import java.lang.reflect.Field;
@@ -403,23 +405,32 @@ class FinancialTransactionServiceTest {
     @Test
     @DisplayName("getSummary - Returns correct aggregation of transactions")
     void testGetSummary() {
-        // Given: mix of revenue and expense transactions with different VAT rates
-        FinancialTransaction revenue1 = new FinancialTransaction(20000L, VatRate.STANDARD, "ORD-001");
-        revenue1.setTenantId(tenantId);
-        setField(revenue1, "id", UUID.randomUUID());
-        setField(revenue1, "createdAt", OffsetDateTime.now());
-
-        FinancialTransaction revenue2 = new FinancialTransaction(5000L, VatRate.ZERO, "ORD-002");
-        revenue2.setTenantId(tenantId);
-        setField(revenue2, "id", UUID.randomUUID());
-        setField(revenue2, "createdAt", OffsetDateTime.now());
-
-        FinancialTransaction refund = new FinancialTransaction(-3000L, VatRate.STANDARD, "REFUND-001");
-        refund.setTenantId(tenantId);
-        setField(refund, "id", UUID.randomUUID());
-        setField(refund, "createdAt", OffsetDateTime.now());
-
-        when(financialTransactionRepository.findAll()).thenReturn(List.of(revenue1, revenue2, refund));
+        // Given: mix of revenue and expense transactions with different VAT rates.
+        // Post-CQ-02, getSummary() calls two JPQL aggregate queries instead of
+        // findAll()+reduce — the stubs now return the pre-aggregated result rows
+        // directly. The expected totals below mirror what a real DB run would
+        // produce against: (STANDARD +20000), (ZERO +5000), (STANDARD -3000).
+        //
+        //   totalRevenue  = 20000 + 5000      = 25000
+        //   totalExpenses = abs(-3000)        = 3000
+        //   totalVat      = (20000*20/100)    = 4000
+        //                 + (  5000* 0/100)   = 0
+        //                 + (-3000*20/100)    = -600
+        //                                       -----
+        //                                       3400
+        //   count         = 3
+        FinancialAggregateRow aggregate = new FinancialAggregateRow(
+                25000L,   // totalRevenuePennies
+                3000L,    // totalExpensesPennies
+                3400L,    // totalVatPennies
+                3L);      // transactionCount
+        List<FinancialVatRow> vatRows = List.of(
+                // STANDARD: +20000 + -3000 = 17000; vat (20000*20/100) + (-3000*20/100) = 3400
+                new FinancialVatRow(VatRate.STANDARD, 17000L, 3400L, 2L),
+                // ZERO: +5000; vat = 0
+                new FinancialVatRow(VatRate.ZERO, 5000L, 0L, 1L));
+        when(financialTransactionRepository.aggregateForCurrentTenant()).thenReturn(aggregate);
+        when(financialTransactionRepository.aggregateByVatRate()).thenReturn(vatRows);
 
         // When
         FinancialSummaryDto summary = financialTransactionService.getSummary();
@@ -436,7 +447,10 @@ class FinancialTransactionServiceTest {
     @Test
     @DisplayName("getSummary - Returns zeros when no transactions exist")
     void testGetSummary_Empty() {
-        when(financialTransactionRepository.findAll()).thenReturn(List.of());
+        // COALESCE(SUM(...), 0L) in the JPQL guarantees zero rows → 0L (not NULL).
+        when(financialTransactionRepository.aggregateForCurrentTenant())
+                .thenReturn(new FinancialAggregateRow(0L, 0L, 0L, 0L));
+        when(financialTransactionRepository.aggregateByVatRate()).thenReturn(List.of());
 
         FinancialSummaryDto summary = financialTransactionService.getSummary();
 

@@ -28,11 +28,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * Service for order management operations.
@@ -51,6 +48,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final OrderEventPublisher eventPublisher;
     private final FinancialTransactionService financialTransactionService;
+    private final StockService stockService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -59,7 +57,8 @@ public class OrderService {
                        OrderStateMachineService stateMachineService,
                        OrderMapper orderMapper,
                        OrderEventPublisher eventPublisher,
-                       FinancialTransactionService financialTransactionService) {
+                       FinancialTransactionService financialTransactionService,
+                       StockService stockService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -68,6 +67,7 @@ public class OrderService {
         this.orderMapper = orderMapper;
         this.eventPublisher = eventPublisher;
         this.financialTransactionService = financialTransactionService;
+        this.stockService = stockService;
     }
 
     /**
@@ -315,28 +315,38 @@ public class OrderService {
         // Use StateMachine to validate and execute transition
         OrderStatus newStatus = stateMachineService.sendEvent(orderId, oldStatus, event);
 
-        // Update order with new status
+        // Mutate in memory first; the save happens AFTER stock bookkeeping so a
+        // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
+
+        // Stock decrement (CQ-01): optimistic-lock gated, re-reads inside retry.
+        // Throws InsufficientStockException on exhaustion — surrounding
+        // @Transactional rolls back the in-memory status change so the order
+        // remains in its prior state (PENDING) rather than becoming a ghost
+        // CONFIRMED row.
+        if (newStatus == OrderStatus.CONFIRMED) {
+            stockService.decrementForOrder(order.getItems());
+        }
+
+        // Restore stock when order is cancelled (if it was previously confirmed).
+        // Cancel-path is additive; @Version makes it collision-safe for free.
+        if (newStatus == OrderStatus.CANCELLED && oldStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()) {
+            stockService.restoreForOrder(order.getItems());
+        }
+
+        // Save AFTER stock bookkeeping — ensures a decrement failure leaves the
+        // order in its prior PENDING status, not a ghost CONFIRMED row.
         order = orderRepository.save(order);
 
         log.info("Order {} transitioned: {} -> {} via event {}",
                 order.getOrderNumber(), oldStatus, newStatus, event);
 
-        // Publish state change event (non-blocking — RabbitMQ failure doesn't break the transition)
+        // Publish state change event AFTER successful save (non-blocking —
+        // RabbitMQ failure doesn't break the transition).
         eventPublisher.publishStateChange(
                 order.getId(), order.getTenantId(), order.getOrderNumber(),
                 oldStatus, newStatus);
-
-        // Decrement stock when order is confirmed (not on creation — vendor might reject)
-        if (newStatus == OrderStatus.CONFIRMED) {
-            adjustStockInBatch(order.getItems(), -1, "Decremented");
-        }
-
-        // Restore stock when order is cancelled (if it was previously confirmed)
-        if (newStatus == OrderStatus.CANCELLED && oldStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()) {
-            adjustStockInBatch(order.getItems(), +1, "Restored");
-        }
 
         // Auto-create financial transaction when order is completed
         if (newStatus == OrderStatus.COMPLETED && order.getTotalAmountPennies() != null) {
@@ -350,43 +360,6 @@ public class OrderService {
         }
 
         return orderMapper.toDto(order);
-    }
-
-    /**
-     * Batch-adjust product stock for all items of an order.
-     *
-     * <p>Previously each item did a {@code findById} + {@code save} pair, causing N+1
-     * database round-trips per order. This helper issues a single {@code findAllById}
-     * and a single {@code saveAll}, so a 5-item order now hits the DB twice instead
-     * of ten times. Stock never drops below zero.
-     *
-     * @param items     order items to adjust
-     * @param direction -1 to decrement, +1 to restore
-     * @param verb      log verb ("Decremented" or "Restored")
-     */
-    private void adjustStockInBatch(List<OrderItem> items, int direction, String verb) {
-        if (items == null || items.isEmpty()) {
-            return;
-        }
-        List<UUID> productIds = items.stream()
-                .map(OrderItem::getProductId)
-                .distinct()
-                .toList();
-        Map<UUID, Product> byId = productRepository.findAllById(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, Function.identity()));
-        for (OrderItem item : items) {
-            Product product = byId.get(item.getProductId());
-            if (product == null || product.getQuantityInStock() == null) {
-                continue;
-            }
-            int oldStock = product.getQuantityInStock();
-            int newStock = Math.max(0, oldStock + (direction * item.getQuantity()));
-            product.setQuantityInStock(newStock);
-            log.info("{} stock for product {}: {} -> {}", verb, product.getSku(), oldStock, newStock);
-        }
-        if (!byId.isEmpty()) {
-            productRepository.saveAll(byId.values());
-        }
     }
 
     /**
