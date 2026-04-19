@@ -21,7 +21,14 @@ const cspDirectives = [
   `form-action 'self' ${keycloakOrigin}`.replace(/\s+/g, ' ').trim(),
   "base-uri 'self'",
   "object-src 'none'",
-  "upgrade-insecure-requests",
+  // `upgrade-insecure-requests` is applied by Chromium even under
+  // Content-Security-Policy-Report-Only (it is a semantic request-modifier
+  // per CSP3, not a report-or-block decision). In dev, MinIO is on
+  // plain-HTTP http://localhost:9000 — upgrading the request to https://
+  // causes every product/banner/logo image to fail to load. Apply this
+  // directive only in non-dev environments where all object-storage URLs
+  // are HTTPS.
+  ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join('; ')
 
 const nextConfig = {
