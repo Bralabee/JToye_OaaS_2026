@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: in-progress
-stopped_at: Phase 13 plan 01 complete — SEC-01 shipped on branch `feature/phase-13-guest-tracking-tenant-validation` (5 atomic commits 1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2). TDD RED-RED-GREEN-GREEN-pin sequence; VALIDATION.md nyquist_compliant: true. Ready for PR.
-last_updated: "2026-04-18T23:13:00Z"
-last_activity: 2026-04-18
+stopped_at: Phase 14 COMPLETE — CQ-01 + CQ-02 shipped on branch `feature/phase-14-stock-race-summary-aggregation`. Plan 14-01 (6 commits ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd) + Plan 14-02 (3 commits 635cc22, 06964ac, 83fa33a). getSummary now issues 2 JPQL aggregate queries with SUM/CASE WHEN + GROUP BY vatRate, replacing findAll()+4-stream-reduce. Output parity pinned by 1k-row golden fixture; index usability pinned by EXPLAIN ANALYZE with enable_seqscan=off; query count pinned to exactly 2 prepared statements; cross-tenant disjointness pinned via raw-SQL + reflection-based @Query inspection. Branch ready for PR to main. Phase 12 Task 12-02-07 human gate still pending.
+last_updated: "2026-04-19T00:55:00Z"
+last_activity: 2026-04-19
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 11
-  completed_plans: 3
-  percent: 27
+  completed_plans: 5
+  percent: 45
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 13 — Guest Tracking Tenant Validation (COMPLETE, ready for PR)
-Plan: 13-01 COMPLETE — 5 atomic TDD commits on `feature/phase-13-guest-tracking-tenant-validation`; VALIDATION.md flipped to `nyquist_compliant: true`; SUMMARY.md at .planning/phases/13-guest-tracking-tenant-validation/13-01-SUMMARY.md
-Status: Phase 13 SEC-01 application-layer tenant-match gate shipped on all 5 vulnerable call sites (PublicStorefrontService ×3 + ReviewService ×2). 6 new MockMvc+Testcontainers @Test methods + 4 new unit tests green. Ready for PR. Phase 12 Task 12-02-07 human gate still pending (post-merge staging observation).
-Last activity: 2026-04-18 — Completed plan 13-01 on branch `feature/phase-13-guest-tracking-tenant-validation`: commits 1f0b9aa (RED integration), 1e7f357 (RED unit), e978939 (GREEN storefront), 9c5309b (GREEN reviews), 300cae2 (regression pin + VALIDATION.md)
+Phase: 14 — Stock Race Fix + Summary Aggregation (COMPLETE — both plans shipped)
+Plan: 14-02 COMPLETE — 3 atomic commits on `feature/phase-14-stock-race-summary-aggregation`; SUMMARY.md at .planning/phases/14-stock-race-fix-summary-aggregation/14-02-SUMMARY.md
+Status: Phase 14 COMPLETE — CQ-02 getSummary DB aggregation shipped. FinancialTransactionService.getSummary() rewritten with 2 JPQL constructor-expression queries (scalar aggregate + GROUP BY vatRate) replacing findAll()+4-stream-reduce. FinancialAggregateRow + FinancialVatRow DTOs added. Output parity pinned by FinancialSummaryGoldenFileTest against a committed 1000-row deterministic golden fixture (byte-for-byte VAT math via SQL CASE WHEN mirroring entity.calculateVatAmount). Query count pinned to exactly 2 prepared statements by FinancialSummaryQueryCountTest (Hibernate Statistics getPrepareStatementCount — the RED→GREEN delta). Index usability pinned by FinancialSummaryQueryPlanTest using EXPLAIN ANALYZE with enable_seqscan=off at 10k tenant-A + 2k decoy-tenant rows. Cross-tenant regression pinned by FinancialSummaryCrossTenantIsolationTest (raw-SQL per-tenant disjointness + reflection-based JPQL no-explicit-tenant-WHERE assertion). Full :core-java:test sweep: 415 tests / 37 pre-existing RabbitMQ PLAIN auth failures (all unchanged) / 1 skipped / zero new regressions. Branch ready for PR to main.
+Last activity: 2026-04-19 — Completed plan 14-02 on branch `feature/phase-14-stock-race-summary-aggregation`: commits 635cc22 (RED tests), 06964ac (GREEN — DTOs + JPQL + service rewrite), 83fa33a (regression pin — cross-tenant + CHANGELOG)
 
-Progress: [███░░░░░░░] 27% (3/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [████▌░░░░░] 45% (5/11 plans complete; 1/6 milestone-v2.2 phases complete — phases 12-17)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (M2): 10
+- Total plans completed (M2): 10 + Milestone v2.2: 5
 - Average duration: —
 - Total execution time: — hours
 
@@ -61,11 +61,13 @@ Progress: [███░░░░░░░] 27% (3/11 plans complete; 1/6 milesto
 | 12    | 01   | ~90min   | 4     | 6     | 8 Java      |
 | 12    | 02   | ~5min    | 6     | 7     | 8 Jest + 3 Playwright |
 | 13    | 01   | ~45min   | 5     | 8     | 10 Java (6 integration + 4 unit) |
+| 14    | 01   | ~20min   | 5     | 17    | 8 Java (5 StockService unit + 1 Concurrent integration + 2 StockDecrementLocation + 1 Handler + 2 refactored OrderService) |
+| 14    | 02   | ~40min   | 3     | 12    | 6 Java (1 Golden-file + 1 QueryPlan + 1 QueryCount + 1 CrossTenant + 2 rewritten GetSummary) + committed 1k-row JSON fixture |
 
 **Recent Trend:**
 
-- Last plan: 13-01 Guest Tracking Tenant Validation (SEC-01) — 5 atomic TDD commits (RED-RED-GREEN-GREEN-pin); TenantAccessDeniedException + resolvePublicShopForSlug helper in PublicStorefrontService + ReviewService; 6 MockMvc+Testcontainers integration tests against real Postgres (not H2 — Phase 12 Deviation #4 pattern reused); 4 resolvePublicShopForSlug_* unit tests; OutputCaptureExtension pins the audit-log format
-- Trend: milestone v2.2 execution continues green; 3/11 plans complete; Phase 13 ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
+- Last plan: 14-02 getSummary DB Aggregation (CQ-02) — 3 atomic commits (RED→GREEN→pin); 2 JPQL constructor-expression queries replace findAll()+reduce; COALESCE(SUM(...), 0L) empty-safety; qualified-enum literals in JPQL CASE WHEN; Hibernate Statistics query-count pin; EXPLAIN ANALYZE + enable_seqscan=off index-usability pin (deviation — planner legitimately prefers Seq Scan at 12k total rows / 145 pages Testcontainers scale); reflection-based JPQL @Query inspection for no-explicit-tenant-WHERE (STRIDE T-14-04 mitigation); superuser-RLS-bypass environmental caveat documented in deferred-items.md §2.
+- Trend: milestone v2.2 execution continues green; 5/11 plans complete (Phase 14 COMPLETE — both plans shipped); branch `feature/phase-14-stock-race-summary-aggregation` ready for PR to main; Phase 13 still ready for PR; Phase 12 Task 12-02-07 staging-observation gate still pending
 
 *Updated after each plan completion*
 
@@ -117,6 +119,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-18T23:13:00Z
-Stopped at: Phase 13 plan 01 COMPLETE — branch `feature/phase-13-guest-tracking-tenant-validation` has 5 new commits (1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2) + SUMMARY.md ready for PR. Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover) still pending as a human-verification item.
-Resume file: .planning/phases/12-spring-security-response-headers-frontend-csp/12-02-SUMMARY.md
+Last session: 2026-04-19T00:55:00Z
+Stopped at: Phase 14 COMPLETE — branch `feature/phase-14-stock-race-summary-aggregation` has 9 commits total (14-01: ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd, 98176a5; 14-02: 635cc22, 06964ac, 83fa33a) + 14-02-SUMMARY.md ready for PR to main. Both CQ-01 (stock race) and CQ-02 (getSummary DB aggregation) shipped. Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover) and Phase 13 PR still pending.
+Resume file: .planning/phases/14-stock-race-fix-summary-aggregation/14-02-SUMMARY.md

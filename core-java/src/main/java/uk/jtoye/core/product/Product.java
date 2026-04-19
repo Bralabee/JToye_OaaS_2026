@@ -72,6 +72,12 @@ public class Product {
     @Column(name = "additional_image_urls", columnDefinition = "TEXT[]")
     private List<String> additionalImageUrls = new ArrayList<>();
 
+    // Optimistic-lock column (CQ-01 stock race fix — V34 migration).
+    // Primitive long (not Long) — migration DEFAULT 0 + NOT NULL guarantees no NULLs.
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     public UUID getId() { return id; }
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
@@ -108,6 +114,8 @@ public class Product {
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
     public List<String> getAdditionalImageUrls() { return additionalImageUrls; }
     public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
+    public long getVersion() { return version; }
+    public void setVersion(long version) { this.version = version; }
 
     /**
      * Check if product has stock available.

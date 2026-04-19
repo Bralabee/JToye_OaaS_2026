@@ -53,7 +53,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 
 - [🟡] **Phase 12: Spring Security Response Headers + Frontend CSP** - X-Frame-Options, HSTS (prod-only), X-Content-Type-Options, Referrer-Policy on Spring; CSP on Next.js (SEC-02, SEC-03) — 12-01 DONE, 12-02 operationally complete (Tasks 01-06 shipped; Task 07 manual cutover gate pending human verification)
 - [🟡] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01) — 13-01 DONE 2026-04-18, ready for PR
-- [ ] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02)
+- [x] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02) — **DONE 2026-04-19, both plans shipped on feature/phase-14-stock-race-summary-aggregation, ready for PR**
 - [ ] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets controller with kubeseal conversion of the existing Secret manifests (INF-01, INF-02)
 - [ ] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01)
 - [ ] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe, refund state transition in Order state machine with Flyway V34 migration and RabbitMQ `order.refunded` event (VOPS-01, VOPS-02, VOPS-03)
@@ -98,7 +98,9 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   3. `getSummary()` returns the same output on a seeded 1k-row fixture as the previous `findAll()`+reduce implementation (golden-file comparison)
   4. `getSummary()` query plan uses an index (verified by `EXPLAIN ANALYZE` in the integration test)
   5. No regression in `OrderServiceTest` / `FinancialTransactionServiceTest` existing assertions
-**Plans**: 2 plans
+**Plans**: 2 plans (both complete)
+  - [x] 14-01-PLAN.md — CQ-01 Stock Race Fix: V34 migration adding `@Version` to `products`, new `InsufficientStockException` → 409 via GlobalExceptionHandler, `StockService.decrementForOrder` with `@Retryable(ObjectOptimisticLockingFailureException.class, maxAttempts=3, backoff=50ms)` + `@Recover`, `OrderService.transitionOrder` rewire (save-after-decrement ordering fix), `adjustStockInBatch` + silent `Math.max(0,…)` clamp deleted, Testcontainers concurrent two-thread race test — **DONE 2026-04-19, see 14-01-SUMMARY.md (commits ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd, 98176a5)**
+  - [x] 14-02-PLAN.md — CQ-02 getSummary DB Aggregation: 2 JPQL constructor-target queries (`FinancialAggregateRow` scalar + `FinancialVatRow` GROUP BY vatRate) with `COALESCE(SUM(CASE WHEN…), 0L)`, `ORDER BY ft.vatRate` + Java `Comparator` defense-in-depth, golden-file parity test (1k rows), EXPLAIN ANALYZE Index Scan assertion (10k rows + enable_seqscan=off), Hibernate `getPrepareStatementCount() == 2` pin, cross-tenant isolation test (raw-SQL disjointness + reflection-based no-explicit-tenant-WHERE — superuser RLS bypass environmental caveat documented) — **DONE 2026-04-19, see 14-02-SUMMARY.md (commits 635cc22, 06964ac, 83fa33a)**
 **UI hint**: no
 
 ### Phase 15: K8s NetworkPolicies + Sealed Secrets
