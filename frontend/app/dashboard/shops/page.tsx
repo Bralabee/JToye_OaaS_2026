@@ -244,7 +244,7 @@ export default function ShopsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
   }
@@ -258,10 +258,10 @@ export default function ShopsPage() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Shops</h1>
-          <p className="mt-2 text-ink-secondary">Manage your shop locations</p>
+          <h1 className="text-4xl font-bold text-slate-900">Shops</h1>
+          <p className="mt-2 text-slate-600">Manage your shop locations</p>
         </div>
-        <Button onClick={openCreateDialog} variant="primary" className="gap-2">
+        <Button onClick={openCreateDialog} className="gap-2">
           <Plus className="h-4 w-4" />
           Add Shop
         </Button>
@@ -282,7 +282,7 @@ export default function ShopsPage() {
               </CardDescription>
             </div>
             <div className="relative w-[220px]">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-ink-tertiary" aria-hidden="true" />
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
               <Input
                 placeholder="Search shops..."
                 value={searchQuery}
@@ -294,14 +294,14 @@ export default function ShopsPage() {
           <CardContent>
             {shops.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Store className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
-                <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
+                <Store className="mb-4 h-12 w-12 text-slate-300" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
                   No shops yet
                 </h3>
-                <p className="mb-4 text-sm text-ink-tertiary">
+                <p className="mb-4 text-sm text-slate-500">
                   Get started by creating your first shop
                 </p>
-                <Button onClick={openCreateDialog} variant="secondary">
+                <Button onClick={openCreateDialog} variant="outline">
                   <Plus className="mr-2 h-4 w-4" />
                   Add Shop
                 </Button>
@@ -331,31 +331,31 @@ export default function ShopsPage() {
                             <SafeImage
                               src={shop.logoUrl}
                               alt={shop.name}
-                              className="h-8 w-8 rounded-sm object-cover"
-                              fallbackClassName="h-8 w-8 rounded-sm bg-brand-primary-subtle"
-                              fallbackIcon={<Store className="h-4 w-4 text-brand-primary" />}
+                              className="h-8 w-8 rounded-lg object-cover"
+                              fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                              fallbackIcon={<Store className="h-4 w-4 text-blue-600" />}
                             />
-                            <span className="text-ink-primary">{shop.name}</span>
+                            {shop.name}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2 text-ink-secondary">
-                            <MapPin className="h-4 w-4" aria-hidden="true" />
+                          <div className="flex items-center gap-2 text-slate-600">
+                            <MapPin className="h-4 w-4" />
                             {shop.address || "—"}
                           </div>
                         </TableCell>
                         <TableCell>
                           {shop.published ? (
-                            <Badge variant="success" size="sm">
-                              <Globe className="h-3 w-3 mr-1" aria-hidden="true" />Published
+                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                              <Globe className="h-3 w-3 mr-1" />Published
                             </Badge>
                           ) : (
-                            <Badge variant="subtle" size="sm">Draft</Badge>
+                            <Badge variant="secondary" className="text-slate-500">Draft</Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-ink-secondary">
+                        <TableCell className="text-slate-600">
                           <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" aria-hidden="true" />
+                            <Calendar className="h-4 w-4" />
                             {formatDistanceToNow(new Date(shop.createdAt), {
                               addSuffix: true,
                             })}
@@ -365,18 +365,17 @@ export default function ShopsPage() {
                           <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
-                              size="iconSm"
+                              size="sm"
                               onClick={() => openEditDialog(shop)}
-                              aria-label="Edit shop"
+                              className="h-8 w-8 p-0"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
-                              size="iconSm"
+                              size="sm"
                               onClick={() => openDeleteDialog(shop)}
-                              className="text-danger hover:bg-danger-subtle"
-                              aria-label="Delete shop"
+                              className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -415,12 +414,12 @@ export default function ShopsPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-3">
-              <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Basic Info</h4>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Basic Info</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="name">Shop Name *</Label>
                   <Input id="name" placeholder="e.g., Jollof Express" {...register("name")} />
-                  {errors.name && <p className="text-xs text-danger">{errors.name.message}</p>}
+                  {errors.name && <p className="text-xs text-red-600">{errors.name.message}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="address">Address</Label>
@@ -451,7 +450,7 @@ export default function ShopsPage() {
 
             {/* Storefront Presentation */}
             <div className="space-y-3">
-              <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Storefront Presentation</h4>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Storefront Presentation</h4>
               {editingShop ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <ImageUploader
@@ -498,8 +497,8 @@ export default function ShopsPage() {
                   />
                 </div>
               ) : (
-                <div className="flex items-center gap-2 rounded-md border border-dashed border-subtle bg-surface-subtle px-3 py-3 text-sm text-ink-tertiary">
-                  <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                  <ImageIcon className="h-4 w-4" />
                   <span>Save the shop first, then add logo and banner images</span>
                 </div>
               )}
@@ -514,7 +513,7 @@ export default function ShopsPage() {
 
             {/* Contact & Delivery */}
             <div className="space-y-3">
-              <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Contact & Delivery</h4>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Contact & Delivery</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="phone">Phone</Label>
@@ -539,11 +538,11 @@ export default function ShopsPage() {
 
             {/* Opening Hours */}
             <div className="space-y-3">
-              <h4 className="text-[11px] font-semibold text-ink-tertiary uppercase tracking-[0.08em]">Opening Hours</h4>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Opening Hours</h4>
               <div className="grid grid-cols-1 gap-2">
                 {DAYS.map((day) => (
                   <div key={day} className="flex items-center gap-3">
-                    <span className="w-10 text-xs font-medium text-ink-secondary">{DAY_LABELS[day]}</span>
+                    <span className="w-10 text-xs font-medium text-slate-600">{DAY_LABELS[day]}</span>
                     <Input
                       className="flex-1"
                       placeholder="09:00-17:00 or Closed"

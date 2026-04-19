@@ -68,52 +68,50 @@ const orderSchema = z.object({
 
 type OrderFormData = z.infer<typeof orderSchema>
 
-type OrderBadgeVariant = "subtle" | "warning" | "info" | "brand" | "success" | "danger" | "editorial"
-
 const statusConfig: Record<
   OrderStatus,
-  { label: string; variant: OrderBadgeVariant; iconColor: string; icon: React.ComponentType<{ className?: string }> }
+  { label: string; color: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   DRAFT: {
     label: "Draft",
-    variant: "subtle",
-    iconColor: "text-ink-tertiary",
+    color: "text-gray-700",
+    bgColor: "bg-gray-500",
     icon: Clock,
   },
   PENDING: {
     label: "Pending",
-    variant: "warning",
-    iconColor: "text-ink-primary",
+    color: "text-yellow-700",
+    bgColor: "bg-yellow-500",
     icon: Clock,
   },
   CONFIRMED: {
     label: "Confirmed",
-    variant: "info",
-    iconColor: "text-info",
+    color: "text-blue-700",
+    bgColor: "bg-blue-500",
     icon: CheckCircle2,
   },
   PREPARING: {
     label: "Preparing",
-    variant: "brand",
-    iconColor: "text-brand-primary",
+    color: "text-purple-700",
+    bgColor: "bg-purple-500",
     icon: ChefHat,
   },
   READY: {
     label: "Ready",
-    variant: "success",
-    iconColor: "text-success",
+    color: "text-green-700",
+    bgColor: "bg-green-500",
     icon: PackageIcon,
   },
   COMPLETED: {
     label: "Completed",
-    variant: "editorial",
-    iconColor: "text-accent-editorial",
+    color: "text-emerald-700",
+    bgColor: "bg-emerald-600",
     icon: FileCheck,
   },
   CANCELLED: {
     label: "Cancelled",
-    variant: "danger",
-    iconColor: "text-danger",
+    color: "text-red-700",
+    bgColor: "bg-red-500",
     icon: XCircle,
   },
 }
@@ -127,14 +125,12 @@ const statusFlow: OrderStatus[] = [
   "COMPLETED",
 ]
 
-type TransitionVariant = "primary" | "editorial" | "secondary" | "destructive"
-
 interface StateTransition {
   action: string
   endpoint: string
   nextStatus: OrderStatus
   icon: React.ComponentType<{ className?: string }>
-  variant: TransitionVariant
+  color: string
 }
 
 const getAvailableTransitions = (
@@ -147,7 +143,7 @@ const getAvailableTransitions = (
         endpoint: "submit",
         nextStatus: "PENDING",
         icon: ArrowRight,
-        variant: "primary",
+        color: "bg-yellow-600 hover:bg-yellow-700",
       },
     ],
     PENDING: [
@@ -156,14 +152,14 @@ const getAvailableTransitions = (
         endpoint: "confirm",
         nextStatus: "CONFIRMED",
         icon: CheckCircle2,
-        variant: "primary",
+        color: "bg-blue-600 hover:bg-blue-700",
       },
       {
         action: "Cancel",
         endpoint: "cancel",
         nextStatus: "CANCELLED",
         icon: Ban,
-        variant: "destructive",
+        color: "bg-red-600 hover:bg-red-700",
       },
     ],
     CONFIRMED: [
@@ -172,14 +168,14 @@ const getAvailableTransitions = (
         endpoint: "start-preparation",
         nextStatus: "PREPARING",
         icon: ChefHat,
-        variant: "editorial",
+        color: "bg-purple-600 hover:bg-purple-700",
       },
       {
         action: "Cancel",
         endpoint: "cancel",
         nextStatus: "CANCELLED",
         icon: Ban,
-        variant: "destructive",
+        color: "bg-red-600 hover:bg-red-700",
       },
     ],
     PREPARING: [
@@ -188,7 +184,7 @@ const getAvailableTransitions = (
         endpoint: "mark-ready",
         nextStatus: "READY",
         icon: PackageIcon,
-        variant: "primary",
+        color: "bg-green-600 hover:bg-green-700",
       },
     ],
     READY: [
@@ -197,7 +193,7 @@ const getAvailableTransitions = (
         endpoint: "complete",
         nextStatus: "COMPLETED",
         icon: FileCheck,
-        variant: "secondary",
+        color: "bg-emerald-600 hover:bg-emerald-700",
       },
     ],
     COMPLETED: [],
@@ -211,15 +207,11 @@ const PAGE_SIZE = 20
 function OrdersPageInner() {
   const searchParams = useSearchParams()
   const customerIdParam = searchParams.get("customer")
-  const initialStatusParam = searchParams.get("status")
-  const shouldAutoOpenNew = searchParams.get("new") === "1"
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<string>(
-    initialStatusParam && initialStatusParam !== "ALL" ? initialStatusParam : "ALL"
-  )
+  const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
@@ -230,7 +222,6 @@ function OrdersPageInner() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [autoOpenedNew, setAutoOpenedNew] = useState(false)
   const { toast } = useToast()
 
   const {
@@ -337,14 +328,6 @@ function OrdersPageInner() {
     setDialogOpen(true)
   }
 
-  // Honour ?new=1 — auto-open the create-order dialog once after the initial load
-  useEffect(() => {
-    if (!shouldAutoOpenNew || autoOpenedNew || loading) return
-    openCreateDialog()
-    setAutoOpenedNew(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldAutoOpenNew, autoOpenedNew, loading])
-
   const addOrderItem = () => {
     setOrderItems([...orderItems, { productId: "", quantity: 1 }])
   }
@@ -441,7 +424,7 @@ function OrdersPageInner() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
   }
@@ -455,14 +438,14 @@ function OrdersPageInner() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Orders</h1>
-          <p className="mt-2 text-ink-secondary">
+          <h1 className="text-4xl font-bold text-slate-900">Orders</h1>
+          <p className="mt-2 text-slate-600">
             {customerIdParam
               ? "Showing orders for selected customer"
               : "Manage orders and track their status through the workflow"}
           </p>
         </div>
-        <Button onClick={openCreateDialog} variant="primary" className="gap-2">
+        <Button onClick={openCreateDialog} className="gap-2">
           <Plus className="h-4 w-4" />
           Create Order
         </Button>
@@ -474,7 +457,7 @@ function OrdersPageInner() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card variant="inset" className="overflow-hidden">
+        <Card className="overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50">
           <CardHeader>
             <CardTitle className="text-lg">Order Status Flow</CardTitle>
             <CardDescription>
@@ -488,12 +471,12 @@ function OrdersPageInner() {
                 const StatusIcon = config.icon
                 return (
                   <div key={status} className="flex items-center">
-                    <div className="flex items-center gap-2 rounded-md bg-surface-card border border-subtle px-4 py-2 shadow-subtle">
-                      <StatusIcon className={`h-4 w-4 ${config.iconColor}`} aria-hidden="true" />
-                      <span className="text-sm font-medium text-ink-primary">{config.label}</span>
+                    <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 shadow-sm">
+                      <StatusIcon className={`h-4 w-4 ${config.color}`} />
+                      <span className="text-sm font-medium">{config.label}</span>
                     </div>
                     {index < statusFlow.length - 1 && (
-                      <ArrowRight className="mx-2 h-4 w-4 text-ink-tertiary" aria-hidden="true" />
+                      <ArrowRight className="mx-2 h-4 w-4 text-slate-400" />
                     )}
                   </div>
                 )
@@ -537,14 +520,14 @@ function OrdersPageInner() {
           <CardContent>
             {orders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <ShoppingCart className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
-                <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
+                <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
                   No orders yet
                 </h3>
-                <p className="mb-4 text-sm text-ink-tertiary">
+                <p className="mb-4 text-sm text-slate-500">
                   Get started by creating your first order
                 </p>
-                <Button onClick={openCreateDialog} variant="secondary">
+                <Button onClick={openCreateDialog} variant="outline">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Order
                 </Button>
@@ -574,34 +557,36 @@ function OrdersPageInner() {
                           key={order.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          className="group cursor-pointer hover:bg-surface-subtle/60 transition-colors duration-fast motion-reduce:transition-none"
+                          className="group cursor-pointer hover:bg-slate-50"
                           onClick={() => fetchOrderDetail(order.id)}
                         >
-                          <TableCell className="font-mono tabular-nums text-xs text-ink-secondary">
+                          <TableCell className="font-mono text-xs">
                             {order.id.substring(0, 8)}...
                           </TableCell>
                           <TableCell>
                             <div>
-                              <div className="font-medium text-ink-primary">
+                              <div className="font-medium">
                                 {order.customerName || "N/A"}
                               </div>
                               {order.customerEmail && (
-                                <div className="text-xs text-ink-tertiary">
+                                <div className="text-xs text-slate-500">
                                   {order.customerEmail}
                                 </div>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={config.variant} size="sm" className="flex w-fit items-center gap-1">
+                            <Badge
+                              className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
+                            >
                               <StatusIcon className="h-3 w-3" />
                               {config.label}
                             </Badge>
                           </TableCell>
-                          <TableCell numeric className="font-semibold text-ink-primary">
+                          <TableCell className="font-semibold">
                             £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
                           </TableCell>
-                          <TableCell className="text-ink-secondary">
+                          <TableCell className="text-slate-600">
                             {formatDistanceToNow(new Date(order.createdAt), {
                               addSuffix: true,
                             })}
@@ -614,7 +599,7 @@ function OrdersPageInner() {
                                   <Button
                                     key={transition.action}
                                     size="sm"
-                                    variant={transition.variant}
+                                    className={`${transition.color} text-white h-8`}
                                     onClick={() =>
                                       handleStateTransition(
                                         order.id,
@@ -630,7 +615,7 @@ function OrdersPageInner() {
                                 )
                               })}
                               {transitions.length === 0 && (
-                                <span className="text-xs text-ink-tertiary">
+                                <span className="text-xs text-slate-400">
                                   No actions
                                 </span>
                               )}
@@ -682,7 +667,7 @@ function OrdersPageInner() {
                 </SelectContent>
               </Select>
               {errors.shopId && (
-                <p className="text-sm text-danger">{errors.shopId.message}</p>
+                <p className="text-sm text-red-600">{errors.shopId.message}</p>
               )}
             </div>
 
@@ -694,7 +679,7 @@ function OrdersPageInner() {
                 {...register("customerName")}
               />
               {errors.customerName && (
-                <p className="text-sm text-danger">
+                <p className="text-sm text-red-600">
                   {errors.customerName.message}
                 </p>
               )}
@@ -709,7 +694,7 @@ function OrdersPageInner() {
                 {...register("customerEmail")}
               />
               {errors.customerEmail && (
-                <p className="text-sm text-danger">
+                <p className="text-sm text-red-600">
                   {errors.customerEmail.message}
                 </p>
               )}
@@ -723,7 +708,7 @@ function OrdersPageInner() {
                 {...register("customerPhone")}
               />
               {errors.customerPhone && (
-                <p className="text-sm text-danger">
+                <p className="text-sm text-red-600">
                   {errors.customerPhone.message}
                 </p>
               )}
@@ -746,19 +731,19 @@ function OrdersPageInner() {
               </div>
 
               {orderItems.length === 0 && (
-                <p className="text-sm text-ink-tertiary py-4 text-center border-2 border-dashed border-subtle rounded-md">
+                <p className="text-sm text-slate-500 py-4 text-center border-2 border-dashed rounded-lg">
                   No items added. Click &quot;Add Item&quot; to start building the order.
                 </p>
               )}
 
               {orderItems.map((item, index) => (
-                <div key={index} className="flex gap-2 items-start p-3 border border-subtle rounded-md bg-surface-subtle">
+                <div key={index} className="flex gap-2 items-start p-3 border rounded-lg bg-slate-50">
                   <div className="flex-1 space-y-2">
                     <Select
                       value={item.productId}
                       onValueChange={(value) => updateOrderItem(index, "productId", value)}
                     >
-                      <SelectTrigger className="bg-surface-card">
+                      <SelectTrigger className="bg-white">
                         <SelectValue placeholder="Select product" />
                       </SelectTrigger>
                       <SelectContent>
@@ -775,16 +760,15 @@ function OrdersPageInner() {
                       value={item.quantity}
                       onChange={(e) => updateOrderItem(index, "quantity", parseInt(e.target.value) || 1)}
                       placeholder="Quantity"
-                      className="bg-surface-card"
+                      className="bg-white"
                     />
                   </div>
                   <Button
                     type="button"
-                    size="iconSm"
+                    size="sm"
                     variant="ghost"
                     onClick={() => removeOrderItem(index)}
-                    className="text-danger hover:text-danger hover:bg-danger-subtle"
-                    aria-label="Remove item"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -814,14 +798,14 @@ function OrdersPageInner() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {detailLoading || !selectedOrderDetail ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
+              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
             </div>
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle className="font-display flex items-center gap-3">
-                  <ShoppingCart className="h-5 w-5" aria-hidden="true" />
-                  <span className="font-mono tabular-nums">{selectedOrderDetail.orderNumber || selectedOrderDetail.id.substring(0, 8)}</span>
+                <DialogTitle className="flex items-center gap-3">
+                  <ShoppingCart className="h-5 w-5" />
+                  {selectedOrderDetail.orderNumber || selectedOrderDetail.id.substring(0, 8)}
                 </DialogTitle>
                 <DialogDescription>
                   Created {format(new Date(selectedOrderDetail.createdAt), "PPpp")}
@@ -829,53 +813,53 @@ function OrdersPageInner() {
               </DialogHeader>
 
               {/* Status + Total */}
-              <div className="flex items-center justify-between rounded-md bg-surface-subtle p-4">
-                <Badge variant={statusConfig[selectedOrderDetail.status].variant} size="md">
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 p-4">
+                <Badge className={`${statusConfig[selectedOrderDetail.status].bgColor} flex items-center gap-1 text-white`}>
                   {(() => { const Icon = statusConfig[selectedOrderDetail.status].icon; return <Icon className="h-3 w-3" /> })()}
                   {statusConfig[selectedOrderDetail.status].label}
                 </Badge>
-                <span className="font-display font-mono tabular-nums text-2xl font-semibold text-ink-primary">
+                <span className="text-2xl font-bold">
                   £{((selectedOrderDetail.totalAmountPennies || 0) / 100).toFixed(2)}
                 </span>
               </div>
 
               {/* Customer Info */}
-              <div className="grid grid-cols-2 gap-4 rounded-md border border-subtle p-4">
+              <div className="grid grid-cols-2 gap-4 rounded-lg border p-4">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Customer</p>
-                  <p className="font-medium text-ink-primary">{selectedOrderDetail.customerName || "N/A"}</p>
+                  <p className="text-xs font-medium text-slate-500">Customer</p>
+                  <p className="font-medium">{selectedOrderDetail.customerName || "N/A"}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Shop</p>
-                  <p className="font-medium text-ink-primary">{getShopName(selectedOrderDetail.shopId)}</p>
+                  <p className="text-xs font-medium text-slate-500">Shop</p>
+                  <p className="font-medium">{getShopName(selectedOrderDetail.shopId)}</p>
                 </div>
                 {selectedOrderDetail.customerEmail && (
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Email</p>
-                    <p className="text-sm text-ink-primary">{selectedOrderDetail.customerEmail}</p>
+                    <p className="text-xs font-medium text-slate-500">Email</p>
+                    <p className="text-sm">{selectedOrderDetail.customerEmail}</p>
                   </div>
                 )}
                 {selectedOrderDetail.customerPhone && (
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Phone</p>
-                    <p className="text-sm text-ink-primary">{selectedOrderDetail.customerPhone}</p>
+                    <p className="text-xs font-medium text-slate-500">Phone</p>
+                    <p className="text-sm">{selectedOrderDetail.customerPhone}</p>
                   </div>
                 )}
                 {selectedOrderDetail.notes && (
                   <div className="col-span-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">Notes</p>
-                    <p className="text-sm text-ink-primary">{selectedOrderDetail.notes}</p>
+                    <p className="text-xs font-medium text-slate-500">Notes</p>
+                    <p className="text-sm">{selectedOrderDetail.notes}</p>
                   </div>
                 )}
               </div>
 
               {/* Line Items */}
               <div>
-                <h3 className="mb-3 font-display text-sm font-semibold text-ink-primary">
-                  Items (<span className="font-mono tabular-nums">{selectedOrderDetail.items?.length || 0}</span>)
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">
+                  Items ({selectedOrderDetail.items?.length || 0})
                 </h3>
                 {selectedOrderDetail.items && selectedOrderDetail.items.length > 0 ? (
-                  <div className="overflow-hidden rounded-md border border-subtle">
+                  <div className="overflow-hidden rounded-lg border">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -891,11 +875,11 @@ function OrdersPageInner() {
                             <TableCell className="font-medium">
                               {getProductName(item.productId)}
                             </TableCell>
-                            <TableCell className="text-center font-mono tabular-nums">{item.quantity}</TableCell>
-                            <TableCell numeric>
+                            <TableCell className="text-center">{item.quantity}</TableCell>
+                            <TableCell className="text-right">
                               £{((item.unitPricePennies || 0) / 100).toFixed(2)}
                             </TableCell>
-                            <TableCell numeric className="font-semibold text-ink-primary">
+                            <TableCell className="text-right font-semibold">
                               £{((item.totalPricePennies || 0) / 100).toFixed(2)}
                             </TableCell>
                           </TableRow>
@@ -904,20 +888,20 @@ function OrdersPageInner() {
                     </Table>
                   </div>
                 ) : (
-                  <p className="py-4 text-center text-sm text-ink-tertiary">No items in this order.</p>
+                  <p className="py-4 text-center text-sm text-slate-500">No items in this order.</p>
                 )}
               </div>
 
               {/* Actions */}
               {getAvailableTransitions(selectedOrderDetail.status).length > 0 && (
-                <div className="flex justify-end gap-2 border-t border-subtle pt-4">
+                <div className="flex justify-end gap-2 border-t pt-4">
                   {getAvailableTransitions(selectedOrderDetail.status).map((transition) => {
                     const TransitionIcon = transition.icon
                     return (
                       <Button
                         key={transition.action}
                         size="sm"
-                        variant={transition.variant}
+                        className={`${transition.color} text-white`}
                         onClick={() => {
                           handleStateTransition(
                             selectedOrderDetail.id,
@@ -944,16 +928,7 @@ function OrdersPageInner() {
 
 export default function OrdersPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center">
-          <div
-            className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none"
-            aria-label="Loading"
-          ></div>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div></div>}>
       <OrdersPageInner />
     </Suspense>
   )
