@@ -51,7 +51,7 @@ export default function ImportProductsPage() {
           onClick={() => setActiveTab("csv")}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "csv"
-              ? "border-blue-600 text-blue-600"
+              ? "border-brand-primary text-brand-primary"
               : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
@@ -155,7 +155,7 @@ function CsvImportTab() {
             {uploading ? (
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-                <span className="text-sm text-blue-600">Importing products...</span>
+                <span className="text-sm text-brand-primary">Importing products...</span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3">

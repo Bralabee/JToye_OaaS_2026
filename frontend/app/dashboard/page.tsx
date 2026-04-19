@@ -141,7 +141,7 @@ function DashboardSkeleton() {
     <div className="space-y-10">
       <div
         aria-hidden="true"
-        className="sr-only animate-spin rounded-full border-b-2 border-t-2 border-blue-600"
+        className="sr-only animate-spin rounded-full border-b-2 border-t-2 border-brand-primary"
       />
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
