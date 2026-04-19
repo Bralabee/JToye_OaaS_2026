@@ -38,40 +38,36 @@ import type {
 
 // --- Status config (subset for kitchen) ---
 
-type KitchenBadgeVariant = "info" | "brand" | "success"
-
 const statusConfig: Record<
   string,
-  { label: string; variant: KitchenBadgeVariant; icon: React.ComponentType<{ className?: string }> }
+  { label: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
-  CONFIRMED: { label: "Confirmed", variant: "info", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", variant: "brand", icon: ChefHat },
-  READY: { label: "Ready", variant: "success", icon: Package },
+  CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500", icon: CheckCircle2 },
+  PREPARING: { label: "Preparing", bgColor: "bg-purple-500", icon: ChefHat },
+  READY: { label: "Ready", bgColor: "bg-green-500", icon: Package },
 }
 
 // --- Bump actions per status ---
 
-type BumpVariant = "primary" | "editorial" | "secondary"
-
 interface BumpAction {
   label: string
   endpoint: string
-  variant: BumpVariant
+  color: string
 }
 
 const bumpActions: Record<string, BumpAction> = {
-  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", variant: "editorial" },
-  PREPARING: { label: "Mark Ready", endpoint: "mark-ready", variant: "primary" },
-  READY: { label: "Complete", endpoint: "complete", variant: "secondary" },
+  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-purple-600 hover:bg-purple-700" },
+  PREPARING: { label: "Mark Ready", endpoint: "mark-ready", color: "bg-green-600 hover:bg-green-700" },
+  READY: { label: "Complete", endpoint: "complete", color: "bg-emerald-600 hover:bg-emerald-700" },
 }
 
 // --- Age border colour ---
 
 function ageBorderClass(createdAt: string): string {
   const minutes = (Date.now() - new Date(createdAt).getTime()) / 60000
-  if (minutes < 5) return "border-success"
-  if (minutes <= 15) return "border-warning"
-  return "border-danger"
+  if (minutes < 5) return "border-green-500"
+  if (minutes <= 15) return "border-yellow-500"
+  return "border-red-500"
 }
 
 // --- Elapsed time display ---
@@ -320,10 +316,10 @@ export default function KitchenPage() {
   // --- Connection status dot ---
 
   const connectionDot = connected
-    ? "bg-success"
+    ? "bg-green-500"
     : reconnecting
-      ? "bg-warning"
-      : "bg-ink-tertiary"
+      ? "bg-yellow-500"
+      : "bg-gray-400"
 
   const connectionLabel = connected
     ? "Connected"
@@ -334,7 +330,7 @@ export default function KitchenPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
   }
@@ -344,16 +340,16 @@ export default function KitchenPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Kitchen Display</h1>
-          <p className="mt-1 text-ink-secondary">
+          <h1 className="text-4xl font-bold text-slate-900">Kitchen Display</h1>
+          <p className="mt-1 text-slate-600">
             Live order feed &mdash; bump orders through preparation stages
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Connection status */}
-          <div className="flex items-center gap-2 text-sm text-ink-secondary" title={connectionLabel}>
-            <span className={`h-2.5 w-2.5 rounded-full ${connectionDot}`} aria-hidden="true" />
+          <div className="flex items-center gap-2 text-sm text-slate-600" title={connectionLabel}>
+            <span className={`h-2.5 w-2.5 rounded-full ${connectionDot}`} />
             <span className="hidden sm:inline">{connectionLabel}</span>
           </div>
 
@@ -378,11 +374,10 @@ export default function KitchenPage() {
 
           {/* Mute toggle */}
           <Button
-            variant="secondary"
+            variant="outline"
             size="icon"
             onClick={toggleMute}
             title={muted ? "Unmute alerts" : "Mute alerts"}
-            aria-label={muted ? "Unmute alerts" : "Mute alerts"}
           >
             {muted ? (
               <VolumeX className="h-5 w-5" />
@@ -396,11 +391,11 @@ export default function KitchenPage() {
       {/* Order cards grid */}
       {sortedOrders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <ChefHat className="mb-4 h-16 w-16 text-ink-tertiary" aria-hidden="true" />
-          <h3 className="mb-2 font-display text-xl font-semibold text-ink-primary">
+          <ChefHat className="mb-4 h-16 w-16 text-slate-300" />
+          <h3 className="mb-2 text-xl font-semibold text-slate-900">
             No active orders
           </h3>
-          <p className="text-sm text-ink-tertiary">
+          <p className="text-sm text-slate-500">
             Orders will appear here when customers place them
           </p>
         </div>
@@ -410,6 +405,10 @@ export default function KitchenPage() {
             const config = statusConfig[order.status]
             const action = bumpActions[order.status]
             const StatusIcon = config?.icon || Clock
+            const itemNames =
+              order.items
+                ?.map((item) => item.productName)
+                .join(", ") || "No items"
             const itemSummary =
               order.items && order.items.length > 0
                 ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
@@ -418,16 +417,15 @@ export default function KitchenPage() {
             return (
               <Card
                 key={order.id}
-                variant="lifted"
                 className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
               >
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="font-display font-mono tabular-nums text-2xl font-semibold text-ink-primary">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-2xl font-bold">
                       {order.orderNumber || `#${order.id.substring(0, 6)}`}
                     </CardTitle>
                     {config && (
-                      <Badge variant={config.variant} size="md">
+                      <Badge className={`${config.bgColor} flex items-center gap-1 text-white`}>
                         <StatusIcon className="h-3 w-3" />
                         {config.label}
                       </Badge>
@@ -436,19 +434,19 @@ export default function KitchenPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {/* Customer name */}
-                  <div className="text-base font-medium text-ink-primary">
+                  <div className="text-sm font-medium text-slate-700">
                     {order.customerName || "Walk-in"}
                   </div>
 
                   {/* Items */}
-                  <div className="text-sm text-ink-secondary">
+                  <div className="text-sm text-slate-600">
                     <span className="font-medium">{itemSummary}</span>
                     {order.items && order.items.length > 0 && (
-                      <div className="mt-1 text-sm text-ink-primary leading-relaxed">
+                      <div className="mt-1 text-xs text-slate-500">
                         {order.items.map((item, i) => (
                           <span key={item.id || i}>
                             {i > 0 && ", "}
-                            <span className="font-mono tabular-nums font-semibold">{item.quantity}</span>x {item.productName}
+                            {item.quantity}x {item.productName}
                           </span>
                         ))}
                       </div>
@@ -456,17 +454,15 @@ export default function KitchenPage() {
                   </div>
 
                   {/* Elapsed time */}
-                  <div className="flex items-center gap-1 text-xs text-ink-tertiary">
-                    <Clock className="h-3 w-3" aria-hidden="true" />
+                  <div className="flex items-center gap-1 text-xs text-slate-500">
+                    <Clock className="h-3 w-3" />
                     {elapsedText(order.createdAt)}
                   </div>
 
-                  {/* Bump button — large for touch (min 48px) */}
+                  {/* Bump button */}
                   {action && (
                     <Button
-                      variant={action.variant}
-                      size="lg"
-                      className="w-full min-h-[48px]"
+                      className={`w-full ${action.color} text-white`}
                       onClick={() => handleBump(order.id, order.status)}
                     >
                       {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}

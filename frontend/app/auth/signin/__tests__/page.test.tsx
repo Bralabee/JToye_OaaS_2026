@@ -12,10 +12,8 @@ describe('SignIn Page', () => {
   it('should render the sign-in page', () => {
     render(<SignInPage />)
 
-    expect(screen.getByText(/Welcome to J'Toye/i)).toBeInTheDocument()
-    expect(
-      screen.getByText('Sign in to manage your shops, products, and orders.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText("J'Toye OaaS")).toBeInTheDocument()
+    expect(screen.getByText('Sign in to access your multi-tenant order management system')).toBeInTheDocument()
   })
 
   it('should display the Keycloak sign-in button', () => {
@@ -25,12 +23,12 @@ describe('SignIn Page', () => {
     expect(signInButton).toBeInTheDocument()
   })
 
-  it('should display the brand mark', () => {
+  it('should display the store icon', () => {
     render(<SignInPage />)
 
-    // The brand mark is rendered as an <img> with alt text
-    const mark = screen.getByAltText(/J'Toye mark/i)
-    expect(mark).toBeInTheDocument()
+    // The Store icon is rendered as an SVG
+    const heading = screen.getByText("J'Toye OaaS")
+    expect(heading).toBeInTheDocument()
   })
 
   it('should call signIn when button is clicked', () => {
@@ -42,12 +40,10 @@ describe('SignIn Page', () => {
     expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
   })
 
-  it('should display the brand tagline', () => {
+  it('should display security message', () => {
     render(<SignInPage />)
 
-    expect(
-      screen.getByText(/Every shop\. Every order\. One kitchen\./i),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Secure authentication via Keycloak OIDC')).toBeInTheDocument()
   })
 
   it('should have proper styling classes for centered layout', () => {

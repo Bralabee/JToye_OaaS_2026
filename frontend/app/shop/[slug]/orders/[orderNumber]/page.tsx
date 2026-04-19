@@ -3,19 +3,12 @@
 import { Suspense, use, useEffect, useState, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { motion } from "framer-motion"
 import {
   CheckCircle2, Store, Copy, ArrowLeft, Clock,
   ChefHat, Package, CircleDot, XCircle, Loader2
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { fadeUp, useReducedMotionSafe } from "@/lib/motion"
-import { cn } from "@/lib/utils"
 
 interface OrderStatus {
   orderNumber: string
@@ -34,33 +27,6 @@ const STEPS = [
   { key: "READY", label: "Ready", icon: Package, desc: "Ready for collection" },
   { key: "COMPLETED", label: "Completed", icon: CheckCircle2, desc: "Order complete" },
 ]
-
-type BadgeVariant = "subtle" | "info" | "brand" | "success" | "danger" | "warning"
-
-function statusVariant(status: string): BadgeVariant {
-  switch (status) {
-    case "PENDING":
-      return "subtle"
-    case "CONFIRMED":
-    case "PREPARING":
-      return "info"
-    case "READY":
-      return "brand"
-    case "COMPLETED":
-      return "success"
-    case "CANCELLED":
-      return "danger"
-    default:
-      return "subtle"
-  }
-}
-
-function statusLabel(status: string): string {
-  const match = STEPS.find((s) => s.key === status)
-  if (match) return match.label
-  if (status === "CANCELLED") return "Cancelled"
-  return status
-}
 
 function getStepIndex(status: string): number {
   const idx = STEPS.findIndex((s) => s.key === status)
@@ -82,13 +48,7 @@ export default function OrderTrackingPage({
 }) {
   const { slug, orderNumber } = use(params)
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[60vh] items-center justify-center bg-surface-canvas">
-          <Loader2 className="h-8 w-8 animate-spin text-brand-primary motion-reduce:animate-none" strokeWidth={1.5} />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
       <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
     </Suspense>
   )
@@ -99,9 +59,8 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const pageVariants = useReducedMotionSafe(fadeUp)
 
-  useSearchParams() // preserved — reserved for future query-param use
+  const searchParams = useSearchParams()
 
   // Use authenticated email, or fall back to the email stored during guest checkout.
   // Session is cookie-backed now, so we hydrate asynchronously.
@@ -161,11 +120,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
   if (loading) {
     return (
-      <div className="bg-surface-canvas min-h-screen">
-        <div className="mx-auto max-w-lg px-4 py-16 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-primary motion-reduce:animate-none" strokeWidth={1.5} />
-          <p className="mt-3 text-body-sm text-ink-secondary">Loading order status…</p>
-        </div>
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
+        <p className="mt-3 text-sm text-slate-500">Loading order status...</p>
       </div>
     )
   }
@@ -179,198 +136,156 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   }
 
   return (
-    <div className="bg-surface-canvas min-h-screen">
-      <motion.div
-        variants={pageVariants}
-        initial="hidden"
-        animate="visible"
-        className="mx-auto max-w-lg px-4 sm:px-6 py-8"
-      >
-        {/* Header */}
-        {!error && order && (
-          <div className="text-center mb-8">
-            {isCancelled ? (
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-pill bg-danger-subtle">
-                <XCircle className="h-8 w-8 text-danger" strokeWidth={1.5} />
-              </div>
-            ) : currentStep >= 4 ? (
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-pill bg-success-subtle">
-                <CheckCircle2 className="h-8 w-8 text-success" strokeWidth={1.5} />
-              </div>
-            ) : (
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-pill bg-brand-primary-subtle">
-                <Clock className="h-8 w-8 text-brand-primary" strokeWidth={1.5} />
-              </div>
-            )}
-            <h1 className="mt-4 font-display text-display-sm font-medium tracking-tight text-ink-primary">
-              {isCancelled ? "Order cancelled" : currentStep >= 4 ? "Order complete" : "Order in progress"}
-            </h1>
-            <p className="mt-1 text-body-sm text-ink-secondary">{order.shopName}</p>
+    <div className="mx-auto max-w-lg px-4 sm:px-6 py-8">
+      {/* Header */}
+      {!error && order && (
+        <div className="text-center mb-8">
+          {isCancelled ? (
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+              <XCircle className="h-8 w-8 text-red-500" />
+            </div>
+          ) : currentStep >= 4 ? (
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+            </div>
+          ) : (
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
+              <Clock className="h-8 w-8 text-orange-500" />
+            </div>
+          )}
+          <h1 className="mt-4 text-xl font-bold text-slate-900">
+            {isCancelled ? "Order Cancelled" : currentStep >= 4 ? "Order Complete!" : "Order in Progress"}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">{order.shopName}</p>
+        </div>
+      )}
+
+      {/* Order number */}
+      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm text-center mb-6">
+        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Order number</p>
+        <div className="mt-1 flex items-center justify-center gap-2">
+          <p className="text-sm font-bold font-mono text-slate-900">{orderNumber}</p>
+          <button
+            onClick={copyOrderNumber}
+            className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Copy className="h-3 w-3" />
+          </button>
+          {copied && <span className="text-[10px] text-emerald-600">Copied!</span>}
+        </div>
+        {order && (
+          <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-500">
+            <span>{order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</span>
+            <span>{formatPrice(order.totalAmountPennies)}</span>
           </div>
         )}
+      </div>
 
-        {/* Order number */}
-        <Card variant="default" className="p-4 text-center mb-6">
-          <CardContent className="p-0">
-            <p className="text-[10px] font-medium text-ink-tertiary uppercase tracking-widest">
-              Order number
-            </p>
-            <div className="mt-1 flex items-center justify-center gap-2">
-              <p className="font-mono tabular-nums text-body-sm font-semibold text-ink-primary break-all">
-                {orderNumber}
-              </p>
-              <button
-                type="button"
-                aria-label="Copy order number"
-                onClick={copyOrderNumber}
-                className="flex h-6 w-6 items-center justify-center rounded-sm hover:bg-surface-subtle text-ink-tertiary hover:text-ink-primary transition-colors duration-fast"
-              >
-                <Copy className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-              {copied && <span className="text-[10px] text-success">Copied!</span>}
-            </div>
-            {order && (
-              <div className="mt-2 flex items-center justify-center gap-3 text-caption text-ink-tertiary">
-                <span>
-                  {order.itemCount} item{order.itemCount !== 1 ? "s" : ""}
-                </span>
-                <span className="font-mono tabular-nums text-ink-secondary">
-                  {formatPrice(order.totalAmountPennies)}
-                </span>
-                {order && (
-                  <Badge variant={statusVariant(order.status)} size="sm" className="rounded-pill">
-                    {statusLabel(order.status)}
-                  </Badge>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Error state */}
-        {error && (
-          <Card variant="flat" className="border-danger/40 bg-danger-subtle p-4 text-center mb-6">
-            <CardContent className="p-0">
-              <p className="text-body-sm text-danger">{error}</p>
-              <Button
-                variant="link"
-                size="sm"
-                onClick={fetchStatus}
-                className="mt-2 text-danger hover:text-danger"
-              >
-                Try again
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Progress tracker */}
-        {order && !isCancelled && (
-          <Card variant="lifted" className="p-5 mb-6">
-            <CardContent className="p-0">
-              <div className="space-y-0">
-                {STEPS.map((step, i) => {
-                  const isActive = i === currentStep
-                  const isComplete = i < currentStep
-                  const Icon = step.icon
-
-                  return (
-                    <div key={step.key} className="flex gap-3">
-                      {/* Vertical line + circle */}
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={cn(
-                            "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-pill border-2 transition-all duration-default motion-reduce:transition-none",
-                            isComplete
-                              ? "border-brand-primary bg-brand-primary text-ink-on-brand"
-                              : isActive
-                              ? "border-brand-primary bg-brand-primary text-ink-on-brand shadow-lift"
-                              : "border-border-tone-subtle bg-surface-card text-ink-tertiary",
-                          )}
-                          aria-current={isActive ? "step" : undefined}
-                        >
-                          <Icon className="h-4 w-4" strokeWidth={1.5} />
-                        </div>
-                        {i < STEPS.length - 1 && (
-                          <div
-                            aria-hidden="true"
-                            className={cn(
-                              "w-0.5 h-8 rounded-full",
-                              isComplete ? "bg-brand-primary" : "bg-surface-muted",
-                            )}
-                          />
-                        )}
-                      </div>
-
-                      {/* Label */}
-                      <div className="pb-6">
-                        <p
-                          className={cn(
-                            "text-body-sm font-medium",
-                            isComplete || isActive ? "text-ink-primary" : "text-ink-tertiary",
-                          )}
-                        >
-                          {step.label}
-                        </p>
-                        <p
-                          className={cn(
-                            "text-caption",
-                            isActive ? "text-brand-primary" : "text-ink-tertiary",
-                          )}
-                        >
-                          {isActive && order.updatedAt
-                            ? `${step.desc} · ${formatTime(order.updatedAt)}`
-                            : step.desc}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Cancelled state */}
-        {order && isCancelled && (
-          <Card variant="flat" className="border-danger/40 bg-danger-subtle p-5 mb-6 text-center">
-            <CardContent className="p-0">
-              <p className="text-body-sm text-danger">
-                This order was cancelled. If this was unexpected, please contact the shop.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Auto-refresh indicator */}
-        {order && !isCancelled && currentStep < 4 && (
-          <p className="text-center text-[10px] text-ink-tertiary mb-6" aria-live="polite">
-            <span className="inline-flex items-center gap-1">
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 rounded-pill bg-success motion-safe:animate-pulse"
-              />
-              Live updates every 15 seconds
-            </span>
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="space-y-3">
-          <Button asChild variant="primary" size="lg" className="w-full rounded-pill shadow-lift">
-            <Link href={`/shop/${slug}`}>
-              <Store className="h-4 w-4" strokeWidth={1.5} />
-              Back to shop
-            </Link>
-          </Button>
-          <Button asChild variant="secondary" size="lg" className="w-full rounded-pill">
-            <Link href="/shop">
-              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-              Browse other shops
-            </Link>
-          </Button>
+      {/* Error state */}
+      {error && (
+        <div className="rounded-xl bg-red-50 border border-red-100 p-4 text-center mb-6">
+          <p className="text-sm text-red-700">{error}</p>
+          <button
+            onClick={fetchStatus}
+            className="mt-2 text-xs font-medium text-red-600 hover:text-red-700"
+          >
+            Try again
+          </button>
         </div>
-      </motion.div>
+      )}
+
+      {/* Progress tracker */}
+      {order && !isCancelled && (
+        <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm mb-6">
+          <div className="space-y-0">
+            {STEPS.map((step, i) => {
+              const isActive = i === currentStep
+              const isComplete = i < currentStep
+              const isPending = i > currentStep
+              const Icon = step.icon
+
+              return (
+                <div key={step.key} className="flex gap-3">
+                  {/* Vertical line + circle */}
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all ${
+                        isComplete
+                          ? "bg-emerald-500 text-white"
+                          : isActive
+                          ? "bg-orange-500 text-white ring-4 ring-orange-100"
+                          : "bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <div
+                        className={`w-0.5 h-8 ${
+                          isComplete ? "bg-emerald-500" : "bg-slate-200"
+                        }`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Label */}
+                  <div className="pb-6">
+                    <p
+                      className={`text-sm font-medium ${
+                        isComplete || isActive ? "text-slate-900" : "text-slate-400"
+                      }`}
+                    >
+                      {step.label}
+                    </p>
+                    <p className={`text-xs ${isActive ? "text-orange-600" : "text-slate-400"}`}>
+                      {isActive && order.updatedAt
+                        ? `${step.desc} · ${formatTime(order.updatedAt)}`
+                        : step.desc}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cancelled state */}
+      {order && isCancelled && (
+        <div className="rounded-xl bg-red-50 border border-red-100 p-5 mb-6 text-center">
+          <p className="text-sm text-red-700">
+            This order was cancelled. If this was unexpected, please contact the shop.
+          </p>
+        </div>
+      )}
+
+      {/* Auto-refresh indicator */}
+      {order && !isCancelled && currentStep < 4 && (
+        <p className="text-center text-[10px] text-slate-400 mb-6">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live updates every 15 seconds
+          </span>
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="space-y-3">
+        <Link
+          href={`/shop/${slug}`}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
+        >
+          <Store className="h-4 w-4" />
+          Back to shop
+        </Link>
+        <Link
+          href="/shop"
+          className="flex w-full items-center justify-center gap-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Browse other shops
+        </Link>
+      </div>
     </div>
   )
 }
@@ -379,43 +294,32 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
   const [emailInput, setEmailInput] = useState("")
 
   return (
-    <div className="bg-surface-canvas min-h-screen">
-      <div className="mx-auto max-w-lg px-4 py-10">
-        <div className="text-center mb-6">
-          <Package className="mx-auto h-12 w-12 text-ink-quaternary" strokeWidth={1.5} />
-          <h2 className="mt-4 font-display text-display-sm font-medium tracking-tight text-ink-primary">
-            Track your order
-          </h2>
-          <p className="mt-2 text-body-sm text-ink-secondary">
-            Enter the email you used when placing this order.
-          </p>
-        </div>
-        <Card variant="lifted" className="p-4">
-          <CardContent className="p-0">
-            <p className="font-mono tabular-nums text-[10px] text-ink-tertiary mb-3">
-              {orderNumber}
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (emailInput.trim()) onSubmit(emailInput.trim())
-              }}
-            >
-              <Input
-                type="email"
-                tone="brand"
-                autoComplete="email"
-                required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="your@email.com"
-              />
-              <Button type="submit" variant="primary" size="lg" className="mt-3 w-full rounded-pill shadow-lift">
-                View order status
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+    <div className="mx-auto max-w-lg px-4 py-10">
+      <div className="text-center mb-6">
+        <Package className="mx-auto h-12 w-12 text-slate-300" />
+        <h2 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Enter the email you used when placing this order.
+        </p>
+      </div>
+      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+        <p className="text-[10px] font-mono text-slate-400 mb-3">{orderNumber}</p>
+        <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
+          <input
+            type="email"
+            required
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            placeholder="your@email.com"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+          />
+          <button
+            type="submit"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
+          >
+            View order status
+          </button>
+        </form>
       </div>
     </div>
   )
