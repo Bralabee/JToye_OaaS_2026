@@ -1,7 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
@@ -35,13 +34,11 @@ import type {
 } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 
-type VatBadgeVariant = "info" | "warning" | "success" | "subtle"
-
-const vatRateConfig: Record<VatRate, { label: string; rate: string; variant: VatBadgeVariant }> = {
-  STANDARD: { label: "Standard", rate: "20%", variant: "info" },
-  REDUCED: { label: "Reduced", rate: "5%", variant: "warning" },
-  ZERO: { label: "Zero", rate: "0%", variant: "success" },
-  EXEMPT: { label: "Exempt", rate: "N/A", variant: "subtle" },
+const vatRateConfig: Record<VatRate, { label: string; rate: string; color: string }> = {
+  STANDARD: { label: "Standard", rate: "20%", color: "bg-blue-500" },
+  REDUCED: { label: "Reduced", rate: "5%", color: "bg-yellow-500" },
+  ZERO: { label: "Zero", rate: "0%", color: "bg-green-500" },
+  EXEMPT: { label: "Exempt", rate: "N/A", color: "bg-gray-500" },
 }
 
 const formatPennies = (pennies: number): string => {
@@ -54,55 +51,19 @@ const formatPennies = (pennies: number): string => {
 
 const PAGE_SIZE = 20
 
-function toCsv(rows: FinancialTransaction[]): string {
-  const header = ["id", "description", "amountPennies", "vatRate", "vatAmountPennies", "createdAt"]
-  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
-  const lines = [header.join(",")]
-  for (const tx of rows) {
-    lines.push(
-      [
-        esc(tx.id),
-        esc(tx.description || ""),
-        String(tx.amountPennies ?? 0),
-        esc(tx.vatRate),
-        String(tx.vatAmountPennies ?? 0),
-        esc(tx.createdAt),
-      ].join(","),
-    )
-  }
-  return lines.join("\n")
-}
-
-function FinancePageInner() {
-  const searchParams = useSearchParams()
-  const shouldExport = searchParams.get("export") === "1"
+export default function FinancePage() {
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
-  const [hasExported, setHasExported] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
-
-  // Honour ?export=1 — auto-trigger CSV download once transactions have loaded.
-  useEffect(() => {
-    if (!shouldExport || hasExported || loading || transactions.length === 0) return
-    const csv = toCsv(transactions)
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `financial-transactions-page-${currentPage + 1}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    setHasExported(true)
-  }, [shouldExport, hasExported, loading, transactions, currentPage])
 
   const fetchData = async () => {
     try {
@@ -133,7 +94,7 @@ function FinancePageInner() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none" aria-label="Loading"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
   }
@@ -145,8 +106,8 @@ function FinancePageInner() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-primary">Finance</h1>
-        <p className="mt-2 text-ink-secondary">
+        <h1 className="text-4xl font-bold text-slate-900">Finance</h1>
+        <p className="mt-2 text-slate-600">
           Revenue, expenses, and VAT reporting
         </p>
       </motion.div>
@@ -159,41 +120,41 @@ function FinancePageInner() {
           transition={{ delay: 0.1 }}
           className="grid gap-4 md:grid-cols-4"
         >
-          <Card variant="lifted">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-              <TrendingUp className="h-4 w-4 text-success" aria-hidden="true" />
+              <TrendingUp className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="font-display font-semibold text-3xl text-ink-primary tabular-nums">
+              <div className="text-2xl font-bold text-green-700">
                 {formatPennies(summary.totalRevenuePennies)}
               </div>
             </CardContent>
           </Card>
 
-          <Card variant="lifted">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Expenses</CardTitle>
-              <TrendingDown className="h-4 w-4 text-danger" aria-hidden="true" />
+              <TrendingDown className="h-4 w-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="font-display font-semibold text-3xl text-ink-primary tabular-nums">
+              <div className="text-2xl font-bold text-red-700">
                 {formatPennies(summary.totalExpensesPennies)}
               </div>
             </CardContent>
           </Card>
 
-          <Card variant="lifted">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Net</CardTitle>
-              <Banknote className="h-4 w-4 text-info" aria-hidden="true" />
+              <Banknote className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
               <div
-                className={`font-display font-semibold text-3xl tabular-nums ${
+                className={`text-2xl font-bold ${
                   summary.netAmountPennies >= 0
-                    ? "text-success"
-                    : "text-danger"
+                    ? "text-green-700"
+                    : "text-red-700"
                 }`}
               >
                 {formatPennies(summary.netAmountPennies)}
@@ -201,17 +162,17 @@ function FinancePageInner() {
             </CardContent>
           </Card>
 
-          <Card variant="lifted">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total VAT</CardTitle>
-              <Receipt className="h-4 w-4 text-accent-editorial" aria-hidden="true" />
+              <Receipt className="h-4 w-4 text-purple-600" />
             </CardHeader>
             <CardContent>
-              <div className="font-display font-semibold text-3xl text-ink-primary tabular-nums">
+              <div className="text-2xl font-bold text-purple-700">
                 {formatPennies(summary.totalVatPennies)}
               </div>
-              <p className="text-xs text-ink-tertiary mt-1">
-                <span className="font-mono tabular-nums">{summary.transactionCount}</span> transaction{summary.transactionCount !== 1 ? "s" : ""}
+              <p className="text-xs text-slate-500 mt-1">
+                {summary.transactionCount} transaction{summary.transactionCount !== 1 ? "s" : ""}
               </p>
             </CardContent>
           </Card>
@@ -237,20 +198,19 @@ function FinancePageInner() {
                   return (
                     <div
                       key={vat.vatRate}
-                      className="flex items-center gap-3 rounded-md border border-subtle bg-surface-card p-3"
+                      className="flex items-center gap-3 rounded-lg border p-3"
                     >
-                      <Badge variant={config.variant} size="sm">
+                      <Badge className={`${config.color} text-white`}>
                         {config.rate}
                       </Badge>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-ink-primary">{config.label}</p>
-                        <p className="font-mono tabular-nums text-lg font-semibold text-ink-primary">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{config.label}</p>
+                        <p className="text-lg font-bold">
                           {formatPennies(vat.totalAmountPennies)}
                         </p>
-                        <p className="text-xs text-ink-tertiary">
-                          VAT:{" "}
-                          <span className="font-mono tabular-nums">{formatPennies(vat.totalVatPennies)}</span>
-                          {" "}(<span className="font-mono tabular-nums">{vat.count}</span> tx)
+                        <p className="text-xs text-slate-500">
+                          VAT: {formatPennies(vat.totalVatPennies)} ({vat.count}{" "}
+                          tx)
                         </p>
                       </div>
                     </div>
@@ -279,11 +239,11 @@ function FinancePageInner() {
           <CardContent>
             {transactions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Receipt className="mb-4 h-12 w-12 text-ink-tertiary" aria-hidden="true" />
-                <h3 className="mb-2 font-display text-lg font-semibold text-ink-primary">
+                <Receipt className="mb-4 h-12 w-12 text-slate-300" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
                   No transactions yet
                 </h3>
-                <p className="text-sm text-ink-tertiary">
+                <p className="text-sm text-slate-500">
                   Financial transactions are created automatically when orders
                   are completed.
                 </p>
@@ -294,9 +254,9 @@ function FinancePageInner() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Amount</TableHead>
                       <TableHead>VAT Rate</TableHead>
-                      <TableHead className="text-right">VAT Amount</TableHead>
+                      <TableHead>VAT Amount</TableHead>
                       <TableHead>Created</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -309,24 +269,25 @@ function FinancePageInner() {
                             {tx.description || tx.id.substring(0, 8) + "..."}
                           </TableCell>
                           <TableCell
-                            numeric
-                            className={
+                            className={`font-semibold ${
                               tx.amountPennies >= 0
-                                ? "text-success font-semibold"
-                                : "text-danger font-semibold"
-                            }
+                                ? "text-green-700"
+                                : "text-red-700"
+                            }`}
                           >
                             {formatPennies(tx.amountPennies)}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={config.variant} size="sm">
+                            <Badge
+                              className={`${config.color} text-white text-xs`}
+                            >
                               {config.label} ({config.rate})
                             </Badge>
                           </TableCell>
-                          <TableCell numeric>
+                          <TableCell>
                             {formatPennies(tx.vatAmountPennies)}
                           </TableCell>
-                          <TableCell className="text-ink-secondary">
+                          <TableCell className="text-slate-600">
                             {formatDistanceToNow(new Date(tx.createdAt), {
                               addSuffix: true,
                             })}
@@ -349,22 +310,5 @@ function FinancePageInner() {
         </Card>
       </motion.div>
     </div>
-  )
-}
-
-export default function FinancePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center">
-          <div
-            className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-brand-primary motion-reduce:animate-none"
-            aria-label="Loading"
-          ></div>
-        </div>
-      }
-    >
-      <FinancePageInner />
-    </Suspense>
   )
 }

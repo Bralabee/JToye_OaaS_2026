@@ -28,7 +28,6 @@ describe("CartProvider", () => {
 
     function Outer() {
       const [n, setN] = useState(0)
-      // eslint-disable-next-line react-hooks/globals -- test-only: capture setState into closure-scoped variable so the test harness can trigger a parent re-render from outside the render tree. Not a production pattern.
       setOuter = setN
       return (
         <CartProvider shopSlug="test-shop">

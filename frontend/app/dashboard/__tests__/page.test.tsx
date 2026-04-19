@@ -4,16 +4,9 @@ import apiClient from '@/lib/api-client'
 
 import React from 'react'
 
-// Mock next-auth session (Wave 4B redesign uses it for personalised greeting).
-jest.mock('next-auth/react', () => ({
-  useSession: () => ({ data: null, status: 'unauthenticated' }),
-}))
-
-// Mock recharts — jsdom doesn't support SVG rendering.
+// Mock recharts — jsdom doesn't support SVG rendering
 jest.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  AreaChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Area: () => <div />,
   PieChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Pie: () => <div />,
   Cell: () => <div />,
@@ -57,22 +50,21 @@ describe('Dashboard Page', () => {
     mockedApiClient.get.mockImplementation(defaultMock as jest.Mock)
   })
 
-  it('should render loading state initially', () => {
+  it('should render loading spinner initially', () => {
     mockedApiClient.get.mockImplementation(() => new Promise(() => {}))
 
     const { container } = render(<DashboardPage />)
 
-    // Loading skeleton retains the sr-only spinner for legacy selectors.
     const spinner = container.querySelector('.animate-spin')
     expect(spinner).toBeInTheDocument()
+    expect(spinner).toHaveClass('border-blue-600')
   })
 
   it('should render dashboard heading after loading', async () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      // sr-only H1 preserves the Dashboard landmark.
-      expect(screen.getByRole('heading', { level: 1, name: /dashboard/i })).toBeInTheDocument()
+      expect(screen.getByText('Dashboard')).toBeInTheDocument()
     })
   })
 
@@ -84,7 +76,7 @@ describe('Dashboard Page', () => {
     })
   })
 
-  it('should fetch and display KPIs', async () => {
+  it('should fetch and display stats', async () => {
     mockedApiClient.get.mockImplementation((url: string) => {
       if (url === '/api/v1/financial-transactions/summary') return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
       return Promise.resolve({ data: { content: [], totalElements: 42 } })
@@ -93,19 +85,18 @@ describe('Dashboard Page', () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      // Orders KPI formats 42 as-is (no thousands separator needed).
-      const matches = screen.getAllByText('42')
-      expect(matches.length).toBeGreaterThan(0)
+      const statsCards = screen.getAllByText('42')
+      expect(statsCards.length).toBeGreaterThan(0)
     })
   })
 
-  it('should display all KPI card labels', async () => {
+  it('should display all stat card titles', async () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('Revenue')).toBeInTheDocument()
+      expect(screen.getByText('Shops')).toBeInTheDocument()
+      expect(screen.getByText('Products')).toBeInTheDocument()
       expect(screen.getByText('Orders')).toBeInTheDocument()
-      expect(screen.getByText('Avg order value')).toBeInTheDocument()
       expect(screen.getByText('Customers')).toBeInTheDocument()
     })
   })
@@ -129,7 +120,6 @@ describe('Dashboard Page', () => {
         customerName: 'John Doe',
         customerEmail: 'john@example.com',
         totalAmountPennies: 1999,
-        itemCount: 2,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
