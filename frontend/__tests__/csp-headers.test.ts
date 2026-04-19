@@ -40,9 +40,8 @@ describe('Next.js security response headers (next.config.mjs)', () => {
   })
 
   async function loadHeaders() {
-    const mod: any = await import('../next.config.mjs')
-    const config = mod.default
-    return config.headers()
+    const mod = (await import('../next.config.mjs')) as { default: { headers: () => Promise<unknown[]> } }
+    return mod.default.headers()
   }
 
   it('returns a single route matching all paths', async () => {

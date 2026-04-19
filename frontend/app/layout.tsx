@@ -6,8 +6,10 @@ import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const PAGE_TITLE = `${BRAND.fullName} — ${BRAND.tagline}`;
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: PAGE_TITLE,
   description: BRAND.description,
   icons: { icon: "/favicon.svg", apple: "/apple-touch-icon.svg" },
