@@ -39,8 +39,15 @@ describe('Next.js security response headers (next.config.mjs)', () => {
     process.env = ORIGINAL_ENV
   })
 
-  async function loadHeaders() {
-    const mod = (await import('../next.config.mjs')) as { default: { headers: () => Promise<unknown[]> } }
+  type HeaderRoute = {
+    source: string
+    headers: Array<{ key: string; value: string }>
+  }
+
+  async function loadHeaders(): Promise<HeaderRoute[]> {
+    const mod = (await import('../next.config.mjs')) as {
+      default: { headers: () => Promise<HeaderRoute[]> }
+    }
     return mod.default.headers()
   }
 
