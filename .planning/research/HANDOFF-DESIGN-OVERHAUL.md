@@ -1,9 +1,9 @@
 # Handoff: Frontend Design System Overhaul — Warm Editorial
 
-**Generated**: 2026-04-19 (session wrap-up)
-**Branch**: `feature/design-system-overhaul`
-**Worktree**: `/home/sanmi/IdeaProjects/JToye_OaaS_2026-design/` (use this path, not the primary repo — a parallel session is working on `feature/phase-14-stock-race-summary-aggregation` in the primary repo `/home/sanmi/IdeaProjects/JToye_OaaS_2026/`)
-**Status**: All 8 implementation waves committed on the design branch. `next build` passes end-to-end. 84/84 jest tests pass. 0 new tsc errors. Ready for PR after visual QA on running dev stack.
+**Generated**: 2026-04-19 (session wrap-up, v2 — follow-ups resolved)
+**Branch**: `feature/design-system-overhaul` (13 clean atomic commits on top of `main`)
+**Worktree**: `/home/sanmi/IdeaProjects/JToye_OaaS_2026-design/` (use this path, not the primary repo — a parallel session ships phase-14/15/16 work in the primary repo `/home/sanmi/IdeaProjects/JToye_OaaS_2026/`)
+**Status**: All 8 implementation waves + 2 follow-up rounds committed. `next build` passes end-to-end. 84/84 jest tests pass. **0 tsc errors** (was 36 baseline), **0 lint errors** (was broken baseline). Ready for PR pending visual QA on running dev stack.
 
 ---
 
@@ -11,150 +11,137 @@
 
 Holistic aesthetic overhaul of the Next.js 16 frontend from stock shadcn defaults to a **Warm Editorial** design system for the J'Toye OaaS multi-tenant UK food-retail SaaS, delivered methodically with zero breaking changes and full regression-gate passing.
 
-Direction: warm premium + utility-dense hybrid channeling Square/Toast/Stripe/Linear. Fig primary + Ink Olive secondary + Mustard editorial accent. Fraunces + Inter + Geist Mono typography.
+Direction: warm premium + utility-dense hybrid channelling Square/Toast/Stripe/Linear. Fig primary + Ink Olive secondary + Mustard editorial accent. Fraunces + Inter + Geist Mono typography.
 
 ---
 
 ## Completed work (this session)
 
-### Design branch commits (top → bottom, all on `feature/design-system-overhaul`)
+### Design branch commits — 13 clean atomic commits on top of main
 
-| SHA | Wave | Scope |
+Top → bottom (newest first):
+
+| SHA | Type | Scope |
 |-----|------|-------|
-| `114ecc5` | Wave 6 fix | `Fraunces` variable font config (dropped weight array; axes requires variable weight) |
-| `d5c57b7` | Wave 5 | Light pass on remaining 11 surfaces + pagination primitive + product-detail-modal migration |
-| `4e5d0e5` | Wave 4A | Storefront flagship: `/shop`, `/shop/[slug]`, `/track` + `BrandPlaceholder` component |
-| `5cbeff0` | Wave 4B | Dashboard home with KPI sparklines (Recharts) + orders Table + alerts card |
-| `1f559aa` | Wave 3 | Shells: dashboard sidebar, storefront nav, auth signin, root layout |
-| `fa06bc9` | Wave 2B | Motion helpers (`lib/motion.ts`) + 7 primitive rebuilds (button/card/input/badge/dialog/select/table) |
-| `ad2c5fd` | Wave 2A | Bespoke brand kit: mark, wordmark, OG cards, favicons, BRAND constant |
-| `447f069` | Wave 1 | Warm Editorial tokens (globals.css) + typography (fonts.ts, fraunces+inter+geistMono) + tailwind.config.ts extensions |
-| `e49fd61` | Research | DESIGN-SPEC.md (1160 lines) + ai-agent-tooling-2026-04-18.md (477 lines) |
+| `0984cca` | fix | Tighten `csp-headers.test.ts` type alias so tsc indexes routes[0].source + .headers.find |
+| `3846bfb` | Wave 7 | Polish 4 nested routes to Warm Editorial (products/import, cart, checkout, orders/[orderNumber]) |
+| `9cf4523` | feat | Token cleanup — border-blue-600 → border-brand-primary + auth callback + landing splash |
+| `d8c5101` | chore | Infra cleanup — flat ESLint + jest-dom types + metadataBase |
+| `d492569` | docs | HANDOFF-DESIGN-OVERHAUL — full state, deliverables, resume instructions |
+| `b4c2447` | fix | Fraunces variable font cannot combine explicit weights with axes |
+| `253be77` | Wave 5 | Light pass on remaining 10 surfaces + pagination primitive + product-detail-modal |
+| `519e0d8` | Wave 4A | Storefront flagship — /shop, /shop/[slug], /track + BrandPlaceholder |
+| `296d7b4` | Wave 4B | Dashboard home — KPI sparklines (Recharts) + orders Table + alerts |
+| `b75c784` | Wave 3 | Shells — dashboard sidebar, storefront nav, auth signin, root layout |
+| `43031a0` | Wave 2B | Motion helpers (`lib/motion.ts`) + 7 primitive rebuilds |
+| `208266c` | Wave 2A | Bespoke brand kit — mark, wordmark, OG cards, favicons, BRAND constant |
+| `c565a3b` | Wave 1 | Warm Editorial tokens + typography foundation |
 
-Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
+**Ancestor on main**: `0f4c26f Phase 16: Go Edge OpenAPI + Swagger UI (DOC-01) (#48)` (main moved during this session — phases 14, 15, 16 were merged in parallel).
 
-### Deliverables by file
+**Note**: The earlier stray ancestor `255ccf2 plan(phase-14)` was rebased out. `e49fd61 docs(design): AI tooling research + DESIGN-SPEC` was also dropped by rebase because identical patch contents landed on main via the phase-14 PR merge — so the DESIGN-SPEC.md + ai-agent-tooling-2026-04-18.md research docs are already on main and NOT duplicated in this branch.
 
-**Foundation (Wave 1):**
-- `frontend/app/fonts.ts` — Fraunces + Inter + Geist Mono via `next/font/google`, exported as `fontVariables` string + individual font objects.
-- `frontend/app/globals.css` — 343 lines, full Warm Editorial token suite (light + dark): surface, ink, brand, accent, semantic (success/warning/danger/info), border, shadow tiers (subtle/lift/float/bloom), radius scale, tracking/leading maps, font-feature-settings for Inter (cv05/cv11/ss01/calt) and tabular-nums for `.font-mono`.
-- `frontend/tailwind.config.ts` — 224 lines, extended: `fontFamily.{display,sans,mono}` via CSS vars, fontSize fluid scale, letterSpacing/lineHeight maps, borderRadius scale, boxShadow tiers, `colors.{surface,ink,brand,accent-editorial,success,warning,danger,info}` via `hsl(var(--...))`. Legacy shadcn tokens kept as aliases — zero consumer migration needed.
+### Deliverables by file (unchanged from v1; plus post-handoff follow-ups below)
 
-**Brand (Wave 2A):**
-- `frontend/public/brand/mark.svg` (32×32, 410B) — J-apostrophe slab monogram, currentColor
-- `frontend/public/brand/mark-dark.svg` (528B) — fig-background variant for OG
-- `frontend/public/brand/wordmark.svg` (180×40, 1245B) — editorial slab wordmark
-- `frontend/public/brand/wordmark-with-oaas.svg` (240×48, 2374B) — full product lockup
-- `frontend/public/brand/og-default.svg` + `og-storefront.svg` (1200×630, ~2.5KB each)
-- `frontend/public/favicon.svg` + `apple-touch-icon.svg`
-- `frontend/public/brand/README.md` — swap-contract documentation
-- `frontend/lib/brand.ts` — `BRAND` constant with `name`, `product`, `fullName`, `tagline`, `shortTagline`, `description`, `marks.{icon,iconDark,wordmark,wordmarkWithProduct,og,ogStorefront}`
+See the v1 HANDOFF section above for the full per-file inventory of Waves 1–5. Added in follow-up rounds:
 
-**Motion + primitives (Wave 2B):**
-- `frontend/lib/motion.ts` — `EASE` object (standard/emphasized/spring), `DURATION` map (fast..slowest), Framer Motion variants (`fadeUp`, `fadeIn`, `scaleFade`, `listStagger`, `listItem`, `navUnderline`), `useReducedMotionSafe()` hook returning null-op variants when `prefers-reduced-motion`
-- `frontend/components/ui/button.tsx` — 8 variants (+primary/editorial/subtle), 5 sizes, `isLoading`, hover lift, focus-visible 2px ring, `asChild` preserved
-- `frontend/components/ui/card.tsx` — 4 variants (default/flat/lifted/inset), CardTitle in font-display
-- `frontend/components/ui/input.tsx` — sizes sm/md/lg, tone variants, `invalid` prop, `Omit<..., "size">` for HTML compat
-- `frontend/components/ui/badge.tsx` — 8 semantic tones
-- `frontend/components/ui/dialog.tsx` — tailwind-animate scaleFade content, warm scrim overlay, `motion-reduce:animate-none`
-- `frontend/components/ui/select.tsx` — input-matched sizing, scaleFade content
-- `frontend/components/ui/table.tsx` — `numeric` cell prop (tabular-nums + font-mono + right-align), overline headers, subtle row hover
+**Follow-up 1 — Infrastructure cleanup (commit `d8c5101`):**
+- `frontend/eslint.config.mjs` — new flat-config (ESLint 9 + eslint-config-next v16 native exports). Overrides disable `no-require-imports` on jest.config.js / jest.setup.js (legitimate CJS).
+- `frontend/.eslintrc.json` — deleted (legacy).
+- `frontend/package.json` — `lint` script now `eslint .`
+- `frontend/types/jest-dom.d.ts` — new; imports `@testing-library/jest-dom` to register matcher types globally. Clears all 36 baseline tsc errors.
+- `frontend/tailwind.config.ts` — eslint-disable-next-line with rationale for legitimate `require('tailwindcss-animate')` (CJS at build time).
+- `frontend/__tests__/csp-headers.test.ts` + `header-snapshot.test.ts` — replaced `any` casts with proper typed imports of next.config.mjs (HeaderRoute type alias).
+- `frontend/app/layout.tsx` — added `metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100")` to resolve OG/Twitter social-card URLs.
+- `frontend/components/dashboard/sidebar.tsx` — surgical `eslint-disable-next-line react-hooks/set-state-in-effect` on theme-hydration-from-localStorage (legitimate mount-once pattern).
+- `frontend/components/storefront/storefront-nav.tsx` — same for Keycloak session hydration.
+- `frontend/components/storefront/__tests__/cart-provider.test.tsx` — same for legitimate test-harness setState closure capture.
 
-**Shells (Wave 3):**
-- `frontend/components/dashboard/sidebar.tsx` — purged slate/blue/purple; BRAND wordmark lockup, fig-tinted avatar, ink nav with brand-primary active rail (Framer `layoutId` shared-element), `WORKSPACE`/`OPERATIONS` section overlines, ghost-button tray for theme+signout
-- `frontend/components/dashboard/dashboard-shell.tsx` — `bg-surface-canvas`, `max-w-[90rem]` container, fadeUp page enter
-- `frontend/components/storefront/storefront-nav.tsx` — ink hierarchy tokens, navUnderline hover, primary pill CTA, success-tinted status pill
-- `frontend/app/auth/signin/page.tsx` — lifted Card on `bg-brand-primary/5` canvas, BRAND mark SVG replaces generic icon, font-display title, scaleFade enter
-- `frontend/app/layout.tsx` — BRAND-driven metadata (title/description/OG/Twitter), `bg-surface-canvas text-ink-primary antialiased` on body
-- `frontend/app/auth/signin/__tests__/page.test.tsx` — minimal selector sync (6 cases, no coverage loss)
-- `frontend/jest.setup.js` — Proxy-based framer-motion mock supporting any `motion.*` tag + `AnimatePresence` + reduced-motion hooks
+**Follow-up 2 — Design token cleanup + missing surfaces (commit `9cf4523`):**
+- All 10 dashboard loading spinners: `border-blue-600` + `text-blue-600` → `border-brand-primary` + `text-brand-primary` (sed batch).
+- `frontend/app/dashboard/products/__tests__/page.test.tsx` — test selector updated to assert `border-brand-primary` (no coverage loss; the test still pins the exact class so regressions remain visible).
+- `frontend/app/shop/auth/callback/page.tsx` — full Warm Editorial rewrite: `bg-surface-canvas`, `<Link>` instead of `<a href>` (fixes no-html-link-for-pages lint errors), `<Button variant="primary">` back-to-shops CTA, `text-brand-primary` spinner, `motion-reduce` safe.
+- `frontend/app/page.tsx` — replaced server-side redirect with a real landing splash. Hero with BRAND tagline + "One kitchen." brand-accented final phrase, two-CTA layout (Browse shops primary / Vendor sign-in secondary), 3-feature strip (Storefronts / Kitchen Display / Trust by default) on surface-subtle background, quiet footer.
 
-**Flagship pages (Wave 4):**
-- `frontend/app/shop/page.tsx` — editorial hero with BRAND tagline, search + category pills, 4-col shop card grid with BrandPlaceholder banner fallback, listStagger enter
-- `frontend/app/shop/[slug]/page.tsx` — 21:9 banner (single legibility gradient — the only approved exception), overlapping header Card, sticky backdrop-blur category sub-nav, product Card grid with font-mono pricing, Dialog-based hours disclosure with Table
-- `frontend/app/track/page.tsx` — compact hero, Input-based lookup, result Card with horizontal/vertical progress stepper (Framer fill), numeric Table item list
-- `frontend/app/dashboard/page.tsx` — greeting in font-display, 4-card KPI row with Recharts sparklines (brand-primary stroke + /10 fill), 2/3 recent-orders Table + 1/3 top-customers/alerts stack, page-level fadeUp staggered children
-- `frontend/components/storefront/brand-placeholder.tsx` — aspect-aware fallback, `bg-surface-muted` + mark.svg at 30% opacity
+**Follow-up 3 — Nested route polish (commit `3846bfb`, delegated subagent):**
+- `frontend/app/dashboard/products/import/page.tsx` (443 lines) — Warm Editorial tokens, CSV upload preserved, violet → `accent-editorial` mustard for AI suggestions.
+- `frontend/app/shop/[slug]/cart/page.tsx` (190 lines) — Card lifted, font-mono tabular prices, BrandPlaceholder fallback, `rounded-pill shadow-lift` primary CTA.
+- `frontend/app/shop/[slug]/checkout/page.tsx` (557 lines) — Input tone=brand, lifted order summary, **Stripe appearance** aligned with Warm Editorial palette (theme=flat, `colorPrimary: hsl(1,35%,42%)` Fig, `colorText: hsl(30,10%,16%)` Ink, `colorBackground: hsl(32,30%,99%)` Surface, `colorDanger: hsl(358,55%,45%)`, Inter fontFamily, 10px radius — intentional HSL hardcode at API boundary since Stripe doesn't accept CSS vars).
+- `frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx` (356 lines) — semantic status Badge, font-mono order number, Table item rows, stepper consistent with /track.
 
-**Light pass (Wave 5):**
-- `frontend/app/shop/layout.tsx` — surface-canvas root, backdrop-blur-sm header, BRAND wordmark replaces orange J
-- `frontend/components/storefront/product-detail-modal.tsx` — migrated to Dialog primitive, font-display title, font-mono price, BrandPlaceholder fallback
-- `frontend/app/shop/orders/page.tsx` — Card lifted per order, semantic status Badges, Table item rows
-- `frontend/app/page.tsx` — untouched (server-side redirect only; no UI to enhance)
-- `frontend/app/dashboard/customers/page.tsx` — Table + Input + Select filter bar
-- `frontend/app/dashboard/finance/page.tsx` — KPI row + transactions Table, `?export=1` auto-triggers client-side CSV (page wrapped in `<Suspense>` per `useSearchParams` requirement)
-- `frontend/app/dashboard/products/page.tsx` — Card grid with semantic stock Badges; violet→`accent-editorial` for AI suggestions panel
-- `frontend/app/dashboard/kitchen/page.tsx` — 48px touch targets, loud Badge status, age-border semantics; bump-button optimistic-update + audio beep preserved
-- `frontend/app/dashboard/shops/page.tsx` — lifted Card grid with BrandPlaceholder banner fallback
-- `frontend/app/dashboard/orders/page.tsx` — Table view; `?new=1` auto-opens create Dialog; `?status=<STATUS>` pre-seeds filter
-- `frontend/app/dashboard/marketing/page.tsx` — 4-tile grid (Announcements/Promotions/Reviews/Insights)
-- `frontend/components/ui/pagination.tsx` — purged slate-600 residue, ghost icon buttons, badge-style current page
+**Follow-up 4 — tsc tightening (commit `0984cca`):**
+- `frontend/__tests__/csp-headers.test.ts` — type alias `HeaderRoute` replaces the too-loose `Promise<unknown[]>` so the 7 downstream index accesses (`routes[0].source`, `routes[0].headers.find(...)`) resolve cleanly. Zero runtime impact.
 
-### Quality gates passed
+### Quality gates — all green post-rebase
 
 | Gate | Command | Result |
 |------|---------|--------|
-| Typecheck | `npx tsc --noEmit` (grep-filtered `__tests__` + `.test.`) | **0 new errors** (36 baseline errors in `__tests__` all pre-existing, unrelated to design work) |
-| Unit tests | `npm test` | **15 suites, 84 tests, 1 snapshot — all pass** (2.9s) |
-| Production build | `npx next build` | **All 22 routes compile cleanly** — 7 static, 15 dynamic (including API routes + middleware) |
-| ESLint | `npm run lint` | **Skipped** — `next lint` was removed from Next.js 16; script is broken at baseline (not a design-work regression) |
+| **Typecheck** | `npx tsc --noEmit` | **0 errors** (was 36 baseline — matcher types now registered via jest-dom.d.ts) |
+| **Lint** | `npm run lint` | **0 errors, 11 warnings** (was broken via `next lint` removal; warnings are pre-existing `<img>` + unused-vars, not introduced by design work) |
+| **Unit tests** | `npm test` | **15 suites, 84 tests, 1 snapshot — all pass** (3.0s) |
+| **Production build** | `npx next build` | **All 22 routes compile cleanly** — 7 static (`/`, `/_not-found`, `/auth/signin`, `/shop`, `/shop/auth/callback`, `/shop/orders`, `/track`), 15 dynamic (API + dashboard + shop/[slug] variants), middleware |
 
-### Specific functional behavior verified preserved
+### Functional behavior verified preserved
 
-- NextAuth v5 signin flow — `signIn("keycloak", ...)` call + callback URL unchanged
-- Customer session polling (focus/visibility/storage listeners + 5s post-mount interval) in StorefrontNav unchanged
+- NextAuth v5 signin flow — `signIn("keycloak", ...)` + callback URL unchanged
+- Customer session polling (focus/visibility/storage + 5s post-mount interval) in StorefrontNav unchanged
 - Cart add/remove/quantity via `useCart`, `addItem`, `updateQuantity` unchanged
-- Product detail modal prop surface (`onAdd`/`onIncrement`/`onDecrement`/`onClose`/`quantity`) unchanged
-- Hours disclosure data source (`shop.openingHours` record) unchanged
+- Product detail modal prop surface unchanged
+- Hours disclosure data source (`shop.openingHours`) unchanged
 - Search endpoint `/public/shops?q=` + order lookup `/public/orders/:orderNumber?email=` with 15s auto-refresh unchanged
 - KDS bump-button optimistic update + audio beep unchanged
-- All `data-testid` attributes preserved (no test weakening anywhere)
+- Stripe Elements payment flow — config preserved; only visual appearance aligned
+- CSV import flow (validation, progress, column mapping) unchanged
+- All `data-testid` attributes preserved
 
 ---
 
 ## Remaining work
 
-### Before PR opens (blocking for merge)
+### Blocking for PR merge (manual — require running stack)
 
-1. **Visual QA on running dev stack** (manual, ~30 min). Dev stack must be booted; see `docker-compose.yml`. Then:
-   - Boot frontend: `cd frontend && npm run dev` on port 3100 (MCP holds 3000)
-   - Boot backend + deps: `docker-compose up -d postgres redis keycloak rabbitmq minio core-java edge-go`
-   - Manually walk through: `/`, `/auth/signin`, `/shop`, `/shop/{any-slug}`, `/dashboard`, `/dashboard/kitchen`, `/track`
-   - Check mobile breakpoint via DevTools responsive mode (390×844 + 1440×900 to match Playwright projects)
-   - Verify: dark mode toggle in dashboard sidebar still works; CSP doesn't block `next/font/google` (should work — fonts are self-hosted to `/_next/static/media/`); images load with natural width > 0 (per `feedback_image_rendering.md` memory)
-
-2. **Playwright regression sweep** (requires running stack). Existing suites in `frontend/e2e/`:
-   - `csp-no-violations.spec.ts` — confirms CSP doesn't fire on main flows (critical for design work)
-   - `kitchen-flow.spec.ts` — KDS interaction
-   - `stomp-relay.spec.ts` — real-time order updates
-   - `storefront-flows.spec.ts` — customer shopping flow
-   
+1. **Visual QA on running dev stack** (~30 min, manual):
    ```bash
-   cd frontend
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026   # main repo — docker-compose lives there
+   docker-compose up -d postgres redis keycloak rabbitmq minio core-java edge-go
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/frontend
+   PORT=3100 npm run dev
+   ```
+   Walk through: `/`, `/auth/signin`, `/shop`, `/shop/{slug}`, `/dashboard`, `/dashboard/kitchen`, `/track`, `/shop/[slug]/cart`, `/shop/[slug]/checkout`. Verify dark mode toggle in sidebar still works; CSP doesn't block `next/font/google` (should work — self-hosted); images load with `naturalWidth > 0` (per `feedback_image_rendering.md`).
+
+2. **Playwright regression sweep** (requires running stack):
+   ```bash
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/frontend
    PLAYWRIGHT_BASE_URL=http://localhost:3100 npx playwright test
    ```
-   Expected: all pass. Mobile + desktop projects run automatically.
+   Four existing suites on mobile + desktop projects: `csp-no-violations.spec.ts`, `kitchen-flow.spec.ts`, `stomp-relay.spec.ts`, `storefront-flows.spec.ts`. Expected: all pass.
 
-3. **`metadataBase` warning** (non-blocking but cleanup candidate). In `frontend/app/layout.tsx` metadata:
-   ```ts
-   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100"),
+3. **Open PR**:
+   ```bash
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design
+   git push -u origin feature/design-system-overhaul
+   gh pr create --title "feat(design): Warm Editorial frontend overhaul" \
+     --body-file .planning/research/HANDOFF-DESIGN-OVERHAUL.md
    ```
-   This resolves the "using http://localhost:3000" warning on social card images.
 
-### Nice-to-have (can be follow-ups)
+### Resolved in this round (was "remaining" in v1 HANDOFF)
 
-- **`tweakcn`-driven palette refinement** (optional): feed a vendor food photograph into https://tweakcn.com/ai and iterate Wave 1 `globals.css` tokens. Current palette is hand-authored; a photographed reference could refine warmth.
-- **Storybook + Chromatic VRT** (per research doc `ai-agent-tooling-2026-04-18.md` §4): component-level visual regression once UI stabilizes.
-- **Next.js 16 `next lint` fix**: the stock `next lint` command was removed; either flip `package.json` script to `eslint . --ext .ts,.tsx` with a flat `eslint.config.mjs`, or use `@next/eslint-plugin-next` directly. Unrelated to design work but surfaced during regression gate.
-- **36 baseline tsc errors in `__tests__`**: all from missing `@testing-library/jest-dom` type augmentation. Add `/// <reference types="@testing-library/jest-dom" />` or import `'@testing-library/jest-dom'` in a `jest-dom.d.ts`. Unrelated to design work.
-- **Ancestor commit `255ccf2`** on this branch is actually a phase-14 plan commit that drifted in during worktree setup. Harmless (only touches `.planning/`) but can be rebased out pre-merge via `git rebase -i 009dbc7` and dropping that commit if a clean history is wanted.
+- ~~`metadataBase` warning~~ — fixed; env-driven with localhost:3100 fallback
+- ~~36 baseline tsc errors~~ — fixed via `types/jest-dom.d.ts`
+- ~~`next lint` broken at Next.js 16 baseline~~ — fixed via flat ESLint config
+- ~~Stray ancestor commit `255ccf2`~~ — rebased out
+- ~~Dashboard loading spinners using `border-blue-600`~~ — swapped to `border-brand-primary` with test sync
+- ~~Root `/` page as bare redirect~~ — landing splash shipped
+- ~~`/shop/[slug]/cart`, `/checkout`, `/orders/[orderNumber]` not explicitly touched~~ — polished in Wave 7
+- ~~`/dashboard/products/import` not touched~~ — polished in Wave 7
+- ~~`app/shop/auth/callback/page.tsx` still slate/orange~~ — full Warm Editorial rewrite
 
-### Deeper polish deferred
+### Nice-to-have (genuine followups, not blockers)
 
-- **Root `/` page**: currently a pure server-side redirect; no UI. Could become a marketing splash per DESIGN-SPEC §10.1 with BRAND tagline + two CTAs. Left for a future sketch.
-- **`/dashboard/products/import`**: Wave 5 didn't touch this nested page (it was out of scope); inherits tokens but may benefit from layout pass.
-- **`/shop/[slug]/cart`, `/checkout`, `/orders/[orderNumber]`**: nested storefront routes. Tokens inherit automatically but no explicit light pass applied. Verify visually.
-- **Dashboard loading spinners**: kept `border-blue-600` class on loading states because `dashboard/products/__tests__` pins that class via `toHaveClass('border-blue-600')`. Harmless (blue-600 is closer to the new brand palette than not) but swap to `border-brand-primary` when you also update that test.
+- **11 lint warnings**: all pre-existing — `<img>` recommendations (10+) + 1–2 unused-vars. Acceptable; can be cleaned in a separate infra pass.
+- **`tweakcn`-driven palette refinement**: feed a vendor food photograph into https://tweakcn.com/ai and iterate Wave 1 `globals.css` tokens. Optional — the hand-authored palette is production-ready as-is.
+- **Storybook + Chromatic VRT** (per `ai-agent-tooling-2026-04-18.md` §4): component-level visual regression. Useful once the surface stabilises post-PR.
+- **Next.js `<Image>` migration**: replace remaining `<img>` tags with `<Image>` for LCP/bandwidth. Behaviour-sensitive (needs width/height or fill); defer.
 
 ---
 
@@ -163,14 +150,15 @@ Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
 | Decision | Rationale |
 |---|---|
 | Isolated git worktree at `…-design/` | Primary repo had a parallel Claude session actively committing to `feature/phase-14-stock-race-summary-aggregation`. Each fresh shell inherited that branch's HEAD. Worktree bypassed the contention. |
-| Warm Editorial over Stripe-like cool blue | Food retail needs appetite + trust + editorial craft, not fintech coldness. Channels Square/Toast/Stripe typography/Linear quiet confidence without copying any. |
-| `weight: "variable"` for Fraunces (not specific weights) | Next.js 16 rejects `axes` + specific `weight` array. Variable weight loads all 100–900 anyway; globals.css already sets explicit `font-weight` per type-scale step. |
-| `class-variance-authority` for primitive variants | Already in shadcn dep tree; canonical pattern; zero new deps. |
-| Framer Motion `motion.div + scaleFade` via tailwindcss-animate classes in Dialog | Radix `forceMount` pattern has SSR fragility; data-state-driven `zoom-in-95 fade-in-0 duration-moderate` is semantically identical and respects `motion-reduce:animate-none`. Motion helpers remain available to page-level consumers that want `motion.div` directly. |
-| `BrandPlaceholder` replaces all null-image fallbacks | Spec §8 forbids gradient/grey placeholders. BrandPlaceholder keeps brand presence in empty states. Aspect-prop-aware for card vs modal use. |
-| Legacy shadcn tokens kept as aliases | Zero consumer migration needed. Existing `bg-primary`, `text-foreground`, `bg-background` etc. still resolve — they now point at Warm Editorial values. |
-| One-file swap contract for future designers | `frontend/app/globals.css` is the single palette file. Overwrite token values → every component updates. No code changes required. Documented in `frontend/public/brand/README.md` and `DESIGN-SPEC.md §15`. |
-| No runtime CSS-in-JS for theme | CSP enforces `style-src 'self' 'unsafe-inline'` only for `next/font` injected stylesheets. All colour changes go through CSS vars; dark mode via `.dark` class on `<html>`. |
+| Warm Editorial over fintech-cool blue | Food retail needs appetite + trust + editorial craft, not fintech coldness. Channels Square/Toast/Stripe typography/Linear quiet confidence without copying. |
+| `weight: "variable"` for Fraunces (not specific weights) | Next.js 16 rejects `axes` + specific `weight` array. Variable weight loads all 100–900; globals.css already sets explicit `font-weight` per type-scale step. |
+| Flat ESLint config consuming eslint-config-next/core-web-vitals + typescript | `next lint` was removed in Next.js 16. eslint-config-next v16 ships flat-native exports so migration is trivial — no need for `@next/eslint-plugin-next` direct, no FlatCompat bridge. |
+| Surgical `eslint-disable-next-line react-hooks/set-state-in-effect` on 3 legitimate hydration patterns | Theme from localStorage, Keycloak session fetch, test-harness closure capture. Rule is correct in general but these three are single-shot mount-time patterns with no cascade risk. Rationale comments explain why — future-reader-safe. |
+| Stripe appearance hardcoded HSL triplets | Stripe's appearance API doesn't accept CSS variables. The only clean way is hardcoding token values at the API boundary, isolated to checkout/page.tsx. Matches `--brand-primary` etc. exactly. |
+| Replaced `any` casts in CSP tests with proper type aliases | Once ESLint flat config enabled `no-explicit-any`, the lazy casts surfaced. Clean fix is tightening types rather than silencing the rule — gives future refactors a real contract. |
+| Rebased to drop `255ccf2` + `e49fd61` (the latter as patch-dup) | Clean PR history. The `255ccf2 plan(phase-14)` commit drifted into the design branch during worktree creation and carries unrelated phase-14 plan files. The `e49fd61 docs(design)` commit landed on main via phase-14's merge, so it's already upstream — dropping is the correct rebase outcome. |
+| `<img>` tags kept as-is in nested routes (not migrated to `<Image>`) | Migrating to Next.js `<Image>` requires width/height props or `fill` layout mode — behaviour-sensitive. Zero-risk design work means leaving them. The 10+ lint warnings are acceptable tech debt flagged for a dedicated infra pass. |
+| Landing splash, not redirect | Unauthenticated visitors hitting `/` should see marketing (B2C audience = shoppers). Authenticated vendors already have bookmarks/nav to `/dashboard`. Two-CTA layout serves both audiences cleanly. |
 
 ---
 
@@ -178,10 +166,12 @@ Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
 
 | Approach | Why it failed |
 |---|---|
-| Working in primary repo at `/home/sanmi/IdeaProjects/JToye_OaaS_2026/` | A parallel Claude session was actively committing to `feature/phase-14-stock-race-summary-aggregation` in the same filesystem. Each fresh Bash shell inherited phase-14 HEAD regardless of my explicit `git checkout`. **Solution**: created isolated worktree. |
-| Fraunces with explicit weight array + axes | Next.js 16 Turbopack errored: "Axes can only be defined for variable fonts when the weight property is nonexistent or set to 'variable'". **Solution**: dropped `weight:` array; Fraunces is a variable font so all weights load. |
-| `next lint` as a regression gate | Next.js 16 removed the `next lint` command; stock script parses "lint" as a path. **Solution**: skipped; flagged as infra cleanup task. |
-| Writing HANDOFF.md at repo root as `HANDOFF.md` | Would collide with existing root `HANDOFF.md` from v2.2 scoping session. **Solution**: wrote to `.planning/research/HANDOFF-DESIGN-OVERHAUL.md`. |
+| Working in primary repo at `/home/sanmi/IdeaProjects/JToye_OaaS_2026/` | Parallel session's branch switches kept inheriting into my shells. Solved via isolated worktree. |
+| Fraunces with explicit weight array + axes | Next.js 16 Turbopack errored: "Axes can only be defined for variable fonts when the weight property is nonexistent or set to 'variable'". Dropped `weight:` array. |
+| Initial `any` cast on `next.config.mjs` dynamic import | ESLint + tsc both flagged. Replaced with proper type alias `HeaderRoute`. |
+| Initial `Promise<unknown[]>` typing | Too loose — downstream indexing (`routes[0].source`) errored TS2571. Upgraded to typed `HeaderRoute` alias. |
+| `next lint` as a regression gate | Next.js 16 removed the command. Migrated to flat ESLint 9. |
+| Writing HANDOFF.md at repo root as `HANDOFF.md` | Would collide with existing root `HANDOFF.md` from v2.2 scoping session. Wrote to `.planning/research/HANDOFF-DESIGN-OVERHAUL.md`. |
 
 ---
 
@@ -189,13 +179,12 @@ Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
 
 - **Worktree**: `/home/sanmi/IdeaProjects/JToye_OaaS_2026-design/`
 - **Branch**: `feature/design-system-overhaul`
-- **Most-recent commit**: `114ecc5 fix(design): Fraunces variable font cannot combine explicit weights with axes`
-- **Branch ancestry**: `114ecc5` → `d5c57b7` → `4e5d0e5` → `5cbeff0` → `1f559aa` → `fa06bc9` → `ad2c5fd` → `447f069` → `e49fd61` → `255ccf2` (stray phase-14 plan) → `009dbc7` (main)
-- **Working tree**: clean (verified post-commit)
+- **Most-recent commit**: `0984cca fix(design): tighten csp-headers.test.ts type alias`
+- **Branch ancestry**: 13 clean atomic commits on top of `main` tip `0f4c26f` (Phase 16)
+- **Working tree**: clean
 - **Node version**: Node 20+ (per CLAUDE.md)
-- **Package manager**: npm (via `package-lock.json`; no pnpm/yarn)
+- **Package manager**: npm (via `package-lock.json`)
 - **Dev port**: 3100 (MCP server holds 3000)
-- **Docker-compose services expected**: postgres (5432 — watch for conflict with `dealflow_*` containers per memory), redis, keycloak, rabbitmq, minio, core-java (Spring Boot), edge-go (Gin)
 - **No running services** at session end
 
 ---
@@ -204,38 +193,34 @@ Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
 
 ### For the human (next session / PR owner)
 
-1. **Switch to the worktree**:
+1. **Switch to worktree**:
    ```bash
    cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design
-   git status   # should be clean
-   git log --oneline -10   # should show Wave 1..5 + font fix
+   git status              # should be clean
+   git log --oneline -15   # should show 13 design commits on top of main's phase-16 tip
    ```
 
-2. **Boot dev stack**:
+2. **Boot dev stack** (in primary repo):
    ```bash
-   # If you haven't already:
-   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026   # (main repo — docker-compose lives there)
+   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
    docker-compose up -d postgres redis keycloak rabbitmq minio core-java edge-go
    
-   # Then from the design worktree:
    cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/frontend
    PORT=3100 npm run dev
    ```
-   Expected: Next.js ready on http://localhost:3100 in ~5s.
 
 3. **Run Playwright**:
    ```bash
    cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/frontend
    PLAYWRIGHT_BASE_URL=http://localhost:3100 npx playwright test
    ```
-   Expected: 4 suites pass on mobile + desktop. If any fail, screenshots/traces are in `playwright-report/`.
 
-4. **Visual click-through** (per `feedback_e2e_click_through.md`):
+4. **Visual click-through** (per `feedback_e2e_click_through.md` memory):
    - Sign in via Keycloak → should land in `/dashboard` with new sidebar + KPI cards
-   - Click "Kitchen" → KDS page with loud Badges
+   - Click "Kitchen" → KDS page with loud Badges, 48px touch targets
    - Navigate to `/shop` (unauthenticated) → editorial hero with BRAND tagline
-   - Click into any shop → 21:9 banner + product cards
-   - Open product modal → Dialog primitive with font-display title + font-mono price
+   - Click into any shop → 21:9 banner + product cards, open product modal (Dialog)
+   - Add to cart → `/shop/[slug]/cart` view, then `/checkout` with Stripe
    - Try `/track` → stepper with Framer fill
    - Toggle dark mode in sidebar → every token flips via CSS vars
 
@@ -244,21 +229,19 @@ Ancestor: `009dbc7` Phase 13 on `main` (pre-existing).
    cd /home/sanmi/IdeaProjects/JToye_OaaS_2026-design
    git push -u origin feature/design-system-overhaul
    gh pr create --title "feat(design): Warm Editorial frontend overhaul" \
-     --body-file /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/.planning/research/HANDOFF-DESIGN-OVERHAUL.md
+     --body-file .planning/research/HANDOFF-DESIGN-OVERHAUL.md
    ```
 
-### For a fresh Claude session resuming this work
-
-Paste this into the new session:
+### For a fresh Claude session
 
 ```
-Resuming frontend design system overhaul. Context:
+Resuming frontend design system overhaul.
 - Worktree: /home/sanmi/IdeaProjects/JToye_OaaS_2026-design/
-- Branch: feature/design-system-overhaul
-- All 8 waves committed. `next build` passes. 84/84 jest pass. 0 new tsc.
-- Read .planning/research/HANDOFF-DESIGN-OVERHAUL.md for the full state.
-- Read .planning/research/DESIGN-SPEC.md for design authority.
-- Do NOT cd into /home/sanmi/IdeaProjects/JToye_OaaS_2026/ — parallel session active there.
+- Branch: feature/design-system-overhaul (13 atomic commits)
+- tsc: 0 errors. lint: 0 errors. jest: 84/84. next build: 22 routes.
+- Read .planning/research/HANDOFF-DESIGN-OVERHAUL.md for full state.
+- Read .planning/research/DESIGN-SPEC.md (on main) for design authority.
+- Do NOT cd into /home/sanmi/IdeaProjects/JToye_OaaS_2026/ — parallel session active.
 - Remaining: visual QA on running dev stack + Playwright sweep + PR.
 ```
 
@@ -266,16 +249,17 @@ Resuming frontend design system overhaul. Context:
 
 ## Tests / build artifacts
 
-- `frontend/.next/` — production build output (gitignored). Re-produce via `npx next build` in the design worktree.
-- `frontend/playwright-report/` — last Playwright HTML report location (may be empty; no e2e run this session).
+- `frontend/.next/` — production build output (gitignored). Reproduce via `npx next build`.
+- `frontend/playwright-report/` — last Playwright HTML report (empty this session; requires running stack).
 - `frontend/test-results/` — last Playwright raw traces.
-- Jest: `15 suites, 84 tests, 1 snapshot` — green (2.9s).
-- tsc baseline: `36` errors in `__tests__/*` pre-existing (all `toBeInTheDocument`/`toHaveClass` missing-type), design-work errors: `0`.
+- Jest: **15 suites, 84 tests, 1 snapshot — green (3.0s)**.
+- tsc: **0 errors** (was 36 baseline).
+- Lint: **0 errors, 11 warnings** (all pre-existing `<img>` + unused-vars).
 
 ---
 
 ## References
 
-- Design authority: `.planning/research/DESIGN-SPEC.md` (1160 lines)
-- Ecosystem research: `.planning/research/ai-agent-tooling-2026-04-18.md` (477 lines)
+- DESIGN-SPEC.md — on `main` at `.planning/research/DESIGN-SPEC.md` (1160 lines, merged via phase-14 PR)
+- ai-agent-tooling-2026-04-18.md — on `main` at `.planning/research/` (477 lines)
 - Visual standard memories: `/home/sanmi/.claude/projects/-home-sanmi-IdeaProjects-JToye-OaaS-2026/memory/feedback_ui_quality.md`, `feedback_e2e_click_through.md`, `feedback_image_rendering.md`, `feedback_rebuild_containers.md`, `feedback_port3100.md`
