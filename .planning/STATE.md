@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: executing
-stopped_at: "Phase 16.1-02 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (f182088 fix(16.1-02): scope OrderSseService broadcasts per tenant; bb5ffd6 test(16.1-02): tenant-isolation regression suite) closing AUDIT-W0-01 cross-tenant SSE leak. 11/11 OrderSseService* tests green. 16.1-02-SUMMARY.md created. Next plan: 16.1-03."
-last_updated: "2026-04-27T23:23:52.625Z"
+stopped_at: "Phase 16.1-03 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (decd4c2 test(16.1-03) RED; 48c0914 fix(16.1-03) GREEN) closing AUDIT-W0-02 customer-orders IDOR. 15/15 PublicStorefrontController* tests green (4 new IdorTest + 11 existing). 16.1-03-SUMMARY.md created. Next plan: 16.1-04."
+last_updated: "2026-04-27T23:32:19.834Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 16.1 (Pre-prod Hardening (Wave 0 council audit fixes)) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-27
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [████████░░] 82%
 *Updated after each plan completion*
 | Phase 16.1 P01 | 2min | 1 tasks | 1 files |
 | Phase 16.1 P02 | 4min | 2 tasks | 3 files |
+| Phase 16.1 P03 | 4min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - [Phase 16.1]: Bundled three audit-finding fixes (AUDIT-W0-03 Stripe idempotency, AUDIT-W0-04 reviews_tenant_write rewrite, AUDIT-W0-05 FORCE RLS on 9 tables) into a single V35 Flyway migration. — Partial application would leave the DB in an unsafe state where idempotency exists but FORCE RLS does not. Atomic deploy is required per phase 16.1 LOCKED CONTEXT decisions.
 - [Phase 16.1]: Fail-closed at OrderSseService.subscribe() — throw IllegalStateException when TenantContext is unset, rather than silently attaching a tenant-less emitter — LOCKED in 16.1-CONTEXT.md Item 1: silent fallback to a default bucket would mask a misconfigured request pipeline (JwtTenantFilter not populating context) and could re-introduce the cross-tenant leak this plan exists to close.
 - [Phase 16.1]: Filter SSE broadcasts at the service layer (per-tenant ConcurrentHashMap routed by event.tenantId()), not via @PreAuthorize on OrderController — Broadcasts run on the RabbitMQ consumer thread off-request — Spring SecurityContext is not propagated there, so controller-level annotation cannot enforce tenant scoping at broadcast time. Filtering inside OrderSseService is the correct layer.
+- [Phase 16.1]: AUDIT-W0-02 closed: GET /public/orders requires mandatory verify order-number; trackOrder runs unconditionally as proof-of-ownership — LOCKED in 16.1-CONTEXT.md Item 2; the prior optional verify allowed trivial enumeration of any customer's order history by email
+- [Phase 16.1]: GlobalExceptionHandler now preserves controller-thrown ResponseStatusException + maps MissingServletRequestParameterException to 400 — Auto-fix Rule 1/2 deviation during 16.1-03 — without these handlers the catch-all Exception matcher swallowed both as 500, masking the LOCKED 400 contract
 
 ### Pending Todos
 
@@ -113,7 +116,6 @@ Recent decisions affecting current work:
 - Port conflicts in dev env (frontend 3100 because MCP server holds 3000; Postgres 5432 shared with unrelated `dealflow_*` containers) — E2E smoke tests may need those containers stopped first
 - Stripe refund API (VOPS-02) requires phase-level research into idempotency keys + webhook `charge.refunded` handling — treat as a design-gate before writing the controller
 - K8s Sealed Secrets (INF-02) requires an operator install in the cluster + key rotation policy — not just a manifest change
-- `/public/orders?email=` enumeration risk (deferred from v2.1) — still open; not in v2.2 scope but should be noted as a known vulnerability
 
 ## Deferred Items
 
@@ -131,6 +133,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-27T23:23:52.616Z
-Stopped at: Phase 16.1-02 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (f182088 fix(16.1-02): scope OrderSseService broadcasts per tenant; bb5ffd6 test(16.1-02): tenant-isolation regression suite) closing AUDIT-W0-01 cross-tenant SSE leak. 11/11 OrderSseService* tests green. 16.1-02-SUMMARY.md created. Next plan: 16.1-03.
+Last session: 2026-04-27T23:32:19.825Z
+Stopped at: Phase 16.1-03 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (decd4c2 test(16.1-03) RED; 48c0914 fix(16.1-03) GREEN) closing AUDIT-W0-02 customer-orders IDOR. 15/15 PublicStorefrontController* tests green (4 new IdorTest + 11 existing). 16.1-03-SUMMARY.md created. Next plan: 16.1-04.
 Resume file: None
