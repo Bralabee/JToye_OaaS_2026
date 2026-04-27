@@ -144,10 +144,15 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   4. **`reviews_tenant_write` RLS rewrite** — V35 migration: drop `app.tenant_id` reference (use `app.current_tenant_id`), drop the `customer_email` OR-clause, require `EXISTS (SELECT 1 FROM orders WHERE id=order_id AND customer_email=app.customer_email)`. Test: spam-review attempt with arbitrary `tenant_id` → INSERT rejected.
      - File: original policy in `db/migration/V27__customer_reviews.sql:31-36`; replacement migration V35.
   5. **`FORCE ROW LEVEL SECURITY`** on `reviews`, `shop_promotions`, `shop_announcements`, and all 6 `_aud` audit tables (V35 migration). Test: `SELECT relforcerowsecurity FROM pg_class WHERE relname IN (...)` → all true.
-**Plans:** 0 plans (run `/gsd-plan-phase 16.1` to break down — likely a single V35-migration plan + per-fix Java tasks + RlsContractTest as recommended in `docs/audit/remediation/03-database-remediation.md` F11).
+**Plans:** 6 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 16.1 to break down)
+- [ ] 16.1-01-PLAN.md — V35 Flyway migration: processed_stripe_events table + reviews_tenant_write rewrite + FORCE RLS on 9 tables (AUDIT-W0-03/04/05) [Wave 1]
+- [ ] 16.1-02-PLAN.md — OrderSseService per-tenant emitter routing + OrderSseServiceTenantIsolationTest (AUDIT-W0-01) [Wave 1]
+- [ ] 16.1-03-PLAN.md — Mandatory `verify` param on /public/orders + PublicStorefrontControllerIdorTest (AUDIT-W0-02) [Wave 1]
+- [ ] 16.1-04-PLAN.md — PaymentService.handleWebhookEvent TOCTOU-safe idempotency guard + StripeWebhookIdempotencyIntegrationTest (AUDIT-W0-03) [Wave 2; depends on 16.1-01]
+- [ ] 16.1-05-PLAN.md — RlsContractTest + ReviewsRlsPolicyIntegrationTest (AUDIT-W0-04/05) [Wave 2; depends on 16.1-01]
+- [ ] 16.1-06-PLAN.md — REQUIREMENTS/CHANGELOG/STATE/ROADMAP closure: register AUDIT-W0-01..05, mark phase complete [Wave 3; depends on 01-05]
 
 ### Phase 17: Vendor Order Detail + Stripe Refund Flow
 **Goal**: Vendors can open any order from `/dashboard/orders`, see its full context (items, payment, transitions), and issue a full or partial Stripe refund with a structured reason — and the refund flows through Stripe, the database, the order state machine, and the RabbitMQ event bus consistently.
