@@ -1,5 +1,56 @@
 # Handoff: Dashboard SSE Auth Fix + Dev Polish + Phase 17 Ready
 
+> **NEW 2026-04-27 — Council Audit + Remediation Plan completed.**
+>
+> **READ THIS FIRST**: [`docs/audit/REMEDIATION-PLAN-2026-04-27.md`](docs/audit/REMEDIATION-PLAN-2026-04-27.md) — consolidated 12-week plan across 8 specialist + reviewer remediation pairs. Includes a **30-hour pre-prod path** (Wave 0) that closes 3 confirmed cross-tenant data leaks + Stripe webhook idempotency + production observability blackout, then waves 1-3+ for hardening and commercial GTM.
+>
+> **Source artifacts** (read in this order if onboarding cold):
+> 1. [`docs/audit/REMEDIATION-PLAN-2026-04-27.md`](docs/audit/REMEDIATION-PLAN-2026-04-27.md) — what to do
+> 2. [`docs/audit/COUNCIL-AUDIT-2026-04-27.md`](docs/audit/COUNCIL-AUDIT-2026-04-27.md) — why (10-agent council audit)
+> 3. [`docs/audit/remediation/`](docs/audit/remediation/) — 8 pair docs with full code, SQL, tests ready to ship
+> 4. [`docs/audit/sources/`](docs/audit/sources/) — 10 original audit findings (drill-down)
+>
+> **9 founder decisions block the plan** — see remediation plan §"Founder decisions blocking the plan". Highest-leverage three: (1) approve edge-go absorb? (2) where does prod K8s live? (3) founder personal runway + day-job status (drives raise vs bootstrap). Answer those three and the rest of the sequencing locks itself.
+>
+> **Pre-prod 30-hour path (Wave 0 — must close before any prod rollout >1 tenant or real payments)**:
+> - Backend F1 SSE leak (1.5h) + F2 Stripe idempotency with TOCTOU-safe insert (3h)
+> - Security F1 IDOR mandatory `verify` (2h)
+> - Database F1 reviews policy + F2 FORCE RLS on 9 tables + F11 RlsContractTest (4h)
+> - DevOps F1 prod actuator exposure flip + F3 MDC tenantId + F13 git rm backup file (~1.5 days)
+>
+> **Also see** — a separate advisory/strategic thread from 2026-04-21 is captured under `docs/planning/`:
+> [`SESSION-HANDOFF-2026-04-21.md`](docs/planning/SESSION-HANDOFF-2026-04-21.md) (resume pointer),
+> [`PLATFORM-STATE-AND-POSITIONING-2026-04-19.md`](docs/planning/PLATFORM-STATE-AND-POSITIONING-2026-04-19.md) (competitive analysis),
+> [`PROGRESSION-PLAN-2026-04-21.md`](docs/planning/PROGRESSION-PLAN-2026-04-21.md) (four-wave roadmap).
+> This document below remains the authoritative **coding** resume. Read the strategic thread when deciding *what* to build; read below for *how to resume Phase 17*.
+
+---
+
+## ⚠️ Council Audit (2026-04-27) — resume guidance
+
+**State**: Audit complete and committed-pending. 10 specialist agents (7 technical, 3 commercial) reviewed full stack + market. Output at [`docs/audit/COUNCIL-AUDIT-2026-04-27.md`](docs/audit/COUNCIL-AUDIT-2026-04-27.md).
+
+**Recommended next session — choose one of these paths**:
+
+### Path A — Fix the pre-prod blockers (council recommendation)
+Skip Phase 17 in favour of fixing the 5 confirmed data-integrity bugs. Total effort ~2 days of focused work. Run `/gsd-quick` per item or `/gsd-plan-phase` for a bundled "Pre-prod Hardening" phase:
+
+1. **`OrderSseService` cross-tenant leak** — `core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java:17,29-40`. Capture `TenantContext.get()` at `subscribe()`, filter `broadcast()` by event tenant. Add `OrderSseServiceTenantIsolationTest` regression. Expected: two SSE subscriptions from different tenants → tenant A's transition NOT seen by tenant B.
+2. **Customer-orders IDOR** — `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java:91-104`. Make `verify` mandatory; reject 400 without it. Expected: `curl '/public/orders?email=victim@example.com'` → 400 not 200.
+3. **Stripe webhook idempotency** — `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:113-132`. Add `processed_stripe_events(event_id PRIMARY KEY)` table (V35 migration); guard with `INSERT ON CONFLICT DO NOTHING` at top of `handleWebhookEvent`. Expected: same `event.id` POSTed twice → exactly one `financial_transactions` row.
+4. **`reviews_tenant_write` RLS** — `db/migration/V27__customer_reviews.sql:31-36`. New V35 migration: drop `app.tenant_id` reference (use `app.current_tenant_id`), drop the `customer_email` OR-clause, require `EXISTS (orders WHERE id=order_id AND customer_email=app.customer_email)`. Expected: spam-review attempt with arbitrary `tenant_id` → INSERT rejected.
+5. **`FORCE ROW LEVEL SECURITY`** on `reviews`, `shop_promotions`, `shop_announcements`, all 6 `_aud` tables (V35 migration). Expected: `SELECT relforcerowsecurity FROM pg_class WHERE relname IN (…)` → all true.
+
+### Path B — Continue Phase 17 (Vendor Order Detail + Stripe Refund)
+The original handoff path. ⚠️ Note: the QA audit flagged that the `charge.refunded` webhook is currently in the "ignore" branch despite Phase 17 (PR #51) shipping vendor refunds — Phase 17 implementation MUST close this gap. Add `RefundWebhookHandlingIntegrationTest` as part of the implementation plan, not as follow-up.
+
+### Path C — Commercial pivot (no code changes)
+Per the commercial critic agent's recommendation: freeze feature development, spend 30 days door-knocking 30 ethnic-food vendors in Peckham/Brixton/Tottenham/East Ham/Croydon. Goal: 10 paying vendors at £49/mo in 90 days. Re-prioritize code work *only* against what those 10 customers need — likely the dashboard responsive rebuild + `--primary` design token rebrand from frontend audit's top-5 fixes.
+
+**My recommendation if you ask**: Path A first (2 days), then Path C. Path B can run in parallel with Path C if there's contractual commitment — but Phase 17 polish before customer #1 is the trap the critic agent specifically flagged.
+
+---
+
 **Generated**: 2026-04-19 (session wrap-up)
 **Branch**: `main` (clean — all in-session work merged)
 **Main tip**: `0d6f863` `fix(dashboard): authenticate orders SSE stream + bind NextAuth to :3100 (#53)`
