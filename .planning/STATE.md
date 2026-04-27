@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: planning
+status: executing
 stopped_at: "Phase 15 DRAFTING COMPLETE — branch `feature/phase-15-k8s-networkpolicies-sealed-secrets` has 6 atomic commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit for SUMMARY + CHANGELOG + ROADMAP + REQUIREMENTS + STATE) + 15-01-SUMMARY.md ready for PR to main. Both INF-01 (NetworkPolicies) and INF-02 (Sealed Secrets) drafted. Cluster-admin operator install + first kubeseal conversion is a 4-step rollout checklist documented in SUMMARY + runbook — cannot be done from this environment. Also pending: Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover), Phase 13 PR, Phase 14 PR."
-last_updated: "2026-04-27T22:42:56.735Z"
-last_activity: "2026-04-19 — Completed plan 16-01 on branch `feature/phase-16-go-edge-openapi`: commits aa6e292 (swaggo deps + route inventory), 1d95bb3 (swaggo annotations on all 4 routes + handler refactor), 36a29fc (generated spec + gin-swagger wiring + /docs redirect), 197243b (openapi tests + CI gate) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE."
+last_updated: "2026-04-27T23:15:19.955Z"
+last_activity: 2026-04-27
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 7
-  percent: 100
+  total_plans: 11
+  completed_plans: 8
+  percent: 73
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Milestone v2.2 — 8 P2 security/quality items from deep-audit + Work Order E (vendor order detail + Stripe refund flow)
+**Current focus:** Phase 16.1 — Pre-prod Hardening (Wave 0 council audit fixes)
 
 ## Current Position
 
-Phase: 16.1 — Pre-prod Hardening (Wave 0 council audit fixes) — INSERTED, not planned yet
-Plan: none yet — run /gsd-plan-phase 16.1
-Status: Phase 16.1 inserted 2026-04-27 between Phases 16 and 17 to close 5 pre-prod blockers from council audit (3 cross-tenant leaks + Stripe webhook idempotency + FORCE RLS on 9 tables). Must land before Phase 17 Stripe refund work. See .planning/phases/16.1-pre-prod-hardening/ and docs/audit/REMEDIATION-PLAN-2026-04-27.md.
-Last activity: 2026-04-19 — Completed plan 16-01 on branch `feature/phase-16-go-edge-openapi`: commits aa6e292 (swaggo deps + route inventory), 1d95bb3 (swaggo annotations on all 4 routes + handler refactor), 36a29fc (generated spec + gin-swagger wiring + /docs redirect), 197243b (openapi tests + CI gate) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE.
+Phase: 16.1 (Pre-prod Hardening (Wave 0 council audit fixes)) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-04-27
 
-Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [███████░░░] 73%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milesto
 - Trend: milestone v2.2 execution continues green; 7/10 plans complete (phases 13 + 14 + 16 complete, 15 implementation-complete, 12 operationally complete). Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
 
 *Updated after each plan completion*
+| Phase 16.1 P01 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ Recent decisions affecting current work:
 - [M3 Roadmap]: Phase 10 (STFR) is independent of 9 and 11 — can run in parallel with either
 - [M3 Roadmap]: Phase 11 (STMP) depends on Phase 9 — STMP-05 reuses the Alertmanager + Slack route from SECR-04/SECR-05
 - [M3 Roadmap]: One phase per work order (no splitting) — task breakdown fits cleanly, preserves audit traceability
+- [Phase 16.1]: Bundled three audit-finding fixes (AUDIT-W0-03 Stripe idempotency, AUDIT-W0-04 reviews_tenant_write rewrite, AUDIT-W0-05 FORCE RLS on 9 tables) into a single V35 Flyway migration. — Partial application would leave the DB in an unsafe state where idempotency exists but FORCE RLS does not. Atomic deploy is required per phase 16.1 LOCKED CONTEXT decisions.
 
 ### Pending Todos
 
@@ -126,6 +128,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-18T21:00:00Z
+Last session: 2026-04-27T23:14:22.240Z
 Stopped at: Phase 15 DRAFTING COMPLETE — branch `feature/phase-15-k8s-networkpolicies-sealed-secrets` has 6 atomic commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit for SUMMARY + CHANGELOG + ROADMAP + REQUIREMENTS + STATE) + 15-01-SUMMARY.md ready for PR to main. Both INF-01 (NetworkPolicies) and INF-02 (Sealed Secrets) drafted. Cluster-admin operator install + first kubeseal conversion is a 4-step rollout checklist documented in SUMMARY + runbook — cannot be done from this environment. Also pending: Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover), Phase 13 PR, Phase 14 PR.
-Resume file: .planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md
+Resume file: None
