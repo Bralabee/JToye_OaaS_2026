@@ -1,9 +1,11 @@
 package uk.jtoye.core.order;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import uk.jtoye.core.security.TenantContext;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -14,6 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * Unit tests for OrderSseService.
  * Tests SSE subscription, broadcast, and emitter lifecycle management.
  * No mocks needed — the service manages its own emitter list.
+ *
+ * <p>Post AUDIT-W0-01 (Phase 16.1-02): {@link OrderSseService#subscribe()} is fail-closed
+ * when {@code TenantContext} is unset. These existing tests don't care which tenant they
+ * run under — they just need <em>some</em> tenant set so subscribe() doesn't throw.
+ * The per-test setup picks a fresh random UUID per test class to avoid bleed.</p>
  */
 class OrderSseServiceTest {
 
@@ -22,6 +29,13 @@ class OrderSseServiceTest {
     @BeforeEach
     void setUp() {
         orderSseService = new OrderSseService();
+        // Required so subscribe() does not fail-closed on a missing TenantContext.
+        TenantContext.set(UUID.randomUUID());
+    }
+
+    @AfterEach
+    void clearTenant() {
+        TenantContext.clear();
     }
 
     private OrderStateChangeEvent createTestEvent() {
