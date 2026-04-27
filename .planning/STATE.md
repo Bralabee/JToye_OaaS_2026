@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: executing
-stopped_at: "Phase 16.1-03 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (decd4c2 test(16.1-03) RED; 48c0914 fix(16.1-03) GREEN) closing AUDIT-W0-02 customer-orders IDOR. 15/15 PublicStorefrontController* tests green (4 new IdorTest + 11 existing). 16.1-03-SUMMARY.md created. Next plan: 16.1-04."
-last_updated: "2026-04-27T23:32:19.834Z"
+stopped_at: "Phase 16.1-04 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 4 plan-04 commits (c6ea32b test RED + 5967a40 feat GREEN). 24/24 payment-package tests green. AUDIT-W0-03 closed: PaymentService.handleWebhookEvent runs TOCTOU-safe INSERT ... ON CONFLICT DO NOTHING against processed_stripe_events. Next plan: 16.1-05."
+last_updated: "2026-04-27T23:48:42.221Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 11
-  completed_plans: 10
-  percent: 91
+  completed_plans: 11
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 16.1 (Pre-prod Hardening (Wave 0 council audit fixes)) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-04-27
 
-Progress: [█████████░] 91%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [█████████░] 91%
 | Phase 16.1 P01 | 2min | 1 tasks | 1 files |
 | Phase 16.1 P02 | 4min | 2 tasks | 3 files |
 | Phase 16.1 P03 | 4min | 1 tasks | 3 files |
+| Phase 16.1 P04 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Recent decisions affecting current work:
 - [Phase 16.1]: Filter SSE broadcasts at the service layer (per-tenant ConcurrentHashMap routed by event.tenantId()), not via @PreAuthorize on OrderController — Broadcasts run on the RabbitMQ consumer thread off-request — Spring SecurityContext is not propagated there, so controller-level annotation cannot enforce tenant scoping at broadcast time. Filtering inside OrderSseService is the correct layer.
 - [Phase 16.1]: AUDIT-W0-02 closed: GET /public/orders requires mandatory verify order-number; trackOrder runs unconditionally as proof-of-ownership — LOCKED in 16.1-CONTEXT.md Item 2; the prior optional verify allowed trivial enumeration of any customer's order history by email
 - [Phase 16.1]: GlobalExceptionHandler now preserves controller-thrown ResponseStatusException + maps MissingServletRequestParameterException to 400 — Auto-fix Rule 1/2 deviation during 16.1-03 — without these handlers the catch-all Exception matcher swallowed both as 500, masking the LOCKED 400 contract
+- [Phase ?]: [Phase 16.1-04]: Stripe webhook idempotency guard sits INSIDE the existing @Transactional boundary (not REQUIRES_NEW) — semantic is 'processed at least once', so a downstream throw rolls back the dedup row and Stripe's retry succeeds cleanly. REQUIRES_NEW path requires a separate failed-event reconciliation flow which is out of scope for Wave 0.
+- [Phase ?]: [Phase 16.1-04]: TOCTOU-safe single-statement INSERT ... ON CONFLICT DO NOTHING via JdbcTemplate, NOT a JPA ProcessedStripeEvent entity + repo with existsByEventId+saveAndFlush — the JPA pattern has a SELECT-then-INSERT race window under concurrent webhook delivery from Stripe's edge.
 
 ### Pending Todos
 
@@ -133,6 +136,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-27T23:32:19.825Z
-Stopped at: Phase 16.1-03 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 atomic commits (decd4c2 test(16.1-03) RED; 48c0914 fix(16.1-03) GREEN) closing AUDIT-W0-02 customer-orders IDOR. 15/15 PublicStorefrontController* tests green (4 new IdorTest + 11 existing). 16.1-03-SUMMARY.md created. Next plan: 16.1-04.
+Last session: 2026-04-27T23:48:42.213Z
+Stopped at: Phase 16.1-04 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 4 plan-04 commits (c6ea32b test RED + 5967a40 feat GREEN). 24/24 payment-package tests green. AUDIT-W0-03 closed: PaymentService.handleWebhookEvent runs TOCTOU-safe INSERT ... ON CONFLICT DO NOTHING against processed_stripe_events. Next plan: 16.1-05.
 Resume file: None
