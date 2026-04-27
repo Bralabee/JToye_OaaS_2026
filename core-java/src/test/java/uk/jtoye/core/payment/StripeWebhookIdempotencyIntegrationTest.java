@@ -72,14 +72,22 @@ class StripeWebhookIdempotencyIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        // Override H2 defaults from application-test.yml so Testcontainers
-        // PostgreSQL is used with real Flyway migrations (V35 in particular).
+        // src/test/resources/application-test.yml defaults to H2; override every
+        // property that yml file sets so Testcontainers Postgres is actually
+        // used. Mirrors CrossTenantSpoofIntegrationTest's pattern.
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
         registry.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.PostgreSQLDialect");
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.PostgreSQLDialect");
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("rate-limiting.enabled", () -> "false");
+        // RabbitMQ stubs — OrderEventPublisher has a compile-time RabbitTemplate
+        // dependency. Listener auto-startup is disabled and host points at a
+        // dead port so context boots without a live broker. We additionally
+        // @MockBean OrderEventPublisher + PaymentEventPublisher so no Rabbit
+        // calls are issued during tests.
+        registry.add("spring.rabbitmq.host", () -> "localhost");
+        registry.add("spring.rabbitmq.port", () -> "0");
+        registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
         // Stripe needs *some* webhook secret because PaymentService passes it to
         // Webhook.constructEvent — but we mock the call so the value never matters.
         registry.add("stripe.webhook-secret", () -> "whsec_test_idempotency");
@@ -108,10 +116,12 @@ class StripeWebhookIdempotencyIntegrationTest {
 
         TenantContext.set(TENANT_ID);
         try {
-            // Create a shop so the order's FK constraint is satisfied.
+            // Create a shop so the order's FK constraint is satisfied. shops.slug
+            // is NOT NULL and globally unique — derive a stable, test-scoped value.
             Shop shop = new Shop();
             shop.setTenantId(TENANT_ID);
             shop.setName("Idempotency Shop");
+            shop.setSlug("idempotency-shop-" + UUID.randomUUID().toString().substring(0, 8));
             shop.setAddress("1 Test Lane");
             Shop savedShop = shopRepository.save(shop);
 
@@ -139,11 +149,15 @@ class StripeWebhookIdempotencyIntegrationTest {
     void duplicateEventResultsInExactlyOneFinancialTransaction() {
         String eventId = "evt_test_idempotency_001";
         String paymentIntentId = "pi_test_idempotency_001";
+        // Build the stubbed Event BEFORE entering MockedStatic.when(...) so the
+        // inner Mockito.when() calls inside the helper do not nest under
+        // Webhook.constructEvent's stubbing context (UnfinishedStubbingException).
+        Event stubbedEvent = buildSucceededEvent(eventId, paymentIntentId,
+                seededOrder.getId(), TENANT_ID);
 
         try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
             webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
-                    .thenReturn(buildSucceededEvent(eventId, paymentIntentId,
-                            seededOrder.getId(), TENANT_ID));
+                    .thenReturn(stubbedEvent);
 
             paymentService.handleWebhookEvent("payload-1", "sig-1");
             // Second delivery: same event.id — must short-circuit at the dedup guard.
@@ -178,11 +192,12 @@ class StripeWebhookIdempotencyIntegrationTest {
     void firstEventInsertsRow() {
         String eventId = "evt_first_only";
         String paymentIntentId = "pi_first_only";
+        Event stubbedEvent = buildSucceededEvent(eventId, paymentIntentId,
+                seededOrder.getId(), TENANT_ID);
 
         try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
             webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
-                    .thenReturn(buildSucceededEvent(eventId, paymentIntentId,
-                            seededOrder.getId(), TENANT_ID));
+                    .thenReturn(stubbedEvent);
             paymentService.handleWebhookEvent("payload", "sig");
         }
 
