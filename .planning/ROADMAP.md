@@ -130,6 +130,25 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
   - [x] 16-01-PLAN.md — swaggo annotations on 4 Gin handlers + generated Swagger 2.0 spec at `edge-go/docs/` + `/openapi.json` + Swagger UI at `/docs` + in-process freshness test + CI validation via `@seriousme/openapi-schema-validator` — **DONE 2026-04-19, see 16-01-SUMMARY.md. Swagger 2.0 vs OpenAPI 3.0 tradeoff: `swaggo/swag v1` emits 2.0; npm validator accepts both; v2.3 upgrade path to `swag v2` (OpenAPI 3.1) when stable. Pinned swaggo deps at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` to keep edge-go on Go 1.22 (CLAUDE.md constraint).**
 **UI hint**: no
 
+### Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes (INSERTED)
+
+**Goal**: Close the 5 confirmed pre-prod blockers from the 2026-04-27 council audit before any production rollout >1 tenant or real payments. Eliminates 3 cross-tenant data-integrity bugs, adds Stripe webhook idempotency, and forces RLS on tables where superuser/owner bypass would defeat tenant isolation.
+**Depends on**: Phase 16
+**Requirements** (must land before Phase 17 Stripe refund work):
+  1. **`OrderSseService` cross-tenant leak fix** — capture `TenantContext.get()` at `subscribe()`, filter `broadcast()` by event tenant. Regression test: `OrderSseServiceTenantIsolationTest` — two SSE subscriptions from different tenants, tenant A's transition NOT seen by tenant B.
+     - File: `core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java:17,29-40`
+  2. **Customer-orders IDOR mitigation** — make `verify` parameter mandatory on `/public/orders`; reject 400 without it. Test: `curl '/public/orders?email=victim@example.com'` → 400 not 200.
+     - File: `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java:91-104`
+  3. **Stripe webhook idempotency** — V35 migration adds `processed_stripe_events(event_id PRIMARY KEY, processed_at TIMESTAMPTZ)`. Guard `handleWebhookEvent` with TOCTOU-safe `INSERT ... ON CONFLICT DO NOTHING` at top. Test: same `event.id` POSTed twice → exactly one `financial_transactions` row.
+     - File: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:113-132`
+  4. **`reviews_tenant_write` RLS rewrite** — V35 migration: drop `app.tenant_id` reference (use `app.current_tenant_id`), drop the `customer_email` OR-clause, require `EXISTS (SELECT 1 FROM orders WHERE id=order_id AND customer_email=app.customer_email)`. Test: spam-review attempt with arbitrary `tenant_id` → INSERT rejected.
+     - File: original policy in `db/migration/V27__customer_reviews.sql:31-36`; replacement migration V35.
+  5. **`FORCE ROW LEVEL SECURITY`** on `reviews`, `shop_promotions`, `shop_announcements`, and all 6 `_aud` audit tables (V35 migration). Test: `SELECT relforcerowsecurity FROM pg_class WHERE relname IN (...)` → all true.
+**Plans:** 0 plans (run `/gsd-plan-phase 16.1` to break down — likely a single V35-migration plan + per-fix Java tasks + RlsContractTest as recommended in `docs/audit/remediation/03-database-remediation.md` F11).
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 16.1 to break down)
+
 ### Phase 17: Vendor Order Detail + Stripe Refund Flow
 **Goal**: Vendors can open any order from `/dashboard/orders`, see its full context (items, payment, transitions), and issue a full or partial Stripe refund with a structured reason — and the refund flows through Stripe, the database, the order state machine, and the RabbitMQ event bus consistently.
 **Depends on**: Phase 14 (shares OrderStateMachine changes — STMP refund transition is added after CQ-01 lands to avoid merge conflicts)

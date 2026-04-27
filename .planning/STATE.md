@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: in-progress
-stopped_at: Phase 16 COMPLETE — DOC-01 shipped on branch `feature/phase-16-go-edge-openapi`. 5 commits (aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). swaggo/swag-annotated Gin handlers emit a Swagger 2.0 spec at `edge-go/docs/swagger.json` (4 routes, 7 definitions, BearerAuth); edge serves `/openapi.json` (embedded via `docs.SwaggerInfo.ReadDoc()` — no filesystem dep, scratch-Dockerfile-friendly) + Swagger UI at `/docs/*` with `/docs → 301 /docs/index.html` convenience redirect. Handlers refactored from anonymous closures to `edgeHandlers` struct methods (handlers.go) so swaggo can parse doc comments; behaviour byte-identical and all pre-existing edge tests pass. Four new `TestOpenAPISpec_*` tests in `openapi_test.go` cover spec validity, path-set equality (stricter than count), security definition, and freshness (regenerate-and-diff). CI gate: installs `swag@v1.16.3` before `go test` so freshness test runs in CI + runs `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity — verified exits non-zero on bogus spec. Swagger 2.0 (not OpenAPI 3.0) is an explicit tradeoff: swaggo v1 emits 2.0, v2 is alpha; npm validator accepts both — v2.3 upgrade path. swaggo deps pinned at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` so `go` directive stays at 1.22 per CLAUDE.md (newer versions pull x/crypto v0.36+ which requires Go 1.23). Phase 15 DRAFT-ONLY complete, cluster-admin rollout pending. Phase 14 ready for PR; Phase 13 ready for PR; Phase 12 Task 12-02-07 human gate still pending.
-last_updated: "2026-04-19T00:35:00Z"
-last_activity: 2026-04-19
+status: planning
+stopped_at: "Phase 15 DRAFTING COMPLETE — branch `feature/phase-15-k8s-networkpolicies-sealed-secrets` has 6 atomic commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit for SUMMARY + CHANGELOG + ROADMAP + REQUIREMENTS + STATE) + 15-01-SUMMARY.md ready for PR to main. Both INF-01 (NetworkPolicies) and INF-02 (Sealed Secrets) drafted. Cluster-admin operator install + first kubeseal conversion is a 4-step rollout checklist documented in SUMMARY + runbook — cannot be done from this environment. Also pending: Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover), Phase 13 PR, Phase 14 PR."
+last_updated: "2026-04-27T22:42:56.735Z"
+last_activity: "2026-04-19 — Completed plan 16-01 on branch `feature/phase-16-go-edge-openapi`: commits aa6e292 (swaggo deps + route inventory), 1d95bb3 (swaggo annotations on all 4 routes + handler refactor), 36a29fc (generated spec + gin-swagger wiring + /docs redirect), 197243b (openapi tests + CI gate) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE."
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 3
-  total_plans: 10
+  total_plans: 5
   completed_plans: 7
-  percent: 70
+  percent: 100
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 16 — Go Edge OpenAPI (COMPLETE — ready for PR)
-Plan: 16-01 COMPLETE — 5 atomic commits on `feature/phase-16-go-edge-openapi`; SUMMARY.md at .planning/phases/16-go-edge-openapi/16-01-SUMMARY.md
-Status: Phase 16 COMPLETE — DOC-01 shipped. swaggo-annotated Gin handlers in `edge-go/cmd/edge/` (4 business routes: /health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp) emit a Swagger 2.0 spec committed at `edge-go/docs/swagger.json` (11.6KB, 7 response-type definitions, BearerAuth security scheme). Edge gateway serves `GET /openapi.json` (embedded spec via `docs.SwaggerInfo.ReadDoc()` — no filesystem read, scratch-Dockerfile-friendly) + interactive Swagger UI at `GET /docs/*any` (swaggo/gin-swagger + swaggo/files) + `GET /docs → 301 /docs/index.html` convenience redirect. Handlers refactored from anonymous closures to top-level methods on `edgeHandlers` struct (handlers.go) so swaggo can parse doc comments; behaviour byte-identical, all pre-existing edge tests pass unchanged. Named response types (HealthResponse, ReadyResponse, ComponentHealth, SyncBatchRequest, SyncBatchResponse, WebhookAck, ErrorResponse) in types.go back the {object} schema refs. 4 new in-process tests in openapi_test.go: TestOpenAPISpec_IsValidJSON (top-level keys), TestOpenAPISpec_AllRoutesDocumented (path-set equality — stricter than count so typo'd @Router is caught), TestOpenAPISpec_HasSecurityDefinition, TestOpenAPISpec_Fresh (regenerate-and-diff — fails on drift with regenerate message). CI gate in ci-cd.yaml: installs swag@v1.16.3 before `go test` so freshness test runs in CI + runs `@seriousme/openapi-schema-validator validate-api` (npm, binary `validate-api`) for spec validity (verified exit-non-zero on bogus spec). OpenAPI 3.0 caveat: swaggo/swag v1 emits Swagger 2.0; swag v2 is alpha; the npm validator accepts both — explicit tradeoff documented in 16-01-SUMMARY.md + 16-RESEARCH.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) when stable. Pinned swaggo at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` because newer versions pull x/crypto v0.36+ which would bump `go` directive to 1.23 — edge-go stays on Go 1.22 per CLAUDE.md. Smoke-tested on port 18081: /openapi.json 200 (11604 bytes), /docs/index.html 200, /docs 301 → /docs/index.html, /health 200. Phase 15 DRAFT-ONLY COMPLETE (cluster rollout pending); Phase 14 ready for PR; Phase 13 ready for PR; Phase 12 Task 12-02-07 human gate still pending.
+Phase: 16.1 — Pre-prod Hardening (Wave 0 council audit fixes) — INSERTED, not planned yet
+Plan: none yet — run /gsd-plan-phase 16.1
+Status: Phase 16.1 inserted 2026-04-27 between Phases 16 and 17 to close 5 pre-prod blockers from council audit (3 cross-tenant leaks + Stripe webhook idempotency + FORCE RLS on 9 tables). Must land before Phase 17 Stripe refund work. See .planning/phases/16.1-pre-prod-hardening/ and docs/audit/REMEDIATION-PLAN-2026-04-27.md.
 Last activity: 2026-04-19 — Completed plan 16-01 on branch `feature/phase-16-go-edge-openapi`: commits aa6e292 (swaggo deps + route inventory), 1d95bb3 (swaggo annotations on all 4 routes + handler refactor), 36a29fc (generated spec + gin-swagger wiring + /docs redirect), 197243b (openapi tests + CI gate) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE.
 
 Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milestone-v2.2 phases complete — phases 12-17)
@@ -74,6 +74,10 @@ Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milesto
 *Updated after each plan completion*
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
 
 ### Decisions
 
