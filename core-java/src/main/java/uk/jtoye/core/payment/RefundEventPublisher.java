@@ -1,0 +1,94 @@
+package uk.jtoye.core.payment;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.config.RabbitMQConfig;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Outbox-backed publisher for {@link RefundEvent}s. Persists rows in the
+ * caller's @Transactional; the shared {@link PaymentEventOutboxFlusher}
+ * flushes them to {@code RabbitMQConfig.ORDER_EVENTS_EXCHANGE} via the
+ * V36 {@code exchange} column.
+ *
+ * <p>Mirrors {@link PaymentEventPublisher}'s shape exactly — only the
+ * destination exchange ({@code order.events}) and routing key
+ * ({@code order.refunded}) differ. The 5-arg outbox constructor is the
+ * load-bearing contract: a 4-arg constructor would default to
+ * {@code payment.events} and route refund events to the wrong exchange.
+ */
+@Component
+public class RefundEventPublisher {
+    private static final Logger log = LoggerFactory.getLogger(RefundEventPublisher.class);
+    private static final String REFUND_ROUTING_KEY = "order.refunded";
+
+    private final PaymentEventOutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
+
+    public RefundEventPublisher(PaymentEventOutboxRepository outboxRepository,
+                                ObjectMapper objectMapper) {
+        this.outboxRepository = outboxRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    public void publishRefundSucceeded(UUID refundId, UUID orderId, UUID tenantId, String orderNumber,
+                                       String stripeRefundId, long amountPennies, String currency,
+                                       String status) {
+        persist(new RefundEvent(refundId, orderId, tenantId, orderNumber, stripeRefundId,
+                amountPennies, currency, RefundEvent.RefundEventType.REFUND_SUCCEEDED,
+                status, null, OffsetDateTime.now()));
+    }
+
+    public void publishRefundFailed(UUID refundId, UUID orderId, UUID tenantId, String orderNumber,
+                                    String stripeRefundId, long amountPennies, String currency,
+                                    String failureReason) {
+        persist(new RefundEvent(refundId, orderId, tenantId, orderNumber, stripeRefundId,
+                amountPennies, currency, RefundEvent.RefundEventType.REFUND_FAILED,
+                "failed", failureReason, OffsetDateTime.now()));
+    }
+
+    public void publishRefundUpdated(UUID refundId, UUID orderId, UUID tenantId, String orderNumber,
+                                     String stripeRefundId, long amountPennies, String currency,
+                                     String status) {
+        persist(new RefundEvent(refundId, orderId, tenantId, orderNumber, stripeRefundId,
+                amountPennies, currency, RefundEvent.RefundEventType.REFUND_UPDATED,
+                status, null, OffsetDateTime.now()));
+    }
+
+    /**
+     * Persist a refund event to the outbox in the current transaction. Uses
+     * REQUIRED propagation (default) so it joins the caller's transaction;
+     * if the caller rolls back, the event row rolls back too.
+     */
+    @Transactional
+    protected void persist(RefundEvent event) {
+        String payloadJson;
+        try {
+            payloadJson = objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            // Serialization failure is a programmer error (record is fixed shape);
+            // loudly surface it rather than silently drop the event.
+            log.error("Failed to serialize RefundEvent for refund {}: {}",
+                    event.refundId(), e.getMessage(), e);
+            throw new IllegalStateException("RefundEvent serialization failed", e);
+        }
+
+        PaymentEventOutbox row = new PaymentEventOutbox(
+                event.tenantId(),
+                event.type().name(),
+                REFUND_ROUTING_KEY,
+                payloadJson,
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE
+        );
+        outboxRepository.save(row);
+
+        log.info("Persisted refund event {} to outbox: refund={} order={} stripe={}",
+                event.type(), event.refundId(), event.orderNumber(), event.stripeRefundId());
+    }
+}
