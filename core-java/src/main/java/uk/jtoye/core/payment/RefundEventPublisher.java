@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.config.RabbitMQConfig;
 
 import java.time.OffsetDateTime;
@@ -62,12 +61,22 @@ public class RefundEventPublisher {
     }
 
     /**
-     * Persist a refund event to the outbox in the current transaction. Uses
-     * REQUIRED propagation (default) so it joins the caller's transaction;
-     * if the caller rolls back, the event row rolls back too.
+     * Persist a refund event to the outbox in the caller's transaction.
+     *
+     * <p><b>WR-02:</b> intentionally NOT annotated {@code @Transactional}.
+     * This method is invoked exclusively via {@code this.publishRefund*}
+     * (same class, same instance), which means Spring's AOP proxy never
+     * intercepts the call and any {@code @Transactional} here would be a
+     * no-op. The contract is "joins the caller's transaction" — every
+     * caller in the codebase ({@link RefundService}) is already
+     * {@code @Transactional}, so the outbox write rides on that
+     * transaction and rolls back together with it.
+     *
+     * <p>Made {@code private} so future callers cannot reach this method
+     * across the proxy boundary and accidentally rely on a non-existent
+     * transactional contract.
      */
-    @Transactional
-    protected void persist(RefundEvent event) {
+    private void persist(RefundEvent event) {
         String payloadJson;
         try {
             payloadJson = objectMapper.writeValueAsString(event);
