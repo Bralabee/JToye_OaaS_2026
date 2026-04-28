@@ -1,115 +1,121 @@
-# Handoff: Phase 16.1 Shipped — Phase 17 Unblocked
+# Handoff: Phase 17 Plans Drafted (PR #57 DRAFT) — Execution Pending
 
 **Generated:** 2026-04-28
-**Branch:** `main` will be the resume point once PR #56 merges; currently work sits on `feature/phase-16.1-pre-prod-hardening` (PR #56 open and READY-TO-MERGE).
-**Main tip (pre-merge):** `bd13864 docs(audit): add 20-doc council audit + 8-pair remediation plan (#55)`
-**Phase 16.1 tip:** `2112a03 docs(16.1): verifier confirms phase goal achieved (READY-TO-MERGE)`
+**Branch:** `feature/phase-17-implementation` (PR #57 open as DRAFT — plans only, no code yet)
+**Previous tip on main:** `b3aded5 Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes (#56)` (merged 2026-04-28)
+**Phase 17 branch tip:** plan-commit at HEAD; no production-code changes yet.
 
 ---
 
-## What just shipped (PR #56)
+## Resume in a fresh context window
 
-**Phase 16.1 — Pre-prod Hardening (Wave 0 council audit fixes)** — closes the 5 confirmed pre-prod blockers from the 2026-04-27 council audit:
+Phase 17 spans 4 plans across 4 waves (backend → backend infra → backend integration → frontend + E2E). Total surface area ≈ 35 source files + 1 Flyway migration + ~25 new tests + Playwright spec. **This needs a fresh context** — the prior session shipped Phase 16.1 end-to-end and drafted Phase 17 plans; executing all 4 waves on top would push beyond the 1M-context comfort zone.
 
-| AUDIT-W0 | Fix | Files |
-|---|---|---|
-| 01 | `OrderSseService` cross-tenant leak — per-tenant `ConcurrentHashMap<UUID, ...>` routing + fail-closed subscribe | `OrderSseService.java` (rewrite) + `OrderSseServiceTenantIsolationTest` |
-| 02 | `/public/orders` IDOR — `verify` param now mandatory; missing/blank → HTTP 400 | `PublicStorefrontController.java`, `GlobalExceptionHandler.java` (400 mapping) + `PublicStorefrontControllerIdorTest` |
-| 03 | Stripe webhook idempotency — TOCTOU-safe `INSERT INTO processed_stripe_events ... ON CONFLICT DO NOTHING` BEFORE the dispatch switch | `PaymentService.java`, V35 migration + `StripeWebhookIdempotencyIntegrationTest` |
-| 04 | `reviews_tenant_write` policy rewrite — V35 drops legacy policy, recreates with canonical `app.current_tenant_id` GUC + `EXISTS (orders WHERE customer_email=...)` ownership proof | V35 migration + `ReviewsRlsPolicyIntegrationTest` |
-| 05 | `FORCE ROW LEVEL SECURITY` on `reviews`, `shop_promotions`, `shop_announcements`, all 6 `_aud` tables | V35 migration |
+### Step 1 — Verify state (<30s)
 
-Plus **`RlsContractTest`** — schema-walk drift guard: walks `pg_class` and asserts BOTH `relrowsecurity` AND `relforcerowsecurity` are true for every public-schema relation (with documented EXEMPT_TABLES).
+```bash
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+git checkout feature/phase-17-implementation
+git pull
+git log --oneline -3
+# Expect tip: docs(17): plan Phase 17 — Vendor Order Detail + Stripe Refund Flow
+```
 
-**Production scope:** 4 Java files + 1 Flyway migration (V35). 22 atomic commits with TDD ordering. 19 new `@Test` methods across 5 new test classes.
+### Step 2 — Execute the phase
 
-**CI on PR #56**: Run Tests PASS (2m26s, full suite), Security Scan + gitleaks + GitGuardian PASS. Trivy/Build/Deploy correctly skip on non-main branches.
+```bash
+/gsd-execute-phase 17
+```
+
+Plans are sequential (Wave 1 → 2 → 3 → 4). The orchestrator will dispatch one wave at a time honoring `depends_on`. Sequential execution is recommended (Java/Gradle daemon contention + Testcontainers concurrent Postgres containers — same constraint as Phase 16.1).
+
+**Per-wave expectations:**
+
+- **Wave 1 (17-01)** — V36 migration + Refund entity stack + state-machine extension. Pure backend. Unit tests only (no Testcontainers in this wave). ~2 commits per task = 4 commits.
+- **Wave 2 (17-02)** — `payment_event_outbox.exchange` column + flusher routing + `RefundEventPublisher`. Pure backend. ~2 tasks, ~4 commits.
+- **Wave 3 (17-03)** — `RefundController` + webhook `refund.*` cases (sitting AFTER Phase 16.1 dedup) + `RefundWebhookHandlingIntegrationTest` (Testcontainers). ~2 tasks, ~4 commits.
+- **Wave 4 (17-04)** — Frontend detail route + `OrderDetailPanel` extraction + `RefundDialog` + Playwright E2E.
+  - **MANDATORY before claiming success**: per `CLAUDE.md` E2E Utilization Testing rule + memory `feedback_e2e_click_through.md` + `feedback_image_rendering.md`:
+    - `docker-compose -f docker-compose.full-stack.yml up -d --build` (rebuild ALL containers per `feedback_rebuild_containers.md`)
+    - `cd frontend && npm run dev` (binds NEXTAUTH_URL=http://localhost:3100 via cross-env)
+    - Playwright browser-test the full flow: vendor login → /dashboard/orders → click row → refund modal → submit → Stripe test-mode success → UI shows REFUNDED
+    - Screenshot key states; verify no blank pages, no naturalWidth=0 images, no console CSP violations
+  - Memory rule `feedback_design_direction.md`: refund modal MUST use existing Radix Dialog primitives + orange/emerald/slate palette. NO serif type, NO editorial layout. Plan 17-04 already locks this — do not deviate.
+
+### Step 3 — Verify + review + merge
+
+After all 4 waves complete:
+
+1. Spawn `gsd-verifier` against the 10 must-haves listed in `17-CONTEXT.md` (`<must_haves>` block embedded in each PLAN.md frontmatter; consolidate during verify).
+2. Spawn `gsd-code-reviewer` for a final review pass (especially the webhook handler — concurrency around `processed_stripe_events` reuse is the most likely defect site).
+3. Address any blocking findings, push, wait for CI green, squash-merge PR #57.
 
 ---
 
-## Next session — start here
+## What's locked (do NOT redebate)
 
-### Once PR #56 merges to main
+5 UC defaults + 3 Phase 16.1 corrections (full rationale in `17-CONTEXT.md`):
 
-1. **Verify state** (<30s):
-   ```bash
-   cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-   git checkout main && git pull
-   git log --oneline -3            # tip should be the squash-merged Phase 16.1 commit
-   ```
+- **UC-1** stored-first server-generated UUID idempotency (Refund row inserted with status=`CREATING` BEFORE Stripe call)
+- **UC-2** reuse `payment_event_outbox` table + add `exchange VARCHAR(128)` column
+- **UC-3** lowercase `RefundStatus` enum (`succeeded`, `failed`, `pending`, `requires_action`, `canceled`) + uppercase sentinel `CREATING`
+- **UC-4** webhook subscribes to `refund.created`/`refund.updated`/`refund.failed` exclusively; `charge.refunded` is a documented no-op
+- **UC-5** defer VENDOR RBAC to v2.3 (codebase has zero RBAC today; not a Phase 17 concern)
+- **CORRECTION-1** migration slot is **V36** (Phase 16.1 took V35 in PR #56) — the new file name is `V36__refunds_and_outbox_exchange.sql`
+- **CORRECTION-2** refund webhook cases sit AFTER `INSERT INTO processed_stripe_events ... ON CONFLICT DO NOTHING` inside the existing PaymentService switch. NO new dedup table.
+- **CORRECTION-3** every RLS policy in V36 uses `current_setting('app.current_tenant_id', true)::UUID`. Phase 16.1's `RlsContractTest` will fail the build if `refunds` lacks ENABLE+FORCE RLS or any policy references legacy `app.tenant_id`.
 
-2. **Phase 17 is now unblocked** — Vendor Order Detail + Stripe Refund Flow (VOPS-01..03). Research landed in PR #51. Implementation pending.
-   ```bash
-   git checkout -b feature/phase-17-implementation
-   /gsd-plan-phase 17
-   ```
+---
 
-   **Critical Phase 17 inputs:**
-   - The `processed_stripe_events` table + idempotency guard from Phase 16.1 is the foundation — the new `charge.refunded` and `refund.updated` webhook handlers MUST reuse the same TOCTOU-safe `INSERT ... ON CONFLICT` pattern in `PaymentService.handleWebhookEvent`. Currently those events fall into the `default -> log.debug` branch (line 152 of PaymentService.java).
-   - The QA audit (`docs/audit/sources/06-qa-engineer.md`) explicitly flagged that Phase 17 must include `RefundWebhookHandlingIntegrationTest`. Add this to the plan upfront, not as follow-up.
-   - The `reviews_tenant_write` rewrite from Phase 16.1 changed the canonical RLS GUC to `app.current_tenant_id` — if Phase 17 adds new RLS policies for `refunds`, mirror this naming exactly, not the legacy `app.tenant_id`.
-   - `RlsContractTest` will catch any new tables in Phase 17 that lack `FORCE RLS` — add `ALTER TABLE refunds FORCE ROW LEVEL SECURITY` upfront.
+## Phase 16.1 status (completed this session)
 
-### Other Wave 0 items still NOT closed (separate phases)
+- **PR #56 MERGED** (commit `b3aded5` on main).
+- All 7 must-haves PASS per `gsd-verifier`. Code-reviewer flagged one real concurrency hole (subscribe-vs-cleanup race in OrderSseService) — fixed inline before merge with a 200-round concurrent stress test.
+- 5 production-code files touched: OrderSseService, PublicStorefrontController, GlobalExceptionHandler, PaymentService, V35 migration. 6 new test classes / 20 new `@Test` methods. CI Run Tests 3m31s green.
 
-The council audit (`docs/audit/REMEDIATION-PLAN-2026-04-27.md`) listed 8 specialist remediation pairs. Phase 16.1 closed pairs 1-3 (backend F1/F2, security F1, database F1/F2/F11). The remaining 5 are NOT yet scoped:
+---
+
+## Other open work (not in scope for Phase 17)
+
+The 2026-04-27 council audit had 8 specialist remediation pairs. Phase 16.1 closed pairs 1-3 (backend F1/F2, security F1, database F1/F2/F11). Five pairs remain unscoped:
 
 - **DevOps F1/F3/F13** — prod actuator exposure flip, MDC tenantId, git rm backup file. Could ship as `/gsd-quick` or a small phase.
-- **Frontend F1-F5** — `--primary` design token rebrand, dashboard responsive rebuild. ⚠ Memory rule: any UI refresh requires `/gsd-sketch` first per `feedback_design_direction.md`.
-- **Edge-go absorb** — Wave 2+, blocks on founder decisions called out in REMEDIATION-PLAN.
-- **Commercial track** — door-knock 30 vendors per the commercial critic agent. Not a code track.
+- **Frontend F1-F5** — `--primary` design token rebrand, dashboard responsive rebuild. ⚠ Memory rule: any UI refresh needs `/gsd-sketch` first per `feedback_design_direction.md`.
+- **Edge-go absorb** — Wave 2+, blocks on founder decisions (see remediation plan).
+- **Commercial track** — door-knock 30 vendors per the commercial critic agent (no code).
 
-Founder decisions still pending (per remediation plan §"Founder decisions blocking the plan"): (1) approve edge-go absorb? (2) where does prod K8s live? (3) founder personal runway / day-job status. Answer these three and the rest of the sequencing locks itself.
+Founder decisions still pending: (1) approve edge-go absorb? (2) where does prod K8s live? (3) founder runway/day-job. Answer those three and the rest of the sequencing locks itself.
 
 ---
 
 ## Environment state
 
 - **Repo**: `/home/sanmi/IdeaProjects/JToye_OaaS_2026`
-- **Branch**: `feature/phase-16.1-pre-prod-hardening` (PR #56 open, READY-TO-MERGE pending review)
-- **Open PRs**: #56 (Phase 16.1)
-- **Workdir**: `.idea/gradle.xml` modified (pre-existing IDE noise, not touched by any plan; safe to leave or `git checkout`)
-- **Dev port**: 3100 (MCP holds 3000) — `npm run dev` script bakes in `NEXTAUTH_URL=http://localhost:3100`
-- **docker-compose**: unchanged this session
-- **STATE.md**: phase 16.1 marked COMPLETE, Current Position advanced to Phase 17
-- **CHANGELOG.md**: Phase 16.1 entry added under `[Unreleased]`
-- **REQUIREMENTS.md**: AUDIT-W0-01..05 registered with traceability rows, status COMPLETE
+- **Branch**: `feature/phase-17-implementation`
+- **Workdir**: `.idea/gradle.xml` modified (pre-existing IDE noise; safe to leave or `git checkout`)
+- **Open PRs**: #57 (DRAFT, Phase 17 plans only)
+- **Dev port**: 3100 (`npm run dev` script bakes in NEXTAUTH_URL=http://localhost:3100 via cross-env)
+- **docker-compose**: unchanged this session — when Wave 4 starts, rebuild ALL containers per feedback_rebuild_containers.md
+- **Latest migration on main**: V35 (Phase 16.1)
+- **Next migration slot**: V36 (Phase 17)
 
 ---
 
-## Key decisions (this session)
-
-| Decision | Rationale |
-|---|---|
-| Insert as Phase 16.1 (decimal), not Phase 17.5 or new milestone | Pre-prod fixes must precede Phase 17 (Stripe refund) since Phase 17 depends on the idempotency guard + V35 patterns. Decimal numbering preserves Phase 17 slot. |
-| Single V35 migration for items 3, 4, 5 | Atomic deployment — partial state where idempotency exists but FORCE RLS doesn't would be unsafe. |
-| `JdbcTemplate` (not JPA) for Stripe dedup | TOCTOU-safe atomic `INSERT ... ON CONFLICT DO NOTHING RETURNING` is one statement. JPA's `existsByEventId` + `saveAndFlush` is two statements with a race. Locked in CONTEXT.md per remediation/01 F2 guidance. |
-| Schema-walk `RlsContractTest` (not hardcoded list) | Future-proofs against new tables landing without FORCE RLS. EXEMPT_TABLES is a documented allowlist. |
-| `SET LOCAL ROLE rls_test_role` in Testcontainers RLS tests | Postgres container creates the test user as SUPERUSER which bypasses RLS regardless of FORCE/NOBYPASSRLS. Without role-drop, every assertion would silently pass. |
-| Sequential plan execution (not parallel worktrees) | Java/Gradle daemon contention + Testcontainers Postgres-per-container was a real risk. Sequential kept the run clean and CI logs readable. |
-
----
-
-## References
-
-- Council audit: `docs/audit/COUNCIL-AUDIT-2026-04-27.md` (10-agent stack + market review)
-- Remediation plan: `docs/audit/REMEDIATION-PLAN-2026-04-27.md` (12-week, 8 pairs)
-- Phase 16.1 artifacts: `.planning/phases/16.1-pre-prod-hardening/` — CONTEXT.md, 6 PLAN.md files, 6 SUMMARY.md files, VERIFICATION.md
-- Phase 17 research (already done in PR #51): `.planning/phases/17-vendor-order-detail-stripe-refund-flow/17-RESEARCH.md`
-- Memory: `/home/sanmi/.claude/projects/-home-sanmi-IdeaProjects-JToye-OaaS-2026/memory/project_phase_16_1.md`
-
----
-
-## Resume instructions for a fresh Claude session
+## Resume prompt for a fresh Claude session
 
 ```
-Resuming J'Toye OaaS work. Context:
-- PR #56 (Phase 16.1 — Pre-prod Hardening, Wave 0 council audit) is READY-TO-MERGE — verify on GitHub and merge if not already done.
-- Once merged, Phase 17 (Vendor Order Detail + Stripe Refund Flow) is unblocked.
-- Phase 17 MUST reuse the processed_stripe_events idempotency pattern from Phase 16.1 for charge.refunded / refund.updated webhooks. Add RefundWebhookHandlingIntegrationTest upfront.
-- Phase 17 MUST use canonical app.current_tenant_id GUC (NOT legacy app.tenant_id) for any new RLS policies.
-- Memory rule: feedback_design_direction.md — no autonomous UI redesigns; sketch-first via /gsd-sketch.
-- Read /home/sanmi/IdeaProjects/JToye_OaaS_2026/HANDOFF.md for full state.
+Resuming J'Toye OaaS — Phase 17 execution.
 
-Plan: git checkout -b feature/phase-17-implementation && /gsd-plan-phase 17
+State:
+- PR #57 (Phase 17, vendor order detail + Stripe refund) is DRAFT with 4 plans committed.
+- Phase 16.1 merged via PR #56 (V35 migration + processed_stripe_events idempotency + RlsContractTest).
+- Branch: feature/phase-17-implementation (already checked out).
+- Migration slot for Phase 17 is V36; refund webhook cases reuse Phase 16.1's processed_stripe_events guard.
+- Memory rule: feedback_design_direction.md — refund modal uses existing Radix Dialog + orange/emerald/slate palette only.
+- Memory rule: feedback_rebuild_containers.md — rebuild ALL Docker containers before E2E.
+- Read /home/sanmi/IdeaProjects/JToye_OaaS_2026/HANDOFF.md for full context.
+
+Run: /gsd-execute-phase 17
+
+After all 4 waves complete, gsd-verifier + gsd-code-reviewer + push + wait CI + squash-merge PR #57.
 ```
