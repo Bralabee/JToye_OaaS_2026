@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: executing
-stopped_at: "Phase 16.1-04 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 4 plan-04 commits (c6ea32b test RED + 5967a40 feat GREEN). 24/24 payment-package tests green. AUDIT-W0-03 closed: PaymentService.handleWebhookEvent runs TOCTOU-safe INSERT ... ON CONFLICT DO NOTHING against processed_stripe_events. Next plan: 16.1-05."
-last_updated: "2026-04-27T23:48:42.221Z"
-last_activity: 2026-04-27
+stopped_at: "Phase 16.1-05 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 plan-05 commits (850a499 RlsContractTest + 4cf5e1e ReviewsRlsPolicyIntegrationTest). 8/8 RLS-related tests green. AUDIT-W0-04 + AUDIT-W0-05 closed at the test layer. Next plan: 16.1-06 (REQUIREMENTS.md backfill)."
+last_updated: "2026-04-28T00:17:03.589Z"
+last_activity: 2026-04-28
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 11
-  completed_plans: 11
+  completed_plans: 12
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 16.1 (Pre-prod Hardening (Wave 0 council audit fixes)) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
-Last activity: 2026-04-27
+Last activity: 2026-04-28
 
 Progress: [██████████] 100%
 
@@ -76,6 +76,7 @@ Progress: [██████████] 100%
 | Phase 16.1 P02 | 4min | 2 tasks | 3 files |
 | Phase 16.1 P03 | 4min | 1 tasks | 3 files |
 | Phase 16.1 P04 | 10min | 2 tasks | 3 files |
+| Phase 16.1 P05 | 22min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Recent decisions affecting current work:
 - [Phase 16.1]: GlobalExceptionHandler now preserves controller-thrown ResponseStatusException + maps MissingServletRequestParameterException to 400 — Auto-fix Rule 1/2 deviation during 16.1-03 — without these handlers the catch-all Exception matcher swallowed both as 500, masking the LOCKED 400 contract
 - [Phase ?]: [Phase 16.1-04]: Stripe webhook idempotency guard sits INSIDE the existing @Transactional boundary (not REQUIRES_NEW) — semantic is 'processed at least once', so a downstream throw rolls back the dedup row and Stripe's retry succeeds cleanly. REQUIRES_NEW path requires a separate failed-event reconciliation flow which is out of scope for Wave 0.
 - [Phase ?]: [Phase 16.1-04]: TOCTOU-safe single-statement INSERT ... ON CONFLICT DO NOTHING via JdbcTemplate, NOT a JPA ProcessedStripeEvent entity + repo with existsByEventId+saveAndFlush — the JPA pattern has a SELECT-then-INSERT race window under concurrent webhook delivery from Stripe's edge.
+- [Phase ?]: [Phase 16.1-05]: Drop SUPERUSER via SET LOCAL ROLE rls_test_role in Testcontainers RLS-denial tests — postgres:15 testcontainer creates the test user as SUPERUSER which bypasses RLS regardless of NOBYPASSRLS / FORCE; provisioning a dedicated NOSUPERUSER NOBYPASSRLS LOGIN role and SET LOCAL ROLE-ing to it for each RLS-sensitive test transaction is the canonical pattern.
+- [Phase ?]: [Phase 16.1-05]: EXEMPT_TABLES list expanded to 4 entries (flyway_schema_history, processed_stripe_events, tenants, revinfo) — tenants and revinfo are infrastructure tables with no tenant column and were caught by the schema-walk; each carries a written code-comment justification per the LOCKED 'add with justification' rule.
+- [Phase ?]: [Phase 16.1-05]: Storefront review-submit wiring confirmed correct as-is — ReviewService.createReview sets TenantContext, TenantSetLocalAspect translates to set_config('app.current_tenant_id', ?, true), and the V35 policy's app branch fires. The customer-email branch exists for defense-in-depth and is exercised in the test only. No production code change required.
 
 ### Pending Todos
 
@@ -136,6 +140,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-27T23:48:42.213Z
-Stopped at: Phase 16.1-04 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 4 plan-04 commits (c6ea32b test RED + 5967a40 feat GREEN). 24/24 payment-package tests green. AUDIT-W0-03 closed: PaymentService.handleWebhookEvent runs TOCTOU-safe INSERT ... ON CONFLICT DO NOTHING against processed_stripe_events. Next plan: 16.1-05.
+Last session: 2026-04-28T00:17:03.579Z
+Stopped at: Phase 16.1-05 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 plan-05 commits (850a499 RlsContractTest + 4cf5e1e ReviewsRlsPolicyIntegrationTest). 8/8 RLS-related tests green. AUDIT-W0-04 + AUDIT-W0-05 closed at the test layer. Next plan: 16.1-06 (REQUIREMENTS.md backfill).
 Resume file: None
