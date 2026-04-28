@@ -51,6 +51,7 @@ class RefundServiceTest {
     @Mock private OrderStateMachineService stateMachineService;
     @Mock private RefundMapper refundMapper;
     @Mock private StripeRefundClient stripeRefundClient;
+    @Mock private RefundEventPublisher refundEventPublisher;
 
     private RefundService refundService;
 
@@ -61,7 +62,7 @@ class RefundServiceTest {
     void setUp() {
         refundService = new RefundService(
                 refundRepository, orderRepository, stateMachineService,
-                refundMapper, stripeRefundClient
+                refundMapper, stripeRefundClient, refundEventPublisher
         );
         tenantId = UUID.randomUUID();
         orderId = UUID.randomUUID();

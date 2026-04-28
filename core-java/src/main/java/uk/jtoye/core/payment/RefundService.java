@@ -64,17 +64,20 @@ public class RefundService {
     private final OrderStateMachineService stateMachineService;
     private final RefundMapper refundMapper;
     private final StripeRefundClient stripeRefundClient;
+    private final RefundEventPublisher refundEventPublisher;
 
     public RefundService(RefundRepository refundRepository,
                          OrderRepository orderRepository,
                          OrderStateMachineService stateMachineService,
                          RefundMapper refundMapper,
-                         StripeRefundClient stripeRefundClient) {
+                         StripeRefundClient stripeRefundClient,
+                         RefundEventPublisher refundEventPublisher) {
         this.refundRepository = refundRepository;
         this.orderRepository = orderRepository;
         this.stateMachineService = stateMachineService;
         this.refundMapper = refundMapper;
         this.stripeRefundClient = stripeRefundClient;
+        this.refundEventPublisher = refundEventPublisher;
     }
 
     /**
@@ -228,6 +231,97 @@ public class RefundService {
     @Transactional(readOnly = true)
     public List<RefundDto> findByOrderId(UUID orderId) {
         return refundMapper.toDtoList(refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId));
+    }
+
+    /**
+     * Webhook handler for refund.* Stripe events. Called from
+     * {@link PaymentService#handleWebhookEvent} AFTER the Phase 16.1
+     * processed_stripe_events dedup guard, inside the same @Transactional.
+     *
+     * <p>Looks up the local Refund row by metadata.refund_id (set by us on
+     * create) — falls back to lookup-by-stripe_refund_id for refunds we
+     * already updated. Applies the wire status and persists.
+     *
+     * <p>Does NOT call the state machine — the order-status transition
+     * happens on initial create (in {@link #createRefund}); the webhook only
+     * updates the Refund row's wire status. Double-transitioning would throw
+     * {@link InvalidStateTransitionException}.
+     */
+    public void handleStripeRefundEvent(com.stripe.model.Event event) {
+        com.stripe.model.Refund stripeRefund = (com.stripe.model.Refund) event.getDataObjectDeserializer()
+                .getObject()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Failed to deserialize Refund object from event " + event.getId()));
+
+        java.util.Map<String, String> metadata = stripeRefund.getMetadata();
+        String localRefundIdStr = metadata != null ? metadata.get("refund_id") : null;
+        String tenantIdStr      = metadata != null ? metadata.get("tenant_id")  : null;
+
+        if (localRefundIdStr == null) {
+            // Refund issued externally (e.g., Stripe dashboard, no metadata) —
+            // try to locate by stripe_refund_id; if we don't have it, log and
+            // bail so the dedup row stays committed and retries also no-op.
+            Optional<Refund> existing = refundRepository.findByStripeRefundId(stripeRefund.getId());
+            if (existing.isEmpty()) {
+                log.warn("Refund webhook {} for Stripe refund {} has no refund_id metadata "
+                       + "and no local row matches stripe_refund_id — ignoring",
+                        event.getId(), stripeRefund.getId());
+                return;
+            }
+            applyStripeStatusToRefund(existing.get(), stripeRefund, event.getType());
+            return;
+        }
+
+        if (tenantIdStr != null) {
+            TenantContext.set(UUID.fromString(tenantIdStr));
+        }
+        try {
+            UUID refundId = UUID.fromString(localRefundIdStr);
+            Refund refund = refundRepository.findById(refundId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Refund not found for webhook event " + event.getId() + ": " + refundId));
+            applyStripeStatusToRefund(refund, stripeRefund, event.getType());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private void applyStripeStatusToRefund(Refund refund,
+                                           com.stripe.model.Refund stripeRefund,
+                                           String eventType) {
+        RefundStatus newStatus = parseStripeStatus(stripeRefund.getStatus());
+        refund.setStripeRefundId(stripeRefund.getId());
+        refund.setStatus(newStatus);
+        if (stripeRefund.getFailureReason() != null) {
+            refund.setFailureReason(stripeRefund.getFailureReason());
+        }
+        refund.setUpdatedAt(OffsetDateTime.now());
+        refund = refundRepository.save(refund);
+
+        // Look up the order to populate event payload — best effort, do not
+        // fail the webhook if the order has been deleted.
+        Order order = orderRepository.findById(refund.getOrderId()).orElse(null);
+        String orderNumber = order != null ? order.getOrderNumber() : null;
+
+        if ("refund.failed".equals(eventType) || newStatus == RefundStatus.failed) {
+            refundEventPublisher.publishRefundFailed(
+                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
+                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
+                    refund.getFailureReason());
+        } else if (newStatus == RefundStatus.succeeded) {
+            refundEventPublisher.publishRefundSucceeded(
+                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
+                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
+                    newStatus.name());
+        } else {
+            refundEventPublisher.publishRefundUpdated(
+                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
+                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
+                    newStatus.name());
+        }
+
+        log.info("Applied Stripe refund event {} -> refund {} status={}",
+                eventType, refund.getId(), newStatus);
     }
 
     private static RefundStatus parseStripeStatus(String wire) {

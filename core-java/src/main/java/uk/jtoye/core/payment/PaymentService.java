@@ -46,19 +46,22 @@ public class PaymentService {
     private final PaymentEventPublisher paymentEventPublisher;
     private final FinancialTransactionService financialTransactionService;
     private final JdbcTemplate jdbcTemplate;
+    private final RefundService refundService;
 
     public PaymentService(StripeProperties stripeProperties,
                          OrderRepository orderRepository,
                          OrderEventPublisher eventPublisher,
                          PaymentEventPublisher paymentEventPublisher,
                          FinancialTransactionService financialTransactionService,
-                         JdbcTemplate jdbcTemplate) {
+                         JdbcTemplate jdbcTemplate,
+                         RefundService refundService) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.paymentEventPublisher = paymentEventPublisher;
         this.financialTransactionService = financialTransactionService;
         this.jdbcTemplate = jdbcTemplate;
+        this.refundService = refundService;
     }
 
     @PostConstruct
@@ -152,6 +155,19 @@ public class PaymentService {
         switch (event.getType()) {
             case "payment_intent.succeeded" -> handlePaymentIntentSucceeded(event);
             case "payment_intent.payment_failed" -> handlePaymentIntentFailed(event);
+            // Phase 17 VOPS-02 — refund webhook lifecycle. These cases sit AFTER
+            // the Phase 16.1 dedup INSERT (above) inside the same switch, so
+            // re-delivery of the same event.id short-circuits at the dedup
+            // guard — we do NOT add a new dedup table per CORRECTION-2 LOCKED.
+            case "refund.created", "refund.updated", "refund.failed" ->
+                    refundService.handleStripeRefundEvent(event);
+            // UC-4 LOCKED — refund.* events are the canonical surface as of
+            // Stripe's 2024-10-28 unified-events changelog. charge.refunded
+            // is redundant for our needs but Stripe still fires it; ignore
+            // explicitly to avoid "unhandled event" log spam.
+            case "charge.refunded" -> log.debug(
+                    "Ignored Stripe event charge.refunded ({}); refund.* is canonical",
+                    event.getId());
             default -> log.debug("Unhandled Stripe event type: {}", event.getType());
         }
     }
