@@ -18,8 +18,6 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,8 +26,10 @@ import static org.mockito.Mockito.when;
  *
  * <p>Verifies that publish methods persist exactly one outbox row each, that
  * the row targets {@code order.events} exchange with routing key
- * {@code order.refunded}, and that ObjectMapper failures surface as
- * IllegalStateException without a save.
+ * {@code order.refunded}, and that ObjectMapper failures persist a FAILED
+ * placeholder row WITHOUT propagating (WR-05) so the caller's
+ * processed_stripe_events dedup row stays committed and Stripe does not
+ * retry into the same serialization failure forever.
  */
 @ExtendWith(MockitoExtension.class)
 class RefundEventPublisherTest {
@@ -137,24 +137,30 @@ class RefundEventPublisherTest {
     }
 
     @Test
-    @DisplayName("persist rethrows JsonProcessingException as IllegalStateException and never saves")
-    void persist_objectMapperThrows_throwsIllegalStateException() throws JsonProcessingException {
+    @DisplayName("WR-05: persist on JsonProcessingException records FAILED placeholder and does NOT propagate")
+    void persist_objectMapperThrows_persistsFailedPlaceholder() throws JsonProcessingException {
         ObjectMapper throwingMapper = org.mockito.Mockito.mock(ObjectMapper.class);
         when(throwingMapper.writeValueAsString(org.mockito.ArgumentMatchers.any()))
                 .thenThrow(new JsonProcessingException("simulated") {});
 
         RefundEventPublisher throwingPublisher = new RefundEventPublisher(outboxRepository, throwingMapper);
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
-                throwingPublisher.publishRefundSucceeded(
-                        refundId, orderId, tenantId, "ORD-X",
-                        "re_x", 100L, "gbp", "succeeded"
-                )
+        // No exception escapes — caller's @Transactional (and the
+        // processed_stripe_events dedup row) must not roll back.
+        throwingPublisher.publishRefundSucceeded(
+                refundId, orderId, tenantId, "ORD-X",
+                "re_x", 100L, "gbp", "succeeded"
         );
-        assertNotNull(ex.getCause());
 
-        // Critical invariant: a serialization failure must NOT leak a half-built
-        // outbox row to the DB. The contract is "all-or-nothing".
-        verify(outboxRepository, never()).save(org.mockito.ArgumentMatchers.any(PaymentEventOutbox.class));
+        // Exactly one FAILED placeholder row was persisted with a non-empty
+        // last_error so the flusher can dead-letter it on the next tick.
+        ArgumentCaptor<PaymentEventOutbox> captor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(outboxRepository).save(captor.capture());
+        PaymentEventOutbox failedRow = captor.getValue();
+        assertEquals(PaymentEventOutbox.Status.FAILED, failedRow.getStatus());
+        assertNotNull(failedRow.getLastError());
+        assertEquals(RabbitMQConfig.ORDER_EVENTS_EXCHANGE, failedRow.getExchange());
+        // Placeholder payload includes refundId/orderId for forensic traceability.
+        assertNotNull(failedRow.getPayload());
     }
 }

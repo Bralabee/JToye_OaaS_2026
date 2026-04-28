@@ -81,11 +81,33 @@ public class RefundEventPublisher {
         try {
             payloadJson = objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException e) {
-            // Serialization failure is a programmer error (record is fixed shape);
-            // loudly surface it rather than silently drop the event.
-            log.error("Failed to serialize RefundEvent for refund {}: {}",
+            // WR-05 — DO NOT propagate. Throwing here would roll back the
+            // caller's @Transactional including the processed_stripe_events
+            // dedup row, and Stripe would retry the same event into the same
+            // failure forever. Instead persist a FAILED placeholder so the
+            // dedup row commits, the flusher dead-letters the placeholder
+            // row, and operators see exactly one alert per failure.
+            //
+            // The placeholder payload is a JSON string literal (no
+            // ObjectMapper involvement) so this branch cannot itself throw
+            // JsonProcessingException. The flusher's payload-deserialization
+            // catch flips it to FAILED on the next tick (no retry loop).
+            log.error("Failed to serialize RefundEvent for refund {}: {} — persisting FAILED placeholder",
                     event.refundId(), e.getMessage(), e);
-            throw new IllegalStateException("RefundEvent serialization failed", e);
+            String placeholder = String.format(
+                    "{\"error\":\"serialization_failed\",\"refundId\":\"%s\",\"orderId\":\"%s\"}",
+                    event.refundId(), event.orderId());
+            PaymentEventOutbox failedRow = new PaymentEventOutbox(
+                    event.tenantId(),
+                    event.type().name(),
+                    REFUND_ROUTING_KEY,
+                    placeholder,
+                    RabbitMQConfig.ORDER_EVENTS_EXCHANGE
+            );
+            failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
+            failedRow.setLastError("RefundEvent serialization failed: " + e.getMessage());
+            outboxRepository.save(failedRow);
+            return;
         }
 
         PaymentEventOutbox row = new PaymentEventOutbox(
