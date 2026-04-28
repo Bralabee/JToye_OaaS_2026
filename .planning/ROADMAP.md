@@ -206,4 +206,4 @@ Suggested wave layout:
 | 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
-| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete   | 2026-04-28 |
+| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |

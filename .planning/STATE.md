@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
+status: milestone_complete
 stopped_at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
 last_updated: "2026-04-28T09:08:59.557Z"
 last_activity: 2026-04-28 -- Phase 17 execution started
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
   completed_plans: 13
-  percent: 87
+  percent: 71
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 17 (vendor-order-detail-stripe-refund-flow) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 17
-Last activity: 2026-04-28 -- Phase 17 execution started
+Phase: 17
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-04-28
 
 Progress: [██████████] 100%
 
@@ -53,6 +53,7 @@ Progress: [██████████] 100%
 | 7 | 1 | - | - |
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
+| 17 | 4 | - | - |
 
 **Milestone v2.2 (executing):**
 
