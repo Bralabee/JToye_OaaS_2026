@@ -57,7 +57,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [🟡] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets runbook + batch `kubeseal` conversion script (INF-01, INF-02) — **DRAFTING COMPLETE 2026-04-18 on `feature/phase-15-k8s-networkpolicies-sealed-secrets` (6 commits). 6 NetworkPolicy manifests + offline validator + runbook + `seal-secrets.sh` + `secrets-template.yaml` legacy flag. Cluster-admin rollout pending — 4-step checklist in 15-01-SUMMARY.md. Actual layout: `k8s/staging/` + `k8s/production/` (not `k8s/overlays/*`).**
 - [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
 - [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
-- [ ] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27
+- [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
 
 ## Phase Details
 
@@ -171,7 +171,7 @@ Plans:
 - [x] 17-01-PLAN.md — V36 migration (refunds + refunds_aud + orders CHECK rewrite + payment_event_outbox.exchange) + Refund entity stack + RefundService stored-first idempotency + state-machine extension (REFUND_REQUESTED, REFUNDED, .end()) + unit tests [Wave 1]
 - [x] 17-02-PLAN.md — PaymentEventOutbox.exchange field + Flusher per-row routing + RefundEvent record + RefundEventPublisher [Wave 1; consumes V36 column from 17-01]
 - [x] 17-03-PLAN.md — RefundController (POST /orders/{id}/refund + Idempotency-Key + GET /orders/{id}/refunds) + PaymentService webhook refund.* cases (after Phase 16.1 dedup) + OrderDetailDto extension + GlobalExceptionHandler StripeException→502 + RefundWebhookHandlingIntegrationTest (Testcontainers) [Wave 2; depends on 17-01 + 17-02]
-- [ ] 17-04-PLAN.md — Frontend /dashboard/orders/[id] route + OrderDetailPanel extraction + RefundDialog (Zod + Idempotency-Key) + OrderStatus REFUNDED type extension + Jest unit tests + Playwright vendor-refund-flow E2E (port 3100) [Wave 3; depends on 17-03]
+- [x] 17-04-PLAN.md — Frontend /dashboard/orders/[id] route + OrderDetailPanel extraction + RefundDialog (Zod + Idempotency-Key) + OrderStatus REFUNDED type extension + Jest unit tests + Playwright vendor-refund-flow E2E (port 3100) [Wave 3; depends on 17-03]
 
 **UI hint**: yes
 
@@ -206,4 +206,4 @@ Suggested wave layout:
 | 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
-| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 3/4 | In Progress|  |
+| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete   | 2026-04-28 |
