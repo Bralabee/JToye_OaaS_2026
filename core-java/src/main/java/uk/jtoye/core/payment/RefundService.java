@@ -306,32 +306,43 @@ public class RefundService {
             refund.setFailureReason(stripeRefund.getFailureReason());
         }
         refund.setUpdatedAt(OffsetDateTime.now());
-        refund = refundRepository.save(refund);
+        // WR-03: bind the saved instance to a distinct local rather than
+        // overwriting the parameter. JPA save returns the merged managed
+        // entity; using `persisted` from here on makes the "always read
+        // post-save state" contract self-documenting and survives a future
+        // refactor that passes a detached refund.
+        Refund persisted = refundRepository.save(refund);
 
         // Look up the order to populate event payload — best effort, do not
         // fail the webhook if the order has been deleted.
-        Order order = orderRepository.findById(refund.getOrderId()).orElse(null);
+        Order order = orderRepository.findById(persisted.getOrderId()).orElse(null);
+        if (order == null) {
+            // WR-06: surface the silent-null-orderNumber path so operators
+            // can see when a refund references a missing/unreachable order.
+            log.warn("Refund {} references missing/unreachable order {} — event will publish "
+                   + "with null orderNumber", persisted.getId(), persisted.getOrderId());
+        }
         String orderNumber = order != null ? order.getOrderNumber() : null;
 
         if ("refund.failed".equals(eventType) || newStatus == RefundStatus.failed) {
             refundEventPublisher.publishRefundFailed(
-                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
-                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
-                    refund.getFailureReason());
+                    persisted.getId(), persisted.getOrderId(), persisted.getTenantId(), orderNumber,
+                    persisted.getStripeRefundId(), persisted.getAmountPennies(), persisted.getCurrency(),
+                    persisted.getFailureReason());
         } else if (newStatus == RefundStatus.succeeded) {
             refundEventPublisher.publishRefundSucceeded(
-                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
-                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
+                    persisted.getId(), persisted.getOrderId(), persisted.getTenantId(), orderNumber,
+                    persisted.getStripeRefundId(), persisted.getAmountPennies(), persisted.getCurrency(),
                     newStatus.name());
         } else {
             refundEventPublisher.publishRefundUpdated(
-                    refund.getId(), refund.getOrderId(), refund.getTenantId(), orderNumber,
-                    refund.getStripeRefundId(), refund.getAmountPennies(), refund.getCurrency(),
+                    persisted.getId(), persisted.getOrderId(), persisted.getTenantId(), orderNumber,
+                    persisted.getStripeRefundId(), persisted.getAmountPennies(), persisted.getCurrency(),
                     newStatus.name());
         }
 
         log.info("Applied Stripe refund event {} -> refund {} status={}",
-                eventType, refund.getId(), newStatus);
+                eventType, persisted.getId(), newStatus);
     }
 
     private static RefundStatus parseStripeStatus(String wire) {
