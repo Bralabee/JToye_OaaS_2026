@@ -257,26 +257,36 @@ public class RefundService {
         String localRefundIdStr = metadata != null ? metadata.get("refund_id") : null;
         String tenantIdStr      = metadata != null ? metadata.get("tenant_id")  : null;
 
-        if (localRefundIdStr == null) {
-            // Refund issued externally (e.g., Stripe dashboard, no metadata) —
-            // try to locate by stripe_refund_id; if we don't have it, log and
-            // bail so the dedup row stays committed and retries also no-op.
-            Optional<Refund> existing = refundRepository.findByStripeRefundId(stripeRefund.getId());
-            if (existing.isEmpty()) {
-                log.warn("Refund webhook {} for Stripe refund {} has no refund_id metadata "
-                       + "and no local row matches stripe_refund_id — ignoring",
-                        event.getId(), stripeRefund.getId());
-                return;
-            }
-            applyStripeStatusToRefund(existing.get(), stripeRefund, event.getType());
+        // BL-02 / BL-03 / BL-04 fix — externally-issued refunds (no metadata)
+        // are explicitly out-of-scope per UC-5 LOCKED. Trying to look up the
+        // local row by stripe_refund_id without TenantContext set means the
+        // RLS predicate evaluates to UNKNOWN and the SELECT silently returns
+        // empty — the very case this fallback was designed to handle. Any
+        // subsequent INSERT into payment_event_outbox would also be rejected
+        // by RLS (V33 ENABLE+FORCE).
+        //
+        // Log the event and return so the dedup row stays committed and
+        // future redeliveries of the same event.id short-circuit at the
+        // processed_stripe_events guard. If we ever ship internally-issued
+        // refunds without our own metadata, that is a bug at create time —
+        // not something this handler should paper over.
+        if (localRefundIdStr == null || tenantIdStr == null) {
+            log.warn("Refund webhook {} for Stripe refund {} is missing required metadata "
+                   + "(refund_id={}, tenant_id={}) — ignoring per UC-5 LOCKED "
+                   + "(externally-issued refunds out of scope)",
+                    event.getId(), stripeRefund.getId(), localRefundIdStr, tenantIdStr);
             return;
         }
 
-        if (tenantIdStr != null) {
-            TenantContext.set(UUID.fromString(tenantIdStr));
-        }
+        TenantContext.set(UUID.fromString(tenantIdStr));
         try {
             UUID refundId = UUID.fromString(localRefundIdStr);
+            // BL-04 — fail loud on missing-row in the metadata-bearing path.
+            // Throwing rolls back the @Transactional in PaymentService (and
+            // with it the processed_stripe_events dedup row), so Stripe
+            // retries the event after our local row catches up. If the row
+            // is permanently absent, Stripe gives up after its retry budget
+            // and we keep the failure visible in logs.
             Refund refund = refundRepository.findById(refundId)
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Refund not found for webhook event " + event.getId() + ": " + refundId));

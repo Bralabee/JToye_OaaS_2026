@@ -325,13 +325,21 @@ class RefundWebhookHandlingIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // Refund metadata absent — defensive lookup-by-stripe_refund_id
+    // Refund metadata absent — UC-5 LOCKED ignore (BL-02 / BL-03 / BL-04 fix)
+    //
+    // Externally-issued refunds (e.g. dashboard-created, no metadata) are
+    // explicitly out-of-scope. The handler logs and returns without touching
+    // the DB so it can never violate RLS by SELECTing or INSERTing without
+    // TenantContext set. The dedup row stays committed (Stripe will not
+    // retry) — that is the deliberate posture, not a bug.
     // ------------------------------------------------------------------
 
     @Test
-    void webhookRefundWithoutMetadata_findsByStripeRefundIdIfPresent() {
-        // Pre-populate the seeded refund with a stripe_refund_id so the
-        // fallback lookup-by-stripe_refund_id can find it.
+    void webhookRefundWithoutMetadata_ignoresEventEvenWhenLocalRowExists() {
+        // Pre-populate the seeded refund with a stripe_refund_id that the
+        // (now-removed) fallback lookup-by-stripe_refund_id would have hit.
+        // Post-fix the handler short-circuits BEFORE the lookup, so this
+        // refund must remain in its seeded CREATING state.
         TenantContext.set(TENANT_ID);
         try {
             seededRefund.setStripeRefundId("re_externally_issued");
@@ -352,8 +360,20 @@ class RefundWebhookHandlingIntegrationTest {
 
         Refund after = refundRepository.findById(seededRefund.getId()).orElseThrow();
         assertThat(after.getStatus())
-                .as("Defensive fallback should find the row via stripe_refund_id and apply status")
-                .isEqualTo(RefundStatus.succeeded);
+                .as("Metadata-less webhook must be ignored (UC-5 LOCKED) — refund stays CREATING")
+                .isEqualTo(RefundStatus.CREATING);
+
+        // Dedup row was committed (handler returned normally) so a redelivery
+        // of the same event.id short-circuits at the processed_stripe_events guard.
+        Long dedupRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM processed_stripe_events WHERE event_id = ?",
+                Long.class, eventId);
+        assertThat(dedupRows).isEqualTo(1L);
+
+        // No outbox row published (publisher never invoked without TenantContext).
+        Long outboxRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payment_event_outbox", Long.class);
+        assertThat(outboxRows).isEqualTo(0L);
     }
 
     @Test
