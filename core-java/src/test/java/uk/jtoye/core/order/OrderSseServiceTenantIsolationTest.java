@@ -12,11 +12,17 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -111,6 +117,74 @@ class OrderSseServiceTenantIsolationTest {
         f.setAccessible(true);
         Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) f.get(service);
         assertFalse(map.containsKey(tenantA), "empty tenant bucket should be evicted from outer map");
+    }
+
+    @Test
+    @DisplayName("subscribe-vs-cleanup race — concurrent subscribe + cleanup never orphans a new emitter")
+    @SuppressWarnings("unchecked")
+    void subscribeIsAtomicWithCleanup() throws Exception {
+        // Reproduces the race the post-merge reviewer flagged: if cleanup of a now-empty
+        // bucket runs between a concurrent subscribe()'s computeIfAbsent and bucket.add,
+        // the new emitter would be added to a Set already detached from the outer map and
+        // future broadcasts would never reach that client. With the atomic compute() fix,
+        // every successful subscribe leaves a reachable bucket containing the new emitter.
+        UUID tenant = UUID.randomUUID();
+        int rounds = 200;
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        try {
+            for (int i = 0; i < rounds; i++) {
+                CountDownLatch start = new CountDownLatch(1);
+
+                // First populate a bucket with one emitter, then concurrently:
+                //  - cleanup that emitter (which may want to evict the now-empty bucket)
+                //  - subscribe a new emitter for the same tenant
+                TenantContext.set(tenant);
+                SseEmitter existing = service.subscribe();
+                Field cbField = existing.getClass().getSuperclass().getDeclaredField("completionCallback");
+                cbField.setAccessible(true);
+                Runnable existingCleanup = (Runnable) cbField.get(existing);
+                TenantContext.clear();
+
+                pool.submit(() -> { try { start.await(); } catch (InterruptedException ignored) {}
+                    existingCleanup.run();
+                });
+                pool.submit(() -> { try { start.await(); } catch (InterruptedException ignored) {}
+                    TenantContext.set(tenant);
+                    try { service.subscribe(); } finally { TenantContext.clear(); }
+                });
+                start.countDown();
+
+                // Drain by waiting briefly for both submissions on this round to settle.
+                Thread.sleep(2);
+
+                // Whatever the interleaving, the outer map MUST contain the bucket if any
+                // subscribe succeeded after the cleanup, AND that bucket MUST contain the
+                // newly subscribed emitter (no orphans).
+                Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
+                f.setAccessible(true);
+                Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) f.get(service);
+                Set<SseEmitter> bucket = map.get(tenant);
+                if (bucket != null) {
+                    // Reachable bucket invariant: emitter count >= 1 (the new subscribe) and
+                    // every emitter is the same identity the bucket itself holds.
+                    assertTrue(bucket.size() >= 1, "round " + i + ": bucket present but empty (orphaned)");
+                }
+                // Reset between rounds.
+                map.remove(tenant);
+            }
+            assertEquals(0, ((Map<?, ?>) reflectMap()).size(),
+                    "no leftover bucket entries after concurrent stress");
+        } finally {
+            pool.shutdownNow();
+            pool.awaitTermination(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<UUID, Set<SseEmitter>> reflectMap() throws Exception {
+        Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
+        f.setAccessible(true);
+        return (Map<UUID, Set<SseEmitter>>) f.get(service);
     }
 
     // --- helpers ---

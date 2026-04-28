@@ -33,14 +33,25 @@ public class OrderSseService {
         }
 
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
-        Set<SseEmitter> bucket = emittersByTenant.computeIfAbsent(
-                tenantId, k -> Collections.newSetFromMap(new ConcurrentHashMap<>()));
-        bucket.add(emitter);
+        // Atomic insert: add the emitter inside the map mutation lambda so concurrent
+        // cleanup cannot remove the bucket between our lookup and our add (which would
+        // orphan the new emitter — broadcasts would never reach this client).
+        Set<SseEmitter> bucket = emittersByTenant.compute(tenantId, (k, existing) -> {
+            Set<SseEmitter> set = (existing != null)
+                    ? existing
+                    : Collections.newSetFromMap(new ConcurrentHashMap<>());
+            set.add(emitter);
+            return set;
+        });
 
         Runnable cleanup = () -> {
-            bucket.remove(emitter);
-            // Free the bucket entry once empty so long-lived JVMs don't leak per-tenant maps.
-            emittersByTenant.computeIfPresent(tenantId, (k, v) -> v.isEmpty() ? null : v);
+            // Atomic remove: drop the emitter and (if the bucket is now empty) the bucket
+            // itself, all under the same map mutation. Free the bucket entry once empty so
+            // long-lived JVMs don't leak per-tenant maps.
+            emittersByTenant.computeIfPresent(tenantId, (k, v) -> {
+                v.remove(emitter);
+                return v.isEmpty() ? null : v;
+            });
         };
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
