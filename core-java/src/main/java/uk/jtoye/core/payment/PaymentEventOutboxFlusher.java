@@ -94,24 +94,42 @@ public class PaymentEventOutboxFlusher {
 
     private void publishRow(PaymentEventOutbox row) {
         try {
-            PaymentEvent event = objectMapper.readValue(row.getPayload(), PaymentEvent.class);
-            rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE,
-                    row.getRoutingKey(),
-                    event
-            );
+            // V36 — per-row exchange routing. Refund rows write 'order.events',
+            // payment rows write 'payment.events' (legacy default). NULL is
+            // defensive: any pre-V36 in-flight row would have exchange=NULL
+            // before flush; log + fall back so we don't drop the message.
+            String exchange = row.getExchange();
+            if (exchange == null || exchange.isBlank()) {
+                log.warn("Outbox row {} has no exchange — falling back to {}",
+                        row.getId(), RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE);
+                exchange = RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE;
+            }
+
+            // Deserialize payload according to event family. Refund rows carry
+            // RefundEvent JSON; payment rows carry PaymentEvent JSON. We pick by
+            // exchange so a single flusher serves both without if-instance noise
+            // in business code.
+            Object event;
+            if (RabbitMQConfig.ORDER_EVENTS_EXCHANGE.equals(exchange)) {
+                event = objectMapper.readValue(row.getPayload(), RefundEvent.class);
+            } else {
+                event = objectMapper.readValue(row.getPayload(), PaymentEvent.class);
+            }
+
+            rabbitTemplate.convertAndSend(exchange, row.getRoutingKey(), event);
             row.setStatus(PaymentEventOutbox.Status.SENT);
             row.setSentAt(OffsetDateTime.now());
             row.setLastError(null);
             repository.save(row);
-            log.info("Flushed payment event {} (outbox id={})", row.getEventType(), row.getId());
+            log.info("Flushed outbox event {} (id={}, exchange={})",
+                    row.getEventType(), row.getId(), exchange);
         } catch (JsonProcessingException e) {
             // Payload corruption — not recoverable by retry. Mark FAILED immediately.
             row.setStatus(PaymentEventOutbox.Status.FAILED);
             row.setLastError("payload deserialization failed: " + e.getMessage());
             row.setAttempts(row.getAttempts() + 1);
             repository.save(row);
-            log.error("Payment event outbox row {} is unrecoverable", row.getId(), e);
+            log.error("Outbox row {} is unrecoverable", row.getId(), e);
             if (deadLetterCounter != null) deadLetterCounter.increment();
         } catch (Exception e) {
             int attempts = row.getAttempts() + 1;
@@ -120,10 +138,10 @@ public class PaymentEventOutboxFlusher {
             if (attempts >= MAX_ATTEMPTS) {
                 row.setStatus(PaymentEventOutbox.Status.FAILED);
                 if (deadLetterCounter != null) deadLetterCounter.increment();
-                log.error("Payment event {} exhausted {} retries; marking FAILED",
+                log.error("Outbox event {} exhausted {} retries; marking FAILED",
                         row.getId(), MAX_ATTEMPTS);
             } else {
-                log.warn("Publish attempt {}/{} failed for payment event {}: {}",
+                log.warn("Publish attempt {}/{} failed for outbox event {}: {}",
                         attempts, MAX_ATTEMPTS, row.getId(), e.getMessage());
             }
             repository.save(row);

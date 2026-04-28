@@ -44,6 +44,17 @@ public class PaymentEventOutbox {
     @Column(name = "routing_key", nullable = false, length = 128)
     private String routingKey;
 
+    /**
+     * Destination AMQP exchange for this row (V36 — per-row routing).
+     *
+     * <p>Defaults to {@code payment.events} so existing payment-event flow is
+     * preserved. Refund-domain rows write {@code order.events} so the same
+     * outbox table can serve both payment-domain and order-domain events
+     * without a second outbox table (UC-2 LOCKED).
+     */
+    @Column(name = "exchange", nullable = false, length = 128)
+    private String exchange = "payment.events";
+
     @Column(name = "payload", nullable = false, columnDefinition = "TEXT")
     private String payload;
 
@@ -74,6 +85,16 @@ public class PaymentEventOutbox {
         this.payload = payload;
     }
 
+    /**
+     * Five-arg constructor for callers that target a non-default AMQP exchange
+     * (e.g. {@code RefundEventPublisher} → {@code order.events}). The 4-arg
+     * constructor remains the entry point for payment-event flow.
+     */
+    public PaymentEventOutbox(UUID tenantId, String eventType, String routingKey, String payload, String exchange) {
+        this(tenantId, eventType, routingKey, payload);
+        this.exchange = exchange;
+    }
+
     public UUID getId() { return id; }
 
     public UUID getTenantId() { return tenantId; }
@@ -84,6 +105,9 @@ public class PaymentEventOutbox {
 
     public String getRoutingKey() { return routingKey; }
     public void setRoutingKey(String routingKey) { this.routingKey = routingKey; }
+
+    public String getExchange() { return exchange; }
+    public void setExchange(String exchange) { this.exchange = exchange; }
 
     public String getPayload() { return payload; }
     public void setPayload(String payload) { this.payload = payload; }
