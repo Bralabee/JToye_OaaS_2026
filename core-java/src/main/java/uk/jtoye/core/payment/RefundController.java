@@ -31,11 +31,19 @@ import java.util.UUID;
  * (RLS enforces tenant scoping; refund target is validated server-side
  * by {@link RefundService}).
  *
- * <p>Mirrors {@link uk.jtoye.core.order.OrderController}'s base mapping
- * ({@code /orders}) so the refund endpoints sit under {@code /orders/{id}/...}.
+ * <p><b>BL-01 fix:</b> hard-code the {@code /api/v1} prefix in the
+ * {@code @RequestMapping} value rather than relying on
+ * {@link uk.jtoye.core.config.WebConfig#configurePathMatch}. WebConfig only
+ * applies the prefix to controllers in {@code uk.jtoye.core.{shop,product,
+ * order,customer,finance,gdpr,sync}}, and this controller lives in
+ * {@code uk.jtoye.core.payment} (which is intentionally excluded so the
+ * {@link PaymentController} can keep its {@code /public/payments/webhook}
+ * mapping for Stripe). Adding {@code uk.jtoye.core.payment} to WebConfig
+ * would unintentionally rewrite {@code PaymentController} to
+ * {@code /api/v1/public/payments/webhook} and break Stripe webhooks.
  */
 @RestController
-@RequestMapping("/orders")
+@RequestMapping("/api/v1/orders")
 @Tag(name = "Refunds", description = "Stripe refund issuance for vendor orders")
 @SecurityRequirement(name = "bearer-jwt")
 public class RefundController {
@@ -65,7 +73,7 @@ public class RefundController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) throws StripeException {
         RefundDto refund = refundService.createRefund(orderId, request, idempotencyKey);
-        URI location = URI.create("/orders/" + orderId + "/refunds/" + refund.id());
+        URI location = URI.create("/api/v1/orders/" + orderId + "/refunds/" + refund.id());
         // Always return 201 on success — the resource exists either way and
         // the Location header points to the same URI on replay. Frontend
         // treats 201 == success.

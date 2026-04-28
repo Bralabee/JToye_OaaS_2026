@@ -82,7 +82,7 @@ class RefundControllerIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // POST /orders/{id}/refund — happy path + Idempotency-Key
+    // POST /api/v1/orders/{id}/refund — happy path + Idempotency-Key
     // ------------------------------------------------------------------
 
     @Test
@@ -98,12 +98,12 @@ class RefundControllerIntegrationTest {
                 {"amountPennies":500,"reason":"REQUESTED_BY_CUSTOMER","note":"customer requested"}
                 """;
 
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", idempotencyKey)
                         .content(body))
                 .andExpect(status().isCreated())
-                .andExpect(header().string("Location", "/orders/" + orderId + "/refunds/" + refundId))
+                .andExpect(header().string("Location", "/api/v1/orders/" + orderId + "/refunds/" + refundId))
                 .andExpect(jsonPath("$.id").value(refundId.toString()))
                 .andExpect(jsonPath("$.stripeRefundId").value("re_test_xyz"))
                 .andExpect(jsonPath("$.status").value("succeeded"));
@@ -123,7 +123,7 @@ class RefundControllerIntegrationTest {
                 {"amountPennies":500,"reason":"REQUESTED_BY_CUSTOMER"}
                 """;
 
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
@@ -150,7 +150,7 @@ class RefundControllerIntegrationTest {
                 """;
 
         // First POST
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", idempotencyKey)
                         .content(body))
@@ -158,7 +158,7 @@ class RefundControllerIntegrationTest {
                 .andExpect(jsonPath("$.id").value(refundId.toString()));
 
         // Second POST — same body, same key → same id observable
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", idempotencyKey)
                         .content(body))
@@ -170,7 +170,7 @@ class RefundControllerIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // POST /orders/{id}/refund — validation + state errors
+    // POST /api/v1/orders/{id}/refund — validation + state errors
     // ------------------------------------------------------------------
 
     @Test
@@ -184,7 +184,7 @@ class RefundControllerIntegrationTest {
                 {"amountPennies":20000,"reason":"REQUESTED_BY_CUSTOMER"}
                 """;
 
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -204,7 +204,7 @@ class RefundControllerIntegrationTest {
                 {"amountPennies":500,"reason":"REQUESTED_BY_CUSTOMER"}
                 """;
 
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -226,7 +226,7 @@ class RefundControllerIntegrationTest {
                 {"amountPennies":500,"reason":"REQUESTED_BY_CUSTOMER"}
                 """;
 
-        mockMvc.perform(post("/orders/" + orderId + "/refund")
+        mockMvc.perform(post("/api/v1/orders/" + orderId + "/refund")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadGateway())
@@ -238,11 +238,11 @@ class RefundControllerIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // GET /orders/{id}/refunds
+    // GET /api/v1/orders/{id}/refunds
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("GET /orders/{id}/refunds returns list ordered as service returns it")
+    @DisplayName("GET /api/v1/orders/{id}/refunds returns list ordered as service returns it")
     void getRefunds_returnsList() throws Exception {
         UUID r1 = UUID.randomUUID();
         UUID r2 = UUID.randomUUID();
@@ -250,7 +250,7 @@ class RefundControllerIntegrationTest {
         RefundDto older = stubRefundDto(r2, RefundStatus.succeeded);
         when(refundService.findByOrderId(orderId)).thenReturn(List.of(newest, older));
 
-        mockMvc.perform(get("/orders/" + orderId + "/refunds"))
+        mockMvc.perform(get("/api/v1/orders/" + orderId + "/refunds"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(2))
