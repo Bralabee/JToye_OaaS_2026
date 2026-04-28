@@ -1,5 +1,6 @@
 package uk.jtoye.core.common;
 
+import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -159,6 +160,30 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
         problem.setTitle("Forbidden");
         problem.setType(URI.create("https://jtoye.uk/errors/forbidden"));
+        return problem;
+    }
+
+    /**
+     * Phase 17 VOPS-02 — map any {@link StripeException} (the SDK base type
+     * that {@code InvalidRequestException}, {@code ApiException} et al. extend)
+     * to HTTP 502. We are the gateway between the vendor and Stripe; a Stripe
+     * failure is a bad-gateway from the client's perspective.
+     *
+     * <p>Body surfaces only {@code ex.getMessage()} and {@code stripeCode} —
+     * the full stack trace is logged server-side at WARN, not returned to
+     * the client (T-17-14).
+     */
+    @ExceptionHandler(StripeException.class)
+    public ProblemDetail handleStripeException(StripeException ex) {
+        log.warn("Stripe API error: code={} message={}", ex.getCode(), ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                "Payment provider error: " + ex.getMessage());
+        problem.setTitle("Payment Provider Error");
+        problem.setType(URI.create("https://jtoye.uk/errors/payment-provider"));
+        if (ex.getCode() != null) {
+            problem.setProperty("stripeCode", ex.getCode());
+        }
         return problem;
     }
 
