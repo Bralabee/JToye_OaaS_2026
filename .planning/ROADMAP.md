@@ -170,7 +170,7 @@ Plans:
 Plans:
 - [x] 17-01-PLAN.md — V36 migration (refunds + refunds_aud + orders CHECK rewrite + payment_event_outbox.exchange) + Refund entity stack + RefundService stored-first idempotency + state-machine extension (REFUND_REQUESTED, REFUNDED, .end()) + unit tests [Wave 1]
 - [x] 17-02-PLAN.md — PaymentEventOutbox.exchange field + Flusher per-row routing + RefundEvent record + RefundEventPublisher [Wave 1; consumes V36 column from 17-01]
-- [ ] 17-03-PLAN.md — RefundController (POST /orders/{id}/refund + Idempotency-Key + GET /orders/{id}/refunds) + PaymentService webhook refund.* cases (after Phase 16.1 dedup) + OrderDetailDto extension + GlobalExceptionHandler StripeException→502 + RefundWebhookHandlingIntegrationTest (Testcontainers) [Wave 2; depends on 17-01 + 17-02]
+- [x] 17-03-PLAN.md — RefundController (POST /orders/{id}/refund + Idempotency-Key + GET /orders/{id}/refunds) + PaymentService webhook refund.* cases (after Phase 16.1 dedup) + OrderDetailDto extension + GlobalExceptionHandler StripeException→502 + RefundWebhookHandlingIntegrationTest (Testcontainers) [Wave 2; depends on 17-01 + 17-02]
 - [ ] 17-04-PLAN.md — Frontend /dashboard/orders/[id] route + OrderDetailPanel extraction + RefundDialog (Zod + Idempotency-Key) + OrderStatus REFUNDED type extension + Jest unit tests + Playwright vendor-refund-flow E2E (port 3100) [Wave 3; depends on 17-03]
 
 **UI hint**: yes
@@ -206,4 +206,4 @@ Suggested wave layout:
 | 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
-| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 2/4 | In Progress|  |
+| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 3/4 | In Progress|  |
