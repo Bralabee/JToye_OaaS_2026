@@ -10,6 +10,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.review.dto.ReviewDto;
@@ -90,16 +91,21 @@ public class PublicStorefrontController {
 
     @GetMapping("/orders")
     @Operation(summary = "Customer order history",
-            description = "List all orders for a customer by email address. Requires both email and a recent order number for verification.")
+            description = "List all orders for a customer by email address. The 'verify' parameter (a recent order number for this customer) is mandatory — without it the request is rejected to prevent email-based enumeration.")
     public ResponseEntity<List<PublicOrderStatus>> getCustomerOrders(
             @RequestParam String email,
-            @RequestParam(name = "verify", required = false) String verifyOrderNumber) {
-        // Security: require a known order number to prove ownership of the email.
-        // Without this, anyone who knows an email can enumerate all their orders.
-        if (verifyOrderNumber != null && !verifyOrderNumber.isBlank()) {
-            // Verify the caller knows at least one valid order number for this email
-            storefrontService.trackOrder(verifyOrderNumber, email);
+            @RequestParam(name = "verify") String verifyOrderNumber) {
+        // AUDIT-W0-02: 'verify' is mandatory. Spring's missing-required-param exception
+        // already returns 400 for the absent case; we add an explicit guard for the
+        // present-but-blank case so both surfaces look the same to the client.
+        if (verifyOrderNumber == null || verifyOrderNumber.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "'verify' (a recent order number) is required");
         }
+        // Throws ResourceNotFoundException → 404 if the (verify, email) pair does not
+        // resolve to a real order — that is the proof-of-ownership gate.
+        storefrontService.trackOrder(verifyOrderNumber, email);
         return ResponseEntity.ok(storefrontService.getCustomerOrders(email));
     }
 

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 16.1 — Pre-prod hardening (Wave 0 council audit fixes) — 2026-04-27
+
+**Security & data-integrity bug fixes** identified by the 2026-04-27 council audit. All five blockers must land before any production rollout to a second tenant or real Stripe payments.
+
+#### Fixed
+- **AUDIT-W0-01** Cross-tenant SSE leak: `OrderSseService` previously broadcast every tenant's order state changes to every connected dashboard. Now uses per-tenant emitter routing keyed by `TenantContext.get()` at subscribe time; `broadcast()` filters by `event.tenantId()`. Fail-closed: subscribe with no TenantContext throws `IllegalStateException`. (`core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java`)
+- **AUDIT-W0-02** Customer-orders IDOR: `GET /public/orders?email=…` no longer returns order history without the `verify` order-number proof. Bare email-only requests now return 400; `trackOrder(verify, email)` runs unconditionally as proof-of-ownership before any order data is returned. (`core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java`)
+- **AUDIT-W0-03** Stripe webhook idempotency: duplicate `event.id` deliveries no longer write duplicate `financial_transactions` rows or double-publish state-change events. New TOCTOU-safe `INSERT ... ON CONFLICT DO NOTHING` against `processed_stripe_events` runs immediately after signature verification. (`core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java`)
+- **AUDIT-W0-04** `reviews_tenant_write` RLS policy: V35 replaces V27's broken policy (read wrong GUC name `app.tenant_id`; OR-clause allowed arbitrary `tenant_id` writes by anyone setting `app.customer_email`) with canonical `current_setting('app.current_tenant_id')` + EXISTS-on-orders ownership proof in the customer branch.
+- **AUDIT-W0-05** FORCE ROW LEVEL SECURITY on 9 tables: `reviews`, `shop_promotions`, `shop_announcements`, and the 6 `_aud` audit tables (`customers_aud`, `shops_aud`, `products_aud`, `financial_transactions_aud`, `orders_aud`, `order_items_aud`) now FORCE RLS — table-owner / superuser writes are subject to policy, closing the audit/marketing cross-tenant read+write surface.
+
+#### Database migration
+- **V35 `__rls_idempotency_force_rls.sql`** (transactional, online-safe) — bundles AUDIT-W0-03/04/05 into one atomic Flyway migration. Forward-only; no IF EXISTS guards (fail loud on drift).
+
+#### Added
+- **GlobalExceptionHandler entries for `MissingServletRequestParameterException` (→ 400) and `ResponseStatusException` (preserve declared status)** — Auto-fix Rule 1/2 deviation during AUDIT-W0-02 work; without these, the catch-all `Exception` matcher swallowed both as 500, masking the LOCKED 400 contract.
+
+#### Tests added (+19 Java `@Test` methods)
+- `OrderSseServiceTenantIsolationTest` — 4 unit tests (subscribeRequiresTenant, broadcastIsTenantScoped, broadcastNoOpForUnknownTenant, cleanupRemovesEmptyBucket)
+- `PublicStorefrontControllerIdorTest` — 4 MockMvc tests (missing → 400, blank → 400, wrong verify → 404, valid verify → 200)
+- `StripeWebhookIdempotencyIntegrationTest` — 3 Testcontainers integration tests (load-bearing duplicate, single-delivery sanity, distinct-id negative control)
+- `RlsContractTest` — 3 Testcontainers integration tests (schema-walk drift guard over `pg_class` for ENABLE+FORCE; AUDIT-W0-05 FORCE-on-9-tables sentinel; AUDIT-W0-04 buggy-`app.tenant_id`-GUC sentinel)
+- `ReviewsRlsPolicyIntegrationTest` — 5 Testcontainers integration tests (legitimate insert via app branch; legitimate via customer branch; spam blocked; email-mismatch blocked; null-email-GUC short-circuit blocked)
+
+#### Operational notes
+- V35 is forward-only. Deploys must apply V35 in the same release as the Java changes — otherwise `PaymentService.handleWebhookEvent` will start TOCTOU-safe inserts against a missing table and fail.
+- Pruning of `processed_stripe_events` (keep N days of dedup history) is deferred to a future housekeeping phase.
+- `RlsContractTest` is a permanent CI guard against future RLS drift: any future Flyway migration that introduces a tenant-scoped table without ENABLE+FORCE breaks the build immediately.
+- Phase 2 magic-link / rate-limiter for `/public/orders` is deferred per phase 16.1 CONTEXT `<deferred>`.
+
 ### Added
 
 - **DOC-01 Go edge gateway OpenAPI spec**: swaggo/swag-annotated Gin handlers in `edge-go/cmd/edge/` emit a Swagger 2.0 spec committed at `edge-go/docs/swagger.json` (+ `swagger.yaml` + generated `docs.go`). Edge gateway now serves `GET /openapi.json` (embedded spec, no filesystem read — keeps the scratch-based Dockerfile single-binary), `GET /docs/*any` (Swagger UI via `swaggo/gin-swagger` + `swaggo/files`), and `GET /docs → 301 /docs/index.html` for bare-path UX. Covered routes: `/health`, `/ready`, `/api/v1/sync/batch`, `/api/v1/webhooks/whatsapp` — each with `@Summary`, `@Description`, `@Tags`, `@Accept`, `@Produce`, `@Param`, `@Success`, `@Failure`, `@Security`, `@Router` annotations. Named response types (`HealthResponse`, `ReadyResponse`, `ComponentHealth`, `SyncBatchRequest`, `SyncBatchResponse`, `WebhookAck`, `ErrorResponse`) in `cmd/edge/types.go` back the `{object}` references. Top-level metadata (`@title`, `@version`, `@BasePath`, `@securityDefinitions.apikey BearerAuth`) lives as the file doc-comment on `main.go`. Handlers moved from anonymous closures in `main()` to top-level methods on an `edgeHandlers` struct (`handlers.go`) so swaggo can parse their doc-comments; behaviour is byte-identical and all pre-existing Go tests pass unchanged. CI gate: `.github/workflows/ci-cd.yaml` installs `swag@v1.16.3` before `go test` so the in-process `TestOpenAPISpec_Fresh` freshness test (re-runs `swag init` into a tempdir + JSON-diffs against the committed spec) runs in CI, then invokes `@seriousme/openapi-schema-validator` (`validate-api` binary) to assert spec validity. Four in-process tests pin the outcome: `TestOpenAPISpec_IsValidJSON`, `TestOpenAPISpec_AllRoutesDocumented` (path-set equality against an `expectedRoutes` map — stricter than count), `TestOpenAPISpec_HasSecurityDefinition`, `TestOpenAPISpec_Fresh`. Swagger 2.0 (not OpenAPI 3.0) is an explicit tradeoff — `swaggo/swag` v1 emits 2.0; the npm validator accepts both; v2.3 follow-up to move to `swag` v2 once it's stable. Rationale in `.planning/phases/16-go-edge-openapi/16-RESEARCH.md`. Pinned swaggo deps at `swag v1.16.3` / `gin-swagger v1.6.0` / `files v1.0.1` because newer versions bump the minimum Go to 1.23 via transitive `x/crypto v0.36.x`; edge-go stays on Go 1.22 per CLAUDE.md.

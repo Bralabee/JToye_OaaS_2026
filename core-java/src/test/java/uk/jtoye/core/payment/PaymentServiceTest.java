@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
@@ -39,6 +40,7 @@ class PaymentServiceTest {
     @Mock private OrderEventPublisher eventPublisher;
     @Mock private PaymentEventPublisher paymentEventPublisher;
     @Mock private FinancialTransactionService financialTransactionService;
+    @Mock private JdbcTemplate jdbcTemplate;
 
     private PaymentService paymentService;
 
@@ -49,7 +51,17 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher,
-                paymentEventPublisher, financialTransactionService);
+                paymentEventPublisher, financialTransactionService, jdbcTemplate);
+        // AUDIT-W0-03: PaymentService now runs INSERT ... ON CONFLICT DO NOTHING
+        // against processed_stripe_events. For unit tests we model the "first
+        // delivery" path (1 row inserted) so the existing assertions about
+        // downstream side-effects continue to hold. Tests that explicitly want
+        // to assert duplicate-event short-circuit semantics live in
+        // StripeWebhookIdempotencyIntegrationTest (Testcontainers Postgres).
+        org.mockito.Mockito.lenient()
+                .when(jdbcTemplate.update(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.<Object>any()))
+                .thenReturn(1);
 
         orderId = UUID.randomUUID();
         tenantId = UUID.randomUUID();

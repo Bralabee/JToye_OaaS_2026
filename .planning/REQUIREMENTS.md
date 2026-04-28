@@ -37,6 +37,20 @@ Fill the last surface-area documentation gap.
 
 - [x] **DOC-01**: OpenAPI spec for the Go edge gateway. Use `swaggo/swag` or `go-swagger` to annotate Gin handlers (`cmd/edge/main.go` and `internal/`) and generate a `/openapi.json` endpoint + Swagger UI at `/docs`. Covers all edge routes: `/health`, `/ready`, `/sync/batch`, `/orders`, `/whatsapp`, `/products/search` (if present). Tests cover: spec is valid OpenAPI 3.0 per `openapi-spec-validator` npm tool in CI; every Gin route has a corresponding `@Summary`/`@Router` annotation (line-count assertion). Source: HANDOFF.md P2 "Generate OpenAPI for Go gateway". **DONE 2026-04-19 in Plan 16-01 (commits aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 Gin routes annotated (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp — the only routes actually on the edge; HANDOFF's reference to /orders and /products/search was stale and those are direct core-java surface). Generated Swagger 2.0 spec at `edge-go/docs/swagger.json` (7 response-type definitions, BearerAuth security scheme); served at GET /openapi.json (embedded, no disk read) + Swagger UI at GET /docs/* with GET /docs → 301 /docs/index.html redirect. CI installs `swag@v1.16.3` before `go test` so `TestOpenAPISpec_Fresh` runs (regenerate-and-diff), then invokes `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity. Swagger 2.0 (not OpenAPI 3.0) is an explicit tradeoff: swaggo/swag v1 emits 2.0, swag v2 is alpha; the npm validator accepts both — documented in 16-01-SUMMARY.md + 16-RESEARCH.md; v2.3 upgrade to swag v2 when stable. Pinned swaggo at older versions (swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1) so `go` directive stays at 1.22 per CLAUDE.md.**
 
+### Pre-prod hardening (AUDIT-W0) — added 2026-04-27
+
+Five pre-prod blockers identified by the 2026-04-27 council audit (`docs/audit/COUNCIL-AUDIT-2026-04-27.md`). Inserted into Phase 16.1 (between original Phases 16 and 17). Source: council audit + 8 specialist remediation docs (`docs/audit/remediation/`); findings re-verified against live code on 2026-04-27.
+
+- [x] **AUDIT-W0-01**: `OrderSseService` cross-tenant SSE leak — every dashboard subscriber received every tenant's order state changes. Fix: per-tenant `ConcurrentHashMap<UUID, Set<SseEmitter>>` keyed at `subscribe()` from `TenantContext.get()`; `broadcast()` filters by `event.tenantId()`. Source: `core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java:17,29-40`. **Shipped:** Phase 16.1 Plan 02 — see 16.1-02-SUMMARY.md. Regression: `OrderSseServiceTenantIsolationTest`.
+
+- [x] **AUDIT-W0-02**: `/public/orders` IDOR — `verify` order-number was opt-in; bare `?email=` returned the customer's full order list. Fix: `verify` parameter is now mandatory at the controller; `trackOrder(verify, email)` is called unconditionally before `getCustomerOrders(email)`; missing/blank → 400. Source: `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java:91-104`. **Shipped:** Phase 16.1 Plan 03 — see 16.1-03-SUMMARY.md. Regression: `PublicStorefrontControllerIdorTest` (4 MockMvc tests). Phase 2 magic-link + rate limiter is deferred per CONTEXT `<deferred>`.
+
+- [x] **AUDIT-W0-03**: Stripe webhook idempotency — `handleWebhookEvent` had no de-dup; retried events double-wrote `financial_transactions` and double-published the order state change. Fix: V35 adds `processed_stripe_events(event_id TEXT PK, processed_at TIMESTAMPTZ)`; `handleWebhookEvent` runs TOCTOU-safe `INSERT ... ON CONFLICT DO NOTHING` immediately after signature verification — 0 rows affected ⇒ retry, return early. Source: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:113-132` + `core-java/src/main/resources/db/migration/V35__rls_idempotency_force_rls.sql`. **Shipped:** Phase 16.1 Plans 01 + 04 — see 16.1-04-SUMMARY.md. Regression: `StripeWebhookIdempotencyIntegrationTest` (Testcontainers Postgres).
+
+- [x] **AUDIT-W0-04**: `reviews_tenant_write` RLS policy rewrite — V27's policy read the wrong GUC name (`app.tenant_id` instead of canonical `app.current_tenant_id`) and the OR-clause `current_setting('app.customer_email', true) = customer_email` allowed anyone setting `app.customer_email` to insert a review on any tenant_id and any order_id. Fix: V35 drops the buggy policy and recreates with canonical GUC name + EXISTS-on-orders ownership proof in the customer branch. Source: original at `core-java/src/main/resources/db/migration/V27__customer_reviews.sql:31-36`; replacement in V35. **Shipped:** Phase 16.1 Plans 01 + 05 — see 16.1-05-SUMMARY.md. Regression: `ReviewsRlsPolicyIntegrationTest` (5 behavioural tests on Testcontainers Postgres).
+
+- [x] **AUDIT-W0-05**: FORCE ROW LEVEL SECURITY on 9 tables — `reviews`, `shop_promotions`, `shop_announcements`, and the 6 `_aud` audit tables had ENABLE but not FORCE; the table-owner DB role used by some Flyway migrations and Envers writes could bypass tenant isolation. Fix: V35 issues `ALTER TABLE ... FORCE ROW LEVEL SECURITY` for all 9. Source: per-table evidence in `docs/audit/sources/03-database-engineer.md`; replacement in V35. **Shipped:** Phase 16.1 Plans 01 + 05 — see 16.1-05-SUMMARY.md. Regression: `RlsContractTest` (walks `pg_class`, asserts ENABLE+FORCE on every non-exempt public table; future migrations missing RLS+FORCE break the build).
+
 ### Vendor operations (VOPS) — Work Order E
 
 Ship the last piece of the vendor order-management loop.
@@ -112,15 +126,21 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | INF-01 | Phase 15 (Plan 15-01) | Drafting Complete (2026-04-18) — cluster rollout pending |
 | INF-02 | Phase 15 (Plan 15-01) | Drafting Complete (2026-04-18) — operator install + first conversion pending |
 | DOC-01 | Phase 16 (Plan 16-01) | Complete (2026-04-19) |
+| AUDIT-W0-01 | Phase 16.1 (Plan 16.1-02) | Complete (2026-04-28) |
+| AUDIT-W0-02 | Phase 16.1 (Plan 16.1-03) | Complete (2026-04-28) |
+| AUDIT-W0-03 | Phase 16.1 (Plans 16.1-01 + 16.1-04) | Complete (2026-04-28) |
+| AUDIT-W0-04 | Phase 16.1 (Plans 16.1-01 + 16.1-05) | Complete (2026-04-28) |
+| AUDIT-W0-05 | Phase 16.1 (Plans 16.1-01 + 16.1-05) | Complete (2026-04-28) |
 | VOPS-01 | Phase 17 | Pending |
 | VOPS-02 | Phase 17 | Pending |
 | VOPS-03 | Phase 17 | Pending |
 
 **Coverage:**
-- v1 requirements: 11 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + VOPS ×3)
-- Mapped to phases: 11 (phases 12–17)
+- v1 requirements: 11 + 5 (AUDIT-W0) = 16 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3)
+- Mapped to phases: 16 (phases 12–17 incl. inserted 16.1)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-18*
 *Last updated: 2026-04-18 — initial scope for milestone v2.2*
+*Last updated: 2026-04-27 — registered AUDIT-W0-01..05 retrospectively from the 2026-04-27 council audit (Phase 16.1 closure).*

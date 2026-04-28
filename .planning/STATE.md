@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: in-progress
-stopped_at: Phase 16 COMPLETE — DOC-01 shipped on branch `feature/phase-16-go-edge-openapi`. 5 commits (aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). swaggo/swag-annotated Gin handlers emit a Swagger 2.0 spec at `edge-go/docs/swagger.json` (4 routes, 7 definitions, BearerAuth); edge serves `/openapi.json` (embedded via `docs.SwaggerInfo.ReadDoc()` — no filesystem dep, scratch-Dockerfile-friendly) + Swagger UI at `/docs/*` with `/docs → 301 /docs/index.html` convenience redirect. Handlers refactored from anonymous closures to `edgeHandlers` struct methods (handlers.go) so swaggo can parse doc comments; behaviour byte-identical and all pre-existing edge tests pass. Four new `TestOpenAPISpec_*` tests in `openapi_test.go` cover spec validity, path-set equality (stricter than count), security definition, and freshness (regenerate-and-diff). CI gate: installs `swag@v1.16.3` before `go test` so freshness test runs in CI + runs `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity — verified exits non-zero on bogus spec. Swagger 2.0 (not OpenAPI 3.0) is an explicit tradeoff: swaggo v1 emits 2.0, v2 is alpha; npm validator accepts both — v2.3 upgrade path. swaggo deps pinned at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` so `go` directive stays at 1.22 per CLAUDE.md (newer versions pull x/crypto v0.36+ which requires Go 1.23). Phase 15 DRAFT-ONLY complete, cluster-admin rollout pending. Phase 14 ready for PR; Phase 13 ready for PR; Phase 12 Task 12-02-07 human gate still pending.
-last_updated: "2026-04-19T00:35:00Z"
-last_activity: 2026-04-19
+status: executing
+stopped_at: "Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. V35 migration + OrderSseService per-tenant routing + /public/orders mandatory verify + Stripe webhook idempotency + RlsContractTest + ReviewsRlsPolicyIntegrationTest. 19 new Java @Test methods. Ready for PR. Phase 17 (vendor order detail + Stripe refund) is the next phase."
+last_updated: "2026-04-28T00:18:25Z"
+last_activity: 2026-04-28
 progress:
-  total_phases: 6
-  completed_phases: 3
-  total_plans: 10
-  completed_plans: 7
-  percent: 70
+  total_phases: 7
+  completed_phases: 4
+  total_plans: 12
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Milestone v2.2 — 8 P2 security/quality items from deep-audit + Work Order E (vendor order detail + Stripe refund flow)
+**Current focus:** Phase 17 — Vendor Order Detail + Stripe Refund Flow (NEXT, not planned yet)
 
 ## Current Position
 
-Phase: 16 — Go Edge OpenAPI (COMPLETE — ready for PR)
-Plan: 16-01 COMPLETE — 5 atomic commits on `feature/phase-16-go-edge-openapi`; SUMMARY.md at .planning/phases/16-go-edge-openapi/16-01-SUMMARY.md
-Status: Phase 16 COMPLETE — DOC-01 shipped. swaggo-annotated Gin handlers in `edge-go/cmd/edge/` (4 business routes: /health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp) emit a Swagger 2.0 spec committed at `edge-go/docs/swagger.json` (11.6KB, 7 response-type definitions, BearerAuth security scheme). Edge gateway serves `GET /openapi.json` (embedded spec via `docs.SwaggerInfo.ReadDoc()` — no filesystem read, scratch-Dockerfile-friendly) + interactive Swagger UI at `GET /docs/*any` (swaggo/gin-swagger + swaggo/files) + `GET /docs → 301 /docs/index.html` convenience redirect. Handlers refactored from anonymous closures to top-level methods on `edgeHandlers` struct (handlers.go) so swaggo can parse doc comments; behaviour byte-identical, all pre-existing edge tests pass unchanged. Named response types (HealthResponse, ReadyResponse, ComponentHealth, SyncBatchRequest, SyncBatchResponse, WebhookAck, ErrorResponse) in types.go back the {object} schema refs. 4 new in-process tests in openapi_test.go: TestOpenAPISpec_IsValidJSON (top-level keys), TestOpenAPISpec_AllRoutesDocumented (path-set equality — stricter than count so typo'd @Router is caught), TestOpenAPISpec_HasSecurityDefinition, TestOpenAPISpec_Fresh (regenerate-and-diff — fails on drift with regenerate message). CI gate in ci-cd.yaml: installs swag@v1.16.3 before `go test` so freshness test runs in CI + runs `@seriousme/openapi-schema-validator validate-api` (npm, binary `validate-api`) for spec validity (verified exit-non-zero on bogus spec). OpenAPI 3.0 caveat: swaggo/swag v1 emits Swagger 2.0; swag v2 is alpha; the npm validator accepts both — explicit tradeoff documented in 16-01-SUMMARY.md + 16-RESEARCH.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) when stable. Pinned swaggo at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` because newer versions pull x/crypto v0.36+ which would bump `go` directive to 1.23 — edge-go stays on Go 1.22 per CLAUDE.md. Smoke-tested on port 18081: /openapi.json 200 (11604 bytes), /docs/index.html 200, /docs 301 → /docs/index.html, /health 200. Phase 15 DRAFT-ONLY COMPLETE (cluster rollout pending); Phase 14 ready for PR; Phase 13 ready for PR; Phase 12 Task 12-02-07 human gate still pending.
-Last activity: 2026-04-19 — Completed plan 16-01 on branch `feature/phase-16-go-edge-openapi`: commits aa6e292 (swaggo deps + route inventory), 1d95bb3 (swaggo annotations on all 4 routes + handler refactor), 36a29fc (generated spec + gin-swagger wiring + /docs redirect), 197243b (openapi tests + CI gate) + metadata commit for SUMMARY.md + CHANGELOG + ROADMAP + REQUIREMENTS + STATE.
+Phase: 17 — Vendor Order Detail + Stripe Refund Flow — NEXT, not planned yet
+Plan: none yet — run /gsd-plan-phase 17
+Status: Phase 16.1 (pre-prod hardening) drafting complete; branch feature/phase-16.1-pre-prod-hardening has 6 atomic commits + plan SUMMARYs ready for PR. All 5 council-audit Wave-0 blockers closed.
+Last activity: 2026-04-28
 
-Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milestone-v2.2 phases complete — phases 12-17)
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -68,12 +68,23 @@ Progress: [███████░░░] 70% (7/10 plans complete; 3/6 milesto
 
 **Recent Trend:**
 
-- Last plan: 16-01 Go Edge OpenAPI (DOC-01) — 5 atomic commits adding swaggo/swag annotations to 4 Gin handlers, generating a Swagger 2.0 spec at `edge-go/docs/swagger.json` (4 paths, 7 definitions, BearerAuth), serving `/openapi.json` + Swagger UI at `/docs` + 301 redirect from bare `/docs`. CI gate installs `swag@v1.16.3` before `go test` so in-process `TestOpenAPISpec_Fresh` (regenerate-and-diff) runs on every PR + runs `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity. Handler refactor from anonymous closures to `edgeHandlers` struct methods is behaviour-preserving — all pre-existing Go tests pass. Swagger 2.0 (not OpenAPI 3.0) is explicit tradeoff: swaggo v1 emits 2.0, swag v2 alpha, npm validator accepts both; v2.3 upgrade path. Pinned swaggo at older versions (swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1) so edge-go stays on Go 1.22 per CLAUDE.md.
-- Trend: milestone v2.2 execution continues green; 7/10 plans complete (phases 13 + 14 + 16 complete, 15 implementation-complete, 12 operationally complete). Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
+- Last plan: 16.1-06 Phase 16.1 closure (admin/metadata) — 4 file edits (REQUIREMENTS.md AUDIT-W0-01..05 registration; CHANGELOG.md Phase 16.1 [Unreleased] entry; ROADMAP.md Phase 16.1 entry marked 6/6 complete + Progress table row; STATE.md Current Position advances to Phase 17). 0 source/test changes. AUDIT-W0-01..05 retrospectively added to the requirements ledger; coverage block updated 11 → 16. Closes Phase 16.1 administratively.
+- Trend: milestone v2.2 execution continues green; phases 13, 14, 16, and 16.1 complete (drafting), 15 implementation-complete, 12 operationally complete. Phase 16.1 branch feature/phase-16.1-pre-prod-hardening has 12 atomic commits (6 plans × 2 commits each on average) closing the 5 council-audit Wave-0 blockers. Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi, feature/phase-16.1-pre-prod-hardening. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
 
 *Updated after each plan completion*
+| Phase 16.1 P01 | 2min | 1 tasks | 1 files |
+| Phase 16.1 P02 | 4min | 2 tasks | 3 files |
+| Phase 16.1 P03 | 4min | 1 tasks | 3 files |
+| Phase 16.1 P04 | 10min | 2 tasks | 3 files |
+| Phase 16.1 P05 | 22min | 2 tasks | 2 files |
+| Phase 16.1 P06 | ~5min | 3 tasks | 4 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
+- Phase 16.1 (Pre-prod Hardening) — DONE 2026-04-28. 5 council-audit blockers closed (cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables). V35 migration ships them atomically. RlsContractTest is a permanent CI guard against future RLS drift. AUDIT-W0-01..05 retrospectively registered in REQUIREMENTS.md (16-entry total, traceability complete).
 
 ### Decisions
 
@@ -90,6 +101,16 @@ Recent decisions affecting current work:
 - [M3 Roadmap]: Phase 10 (STFR) is independent of 9 and 11 — can run in parallel with either
 - [M3 Roadmap]: Phase 11 (STMP) depends on Phase 9 — STMP-05 reuses the Alertmanager + Slack route from SECR-04/SECR-05
 - [M3 Roadmap]: One phase per work order (no splitting) — task breakdown fits cleanly, preserves audit traceability
+- [Phase 16.1]: Bundled three audit-finding fixes (AUDIT-W0-03 Stripe idempotency, AUDIT-W0-04 reviews_tenant_write rewrite, AUDIT-W0-05 FORCE RLS on 9 tables) into a single V35 Flyway migration. — Partial application would leave the DB in an unsafe state where idempotency exists but FORCE RLS does not. Atomic deploy is required per phase 16.1 LOCKED CONTEXT decisions.
+- [Phase 16.1]: Fail-closed at OrderSseService.subscribe() — throw IllegalStateException when TenantContext is unset, rather than silently attaching a tenant-less emitter — LOCKED in 16.1-CONTEXT.md Item 1: silent fallback to a default bucket would mask a misconfigured request pipeline (JwtTenantFilter not populating context) and could re-introduce the cross-tenant leak this plan exists to close.
+- [Phase 16.1]: Filter SSE broadcasts at the service layer (per-tenant ConcurrentHashMap routed by event.tenantId()), not via @PreAuthorize on OrderController — Broadcasts run on the RabbitMQ consumer thread off-request — Spring SecurityContext is not propagated there, so controller-level annotation cannot enforce tenant scoping at broadcast time. Filtering inside OrderSseService is the correct layer.
+- [Phase 16.1]: AUDIT-W0-02 closed: GET /public/orders requires mandatory verify order-number; trackOrder runs unconditionally as proof-of-ownership — LOCKED in 16.1-CONTEXT.md Item 2; the prior optional verify allowed trivial enumeration of any customer's order history by email
+- [Phase 16.1]: GlobalExceptionHandler now preserves controller-thrown ResponseStatusException + maps MissingServletRequestParameterException to 400 — Auto-fix Rule 1/2 deviation during 16.1-03 — without these handlers the catch-all Exception matcher swallowed both as 500, masking the LOCKED 400 contract
+- [Phase ?]: [Phase 16.1-04]: Stripe webhook idempotency guard sits INSIDE the existing @Transactional boundary (not REQUIRES_NEW) — semantic is 'processed at least once', so a downstream throw rolls back the dedup row and Stripe's retry succeeds cleanly. REQUIRES_NEW path requires a separate failed-event reconciliation flow which is out of scope for Wave 0.
+- [Phase ?]: [Phase 16.1-04]: TOCTOU-safe single-statement INSERT ... ON CONFLICT DO NOTHING via JdbcTemplate, NOT a JPA ProcessedStripeEvent entity + repo with existsByEventId+saveAndFlush — the JPA pattern has a SELECT-then-INSERT race window under concurrent webhook delivery from Stripe's edge.
+- [Phase ?]: [Phase 16.1-05]: Drop SUPERUSER via SET LOCAL ROLE rls_test_role in Testcontainers RLS-denial tests — postgres:15 testcontainer creates the test user as SUPERUSER which bypasses RLS regardless of NOBYPASSRLS / FORCE; provisioning a dedicated NOSUPERUSER NOBYPASSRLS LOGIN role and SET LOCAL ROLE-ing to it for each RLS-sensitive test transaction is the canonical pattern.
+- [Phase ?]: [Phase 16.1-05]: EXEMPT_TABLES list expanded to 4 entries (flyway_schema_history, processed_stripe_events, tenants, revinfo) — tenants and revinfo are infrastructure tables with no tenant column and were caught by the schema-walk; each carries a written code-comment justification per the LOCKED 'add with justification' rule.
+- [Phase ?]: [Phase 16.1-05]: Storefront review-submit wiring confirmed correct as-is — ReviewService.createReview sets TenantContext, TenantSetLocalAspect translates to set_config('app.current_tenant_id', ?, true), and the V35 policy's app branch fires. The customer-email branch exists for defense-in-depth and is exercised in the test only. No production code change required.
 
 ### Pending Todos
 
@@ -104,7 +125,6 @@ Recent decisions affecting current work:
 - Port conflicts in dev env (frontend 3100 because MCP server holds 3000; Postgres 5432 shared with unrelated `dealflow_*` containers) — E2E smoke tests may need those containers stopped first
 - Stripe refund API (VOPS-02) requires phase-level research into idempotency keys + webhook `charge.refunded` handling — treat as a design-gate before writing the controller
 - K8s Sealed Secrets (INF-02) requires an operator install in the cluster + key rotation policy — not just a manifest change
-- `/public/orders?email=` enumeration risk (deferred from v2.1) — still open; not in v2.2 scope but should be noted as a known vulnerability
 
 ## Deferred Items
 
@@ -122,6 +142,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-18T21:00:00Z
-Stopped at: Phase 15 DRAFTING COMPLETE — branch `feature/phase-15-k8s-networkpolicies-sealed-secrets` has 6 atomic commits (69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit for SUMMARY + CHANGELOG + ROADMAP + REQUIREMENTS + STATE) + 15-01-SUMMARY.md ready for PR to main. Both INF-01 (NetworkPolicies) and INF-02 (Sealed Secrets) drafted. Cluster-admin operator install + first kubeseal conversion is a 4-step rollout checklist documented in SUMMARY + runbook — cannot be done from this environment. Also pending: Phase 12 Task 12-02-07 (post-merge staging CSP enforce-cutover), Phase 13 PR, Phase 14 PR.
-Resume file: .planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md
+Last session: 2026-04-28T00:18:25Z
+Stopped at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
+Resume file: None

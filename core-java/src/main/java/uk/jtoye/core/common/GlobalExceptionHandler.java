@@ -7,8 +7,10 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -103,6 +105,44 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problem.setTitle("Insufficient Stock");
         problem.setType(URI.create("https://jtoye.uk/errors/insufficient-stock"));
+        return problem;
+    }
+
+    /**
+     * Map missing required @RequestParam to HTTP 400 (rather than letting it fall
+     * through to the catch-all 500 handler).
+     *
+     * <p>AUDIT-W0-02 (Phase 16.1): the customer-orders endpoint now requires
+     * {@code verify} as a non-optional param to prevent email-based order
+     * enumeration. Spring raises this exception on absence; we return 400 so the
+     * client sees a request-shape error, not a server fault.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ProblemDetail handleMissingRequestParam(MissingServletRequestParameterException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Missing Required Parameter");
+        problem.setType(URI.create("https://jtoye.uk/errors/missing-parameter"));
+        return problem;
+    }
+
+    /**
+     * Map any controller-thrown {@link ResponseStatusException} to its embedded
+     * status + reason, preserving the status the controller intended.
+     *
+     * <p>AUDIT-W0-02 (Phase 16.1): used by the customer-orders endpoint to reject
+     * blank {@code verify} with 400. Without this handler, the catch-all
+     * {@code handleGenericException} would swallow the exception as 500.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ProblemDetail handleResponseStatusException(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String detail = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setTitle(status.getReasonPhrase());
+        problem.setType(URI.create("https://jtoye.uk/errors/response-status"));
         return problem;
     }
 

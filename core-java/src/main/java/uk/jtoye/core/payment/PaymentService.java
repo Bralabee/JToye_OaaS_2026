@@ -12,6 +12,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,17 +45,20 @@ public class PaymentService {
     private final OrderEventPublisher eventPublisher;
     private final PaymentEventPublisher paymentEventPublisher;
     private final FinancialTransactionService financialTransactionService;
+    private final JdbcTemplate jdbcTemplate;
 
     public PaymentService(StripeProperties stripeProperties,
                          OrderRepository orderRepository,
                          OrderEventPublisher eventPublisher,
                          PaymentEventPublisher paymentEventPublisher,
-                         FinancialTransactionService financialTransactionService) {
+                         FinancialTransactionService financialTransactionService,
+                         JdbcTemplate jdbcTemplate) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.paymentEventPublisher = paymentEventPublisher;
         this.financialTransactionService = financialTransactionService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @PostConstruct
@@ -120,6 +124,27 @@ public class PaymentService {
         } catch (Exception e) {
             log.error("Failed to parse Stripe webhook event", e);
             throw new IllegalArgumentException("Invalid webhook payload");
+        }
+
+        // AUDIT-W0-03 — TOCTOU-safe idempotency guard.
+        //
+        // Single SQL statement; INSERT ... ON CONFLICT DO NOTHING is atomic in
+        // Postgres so concurrent webhook deliveries cannot both think they are
+        // "first". 1 row affected => first delivery, proceed. 0 rows affected
+        // => duplicate retry, return early so side effects fire exactly once.
+        //
+        // The INSERT sits INSIDE the existing @Transactional boundary on
+        // purpose: if downstream side-effect processing throws, the dedup
+        // row also rolls back, and Stripe's next retry gets a fresh shot.
+        // Semantic is "successfully processed at least once", not "we saw
+        // this event_id once". Runs AFTER signature verification so junk
+        // payloads cannot pollute processed_stripe_events.
+        int inserted = jdbcTemplate.update(
+                "INSERT INTO processed_stripe_events (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING",
+                event.getId());
+        if (inserted == 0) {
+            log.info("Stripe event {} ({}) already processed — skipping", event.getId(), event.getType());
+            return;
         }
 
         log.info("Received Stripe event: {} ({})", event.getType(), event.getId());
