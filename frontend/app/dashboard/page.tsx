@@ -15,6 +15,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  RefreshCcw,
 } from "lucide-react"
 import type { Order, OrderStatus, FinancialSummary } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
@@ -50,6 +51,9 @@ const statusConfig: Record<
   READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },
   COMPLETED: { label: "Completed", color: "bg-emerald-600", chartColor: "#059669", icon: CheckCircle2 },
   CANCELLED: { label: "Cancelled", color: "bg-red-500", chartColor: "#ef4444", icon: XCircle },
+  // Phase 17-04: REFUNDED is a new terminal state — orange keeps it within
+  // the existing food-delivery palette (per `feedback_design_direction.md`).
+  REFUNDED: { label: "Refunded", color: "bg-orange-500", chartColor: "#f97316", icon: RefreshCcw },
 }
 
 const vatRateLabels: Record<string, { label: string; color: string }> = {
