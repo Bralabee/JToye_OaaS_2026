@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: executing
-stopped_at: "Phase 16.1-05 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 plan-05 commits (850a499 RlsContractTest + 4cf5e1e ReviewsRlsPolicyIntegrationTest). 8/8 RLS-related tests green. AUDIT-W0-04 + AUDIT-W0-05 closed at the test layer. Next plan: 16.1-06 (REQUIREMENTS.md backfill)."
-last_updated: "2026-04-28T00:17:03.589Z"
+stopped_at: "Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. V35 migration + OrderSseService per-tenant routing + /public/orders mandatory verify + Stripe webhook idempotency + RlsContractTest + ReviewsRlsPolicyIntegrationTest. 19 new Java @Test methods. Ready for PR. Phase 17 (vendor order detail + Stripe refund) is the next phase."
+last_updated: "2026-04-28T00:18:25Z"
 last_activity: 2026-04-28
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 11
-  completed_plans: 12
+  completed_phases: 4
+  total_plans: 12
+  completed_plans: 13
   percent: 100
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 16.1 — Pre-prod Hardening (Wave 0 council audit fixes)
+**Current focus:** Phase 17 — Vendor Order Detail + Stripe Refund Flow (NEXT, not planned yet)
 
 ## Current Position
 
-Phase: 16.1 (Pre-prod Hardening (Wave 0 council audit fixes)) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
+Phase: 17 — Vendor Order Detail + Stripe Refund Flow — NEXT, not planned yet
+Plan: none yet — run /gsd-plan-phase 17
+Status: Phase 16.1 (pre-prod hardening) drafting complete; branch feature/phase-16.1-pre-prod-hardening has 6 atomic commits + plan SUMMARYs ready for PR. All 5 council-audit Wave-0 blockers closed.
 Last activity: 2026-04-28
 
 Progress: [██████████] 100%
@@ -68,8 +68,8 @@ Progress: [██████████] 100%
 
 **Recent Trend:**
 
-- Last plan: 16-01 Go Edge OpenAPI (DOC-01) — 5 atomic commits adding swaggo/swag annotations to 4 Gin handlers, generating a Swagger 2.0 spec at `edge-go/docs/swagger.json` (4 paths, 7 definitions, BearerAuth), serving `/openapi.json` + Swagger UI at `/docs` + 301 redirect from bare `/docs`. CI gate installs `swag@v1.16.3` before `go test` so in-process `TestOpenAPISpec_Fresh` (regenerate-and-diff) runs on every PR + runs `@seriousme/openapi-schema-validator validate-api` (npm) for spec validity. Handler refactor from anonymous closures to `edgeHandlers` struct methods is behaviour-preserving — all pre-existing Go tests pass. Swagger 2.0 (not OpenAPI 3.0) is explicit tradeoff: swaggo v1 emits 2.0, swag v2 alpha, npm validator accepts both; v2.3 upgrade path. Pinned swaggo at older versions (swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1) so edge-go stays on Go 1.22 per CLAUDE.md.
-- Trend: milestone v2.2 execution continues green; 7/10 plans complete (phases 13 + 14 + 16 complete, 15 implementation-complete, 12 operationally complete). Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
+- Last plan: 16.1-06 Phase 16.1 closure (admin/metadata) — 4 file edits (REQUIREMENTS.md AUDIT-W0-01..05 registration; CHANGELOG.md Phase 16.1 [Unreleased] entry; ROADMAP.md Phase 16.1 entry marked 6/6 complete + Progress table row; STATE.md Current Position advances to Phase 17). 0 source/test changes. AUDIT-W0-01..05 retrospectively added to the requirements ledger; coverage block updated 11 → 16. Closes Phase 16.1 administratively.
+- Trend: milestone v2.2 execution continues green; phases 13, 14, 16, and 16.1 complete (drafting), 15 implementation-complete, 12 operationally complete. Phase 16.1 branch feature/phase-16.1-pre-prod-hardening has 12 atomic commits (6 plans × 2 commits each on average) closing the 5 council-audit Wave-0 blockers. Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi, feature/phase-16.1-pre-prod-hardening. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
 
 *Updated after each plan completion*
 | Phase 16.1 P01 | 2min | 1 tasks | 1 files |
@@ -77,12 +77,14 @@ Progress: [██████████] 100%
 | Phase 16.1 P03 | 4min | 1 tasks | 3 files |
 | Phase 16.1 P04 | 10min | 2 tasks | 3 files |
 | Phase 16.1 P05 | 22min | 2 tasks | 2 files |
+| Phase 16.1 P06 | ~5min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
 - Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
+- Phase 16.1 (Pre-prod Hardening) — DONE 2026-04-28. 5 council-audit blockers closed (cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables). V35 migration ships them atomically. RlsContractTest is a permanent CI guard against future RLS drift. AUDIT-W0-01..05 retrospectively registered in REQUIREMENTS.md (16-entry total, traceability complete).
 
 ### Decisions
 
@@ -140,6 +142,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-28T00:17:03.579Z
-Stopped at: Phase 16.1-05 COMPLETE — branch feature/phase-16.1-pre-prod-hardening has 2 plan-05 commits (850a499 RlsContractTest + 4cf5e1e ReviewsRlsPolicyIntegrationTest). 8/8 RLS-related tests green. AUDIT-W0-04 + AUDIT-W0-05 closed at the test layer. Next plan: 16.1-06 (REQUIREMENTS.md backfill).
+Last session: 2026-04-28T00:18:25Z
+Stopped at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
 Resume file: None
