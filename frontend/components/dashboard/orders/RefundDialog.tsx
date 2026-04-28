@@ -52,12 +52,39 @@ function formatPounds(pennies: number): string {
   return (Math.max(0, pennies) / 100).toFixed(2)
 }
 
+/**
+ * Generate a cryptographically-secure idempotency key.
+ *
+ * <p>Idempotency keys are a security-critical contract — a key collision
+ * across same-tenant submits would let one client replay another's refund
+ * via {@code findByTenantIdAndIdempotencyKey}. Math.random is per-tab-seeded
+ * and timestamps are observable, so the WR-07 fallback to
+ * {@code `${Date.now()}-${Math.random()}`} is unsafe.
+ *
+ * <p>Order of preference:
+ *   1. {@code crypto.randomUUID} — modern HTTPS contexts (Safari 15.4+, Chrome 92+)
+ *   2. {@code crypto.getRandomValues} — RFC 4122 v4 UUID hand-rolled from
+ *      16 secure random bytes
+ *   3. throw — secure random is mandatory; we will never silently fall
+ *      back to Math.random for an idempotency key.
+ */
 function makeIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
   }
-  // Test-environment fallback. Production browsers always have crypto.randomUUID.
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const buf = new Uint8Array(16)
+    crypto.getRandomValues(buf)
+    // RFC 4122 v4 — set version (top 4 bits of byte 6) and variant (top 2 bits of byte 8).
+    buf[6] = (buf[6] & 0x0f) | 0x40
+    buf[8] = (buf[8] & 0x3f) | 0x80
+    const hex = Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("")
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  }
+  throw new Error(
+    "No secure random source available — refunds require a cryptographic Idempotency-Key. " +
+      "Upgrade to a browser that supports crypto.randomUUID or crypto.getRandomValues."
+  )
 }
 
 export function RefundDialog({
