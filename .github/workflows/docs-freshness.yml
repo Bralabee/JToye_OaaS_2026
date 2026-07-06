@@ -1,0 +1,22 @@
+name: docs-freshness
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: docs-freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so git ls-files sees the whole tree deterministically.
+          fetch-depth: 0
+      - name: Verify documentation metrics match source
+        run: bash scripts/docs-freshness.sh
