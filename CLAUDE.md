@@ -9,7 +9,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ### Constraints
 
-- **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.22, PostgreSQL 15
+- **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.22, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
 - **Testing**: All new code requires tests — project standard is 682 logical invocations passing (485 Java `@Test` methods across 72 files + 100 Jest `it/test` blocks across 17 files + 74 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
@@ -20,7 +20,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 ## Technology Stack
 
 ## Languages
-- Java 21 - Core API (Spring Boot 3.4.2)
+- Java 21 - Core API (Spring Boot 3.5.16)
 - TypeScript 5 - Frontend (Next.js 16.2.2, React 19)
 - Go 1.22 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
@@ -37,7 +37,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - npm: package-lock.json (implicit)
 - Go: go.sum
 ## Frameworks
-- Spring Boot 3.4.2 - Web framework, dependency injection, auto-configuration
+- Spring Boot 3.5.16 - Web framework, dependency injection, auto-configuration
 - Spring Data JPA - ORM and database abstraction
 - Spring Security - Authentication and authorization
 - Spring OAuth2 Resource Server - JWT/OIDC token validation
@@ -65,13 +65,13 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Jest 29.7.0 - JavaScript test runner
 - @testing-library/react - React component testing
 - @playwright/test 1.59.1 - E2E browser automation
-- Spring Boot Gradle Plugin 3.4.2 - JAR packaging
+- Spring Boot Gradle Plugin 3.5.16 - JAR packaging
 - Flyway - Database migration management
 - Lombok - Boilerplate reduction (code generation)
 - MapStruct 1.5.5 - Type-safe DTO mapping
 ## Key Dependencies
 - PostgreSQL JDBC Driver 42.7.3 - Database connectivity
-- Hibernate ORM 3.4.2 (via Spring Boot) - JPA implementation
+- Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
 - AWS SDK v2 (2.25.60) - S3 API for image storage
 - Stripe React/JS 6.1.0, 9.0.1 - Payment processing UI integration
@@ -128,7 +128,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Keycloak 24.0+ (external identity provider)
 - AWS S3 (or S3-compatible storage like MinIO)
 - SMTP server (SendGrid, AWS SES, etc.)
-- Spring Boot: 3.4.2 (Java 21)
+- Spring Boot: 3.5.16 (Java 21)
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine

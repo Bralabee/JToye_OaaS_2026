@@ -62,10 +62,10 @@ export function validateEnvironment(): void {
 
   // Only fail if variables are completely missing
   if (missing.length > 0) {
-    console.warn('\n⚠️  Environment Configuration Warning!\n');
+    console.warn('\n[WARN] Environment Configuration Warning!\n');
     console.warn('Missing environment variables (will use defaults):');
     missing.forEach(v => console.warn(`  - ${v}`));
-    console.warn('\n📋 For production use:');
+    console.warn('\n[INFO] For production use:');
     console.warn('  1. Copy frontend/.env.local.example to frontend/.env.local');
     console.warn('  2. Update values as needed');
     console.warn('  3. See docs/ENVIRONMENT_SETUP.md for detailed guide\n');
@@ -73,13 +73,13 @@ export function validateEnvironment(): void {
 
   // Show warnings but don't fail
   if (warnings.length > 0) {
-    console.warn('⚠️  Configuration warnings:');
+    console.warn('[WARN] Configuration warnings:');
     warnings.forEach(w => console.warn(`  - ${w}`));
     console.warn('');
   }
 
   if (missing.length === 0 && warnings.length === 0) {
-    console.log('✅ Environment variables validated successfully');
+    console.log('[OK] Environment variables validated successfully');
   }
 }
 
@@ -88,7 +88,7 @@ export function validateEnvironment(): void {
  */
 export function logEnvironmentInfo(): void {
   if (process.env.NODE_ENV === 'production') return;
-  console.log('\n📝 Environment Configuration:');
+  console.log('\n[INFO] Environment Configuration:');
   console.log(`  API URL: ${process.env.NEXT_PUBLIC_API_URL}`);
   console.log(`  Keycloak Issuer: ${process.env.KEYCLOAK_ISSUER}`);
   console.log(`  NextAuth URL: ${process.env.NEXTAUTH_URL}`);
