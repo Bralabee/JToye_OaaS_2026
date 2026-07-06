@@ -10,9 +10,11 @@ resources:
   - ../base
   - namespace.yaml
 
-# Staging-specific labels
-commonLabels:
-  environment: staging
+# Staging-specific labels (labels+includeSelectors replaces deprecated commonLabels)
+labels:
+  - pairs:
+      environment: staging
+    includeSelectors: true
 
 # Staging-specific annotations
 commonAnnotations:
