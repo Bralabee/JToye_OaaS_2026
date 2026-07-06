@@ -23,10 +23,15 @@ resources:
   - networkpolicies/40-datastores.yaml
   - networkpolicies/50-observability.yaml
 
-# Common labels applied to all resources
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
-  app.kubernetes.io/part-of: jtoye-platform
+# Common labels applied to all resources.
+# `labels` with includeSelectors:true is the direct, behaviour-preserving
+# replacement for the deprecated `commonLabels` (labels are added to metadata
+# AND to selectors / pod templates, exactly as before).
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+    includeSelectors: true
 
 # Common annotations
 commonAnnotations:

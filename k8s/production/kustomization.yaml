@@ -10,9 +10,11 @@ resources:
   - ../base
   - namespace.yaml
 
-# Production-specific labels
-commonLabels:
-  environment: production
+# Production-specific labels (labels+includeSelectors replaces deprecated commonLabels)
+labels:
+  - pairs:
+      environment: production
+    includeSelectors: true
 
 # Production-specific annotations
 commonAnnotations:
