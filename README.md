@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-425%2F425%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-682%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -27,7 +27,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ### Key Features
 
 ✅ **Multi-Tenancy** - PostgreSQL RLS with JWT-based isolation
-✅ **Full CRUD** - 8 REST controllers (Shops, Products, Orders, Customers, Sync, etc.)
+✅ **Full CRUD** - 14 REST controllers (Shops, Products, Orders, Customers, Payments, Financial Transactions, Sync, etc.)
 ✅ **Service Layer Architecture** - Clean separation with Service-Repository pattern
 ✅ **Type-Safe Mapping** - MapStruct for compile-time DTO conversion
 ✅ **Redis Caching** - Tenant-aware caching with performance boost
@@ -150,7 +150,7 @@ cd frontend && npm install && npm run dev
 
 ### Core Features
 
-**8 REST APIs:**
+**REST API (14 controllers) — representative endpoints:**
 - `/shops` - Retail location management
 - `/products` - Product catalog with allergen tracking
 - `/orders` - Order lifecycle with state machine
@@ -223,11 +223,16 @@ CREATE POLICY tenant_isolation ON shops
 
 ### Current Version: v2.1.0
 
-**Test Results:**
-- Backend: 312/312 passing ✅ (+ 44 Testcontainers integration tests, require Docker)
-- Edge: 26/26 passing ✅
-- Frontend: 43/43 passing ✅
-- Total: 425/425 (100%) ✅
+**Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
+- Backend (Java): 485 `@Test` methods across 72 files ✅ (18 use Testcontainers with real Postgres + RLS, require Docker)
+- Edge (Go): 74 `Test*` functions across 8 files ✅
+- Frontend (Jest): 100 `it/test` blocks across 17 files ✅
+- Frontend E2E (Playwright): 23 `test()` blocks across 5 specs ✅
+- **Total: 682 logical test invocations** ✅
+
+> Documentation counts are guarded by the `docs-freshness` CI gate
+> (`.github/workflows/docs-freshness.yml`), which fails the build if these
+> numbers drift from the source tree.
 
 **Production Readiness:** 100/100
 

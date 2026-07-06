@@ -122,6 +122,57 @@ class OrderStateMachineServiceTest {
     }
 
     @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED from CONFIRMED transitions to REFUNDED")
+    void refundRequestedFromConfirmed_transitionsToRefunded() {
+        OrderStatus newStatus = stateMachineService.sendEvent(
+                UUID.randomUUID(), OrderStatus.CONFIRMED, OrderEvent.REFUND_REQUESTED);
+        assertEquals(OrderStatus.REFUNDED, newStatus);
+    }
+
+    @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED from PREPARING transitions to REFUNDED")
+    void refundRequestedFromPreparing_transitionsToRefunded() {
+        OrderStatus newStatus = stateMachineService.sendEvent(
+                UUID.randomUUID(), OrderStatus.PREPARING, OrderEvent.REFUND_REQUESTED);
+        assertEquals(OrderStatus.REFUNDED, newStatus);
+    }
+
+    @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED from READY transitions to REFUNDED")
+    void refundRequestedFromReady_transitionsToRefunded() {
+        OrderStatus newStatus = stateMachineService.sendEvent(
+                UUID.randomUUID(), OrderStatus.READY, OrderEvent.REFUND_REQUESTED);
+        assertEquals(OrderStatus.REFUNDED, newStatus);
+    }
+
+    @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED from COMPLETED transitions to REFUNDED")
+    void refundRequestedFromCompleted_transitionsToRefunded() {
+        OrderStatus newStatus = stateMachineService.sendEvent(
+                UUID.randomUUID(), OrderStatus.COMPLETED, OrderEvent.REFUND_REQUESTED);
+        assertEquals(OrderStatus.REFUNDED, newStatus);
+    }
+
+    @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED from DRAFT throws — refunds require captured payment")
+    void refundRequestedFromDraft_throwsInvalidStateTransition() {
+        UUID orderId = UUID.randomUUID();
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(orderId, OrderStatus.DRAFT, OrderEvent.REFUND_REQUESTED));
+    }
+
+    @Test
+    @DisplayName("Phase 17 VOPS-03: REFUND_REQUESTED on REFUNDED order throws — idempotency lives in RefundService")
+    void refundRequestedFromRefunded_throwsInvalidStateTransition() {
+        // Documents UC-3 LOCKED + research §7.5 Option B: the state machine
+        // remains fail-loud on REFUNDED→REFUNDED. RefundService short-circuits
+        // BEFORE invoking the state machine on already-REFUNDED orders.
+        UUID orderId = UUID.randomUUID();
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(orderId, OrderStatus.REFUNDED, OrderEvent.REFUND_REQUESTED));
+    }
+
+    @Test
     @DisplayName("Should be thread-safe - concurrent transitions use isolated state machines")
     void testThreadSafety() {
         // Each sendEvent creates its own StateMachine instance

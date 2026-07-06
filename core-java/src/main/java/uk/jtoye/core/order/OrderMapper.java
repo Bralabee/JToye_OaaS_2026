@@ -32,6 +32,13 @@ public interface OrderMapper {
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
+    @Mapping(target = "paymentStatus", source = "paymentStatus")
+    @Mapping(target = "paymentReference", source = "paymentReference")
+    @Mapping(target = "paymentMethod", source = "paymentMethod")
+    // refunds is populated by OrderService.getOrderDetailById post-mapping —
+    // the Refund aggregate lives in a different package and the mapper does
+    // not depend on RefundService.
+    @Mapping(target = "refunds", ignore = true)
     OrderDetailDto toDetailDto(Order order);
 
     OrderItemDto toItemDto(OrderItem orderItem);

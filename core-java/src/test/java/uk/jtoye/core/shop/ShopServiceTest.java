@@ -209,7 +209,7 @@ class ShopServiceTest {
     @DisplayName("getShopById - Success when shop exists")
     void testGetShopById_Success() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
 
         // When
         Optional<ShopDto> result = shopService.getShopById(shopId);
@@ -219,21 +219,21 @@ class ShopServiceTest {
         assertEquals(shopId, result.get().getId());
         assertEquals("Test Shop", result.get().getName());
         assertEquals("123 Test Street, London", result.get().getAddress());
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
     }
 
     @Test
     @DisplayName("getShopById - Returns empty when shop not found")
     void testGetShopById_NotFound() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.empty());
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.empty());
 
         // When
         Optional<ShopDto> result = shopService.getShopById(shopId);
 
         // Then
         assertFalse(result.isPresent());
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
     }
 
     @Test
@@ -242,7 +242,7 @@ class ShopServiceTest {
         // Given
         Pageable pageable = PageRequest.of(0, 10);
         Page<Shop> shopPage = new PageImpl<>(List.of(testShop), pageable, 1);
-        when(shopRepository.findAll(pageable)).thenReturn(shopPage);
+        when(shopRepository.findByTenantId(tenantId, pageable)).thenReturn(shopPage);
 
         // When
         Page<ShopDto> result = shopService.getAllShops(pageable);
@@ -253,7 +253,7 @@ class ShopServiceTest {
         assertEquals(1, result.getContent().size());
         assertEquals(shopId, result.getContent().get(0).getId());
         assertEquals("Test Shop", result.getContent().get(0).getName());
-        verify(shopRepository).findAll(pageable);
+        verify(shopRepository).findByTenantId(tenantId, pageable);
     }
 
     @Test
@@ -350,7 +350,7 @@ class ShopServiceTest {
     @DisplayName("DTO mapping - Converts Shop entity to DTO correctly")
     void testDtoMapping_CorrectFieldMapping() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
 
         // When
         Optional<ShopDto> result = shopService.getShopById(shopId);

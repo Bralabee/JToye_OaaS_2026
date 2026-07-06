@@ -17,7 +17,8 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/dev/tenants")
-@Profile({"dev", "local", "default"})  // Only active in non-production profiles
+@Profile({"dev", "local"})  // Only active in non-production profiles; "default" removed so a
+                            // missing SPRING_PROFILES_ACTIVE cannot expose tenant creation in prod
 public class DevTenantController {
     private final DevTenantService service;
 

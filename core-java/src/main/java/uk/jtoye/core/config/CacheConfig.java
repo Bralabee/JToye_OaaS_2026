@@ -1,5 +1,9 @@
 package uk.jtoye.core.config;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -48,7 +52,7 @@ public class CacheConfig {
                         RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer())
                 )
                 .serializeValuesWith(
-                        RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer())
+                        RedisSerializationContext.SerializationPair.fromSerializer(jsonRedisSerializer())
                 )
                 .disableCachingNullValues();  // Don't cache null values
 
@@ -65,6 +69,30 @@ public class CacheConfig {
                 .cacheDefaults(defaultConfig)
                 .withInitialCacheConfigurations(cacheConfigurations)
                 .build();
+    }
+
+    /**
+     * QA-council BE-01: build the Redis value serializer with JSR-310 support.
+     *
+     * <p>The default {@code new GenericJackson2JsonRedisSerializer()} uses an
+     * ObjectMapper with no {@link JavaTimeModule}, so caching any DTO that carries
+     * a {@code java.time} type (e.g. {@code ShopDto}/{@code ProductDto.createdAt}
+     * is an {@code OffsetDateTime}) threw on the cache write — turning the
+     * {@code @Cacheable getShopById}/{@code getProductById} calls into HTTP 500.
+     *
+     * <p>We register the JavaTimeModule (ISO-8601, not epoch arrays) and keep the
+     * serializer's polymorphic default typing so cached values still deserialize
+     * back to their concrete type (stores {@code @class}). NOTE: flush the Redis
+     * "shops"/"products" caches on deploy — any entries written by the old
+     * serializer are format-incompatible.
+     */
+    private GenericJackson2JsonRedisSerializer jsonRedisSerializer() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.activateDefaultTyping(mapper.getPolymorphicTypeValidator(),
+                ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
+        return new GenericJackson2JsonRedisSerializer(mapper);
     }
 
     /**

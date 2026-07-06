@@ -1,5 +1,6 @@
 package uk.jtoye.core.security;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -52,7 +53,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtTenantFilter jwtTenantFilter,
-                                                   TenantFilter tenantFilter,
+                                                   ObjectProvider<TenantFilter> tenantFilterProvider,
                                                    Environment env) throws Exception {
         http
             // CSRF protection disabled: this is a stateless JWT bearer-token API.
@@ -92,8 +93,14 @@ public class SecurityConfig {
             }
         });
 
-        // Ensure dev header-based tenant mapping runs early (before auth)
-        http.addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class);
+        // Ensure dev/test header-based tenant mapping runs early (before auth).
+        // TenantFilter is @Profile-gated to non-prod, so in production this bean
+        // is absent and the tenant is derived solely from the JWT (JwtTenantFilter);
+        // a spoofed X-Tenant-Id header has no effect.
+        TenantFilter tenantFilter = tenantFilterProvider.getIfAvailable();
+        if (tenantFilter != null) {
+            http.addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class);
+        }
         // Ensure that after JWT authentication, we map tenant from token into TenantContext
         // IMPORTANT: Must run AFTER BearerTokenAuthenticationFilter (which validates JWT)
         http.addFilterAfter(jwtTenantFilter, BearerTokenAuthenticationFilter.class);

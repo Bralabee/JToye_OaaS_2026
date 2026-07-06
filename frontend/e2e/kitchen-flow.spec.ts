@@ -14,8 +14,9 @@
 
 import { test, expect } from "@playwright/test"
 
-const BASE = "http://localhost:3000"
-const API = "http://localhost:9090"
+// Honour PLAYWRIGHT_BASE_URL (dev stack runs on :3100). Mirrors playwright.config.ts.
+const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
 const shopsResponse = {
   content: [

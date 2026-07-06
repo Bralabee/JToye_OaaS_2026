@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -55,6 +55,7 @@ import {
   Package as PackageIcon,
   FileCheck,
   Ban,
+  RefreshCcw,
 } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
 import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api"
@@ -115,6 +116,15 @@ const statusConfig: Record<
     color: "text-red-700",
     bgColor: "bg-red-500",
     icon: XCircle,
+  },
+  REFUNDED: {
+    // Phase 17-04: REFUNDED is the new terminal state for orders that have
+    // had at least one Stripe refund issued. Orange badge keeps it within
+    // the existing food-delivery palette (per `feedback_design_direction.md`).
+    label: "Refunded",
+    color: "text-orange-700",
+    bgColor: "bg-orange-500",
+    icon: RefreshCcw,
   },
 }
 
@@ -200,6 +210,10 @@ const getAvailableTransitions = (
     ],
     COMPLETED: [],
     CANCELLED: [],
+    // REFUNDED is a terminal state — no further transitions from the UI.
+    // Refunds are issued via the detail page's RefundDialog, not as a row
+    // action on the list.
+    REFUNDED: [],
   }
   return transitions[currentStatus] || []
 }
@@ -208,6 +222,7 @@ const PAGE_SIZE = 20
 
 function OrdersPageInner() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const customerIdParam = searchParams.get("customer")
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
@@ -221,8 +236,17 @@ function OrdersPageInner() {
   const [submitting, setSubmitting] = useState(false)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
   const [orderItems, setOrderItems] = useState<{ productId: string; quantity: number }[]>([])
+  // Phase 17-04: the inline detail Dialog is preserved for v2.2 per
+  // 17-CONTEXT but is no longer reachable from the UI — row clicks now
+  // navigate to /dashboard/orders/[id] (the dedicated detail route). The
+  // setters below are retained so the existing modal JSX still type-checks
+  // and so a follow-up cleanup phase can delete the modal without touching
+  // unrelated code.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderDetail | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [detailLoading, setDetailLoading] = useState(false)
   const { toast } = useToast()
 
@@ -303,25 +327,10 @@ function OrdersPageInner() {
     }
   }
 
-  const fetchOrderDetail = async (orderId: string) => {
-    try {
-      setDetailLoading(true)
-      setDetailDialogOpen(true)
-      setSelectedOrderDetail(null)
-      const res = await apiClient.get(`/api/v1/orders/${orderId}/detail`)
-      setSelectedOrderDetail(res.data)
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load order details"
-      toast({
-        variant: "destructive",
-        title: "Error loading order details",
-        description: errorMessage,
-      })
-      setDetailDialogOpen(false)
-    } finally {
-      setDetailLoading(false)
-    }
-  }
+  // Phase 17-04: `fetchOrderDetail` was the inline-modal loader. The detail
+  // route now owns this fetch. The function (and its associated state
+  // setters above) are removed; the modal JSX further down is preserved per
+  // 17-CONTEXT but is no longer reachable from any row click.
 
   const getProductName = (productId: string): string => {
     const product = products.find(p => p.id === productId)
@@ -530,6 +539,7 @@ function OrdersPageInner() {
                 <SelectItem value="READY">Ready</SelectItem>
                 <SelectItem value="COMPLETED">Completed</SelectItem>
                 <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                <SelectItem value="REFUNDED">Refunded</SelectItem>
               </SelectContent>
             </Select>
           </CardHeader>
@@ -574,7 +584,12 @@ function OrdersPageInner() {
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           className="group cursor-pointer hover:bg-slate-50"
-                          onClick={() => fetchOrderDetail(order.id)}
+                          // Phase 17-04 (VOPS-01): row click navigates to the
+                          // dedicated detail route so vendors can issue refunds
+                          // and use the full detail panel. The inline detail
+                          // Dialog below is kept for v2.2 per 17-CONTEXT
+                          // (deferred deprecation — frontend cleanup TBD).
+                          onClick={() => router.push(`/dashboard/orders/${order.id}`)}
                         >
                           <TableCell className="font-mono text-xs">
                             {order.id.substring(0, 8)}...

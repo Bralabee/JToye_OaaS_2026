@@ -60,6 +60,9 @@ Vendor operations (Work Order E):
 - ✓ **[v2.1 STFR]** Storefront renders vendor promotions + announcements; `/shop/[slug]/cart` + `/shop/orders` routes shipped; full browse→cart→Stripe checkout Playwright e2e — phase 10, PR #38
 - ✓ **[v2.1 STMP]** `StompBrokerRelay` behind `stomp.broker.mode` flag; RabbitMQ STOMP plugin; two-replica smoke test 6/6; StompBrokerLag alert + Grafana dashboard — phase 11, PR #39
 - ✓ **[v2.1 Deep audit P1]** 4 new Prometheus alerts, redis-exporter, error boundaries, STOMP tenant validation on ALL /topic/, JWT in CONNECT headers, Go edge tests (21→57) — PR #40
+- ✓ **[v2.2 VOPS-02]** `POST /api/v1/orders/{id}/refund` wired to Stripe `Refund.create` with stored-first idempotency; refund.created/refund.updated/refund.failed webhook lifecycle (after Phase 16.1 dedup); V36 refunds + refunds_aud + RLS migration; `RefundEventPublisher` writes `order.refunded` to outbox — Phase 17
+- ✓ **[v2.2 VOPS-03]** Order state machine extended with `REFUND_REQUESTED` event + `REFUNDED` state + 4 transitions (`CONFIRMED|PREPARING|READY|COMPLETED → REFUNDED`); idempotent (service-level short-circuit on already-refunded); audited via Hibernate Envers — Phase 17
+- ⚠ **[v2.2 VOPS-01]** `/dashboard/orders/[id]` route + `OrderDetailPanel` (header, customer, items, payment block, refund history) — header-level **state-transition timeline subcomponent NOT implemented**; tracked in `17-VERIFICATION.md` gaps + `17-HUMAN-UAT.md` — Phase 17
 
 ### Active
 
@@ -79,10 +82,7 @@ Vendor operations (Work Order E):
 **API documentation (DOC):**
 - [ ] DOC-01: Go edge gateway OpenAPI spec generated from Gin routes; served at `/openapi.json` with Swagger UI at `/docs`
 
-**Vendor operations (VOPS):**
-- [ ] VOPS-01: `/dashboard/orders/[id]` order detail view — all order fields, payment history, state transitions timeline, customer info, item lines
-- [ ] VOPS-02: Refund flow wired to Stripe refund API — `POST /api/v1/orders/{id}/refund` with amount + reason; partial and full refunds; Stripe webhook handling for `charge.refunded`
-- [ ] VOPS-03: Refund state transition added to Order state machine — `CONFIRMED/PREPARING/READY/COMPLETED → REFUNDED` via `REFUND_REQUESTED` event; idempotent; audited via Hibernate Envers
+**Vendor operations (VOPS):** — validated in Phase 17, see Validated section below for status notes
 
 ### Out of Scope
 
@@ -152,4 +152,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-18 at start of milestone v2.2 (Production Hardening + Vendor Order Operations)*
+*Last updated: 2026-04-28 — Phase 17 (Vendor Order Detail + Stripe Refund Flow) complete; VOPS-02 + VOPS-03 fully validated, VOPS-01 partial (state-transition timeline pending — tracked in 17-HUMAN-UAT.md)*
