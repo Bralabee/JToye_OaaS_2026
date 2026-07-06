@@ -6,7 +6,7 @@ exports[`Security headers snapshot (regression guard) matches snapshot 1`] = `
     "headers": [
       {
         "key": "Content-Security-Policy-Report-Only",
-        "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:9000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api.snapshot.local wss://api.snapshot.local https://keycloak.snapshot.local; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://keycloak.snapshot.local; base-uri 'self'; object-src 'none'; upgrade-insecure-requests",
+        "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:9000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api.snapshot.local wss://api.snapshot.local https://keycloak.snapshot.local; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://keycloak.snapshot.local; base-uri 'self'; object-src 'none'",
       },
       {
         "key": "Permissions-Policy",
