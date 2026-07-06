@@ -2,7 +2,7 @@
 
 **Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
 [![Tests](https://img.shields.io/badge/tests-425%2F425%20passing-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -221,7 +221,7 @@ CREATE POLICY tenant_isolation ON shops
 
 ## 📊 Status
 
-### Current Version: v2.0.0
+### Current Version: v2.1.0
 
 **Test Results:**
 - Backend: 312/312 passing ✅ (+ 44 Testcontainers integration tests, require Docker)
