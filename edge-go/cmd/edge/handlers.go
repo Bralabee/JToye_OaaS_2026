@@ -20,10 +20,10 @@ import (
 // are invisible to swaggo) AND makes the handlers unit-testable in
 // isolation. Behavior is byte-identical to the pre-refactor code.
 type edgeHandlers struct {
-	coreClient     *core.Client
-	logger         *zap.Logger
-	jwksURL        string
-	defaultShopID  string
+	coreClient    *core.Client
+	logger        *zap.Logger
+	jwksURL       string
+	defaultShopID string
 }
 
 // Health godoc
