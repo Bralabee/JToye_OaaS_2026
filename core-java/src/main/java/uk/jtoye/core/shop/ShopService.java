@@ -71,11 +71,16 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
+    // BE-03 completion: scope the authenticated by-id read to the caller's tenant.
+    // findById is RLS-only and shops_public_read permits published shops, so a
+    // tenant could otherwise fetch another tenant's PUBLISHED shop by direct id.
     @Transactional(readOnly = true)
     @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ShopDto> getShopById(UUID shopId) {
-        log.debug("Fetching shop by ID: {}", shopId);
-        return shopRepository.findById(shopId)
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        log.debug("Fetching shop {} for tenant {}", shopId, tenantId);
+        return shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .map(shopMapper::toDto);
     }
 
