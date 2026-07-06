@@ -212,5 +212,5 @@ For comprehensive guide, see:
 ---
 
 **Status: Production Ready ✓**
-**Version: v0.8.0**
-**Last Updated: 2026-01-16**
+**Version: 2.1.0**
+**Last Updated: 2026-07-06**
