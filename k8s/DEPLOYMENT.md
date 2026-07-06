@@ -160,11 +160,11 @@ Edit `k8s/production/kustomization.yaml` and update image tags to the desired ve
 ```yaml
 images:
   - name: ghcr.io/jtoye/core-java
-    newTag: v0.8.0  # Update this
+    newTag: 2.1.0  # Update this
   - name: ghcr.io/jtoye/edge-go
-    newTag: v0.8.0  # Update this
+    newTag: 2.1.0  # Update this
   - name: ghcr.io/jtoye/frontend
-    newTag: v0.8.0  # Update this
+    newTag: 2.1.0  # Update this
 ```
 
 #### 2. Review Generated Manifests
@@ -459,4 +459,5 @@ For issues or questions:
 - Documentation: https://github.com/jtoye/oaas-platform/wiki
 
 ## Version History
+- 2.1.0 (2026-07-06): Image tags aligned to product version 2.1.0; kustomize overlays fixed (each env owns its namespace) and `bases`/`commonLabels`/`patchesStrategicMerge` deprecations cleared.
 - v0.8.0 (2026-01-16): Initial production-ready deployment with security enhancements
