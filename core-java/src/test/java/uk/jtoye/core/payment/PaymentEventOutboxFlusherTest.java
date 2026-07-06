@@ -153,4 +153,111 @@ class PaymentEventOutboxFlusherTest {
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
         verify(repository, never()).save(any(PaymentEventOutbox.class));
     }
+
+    // ---------- V36 per-row exchange routing tests (Plan 17-02 Task 1) ----------
+
+    private PaymentEventOutbox paymentRow() throws Exception {
+        PaymentEvent event = new PaymentEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "ORD-PE", "pi_pe",
+                1500L, "gbp", PaymentEvent.PaymentEventType.SUCCEEDED,
+                null, OffsetDateTime.now()
+        );
+        return new PaymentEventOutbox(
+                event.tenantId(),
+                "SUCCEEDED",
+                "payment.succeeded",
+                objectMapper.writeValueAsString(event),
+                RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE
+        );
+    }
+
+    private PaymentEventOutbox refundRow() throws Exception {
+        RefundEvent event = new RefundEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "ORD-RF", "re_test", 2500L, "gbp",
+                RefundEvent.RefundEventType.REFUND_SUCCEEDED,
+                "succeeded", null, OffsetDateTime.now()
+        );
+        return new PaymentEventOutbox(
+                event.tenantId(),
+                "REFUND_SUCCEEDED",
+                "order.refunded",
+                objectMapper.writeValueAsString(event),
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE
+        );
+    }
+
+    @Test
+    @DisplayName("publishRow with exchange=payment.events routes to payment exchange")
+    void publishRow_paymentExchangeRow_routesToPaymentExchange() throws Exception {
+        PaymentEventOutbox row = paymentRow();
+        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        ArgumentCaptor<String> exchangeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> routingCaptor = ArgumentCaptor.forClass(String.class);
+        verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), routingCaptor.capture(), any(Object.class));
+        assertEquals(RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE, exchangeCaptor.getValue());
+        assertEquals("payment.succeeded", routingCaptor.getValue());
+
+        ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(savedCaptor.capture());
+        assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("publishRow with exchange=order.events routes to order exchange and deserializes RefundEvent")
+    void publishRow_orderExchangeRow_routesToOrderExchange() throws Exception {
+        PaymentEventOutbox row = refundRow();
+        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        ArgumentCaptor<String> exchangeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> routingCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), routingCaptor.capture(), payloadCaptor.capture());
+        assertEquals(RabbitMQConfig.ORDER_EVENTS_EXCHANGE, exchangeCaptor.getValue());
+        assertEquals("order.refunded", routingCaptor.getValue());
+        // Payload was deserialized as RefundEvent because exchange == order.events.
+        org.junit.jupiter.api.Assertions.assertInstanceOf(RefundEvent.class, payloadCaptor.getValue());
+
+        ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(savedCaptor.capture());
+        assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("publishRow with null exchange falls back to payment.events and logs warning")
+    void publishRow_nullExchange_fallsBackToPaymentAndLogsWarn() throws Exception {
+        // Build a row through the 4-arg constructor (default 'payment.events') then
+        // null out the exchange to simulate a pre-V36 in-flight row.
+        PaymentEvent event = new PaymentEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "ORD-NX", "pi_nx",
+                500L, "gbp", PaymentEvent.PaymentEventType.SUCCEEDED,
+                null, OffsetDateTime.now()
+        );
+        PaymentEventOutbox row = new PaymentEventOutbox(
+                event.tenantId(), "SUCCEEDED", "payment.succeeded",
+                objectMapper.writeValueAsString(event)
+        );
+        row.setExchange(null);
+
+        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        ArgumentCaptor<String> exchangeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), eq("payment.succeeded"), any(Object.class));
+        assertEquals(RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE, exchangeCaptor.getValue(),
+                "Null exchange must fall back to payment.events, not throw or skip");
+
+        ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(savedCaptor.capture());
+        assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
 }

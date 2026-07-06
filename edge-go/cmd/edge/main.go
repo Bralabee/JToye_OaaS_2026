@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jtoye/edge/internal/auth"
 	"github.com/jtoye/edge/internal/core"
 	"github.com/jtoye/edge/internal/middleware"
 	"go.uber.org/zap"
@@ -64,7 +65,12 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 	return token, true
 }
 
-// Simple token bucket rate limiter middleware.
+// rateLimiter is a single, process-wide token-bucket used purely as a coarse
+// DoS / overload guard for this edge replica — it is NOT a per-tenant quota.
+// The authoritative per-tenant rate limit (e.g. 100 req/min per tenant) lives
+// in Core via Bucket4j. Note that with multiple edge replicas the effective
+// global ceiling is this limit multiplied by the replica count.
+//
 // The refill goroutine is tied to the supplied context so it exits cleanly
 // on graceful shutdown instead of leaking the ticker + goroutine for the
 // process lifetime.
@@ -127,6 +133,11 @@ func main() {
 	jwksURL := keycloakIssuer + "/protocol/openid-connect/certs"
 	port := getEnv("PORT", "8080")
 	defaultShopID := getEnv("WHATSAPP_DEFAULT_SHOP_ID", "")
+	// WhatsApp intake is a signature-only public route; these scope the
+	// edge->Core service-token call that replaces the (impossible) caller JWT.
+	whatsAppTenantID := getEnv("WHATSAPP_DEFAULT_TENANT_ID", "")
+	whatsAppClientID := getEnv("WHATSAPP_SERVICE_CLIENT_ID", "")
+	whatsAppClientSecret := getEnv("WHATSAPP_SERVICE_CLIENT_SECRET", "")
 
 	// Initialize Core API client with circuit breaker
 	coreClient := core.NewClient(coreAPIURL, logger)
@@ -134,22 +145,33 @@ func main() {
 	// Initialize JWT middleware
 	jwtMiddleware := middleware.NewJWTMiddleware(jwksURL, keycloakIssuer, logger)
 
+	// Client-credentials provider used by the public WhatsApp webhook to
+	// authenticate to Core (Meta cannot present a Keycloak JWT).
+	whatsAppTokenProvider := auth.NewKeycloakServiceTokenProvider(
+		keycloakIssuer, whatsAppClientID, whatsAppClientSecret, logger)
+
 	// Handler bundle — holds per-process deps the Gin handlers need. See
 	// handlers.go for the actual swaggo-annotated route functions.
 	h := &edgeHandlers{
-		coreClient:    coreClient,
-		logger:        logger,
-		jwksURL:       jwksURL,
-		defaultShopID: defaultShopID,
+		coreClient:       coreClient,
+		logger:           logger,
+		jwksURL:          jwksURL,
+		defaultShopID:    defaultShopID,
+		startedAt:        time.Now(),
+		tokenProvider:    whatsAppTokenProvider,
+		whatsAppTenantID: whatsAppTenantID,
 	}
 
 	// Setup Gin
 	r := gin.Default()
 
-	// Global rate limiter (configurable via env)
+	// Process-wide DoS guard (configurable via env). This is a per-replica
+	// overload valve, not a per-tenant quota — see rateLimiter() and Core's
+	// Bucket4j for the authoritative per-tenant limit.
 	rps := getEnvInt("RATE_LIMIT_RPS", 20)
 	burst := getEnvInt("RATE_LIMIT_BURST", 40)
-	logger.Info("Rate limiter configured", zap.Int("rps", rps), zap.Int("burst", burst))
+	logger.Info("Process-wide DoS-guard rate limiter configured (per-replica, not per-tenant)",
+		zap.Int("rps", rps), zap.Int("burst", burst))
 	r.Use(rateLimiter(ctx, rps, burst))
 
 	// Public probes. Liveness must not depend on any downstream — a failing
@@ -166,11 +188,15 @@ func main() {
 	// partners can fetch the spec without auth.
 	registerDocRoutes(r)
 
+	// WhatsApp webhook is a PUBLIC route: Meta authenticates via the HMAC
+	// signature (verified in the handler), not a Keycloak JWT. Registered
+	// outside the protected group so the real integration can actually call it.
+	r.POST("/api/v1/webhooks/whatsapp", h.WhatsAppWebhook)
+
 	// Protected routes (require JWT)
 	protected := r.Group("/")
 	protected.Use(jwtMiddleware.Validate())
 	protected.POST("/api/v1/sync/batch", h.SyncBatch)
-	protected.POST("/api/v1/webhooks/whatsapp", h.WhatsAppWebhook)
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))
 

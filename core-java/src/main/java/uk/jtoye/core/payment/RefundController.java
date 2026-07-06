@@ -1,0 +1,93 @@
+package uk.jtoye.core.payment;
+
+import com.stripe.exception.StripeException;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import uk.jtoye.core.payment.dto.CreateRefundRequest;
+import uk.jtoye.core.payment.dto.RefundDto;
+
+import java.net.URI;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Vendor-facing refund endpoints (VOPS-02).
+ *
+ * <p>Per UC-5 LOCKED in Phase 17 CONTEXT: deferred RBAC. Any
+ * JWT-authenticated tenant user can refund their own tenant's orders
+ * (RLS enforces tenant scoping; refund target is validated server-side
+ * by {@link RefundService}).
+ *
+ * <p><b>BL-01 fix:</b> hard-code the {@code /api/v1} prefix in the
+ * {@code @RequestMapping} value rather than relying on
+ * {@link uk.jtoye.core.config.WebConfig#configurePathMatch}. WebConfig only
+ * applies the prefix to controllers in {@code uk.jtoye.core.{shop,product,
+ * order,customer,finance,gdpr,sync}}, and this controller lives in
+ * {@code uk.jtoye.core.payment} (which is intentionally excluded so the
+ * {@link PaymentController} can keep its {@code /public/payments/webhook}
+ * mapping for Stripe). Adding {@code uk.jtoye.core.payment} to WebConfig
+ * would unintentionally rewrite {@code PaymentController} to
+ * {@code /api/v1/public/payments/webhook} and break Stripe webhooks.
+ */
+@RestController
+@RequestMapping("/api/v1/orders")
+@Tag(name = "Refunds", description = "Stripe refund issuance for vendor orders")
+@SecurityRequirement(name = "bearer-jwt")
+public class RefundController {
+
+    private static final Logger log = LoggerFactory.getLogger(RefundController.class);
+
+    private final RefundService refundService;
+
+    public RefundController(RefundService refundService) {
+        this.refundService = refundService;
+    }
+
+    /**
+     * Issue a refund for an order. {@code Idempotency-Key} header is optional
+     * but recommended; same key for two POSTs returns the same refund without
+     * invoking Stripe twice (server-side dedup).
+     */
+    @PostMapping("/{orderId}/refund")
+    @Operation(
+            summary = "Issue a refund for an order",
+            description = "Creates a Stripe refund and records it. Idempotency-Key header recommended; "
+                        + "same key returns the same refund without invoking Stripe twice."
+    )
+    public ResponseEntity<RefundDto> createRefund(
+            @PathVariable UUID orderId,
+            @Valid @RequestBody CreateRefundRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) throws StripeException {
+        RefundDto refund = refundService.createRefund(orderId, request, idempotencyKey);
+        URI location = URI.create("/api/v1/orders/" + orderId + "/refunds/" + refund.id());
+        // Always return 201 on success — the resource exists either way and
+        // the Location header points to the same URI on replay. Frontend
+        // treats 201 == success.
+        log.info("Refund {} created for order {} (Stripe={}, status={})",
+                refund.id(), orderId, refund.stripeRefundId(), refund.status());
+        return ResponseEntity.status(HttpStatus.CREATED).location(location).body(refund);
+    }
+
+    /**
+     * List refunds for an order, newest first.
+     */
+    @GetMapping("/{orderId}/refunds")
+    @Operation(summary = "List refunds for an order", description = "Returns refunds newest-first (requestedAt DESC).")
+    public ResponseEntity<List<RefundDto>> listRefunds(@PathVariable UUID orderId) {
+        return ResponseEntity.ok(refundService.findByOrderId(orderId));
+    }
+}

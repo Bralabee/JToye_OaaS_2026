@@ -4,13 +4,22 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
 
+/**
+ * Header-based tenant mapping ({@code X-Tenant-Id}) for local development and
+ * tests only. Gated to non-production profiles so that in {@code prod} the
+ * tenant is derived <em>solely</em> from the authenticated JWT (see
+ * {@link JwtTenantFilter}); a spoofed {@code X-Tenant-Id} header therefore
+ * has no effect in production.
+ */
 @Component
+@Profile({"dev", "local", "test"})
 public class TenantFilter extends OncePerRequestFilter {
     public static final String TENANT_HEADER = "X-Tenant-Id";
 

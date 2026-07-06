@@ -71,26 +71,40 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
+    // BE-03 completion: scope the authenticated by-id read to the caller's tenant.
+    // findById is RLS-only and shops_public_read permits published shops, so a
+    // tenant could otherwise fetch another tenant's PUBLISHED shop by direct id.
     @Transactional(readOnly = true)
     @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ShopDto> getShopById(UUID shopId) {
-        log.debug("Fetching shop by ID: {}", shopId);
-        return shopRepository.findById(shopId)
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        log.debug("Fetching shop {} for tenant {}", shopId, tenantId);
+        return shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .map(shopMapper::toDto);
     }
 
+    // QA-council BE-03: scope the authenticated "my shops" list to the caller's
+    // tenant. Relying on RLS alone leaked other tenants' PUBLISHED shops here,
+    // because the shops_public_read policy (V16) OR-permits published=true.
     @Transactional(readOnly = true)
     public Page<ShopDto> getAllShops(Pageable pageable) {
-        log.debug("Fetching shops with pagination: page {}, size {}",
-                pageable.getPageNumber(), pageable.getPageSize());
-        return shopRepository.findAll(pageable)
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        log.debug("Fetching shops for tenant {} with pagination: page {}, size {}",
+                tenantId, pageable.getPageNumber(), pageable.getPageSize());
+        return shopRepository.findByTenantId(tenantId, pageable)
                 .map(shopMapper::toDto);
     }
 
+    // QA-council BE-03: scope authenticated shop search to the caller's tenant
+    // (same published-shop leak as getAllShops via the unscoped search query).
     @Transactional(readOnly = true)
     public List<ShopDto> search(String query) {
-        log.debug("Searching shops with query: {}", query);
-        return shopRepository.search(query).stream()
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        log.debug("Searching shops for tenant {} with query: {}", tenantId, query);
+        return shopRepository.searchByTenant(tenantId, query).stream()
                 .map(shopMapper::toDto)
                 .toList();
     }

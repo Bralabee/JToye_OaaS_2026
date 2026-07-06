@@ -102,6 +102,56 @@ export type OrderStatus =
   | "READY"
   | "COMPLETED"
   | "CANCELLED"
+  | "REFUNDED"
+
+// Payment status mirrors backend uk.jtoye.core.payment.PaymentStatus.
+export type PaymentStatus =
+  | "NONE"
+  | "PENDING"
+  | "AUTHORIZED"
+  | "CAPTURED"
+  | "FAILED"
+  | "REFUNDED"
+
+// Refund reason — Stripe accepts only these three values on Refund.create.
+export type RefundReason =
+  | "DUPLICATE"
+  | "FRAUDULENT"
+  | "REQUESTED_BY_CUSTOMER"
+
+// Refund status — UC-3 LOCKED: lowercase mirrors Stripe wire format. CREATING
+// is the pre-Stripe sentinel set by RefundService before the first API call.
+export type RefundStatus =
+  | "CREATING"
+  | "succeeded"
+  | "failed"
+  | "pending"
+  | "requires_action"
+  | "canceled"
+
+// Refund DTO — matches backend uk.jtoye.core.payment.dto.RefundDto (Phase 17-03).
+export interface Refund {
+  id: string
+  tenantId: string
+  orderId: string
+  stripeRefundId: string | null
+  idempotencyKey: string
+  amountPennies: number
+  currency: string
+  reason: RefundReason
+  reasonNote: string | null
+  status: RefundStatus
+  failureReason: string | null
+  requestedAt: string
+  updatedAt: string
+}
+
+// POST /orders/{id}/refund body. amountPennies omitted = full remaining refund.
+export interface CreateRefundRequest {
+  amountPennies?: number
+  reason: RefundReason
+  note?: string
+}
 
 export interface Order {
   id: string
@@ -142,6 +192,12 @@ export interface OrderDetail {
   items: OrderItem[]
   createdAt: string
   updatedAt: string
+  // Phase 17-03: backend OrderDetailDto now exposes payment + refunds. Optional
+  // for backward compatibility with cached responses from older clients.
+  paymentStatus?: PaymentStatus
+  paymentReference?: string | null
+  paymentMethod?: string | null
+  refunds?: Refund[]
 }
 
 export interface CreateOrderRequest {

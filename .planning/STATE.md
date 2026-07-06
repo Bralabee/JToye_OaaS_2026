@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: "Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. V35 migration + OrderSseService per-tenant routing + /public/orders mandatory verify + Stripe webhook idempotency + RlsContractTest + ReviewsRlsPolicyIntegrationTest. 19 new Java @Test methods. Ready for PR. Phase 17 (vendor order detail + Stripe refund) is the next phase."
-last_updated: "2026-04-28T00:18:25Z"
-last_activity: 2026-04-28
+status: milestone_complete
+stopped_at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
+last_updated: "2026-04-28T09:08:59.557Z"
+last_activity: 2026-04-28 -- Phase 17 execution started
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 12
+  completed_phases: 5
+  total_plans: 15
   completed_plans: 13
-  percent: 100
+  percent: 71
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 17 — Vendor Order Detail + Stripe Refund Flow (NEXT, not planned yet)
+**Current focus:** Phase 17 — vendor-order-detail-stripe-refund-flow
 
 ## Current Position
 
-Phase: 17 — Vendor Order Detail + Stripe Refund Flow — NEXT, not planned yet
-Plan: none yet — run /gsd-plan-phase 17
-Status: Phase 16.1 (pre-prod hardening) drafting complete; branch feature/phase-16.1-pre-prod-hardening has 6 atomic commits + plan SUMMARYs ready for PR. All 5 council-audit Wave-0 blockers closed.
+Phase: 17
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-04-28
 
 Progress: [██████████] 100%
@@ -53,6 +53,7 @@ Progress: [██████████] 100%
 | 7 | 1 | - | - |
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
+| 17 | 4 | - | - |
 
 **Milestone v2.2 (executing):**
 

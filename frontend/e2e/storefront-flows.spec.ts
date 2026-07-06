@@ -7,8 +7,11 @@
 
 import { test, expect, type Page } from "@playwright/test"
 
-const BASE = "http://localhost:3000"
-const KEYCLOAK = "http://localhost:8085"
+// Honour PLAYWRIGHT_BASE_URL (dev stack runs on :3100; the MCP server holds
+// :3000). Hardcoding :3000 tested the wrong app — and, on a shared host, could
+// hit a cohabiting service. Mirrors the default in playwright.config.ts.
+const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
+const KEYCLOAK = process.env.PLAYWRIGHT_KEYCLOAK_URL || "http://localhost:8085"
 const SHOP_SLUG = "jollof-express-brixton-900b57a8"
 
 // Helper: register + login a customer, returns the page with an active session

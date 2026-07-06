@@ -24,5 +24,8 @@ public enum OrderStatus {
     COMPLETED,
 
     /** Order was cancelled */
-    CANCELLED
+    CANCELLED,
+
+    /** Order has been refunded (one or more refunds recorded). */
+    REFUNDED
 }

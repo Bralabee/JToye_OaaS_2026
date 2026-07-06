@@ -41,6 +41,7 @@ class PaymentServiceTest {
     @Mock private PaymentEventPublisher paymentEventPublisher;
     @Mock private FinancialTransactionService financialTransactionService;
     @Mock private JdbcTemplate jdbcTemplate;
+    @Mock private RefundService refundService;
 
     private PaymentService paymentService;
 
@@ -51,7 +52,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher,
-                paymentEventPublisher, financialTransactionService, jdbcTemplate);
+                paymentEventPublisher, financialTransactionService, jdbcTemplate, refundService);
         // AUDIT-W0-03: PaymentService now runs INSERT ... ON CONFLICT DO NOTHING
         // against processed_stripe_events. For unit tests we model the "first
         // delivery" path (1 row inserted) so the existing assertions about

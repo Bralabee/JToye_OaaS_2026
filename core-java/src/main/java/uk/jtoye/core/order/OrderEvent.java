@@ -21,5 +21,8 @@ public enum OrderEvent {
     COMPLETE,
 
     /** Cancel order at any stage */
-    CANCEL
+    CANCEL,
+
+    /** Refund issued — transitions order to REFUNDED. */
+    REFUND_REQUESTED
 }

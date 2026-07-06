@@ -1,0 +1,206 @@
+/**
+ * Tests for OrderDetailPanel (Phase 17-04 / VOPS-01).
+ *
+ * Validates:
+ *   - All five blocks render for a CONFIRMED order with no refunds
+ *   - Refund history renders one row per refund with status colour classes
+ *   - "Issue refund" button is hidden on a DRAFT order (status not refundable)
+ *   - "Issue refund" button is hidden on a REFUNDED order with full refund
+ *     (remaining = 0)
+ *   - "Issue refund" button is shown when status, paymentStatus,
+ *     paymentReference, and remaining are all valid
+ */
+
+import { render, screen } from "@testing-library/react"
+import { OrderDetailPanel } from "../OrderDetailPanel"
+import type { OrderDetail, Refund } from "@/types/api"
+
+// RefundDialog is a child of OrderDetailPanel — stub it so these tests stay
+// focused on the panel's own rendering and visibility logic.
+jest.mock("../RefundDialog", () => ({
+  RefundDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="refund-dialog-stub" /> : null,
+}))
+
+function makeOrder(overrides: Partial<OrderDetail> = {}): OrderDetail {
+  return {
+    id: "order-abc-123",
+    tenantId: "tenant-xyz",
+    shopId: "shop-1",
+    orderNumber: "ORD-2026-0001",
+    status: "CONFIRMED",
+    customerName: "Jane Doe",
+    customerEmail: "jane@example.com",
+    customerPhone: "+44 7700 900000",
+    notes: "No nuts please",
+    totalAmountPennies: 1000,
+    items: [
+      {
+        id: "item-1",
+        productId: "prod-1",
+        productName: "Jollof Rice",
+        quantity: 2,
+        unitPricePennies: 500,
+        totalPricePennies: 1000,
+        createdAt: "2026-04-28T10:00:00Z",
+      },
+    ],
+    createdAt: "2026-04-28T10:00:00Z",
+    updatedAt: "2026-04-28T10:00:00Z",
+    paymentStatus: "CAPTURED",
+    paymentReference: "pi_test_123",
+    paymentMethod: "card",
+    refunds: [],
+    ...overrides,
+  }
+}
+
+function makeRefund(overrides: Partial<Refund> = {}): Refund {
+  return {
+    id: "refund-1",
+    tenantId: "tenant-xyz",
+    orderId: "order-abc-123",
+    stripeRefundId: "re_test_123",
+    idempotencyKey: "abc-key",
+    amountPennies: 500,
+    currency: "gbp",
+    reason: "REQUESTED_BY_CUSTOMER",
+    reasonNote: "Missing item",
+    status: "succeeded",
+    failureReason: null,
+    requestedAt: "2026-04-28T11:00:00Z",
+    updatedAt: "2026-04-28T11:00:00Z",
+    ...overrides,
+  }
+}
+
+describe("OrderDetailPanel", () => {
+  it("renders header, customer, payment, items, and action blocks", () => {
+    render(<OrderDetailPanel order={makeOrder()} />)
+
+    // Header block — order number and a confirmed-status badge. The £10.00
+    // total appears twice (header total + line item total) so we use
+    // getAllByText for that one.
+    expect(screen.getByText("ORD-2026-0001")).toBeInTheDocument()
+    expect(screen.getAllByText("£10.00").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("Confirmed")).toBeInTheDocument()
+
+    // Customer block
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument()
+    expect(screen.getByText("jane@example.com")).toBeInTheDocument()
+    expect(screen.getByText("+44 7700 900000")).toBeInTheDocument()
+
+    // Payment block
+    expect(screen.getByText("CAPTURED")).toBeInTheDocument()
+    expect(screen.getByText("card")).toBeInTheDocument()
+    expect(screen.getByText("pi_test_123")).toBeInTheDocument()
+
+    // Line items block
+    expect(screen.getByText(/Items \(1\)/)).toBeInTheDocument()
+    expect(screen.getByText("Jollof Rice")).toBeInTheDocument()
+
+    // Action panel — "Issue refund" is visible because status=CONFIRMED,
+    // payment=CAPTURED, paymentReference is set, remaining > 0.
+    expect(
+      screen.getByRole("button", { name: /Issue refund/i })
+    ).toBeInTheDocument()
+  })
+
+  it("renders refund history when refunds.length > 0", () => {
+    const refunds = [
+      makeRefund({ id: "r1", amountPennies: 300, status: "succeeded" }),
+      makeRefund({ id: "r2", amountPennies: 200, status: "pending" }),
+    ]
+    render(<OrderDetailPanel order={makeOrder({ refunds })} />)
+
+    expect(screen.getByText(/Refunds \(2\)/)).toBeInTheDocument()
+    expect(screen.getByText("£3.00")).toBeInTheDocument()
+    expect(screen.getByText("£2.00")).toBeInTheDocument()
+    // Status colour-coded text exists for both
+    expect(screen.getByText("succeeded")).toHaveClass("text-emerald-700")
+    expect(screen.getByText("pending")).toHaveClass("text-orange-600")
+  })
+
+  it("hides 'Issue refund' button on a DRAFT order", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ status: "DRAFT", paymentStatus: "NONE" })}
+      />
+    )
+    expect(
+      screen.queryByRole("button", { name: /Issue refund/i })
+    ).not.toBeInTheDocument()
+  })
+
+  it("hides 'Issue refund' button when paymentStatus !== CAPTURED", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ paymentStatus: "AUTHORIZED" })}
+      />
+    )
+    expect(
+      screen.queryByRole("button", { name: /Issue refund/i })
+    ).not.toBeInTheDocument()
+  })
+
+  it("hides 'Issue refund' button when paymentReference is missing", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ paymentReference: null })}
+      />
+    )
+    expect(
+      screen.queryByRole("button", { name: /Issue refund/i })
+    ).not.toBeInTheDocument()
+  })
+
+  it("hides 'Issue refund' on a REFUNDED order with full refund (remaining = 0)", () => {
+    const refunds = [
+      makeRefund({ id: "r1", amountPennies: 1000, status: "succeeded" }),
+    ]
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ status: "REFUNDED", refunds })}
+      />
+    )
+    expect(
+      screen.queryByRole("button", { name: /Issue refund/i })
+    ).not.toBeInTheDocument()
+    // The refund history still shows the row — vendors can see what happened.
+    expect(screen.getByText(/Refunds \(1\)/)).toBeInTheDocument()
+    // And the REFUNDED badge appears
+    expect(screen.getByText("Refunded")).toBeInTheDocument()
+  })
+
+  it("shows 'Issue refund' button when status COMPLETED and remaining > 0 after partial refund", () => {
+    const refunds = [
+      makeRefund({ id: "r1", amountPennies: 300, status: "succeeded" }),
+    ]
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ status: "COMPLETED", refunds })}
+      />
+    )
+    expect(
+      screen.getByRole("button", { name: /Issue refund/i })
+    ).toBeInTheDocument()
+    // Footer shows the running totals for transparency
+    expect(screen.getByText(/Already refunded: £3\.00/)).toBeInTheDocument()
+    expect(screen.getByText(/Remaining:\s*£7\.00/)).toBeInTheDocument()
+  })
+
+  it("renders failed refund failure_reason in the history row", () => {
+    const refunds = [
+      makeRefund({
+        id: "r1",
+        amountPennies: 500,
+        status: "failed",
+        failureReason: "card_declined",
+      }),
+    ]
+    render(<OrderDetailPanel order={makeOrder({ refunds })} />)
+
+    expect(screen.getByText("failed")).toHaveClass("text-red-600")
+    expect(screen.getByText("card_declined")).toBeInTheDocument()
+  })
+})
