@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V37 (refunds table + refunds_aud audit version column; V35 force-enabled RLS on marketing/audit tables)
+- Current schema version: V38 (shops_aud/order_items_aud Envers audit-column backfill; V37 refunds_aud audit version column; V35 force-enabled RLS on marketing/audit tables)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`
