@@ -4,13 +4,17 @@ import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
@@ -184,6 +188,51 @@ public class GlobalExceptionHandler {
         if (ex.getCode() != null) {
             problem.setProperty("stripeCode", ex.getCode());
         }
+        return problem;
+    }
+
+    /**
+     * QA-council BE-04 — classify common request-shape faults as their correct
+     * 4xx status instead of letting them fall through to the catch-all 500.
+     * Bodies stay generic RFC-7807 (no internal detail leaked).
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleUnreadableMessage(HttpMessageNotReadableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Malformed or unreadable request body");
+        problem.setTitle("Bad Request");
+        problem.setType(URI.create("https://jtoye.uk/errors/unreadable-request"));
+        return problem;
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ProblemDetail handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage());
+        problem.setTitle("Unsupported Media Type");
+        problem.setType(URI.create("https://jtoye.uk/errors/unsupported-media-type"));
+        return problem;
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ProblemDetail handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.METHOD_NOT_ALLOWED, ex.getMessage());
+        problem.setTitle("Method Not Allowed");
+        problem.setType(URI.create("https://jtoye.uk/errors/method-not-allowed"));
+        return problem;
+    }
+
+    /**
+     * Bad path/query variable type (e.g. a non-UUID id) — a client error, 400,
+     * not a server fault.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
+        problem.setTitle("Bad Request");
+        problem.setType(URI.create("https://jtoye.uk/errors/type-mismatch"));
         return problem;
     }
 
