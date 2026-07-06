@@ -42,7 +42,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: core-java
-        image: ghcr.io/jtoye/core-java:2.0.0
+        image: ghcr.io/jtoye/core-java:2.1.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 9090

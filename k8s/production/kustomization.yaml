@@ -19,11 +19,11 @@ commonAnnotations:
 # Image tags for production (override defaults)
 images:
   - name: ghcr.io/jtoye/core-java
-    newTag: v0.8.0
+    newTag: 2.1.0
   - name: ghcr.io/jtoye/edge-go
-    newTag: v0.8.0
+    newTag: 2.1.0
   - name: ghcr.io/jtoye/frontend
-    newTag: v0.8.0
+    newTag: 2.1.0
 
 # ConfigMap patches for production environment
 patchesStrategicMerge:
