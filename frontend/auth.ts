@@ -5,7 +5,13 @@ async function refreshAccessToken(token: {
   refreshToken?: string
   [key: string]: unknown
 }) {
-  const tokenUrl = `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`
+  // Refresh runs server-side inside the frontend container, so it must use the
+  // internal Docker network URL (keycloak:8080) — the public KEYCLOAK_ISSUER
+  // (localhost:8085) is not reachable from here and hangs ~10s on a connect
+  // timeout before failing, leaving the session with an expired token (401).
+  // Mirrors the provider token/userinfo endpoints below (kcServerBase).
+  const kcTokenBase = process.env.KEYCLOAK_ISSUER_INTERNAL || process.env.KEYCLOAK_ISSUER
+  const tokenUrl = `${kcTokenBase}/protocol/openid-connect/token`
 
   const response = await fetch(tokenUrl, {
     method: "POST",
@@ -81,7 +87,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       try {
         return await refreshAccessToken(token)
       } catch {
-        return { ...token, error: "RefreshTokenError" }
+        // Refresh failed (typically the Keycloak SSO session / refresh token
+        // itself expired — max lifespan 2h, idle 30m). Drop the stale access
+        // token so the session reads as unauthenticated and the api-client 401
+        // handler bounces to /auth/signin, instead of the app retrying forever
+        // with a dead token and trapping the user on a wall of 401s.
+        return { ...token, accessToken: undefined, error: "RefreshTokenError" }
       }
     },
     async session({ session, token }) {
