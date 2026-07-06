@@ -18,6 +18,7 @@ import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.UpdateOrderRequest;
 import uk.jtoye.core.order.dto.OrderItemRequest;
+import uk.jtoye.core.payment.RefundService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -49,6 +50,7 @@ public class OrderService {
     private final OrderEventPublisher eventPublisher;
     private final FinancialTransactionService financialTransactionService;
     private final StockService stockService;
+    private final RefundService refundService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -58,7 +60,8 @@ public class OrderService {
                        OrderMapper orderMapper,
                        OrderEventPublisher eventPublisher,
                        FinancialTransactionService financialTransactionService,
-                       StockService stockService) {
+                       StockService stockService,
+                       RefundService refundService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -68,6 +71,7 @@ public class OrderService {
         this.eventPublisher = eventPublisher;
         this.financialTransactionService = financialTransactionService;
         this.stockService = stockService;
+        this.refundService = refundService;
     }
 
     /**
@@ -163,12 +167,16 @@ public class OrderService {
 
     /**
      * Get order with items by ID (tenant-scoped).
-     * Eagerly fetches items for the detail view.
+     * Eagerly fetches items for the detail view, plus refund history (Phase 17 VOPS-01).
      */
     @Transactional(readOnly = true)
     public Optional<OrderDetailDto> getOrderDetailById(UUID orderId) {
         return orderRepository.findById(orderId)
-                .map(orderMapper::toDetailDto);
+                .map(order -> {
+                    OrderDetailDto dto = orderMapper.toDetailDto(order);
+                    dto.setRefunds(refundService.findByOrderId(orderId));
+                    return dto;
+                });
     }
 
     /**

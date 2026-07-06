@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: "Phase 17 (vendor order detail + Stripe refund) PLANNING COMPLETE — 4 plans drafted on branch feature/phase-17-implementation: 17-01 (V36 migration + Refund stack + state machine), 17-02 (outbox exchange routing + RefundEventPublisher), 17-03 (RefundController + webhook handler + Testcontainers test), 17-04 (frontend detail route + RefundDialog + Playwright E2E). All 5 UC LOCKED defaults honored; V35→V36 correction applied throughout; Phase 16.1 dedup guard reused per CORRECTION-2. Ready to execute 17-01 + 17-02 in parallel (Wave 1)."
-last_updated: "2026-04-27T22:00:00Z"
-last_activity: 2026-04-27
+status: milestone_complete
+stopped_at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
+last_updated: "2026-04-28T09:08:59.557Z"
+last_activity: 2026-04-28 -- Phase 17 execution started
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 12
+  completed_phases: 5
+  total_plans: 15
   completed_plans: 13
-  percent: 100
+  percent: 71
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 17 — Vendor Order Detail + Stripe Refund Flow (NEXT, not planned yet)
+**Current focus:** Phase 17 — vendor-order-detail-stripe-refund-flow
 
 ## Current Position
 
-Phase: 17 — Vendor Order Detail + Stripe Refund Flow — PLANS DRAFTED 2026-04-27 (4 plans, 3 waves)
-Plan: 17-01 + 17-02 next (Wave 1, parallel) — run /gsd-execute-phase 17
-Status: Phase 16.1 (pre-prod hardening) drafting complete; branch feature/phase-16.1-pre-prod-hardening has 6 atomic commits + plan SUMMARYs ready for PR. All 5 council-audit Wave-0 blockers closed.
+Phase: 17
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-04-28
 
 Progress: [██████████] 100%
@@ -53,6 +53,7 @@ Progress: [██████████] 100%
 | 7 | 1 | - | - |
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
+| 17 | 4 | - | - |
 
 **Milestone v2.2 (executing):**
 

@@ -3,9 +3,12 @@ package middleware
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,191 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
+
+// jwkFromPublicKey encodes an RSA public key as a JWK entry so a test JWKS
+// server can serve it for real signature verification.
+func jwkFromPublicKey(kid string, pub *rsa.PublicKey) JWK {
+	eBytes := big.NewInt(int64(pub.E)).Bytes()
+	return JWK{
+		Kid: kid,
+		Kty: "RSA",
+		Alg: "RS256",
+		Use: "sig",
+		N:   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
+		E:   base64.RawURLEncoding.EncodeToString(eBytes),
+	}
+}
+
+// newTestMiddleware wires a JWTMiddleware to a JWKS server serving the given
+// key under kid "test-key-id", returning a helper to sign valid tokens.
+func newTestMiddleware(t *testing.T, issuer string) (*JWTMiddleware, func(jwt.MapClaims) string) {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate RSA key: %v", err)
+	}
+	const kid = "test-key-id"
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(JWKSResponse{Keys: []JWK{jwkFromPublicKey(kid, &privateKey.PublicKey)}})
+	}))
+	t.Cleanup(jwksServer.Close)
+
+	logger, _ := zap.NewProduction()
+	m := NewJWTMiddleware(jwksServer.URL, issuer, logger)
+
+	sign := func(claims jwt.MapClaims) string {
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		token.Header["kid"] = kid
+		signed, err := token.SignedString(privateKey)
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+		return signed
+	}
+	return m, sign
+}
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+func runValidate(m *JWTMiddleware, tokenString string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/test", nil)
+	c.Request.Header.Set("Authorization", "Bearer "+tokenString)
+	m.Validate()(c)
+	return w
+}
+
+func TestJWTMiddleware_Validate_ValidTokenWithTenant(t *testing.T) {
+	const issuer = "http://test-issuer.com"
+	m, sign := newTestMiddleware(t, issuer)
+	token := sign(jwt.MapClaims{
+		"iss":       issuer,
+		"sub":       "test-user-123",
+		"tenant_id": "00000000-0000-0000-0000-000000000001",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"iat":       time.Now().Unix(),
+	})
+	w := runValidate(m, token)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for valid token, got %d (%s)", w.Code, w.Body.String())
+	}
+}
+
+func TestJWTMiddleware_Validate_MissingTenantRejected(t *testing.T) {
+	const issuer = "http://test-issuer.com"
+	m, sign := newTestMiddleware(t, issuer)
+	token := sign(jwt.MapClaims{
+		"iss": issuer,
+		"sub": "test-user-123",
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	})
+	w := runValidate(m, token)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 for token with no tenant claim, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["error"] != "missing tenant claim" {
+		t.Errorf("Expected missing tenant error, got: %v", resp["error"])
+	}
+}
+
+func TestJWTMiddleware_Validate_Audience(t *testing.T) {
+	const issuer = "http://test-issuer.com"
+	t.Setenv("EDGE_JWT_AUDIENCE", "jtoye-core")
+	m, sign := newTestMiddleware(t, issuer)
+
+	base := func() jwt.MapClaims {
+		return jwt.MapClaims{
+			"iss":       issuer,
+			"sub":       "u1",
+			"tenant_id": "00000000-0000-0000-0000-000000000001",
+			"exp":       time.Now().Add(time.Hour).Unix(),
+			"iat":       time.Now().Unix(),
+		}
+	}
+
+	t.Run("correct string aud passes", func(t *testing.T) {
+		claims := base()
+		claims["aud"] = "jtoye-core"
+		if w := runValidate(m, sign(claims)); w.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d (%s)", w.Code, w.Body.String())
+		}
+	})
+	t.Run("correct array aud passes", func(t *testing.T) {
+		claims := base()
+		claims["aud"] = []string{"other", "jtoye-core"}
+		if w := runValidate(m, sign(claims)); w.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d (%s)", w.Code, w.Body.String())
+		}
+	})
+	t.Run("wrong aud rejected", func(t *testing.T) {
+		claims := base()
+		claims["aud"] = "someone-else"
+		if w := runValidate(m, sign(claims)); w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for wrong audience, got %d", w.Code)
+		}
+	})
+	t.Run("missing aud rejected", func(t *testing.T) {
+		if w := runValidate(m, sign(base())); w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for missing audience, got %d", w.Code)
+		}
+	})
+}
+
+func TestHasAudience(t *testing.T) {
+	cases := []struct {
+		name     string
+		aud      interface{}
+		expected string
+		want     bool
+	}{
+		{"string match", "core", "core", true},
+		{"string mismatch", "core", "edge", false},
+		{"array match", []interface{}{"a", "core"}, "core", true},
+		{"array mismatch", []interface{}{"a", "b"}, "core", false},
+		{"absent", nil, "core", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := jwt.MapClaims{}
+			if tc.aud != nil {
+				claims["aud"] = tc.aud
+			}
+			if got := hasAudience(claims, tc.expected); got != tc.want {
+				t.Errorf("hasAudience(%v)=%v, want %v", tc.aud, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestJWTMiddleware_ConcurrentRefresh exercises the request path and forced
+// JWKS refreshes concurrently. Run with -race, it fails on the previously
+// unsynchronized publicKeys/lastRefresh access.
+func TestJWTMiddleware_ConcurrentRefresh(t *testing.T) {
+	const issuer = "http://test-issuer.com"
+	m, sign := newTestMiddleware(t, issuer)
+	token := sign(jwt.MapClaims{
+		"iss":       issuer,
+		"sub":       "u1",
+		"tenant_id": "00000000-0000-0000-0000-000000000001",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"iat":       time.Now().Unix(),
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); runValidate(m, token) }()
+		go func() { defer wg.Done(); _ = m.refreshKeys() }()
+	}
+	wg.Wait()
+}
 
 func TestJWTMiddleware_Validate_MissingAuthHeader(t *testing.T) {
 	logger, _ := zap.NewProduction()

@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.22, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 595+ logical invocations passing (432 Java `@Test` methods across 61 files + 84 Jest `it/test` blocks across 16 files + 54 top-level Go `Test*` funcs across 6 files + 21 Playwright `test()` blocks across 4 specs). 18 of the 61 Java files use Testcontainers (real Postgres + RLS). Verified 2026-04-27 by automated count (see `docs/audit/sources/06-qa-engineer.md`). A `docs-freshness` CI step is planned (see `docs/audit/remediation/06-qa-remediation.md` F12) to fail builds on future drift.
+- **Testing**: All new code requires tests — project standard is 681 logical invocations passing (484 Java `@Test` methods across 72 files + 100 Jest `it/test` blocks across 17 files + 74 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V33 (RLS policy fixes for promotions/announcements/reviews/payment_event_outbox)
+- Current schema version: V38 (shops_aud/order_items_aud Envers audit-column backfill; V37 refunds_aud audit version column; V35 force-enabled RLS on marketing/audit tables)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`

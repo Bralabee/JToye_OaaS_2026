@@ -139,6 +139,11 @@ paths:
         default shop, Core error) always return HTTP 200 to prevent
         WhatsApp from entering its 3-day exponential retry loop.
         Real error signals are in the structured logs.
+
+        This is a PUBLIC route: Meta authenticates via the HMAC
+        signature alone (it cannot present a Keycloak JWT). The edge
+        mints its own client-credentials service token for the
+        edge->Core call and scopes the order to WHATSAPP_DEFAULT_TENANT_ID.
       parameters:
       - description: HMAC-SHA256 of the raw body, prefixed with 'sha256='
         in: header
@@ -159,15 +164,13 @@ paths:
           schema:
             $ref: '#/definitions/main.WebhookAck'
         "401":
-          description: Missing or invalid signature / bearer token
+          description: Missing or invalid HMAC signature
           schema:
             $ref: '#/definitions/main.ErrorResponse'
         "500":
           description: WHATSAPP_APP_SECRET not configured
           schema:
             $ref: '#/definitions/main.ErrorResponse'
-      security:
-      - BearerAuth: []
       summary: WhatsApp order-intake webhook
       tags:
       - webhooks

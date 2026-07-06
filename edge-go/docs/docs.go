@@ -81,12 +81,7 @@ const docTemplate = `{
         },
         "/api/v1/webhooks/whatsapp": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Accepts WhatsApp message-events, verifies the HMAC-SHA256\nsignature in ` + "`" + `X-Hub-Signature-256` + "`" + ` against\n` + "`" + `WHATSAPP_APP_SECRET` + "`" + `, parses the message body into an\norder, resolves each product-name query to a product UUID\nvia the Core search endpoint, and creates an order scoped\nto the vendor identified by ` + "`" + `WHATSAPP_DEFAULT_SHOP_ID` + "`" + `. The\nendpoint is fail-closed: if the secret is not configured\nor the signature is invalid/absent the webhook is rejected.\n\nProcessing outcomes (bad payload, ambiguous product, missing\ndefault shop, Core error) always return HTTP 200 to prevent\nWhatsApp from entering its 3-day exponential retry loop.\nReal error signals are in the structured logs.",
+                "description": "Accepts WhatsApp message-events, verifies the HMAC-SHA256\nsignature in ` + "`" + `X-Hub-Signature-256` + "`" + ` against\n` + "`" + `WHATSAPP_APP_SECRET` + "`" + `, parses the message body into an\norder, resolves each product-name query to a product UUID\nvia the Core search endpoint, and creates an order scoped\nto the vendor identified by ` + "`" + `WHATSAPP_DEFAULT_SHOP_ID` + "`" + `. The\nendpoint is fail-closed: if the secret is not configured\nor the signature is invalid/absent the webhook is rejected.\n\nProcessing outcomes (bad payload, ambiguous product, missing\ndefault shop, Core error) always return HTTP 200 to prevent\nWhatsApp from entering its 3-day exponential retry loop.\nReal error signals are in the structured logs.\n\nThis is a PUBLIC route: Meta authenticates via the HMAC\nsignature alone (it cannot present a Keycloak JWT). The edge\nmints its own client-credentials service token for the\nedge-\u003eCore call and scopes the order to WHATSAPP_DEFAULT_TENANT_ID.",
                 "consumes": [
                     "application/json"
                 ],
@@ -123,7 +118,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "Missing or invalid signature / bearer token",
+                        "description": "Missing or invalid HMAC signature",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
                         }

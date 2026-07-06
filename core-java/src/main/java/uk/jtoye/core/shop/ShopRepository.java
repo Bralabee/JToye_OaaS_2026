@@ -13,6 +13,22 @@ import java.util.UUID;
 public interface ShopRepository extends JpaRepository<Shop, UUID> {
     Optional<Shop> findByName(String name);
 
+    // Tenant-scoped reads for the authenticated management plane (QA-council BE-03).
+    // The `shops_public_read` RLS policy (V16) permits `published = true`, so a bare
+    // findAll()/search() leaks every tenant's PUBLISHED shops into the authenticated
+    // "my shops" endpoints. These queries add an explicit tenant filter so the
+    // management list/search return only the caller's own shops. The anonymous
+    // storefront (/public/shops) keeps using the RLS-only path and is unaffected.
+    Page<Shop> findByTenantId(UUID tenantId, Pageable pageable);
+
+    @Query("SELECT s FROM Shop s WHERE s.tenantId = :tenantId AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%')))")
+    List<Shop> searchByTenant(@Param("tenantId") UUID tenantId, @Param("q") String query);
+
+    // Tenant-scoped by-id read for the authenticated management endpoint (BE-03
+    // completion): the plain findById is RLS-only and shops_public_read permits
+    // published=true, so a tenant could fetch another tenant's PUBLISHED shop by id.
+    Optional<Shop> findByIdAndTenantId(UUID id, UUID tenantId);
+
     Optional<Shop> findBySlug(String slug);
 
     Optional<Shop> findBySlugAndPublishedTrue(String slug);

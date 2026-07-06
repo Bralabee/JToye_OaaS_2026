@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jtoye/edge/internal/auth"
 	"github.com/jtoye/edge/internal/core"
 	"github.com/jtoye/edge/internal/whatsapp"
 	"go.uber.org/zap"
@@ -20,10 +21,21 @@ import (
 // are invisible to swaggo) AND makes the handlers unit-testable in
 // isolation. Behavior is byte-identical to the pre-refactor code.
 type edgeHandlers struct {
-	coreClient     *core.Client
-	logger         *zap.Logger
-	jwksURL        string
-	defaultShopID  string
+	coreClient    *core.Client
+	logger        *zap.Logger
+	jwksURL       string
+	defaultShopID string
+
+	// startedAt is captured at process start so /health can report a real
+	// uptime instead of a wall-clock timestamp.
+	startedAt time.Time
+
+	// WhatsApp intake is a signature-only public route (Meta cannot present a
+	// Keycloak JWT). tokenProvider mints a client-credentials service token
+	// for edge->Core calls, and whatsAppTenantID scopes the order to the
+	// configured vendor tenant.
+	tokenProvider    auth.ServiceTokenProvider
+	whatsAppTenantID string
 }
 
 // Health godoc
@@ -39,9 +51,20 @@ type edgeHandlers struct {
 // @Router      /health [get]
 func (h *edgeHandlers) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"edge":   "OK",
-		"uptime": time.Now().Unix(), // Placeholder
+		"edge": "OK",
+		// Real uptime in seconds since process start (startedAt is set in
+		// main()); zero when unset so the field is always present.
+		"uptime": uptimeSeconds(h.startedAt),
 	})
+}
+
+// uptimeSeconds returns whole seconds elapsed since startedAt, or 0 when
+// startedAt is the zero value (not yet initialised).
+func uptimeSeconds(startedAt time.Time) int64 {
+	if startedAt.IsZero() {
+		return 0
+	}
+	return int64(time.Since(startedAt).Seconds())
 }
 
 // Ready godoc
@@ -115,15 +138,18 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 		return
 	}
 
-	// Extract tenant and token from context
-	tenantID, _ := c.Get("tenant_id")
-	token, ok := extractBearerToken(c)
-	if !ok {
+	// Extract tenant and token from context. The JWT middleware always sets
+	// tenant_id as a string, but use the comma-ok form so a misconfiguration
+	// (missing/non-string value) returns 400 instead of panicking.
+	tenantVal, _ := c.Get("tenant_id")
+	tenantID, ok := tenantVal.(string)
+	token, hasToken := extractBearerToken(c)
+	if !hasToken {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
 		return
 	}
 
-	if tenantID == "" {
+	if !ok || tenantID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
 		return
 	}
@@ -132,7 +158,7 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	resp, err := h.coreClient.SyncBatch(ctx, token, tenantID.(string), payload.Items)
+	resp, err := h.coreClient.SyncBatch(ctx, token, tenantID, payload.Items)
 	if err != nil {
 		h.logger.Error("Batch sync failed", zap.Error(err))
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to sync with core API"})
@@ -157,14 +183,18 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 // @Description default shop, Core error) always return HTTP 200 to prevent
 // @Description WhatsApp from entering its 3-day exponential retry loop.
 // @Description Real error signals are in the structured logs.
+// @Description
+// @Description This is a PUBLIC route: Meta authenticates via the HMAC
+// @Description signature alone (it cannot present a Keycloak JWT). The edge
+// @Description mints its own client-credentials service token for the
+// @Description edge->Core call and scopes the order to WHATSAPP_DEFAULT_TENANT_ID.
 // @Tags        webhooks
-// @Security    BearerAuth
 // @Accept      json
 // @Produce     json
 // @Param       X-Hub-Signature-256 header   string      true  "HMAC-SHA256 of the raw body, prefixed with 'sha256='"
 // @Param       payload             body     object      true  "WhatsApp message-event payload (shape defined by Meta)"
 // @Success     200 {object} WebhookAck    "Webhook received (processing outcome in logs)"
-// @Failure     401 {object} ErrorResponse "Missing or invalid signature / bearer token"
+// @Failure     401 {object} ErrorResponse "Missing or invalid HMAC signature"
 // @Failure     500 {object} ErrorResponse "WHATSAPP_APP_SECRET not configured"
 // @Router      /api/v1/webhooks/whatsapp [post]
 func (h *edgeHandlers) WhatsAppWebhook(c *gin.Context) {
@@ -215,28 +245,25 @@ func (h *edgeHandlers) WhatsAppWebhook(c *gin.Context) {
 		return
 	}
 
-	// Extract auth context. The route sits behind the JWT middleware, so
-	// a missing/blank bearer here is a programming error — reject rather
-	// than forward an unauthenticated request to Core.
-	tenantID, _ := c.Get("tenant_id")
-	token, ok := extractBearerToken(c)
-	if !ok {
-		h.logger.Warn("WhatsApp webhook rejected: missing bearer token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed bearer token"})
-		return
-	}
-	tenantStr := ""
-	if tenantID != nil {
-		tenantStr = tenantID.(string)
-	}
-	if tenantStr == "" {
-		h.logger.Warn("WhatsApp webhook rejected: tenant_id missing from JWT")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id missing from JWT"})
-		return
-	}
-
+	// This is a signature-only public route: Meta authenticates via the HMAC
+	// signature verified above, not a Keycloak JWT. Core still requires an
+	// authenticated, tenant-scoped Bearer token, so mint a client-credentials
+	// service token and scope the order to the configured WhatsApp tenant.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
+
+	if h.whatsAppTenantID == "" || h.tokenProvider == nil {
+		h.logger.Error("WhatsApp intake not configured (tenant/service token); dropping order")
+		c.Status(http.StatusOK) // 200 to avoid Meta's 3-day retry storm; failure is in logs
+		return
+	}
+	tenantStr := h.whatsAppTenantID
+	token, err := h.tokenProvider.Token(ctx)
+	if err != nil {
+		h.logger.Error("Failed to acquire service token for WhatsApp order", zap.Error(err))
+		c.Status(http.StatusOK) // 200 to avoid Meta's 3-day retry storm; failure is in logs
+		return
+	}
 
 	// Resolve product queries to UUIDs via Core API search.
 	// Require a confident match: either a single search hit, or an

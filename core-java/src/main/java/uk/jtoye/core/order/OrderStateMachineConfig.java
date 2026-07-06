@@ -30,8 +30,15 @@ public class OrderStateMachineConfig extends StateMachineConfigurerAdapter<Order
             .withStates()
                 .initial(OrderStatus.DRAFT)
                 .states(EnumSet.allOf(OrderStatus.class))
-                .end(OrderStatus.COMPLETED)
-                .end(OrderStatus.CANCELLED);
+                // Phase 17 VOPS-03: COMPLETED is no longer an .end() state.
+                // Refunds may be issued AFTER an order completes (most common
+                // path — vendor refunds a delivered order). Spring Statemachine
+                // refuses transitions OUT OF end states even with explicit
+                // .withExternal() definitions, so retaining .end(COMPLETED)
+                // would block the COMPLETED → REFUNDED transition required by
+                // the plan. CANCELLED and REFUNDED remain terminal.
+                .end(OrderStatus.CANCELLED)
+                .end(OrderStatus.REFUNDED);
     }
 
     @Override
@@ -110,6 +117,39 @@ public class OrderStateMachineConfig extends StateMachineConfigurerAdapter<Order
                 .source(OrderStatus.READY)
                 .target(OrderStatus.CANCELLED)
                 .event(OrderEvent.CANCEL)
-                .action(ctx -> log.info("Ready order cancelled"));
+                .action(ctx -> log.info("Ready order cancelled"))
+                .and()
+
+            // REFUND_REQUESTED transitions — Phase 17 VOPS-03.
+            // Sources: any state where Stripe has captured payment and the
+            // refund is still meaningful (CONFIRMED, PREPARING, READY, COMPLETED).
+            // Idempotent already-REFUNDED short-circuit lives in RefundService,
+            // NOT here — the state machine remains fail-loud on REFUNDED→REFUNDED.
+            .withExternal()
+                .source(OrderStatus.CONFIRMED)
+                .target(OrderStatus.REFUNDED)
+                .event(OrderEvent.REFUND_REQUESTED)
+                .action(ctx -> log.info("Order refund requested from CONFIRMED"))
+                .and()
+
+            .withExternal()
+                .source(OrderStatus.PREPARING)
+                .target(OrderStatus.REFUNDED)
+                .event(OrderEvent.REFUND_REQUESTED)
+                .action(ctx -> log.info("Order refund requested from PREPARING"))
+                .and()
+
+            .withExternal()
+                .source(OrderStatus.READY)
+                .target(OrderStatus.REFUNDED)
+                .event(OrderEvent.REFUND_REQUESTED)
+                .action(ctx -> log.info("Order refund requested from READY"))
+                .and()
+
+            .withExternal()
+                .source(OrderStatus.COMPLETED)
+                .target(OrderStatus.REFUNDED)
+                .event(OrderEvent.REFUND_REQUESTED)
+                .action(ctx -> log.info("Order refund requested from COMPLETED"));
     }
 }
