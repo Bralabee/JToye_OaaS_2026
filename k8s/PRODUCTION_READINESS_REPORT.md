@@ -4,6 +4,8 @@
 **Auditor:** DevOps Team
 **Status:** PRODUCTION READY ✓
 
+> **Post-audit note (2026-07-06):** This report is the historical v0.8.0 audit from 2026-01-16 and is kept as-is for the record. Pinned image tags have since been bumped to **2.1.0** (see `k8s/DEPLOYMENT.md` → Version History). The manifests were not re-audited for this version bump — a fresh readiness review is advised before the next production release.
+
 ---
 
 ## Executive Summary
