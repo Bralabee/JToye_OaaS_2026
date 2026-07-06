@@ -30,8 +30,10 @@ images:
     newTag: staging
 
 # ConfigMap patches for staging environment
-patchesStrategicMerge:
-  - configmap-patch.yaml
+# `patches` with a bare `path` auto-detects strategic-merge, the
+# behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
+patches:
+  - path: configmap-patch.yaml
 
 # Staging replicas (reduced for cost savings)
 replicas:
