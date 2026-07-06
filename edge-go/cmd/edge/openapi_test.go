@@ -105,10 +105,10 @@ func TestOpenAPISpec_IsValidJSON(t *testing.T) {
 // surface, and are deliberately excluded. If we ever want them in the
 // spec we'd annotate registerDocRoutes and add them here.
 var expectedRoutes = map[string]string{
-	"/health":                     "get",
-	"/ready":                      "get",
-	"/api/v1/sync/batch":          "post",
-	"/api/v1/webhooks/whatsapp":   "post",
+	"/health":                   "get",
+	"/ready":                    "get",
+	"/api/v1/sync/batch":        "post",
+	"/api/v1/webhooks/whatsapp": "post",
 }
 
 // TestOpenAPISpec_AllRoutesDocumented is the route-count assertion from
@@ -188,7 +188,7 @@ func TestOpenAPISpec_Fresh(t *testing.T) {
 	regenerated := readNormalizedSpec(t, filepath.Join(tmpDir, "swagger.json"))
 
 	if committed != regenerated {
-		t.Errorf("docs/swagger.json is stale. Re-run:\n  cd edge-go && swag init -g cmd/edge/main.go -o ./docs\n"+
+		t.Errorf("docs/swagger.json is stale. Re-run:\n  cd edge-go && swag init -g cmd/edge/main.go -o ./docs\n" +
 			"and commit the result.\n\n(committed spec differs from what `swag init` produces right now.)")
 	}
 }
