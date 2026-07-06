@@ -30,8 +30,10 @@ images:
     newTag: 2.1.0
 
 # ConfigMap patches for production environment
-patchesStrategicMerge:
-  - configmap-patch.yaml
+# `patches` with a bare `path` auto-detects strategic-merge, the
+# behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
+patches:
+  - path: configmap-patch.yaml
 
 # Production replicas scaling (optional - HPA handles this)
 replicas:
