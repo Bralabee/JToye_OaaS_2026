@@ -4,9 +4,11 @@ kind: Kustomization
 # Staging overlay configuration
 namespace: jtoye-staging
 
-# Reference base configuration
-bases:
+# Reference base configuration + this environment's namespace
+# (`resources` replaces the deprecated `bases`)
+resources:
   - ../base
+  - namespace.yaml
 
 # Staging-specific labels
 commonLabels:
