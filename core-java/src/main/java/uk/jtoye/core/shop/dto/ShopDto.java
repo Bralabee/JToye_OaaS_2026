@@ -6,6 +6,13 @@ import java.util.UUID;
 
 public class ShopDto {
     private UUID id;
+    // QA-council H1: expose tenantId so real-time clients (Kitchen Display STOMP
+    // topic /topic/kitchen/{tenantId}/{shopId}) can derive their subscription.
+    // The frontend Shop type already declares tenantId as required; every sibling
+    // DTO (OrderDto, CustomerDto) exposes it, and it is already present in the
+    // caller's JWT. Public/anonymous responses use the separate PublicShopDto,
+    // which has no tenantId — so this adds no anonymous disclosure.
+    private UUID tenantId;
     private String name;
     private String address;
     private OffsetDateTime createdAt;
@@ -25,6 +32,8 @@ public class ShopDto {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public UUID getTenantId() { return tenantId; }
+    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getAddress() { return address; }
