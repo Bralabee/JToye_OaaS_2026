@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: milestone_complete
-stopped_at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
-last_updated: "2026-04-28T09:08:59.557Z"
-last_activity: 2026-04-28 -- Phase 17 execution started
+stopped_at: v2.2 SHIPPED (all 7 phases; Phase 17 merged via PR #57 on 2026-07-06). Post-milestone hardening since — see Post-Milestone Activity below. No v2.3 milestone started yet.
+last_updated: "2026-07-07T23:59:00.000Z"
+last_activity: 2026-07-07 -- QA-council remediation (PR #70), edge-go pipeline fix (PR #72), observability restore (PR #73), RLS integration-suite CI enablement (#71)
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 7
   total_plans: 15
-  completed_plans: 13
-  percent: 71
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,21 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 17
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-04-28
+Phase: 17 (final) — complete
+Plan: —
+Status: Milestone complete; post-milestone hardening in progress
+Last activity: 2026-07-07
 
 Progress: [██████████] 100%
+
+## Post-Milestone Activity (v2.2 → v2.3 gap)
+
+- 2026-07-06 — Phase 17 merged (PR #57); k8s kustomize cleanup series (PRs #66-#69)
+- 2026-07-07 — QA-council remediation merged (PR #70): KDS tenantId, shop-write IDORs (M3+ext), per-tenant cleanup job (M1), error codes (L1/L2), frontend deps (M4)
+- 2026-07-07 — edge-go image pipeline restored (PR #72): Dockerfile golang 1.22→1.25 drift from #57 had broken every main image build since 2026-07-06
+- 2026-07-07 — Observability stack restored after 7 weeks down (PR #73): Grafana port param, core-java scrape auth (2-layer), edge-go dead target removed, redis-exporter healthcheck
+- 2026-07-07 — #71 RLS integration-suite CI enablement: integrationTest Gradle task + CI job, IntegrationTestSupport harness, 9 never-running classes repaired, NOSUPERUSER RLS-enforcement pattern, ShopImageCrossTenantIntegrationTest IDOR guard (+7 tests → 692)
+- OPEN: #61 refund E2E — BLOCKED on Stripe test-mode keys (none in env; STRIPE_API_KEY empty in running container) + WR-09 product decision (single vs multiple partial refunds)
 
 ## Performance Metrics
 

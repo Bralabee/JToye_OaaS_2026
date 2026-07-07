@@ -68,7 +68,11 @@ class SecurityHeadersIntegrationTest {
     @Test
     @WithMockUser
     void shopsEndpointHasSecurityHeaders() throws Exception {
-        mockMvc.perform(get("/api/v1/shops"))
+        // X-Tenant-Id: a tenant-less request is now rejected 400 before the
+        // controller (QA-council error-code hardening); this test asserts the
+        // security HEADERS on the happy path, so supply a tenant credential.
+        mockMvc.perform(get("/api/v1/shops")
+                        .header("X-Tenant-Id", java.util.UUID.randomUUID().toString()))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Frame-Options", "DENY"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
