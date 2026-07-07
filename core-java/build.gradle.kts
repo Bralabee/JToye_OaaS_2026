@@ -104,3 +104,20 @@ tasks.test {
     environment("DOCKER_API_VERSION", "1.45")
     systemProperty("api.version", "1.45")
 }
+
+// QA-council #71: dedicated task for the @Tag("testcontainers") integration
+// suite (real Postgres + FORCE RLS). Run by the "Integration Tests" CI job on
+// every PR/push; `test` above keeps excluding the tag so the fast unit job is
+// unchanged. Locally: ./gradlew :core-java:integrationTest
+tasks.register<Test>("integrationTest") {
+    description = "Runs the Testcontainers integration suite (real Postgres + RLS)."
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("testcontainers")
+    }
+    environment("DOCKER_API_VERSION", "1.45")
+    systemProperty("api.version", "1.45")
+    shouldRunAfter(tasks.test)
+}

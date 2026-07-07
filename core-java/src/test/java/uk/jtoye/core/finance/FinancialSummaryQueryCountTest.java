@@ -70,6 +70,15 @@ class FinancialSummaryQueryCountTest {
         registry.add("rate-limiting.enabled", () -> "false");
         // Enable Hibernate stats for prepared-statement counting.
         registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
+        // PaymentEventOutboxFlusher polls every 5s by default — a tick landing
+        // inside the measurement window below adds a prepared statement and
+        // flakes the exact-count assertion (observed under full-suite load:
+        // expected 2, was 3). fixedDelay's initial tick fires at context boot,
+        // long before stats.clear(); a 1h interval guarantees no second tick
+        // during the test. Bonus: the unique property value keeps this context
+        // out of Spring's context cache, so no other class's schedulers share
+        // this SessionFactory's statistics.
+        registry.add("payment.outbox.flush-interval-ms", () -> "3600000");
         registry.add("spring.rabbitmq.host", () -> "localhost");
         registry.add("spring.rabbitmq.port", () -> "0");
         registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
@@ -106,8 +115,6 @@ class FinancialSummaryQueryCountTest {
         stats.setStatisticsEnabled(true);
         stats.clear();
 
-        long preparedBefore = stats.getPrepareStatementCount();
-
         TenantContext.set(TENANT_ID);
         try {
             service.getSummary();
@@ -115,13 +122,35 @@ class FinancialSummaryQueryCountTest {
             TenantContext.clear();
         }
 
-        long preparedAfter = stats.getPrepareStatementCount();
-        long delta = preparedAfter - preparedBefore;
+        // Per-query statistics filtered to FinancialTransaction queries, NOT a
+        // global prepared-statement delta: the shared JVM has background JPA
+        // activity (e.g. the PaymentEventOutboxFlusher's 5s poll) whose
+        // statements race into a global count and flaked this test (observed:
+        // expected 2, was 3 under full-suite load). Filtering preserves the
+        // CQ-02 contract exactly while ignoring unrelated statements.
+        String[] queries = stats.getQueries();
+        java.util.List<String> ftQueries = java.util.Arrays.stream(queries)
+                .filter(q -> q.contains("FinancialTransaction"))
+                .toList();
 
-        assertThat(delta)
-                .as("getSummary must issue exactly 2 prepared statements "
-                        + "(aggregate + GROUP BY vatRate), not 1 (findAll) or >2")
+        long ftExecutions = ftQueries.stream()
+                .mapToLong(q -> stats.getQueryStatistics(q).getExecutionCount())
+                .sum();
+
+        assertThat(ftExecutions)
+                .as("getSummary must issue exactly 2 FinancialTransaction queries "
+                        + "(aggregate + GROUP BY vatRate), not 1 (findAll) or >2. Ran: " + ftQueries)
                 .isEqualTo(2L);
+
+        // The CQ-02 regression shape is a full-entity fetch (findAll) followed by
+        // in-memory aggregation — every FinancialTransaction query here must be a
+        // DB-side aggregate, never an entity scan.
+        assertThat(ftQueries)
+                .as("all FinancialTransaction queries must aggregate DB-side")
+                .allMatch(q -> {
+                    String lower = q.toLowerCase();
+                    return lower.contains("sum(") || lower.contains("count(");
+                });
     }
 
     // ---- Seed helpers ----
