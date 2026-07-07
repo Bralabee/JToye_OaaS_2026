@@ -19,7 +19,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
 | **Backend** | Spring Boot 3, Java 21, MapStruct 1.5.5, Redis Caching, Spring State Machine |
-| **Edge** | Go 1.22, Gin, Circuit Breakers, Rate Limiting |
+| **Edge** | Go 1.25, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
@@ -260,7 +260,7 @@ CREATE POLICY tenant_isolation ON shops
 
 - **Java 21** (Eclipse Temurin recommended)
 - **Node.js 20+** (with npm)
-- **Go 1.22+**
+- **Go 1.25+**
 - **Docker & Docker Compose**
 
 ### Project Structure
