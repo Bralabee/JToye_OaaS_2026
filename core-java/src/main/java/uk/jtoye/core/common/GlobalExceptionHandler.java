@@ -11,11 +11,13 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -127,6 +129,39 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setTitle("Missing Required Parameter");
         problem.setType(URI.create("https://jtoye.uk/errors/missing-parameter"));
+        return problem;
+    }
+
+    /**
+     * QA-council L2 — a missing required {@code @RequestHeader} (e.g. the
+     * absent {@code Stripe-Signature} on the payments webhook) is a client
+     * request-shape error, so return 400 rather than letting it fall through
+     * to the catch-all 500. Signature verification of a *present* header is
+     * unchanged (invalid signature still 400 and the event is not processed).
+     */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail handleMissingRequestHeader(MissingRequestHeaderException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Missing Required Header");
+        problem.setType(URI.create("https://jtoye.uk/errors/missing-header"));
+        return problem;
+    }
+
+    /**
+     * QA-council L1 — an unmapped/unversioned path (e.g. the bare {@code /shops}
+     * against the versioned {@code /api/v1} API) must return 404, not 500.
+     * Spring raises {@link NoResourceFoundException} when no handler/static
+     * resource matches; without an explicit, more-specific handler it fell
+     * through to {@code handleGenericException}, which returned 500 AND logged a
+     * full stacktrace at ERROR for every unmapped request (5xx-alert noise). This
+     * handler is more specific than the {@code ResponseStatusException} handler,
+     * so it wins and yields a clean 404 with no stacktrace log.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail handleNoResourceFound(NoResourceFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Resource not found");
+        problem.setTitle("Not Found");
+        problem.setType(URI.create("https://jtoye.uk/errors/not-found"));
         return problem;
     }
 
