@@ -9,12 +9,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.VatRate;
 
@@ -27,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
+@ActiveProfiles("test")
 @org.junit.jupiter.api.Tag("testcontainers")
 class FinancialTransactionControllerIntegrationTest {
 
@@ -38,11 +41,7 @@ class FinancialTransactionControllerIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("rate-limiting.enabled", () -> "false");
+        IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
     }
 
     @Autowired
@@ -174,11 +173,13 @@ class FinancialTransactionControllerIntegrationTest {
                 "Test transaction"
         );
 
-        // Expect 500 because TenantContext.get().orElseThrow() throws NoSuchElementException
+        // A tenant-less request is a CLIENT error: under the test profile the
+        // missing-tenant case surfaces as 400 (observed contract post QA-council
+        // error-code hardening, PR #70) rather than leaking an internal 500.
         mockMvc.perform(post("/api/v1/financial-transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isBadRequest());
     }
 
     @Test
