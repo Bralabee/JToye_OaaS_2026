@@ -113,6 +113,36 @@ jobs:
             core-java/build-local/reports/tests/
             edge-go/coverage.out
 
+  # Job 1b: Testcontainers integration suite (QA-council #71).
+  # Runs the @Tag("testcontainers") classes — real Postgres + FORCE RLS — that
+  # the fast `test` job above excludes. GitHub-hosted runners provide a Docker
+  # daemon; Testcontainers spins one throwaway Postgres per class. No external
+  # services needed: application-test.yml + IntegrationTestSupport boot the
+  # context brokerless (RabbitMQ dead-port) and cache-less.
+  integration-tests:
+    name: Integration Tests (Testcontainers RLS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Run Testcontainers integration suite
+        run: ./gradlew :core-java:integrationTest --no-daemon
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: core-java/build-local/reports/tests/integrationTest/
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan
@@ -151,7 +181,7 @@ jobs:
   # Job 3: Build and push Docker images
   build-and-push:
     name: Build and Push Images
-    needs: [test, security-scan]
+    needs: [test, integration-tests, security-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'release'
     permissions:

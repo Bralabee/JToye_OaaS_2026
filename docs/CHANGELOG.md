@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Integration-suite CI enablement (#71) — 2026-07-07
+
+#### Fixed
+- **RLS Testcontainers suite now runs in CI** — new `integrationTest` Gradle task (includes `@Tag("testcontainers")`) + dedicated "Integration Tests (Testcontainers RLS)" CI job, gating `build-and-push` alongside unit tests. Previously the suite ran nowhere: CI excluded the tag and 8 of 22 classes could not even boot locally (live-broker AMQP auth failure — missing test profile/H2 overrides). Shared harness extracted to `IntegrationTestSupport`.
+- **RLS tests now actually enforce RLS** — `MultiTenantIsolationIntegrationTest` downgrades the Testcontainers role to `NOSUPERUSER` after seeding (a superuser bypasses even FORCE RLS, so its isolation assertions previously could not fail for the right reason), seeds with `saveAndFlush` (Hibernate batching deferred cross-tenant INSERTs to one flush under a single tenant GUC), and clears the persistence context so reads hit SQL where RLS filters, not the session cache.
+- **Test-latent defects fixed while enabling the suite**: missing NOT-NULL `shops.slug` in seeds (3 classes), stale `@Version` reference in `AuditIntegrationTest` product-update test (OptimisticLock), tenant-less requests now assert the hardened 400 contract (was 500), security-headers happy-path supplies `X-Tenant-Id`.
+
+#### Added
+- `ShopImageCrossTenantIntegrationTest` — 7 tests guarding the PR #70 M3(+ext) IDOR fix under genuinely-enforced RLS: cross-tenant shop update/delete/logo/banner writes 404 BEFORE any storage side effect; positive same-tenant control. (+7 Java `@Test` -> 692 total logical invocations.)
+
+
 ### QA & Remediation Council — cross-tenant isolation, KDS real-time, error codes, deps — 2026-07-07
 
 Fixes from a QA-council discover→plan→remediate pass (PR #70). Scope: `broken` findings only; each proven regression-free in the medium the bug lives in.
