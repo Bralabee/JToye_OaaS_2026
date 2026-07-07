@@ -138,7 +138,7 @@ public class ShopService {
     }
 
     public ShopDto uploadLogo(UUID shopId, MultipartFile file) {
-        Shop shop = shopRepository.findById(shopId)
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         storageService.delete(shop.getLogoUrl());
@@ -156,7 +156,7 @@ public class ShopService {
     }
 
     public ShopDto removeLogo(UUID shopId) {
-        Shop shop = shopRepository.findById(shopId)
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         storageService.delete(shop.getLogoUrl());
@@ -169,7 +169,7 @@ public class ShopService {
     }
 
     public ShopDto uploadBanner(UUID shopId, MultipartFile file) {
-        Shop shop = shopRepository.findById(shopId)
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         storageService.delete(shop.getBannerUrl());
@@ -187,7 +187,7 @@ public class ShopService {
     }
 
     public ShopDto removeBanner(UUID shopId) {
-        Shop shop = shopRepository.findById(shopId)
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         storageService.delete(shop.getBannerUrl());
@@ -218,6 +218,14 @@ public class ShopService {
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
+    }
+
+    // QA-council M3 (extended): the caller's tenant, required. Used to scope shop
+    // writes so a cross-tenant request 404s BEFORE any side effect (e.g. an S3
+    // object delete) runs against another tenant's shop.
+    private UUID requireTenantId() {
+        return TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
     }
 
     private String generateSlug(String name) {
