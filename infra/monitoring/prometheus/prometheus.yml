@@ -42,18 +42,21 @@ scrape_configs:
         target_label: instance
         replacement: 'core-java'
 
-  # Edge Go API
-  - job_name: 'edge-go'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['jtoye-edge-go:8080']
-        labels:
-          service: 'edge-api'
-          component: 'gateway'
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: 'edge-go'
+  # Edge Go API — DISABLED: the Gin edge exposes no /metrics endpoint yet
+  # (no Prometheus instrumentation anywhere in edge-go/), so this target sat
+  # permanently DOWN (404) feeding alert noise. Re-enable when the edge gains
+  # a metrics handler (tracked as a Known Gap in docs/CHANGELOG.md).
+  # - job_name: 'edge-go'
+  #   metrics_path: '/metrics'
+  #   static_configs:
+  #     - targets: ['jtoye-edge-go:8080']
+  #       labels:
+  #         service: 'edge-api'
+  #         component: 'gateway'
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       replacement: 'edge-go'
 
   # PostgreSQL Database
   - job_name: 'postgres'

@@ -120,6 +120,10 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      # Local-stack opt-in for the Prometheus scrape endpoint (base profile
+      # exposes only health,info — see application.yml management comment).
+      # SecurityConfig permits /actuator/prometheus in non-prod profiles only.
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_HOST: rabbitmq
