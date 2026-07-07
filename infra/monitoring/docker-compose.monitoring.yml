@@ -37,14 +37,16 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=http://localhost:3001
+      # Host port is env-tunable (GRAFANA_PORT): cohabiting stacks on this
+      # machine may already hold 3001.
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3001}
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "3001:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     networks:
       - monitoring
     depends_on:
@@ -102,11 +104,10 @@ services:
       - jtoye-network
     depends_on:
       - prometheus
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9121/metrics"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # No container healthcheck: the redis_exporter image is scratch-based
+    # (no shell/wget), so an exec-style check can never pass and the container
+    # showed permanently "unhealthy" while working fine. Prometheus's redis
+    # scrape job is the real health signal for this exporter.
     restart: unless-stopped
 
   # PostgreSQL Exporter - Database metrics
