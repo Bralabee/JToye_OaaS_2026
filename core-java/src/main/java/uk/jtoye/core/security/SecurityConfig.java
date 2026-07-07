@@ -55,6 +55,10 @@ public class SecurityConfig {
                                                    JwtTenantFilter jwtTenantFilter,
                                                    ObjectProvider<TenantFilter> tenantFilterProvider,
                                                    Environment env) throws Exception {
+        // Runtime prod check shared by the actuator-scrape matcher and the HSTS
+        // block below (12-RESEARCH.md §4.2 Pattern A: single bean + env check).
+        boolean isProd = Arrays.asList(env.getActiveProfiles()).contains("prod");
+
         http
             // CSRF protection disabled: this is a stateless JWT bearer-token API.
             // All authenticated requests must carry an Authorization: Bearer <jwt>
@@ -66,19 +70,26 @@ public class SecurityConfig {
             // This is the standard stateless-API posture; see ADR-001.
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults()) // Enable CORS with default configuration
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/health", "/actuator/health", "/actuator/info").permitAll()
-                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .requestMatchers("/public/**").permitAll()
-                .requestMatchers("/ws/**").permitAll()
-                .anyRequest().authenticated()
-            )
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/info").permitAll()
+                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                    .requestMatchers("/public/**").permitAll()
+                    .requestMatchers("/ws/**").permitAll();
+                // Prometheus scrape endpoint: permitted in non-prod only, mirroring
+                // the HSTS runtime-profile pattern below. Exposure is additionally
+                // opt-in per profile (management.endpoints.web.exposure.include —
+                // see application.yml); prod keeps it unexposed AND unauthenticated
+                // scraping rejected, per the documented cardinality/label-leak concern.
+                if (!isProd) {
+                    auth.requestMatchers("/actuator/prometheus").permitAll();
+                }
+                auth.anyRequest().authenticated();
+            })
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
         // Browser security headers per ASVS 14.4.1-14.4.7 (SEC-03).
         // HSTS gated by prod profile at runtime — dev HTTP traffic never sees it.
         // Pattern: 12-RESEARCH.md §4.2 Pattern A (single bean + runtime env check).
-        boolean isProd = Arrays.asList(env.getActiveProfiles()).contains("prod");
         http.headers(headers -> {
             headers.frameOptions(frame -> frame.deny())
                    .contentTypeOptions(Customizer.withDefaults())
