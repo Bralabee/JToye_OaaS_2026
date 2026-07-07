@@ -112,7 +112,14 @@ public class ShopService {
     public ShopDto updateShop(UUID shopId, CreateShopRequest request) {
         log.debug("Updating shop {}", shopId);
 
-        Shop shop = shopRepository.findById(shopId)
+        // QA-council M3: scope the write to the caller's tenant. findById is
+        // RLS-only and shops_public_read (V16) permits published shops, so a
+        // cross-tenant PUT otherwise loaded another tenant's PUBLISHED shop, then
+        // failed the FORCE-RLS write with a StaleStateException surfaced as 500.
+        // findByIdAndTenantId (as getShopById already uses) yields a clean 404.
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         shopMapper.updateEntity(request, shop);
@@ -195,7 +202,12 @@ public class ShopService {
     public void deleteShop(UUID shopId) {
         log.debug("Deleting shop {}", shopId);
 
-        Shop shop = shopRepository.findById(shopId)
+        // QA-council M3: scope the delete to the caller's tenant (see updateShop).
+        // A cross-tenant DELETE otherwise loaded another tenant's published shop
+        // then failed the FORCE-RLS delete with a StaleStateException → 500.
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
         // Clean up images from storage
