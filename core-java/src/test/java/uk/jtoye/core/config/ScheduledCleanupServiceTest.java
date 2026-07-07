@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -29,6 +30,11 @@ class ScheduledCleanupServiceTest {
     @Mock private OrderRepository orderRepository;
     @Mock private EntityManager entityManager;
     @Mock private Query tenantQuery;
+    // QA-council M1: the service now runs per-tenant work via a TransactionTemplate
+    // built from this manager. A bare mock is not a CallbackPreferringPTM, so the
+    // template's execute() runs the callback directly (getTransaction/commit are
+    // no-ops), keeping these unit tests behaviour-preserving.
+    @Mock private PlatformTransactionManager transactionManager;
     @InjectMocks private ScheduledCleanupService cleanupService;
 
     @BeforeEach

@@ -264,7 +264,7 @@ class ShopServiceTest {
         updateRequest.setName("Updated Shop");
         updateRequest.setAddress("456 New Street, Manchester");
 
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
         when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
@@ -275,7 +275,7 @@ class ShopServiceTest {
         assertEquals("Updated Shop", result.getName());
         assertEquals("456 New Street, Manchester", result.getAddress());
 
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
         verify(shopRepository).saveAndFlush(any(Shop.class));
     }
 
@@ -283,7 +283,7 @@ class ShopServiceTest {
     @DisplayName("updateShop - Fails when shop not found")
     void testUpdateShop_NotFound() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.empty());
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.empty());
 
         // When & Then
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
@@ -291,7 +291,7 @@ class ShopServiceTest {
         });
 
         assertTrue(exception.getMessage().contains("Shop not found"));
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
         verify(shopRepository, never()).saveAndFlush(any(Shop.class));
     }
 
@@ -300,7 +300,7 @@ class ShopServiceTest {
     void testUpdateShop_UpdatesAllFields() {
         // Given
         ArgumentCaptor<Shop> shopCaptor = ArgumentCaptor.forClass(Shop.class);
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
         when(shopRepository.saveAndFlush(shopCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CreateShopRequest updateRequest = new CreateShopRequest();
@@ -320,13 +320,13 @@ class ShopServiceTest {
     @DisplayName("deleteShop - Success when shop exists")
     void testDeleteShop_Success() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
 
         // When
         shopService.deleteShop(shopId);
 
         // Then
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
         verify(shopRepository).delete(testShop);
     }
 
@@ -334,7 +334,7 @@ class ShopServiceTest {
     @DisplayName("deleteShop - Fails when shop not found")
     void testDeleteShop_NotFound() {
         // Given
-        when(shopRepository.findById(shopId)).thenReturn(Optional.empty());
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.empty());
 
         // When & Then
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
@@ -342,7 +342,7 @@ class ShopServiceTest {
         });
 
         assertTrue(exception.getMessage().contains("Shop not found"));
-        verify(shopRepository).findById(shopId);
+        verify(shopRepository).findByIdAndTenantId(shopId, tenantId);
         verify(shopRepository, never()).delete(any(Shop.class));
     }
 
@@ -369,7 +369,7 @@ class ShopServiceTest {
     void testUpdateShop_PreservesTenantId() {
         // Given
         UUID originalTenantId = testShop.getTenantId();
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
         when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
@@ -416,7 +416,7 @@ class ShopServiceTest {
     void testUpdateShop_UpdateToNullAddress() {
         // Given
         validRequest.setAddress(null);
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
         when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When

@@ -76,15 +76,15 @@ class PaymentControllerTest {
     }
 
     @Test
-    void webhookMissingSignatureHeader_returnsError() throws Exception {
-        // Missing required @RequestHeader("Stripe-Signature") triggers MissingRequestHeaderException.
-        // GlobalExceptionHandler's catch-all Exception handler returns 500 (not 400) because
-        // MissingRequestHeaderException is not explicitly handled there.
+    void webhookMissingSignatureHeader_returnsBadRequest() throws Exception {
+        // QA-council L2: a missing required @RequestHeader("Stripe-Signature")
+        // triggers MissingRequestHeaderException. GlobalExceptionHandler now maps
+        // it to 400 (a client request-shape error), not the catch-all 500.
         String payload = "{\"type\":\"payment_intent.succeeded\"}";
 
         mockMvc.perform(post("/public/payments/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isBadRequest());
     }
 }

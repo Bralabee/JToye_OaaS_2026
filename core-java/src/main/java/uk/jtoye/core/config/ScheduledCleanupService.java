@@ -6,7 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -26,13 +27,17 @@ public class ScheduledCleanupService {
 
     private final OrderRepository orderRepository;
     private final EntityManager entityManager;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${cleanup.stale-draft-hours:24}")
     private int staleDraftHours;
 
-    public ScheduledCleanupService(OrderRepository orderRepository, EntityManager entityManager) {
+    public ScheduledCleanupService(OrderRepository orderRepository,
+                                   EntityManager entityManager,
+                                   PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.entityManager = entityManager;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -40,35 +45,24 @@ public class ScheduledCleanupService {
      * DRAFT orders are incomplete — the customer abandoned checkout before payment.
      * Runs daily at 03:00 UTC.
      *
-     * <p>SECURITY: Iterates per-tenant to ensure TenantContext is set before each
-     * query, enforcing RLS. Without this, the query would run with NULL tenant
-     * and return rows from ALL tenants (cross-tenant data destruction).
+     * <p>QA-council M1: each tenant is cleaned in its OWN transaction (below), not
+     * one transaction spanning all tenants. The RLS tenant GUC is transaction-local
+     * (TenantSetLocalAspect uses {@code set_config(...,true)}); under a single
+     * transaction, tenant A's deferred cascade delete of {@code order_items}
+     * flushed AFTER the GUC had switched to tenant B, so FORCE-RLS filtered those
+     * rows to 0 → {@code StaleStateException} → the whole job rolled back and
+     * cleaned nothing. Per-tenant transactions flush each tenant's deletes under
+     * its own GUC before the next tenant begins.
      */
     @Scheduled(cron = "0 0 3 * * *")
-    @Transactional
     public void cleanupStaleDraftOrders() {
         OffsetDateTime cutoff = OffsetDateTime.now().minusHours(staleDraftHours);
 
-        @SuppressWarnings("unchecked")
-        List<UUID> tenantIds = entityManager
-                .createNativeQuery("SELECT id FROM tenants")
-                .getResultList();
+        List<UUID> tenantIds = readTenantIds();
 
         int totalCleaned = 0;
         for (UUID tenantId : tenantIds) {
-            TenantContext.set(tenantId);
-            try {
-                List<Order> staleDrafts = orderRepository.findByStatus(OrderStatus.DRAFT).stream()
-                        .filter(o -> o.getCreatedAt().isBefore(cutoff))
-                        .toList();
-                if (!staleDrafts.isEmpty()) {
-                    orderRepository.deleteAll(staleDrafts);
-                    totalCleaned += staleDrafts.size();
-                    log.info("Cleaned up {} stale DRAFT orders for tenant {}", staleDrafts.size(), tenantId);
-                }
-            } finally {
-                TenantContext.clear();
-            }
+            totalCleaned += cleanupTenant(tenantId, cutoff);
         }
 
         if (totalCleaned == 0) {
@@ -76,6 +70,44 @@ public class ScheduledCleanupService {
         } else {
             log.info("Total cleaned: {} stale DRAFT orders across {} tenants (threshold: {} hours)",
                     totalCleaned, tenantIds.size(), staleDraftHours);
+        }
+    }
+
+    private List<UUID> readTenantIds() {
+        return transactionTemplate.execute(status -> {
+            @SuppressWarnings("unchecked")
+            List<UUID> ids = entityManager
+                    .createNativeQuery("SELECT id FROM tenants")
+                    .getResultList();
+            return ids;
+        });
+    }
+
+    /**
+     * Clean one tenant's stale drafts in a dedicated transaction. TenantContext is
+     * set before the transaction so TenantSetLocalAspect applies the correct RLS
+     * GUC to the repository ops inside it, and cleared afterwards. TransactionTemplate
+     * (rather than a {@code @Transactional} helper method) is used deliberately to
+     * avoid the Spring self-invocation proxy trap, which would otherwise start no
+     * transaction at all and run the query with a NULL tenant.
+     */
+    private int cleanupTenant(UUID tenantId, OffsetDateTime cutoff) {
+        TenantContext.set(tenantId);
+        try {
+            Integer cleaned = transactionTemplate.execute(status -> {
+                List<Order> staleDrafts = orderRepository.findByStatus(OrderStatus.DRAFT).stream()
+                        .filter(o -> o.getCreatedAt().isBefore(cutoff))
+                        .toList();
+                if (staleDrafts.isEmpty()) {
+                    return 0;
+                }
+                orderRepository.deleteAll(staleDrafts);
+                log.info("Cleaned up {} stale DRAFT orders for tenant {}", staleDrafts.size(), tenantId);
+                return staleDrafts.size();
+            });
+            return cleaned == null ? 0 : cleaned;
+        } finally {
+            TenantContext.clear();
         }
     }
 }
