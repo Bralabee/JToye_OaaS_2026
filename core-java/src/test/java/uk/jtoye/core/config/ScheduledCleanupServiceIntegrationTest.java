@@ -6,8 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -47,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 @SpringBootTest
 @Testcontainers
+@ActiveProfiles("test")
 @org.junit.jupiter.api.Tag("testcontainers")
 class ScheduledCleanupServiceIntegrationTest {
 
@@ -61,8 +65,21 @@ class ScheduledCleanupServiceIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        // application-test.yml defaults to H2; override every H2-specific property so
+        // the Testcontainers Postgres is actually used (mirrors RlsContractTest).
+        registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+        registry.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.PostgreSQLDialect");
+        registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.PostgreSQLDialect");
+        // ddl-auto: none so the Flyway-managed schema (with its RLS policies) is the
+        // sole source of truth rather than Hibernate create-drop clobbering it.
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("rate-limiting.enabled", () -> "false");
+        // RabbitMQ (OrderEventPublisher) points at a dead port with listener
+        // auto-startup disabled so the context boots without a live broker.
+        registry.add("spring.rabbitmq.host", () -> "localhost");
+        registry.add("spring.rabbitmq.port", () -> "0");
+        registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
         // Any DRAFT created before the job runs counts as stale — no backdating needed.
         registry.add("cleanup.stale-draft-hours", () -> "0");
     }
@@ -73,6 +90,7 @@ class ScheduledCleanupServiceIntegrationTest {
     @Autowired private ShopRepository shopRepository;
     @Autowired private ProductRepository productRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private PlatformTransactionManager txManager;
 
     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -94,6 +112,13 @@ class ScheduledCleanupServiceIntegrationTest {
 
     @Test
     void cleanupAcrossMultipleTenantsCompletesAndDeletesEachTenantsDrafts() {
+        // The Testcontainers bootstrap role is a SUPERUSER, which BYPASSES RLS
+        // entirely (verified: FORCE RLS + superuser still reads across tenants).
+        // Seeding above ran as superuser so its inserts were not subject to RLS
+        // WITH CHECK timing; downgrade to NOSUPERUSER now so the cleanup below
+        // runs under genuinely-enforced RLS — the precondition of the M1 defect.
+        jdbcTemplate.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER");
+
         // Precondition: both tenants have exactly one stale DRAFT.
         assertThat(draftCountFor(TENANT_A)).isEqualTo(1);
         assertThat(draftCountFor(TENANT_B)).isEqualTo(1);
@@ -109,7 +134,12 @@ class ScheduledCleanupServiceIntegrationTest {
     private int draftCountFor(UUID tenantId) {
         TenantContext.set(tenantId);
         try {
-            return orderRepository.findByStatus(OrderStatus.DRAFT).size();
+            // Read inside a transaction so TenantSetLocalAspect applies the RLS
+            // GUC — the aspect no-ops without an active transaction, and a bare
+            // derived query method does not start one, so an unscoped read would
+            // see current_tenant_id() = NULL and return zero rows.
+            return new TransactionTemplate(txManager).execute(status ->
+                    orderRepository.findByStatus(OrderStatus.DRAFT).size());
         } finally {
             TenantContext.clear();
         }
@@ -122,6 +152,9 @@ class ScheduledCleanupServiceIntegrationTest {
             shop.setTenantId(tenantId);
             shop.setName("Shop " + sku);
             shop.setAddress("Address " + sku);
+            // Seed bypasses ShopService (which generates the slug), so set the
+            // NOT-NULL unique slug explicitly. sku is unique per tenant.
+            shop.setSlug("shop-" + sku.toLowerCase());
             shop = shopRepository.save(shop);
 
             Product product = new Product();
