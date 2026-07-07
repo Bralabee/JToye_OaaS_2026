@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### QA & Remediation Council — cross-tenant isolation, KDS real-time, error codes, deps — 2026-07-07
+
+Fixes from a QA-council discover→plan→remediate pass (PR #70). Scope: `broken` findings only; each proven regression-free in the medium the bug lives in.
+
+#### Fixed
+- **KDS real-time (H1)** — `ShopDto` now exposes `tenantId`, so the Kitchen Display STOMP topic `/topic/kitchen/{tenantId}/{shopId}` resolves and the WebSocket connects (browser-verified "Connected"). The flagship real-time display was permanently "Disconnected" because the DTO omitted `tenantId`, leaving the client to build a null topic. Public/anonymous responses use the separate `PublicShopDto` (no `tenantId`) — no anonymous disclosure. (`core-java/src/main/java/uk/jtoye/core/shop/dto/ShopDto.java`)
+- **Cross-tenant shop-write IDOR (M3 + extension)** — `ShopService.updateShop`/`deleteShop`/`uploadLogo`/`removeLogo`/`uploadBanner`/`removeBanner` now scope lookups with `findByIdAndTenantId`. Previously a cross-tenant write returned 500 (`StaleStateException`), and — worse — cross-tenant `removeLogo`/`removeBanner` could delete another tenant's image from S3/MinIO before the RLS write failed (`DELETE` returned 200). Now returns 404 before any side effect. (`core-java/src/main/java/uk/jtoye/core/shop/ShopService.java`)
+- **Nightly cleanup job (M1)** — `ScheduledCleanupService` now runs one transaction per tenant (via `TransactionTemplate`, avoiding the Spring self-invocation trap) instead of one transaction across all tenants, so each tenant's deferred cascade `order_items` delete flushes under its own transaction-local RLS GUC. Previously the mixed-tenant flush threw `StaleStateException`, rolled back, and never cleaned anything. (`core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java`)
+- **Error-code altitude (L1/L2)** — unmapped/unversioned routes now return 404 (was 500 + per-request stacktrace); a missing `Stripe-Signature` webhook header returns 400 (was 500). Signature verification itself is unchanged (invalid signature still 400, event not processed). (`core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java`)
+- **Frontend dependencies (M4)** — resolved high-severity npm advisories: `next` 16.2.3→16.2.10 (patch), `axios`/`form-data`/`postcss` patched. Production `npm audit --omit=dev` high count 3→0 (1 moderate residual: next-auth→next chain).
+
+#### Tests added (+3 Java `@Test` methods → 685 total logical invocations)
+- `GlobalExceptionHandlerRequestShapeTest` — 2 tests (`NoResourceFoundException`→404, `MissingRequestHeaderException`→400)
+- `ScheduledCleanupServiceIntegrationTest` — 1 Testcontainers test (per-tenant stale-draft cleanup across 2 tenants; requires a non-superuser DB role to exercise FORCE RLS)
+
+#### Known follow-ups
+- Refund flow E2E (Stripe-settlement leg) unverified — guards proven, settlement code-verified only — **#61**.
+- RLS Testcontainers integration suite runs nowhere (CI excludes `@Tag("testcontainers")`; local Testcontainers uses a superuser DB that bypasses FORCE RLS) — **#71**.
+
 ### Phase 16.1 — Pre-prod hardening (Wave 0 council audit fixes) — 2026-04-27
 
 **Security & data-integrity bug fixes** identified by the 2026-04-27 council audit. All five blockers must land before any production rollout to a second tenant or real Stripe payments.
