@@ -1,11 +1,35 @@
 services:
+  # Keycloak realm render (issue #80) — renders the gitignored realm-export.json
+  # from realm-export.template.json using rotated secrets from .env.
+  keycloak-realm-render:
+    image: alpine:3.20
+    container_name: jtoye-keycloak-realm-render-host
+    environment:
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}
+      EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set}
+      KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set}
+    volumes:
+      - ./keycloak:/keycloak
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext >/dev/null
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD' \
+          < /keycloak/realm-export.template.json > /keycloak/realm-export.json
+        echo "Rendered infra/keycloak/realm-export.json from template"
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: jtoye-keycloak-host
     command: ["start-dev", "--import-realm", "--http-port=8081"]
     environment:
       KEYCLOAK_ADMIN: ${KC_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set}
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     network_mode: host
+    depends_on:
+      keycloak-realm-render:
+        condition: service_completed_successfully

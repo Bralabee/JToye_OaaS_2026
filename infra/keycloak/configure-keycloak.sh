@@ -8,6 +8,12 @@ echo ""
 KEYCLOAK_URL="http://localhost:8085"
 REALM="jtoye-dev"
 
+# Fail loud if the credentials this script needs are not supplied via the
+# environment. Values must come from the rotated .env (issue #80) — never
+# hardcode a password literal in this file.
+: "${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set (Keycloak master admin password)}"
+: "${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (seed-user password)}"
+
 # Wait for Keycloak to be ready
 echo "Waiting for Keycloak to be ready..."
 until curl -sf "${KEYCLOAK_URL}/realms/${REALM}/.well-known/openid-configuration" > /dev/null 2>&1; do
@@ -22,7 +28,7 @@ echo "Getting admin access token..."
 ADMIN_TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin" \
-  -d "password=admin123" \
+  -d "password=${KC_ADMIN_PASSWORD}" \
   -d "grant_type=password" \
   -d "client_id=admin-cli" | jq -r '.access_token')
 
@@ -114,7 +120,7 @@ if [ -z "$USER_ID" ]; then
         },
         "credentials": [{
           "type": "password",
-          "value": "password123",
+          "value": "'"${KC_SEED_USER_PASSWORD}"'",
           "temporary": false
         }]
       }'
@@ -145,7 +151,7 @@ if [ -z "$USER_ID" ]; then
         },
         "credentials": [{
           "type": "password",
-          "value": "password123",
+          "value": "'"${KC_SEED_USER_PASSWORD}"'",
           "temporary": false
         }]
       }'
@@ -241,14 +247,14 @@ echo ""
 
 echo "=== Configuration Complete ==="
 echo ""
-echo "Test users created:"
-echo "  - tenant-a-user / password123 (tenant_id: 00000000-0000-0000-0000-000000000001)"
-echo "  - tenant-b-user / password123 (tenant_id: 00000000-0000-0000-0000-000000000002)"
+echo "Test users configured (password = value of \$KC_SEED_USER_PASSWORD):"
+echo "  - tenant-a-user (tenant_id: 00000000-0000-0000-0000-000000000001)"
+echo "  - tenant-b-user (tenant_id: 00000000-0000-0000-0000-000000000002)"
 echo ""
-echo "Test JWT token generation with:"
+echo "Test JWT token generation with (reads the password from your environment):"
 echo "  curl -X POST http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token \\"
 echo "    -d 'grant_type=password' \\"
 echo "    -d 'client_id=test-client' \\"
 echo "    -d 'username=tenant-a-user' \\"
-echo "    -d 'password=password123'"
+echo "    --data-urlencode \"password=\$KC_SEED_USER_PASSWORD\""
 echo ""

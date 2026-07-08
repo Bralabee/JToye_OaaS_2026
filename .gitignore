@@ -140,5 +140,9 @@ edge-go/edge
 
 # Rendered Alertmanager config (phase 9 — entrypoint renders this at container start)
 infra/monitoring/alertmanager/alertmanager.yml
+
+# Rendered Keycloak realm import (issue #80 — envsubst renders this from
+# realm-export.template.json at container start; carries resolved secrets, NEVER commit)
+infra/keycloak/realm-export.json
 .qa-council/
 docker-compose.frontend-3100.yml

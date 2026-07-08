@@ -33,7 +33,7 @@ Production-ready monitoring stack using Prometheus for metrics collection and Gr
 
 ### 2. **Grafana** (Port 3001)
 - **Purpose**: Visualization and dashboards
-- **Credentials**: admin / admin123 (CHANGE IN PRODUCTION!)
+- **Credentials**: `admin` / value of `${GRAFANA_ADMIN_PASSWORD}` from `.env` (never commit real values)
 - **Features**:
   - Pre-configured Prometheus datasource
   - Auto-provisioned dashboards
@@ -80,7 +80,7 @@ curl http://localhost:3001/api/health
 
 ### 3. Access Dashboards
 
-- **Grafana**: http://localhost:3001 (admin/admin123)
+- **Grafana**: http://localhost:3001 (`admin` / `${GRAFANA_ADMIN_PASSWORD}`)
 - **Prometheus**: http://localhost:9091
 
 ### 4. Stop Monitoring Stack
@@ -335,9 +335,9 @@ docker run --rm -v prometheus_data:/data -v $(pwd):/backup \
 
 **Export all dashboards** via UI or API:
 ```bash
-curl -u admin:admin123 http://localhost:3001/api/search?query=& | \
+curl -u "admin:$GRAFANA_ADMIN_PASSWORD" http://localhost:3001/api/search?query=& | \
   jq -r '.[] | .uid' | \
-  xargs -I {} curl -u admin:admin123 \
+  xargs -I {} curl -u "admin:$GRAFANA_ADMIN_PASSWORD" \
   http://localhost:3001/api/dashboards/uid/{} > dashboard-{}.json
 ```
 

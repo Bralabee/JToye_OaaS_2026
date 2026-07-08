@@ -20,7 +20,7 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
 **Clients:**
 1. **core-api**
    - Client ID: `core-api`
-   - Client Secret: `core-api-secret-2026`
+   - Client Secret: rendered at import from `${KEYCLOAK_CLIENT_SECRET}` (set in `.env`; the rendered `realm-export.json` is gitignored — never committed)
    - Access Type: confidential
    - Service Accounts Enabled: true
    - Direct Access Grants: enabled
@@ -47,11 +47,14 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
 
 ### Test Users
 
-| Username | Password | Group | Tenant ID |
-|----------|----------|-------|-----------|
-| `tenant-a-user` | `password123` | tenant-a | `00000000-0000-0000-0000-000000000001` |
-| `tenant-b-user` | `password123` | tenant-b | `00000000-0000-0000-0000-000000000002` |
-| `admin-user` | `admin123` | (none) | (none) |
+All seed users share the password supplied via `${KC_SEED_USER_PASSWORD}` (from `.env`;
+rendered into the import at container start, never committed).
+
+| Username | Password source | Group | Tenant ID |
+|----------|-----------------|-------|-----------|
+| `tenant-a-user` | `${KC_SEED_USER_PASSWORD}` | tenant-a | `00000000-0000-0000-0000-000000000001` |
+| `tenant-b-user` | `${KC_SEED_USER_PASSWORD}` | tenant-b | `00000000-0000-0000-0000-000000000002` |
+| `admin-user` | `${KC_SEED_USER_PASSWORD}` | (none) | (none) |
 
 ### Protocol Mappers
 
@@ -90,7 +93,7 @@ The `realm-export.json` file is mounted as a volume and imported on startup.
 2. Access Keycloak Admin Console:
    - URL: http://localhost:8085
    - Username: `admin`
-   - Password: `admin123`
+   - Password: value of `${KC_ADMIN_PASSWORD}` from your `.env`
 
 3. Import realm:
    - Click "Add realm"
@@ -126,7 +129,7 @@ docker cp jtoye-keycloak:/tmp/realm-export.json ./infra/keycloak/realm-export.js
 ### Development vs Production
 
 **This configuration is for DEVELOPMENT ONLY:**
-- ❌ Simple passwords (`password123`, `admin123`)
+- ❌ Weak passwords — never use values like `password123` or `admin123`; supply strong rotated secrets via `.env`
 - ❌ SSL not required (set to `external`)
 - ❌ Client secrets in version control
 - ❌ Permissive CORS settings
@@ -145,10 +148,12 @@ docker cp jtoye-keycloak:/tmp/realm-export.json ./infra/keycloak/realm-export.js
 
 ### Client Secrets
 
-**Current client secrets (DEVELOPMENT ONLY):**
-- `core-api`: `core-api-secret-2026`
+**Client secrets are never committed.** They are rendered into the gitignored
+`realm-export.json` at container start from environment variables in `.env`:
+- `core-api`: `${KEYCLOAK_CLIENT_SECRET}`
+- `edge-api`: `${EDGE_API_CLIENT_SECRET}`
 
-**DO NOT use these secrets in production.** Generate new secrets and store them securely.
+Generate fresh strong values (e.g. `openssl rand -hex 32`) per environment and store them securely.
 
 ## Token Claims
 
@@ -188,7 +193,7 @@ The `tenant_id` claim is used by the backend for multi-tenant data isolation via
 **Problem:** Authentication fails for test users
 **Solution:**
 1. Verify user exists in Keycloak UI
-2. Check password is correct (`password123`)
+2. Check the password matches `${KC_SEED_USER_PASSWORD}` from your `.env`
 3. Ensure user is enabled (not disabled)
 4. Check group membership for tenant users
 

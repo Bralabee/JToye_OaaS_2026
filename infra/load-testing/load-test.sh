@@ -23,7 +23,9 @@ TOTAL_REQUESTS="${TOTAL_REQUESTS:-1000}"
 
 # Test user credentials
 TEST_USER="${TEST_USER:-tenant-a-user}"
-TEST_PASSWORD="${TEST_PASSWORD:-password123}"
+# Seed-user password comes from the rotated .env (issue #80). Export KC_SEED_USER_PASSWORD
+# (or TEST_PASSWORD) before running; never hardcode a literal here.
+TEST_PASSWORD="${TEST_PASSWORD:-${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD or TEST_PASSWORD must be set}}"
 
 echo -e "${GREEN}=== JToye OaaS Load Testing ===${NC}"
 echo ""
@@ -214,7 +216,7 @@ Environment Variables:
     CONCURRENT_USERS        Concurrent users (default: 10)
     TOTAL_REQUESTS          Total requests (default: 1000)
     TEST_USER               Test user (default: tenant-a-user)
-    TEST_PASSWORD           Test password (default: password123)
+    TEST_PASSWORD           Test password (default: value of $KC_SEED_USER_PASSWORD)
 
 Examples:
     # Light load test

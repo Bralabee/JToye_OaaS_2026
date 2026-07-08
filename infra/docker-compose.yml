@@ -15,7 +15,7 @@ services:
     environment:
       # Creates both 'jtoye' and 'keycloak' databases via init scripts
       POSTGRES_USER: ${DB_USER:-jtoye}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: ${DB_NAME:-jtoye}
     ports:
       - "5433:5432" # use 5433 on host to avoid conflicts with existing postgres
@@ -30,13 +30,38 @@ services:
       timeout: 5s
       retries: 5
 
+  # Keycloak realm render (issue #80) — renders the gitignored realm-export.json
+  # from the tracked realm-export.template.json using rotated secrets from .env,
+  # so NO literal client secret / seed password is ever committed. Runs once,
+  # exits 0; keycloak waits on service_completed_successfully.
+  keycloak-realm-render:
+    image: alpine:3.20
+    container_name: jtoye-keycloak-realm-render
+    environment:
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client)}
+      EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
+      KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
+    volumes:
+      - ./keycloak:/keycloak
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext >/dev/null
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD' \
+          < /keycloak/realm-export.template.json > /keycloak/realm-export.json
+        echo "Rendered infra/keycloak/realm-export.json from template"
+    networks:
+      - jtoye-net
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: jtoye-keycloak
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KC_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set}
     ports:
       - "8085:8080"
     volumes:
@@ -46,6 +71,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak-realm-render:
+        condition: service_completed_successfully
 
 networks:
   jtoye-net:
