@@ -8,10 +8,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -23,7 +25,22 @@ import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity  // issue #83 P1-1: activate @PreAuthorize gates on sensitive controllers
 public class SecurityConfig {
+
+    /**
+     * Translate the Keycloak {@code realm_access.roles} claim into Spring
+     * {@code ROLE_*} authorities so {@code @PreAuthorize("hasRole('admin')")}
+     * can gate the sensitive surfaces (issue #83 P1-1). Kept as a private helper
+     * so the same converter instance is wired into the resource server below and
+     * exercised verbatim by {@code KeycloakRealmRoleConverterTest} /
+     * {@code RoleBasedAccessIntegrationTest}.
+     */
+    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
+        return converter;
+    }
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
@@ -85,7 +102,12 @@ public class SecurityConfig {
                 }
                 auth.anyRequest().authenticated();
             })
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+            // issue #83 P1-1: replace the default authority converter with the
+            // Keycloak realm-role mapper so realm_access.roles -> ROLE_* authorities.
+            // JwtTenantFilter (added AFTER BearerTokenAuthenticationFilter below) still
+            // maps tenant_id -> TenantContext; role checks are additive to RLS scoping.
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
+                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
         // Browser security headers per ASVS 14.4.1-14.4.7 (SEC-03).
         // HSTS gated by prod profile at runtime — dev HTTP traffic never sees it.
