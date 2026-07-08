@@ -445,14 +445,18 @@ public class PublicStorefrontService {
 
             order = orderRepository.save(order);
 
-            // Deduct stock
-            for (GuestOrderItemRequest itemReq : request.getItems()) {
-                Product product = productRepository.findById(itemReq.getProductId()).orElse(null);
-                if (product != null && product.getQuantityInStock() != null) {
-                    product.setQuantityInStock(product.getQuantityInStock() - itemReq.getQuantity());
-                    productRepository.save(product);
-                }
-            }
+            // Issue #85 [P1-3]: NO eager stock decrement here.
+            // The former "Deduct stock" for-loop was a naked read-modify-write with
+            // no @Version retry — it double-decremented (once here, once again at
+            // CONFIRM via OrderService.transitionOrder -> StockService.decrementForOrder)
+            // and surfaced concurrent-checkout contention as a customer-facing 500.
+            // Stock is now decremented EXACTLY ONCE at the CONFIRMED transition
+            // through the retry-safe StockService (CQ-01), matching the admin
+            // OrderService.createOrder path and restoring cancel-path restock
+            // symmetry (restore fires only for oldStatus >= CONFIRMED, which is now
+            // where the decrement also lives). The read-only product.hasStock(...)
+            // guard above stays as an early UX availability check — it is NOT a
+            // reservation.
 
             // Publish event for COD orders (Stripe orders get event on webhook)
             if (clientSecret == null) {
