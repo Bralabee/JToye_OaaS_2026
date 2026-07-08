@@ -56,6 +56,14 @@ HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
 # - MaxRAMPercentage: Use up to 75% of container memory for heap
 # - UseG1GC: Low-pause garbage collector (good for APIs)
 # - UseStringDeduplication: Reduce memory usage for duplicate strings
+#
+# NOTE (Issue #78 [P0-2]): do NOT set -Dspring.profiles.active here. Docker
+# expands ${SPRING_PROFILES_ACTIVE:-...} at BUILD time (when the var is empty),
+# baking a literal profile into the image; a -D system property then OVERRIDES
+# the runtime SPRING_PROFILES_ACTIVE env var (system props outrank env vars in
+# Spring), silently defeating the profile set by compose/k8s. Spring Boot reads
+# the SPRING_PROFILES_ACTIVE environment variable natively, so the profile flows
+# from the runtime environment with no -D needed.
 ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -XX:MaxRAMPercentage=75.0 \
                -XX:InitialRAMPercentage=50.0 \
@@ -63,8 +71,7 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -XX:MaxGCPauseMillis=200 \
                -XX:+UnlockExperimentalVMOptions \
                -XX:+UseStringDeduplication \
-               -Djava.security.egd=file:/dev/./urandom \
-               -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-production}"
+               -Djava.security.egd=file:/dev/./urandom"
 
 # Start the application
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
