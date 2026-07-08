@@ -134,7 +134,7 @@ class FinancialTransactionServiceTest {
         assertEquals(transactionId, result.id());
         assertEquals(10000L, result.amountPennies());
         assertEquals(VatRate.STANDARD, result.vatRate());
-        assertEquals(2000L, result.vatAmountPennies()); // 20% of 10000
+        assertEquals(1666L, result.vatAmountPennies()); // fraction method: 10000*20/120 = 1666 (round down)
         assertEquals("ORDER-12345", result.description());
 
         ArgumentCaptor<FinancialTransaction> transactionCaptor = ArgumentCaptor.forClass(FinancialTransaction.class);
@@ -193,7 +193,7 @@ class FinancialTransactionServiceTest {
         FinancialTransactionDto result = financialTransactionService.createTransaction(request);
 
         // Then
-        assertEquals(2000L, result.vatAmountPennies()); // 20% of 10000 = 2000
+        assertEquals(1666L, result.vatAmountPennies()); // fraction method: 10000*20/120 = 1666
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
     }
 
@@ -213,7 +213,7 @@ class FinancialTransactionServiceTest {
         FinancialTransactionDto result = financialTransactionService.createTransaction(request);
 
         // Then
-        assertEquals(500L, result.vatAmountPennies()); // 5% of 10000 = 500
+        assertEquals(476L, result.vatAmountPennies()); // fraction method: 10000*5/105 = 476 (round down)
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
     }
 
@@ -271,7 +271,7 @@ class FinancialTransactionServiceTest {
         assertEquals(transactionId, result.get().id());
         assertEquals(10000L, result.get().amountPennies());
         assertEquals(VatRate.STANDARD, result.get().vatRate());
-        assertEquals(2000L, result.get().vatAmountPennies()); // 20% VAT
+        assertEquals(1666L, result.get().vatAmountPennies()); // fraction method: 10000*20/120 = 1666
         verify(financialTransactionRepository).findById(transactionId);
     }
 
@@ -378,7 +378,7 @@ class FinancialTransactionServiceTest {
 
         // Then
         assertEquals(-5000L, result.amountPennies());
-        assertEquals(-1000L, result.vatAmountPennies()); // 20% of -5000 = -1000
+        assertEquals(-833L, result.vatAmountPennies()); // fraction method: -5000*20/120 = -833 (truncate toward zero)
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
     }
 
@@ -479,7 +479,7 @@ class FinancialTransactionServiceTest {
 
         // Then
         assertEquals(100000000L, result.amountPennies()); // £1,000,000.00
-        assertEquals(20000000L, result.vatAmountPennies()); // £200,000.00 (20% VAT)
+        assertEquals(16666666L, result.vatAmountPennies()); // fraction method: 100000000*20/120 = 16666666 (round down)
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
     }
 }

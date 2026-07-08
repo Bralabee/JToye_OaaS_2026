@@ -35,12 +35,22 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     Optional<FinancialTransaction> findOneByReference(String reference);
 
     /**
+     * Find the ledger row for a given order (Issue #81 BUG 3). Tenant-scoped via
+     * RLS; backed by the partial unique index {@code uq_fin_tx_tenant_order} so
+     * at most one order-linked row exists per settled order. Used as the
+     * service-layer idempotency fast-path in
+     * {@link FinancialTransactionService#createTransaction}.
+     */
+    Optional<FinancialTransaction> findByOrderId(UUID orderId);
+
+    /**
      * CQ-02 scalar aggregate for the current tenant — totalRevenue (sum of
      * positive amounts), totalExpenses (sum of absolute-valued negatives),
      * totalVat (VAT math mirrored exactly from
-     * {@link FinancialTransaction#calculateVatAmount()} — multiply BEFORE
-     * divide, integer division truncating toward zero, same as the Java
-     * switch expression), and transactionCount.
+     * {@link FinancialTransaction#calculateVatAmount()} via the HMRC VAT
+     * fraction method — {@code (amount * rate) / (100 + rate)}, multiply BEFORE
+     * divide, integer division truncating toward zero, same as
+     * {@link VatCalculator#vatFromGross(long, VatRate)}), and transactionCount.
      *
      * <p>No explicit WHERE clause — RLS appends
      * {@code tenant_id = current_tenant_id()} at the SQL rewriter stage,
@@ -60,8 +70,8 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
               COALESCE(SUM(CASE WHEN ft.amountPennies > 0 THEN ft.amountPennies ELSE 0L END), 0L),
               COALESCE(SUM(CASE WHEN ft.amountPennies < 0 THEN -ft.amountPennies ELSE 0L END), 0L),
               COALESCE(SUM(CASE
-                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 100
-                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 100
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 105
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 120
                 ELSE 0L END), 0L),
               COUNT(ft)
             )
@@ -77,17 +87,18 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
      * also sorts by name before constructing the outward DTO list).
      *
      * <p>VAT math is identical to {@link #aggregateForCurrentTenant()} —
-     * mirrors {@link FinancialTransaction#calculateVatAmount()}
-     * byte-for-byte to preserve parity with the legacy in-memory
-     * implementation (pinned by {@code FinancialSummaryGoldenFileTest}).
+     * mirrors {@link FinancialTransaction#calculateVatAmount()} /
+     * {@link VatCalculator#vatFromGross(long, VatRate)} byte-for-byte via the
+     * HMRC VAT fraction method ({@code (amount * rate) / (100 + rate)}, round
+     * down), pinned by {@code FinancialSummaryGoldenFileTest}.
      */
     @Query("""
             SELECT new uk.jtoye.core.finance.dto.FinancialVatRow(
               ft.vatRate,
               COALESCE(SUM(ft.amountPennies), 0L),
               COALESCE(SUM(CASE
-                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 100
-                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 100
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 105
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 120
                 ELSE 0L END), 0L),
               COUNT(ft)
             )

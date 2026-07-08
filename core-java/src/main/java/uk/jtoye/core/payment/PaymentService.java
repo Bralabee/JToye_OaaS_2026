@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
-import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -224,12 +223,16 @@ public class PaymentService {
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
                     intent.getId(), order.getTotalAmountPennies(), "gbp");
 
-            // Create financial transaction record
+            // Create financial transaction record — canonical ledger owner for
+            // card orders (Issue #81 BUG 3). Idempotent on orderId, so the later
+            // COMPLETED transition is a no-op. Rate is the order's resolved
+            // (predominant) rate, not a hardcoded STANDARD literal (BUG 2).
             financialTransactionService.createTransaction(
                     new CreateTransactionRequest(
                             order.getTotalAmountPennies(),
-                            VatRate.STANDARD,
-                            "Payment " + intent.getId() + " for Order " + order.getOrderNumber()
+                            order.getVatRate(),
+                            "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
+                            order.getId()
                     ));
 
             log.info("Payment succeeded for order {} — PI: {}, method: {}",

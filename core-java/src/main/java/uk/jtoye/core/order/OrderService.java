@@ -10,7 +10,6 @@ import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
-import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
@@ -356,13 +355,19 @@ public class OrderService {
                 order.getId(), order.getTenantId(), order.getOrderNumber(),
                 oldStatus, newStatus);
 
-        // Auto-create financial transaction when order is completed
+        // Auto-create financial transaction when order is completed. Idempotent
+        // on orderId (Issue #81 BUG 3): for card orders PaymentService already
+        // created the settlement row on payment, so this COMPLETED call is a
+        // no-op; for cash/COD orders no webhook fired, so this creates the sole
+        // ledger row. The rate is the order's resolved (predominant) rate, never
+        // a hardcoded STANDARD literal (BUG 2).
         if (newStatus == OrderStatus.COMPLETED && order.getTotalAmountPennies() != null) {
             financialTransactionService.createTransaction(
                     new CreateTransactionRequest(
                             order.getTotalAmountPennies(),
-                            VatRate.STANDARD,
-                            "Order " + order.getOrderNumber()
+                            order.getVatRate(),
+                            "Order " + order.getOrderNumber(),
+                            order.getId()
                     ));
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
