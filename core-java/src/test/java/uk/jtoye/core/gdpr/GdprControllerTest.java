@@ -84,10 +84,11 @@ class GdprControllerTest {
     @Test
     @DisplayName("DELETE /api/v1/gdpr/customers/{id}/erase returns 200 with erasure confirmation")
     void eraseData_returnsErasureResponse() throws Exception {
+        UUID recordId = UUID.fromString("22222222-2222-2222-2222-222222222222");
         var response = new GdprController.ErasureResponse(
                 CUSTOMER_ID,
                 OffsetDateTime.parse("2025-06-15T08:00:00Z"),
-                3, 2
+                3, 2, 5, 4, recordId
         );
 
         when(gdprService.eraseCustomerData(CUSTOMER_ID)).thenReturn(response);
@@ -96,7 +97,10 @@ class GdprControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.customerId").value(CUSTOMER_ID.toString()))
                 .andExpect(jsonPath("$.ordersAnonymised").value(3))
-                .andExpect(jsonPath("$.reviewsAnonymised").value(2));
+                .andExpect(jsonPath("$.reviewsAnonymised").value(2))
+                .andExpect(jsonPath("$.auditRowsScrubbed").value(5))
+                .andExpect(jsonPath("$.photosDeleted").value(4))
+                .andExpect(jsonPath("$.recordId").value(recordId.toString()));
     }
 
     @Test
