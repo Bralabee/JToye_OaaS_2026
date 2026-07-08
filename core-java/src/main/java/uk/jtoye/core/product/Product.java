@@ -2,7 +2,9 @@ package uk.jtoye.core.product;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.envers.Audited;
+import org.hibernate.type.SqlTypes;
 import uk.jtoye.core.finance.VatRate;
 
 import java.time.OffsetDateTime;
@@ -82,6 +84,32 @@ public class Product {
     @Column(name = "additional_image_urls", columnDefinition = "TEXT[]")
     private List<String> additionalImageUrls = new ArrayList<>();
 
+    // ---- PPDS / Natasha's Law label compliance (Issue #82 P0-6, V41) ----
+
+    /**
+     * Persisted cache of the emphasis (allergen) spans parsed from
+     * {@code ingredientsText} on save. Nullable. The label renderer re-parses
+     * {@code ingredientsText} at render time (authoritative) rather than trusting
+     * these stored offsets, so an edit to the ingredients text can never leave
+     * stale offsets pointing at the wrong characters. Mirrors the Shop.openingHours
+     * JSONB mapping precedent.
+     */
+    @Column(name = "allergen_spans", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private List<AllergenSpan> allergenSpans;
+
+    /** Per-product shelf life in days; the durability date is computed at label
+     * generation time as generationDate + shelfLifeDays. Nullable (a compliant
+     * label 422s when absent). */
+    @Column(name = "shelf_life_days")
+    private Integer shelfLifeDays;
+
+    /** Durability wording to print: 'USE_BY' or 'BEST_BEFORE'. Kept as a String to
+     * match the varchar+CHECK column and avoid a JPA enum-mapping decision.
+     * Nullable (a compliant label 422s when absent). */
+    @Column(name = "durability_type", length = 20)
+    private String durabilityType;
+
     // Optimistic-lock column (CQ-01 stock race fix — V34 migration).
     // Primitive long (not Long) — migration DEFAULT 0 + NOT NULL guarantees no NULLs.
     @Version
@@ -128,6 +156,12 @@ public class Product {
     public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
+    public List<AllergenSpan> getAllergenSpans() { return allergenSpans; }
+    public void setAllergenSpans(List<AllergenSpan> allergenSpans) { this.allergenSpans = allergenSpans; }
+    public Integer getShelfLifeDays() { return shelfLifeDays; }
+    public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
+    public String getDurabilityType() { return durabilityType; }
+    public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
 
     /**
      * Check if product has stock available.

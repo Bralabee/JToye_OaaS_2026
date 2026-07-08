@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import uk.jtoye.core.finance.VatRate;
 
@@ -25,7 +26,12 @@ public class CreateProductRequest {
 
     @NotBlank(message = "Ingredients text is required (Natasha's Law)")
     @Size(min = 1, max = 2000, message = "Ingredients text must be between 1 and 2000 characters")
-    @Schema(description = "Full ingredients list (Natasha's Law requirement)", example = "Yam (100%)", required = true)
+    @Schema(description = "Full ingredients list (Natasha's Law requirement). Wrap each allergen "
+            + "in double asterisks so the PPDS label emboldens it INLINE within the ingredients "
+            + "list (FSA requirement) — e.g. \"Wheat flour, **milk**, sugar, **egg**\". Real "
+            + "punctuation (parentheses, commas, percentages) is preserved. See "
+            + "docs/ppds-label-markup.md for the full markup convention.",
+            example = "Wheat flour, **milk**, sugar", required = true)
     private String ingredientsText;
 
     @NotNull(message = "Allergen mask is required (Natasha's Law)")
@@ -78,6 +84,23 @@ public class CreateProductRequest {
     @Schema(description = "Quantity in stock (null = unlimited/untracked)", example = "50")
     private Integer quantityInStock;
 
+    // ---- PPDS / Natasha's Law durability (Issue #82 P0-6) ----
+    // Both optional on the request, but a COMPLIANT PPDS label REQUIRES them: the
+    // label endpoint returns HTTP 422 for a product missing shelf life / durability
+    // type (alongside a missing shop address). See docs/ppds-label-markup.md.
+
+    @Min(value = 0, message = "Shelf life days must be non-negative")
+    @Schema(description = "Per-product shelf life in days. The PPDS label prints a durability date "
+            + "computed as generationDate + shelfLifeDays. Required for a compliant label (the "
+            + "label 422s when absent).", example = "3")
+    private Integer shelfLifeDays;
+
+    @Pattern(regexp = "USE_BY|BEST_BEFORE", message = "Durability type must be USE_BY or BEST_BEFORE")
+    @Schema(description = "Which durability wording the PPDS label prints: USE_BY ('Use by:') or "
+            + "BEST_BEFORE ('Best before:'). Required for a compliant label (the label 422s when "
+            + "absent).", example = "USE_BY", allowableValues = {"USE_BY", "BEST_BEFORE"})
+    private String durabilityType;
+
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
     public String getTitle() { return title; }
@@ -110,4 +133,8 @@ public class CreateProductRequest {
     public void setShopId(UUID shopId) { this.shopId = shopId; }
     public Integer getQuantityInStock() { return quantityInStock; }
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
+    public Integer getShelfLifeDays() { return shelfLifeDays; }
+    public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
+    public String getDurabilityType() { return durabilityType; }
+    public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
 }

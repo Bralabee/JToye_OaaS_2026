@@ -11,11 +11,14 @@ public interface ProductMapper {
 
     ProductDto toDto(Product product);
 
+    // allergenSpans is not client-supplied: ProductService parses ingredientsText
+    // and sets it after mapping, so ignore it on both write paths (V41, Issue #82).
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "additionalImageUrls", ignore = true)
     @Mapping(target = "version", ignore = true)
+    @Mapping(target = "allergenSpans", ignore = true)
     Product toEntity(CreateProductRequest request);
 
     @Mapping(target = "id", ignore = true)
@@ -23,5 +26,6 @@ public interface ProductMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "additionalImageUrls", ignore = true)
     @Mapping(target = "version", ignore = true)
+    @Mapping(target = "allergenSpans", ignore = true)
     void updateEntity(CreateProductRequest request, @MappingTarget Product product);
 }
