@@ -1,0 +1,32 @@
+name: pii-guard
+# Zero-tolerance guard against re-introducing database dumps into the repo (P0-3, Issue #79).
+# Rejects any push or PR that tracks a backups/ path or a .sql.gz file. No allowlist.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pii-guard:
+    name: pii-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked db dumps
+        shell: bash
+        run: |
+          # Inspect the tracked index at the checked-out ref (not history).
+          # grep exit 0 = matches found = FAIL; grep exit 1 = clean tree = PASS.
+          if matches=$(git ls-files | grep -E '^backups/|\.sql\.gz$'); then
+            echo "::error::Tracked database dump(s) detected. Remove them and relocate off-tree (see docs/security/PII-EXPOSURE-ASSESSMENT-2026-07-08.md):"
+            while IFS= read -r path; do
+              echo "::error file=${path}::Forbidden tracked dump: ${path}"
+            done <<< "$matches"
+            exit 1
+          fi
+          echo "OK: no tracked backups/ path or .sql.gz file found."
