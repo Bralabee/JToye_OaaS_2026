@@ -3,10 +3,13 @@ package uk.jtoye.core.security;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -47,6 +50,20 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Autowired(required = false)
     private ProxyManager<String> proxyManager;
 
+    // issue #86 [P1-4]: alarm when the rate limiter fails open on a Redis error,
+    // so a temporary throttling-disabled window is observable, not silent.
+    // Null-safe MeterRegistry, mirroring PaymentEventOutboxFlusher.
+    private final Counter failOpenCounter;
+
+    public RateLimitInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        MeterRegistry reg = meterRegistryProvider.getIfAvailable();
+        this.failOpenCounter = reg != null
+                ? Counter.builder("jtoye.ratelimit.fail_open")
+                    .description("Rate limiter degraded to fail-open because the Redis-backed bucket was unavailable (issue #86)")
+                    .register(reg)
+                : null;
+    }
+
     @Value("${rate-limiting.enabled:true}")
     private boolean rateLimitingEnabled;
 
@@ -82,37 +99,57 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         // Create bucket configuration supplier
         Supplier<BucketConfiguration> configSupplier = () -> createBucketConfiguration(tenantId);
 
-        // Get or create bucket for this tenant
-        var bucket = proxyManager.builder().build(rateLimitKey, configSupplier);
+        // issue #86 [P1-4]: fail OPEN with an alarm on ANY Redis error. The
+        // Redis-touching section (bucket build + token consume + probe handling)
+        // is bounded by the explicit Lettuce command timeout configured on the
+        // rate-limit client (RateLimitConfig). If Redis is unavailable the call
+        // throws within that bound; we log at WARN, increment
+        // jtoye.ratelimit.fail_open, and let the request proceed rather than
+        // turning a Redis blip into a 500/60s hang. This is a deliberate
+        // availability-over-enforcement trade-off for the outage window (alarmed
+        // via the counter so operators can alert on it).
+        try {
+            // Get or create bucket for this tenant
+            var bucket = proxyManager.builder().build(rateLimitKey, configSupplier);
 
-        // Try to consume 1 token
-        var probe = bucket.tryConsumeAndReturnRemaining(1);
+            // Try to consume 1 token
+            var probe = bucket.tryConsumeAndReturnRemaining(1);
 
-        if (probe.isConsumed()) {
-            // Request allowed - add rate limit headers
-            response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
-            response.setHeader(HEADER_REMAINING, String.valueOf(probe.getRemainingTokens()));
-            response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + 60)); // Reset in 60 seconds
+            if (probe.isConsumed()) {
+                // Request allowed - add rate limit headers
+                response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
+                response.setHeader(HEADER_REMAINING, String.valueOf(probe.getRemainingTokens()));
+                response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + 60)); // Reset in 60 seconds
 
-            logger.debug("Rate limit check passed for tenant {} - {} tokens remaining", tenantId, probe.getRemainingTokens());
+                logger.debug("Rate limit check passed for tenant {} - {} tokens remaining", tenantId, probe.getRemainingTokens());
+                return true;
+            } else {
+                // Rate limit exceeded - return 429
+                long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
+                response.setStatus(429); // HTTP 429 Too Many Requests
+                response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
+                response.setHeader(HEADER_REMAINING, "0");
+                response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
+                response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
+                response.setContentType("application/json");
+                response.getWriter().write(String.format(
+                    "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in %d seconds.\",\"tenantId\":\"%s\"}",
+                    waitForRefill, tenantId
+                ));
+
+                logger.warn("Rate limit exceeded for tenant {} on path {} - retry after {} seconds",
+                           tenantId, requestPath, waitForRefill);
+                return false;
+            }
+        } catch (Exception e) {
+            // Redis-backed rate limiter degraded — fail OPEN (availability over
+            // enforcement) within the bounded command timeout, and alarm on it.
+            if (failOpenCounter != null) {
+                failOpenCounter.increment();
+            }
+            logger.warn("Rate limiter degraded — failing open for tenant {} on path {}: {}",
+                    tenantId, requestPath, e.getMessage());
             return true;
-        } else {
-            // Rate limit exceeded - return 429
-            long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
-            response.setStatus(429); // HTTP 429 Too Many Requests
-            response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
-            response.setHeader(HEADER_REMAINING, "0");
-            response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
-            response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
-            response.setContentType("application/json");
-            response.getWriter().write(String.format(
-                "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in %d seconds.\",\"tenantId\":\"%s\"}",
-                waitForRefill, tenantId
-            ));
-
-            logger.warn("Rate limit exceeded for tenant {} on path {} - retry after {} seconds",
-                       tenantId, requestPath, waitForRefill);
-            return false;
         }
     }
 
