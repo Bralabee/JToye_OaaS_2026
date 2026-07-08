@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -268,6 +269,22 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
         problem.setTitle("Bad Request");
         problem.setType(URI.create("https://jtoye.uk/errors/type-mismatch"));
+        return problem;
+    }
+
+    /**
+     * PPDS / Natasha's Law (Issue #82 P0-6) — a product that lacks the required
+     * compliance data (business identity, shelf life, durability type) cannot be
+     * turned into a compliant allergen label. The request is well-formed but
+     * semantically unprocessable, so return 422 with a message naming the missing
+     * field(s), rather than emitting a non-compliant PDF or falling through to 500.
+     */
+    @ExceptionHandler(IncompleteLabelDataException.class)
+    public ProblemDetail handleIncompleteLabelData(IncompleteLabelDataException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Incomplete Label Data");
+        problem.setType(URI.create("https://jtoye.uk/errors/incomplete-label-data"));
         return problem;
     }
 

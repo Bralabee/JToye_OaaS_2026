@@ -1,6 +1,7 @@
 package uk.jtoye.core.product.dto;
 
 import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.product.AllergenSpan;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -26,6 +27,9 @@ public class ProductDto {
     private UUID shopId;
     private Integer quantityInStock;
     private List<String> additionalImageUrls;
+    private Integer shelfLifeDays;
+    private String durabilityType;
+    private List<AllergenSpan> allergenSpans;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -65,4 +69,10 @@ public class ProductDto {
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
     public List<String> getAdditionalImageUrls() { return additionalImageUrls; }
     public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
+    public Integer getShelfLifeDays() { return shelfLifeDays; }
+    public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
+    public String getDurabilityType() { return durabilityType; }
+    public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
+    public List<AllergenSpan> getAllergenSpans() { return allergenSpans; }
+    public void setAllergenSpans(List<AllergenSpan> allergenSpans) { this.allergenSpans = allergenSpans; }
 }

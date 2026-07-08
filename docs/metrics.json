@@ -1,13 +1,13 @@
 {
-  "java_test_methods": 515,
-  "java_test_files": 78,
+  "java_test_methods": 527,
+  "java_test_files": 80,
   "java_controllers": 14,
-  "schema_version": 40,
+  "schema_version": 41,
   "go_test_funcs": 74,
   "go_test_files": 8,
   "jest_blocks": 102,
   "jest_files": 18,
   "playwright_blocks": 23,
   "playwright_specs": 5,
-  "total_logical_invocations": 714
+  "total_logical_invocations": 726
 }

@@ -1,0 +1,18 @@
+{
+  "productName" : "Yam Pottage 500g",
+  "sku" : "YAM-500",
+  "pricePennies" : 599,
+  "ingredientRuns" : [ {
+    "text" : "Wheat flour, ",
+    "emphasised" : false
+  }, {
+    "text" : "milk",
+    "emphasised" : true
+  }, {
+    "text" : ", sugar",
+    "emphasised" : false
+  } ],
+  "durabilityLine" : "Use by: 8 Jul 2026",
+  "businessName" : "Test Kitchen Ltd",
+  "businessAddress" : "12 Market Street, London, E1 6AN"
+}
