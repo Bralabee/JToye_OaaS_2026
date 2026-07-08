@@ -482,4 +482,33 @@ class FinancialTransactionServiceTest {
         assertEquals(16666666L, result.vatAmountPennies()); // fraction method: 100000000*20/120 = 16666666 (round down)
         verify(financialTransactionRepository).save(any(FinancialTransaction.class));
     }
+
+    @Test
+    @DisplayName("createTransaction - Idempotent no-op when a ledger row already exists for the orderId")
+    void testCreateTransaction_IdempotentOnOrderId() {
+        // Given: a settled order already has a ledger row (Issue #81 BUG 3).
+        UUID orderId = UUID.randomUUID();
+        CreateTransactionRequest request =
+                new CreateTransactionRequest(1500L, VatRate.STANDARD, "Order ORD-1", orderId);
+
+        FinancialTransaction existing = new FinancialTransaction();
+        setField(existing, "id", transactionId);
+        existing.setTenantId(tenantId);
+        existing.setAmountPennies(1500L);
+        existing.setVatRate(VatRate.STANDARD);
+        existing.setReference("Order ORD-1");
+        existing.setOrderId(orderId);
+        setField(existing, "createdAt", OffsetDateTime.now());
+
+        when(financialTransactionRepository.findByOrderId(orderId)).thenReturn(Optional.of(existing));
+
+        // When
+        FinancialTransactionDto result = financialTransactionService.createTransaction(request);
+
+        // Then: the existing row's DTO is returned and NO new row is saved/flushed.
+        assertEquals(transactionId, result.id());
+        assertEquals(1500L, result.amountPennies());
+        verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
+        verify(financialTransactionRepository, never()).flush();
+    }
 }

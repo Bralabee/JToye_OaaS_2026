@@ -75,6 +75,9 @@ class PaymentServiceTest {
         testOrder.setStatus(OrderStatus.DRAFT);
         testOrder.setPaymentStatus(PaymentStatus.PENDING);
         testOrder.setTotalAmountPennies(1500L);
+        // Resolved (predominant) VAT rate — the ledger row now follows the order's
+        // rate, not a hardcoded STANDARD literal (Issue #81 BUG 2).
+        testOrder.setVatRate(VatRate.STANDARD);
     }
 
     private void setField(Object target, String fieldName, Object value) throws Exception {
@@ -154,7 +157,8 @@ class PaymentServiceTest {
             verify(financialTransactionService).createTransaction(txCaptor.capture());
             CreateTransactionRequest tx = txCaptor.getValue();
             assertEquals(1500L, tx.amountPennies());
-            assertEquals(VatRate.STANDARD, tx.vatRate());
+            assertEquals(VatRate.STANDARD, tx.vatRate()); // follows order.getVatRate() (BUG 2)
+            assertEquals(orderId, tx.orderId());           // keyed for idempotency (BUG 3)
             assertTrue(tx.description().contains("pi_test_123"));
 
             // Verify event published

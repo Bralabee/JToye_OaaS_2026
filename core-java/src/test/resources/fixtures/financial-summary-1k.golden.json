@@ -2,7 +2,7 @@
   "totalRevenuePennies" : 24449800,
   "totalExpensesPennies" : 25848000,
   "netAmountPennies" : -1398200,
-  "totalVatPennies" : -281750,
+  "totalVatPennies" : -233274,
   "transactionCount" : 1000,
   "vatBreakdown" : [ {
     "vatRate" : "EXEMPT",
@@ -12,12 +12,12 @@
   }, {
     "vatRate" : "REDUCED",
     "totalAmountPennies" : 255000,
-    "totalVatPennies" : 12750,
+    "totalVatPennies" : 12135,
     "count" : 200
   }, {
     "vatRate" : "STANDARD",
     "totalAmountPennies" : -1472500,
-    "totalVatPennies" : -294500,
+    "totalVatPennies" : -245409,
     "count" : 400
   }, {
     "vatRate" : "ZERO",
