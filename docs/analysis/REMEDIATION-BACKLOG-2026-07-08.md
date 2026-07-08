@@ -32,6 +32,42 @@ performance 4, data/DR 4, tenant lifecycle 3, ops readiness 3.
 
 ---
 
+## Tracking
+
+All 40 items are tracked as GitHub issues, grouped into one milestone per tier. Each issue carries
+the same evidence, fix direction, effort, and acceptance criteria as its backlog row, plus the
+`main @ 805e02e` / drift caveat.
+
+| Tier | Milestone | Issues |
+|------|-----------|--------|
+| **P0** — Deploy blockers / active exposure | [Remediation P0 — Deploy Blockers](https://github.com/Bralabee/JToye_OaaS_2026/milestone/1) | [#77](https://github.com/Bralabee/JToye_OaaS_2026/issues/77) · [#78](https://github.com/Bralabee/JToye_OaaS_2026/issues/78) · [#79](https://github.com/Bralabee/JToye_OaaS_2026/issues/79) · [#80](https://github.com/Bralabee/JToye_OaaS_2026/issues/80) · [#81](https://github.com/Bralabee/JToye_OaaS_2026/issues/81) · [#82](https://github.com/Bralabee/JToye_OaaS_2026/issues/82) |
+| **P1** — Before first tenant | [Remediation P1 — Before First Tenant](https://github.com/Bralabee/JToye_OaaS_2026/milestone/2) | [#83](https://github.com/Bralabee/JToye_OaaS_2026/issues/83) · [#84](https://github.com/Bralabee/JToye_OaaS_2026/issues/84) · [#85](https://github.com/Bralabee/JToye_OaaS_2026/issues/85) · [#86](https://github.com/Bralabee/JToye_OaaS_2026/issues/86) · [#87](https://github.com/Bralabee/JToye_OaaS_2026/issues/87) · [#88](https://github.com/Bralabee/JToye_OaaS_2026/issues/88) · [#89](https://github.com/Bralabee/JToye_OaaS_2026/issues/89) · [#90](https://github.com/Bralabee/JToye_OaaS_2026/issues/90) · [#91](https://github.com/Bralabee/JToye_OaaS_2026/issues/91) |
+| **P2** — Scale-out & enterprise sale | [Remediation P2 — Scale-out & Enterprise Sale](https://github.com/Bralabee/JToye_OaaS_2026/milestone/3) | [#92](https://github.com/Bralabee/JToye_OaaS_2026/issues/92) · [#93](https://github.com/Bralabee/JToye_OaaS_2026/issues/93) · [#94](https://github.com/Bralabee/JToye_OaaS_2026/issues/94) · [#95](https://github.com/Bralabee/JToye_OaaS_2026/issues/95) · [#96](https://github.com/Bralabee/JToye_OaaS_2026/issues/96) · [#97](https://github.com/Bralabee/JToye_OaaS_2026/issues/97) · [#98](https://github.com/Bralabee/JToye_OaaS_2026/issues/98) · [#99](https://github.com/Bralabee/JToye_OaaS_2026/issues/99) · [#100](https://github.com/Bralabee/JToye_OaaS_2026/issues/100) · [#101](https://github.com/Bralabee/JToye_OaaS_2026/issues/101) · [#102](https://github.com/Bralabee/JToye_OaaS_2026/issues/102) |
+| **P3** — Hardening & polish | [Remediation P3 — Hardening & Polish](https://github.com/Bralabee/JToye_OaaS_2026/milestone/4) | [#103](https://github.com/Bralabee/JToye_OaaS_2026/issues/103) · [#104](https://github.com/Bralabee/JToye_OaaS_2026/issues/104) · [#105](https://github.com/Bralabee/JToye_OaaS_2026/issues/105) · [#106](https://github.com/Bralabee/JToye_OaaS_2026/issues/106) · [#107](https://github.com/Bralabee/JToye_OaaS_2026/issues/107) · [#108](https://github.com/Bralabee/JToye_OaaS_2026/issues/108) · [#109](https://github.com/Bralabee/JToye_OaaS_2026/issues/109) · [#110](https://github.com/Bralabee/JToye_OaaS_2026/issues/110) · [#111](https://github.com/Bralabee/JToye_OaaS_2026/issues/111) · [#112](https://github.com/Bralabee/JToye_OaaS_2026/issues/112) · [#113](https://github.com/Bralabee/JToye_OaaS_2026/issues/113) · [#114](https://github.com/Bralabee/JToye_OaaS_2026/issues/114) · [#115](https://github.com/Bralabee/JToye_OaaS_2026/issues/115) · [#116](https://github.com/Bralabee/JToye_OaaS_2026/issues/116) |
+
+**Per-item mapping** (backlog ID → issue):
+
+| ID | Issue | ID | Issue | ID | Issue | ID | Issue |
+|----|-------|----|-------|----|-------|----|-------|
+| P0-1 | [#77](https://github.com/Bralabee/JToye_OaaS_2026/issues/77) | P1-1 | [#83](https://github.com/Bralabee/JToye_OaaS_2026/issues/83) | P2-1 | [#92](https://github.com/Bralabee/JToye_OaaS_2026/issues/92) | P3-1 | [#103](https://github.com/Bralabee/JToye_OaaS_2026/issues/103) |
+| P0-2 | [#78](https://github.com/Bralabee/JToye_OaaS_2026/issues/78) | P1-2 | [#84](https://github.com/Bralabee/JToye_OaaS_2026/issues/84) | P2-2 | [#93](https://github.com/Bralabee/JToye_OaaS_2026/issues/93) | P3-2 | [#104](https://github.com/Bralabee/JToye_OaaS_2026/issues/104) |
+| P0-3 | [#79](https://github.com/Bralabee/JToye_OaaS_2026/issues/79) | P1-3 | [#85](https://github.com/Bralabee/JToye_OaaS_2026/issues/85) | P2-3 | [#94](https://github.com/Bralabee/JToye_OaaS_2026/issues/94) | P3-3 | [#105](https://github.com/Bralabee/JToye_OaaS_2026/issues/105) |
+| P0-4 | [#80](https://github.com/Bralabee/JToye_OaaS_2026/issues/80) | P1-4 | [#86](https://github.com/Bralabee/JToye_OaaS_2026/issues/86) | P2-4 | [#95](https://github.com/Bralabee/JToye_OaaS_2026/issues/95) | P3-4 | [#106](https://github.com/Bralabee/JToye_OaaS_2026/issues/106) |
+| P0-5 | [#81](https://github.com/Bralabee/JToye_OaaS_2026/issues/81) | P1-5 | [#87](https://github.com/Bralabee/JToye_OaaS_2026/issues/87) | P2-5 | [#96](https://github.com/Bralabee/JToye_OaaS_2026/issues/96) | P3-5 | [#107](https://github.com/Bralabee/JToye_OaaS_2026/issues/107) |
+| P0-6 | [#82](https://github.com/Bralabee/JToye_OaaS_2026/issues/82) | P1-6 | [#88](https://github.com/Bralabee/JToye_OaaS_2026/issues/88) | P2-6 | [#97](https://github.com/Bralabee/JToye_OaaS_2026/issues/97) | P3-6 | [#108](https://github.com/Bralabee/JToye_OaaS_2026/issues/108) |
+|  |  | P1-7 | [#89](https://github.com/Bralabee/JToye_OaaS_2026/issues/89) | P2-7 | [#98](https://github.com/Bralabee/JToye_OaaS_2026/issues/98) | P3-7 | [#109](https://github.com/Bralabee/JToye_OaaS_2026/issues/109) |
+|  |  | P1-8 | [#90](https://github.com/Bralabee/JToye_OaaS_2026/issues/90) | P2-8 | [#99](https://github.com/Bralabee/JToye_OaaS_2026/issues/99) | P3-8 | [#110](https://github.com/Bralabee/JToye_OaaS_2026/issues/110) |
+|  |  | P1-9 | [#91](https://github.com/Bralabee/JToye_OaaS_2026/issues/91) | P2-9 | [#100](https://github.com/Bralabee/JToye_OaaS_2026/issues/100) | P3-9 | [#111](https://github.com/Bralabee/JToye_OaaS_2026/issues/111) |
+|  |  |  |  | P2-10 | [#101](https://github.com/Bralabee/JToye_OaaS_2026/issues/101) | P3-10 | [#112](https://github.com/Bralabee/JToye_OaaS_2026/issues/112) |
+|  |  |  |  | P2-11 | [#102](https://github.com/Bralabee/JToye_OaaS_2026/issues/102) | P3-11 | [#113](https://github.com/Bralabee/JToye_OaaS_2026/issues/113) |
+|  |  |  |  |  |  | P3-12 | [#114](https://github.com/Bralabee/JToye_OaaS_2026/issues/114) |
+|  |  |  |  |  |  | P3-13 | [#115](https://github.com/Bralabee/JToye_OaaS_2026/issues/115) |
+|  |  |  |  |  |  | P3-14 | [#116](https://github.com/Bralabee/JToye_OaaS_2026/issues/116) |
+
+Live board: [`label:remediation`](https://github.com/Bralabee/JToye_OaaS_2026/issues?q=is%3Aissue+label%3Aremediation) · start-here set: [`label:P0`](https://github.com/Bralabee/JToye_OaaS_2026/issues?q=is%3Aissue+label%3AP0).
+
+---
+
 ## P0 — Blockers
 
 **Blockers: fail first deployment, or active legal/financial exposure**
