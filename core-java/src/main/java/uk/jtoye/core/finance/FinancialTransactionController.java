@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
@@ -24,10 +25,17 @@ import java.util.UUID;
  * REST controller for financial transaction management.
  * All endpoints require JWT authentication and are automatically tenant-scoped.
  *
+ * <p><b>Access control (issue #83 P1-1):</b> the financial ledger and summary
+ * are restricted to the {@code admin} realm role via the class-level
+ * {@code @PreAuthorize("hasRole('admin')")} gate — a non-admin caller receives
+ * 403. RLS still scopes admin reads to their own tenant (role and tenant checks
+ * are complementary, not a replacement for one another).
+ *
  * Financial transactions are IMMUTABLE - no update or delete endpoints.
  */
 @RestController
 @RequestMapping("/financial-transactions")
+@PreAuthorize("hasRole('admin')")  // issue #83 P1-1: ledger + summary require the admin realm role
 @Tag(name = "Financial Transactions", description = "Financial transaction management endpoints (audit-compliant)")
 @SecurityRequirement(name = "bearer-jwt")
 @SecurityRequirement(name = "tenant-header")
