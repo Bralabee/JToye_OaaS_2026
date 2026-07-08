@@ -5,9 +5,9 @@
   "schema_version": 39,
   "go_test_funcs": 74,
   "go_test_files": 8,
-  "jest_blocks": 100,
-  "jest_files": 17,
+  "jest_blocks": 102,
+  "jest_files": 18,
   "playwright_blocks": 23,
   "playwright_specs": 5,
-  "total_logical_invocations": 692
+  "total_logical_invocations": 694
 }
