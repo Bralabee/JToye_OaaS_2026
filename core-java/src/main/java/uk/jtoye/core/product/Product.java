@@ -3,6 +3,7 @@ package uk.jtoye.core.product;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
+import uk.jtoye.core.finance.VatRate;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -38,6 +39,15 @@ public class Product {
 
     @Column(name = "price_pennies", nullable = false)
     private Long pricePennies = 1000L;
+
+    /**
+     * VAT liability for this product. Defaults to STANDARD (UK 20%) so no product
+     * is ever silently zero-rated (Issue #81 BUG 2). Resolved into the owning
+     * order's predominant VAT rate at order-creation time.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vat_rate", nullable = false, length = 20)
+    private VatRate vatRate = VatRate.STANDARD;
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -92,6 +102,8 @@ public class Product {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public VatRate getVatRate() { return vatRate; }
+    public void setVatRate(VatRate vatRate) { this.vatRate = vatRate; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public String getImageUrl() { return imageUrl; }

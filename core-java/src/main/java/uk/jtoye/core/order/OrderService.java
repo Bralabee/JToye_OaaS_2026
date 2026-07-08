@@ -10,7 +10,7 @@ import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
-import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
@@ -28,6 +28,7 @@ import uk.jtoye.core.shop.ShopRepository;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -117,7 +118,11 @@ public class OrderService {
         }
         order.setUpdatedAt(OffsetDateTime.now());
 
-        // Add order items with stock validation
+        // Add order items with stock validation. Collect each line's
+        // VAT-inclusive gross + server-resolved rate for predominant-liability
+        // resolution (Issue #81 BUG 2 — closes silent zero-rating on the admin
+        // path, which previously left order.vatRate at the ZERO default).
+        List<VatCalculator.LineRate> lineRates = new ArrayList<>();
         for (OrderItemRequest itemRequest : request.getItems()) {
             // Fetch product to get current price
             Product product = productRepository.findById(itemRequest.getProductId())
@@ -142,7 +147,12 @@ public class OrderService {
             item.setTenantId(tenantId);
             item.setProductName(product.getTitle());
             order.addItem(item);
+            lineRates.add(new VatCalculator.LineRate(
+                    item.getTotalPricePennies(), product.getVatRate()));
         }
+
+        // Resolve the order's single predominant VAT rate before totalling.
+        order.setVatRate(VatCalculator.predominantRate(lineRates));
 
         // Calculate total
         order.calculateTotal();
@@ -356,13 +366,19 @@ public class OrderService {
                 order.getId(), order.getTenantId(), order.getOrderNumber(),
                 oldStatus, newStatus);
 
-        // Auto-create financial transaction when order is completed
+        // Auto-create financial transaction when order is completed. Idempotent
+        // on orderId (Issue #81 BUG 3): for card orders PaymentService already
+        // created the settlement row on payment, so this COMPLETED call is a
+        // no-op; for cash/COD orders no webhook fired, so this creates the sole
+        // ledger row. The rate is the order's resolved (predominant) rate, never
+        // a hardcoded STANDARD literal (BUG 2).
         if (newStatus == OrderStatus.COMPLETED && order.getTotalAmountPennies() != null) {
             financialTransactionService.createTransaction(
                     new CreateTransactionRequest(
                             order.getTotalAmountPennies(),
-                            VatRate.STANDARD,
-                            "Order " + order.getOrderNumber()
+                            order.getVatRate(),
+                            "Order " + order.getOrderNumber(),
+                            order.getId()
                     ));
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }

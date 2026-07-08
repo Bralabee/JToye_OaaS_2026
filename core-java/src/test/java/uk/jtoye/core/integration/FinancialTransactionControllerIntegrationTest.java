@@ -84,7 +84,7 @@ class FinancialTransactionControllerIntegrationTest {
                 .andExpect(jsonPath("$.tenantId").value(testTenantId.toString()))
                 .andExpect(jsonPath("$.amountPennies").value(10000))
                 .andExpect(jsonPath("$.vatRate").value("STANDARD"))
-                .andExpect(jsonPath("$.vatAmountPennies").value(2000))  // 20% of 10000
+                .andExpect(jsonPath("$.vatAmountPennies").value(1666))  // VAT fraction of VAT-inclusive gross: 10000*20/120, round down
                 .andExpect(jsonPath("$.description").value("Test payment"));
     }
 
@@ -142,7 +142,7 @@ class FinancialTransactionControllerIntegrationTest {
                 .andExpect(jsonPath("$.id").value(transactionId))
                 .andExpect(jsonPath("$.amountPennies").value(5000))
                 .andExpect(jsonPath("$.vatRate").value("REDUCED"))
-                .andExpect(jsonPath("$.vatAmountPennies").value(250));  // 5% of 5000
+                .andExpect(jsonPath("$.vatAmountPennies").value(238));  // VAT fraction of VAT-inclusive gross: 5000*5/105, round down
     }
 
     @Test

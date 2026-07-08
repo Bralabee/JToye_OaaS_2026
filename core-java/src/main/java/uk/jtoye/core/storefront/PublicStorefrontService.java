@@ -18,7 +18,7 @@ import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
-import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -357,7 +357,6 @@ public class PublicStorefrontService {
             order.setCustomerEmail(request.getCustomerEmail());
             order.setCustomerPhone(request.getCustomerPhone());
             order.setNotes(request.getNotes());
-            order.setVatRate(VatRate.STANDARD);
             if (idempotencyKey != null && !idempotencyKey.isBlank()) {
                 order.setIdempotencyKey(idempotencyKey);
             }
@@ -366,6 +365,11 @@ public class PublicStorefrontService {
             // Add items with server-side price lookup + allergen cross-check
             List<String> allergenWarnings = new ArrayList<>();
             Integer customerAllergenMask = request.getCustomerAllergenMask();
+            // Collect each line's VAT-inclusive gross + server-resolved rate so
+            // the order's predominant liability can be computed (Issue #81 BUG 2).
+            // The client cannot supply a rate (no rate field on the request) —
+            // it is always resolved from product.vat_rate server-side.
+            List<VatCalculator.LineRate> lineRates = new ArrayList<>();
 
             for (GuestOrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
@@ -400,7 +404,14 @@ public class PublicStorefrontService {
                 );
                 item.setTenantId(tenantId);
                 order.addItem(item);
+                lineRates.add(new VatCalculator.LineRate(
+                        item.getTotalPricePennies(), product.getVatRate()));
             }
+
+            // Resolve the order's single predominant VAT rate from the basket
+            // (replaces the former hardcoded STANDARD). Delivery VAT then follows
+            // this predominant liability via calculateTotal().
+            order.setVatRate(VatCalculator.predominantRate(lineRates));
 
             // Calculate delivery fee — waived if subtotal exceeds free delivery threshold
             long itemSubtotal = order.getItems().stream()

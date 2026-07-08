@@ -51,7 +51,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Fixture determinism rules (RESEARCH §8):
  * <ul>
  *   <li>Fixed {@code new Random(42L)} seed — identical byte-for-byte across runs.</li>
- *   <li>Amounts rounded to multiples of 100 — integer VAT math is exact (no rounding drift).</li>
+ *   <li>Amounts constrained to multiples of 100. NOTE: with the HMRC VAT fraction
+ *       method (Issue #81 — {@code gross*rate/(100+rate)}, round down), VAT is no
+ *       longer exact on multiples of 100 (e.g. 100 STANDARD -&gt; 16, not 20). The
+ *       golden values are therefore whatever the per-row fraction-method aggregate
+ *       produces DB-side; determinism comes from the fixed seed + fixed rounding
+ *       (integer division truncating toward zero), and Java/Postgres parity, NOT
+ *       from the VAT being drift-free. Regenerate via captureGoldenOnce if the
+ *       fixture or VAT math changes.</li>
  *   <li>VAT rate cycled deterministically per row index.</li>
  *   <li>VatBreakdown sorted by {@link VatRate#name()} before serialization for stable ordering.</li>
  * </ul>

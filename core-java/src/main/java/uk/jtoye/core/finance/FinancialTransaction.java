@@ -56,6 +56,15 @@ public class FinancialTransaction {
     @Column(name = "reference")
     private String reference;
 
+    /**
+     * Owning order for order-settlement ledger rows (Issue #81 BUG 3). Nullable:
+     * the admin / manual ledger path has no order. Backed by the partial unique
+     * index {@code uq_fin_tx_tenant_order} so exactly one row exists per settled
+     * order. Audit-mirrored on {@code financial_transactions_aud} (V40).
+     */
+    @Column(name = "order_id")
+    private UUID orderId;
+
     // Constructors
 
     public FinancialTransaction() {
@@ -109,22 +118,40 @@ public class FinancialTransaction {
         this.reference = reference;
     }
 
-    /**
-     * Calculate VAT amount based on UK rates.
-     * Note: Rates should be configurable per jurisdiction in production.
-     */
-    public long calculateVatAmount() {
-        return switch (vatRate) {
-            case ZERO, EXEMPT -> 0L;
-            case REDUCED -> (amountPennies * 5) / 100;  // 5%
-            case STANDARD -> (amountPennies * 20) / 100; // 20%
-        };
+    public UUID getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(UUID orderId) {
+        this.orderId = orderId;
     }
 
     /**
-     * Get amount including VAT.
+     * VAT contained WITHIN this transaction's gross amount.
+     *
+     * <p>{@code amountPennies} is the VAT-INCLUSIVE gross (Issue #81 BUG 1 fix),
+     * so VAT is the net-of-gross fraction, not an add-on. Delegates to
+     * {@link VatCalculator#vatFromGross(long, VatRate)} — the single source of
+     * truth (HMRC fraction method, round-down). The JPQL summary aggregates in
+     * {@link FinancialTransactionRepository} mirror the same arithmetic DB-side.
+     */
+    public long calculateVatAmount() {
+        return VatCalculator.vatFromGross(amountPennies, vatRate);
+    }
+
+    /**
+     * The VAT-inclusive gross amount. Since {@code amountPennies} is already
+     * gross-inclusive, this is simply that amount (Issue #81 BUG 1 reconciliation
+     * — VAT is NOT added on top).
      */
     public long getAmountIncludingVat() {
-        return amountPennies + calculateVatAmount();
+        return amountPennies;
+    }
+
+    /**
+     * The net (ex-VAT) amount = gross minus the extracted VAT fraction.
+     */
+    public long getNetAmountPennies() {
+        return amountPennies - calculateVatAmount();
     }
 }

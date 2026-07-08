@@ -4,6 +4,7 @@ import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
+import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.VatRate;
 
 import java.time.OffsetDateTime;
@@ -130,21 +131,28 @@ public class Order {
         item.setOrder(null);
     }
 
+    /**
+     * Recompute derived totals. Prices are VAT-INCLUSIVE consumer prices
+     * (Issue #81 BUG 1 fix), so VAT is the fraction contained WITHIN the total,
+     * never added on top:
+     * <ul>
+     *   <li>{@code subtotal = Σ line.totalPricePennies} (VAT-inclusive)</li>
+     *   <li>{@code total = subtotal + deliveryFee} (no VAT added on top)</li>
+     *   <li>{@code vatAmount = vatFromGross(subtotal) + vatFromGross(deliveryFee)}
+     *       at the order's predominant {@code vatRate}</li>
+     * </ul>
+     * The single {@link VatCalculator} is the source of truth; the ledger row
+     * for this order re-derives the same VAT from the same rate, so order and
+     * ledger agree to the penny.
+     */
     public void calculateTotal() {
         this.subtotalPennies = items.stream()
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
-        this.vatAmountPennies = calculateVatAmount(this.subtotalPennies, this.vatRate);
-        this.totalAmountPennies = this.subtotalPennies + this.vatAmountPennies + this.deliveryFeePennies;
+        this.totalAmountPennies = this.subtotalPennies + this.deliveryFeePennies;
+        this.vatAmountPennies = VatCalculator.vatFromGross(this.subtotalPennies, this.vatRate)
+                + VatCalculator.vatFromGross(this.deliveryFeePennies, this.vatRate);
         this.itemCount = items.size();
-    }
-
-    private static long calculateVatAmount(long subtotalPennies, VatRate vatRate) {
-        return switch (vatRate) {
-            case ZERO, EXEMPT -> 0L;
-            case REDUCED -> (subtotalPennies * 5) / 100;
-            case STANDARD -> (subtotalPennies * 20) / 100;
-        };
     }
 
     // Getters and Setters

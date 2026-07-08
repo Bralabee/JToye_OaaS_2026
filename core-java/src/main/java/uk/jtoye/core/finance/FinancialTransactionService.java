@@ -2,6 +2,7 @@ package uk.jtoye.core.finance;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -49,20 +50,64 @@ public class FinancialTransactionService {
      * Automatically assigns tenant from context.
      * Validates required fields (amount, VAT rate).
      * NO CACHING - financial records are append-only and compliance-sensitive.
+     *
+     * <p>IDEMPOTENT PER ORDER (Issue #81 BUG 3): when {@code request.orderId()} is
+     * set, exactly one ledger row may exist per settled order. A card order fires
+     * this once on Stripe settlement (PaymentService) and again on the later
+     * COMPLETED transition (OrderService); a cash order fires it once. This method
+     * makes the second call a no-op:
+     * <ol>
+     *   <li>Fast-path: {@code findByOrderId} — if a row already exists, return its
+     *       DTO without saving.</li>
+     *   <li>Race-safe backstop: if two concurrent calls both pass the fast-path,
+     *       the partial unique index {@code uq_fin_tx_tenant_order} rejects the
+     *       second {@code save()} with {@link DataIntegrityViolationException}; we
+     *       catch it, re-query, and return the existing row.</li>
+     * </ol>
      */
     public FinancialTransactionDto createTransaction(CreateTransactionRequest request) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
-        log.debug("Creating financial transaction for tenant {}: amount={} pennies, VAT rate={}, reference={}",
-                tenantId, request.amountPennies(), request.vatRate(), request.description());
+        log.debug("Creating financial transaction for tenant {}: amount={} pennies, VAT rate={}, reference={}, orderId={}",
+                tenantId, request.amountPennies(), request.vatRate(), request.description(), request.orderId());
+
+        // Idempotency fast-path: one canonical ledger row per settled order.
+        if (request.orderId() != null) {
+            Optional<FinancialTransaction> existing =
+                    financialTransactionRepository.findByOrderId(request.orderId());
+            if (existing.isPresent()) {
+                log.info("Idempotent ledger no-op for order {} — existing transaction {} retained",
+                        request.orderId(), existing.get().getId());
+                return financialTransactionMapper.toDto(existing.get());
+            }
+        }
 
         // Create transaction entity using mapper
         FinancialTransaction transaction = financialTransactionMapper.toEntity(request);
         transaction.setTenantId(tenantId);
+        transaction.setOrderId(request.orderId());
 
-        // Save transaction
-        transaction = financialTransactionRepository.save(transaction);
+        // Save transaction. Explicit flush() forces the INSERT so a partial
+        // unique-index violation surfaces HERE (inside the try) rather than
+        // being deferred to transaction commit, keeping the race backstop viable.
+        try {
+            transaction = financialTransactionRepository.save(transaction);
+            financialTransactionRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // Race-safe backstop: a concurrent call won the unique index. Re-query
+            // and return the row it created rather than surfacing an error.
+            if (request.orderId() != null) {
+                Optional<FinancialTransaction> existing =
+                        financialTransactionRepository.findByOrderId(request.orderId());
+                if (existing.isPresent()) {
+                    log.info("Idempotent ledger race resolved for order {} — existing transaction {} retained",
+                            request.orderId(), existing.get().getId());
+                    return financialTransactionMapper.toDto(existing.get());
+                }
+            }
+            throw e;
+        }
 
         log.info("Created financial transaction {} with amount {} pennies, VAT rate: {}, VAT amount: {} pennies",
                 transaction.getId(), transaction.getAmountPennies(),

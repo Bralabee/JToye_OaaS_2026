@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 700 logical invocations passing (501 Java `@Test` methods across 76 files + 102 Jest `it/test` blocks across 18 files + 74 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
+- **Testing**: All new code requires tests — project standard is 714 logical invocations passing (515 Java `@Test` methods across 78 files + 102 Jest `it/test` blocks across 18 files + 74 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V39 (storefront promotions/announcements/reviews RLS uuid-cast fix; V38 shops_aud/order_items_aud Envers audit-column backfill; V37 refunds_aud audit version column)
+- Current schema version: V40 (VAT ledger correctness [Issue #81]: products.vat_rate + financial_transactions.order_id + _aud mirrors + partial unique index uq_fin_tx_tenant_order + historical duplicate collapse; V39 storefront promotions/announcements/reviews RLS uuid-cast fix; V38 shops_aud/order_items_aud Envers audit-column backfill)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`
