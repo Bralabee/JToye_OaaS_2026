@@ -39,12 +39,26 @@ public class RateLimitConfig {
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
+    // issue #86 [P1-4]: reuse the existing per-profile Redis command timeout
+    // (application.yml 2000ms / prod 3000ms / staging 2500ms) rather than a
+    // hardcoded literal. Spring Boot binds the "2000ms"-style string to Duration.
+    @Value("${spring.data.redis.timeout:2000ms}")
+    private Duration redisCommandTimeout;
+
     @Value("${rate-limiting.enabled:true}")
     private boolean rateLimitingEnabled;
 
     /**
      * Creates a Lettuce-based proxy manager for distributed rate limiting.
      * Uses Redis as the shared state store for rate limit buckets.
+     *
+     * <p>issue #86 [P1-4]: an explicit Lettuce command timeout
+     * ({@link #redisCommandTimeout}, sourced from {@code spring.data.redis.timeout})
+     * replaces Lettuce's 60s default. Without it, a Redis outage made every
+     * rate-limited request hang ~60s before the {@code RateLimitInterceptor} could
+     * fail open. Applied both on the {@link RedisURI} (belt) and via
+     * {@link RedisClient#setDefaultTimeout(Duration)} (braces) so the bounded
+     * timeout holds regardless of which command path Lettuce takes.
      *
      * @return LettuceBasedProxyManager configured for tenant-aware rate limiting
      */
@@ -54,10 +68,11 @@ public class RateLimitConfig {
             return null; // Skip bean creation if rate limiting is disabled
         }
 
-        // Build Redis URI
+        // Build Redis URI with an explicit, bounded command timeout (issue #86).
         RedisURI.Builder uriBuilder = RedisURI.builder()
                 .withHost(redisHost)
-                .withPort(redisPort);
+                .withPort(redisPort)
+                .withTimeout(redisCommandTimeout);
 
         if (redisPassword != null && !redisPassword.isEmpty()) {
             uriBuilder.withPassword(redisPassword.toCharArray());
@@ -67,6 +82,7 @@ public class RateLimitConfig {
 
         // Create Redis client
         RedisClient redisClient = RedisClient.create(redisUri);
+        redisClient.setDefaultTimeout(redisCommandTimeout);
 
         // Create connection with String keys and byte array values
         RedisCodec<String, byte[]> codec = RedisCodec.of(StringCodec.UTF8, ByteArrayCodec.INSTANCE);
