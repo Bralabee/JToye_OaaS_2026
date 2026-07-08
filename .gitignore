@@ -102,7 +102,7 @@ replay_pid*
 *.bak
 *.swp
 *~
-backups/
+/backups/
 
 ### Docker Volumes ###
 postgres_data/
