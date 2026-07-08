@@ -69,6 +69,12 @@ public class ProductService {
         if (product.getFeatured() == null) product.setFeatured(false);
         if (product.getDisplayOrder() == null) product.setDisplayOrder(0);
 
+        // Cache the parsed allergen emphasis spans (PPDS, Issue #82). The label
+        // renderer re-parses ingredients_text at render time (authoritative); this
+        // persisted cache serves other consumers (e.g. a storefront allergen badge).
+        product.setAllergenSpans(
+                IngredientMarkupParser.parse(product.getIngredientsText()).spans());
+
         // Save product
         product = productRepository.save(product);
 
@@ -126,6 +132,12 @@ public class ProductService {
 
         // Update all fields via mapper (handles both core and storefront fields)
         productMapper.updateEntity(request, product);
+
+        // Re-parse the (possibly edited) ingredients_text and refresh the cached
+        // allergen spans (PPDS, Issue #82) — keeps the persisted cache in step with
+        // the text so stale offsets never point at the wrong characters.
+        product.setAllergenSpans(
+                IngredientMarkupParser.parse(product.getIngredientsText()).spans());
 
         // Save with flush to ensure immediate persistence
         product = productRepository.saveAndFlush(product);
