@@ -12,9 +12,16 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+cd "$(dirname "$0")/.."
+
+# Preflight: fail loud on missing/weak credentials BEFORE bringing up any
+# container (issue #80). Validates ./.env by default; pass an env-file path or
+# --with-stack through as arguments. See scripts/verify-env.sh for the contract.
+echo -e "\n${YELLOW}Preflight: verifying environment (scripts/verify-env.sh)${NC}"
+bash scripts/verify-env.sh "$@" || { echo 'verify-env failed — fix the named variable(s) in your .env before starting the stack'; exit 1; }
+
 # Step 1: Start Infrastructure
 echo -e "\n${YELLOW}Step 1: Starting Infrastructure (PostgreSQL, Keycloak)${NC}"
-cd "$(dirname "$0")/.."
 cd infra
 docker compose up -d
 cd ..
