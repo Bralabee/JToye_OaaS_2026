@@ -26,11 +26,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StockDecrementLocationTest {
 
     private static final Path ORDER_SERVICE = resolveOrderServicePath();
+    private static final Path PUBLIC_STOREFRONT_SERVICE = resolvePublicStorefrontServicePath();
 
     private static Path resolveOrderServicePath() {
         Path p = Paths.get("src/main/java/uk/jtoye/core/order/OrderService.java");
         if (!Files.exists(p)) {
             p = Paths.get("core-java/src/main/java/uk/jtoye/core/order/OrderService.java");
+        }
+        return p;
+    }
+
+    private static Path resolvePublicStorefrontServicePath() {
+        Path p = Paths.get("src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java");
+        if (!Files.exists(p)) {
+            p = Paths.get("core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java");
         }
         return p;
     }
@@ -83,6 +92,36 @@ class StockDecrementLocationTest {
                 .as("createOrder must NOT decrement stock — decrement happens on CONFIRM transition")
                 .doesNotContain("stockService.decrementForOrder")
                 .doesNotContain("adjustStockInBatch");
+    }
+
+    /**
+     * Issue #85 [P1-3] convergence guard — {@code PublicStorefrontService.createGuestOrder}
+     * must NOT perform an in-place stock write. The former eager "Deduct stock"
+     * for-loop (findById -> setQuantityInStock(current - qty) -> save) was a naked
+     * read-modify-write that double-decremented (once here, once at CONFIRM) and
+     * surfaced concurrent-checkout contention as a 500. Stock is now decremented
+     * exactly once at the CONFIRMED transition via StockService. If a future
+     * refactor reintroduces a guest-path stock write, this test fails loudly.
+     */
+    @Test
+    void createGuestOrderDoesNotWriteStockInPlace() throws Exception {
+        assertThat(Files.exists(PUBLIC_STOREFRONT_SERVICE))
+                .as("PublicStorefrontService.java must be at the expected path (a refactor "
+                        + "relocation would make doesNotContain assertions pass vacuously)")
+                .isTrue();
+
+        String src = Files.readString(PUBLIC_STOREFRONT_SERVICE);
+
+        int start = src.indexOf("public GuestOrderConfirmation createGuestOrder(");
+        assertThat(start).as("createGuestOrder method signature present").isGreaterThan(0);
+
+        String createGuestOrderBody = extractMethodBody(src, start);
+
+        assertThat(createGuestOrderBody)
+                .as("createGuestOrder must NOT decrement stock in-place — the single "
+                        + "authoritative decrement happens at CONFIRM via StockService (#85)")
+                .doesNotContain("setQuantityInStock")
+                .doesNotContain("productRepository.save(product");
     }
 
     private String extractMethodBody(String src, int start) {

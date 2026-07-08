@@ -46,11 +46,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * retry-safe {@code StockService.decrementForOrder} — so a guest order that is
  * created and then vendor-CONFIRMED could decrement stock twice.
  *
- * <p><strong>VERIFY FIRST:</strong> in Task 1 these assertions pin the CURRENT
- * (pre-fix) behavior. Task 2 flips them to the post-fix single-decrement
- * invariants after the eager block is removed. The observed pre-fix delta and
- * concurrency outcome are recorded verbatim in the SUMMARY (CONFIRMED vs
- * REFUTED).
+ * <p><strong>VERIFY FIRST (empirical verdict):</strong> the double-decrement was
+ * empirically CONFIRMED before any fix — a qty=3 guest order against a
+ * stock-10 product ended at stock 4 (delta = 2 x qty), and one of two concurrent
+ * last-unit checkouts crashed under contention. These assertions now pin the
+ * POST-FIX single-decrement invariants (Test A: delta = 1 x qty, final = 7;
+ * Test B: zero 500s) and stand as the permanent regression guard against the
+ * eager checkout decrement being reintroduced.
  *
  * <p>Test profile has no Stripe key ({@code STRIPE_API_KEY:} defaults empty in
  * application.yml) so {@code paymentService.isConfigured()==false} — guest
@@ -138,17 +140,17 @@ class GuestCheckoutStockConvergenceIntegrationTest {
 
         int finalStock = readStock(productId);
         int observedDelta = startStock - finalStock;
-        log.info("ISSUE-85 PRE-FIX CHARACTERIZATION: guest->confirm stock delta = {} (qty={}, => {} x qty); "
+        log.info("ISSUE-85 POST-FIX INVARIANT: guest->confirm stock delta = {} (qty={}, => {} x qty); "
                         + "start={}, final={}",
                 observedDelta, qty, observedDelta / qty, startStock, finalStock);
 
-        // PRE-FIX CHARACTERIZATION — flips to single-decrement in Task 2.
-        // Confirmed-bug code decrements twice: once eagerly in createGuestOrder
-        // (lines 448-455) and once at CONFIRM (transitionOrder). Delta = 2 x qty,
-        // so final stock = 10 - 6 = 4.
+        // POST-FIX INVARIANT (Issue #85): the eager decrement in createGuestOrder is
+        // gone, so stock is decremented EXACTLY ONCE at the CONFIRMED transition.
+        // Pre-fix characterization was final=4 (delta = 2 x qty); post-fix is
+        // final=7 (delta = 1 x qty).
         assertThat(finalStock)
-                .as("PRE-FIX: guest->confirm double-decrement leaves stock at %d (delta = 2 x qty)", startStock - 2 * qty)
-                .isEqualTo(startStock - 2 * qty);
+                .as("POST-FIX: guest->confirm decrements stock once, leaving %d (delta = 1 x qty)", startStock - qty)
+                .isEqualTo(startStock - qty);
     }
 
     // ------------------------------------------------------------------
@@ -177,17 +179,20 @@ class GuestCheckoutStockConvergenceIntegrationTest {
 
             long failures = results.stream().filter(Objects::nonNull).count();
             results.stream().filter(Objects::nonNull).findFirst().ifPresent(t ->
-                    log.info("ISSUE-85 PRE-FIX CHARACTERIZATION: concurrent guest checkout threw {}: {}",
+                    log.warn("ISSUE-85 REGRESSION: concurrent guest checkout threw {}: {}",
                             t.getClass().getName(), t.getMessage()));
-            log.info("ISSUE-85 PRE-FIX CHARACTERIZATION: concurrent-checkout failures = {} of 2", failures);
+            log.info("ISSUE-85 POST-FIX INVARIANT: concurrent-checkout failures = {} of 2", failures);
 
-            // PRE-FIX CHARACTERIZATION — flips to 0 failures in Task 2.
-            // The naked read-modify-write in createGuestOrder has no @Version retry,
-            // so under contention one thread's save hits
-            // ObjectOptimisticLockingFailureException and surfaces as a 500.
+            // POST-FIX INVARIANT (Issue #85): with the eager stock write removed,
+            // guest checkout no longer contends on products.version, so neither
+            // concurrent checkout throws / returns a 500. Pre-fix characterization
+            // was exactly one failure (naked RMW hitting a DB lock/optimistic-lock
+            // conflict); post-fix is zero. Both orders land PENDING; the single
+            // authoritative decrement (and any oversell rejection) happens later at
+            // CONFIRM via the retry-safe StockService.
             assertThat(failures)
-                    .as("PRE-FIX: naked RMW surfaces one 500 under contention")
-                    .isEqualTo(1);
+                    .as("POST-FIX: two concurrent guest checkouts complete with zero 500s")
+                    .isEqualTo(0);
         } finally {
             pool.shutdownNow();
         }
