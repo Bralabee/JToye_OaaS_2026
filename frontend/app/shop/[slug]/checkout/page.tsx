@@ -547,12 +547,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <span className="text-slate-900">{formatPrice(totalPennies)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">VAT (20%)</span>
-              <span className="text-slate-900">{formatPrice(Math.round(totalPennies * 0.2))}</span>
+              {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
+                  contained within the subtotal, not an add-on. Show the extracted
+                  standard-rate fraction (gross*20/120, round down) to match the
+                  post-order confirmation screen's vatAmountPennies. */}
+              <span className="text-slate-600">VAT (incl. 20%)</span>
+              <span className="text-slate-900">{formatPrice(Math.floor((totalPennies * 20) / 120))}</span>
             </div>
             <div className="flex items-center justify-between pt-1.5">
               <span className="text-base font-bold text-slate-900">Estimated total</span>
-              <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies + Math.round(totalPennies * 0.2))}</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
             </div>
             <p className="text-[10px] text-slate-400">Final total confirmed after order is placed. Delivery fee may apply.</p>
           </div>
@@ -579,7 +583,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           ) : (
             <>
               <CreditCard className="h-4 w-4" />
-              Place order &middot; {formatPrice(totalPennies + Math.round(totalPennies * 0.2))}
+              Place order &middot; {formatPrice(totalPennies)}
             </>
           )}
         </button>
