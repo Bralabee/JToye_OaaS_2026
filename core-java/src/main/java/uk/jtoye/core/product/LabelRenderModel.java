@@ -15,7 +15,7 @@ import java.util.List;
  * @param ingredientRuns  ordered runs covering the whole plain ingredients text;
  *                        emphasised runs are the marked allergens rendered INLINE
  *                        in bold (FSA: allergens emphasised within the list) — there
- *                        is NO standalone CONTAINS block
+ *                        is NO standalone allergen-summary block
  * @param durabilityLine  the computed durability line, e.g. "Use by: 8 Jul 2026"
  *                        or "Best before: 8 Jul 2026" (FSA: durability date)
  * @param businessName    the food business name (FSA: name + address of the FBO)
