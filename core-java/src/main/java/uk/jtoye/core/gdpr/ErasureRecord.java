@@ -2,10 +2,9 @@ package uk.jtoye.core.gdpr;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.springframework.data.domain.Persistable;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -25,10 +24,9 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "erasure_records")
-public class ErasureRecord {
+public class ErasureRecord implements Persistable<UUID> {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(name = "tenant_id", nullable = false)
@@ -64,9 +62,10 @@ public class ErasureRecord {
     }
 
     /**
-     * Convenience all-args constructor. The {@code id} is Hibernate-assigned on
-     * persist ({@code @GeneratedValue}), mirroring the codebase's other entities
-     * (Order/Customer/Refund) — no DB default is relied upon.
+     * Convenience all-args constructor. The {@code id} is assigned by the
+     * application here (a fresh {@link UUID#randomUUID()}) rather than by a DB
+     * default — the value is available to the caller immediately (returned in the
+     * erasure response) without a round-trip to the database.
      */
     public ErasureRecord(UUID tenantId,
                          UUID subjectCustomerId,
@@ -77,6 +76,7 @@ public class ErasureRecord {
                          int photosDeleted,
                          String erasedBy,
                          OffsetDateTime erasedAt) {
+        this.id = UUID.randomUUID();
         this.tenantId = tenantId;
         this.subjectCustomerId = subjectCustomerId;
         this.subjectEmailSha256 = subjectEmailSha256;
@@ -88,8 +88,20 @@ public class ErasureRecord {
         this.erasedAt = erasedAt;
     }
 
+    @Override
     public UUID getId() {
         return id;
+    }
+
+    /**
+     * Always {@code true}: an ErasureRecord is an append-only audit row that is
+     * only ever inserted, never updated. Declaring it new lets Spring Data issue a
+     * direct {@code persist} (INSERT) instead of a {@code merge} (SELECT-then-INSERT)
+     * even though the id is pre-assigned.
+     */
+    @Override
+    public boolean isNew() {
+        return true;
     }
 
     public UUID getTenantId() {
