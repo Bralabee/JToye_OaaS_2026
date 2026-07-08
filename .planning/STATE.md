@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 17 (final) — complete
 Plan: —
 Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-08 - Completed quick task 260708-rlp: Issue #83 P1-1 RBAC — method security enabled, Keycloak realm roles mapped to authorities, refunds/finance/GDPR/dev-admin gated by admin role, 9 new role-based tests; full integrationTest 96/96 green. First P1 done (#84-#88 remain).
+Last activity: 2026-07-08 - Completed quick task 260708-ses: Issue #84 P1-2 GDPR erasure completeness — guest orders reached by email sweep, _aud PII scrubbed (V42 tenant-scoped UPDATE policies), S3 photos deleted, durable erasure_records. #83+#84 done; #85 planning in flight (#86-#88 remain).
 
 Progress: [██████████] 100%
 
@@ -148,6 +148,7 @@ Recent decisions affecting current work:
 | 260708-mow | Issue #81 P0-5: VAT ledger correctness (VALIDATE) — HMRC fraction method net-of-gross (single VatCalculator used by entity + JPQL), per-product vat_rate (V40) + predominant-liability delivery, idempotent single ledger entry (partial unique index, race-safe), V40 in-place backfill+dedupe+audit note; +VatCalculatorTest/LedgerSingleEntryIntegrationTest, golden regen; verified 10/10, live DB V40 zero dup ledger rows | 2026-07-08 | 0a0217c | [260708-mow-issue-81-p0-5-vat-ledger-correctness-fra](./quick/260708-mow-issue-81-p0-5-vat-ledger-correctness-fra/) |
 | 260708-ovt | Issue #82 P0-6: PPDS/Natasha's-Law label (VALIDATE) — inline allergen emphasis via IngredientMarkupParser (fail-soft, render-time authoritative + allergen_spans cache), V41 shelf_life_days/durability_type/allergen_spans, computed Use-by/Best-before, tenant-scoped business identity, fail-loud IncompleteLabelDataException→422 (no non-compliant PDF), removed CONTAINS block + 'No allergens declared' fallback; AC3 golden-file test + docs/ppds-label-markup.md; frontend 'mark allergens' editor deferred to fast-follow; verified 7/7, live V41 | 2026-07-08 | dc56b37 | [260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i](./quick/260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i/) |
 | 260708-rlp | Issue #83 P1-1: RBAC — KeycloakRealmRoleConverter (realm_access.roles→ROLE_*) + @EnableMethodSecurity, @PreAuthorize("hasRole('admin')") on refunds/finance/GDPR/dev-admin; +3 converter unit tests +6 RoleBasedAccessIntegrationTest (low-priv 403 on refund/finance/GDPR, admin allowed); full test+integrationTest green (96/96), docs-freshness synced at 735 | 2026-07-08 | 2dfce74 | [260708-rlp-implement-issue-83-p1-1-rbac-method-secu](./quick/260708-rlp-implement-issue-83-p1-1-rbac-method-secu/) |
+| 260708-ses | Issue #84 P1-2: GDPR erasure completeness — guest-order email sweep (reaches customer_id NULL rows), Envers orders_aud/customers_aud PII scrub via tenant-scoped native UPDATEs + V42 RLS UPDATE policies (were SELECT+INSERT only → scrub silently denied), S3 review-photo deletion via StorageService, durable PII-free erasure_records table (SHA-256 email hash, FORCE RLS); TDD, +GdprErasureIntegrationTest guest-PII reachability proof; full local test+integrationTest BUILD SUCCESSFUL, docs-freshness 736/V42 | 2026-07-08 | a11348c | [260708-ses-implement-issue-84-p1-2-gdpr-erasure-dep](./quick/260708-ses-implement-issue-84-p1-2-gdpr-erasure-dep/) |
 
 ## Deferred Items
 
