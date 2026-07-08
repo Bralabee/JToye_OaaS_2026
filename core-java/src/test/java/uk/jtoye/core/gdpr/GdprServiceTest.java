@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -15,13 +16,17 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.review.Review;
 import uk.jtoye.core.review.ReviewRepository;
+import uk.jtoye.core.storage.StorageService;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,29 +38,28 @@ class GdprServiceTest {
     private OrderRepository orderRepository;
     @Mock
     private ReviewRepository reviewRepository;
+    @Mock
+    private StorageService storageService;
+    @Mock
+    private ErasureRecordRepository erasureRecordRepository;
 
     @InjectMocks
     private GdprService gdprService;
 
     private UUID customerId;
+    private UUID tenantId;
     private Customer customer;
 
     @BeforeEach
     void setUp() {
         customerId = UUID.randomUUID();
+        tenantId = UUID.randomUUID();
         customer = new Customer("Jane Doe", "jane@example.com");
         customer.setPhone("+447700900000");
         customer.setAllergenRestrictions(5);
         customer.setNotes("Prefers extra sauce");
-        // Use reflection to set id since there's no setter
-        try {
-            var idField = Customer.class.getDeclaredField("id");
-            idField.setAccessible(true);
-            idField.set(customer, customerId);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        customer.setTenantId(UUID.randomUUID());
+        setId(customer, "id", customerId);
+        customer.setTenantId(tenantId);
     }
 
     @Test
@@ -100,48 +104,102 @@ class GdprServiceTest {
     }
 
     @Test
-    @DisplayName("Erasure: anonymises customer, orders, and reviews")
+    @DisplayName("Erasure: reaches guest orders by email, deletes S3 photos, scrubs _aud, persists PII-free record")
     void eraseCustomerData_anonymisesAllPii() {
-        Order order = new Order();
-        order.setCustomerName("Jane Doe");
-        order.setCustomerEmail("jane@example.com");
-        order.setCustomerPhone("+447700900000");
-        order.setNotes("Special request");
+        // A customer-linked order (found via customer_id).
+        Order linkedOrder = new Order();
+        setId(linkedOrder, "id", UUID.randomUUID());
+        linkedOrder.setCustomerId(customerId);
+        linkedOrder.setCustomerName("Jane Doe");
+        linkedOrder.setCustomerEmail("jane@example.com");
+        linkedOrder.setCustomerPhone("+447700900000");
+        linkedOrder.setNotes("Special request");
+
+        // A GUEST order — customer_id NULL, only reachable by the email sweep.
+        Order guestOrder = new Order();
+        setId(guestOrder, "id", UUID.randomUUID());
+        guestOrder.setCustomerId(null);
+        guestOrder.setCustomerName("Guest Jane");
+        guestOrder.setCustomerEmail("jane@example.com");
+        guestOrder.setCustomerPhone("+447700900222");
+        guestOrder.setNotes("Leave at door");
 
         Review review = new Review();
         review.setCustomerEmail("jane@example.com");
         review.setCustomerName("Jane Doe");
         review.setComment("Great!");
+        review.setPhotoUrls(new ArrayList<>(List.of(
+                "https://cdn.example.com/1/reviews/a/photo1.jpg",
+                "https://cdn.example.com/1/reviews/a/photo2.jpg")));
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
-        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(order));
+        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(linkedOrder));
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com"))
+                .thenReturn(List.of(guestOrder));
         when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), eq("jane@example.com"), eq("[REDACTED]")))
+                .thenReturn(3);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]")))
+                .thenReturn(1);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         var result = gdprService.eraseCustomerData(customerId);
 
         assertNotNull(result);
         assertEquals(customerId, result.customerId());
-        assertEquals(1, result.ordersAnonymised());
+        // Merged distinct set = linked + guest = 2.
+        assertEquals(2, result.ordersAnonymised(), "guest order must be reached by the email sweep");
         assertEquals(1, result.reviewsAnonymised());
+        assertEquals(4, result.auditRowsScrubbed(), "3 orders_aud + 1 customers_aud rows scrubbed");
+        assertEquals(2, result.photosDeleted());
+        assertNotNull(result.recordId());
 
-        // Verify customer PII anonymised
+        // Customer PII anonymised.
         assertEquals("[REDACTED]", customer.getName());
         assertNull(customer.getPhone());
         assertNull(customer.getNotes());
         assertEquals(0, customer.getAllergenRestrictions());
 
-        // Verify order PII anonymised
-        assertEquals("[REDACTED]", order.getCustomerName());
-        assertNull(order.getCustomerEmail());
-        assertNull(order.getCustomerPhone());
-        assertNull(order.getNotes());
+        // Linked order PII anonymised.
+        assertEquals("[REDACTED]", linkedOrder.getCustomerName());
+        assertNull(linkedOrder.getCustomerEmail());
+        assertNull(linkedOrder.getCustomerPhone());
+        assertNull(linkedOrder.getNotes());
 
-        // Verify review PII anonymised
+        // Guest order PII anonymised (the reachability fix).
+        assertEquals("[REDACTED]", guestOrder.getCustomerName());
+        assertNull(guestOrder.getCustomerEmail());
+        assertNull(guestOrder.getCustomerPhone());
+        assertNull(guestOrder.getNotes());
+
+        // Review PII anonymised + photos physically deleted from S3.
         assertEquals("[REDACTED]", review.getCustomerName());
         assertNull(review.getComment());
+        assertNull(review.getPhotoUrls());
+        verify(storageService).delete("https://cdn.example.com/1/reviews/a/photo1.jpg");
+        verify(storageService).delete("https://cdn.example.com/1/reviews/a/photo2.jpg");
+
+        // Native tenant-scoped _aud scrub invoked with the customer's tenant + original email.
+        verify(orderRepository).scrubOrdersAudit(tenantId, customerId, "jane@example.com", "[REDACTED]");
+        verify(customerRepository).scrubCustomerAudit(tenantId, customerId, "[REDACTED]");
+
+        // Exactly one durable, PII-free erasure record persisted.
+        ArgumentCaptor<ErasureRecord> captor = ArgumentCaptor.forClass(ErasureRecord.class);
+        verify(erasureRecordRepository, times(1)).save(captor.capture());
+        ErasureRecord saved = captor.getValue();
+        assertEquals(tenantId, saved.getTenantId());
+        assertEquals(customerId, saved.getSubjectCustomerId());
+        assertEquals(2, saved.getOrdersAnonymised());
+        assertEquals(1, saved.getReviewsAnonymised());
+        assertEquals(4, saved.getAudRowsScrubbed());
+        assertEquals(2, saved.getPhotosDeleted());
+        assertNotNull(saved.getSubjectEmailSha256());
+        assertEquals(64, saved.getSubjectEmailSha256().length(), "SHA-256 hex is 64 chars");
+        assertNotEquals("jane@example.com", saved.getSubjectEmailSha256(), "must never store plaintext email");
+        assertTrue(saved.getSubjectEmailSha256().matches("[0-9a-f]{64}"), "lowercase hex digest");
     }
 
     @Test
@@ -158,16 +216,24 @@ class GdprServiceTest {
     void eraseCustomerData_noOrdersOrReviews() {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
         when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of());
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), any(), eq("[REDACTED]"))).thenReturn(0);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         var result = gdprService.eraseCustomerData(customerId);
 
         assertEquals(0, result.ordersAnonymised());
         assertEquals(0, result.reviewsAnonymised());
+        assertEquals(0, result.auditRowsScrubbed());
+        assertEquals(0, result.photosDeleted());
         assertEquals("[REDACTED]", customer.getName());
+        verify(storageService, never()).delete(any());
+        verify(erasureRecordRepository, times(1)).save(any());
     }
 
     @Test
@@ -180,5 +246,16 @@ class GdprServiceTest {
         var result = gdprService.exportCustomerData(customerId);
 
         assertEquals(5, result.customer().allergenRestrictions());
+    }
+
+    // Assign a JPA @GeneratedValue id in a unit test (no setter on the entity).
+    private static void setId(Object entity, String field, UUID value) {
+        try {
+            Field f = entity.getClass().getDeclaredField(field);
+            f.setAccessible(true);
+            f.set(entity, value);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
