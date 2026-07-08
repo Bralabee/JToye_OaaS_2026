@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
@@ -15,9 +16,15 @@ import java.util.UUID;
 /**
  * UK GDPR data subject rights endpoints.
  * Provides data export (Article 20) and erasure (Article 17).
+ *
+ * <p><b>Access control (issue #83 P1-1):</b> both export (PII disclosure) and
+ * erasure (irreversible anonymisation) require the {@code admin} realm role via
+ * the class-level {@code @PreAuthorize("hasRole('admin')")} gate — a non-admin
+ * caller receives 403. RLS still scopes these operations to the caller's tenant.
  */
 @RestController
 @RequestMapping("/gdpr/customers")
+@PreAuthorize("hasRole('admin')")  // issue #83 P1-1: PII export + erasure require the admin realm role
 @Tag(name = "GDPR", description = "UK GDPR data subject rights — export and erasure")
 @SecurityRequirement(name = "bearer-jwt")
 @SecurityRequirement(name = "tenant-header")
