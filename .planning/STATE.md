@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 17 (final) — complete
 Plan: —
 Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-08 - Completed quick task 260708-bu6: prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit
+Last activity: 2026-07-08 - Completed quick task 260708-g8c: Issue #79 P0-3 repo-side PII remediation (dumps relocated, CI guard, GDPR assessment)
 
 Progress: [██████████] 100%
 
@@ -141,6 +141,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
+| 260708-g8c | Issue #79 P0-3: untrack/relocate 147 db dumps off-tree, pii-guard CI, UK GDPR Art 33/34 exposure assessment (history rewrite handled post-merge) | 2026-07-08 | d162e82 | [260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h](./quick/260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h/) |
 
 ## Deferred Items
 

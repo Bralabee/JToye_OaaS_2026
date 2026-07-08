@@ -23,7 +23,9 @@ set -o pipefail  # Catch errors in pipes
 # ===========================
 
 # Backup directory (must exist and be writable)
-BACKUP_DIR="${BACKUP_DIR:-/home/sanmi/IdeaProjects/JToye_OaaS_2026/backups}"
+# Default resolves OFF the repo tree so the nightly cron never writes dumps into
+# a tracked directory (P0-3). Override with the BACKUP_DIR env var if needed.
+BACKUP_DIR="${BACKUP_DIR:-$HOME/jtoye-db-backups}"
 
 # Database connection (override with environment variables)
 DB_HOST="${DB_HOST:-localhost}"
@@ -295,7 +297,7 @@ Usage:
     $0 --help                  # Show this help message
 
 Environment Variables:
-    BACKUP_DIR              Backup directory (default: ./backups)
+    BACKUP_DIR              Backup directory (default: \$HOME/jtoye-db-backups)
     DB_HOST                 Database host (default: localhost)
     DB_PORT                 Database port (default: 5433)
     DB_NAME                 Database name (default: jtoye)
