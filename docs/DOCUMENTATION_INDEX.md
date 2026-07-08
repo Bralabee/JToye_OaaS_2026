@@ -77,6 +77,7 @@
 23. **[analysis/FRONTEND_CATALOG.md](analysis/FRONTEND_CATALOG.md)** - Next.js pages, components, auth flow, types, and tests
 24. **[analysis/INFRASTRUCTURE_CATALOG.md](analysis/INFRASTRUCTURE_CATALOG.md)** - Docker, K8s, CI/CD, scripts, monitoring, backups
 25. **[analysis/GAPS_AND_IMPROVEMENTS.md](analysis/GAPS_AND_IMPROVEMENTS.md)** - Discrepancies, feature gaps, and improvement opportunities
+26. **[analysis/REMEDIATION-BACKLOG-2026-07-08.md](analysis/REMEDIATION-BACKLOG-2026-07-08.md)** - Prioritized P0-P3 remediation backlog from the 2026-07-08 four-agent enterprise-readiness audit
 
 ### Troubleshooting
 26. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
