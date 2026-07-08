@@ -50,7 +50,7 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "production"
+          value: "prod"
         - name: DB_HOST
           valueFrom:
             secretKeyRef:
