@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import uk.jtoye.core.finance.VatRate;
 
 import java.util.UUID;
 
@@ -38,6 +39,12 @@ public class CreateProductRequest {
     @Max(value = 1000000000L, message = "Price must not exceed £10,000,000")
     @Schema(description = "Product price in pennies", example = "999", required = true)
     private Long pricePennies;
+
+    // Defaults to STANDARD when absent so existing API clients keep working and
+    // no product is silently zero-rated (Issue #81 BUG 2).
+    @Schema(description = "VAT liability for this product", example = "STANDARD",
+            defaultValue = "STANDARD")
+    private VatRate vatRate = VatRate.STANDARD;
 
     // Optional storefront presentation fields
     @Schema(description = "Customer-facing product description")
@@ -81,6 +88,8 @@ public class CreateProductRequest {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public VatRate getVatRate() { return vatRate; }
+    public void setVatRate(VatRate vatRate) { this.vatRate = vatRate; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public String getImageUrl() { return imageUrl; }

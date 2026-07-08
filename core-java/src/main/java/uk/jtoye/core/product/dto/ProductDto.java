@@ -1,5 +1,7 @@
 package uk.jtoye.core.product.dto;
 
+import uk.jtoye.core.finance.VatRate;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -11,6 +13,7 @@ public class ProductDto {
     private String ingredientsText;
     private Integer allergenMask;
     private Long pricePennies;
+    private VatRate vatRate;
     private OffsetDateTime createdAt;
     private String description;
     private String imageUrl;
@@ -36,6 +39,8 @@ public class ProductDto {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public VatRate getVatRate() { return vatRate; }
+    public void setVatRate(VatRate vatRate) { this.vatRate = vatRate; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
     public String getDescription() { return description; }
