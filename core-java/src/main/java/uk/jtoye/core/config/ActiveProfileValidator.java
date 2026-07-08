@@ -3,9 +3,11 @@ package uk.jtoye.core.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
 import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -51,7 +53,42 @@ public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        validate(environment.getActiveProfiles());
+        String[] profiles = resolveActiveProfiles(environment);
+        validate(profiles);
+        // Best-effort positive record of the profiles that passed the guard.
+        // Note: an EnvironmentPostProcessor runs before the logging system is
+        // fully initialised, so this INFO line may not surface in every boot's
+        // output. The fail-fast guarantee does NOT depend on it — a rejected
+        // profile throws below, and the uncaught exception message reaches
+        // stderr regardless of the logging system's state.
+        log.info("Active Spring profile(s) validated: {}",
+                profiles.length == 0 ? "[default]" : Arrays.toString(profiles));
+    }
+
+    /**
+     * Resolve the effective active profiles robustly at
+     * {@code ApplicationEnvironmentPreparedEvent}.
+     *
+     * <p>{@link ConfigurableEnvironment#getActiveProfiles()} alone can miss a
+     * profile supplied only via {@code SPRING_PROFILES_ACTIVE} / the
+     * {@code -Dspring.profiles.active} system property, depending on how early
+     * this post-processor runs relative to config-data processing. To make the
+     * guard order-insensitive we also read the raw {@code spring.profiles.active}
+     * property (which resolves the {@code SPRING_PROFILES_ACTIVE} env var via
+     * relaxed binding) and merge the two, preserving order and de-duplicating.
+     */
+    static String[] resolveActiveProfiles(ConfigurableEnvironment environment) {
+        Set<String> profiles = new LinkedHashSet<>(Arrays.asList(environment.getActiveProfiles()));
+        String raw = environment.getProperty("spring.profiles.active");
+        if (StringUtils.hasText(raw)) {
+            for (String profile : StringUtils.commaDelimitedListToStringArray(raw)) {
+                String trimmed = profile.trim();
+                if (!trimmed.isEmpty()) {
+                    profiles.add(trimmed);
+                }
+            }
+        }
+        return profiles.toArray(new String[0]);
     }
 
     /**
@@ -94,11 +131,14 @@ public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered
     }
 
     /**
-     * Run early so a bad profile is rejected before other post-processors that
-     * assume a valid environment execute.
+     * Run immediately AFTER {@link ConfigDataEnvironmentPostProcessor} so that
+     * profiles contributed by config data (e.g. a {@code spring.profiles.active}
+     * declared in {@code application.yml}) are already resolved, while still
+     * executing at {@code ApplicationEnvironmentPreparedEvent} — long before any
+     * bean or DB initialisation, preserving the fail-fast contract.
      */
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 10;
+        return ConfigDataEnvironmentPostProcessor.ORDER + 1;
     }
 }
