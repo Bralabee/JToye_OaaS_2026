@@ -67,7 +67,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void createTransactionShouldSucceed() throws Exception {
         CreateTransactionRequest request = new CreateTransactionRequest(
                 10000L,  // £100.00
@@ -89,7 +89,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void listTransactionsShouldReturnPaginatedResults() throws Exception {
         // Create test transactions
         for (int i = 1; i <= 3; i++) {
@@ -117,7 +117,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void getTransactionByIdShouldReturnTransaction() throws Exception {
         // Create transaction
         CreateTransactionRequest request = new CreateTransactionRequest(
@@ -146,7 +146,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void createTransactionWithZeroVatShouldCalculateCorrectly() throws Exception {
         CreateTransactionRequest request = new CreateTransactionRequest(
                 8000L,
@@ -165,7 +165,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void createTransactionWithoutTenantShouldFail() throws Exception {
         CreateTransactionRequest request = new CreateTransactionRequest(
                 5000L,
@@ -183,7 +183,7 @@ class FinancialTransactionControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints now require the admin realm role
     void createTransactionWithNullAmountShouldReturnBadRequest() throws Exception {
         CreateTransactionRequest request = new CreateTransactionRequest(
                 null,  // Null amount
