@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 17 (final) — complete
 Plan: —
 Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-08 - Completed quick task 260708-jj1: Issue #77 P0-1 frontend /api/health route + probe alignment (verified live: 200 + container healthy)
+Last activity: 2026-07-08 - Completed quick task 260708-jzm: Issue #78 P0-2 prod profile mismatch + startup profile fail-fast + Dockerfile -D override removed (verified in container: production rejected, prod boots)
 
 Progress: [██████████] 100%
 
@@ -143,6 +143,7 @@ Recent decisions affecting current work:
 | 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
 | 260708-g8c | Issue #79 P0-3: untrack/relocate 147 db dumps off-tree, pii-guard CI, UK GDPR Art 33/34 exposure assessment (history rewrite handled post-merge) | 2026-07-08 | d162e82 | [260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h](./quick/260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h/) |
 | 260708-jj1 | Issue #77 P0-1: add frontend /api/health route (+2 Jest tests), align compose healthcheck; verified live — curl 200 {"status":"ok"} unauthenticated, container healthy under new probe | 2026-07-08 | 9712eb2 | [260708-jj1-issue-77-p0-1-add-frontend-api-health-ro](./quick/260708-jj1-issue-77-p0-1-add-frontend-api-health-ro/) |
+| 260708-jzm | Issue #78 P0-2: k8s production→prod, ActiveProfileValidator fail-fast (+6 tests), application-dev.yml, Dockerfile baked -Dspring.profiles.active override removed; container-proven (production→hard fail, prod→boots, live dev healthy) | 2026-07-08 | a389739 | [260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-](./quick/260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-/) |
 
 ## Deferred Items
 
