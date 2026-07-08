@@ -32,24 +32,44 @@ import { test, expect } from "@playwright/test"
 
 const BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100"
-const VENDOR_EMAIL = process.env.E2E_VENDOR_EMAIL ?? "vendor@dev.local"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "dev-password"
+// Keycloak dev-realm test vendor (docs/setup/SETUP.md); tenant-a-user maps to
+// tenant 00000000-…-000000000001 via the realm's tenant_id attribute.
+const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "tenant-a-user"
+const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 async function vendorLogin(page: import("@playwright/test").Page) {
   await page.goto(`${BASE_URL}/auth/signin`)
-  await page.waitForLoadState("networkidle")
-  // The dashboard sign-in page exposes a simple email/password form
-  // (NextAuth credentials provider in dev). If a deployment uses a
-  // different auth flow the test must skip — login UI is environment-
-  // specific.
+  // NOT networkidle: the app keeps SSE/realtime connections open, so
+  // networkidle never fires — wait for the DOM and the concrete controls.
+  await page.waitForLoadState("domcontentloaded")
+
+  // Some deployments expose a NextAuth credentials form; the dev stack's
+  // signin page is a single "Sign in with Keycloak" SSO button. Support both.
   const emailInput = page.locator('input[name="email"], input[type="email"]').first()
-  if (await emailInput.count() === 0) {
-    test.skip(true, "Vendor sign-in form not present — environment likely uses Keycloak SSO; skip until E2E_VENDOR_* are wired through SSO")
+  if ((await emailInput.count()) > 0) {
+    await emailInput.fill(VENDOR_USERNAME)
+    await page.locator('input[name="password"], input[type="password"]').first().fill(VENDOR_PASSWORD)
+    await page.locator('button[type="submit"]').first().click()
+    await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+    return
   }
-  await emailInput.fill(VENDOR_EMAIL)
-  await page.locator('input[name="password"], input[type="password"]').first().fill(VENDOR_PASSWORD)
-  await page.locator('button[type="submit"]').first().click()
-  await page.waitForURL(/\/dashboard/, { timeout: 10_000 })
+
+  const ssoButton = page.getByRole("button", { name: /sign in with keycloak/i })
+  if ((await ssoButton.count()) === 0) {
+    test.skip(true, "No sign-in method found on /auth/signin — unknown auth flow")
+  }
+  await ssoButton.click()
+
+  // NextAuth redirects to the Keycloak hosted login (realm jtoye-dev on
+  // localhost:8085). A live Keycloak SSO cookie can skip the form entirely
+  // and land straight on /dashboard — handle both arrivals.
+  await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 15_000 })
+  if (!page.url().includes("/dashboard")) {
+    await page.fill("#username", VENDOR_USERNAME)
+    await page.fill("#password", VENDOR_PASSWORD)
+    await page.click("#kc-login")
+  }
+  await page.waitForURL(/\/dashboard/, { timeout: 20_000 })
 }
 
 test.describe("Phase 17 — vendor refund flow", () => {
@@ -58,7 +78,9 @@ test.describe("Phase 17 — vendor refund flow", () => {
 
     // 1. Open the orders list
     await page.goto(`${BASE_URL}/dashboard/orders`)
-    await page.waitForLoadState("networkidle")
+    // Element-based wait (networkidle never fires with SSE open): the page
+    // is ready when the heading renders; rows may stream in after.
+    await page.waitForLoadState("domcontentloaded")
     await expect(
       page.locator("h1, h2").filter({ hasText: /Orders/i }).first()
     ).toBeVisible({ timeout: 10_000 })
@@ -66,6 +88,10 @@ test.describe("Phase 17 — vendor refund flow", () => {
     // 2. Click the first refundable row (anything past CONFIRMED that hasn't
     //    already been REFUNDED). Skip the test if no refundable order is
     //    seeded — the run is environment-dependent.
+    // Rows stream in after the heading — give the table a beat before
+    // counting, but don't fail if the tenant simply has no orders.
+    await page.locator("table tbody tr").first().waitFor({ timeout: 8_000 }).catch(() => {})
+
     const refundableRow = page
       .locator("table tbody tr")
       .filter({ hasText: /CONFIRMED|PREPARING|READY|COMPLETED/ })
@@ -79,7 +105,10 @@ test.describe("Phase 17 — vendor refund flow", () => {
         "No CONFIRMED+CAPTURED order seeded — fixture is environment-dependent. Run docker-compose dev-data seed before this spec."
       )
     }
-    await refundableRow.click()
+    // Click the FIRST cell (plain text, triggers row navigation): at mobile widths the fixed w-64 sidebar overlays
+    // the row's horizontal centre and intercepts the click (real mobile
+    // layout gap — dashboard shell has no responsive sidebar variant).
+    await refundableRow.locator("td").first().click()
 
     // 3. Verify navigation to the dedicated detail route (Task 1 contract).
     await page.waitForURL(/\/dashboard\/orders\/[0-9a-f-]+$/, {
@@ -140,7 +169,14 @@ test.describe("Phase 17 — vendor refund flow", () => {
     await vendorLogin(page)
 
     await page.goto(`${BASE_URL}/dashboard/orders`)
-    await page.waitForLoadState("networkidle")
+    // Element-based wait (networkidle never fires with SSE open): the page
+    // is ready when the heading renders; rows may stream in after.
+    await page.waitForLoadState("domcontentloaded")
+    await expect(
+      page.locator("h1, h2").filter({ hasText: /Orders/i }).first()
+    ).toBeVisible({ timeout: 10_000 })
+    // Rows stream in after the heading — give the table a beat before counting.
+    await page.locator("table tbody tr").first().waitFor({ timeout: 8_000 }).catch(() => {})
     const draftRow = page
       .locator("table tbody tr")
       .filter({ hasText: /DRAFT/i })
@@ -148,7 +184,8 @@ test.describe("Phase 17 — vendor refund flow", () => {
     if ((await draftRow.count()) === 0) {
       test.skip(true, "No DRAFT order seeded — skipping")
     }
-    await draftRow.click()
+    // First cell for the same mobile-sidebar interception reason as above.
+    await draftRow.locator("td").first().click()
     await page.waitForURL(/\/dashboard\/orders\/[0-9a-f-]+$/, {
       timeout: 5_000,
     })
