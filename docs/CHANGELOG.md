@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P0 remediation sprint (backlog #77–#82) — 2026-07-08
+
+Six P0 items from the 2026-07-08 enterprise-readiness audit (`docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md`), each planned → executed → verified against the live stack → merged via PR.
+
+#### Security
+- **Customer PII purged from public git history (#79, P0-3).** Untracked and relocated 147 `pg_dump` gzips off the working tree; added a `pii-guard` CI gate rejecting any tracked `backups/`/`*.sql.gz`; rewrote git history (`git filter-repo`) and force-pushed `main`+tags to strip the dump blobs. Recorded a UK GDPR Art 33/34 breach assessment (`docs/security/PII-EXPOSURE-ASSESSMENT-2026-07-08.md`): synthetic dev data only, no notification duty. (PR #118)
+- **Committed Keycloak/MinIO credentials rotated (#80, P0-4).** Realm export templated with an `envsubst` render sidecar (client secrets, realm KeyProvider key material, and PBKDF2 seed-user hashes removed from tracking); weak compose fallbacks (`admin123`/`password123`/`minioadmin`) replaced with fail-loud `${VAR:?}`; `scripts/verify-env.sh` extended into a required-var + weak-value deny-list gate wired into `start-dev.sh`. (PR #122)
+
+#### Fixed
+- **Frontend k8s health probe (#77, P0-1).** Added `frontend/app/api/health/route.ts` (200, unauthenticated); the k8s liveness/readiness probes, Dockerfile HEALTHCHECK, and compose healthcheck now target the same working `/api/health` path. Previously the UI tier crash-looped in Kubernetes. (PR #120)
+- **Production Spring profile now loads (#78, P0-2).** k8s `SPRING_PROFILES_ACTIVE` corrected `production` → `prod`; added `ActiveProfileValidator` (fail-fast on any unknown profile) and `application-dev.yml`; removed a Dockerfile-baked `-Dspring.profiles.active` system property that overrode the runtime env var and would have silently no-op'd the fix. (PR #121)
+- **VAT ledger correctness (#81, P0-5).** VAT now computed net-of-gross via the HMRC fraction method (`gross*rate/(100+rate)`, round-down) from a single `VatCalculator` used by both the entity and the JPQL aggregates; per-product `vat_rate` with delivery following the basket's predominant liability; exactly one ledger entry per settled order (idempotent `createTransaction` + partial unique index, race-safe). V40 migration corrects historical rows in place and collapses card-paid duplicates. (PR #123)
+- **PPDS / Natasha's Law label compliance (#82, P0-6).** Allergens are now emphasised inline within the ingredients list (removed the FSA-prohibited standalone `CONTAINS:` block and the `No allergens declared` fallback); added a computed use-by/best-before durability date and business name/address; label generation fails loud (`IncompleteLabelDataException` → 422) when required PPDS data is missing rather than emitting a non-compliant PDF. Guarded by a golden-file test citing FSA guidance. (PR #124)
+
+#### Added
+- `products.vat_rate` (V40); `products.shelf_life_days` / `durability_type` / `allergen_spans` (V41); `IngredientMarkupParser` + vendor markup convention (`docs/ppds-label-markup.md`); `VatCalculatorTest`, `LedgerSingleEntryIntegrationTest`, `IngredientMarkupParserTest`, `ProductLabelGoldenFileTest`, `ActiveProfileValidatorTest`. Test baseline 692 → 726 logical invocations; schema V39 → V41.
+
+#### Deferred / follow-ups
+- Frontend "mark allergens" dashboard editor (backend complete; vendors need a UI to add the `**allergen**` markup).
+- #119 — nightly backup cron silently failing since ~Feb 2026 (128 of 147 dumps were error logs).
+
 ### Integration-suite CI enablement (#71) — 2026-07-07
 
 #### Fixed
