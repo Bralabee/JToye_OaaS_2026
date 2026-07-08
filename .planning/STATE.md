@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 17 (final) — complete
 Plan: —
 Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-07
+Last activity: 2026-07-08 - Completed quick task 260708-bu6: prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit
 
 Progress: [██████████] 100%
 
@@ -135,6 +135,12 @@ Recent decisions affecting current work:
 - Port conflicts in dev env (frontend 3100 because MCP server holds 3000; Postgres 5432 shared with unrelated `dealflow_*` containers) — E2E smoke tests may need those containers stopped first
 - Stripe refund API (VOPS-02) requires phase-level research into idempotency keys + webhook `charge.refunded` handling — treat as a design-gate before writing the controller
 - K8s Sealed Secrets (INF-02) requires an operator install in the cluster + key rotation policy — not just a manifest change
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
 
 ## Deferred Items
 
