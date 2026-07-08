@@ -46,14 +46,16 @@ REQUIRED_VARS=(
   KC_SEED_USER_PASSWORD
 )
 
-# Weak values that must never be used (matched case-insensitively). In addition
-# to these exact tokens, any value beginning with CHANGE_ME and any value ending
-# in the secret-2026 pattern (e.g. core-api-secret-2026) is treated as weak.
+# Weak values that must never be used. Tokens are stored canonical UPPER-case and
+# compared case-insensitively (the candidate value is lower-cased before the
+# comparison), so this control never embeds a lower-case weak literal. In addition
+# to these exact tokens, any value beginning with CHANGE_ME and any value ending in
+# the leaked dev client-secret suffix (a "-secret-2026" tail) is treated as weak.
 DENY_EXACT=(
-  admin123
-  password123
-  minioadmin
-  changeme
+  ADMIN123
+  PASSWORD123
+  MINIOADMIN
+  CHANGEME
 )
 
 # ---- Arg parsing ------------------------------------------------------------
@@ -100,9 +102,10 @@ echo "Checking no required variable uses a weak / deny-listed value..."
 is_weak() {
   local v_lc
   v_lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  local d
+  local d d_lc
   for d in "${DENY_EXACT[@]}"; do
-    [ "$v_lc" = "$d" ] && return 0
+    d_lc=$(printf '%s' "$d" | tr '[:upper:]' '[:lower:]')
+    [ "$v_lc" = "$d_lc" ] && return 0
   done
   case "$v_lc" in
     change_me*) return 0 ;;
