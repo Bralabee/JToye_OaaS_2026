@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,10 +27,15 @@ import java.util.UUID;
 /**
  * Vendor-facing refund endpoints (VOPS-02).
  *
- * <p>Per UC-5 LOCKED in Phase 17 CONTEXT: deferred RBAC. Any
- * JWT-authenticated tenant user can refund their own tenant's orders
- * (RLS enforces tenant scoping; refund target is validated server-side
- * by {@link RefundService}).
+ * <p><b>Access control (issue #83 P1-1):</b> refunds now require the
+ * {@code admin} realm role — the class-level
+ * {@code @PreAuthorize("hasRole('admin')")} gate rejects any non-admin caller
+ * with 403. This supersedes the Phase 17 UC-5 deferral, which previously
+ * allowed any JWT-authenticated tenant user to refund. RLS still enforces
+ * tenant scoping <em>in addition to</em> the role check (the two are
+ * complementary — a role grants the capability, RLS bounds it to the caller's
+ * tenant), and the refund target is validated server-side by
+ * {@link RefundService}.
  *
  * <p><b>BL-01 fix:</b> hard-code the {@code /api/v1} prefix in the
  * {@code @RequestMapping} value rather than relying on
@@ -44,6 +50,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/orders")
+@PreAuthorize("hasRole('admin')")  // issue #83 P1-1: refunds require the admin realm role
 @Tag(name = "Refunds", description = "Stripe refund issuance for vendor orders")
 @SecurityRequirement(name = "bearer-jwt")
 public class RefundController {
