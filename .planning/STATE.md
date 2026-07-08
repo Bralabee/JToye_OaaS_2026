@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 17 (final) — complete
 Plan: —
 Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-08 - Completed quick task 260708-mow: Issue #81 P0-5 VAT ledger correctness — fraction method, per-product rate + predominant delivery, single ledger entry, V40 backfill; verified 10/10 (live DB V40, zero duplicate ledger rows)
+Last activity: 2026-07-08 - Completed quick task 260708-ovt: Issue #82 P0-6 PPDS/Natasha's-Law label compliance — inline allergen emphasis, computed durability date, business identity, fail-loud 422; verified 7/7 (live V41, golden test). ALL 6 P0s (#77-#82) DONE.
 
 Progress: [██████████] 100%
 
@@ -146,6 +146,7 @@ Recent decisions affecting current work:
 | 260708-jzm | Issue #78 P0-2: k8s production→prod, ActiveProfileValidator fail-fast (+6 tests), application-dev.yml, Dockerfile baked -Dspring.profiles.active override removed; container-proven (production→hard fail, prod→boots, live dev healthy) | 2026-07-08 | a389739 | [260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-](./quick/260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-/) |
 | 260708-l2c | Issue #80 P0-4: rotate all committed Keycloak/MinIO creds; realm-export → template + envsubst sidecar (KeyProvider material + PBKDF2 user hashes stripped), :?-required compose vars, verify-env.sh deny-list wired into start-dev.sh; live-proven — old secret 401, rotated grant 200 → API 200, Playwright SSO login green, app DB untouched | 2026-07-08 | 81035e2 | [260708-l2c-issue-80-p0-4-rotate-committed-keycloak-](./quick/260708-l2c-issue-80-p0-4-rotate-committed-keycloak-/) |
 | 260708-mow | Issue #81 P0-5: VAT ledger correctness (VALIDATE) — HMRC fraction method net-of-gross (single VatCalculator used by entity + JPQL), per-product vat_rate (V40) + predominant-liability delivery, idempotent single ledger entry (partial unique index, race-safe), V40 in-place backfill+dedupe+audit note; +VatCalculatorTest/LedgerSingleEntryIntegrationTest, golden regen; verified 10/10, live DB V40 zero dup ledger rows | 2026-07-08 | 0a0217c | [260708-mow-issue-81-p0-5-vat-ledger-correctness-fra](./quick/260708-mow-issue-81-p0-5-vat-ledger-correctness-fra/) |
+| 260708-ovt | Issue #82 P0-6: PPDS/Natasha's-Law label (VALIDATE) — inline allergen emphasis via IngredientMarkupParser (fail-soft, render-time authoritative + allergen_spans cache), V41 shelf_life_days/durability_type/allergen_spans, computed Use-by/Best-before, tenant-scoped business identity, fail-loud IncompleteLabelDataException→422 (no non-compliant PDF), removed CONTAINS block + 'No allergens declared' fallback; AC3 golden-file test + docs/ppds-label-markup.md; frontend 'mark allergens' editor deferred to fast-follow; verified 7/7, live V41 | 2026-07-08 | dc56b37 | [260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i](./quick/260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i/) |
 
 ## Deferred Items
 
