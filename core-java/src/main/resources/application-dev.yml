@@ -1,0 +1,16 @@
+# Development profile — the compose in-container profile.
+#
+# `dev` is the profile docker-compose sets via SPRING_PROFILES_ACTIVE=dev. Its
+# live behaviour lives mainly in @Profile({"dev", ...}) annotations (e.g.
+# TenantFilter, DevTenantController) rather than in property overrides: every
+# effective dev configuration value comes from the env-var defaults declared in
+# the base application.yml.
+#
+# This document exists so SPRING_PROFILES_ACTIVE=dev resolves to a REAL profile
+# document rather than a phantom profile that silently loads nothing (the class
+# of misconfiguration behind Issue #78 [P0-2]). It is intentionally
+# behaviour-neutral — the single key below is identical to the base
+# application.yml LOG_LEVEL default, so it changes no effective behaviour.
+logging:
+  level:
+    uk.jtoye: ${LOG_LEVEL:INFO}

@@ -1,0 +1,6 @@
+# Registers the fail-fast active-profile guard so it runs at
+# ApplicationEnvironmentPreparedEvent for BOTH CoreApplication.main() and every
+# @SpringBootTest boot. This auto-discovery is what makes the {dev,test} and
+# {prod,test} context tests exercise the validator as a built-in regression net.
+# See Issue #78 [P0-2].
+org.springframework.boot.env.EnvironmentPostProcessor=uk.jtoye.core.config.ActiveProfileValidator
