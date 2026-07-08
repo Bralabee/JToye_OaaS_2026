@@ -4,8 +4,12 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -38,7 +42,25 @@ import java.util.Map;
 @Configuration
 @EnableCaching
 @Profile("!test")  // Disable caching in test profile
-public class CacheConfig {
+public class CacheConfig implements CachingConfigurer {
+
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    public CacheConfig(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.meterRegistryProvider = meterRegistryProvider;
+    }
+
+    /**
+     * Redis cache resilience (issue #86 [P1-4]): replace Spring's default
+     * {@code SimpleCacheErrorHandler} (which RE-THROWS every cache error → HTTP
+     * 500 when Redis is down) with {@link RedisCacheErrorHandler}, which degrades
+     * cache errors to log-and-continue so cached reads fall back to the
+     * source-of-truth. See that class for the per-operation semantics.
+     */
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new RedisCacheErrorHandler(meterRegistryProvider);
+    }
 
     /**
      * Configure Redis Cache Manager with per-cache TTL settings.

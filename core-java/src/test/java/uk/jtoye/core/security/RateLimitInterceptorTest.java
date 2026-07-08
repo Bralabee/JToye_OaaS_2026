@@ -4,6 +4,7 @@ import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.distributed.proxy.RemoteBucketBuilder;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.PrintWriter;
@@ -33,6 +35,13 @@ class RateLimitInterceptorTest {
 
     @Mock
     private ProxyManager<String> proxyManager;
+
+    // issue #86 [P1-4]: RateLimitInterceptor now takes ObjectProvider<MeterRegistry>
+    // via constructor (fail-open alarm counter). Provide a mock so @InjectMocks can
+    // construct it; getIfAvailable() returns null by default → counter absent, which
+    // is the intended null-safe behaviour for these pre-existing happy-path tests.
+    @Mock
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     @Mock
     private HttpServletRequest request;
