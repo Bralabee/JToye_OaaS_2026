@@ -1,6 +1,9 @@
 package uk.jtoye.core.order;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -47,4 +50,27 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByCustomerEmailOrderByCreatedAtDesc(String customerEmail);
 
     Optional<Order> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
+
+    /**
+     * GDPR Article-17 scrub of pre-erasure PII from the append-only {@code orders_aud}
+     * Envers history (Issue #84 [P1-2]). Redacts the subject's rows across BOTH the
+     * customer-linked path (customer_id) AND the guest-order path (customer_email),
+     * matching the live-row email sweep in GdprService.
+     *
+     * <p>{@code tenant_id} is an explicit WHERE predicate — mandatory defense-in-depth
+     * per the multi-tenancy constraint: a native UPDATE on an {@code _aud} table must
+     * never rely on RLS alone. The V42 {@code orders_aud_update_policy} gates the same
+     * scope at the policy layer.
+     *
+     * @return number of audit rows scrubbed
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "UPDATE orders_aud SET customer_name = :redacted, customer_email = NULL, "
+            + "customer_phone = NULL, notes = NULL "
+            + "WHERE tenant_id = :tenantId AND (customer_id = :customerId OR customer_email = :email)",
+            nativeQuery = true)
+    int scrubOrdersAudit(@Param("tenantId") UUID tenantId,
+                         @Param("customerId") UUID customerId,
+                         @Param("email") String email,
+                         @Param("redacted") String redacted);
 }

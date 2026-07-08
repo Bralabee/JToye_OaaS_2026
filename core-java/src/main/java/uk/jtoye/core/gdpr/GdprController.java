@@ -107,6 +107,9 @@ public class GdprController {
             UUID customerId,
             OffsetDateTime erasedAt,
             int ordersAnonymised,
-            int reviewsAnonymised
+            int reviewsAnonymised,
+            int auditRowsScrubbed,
+            int photosDeleted,
+            UUID recordId
     ) {}
 }
