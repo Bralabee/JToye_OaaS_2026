@@ -15,7 +15,7 @@ services:
     container_name: jtoye-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5433:5432"
@@ -30,6 +30,31 @@ services:
     networks:
       - jtoye-network
 
+  # Keycloak realm render (issue #80) — renders the gitignored realm-export.json
+  # from the tracked realm-export.template.json using rotated secrets from .env,
+  # so NO literal client secret / seed password is ever committed. Runs once,
+  # exits 0; keycloak waits on service_completed_successfully.
+  keycloak-realm-render:
+    image: alpine:3.20
+    container_name: jtoye-keycloak-realm-render
+    environment:
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client + feeds frontend NextAuth)}
+      EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
+      KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
+    volumes:
+      - ./infra/keycloak:/keycloak
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext >/dev/null
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD' \
+          < /keycloak/realm-export.template.json > /keycloak/realm-export.json
+        echo "Rendered infra/keycloak/realm-export.json from template"
+    networks:
+      - jtoye-network
+
   # Keycloak Identity Provider
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
@@ -37,11 +62,11 @@ services:
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${KC_DB_USERNAME}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD must be set}
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HOSTNAME: localhost
@@ -56,6 +81,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak-realm-render:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\n\r\n' >&3 && timeout 2 cat <&3 | grep -q '200 OK'"]
       interval: 15s
@@ -70,7 +97,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: jtoye-redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
       - "6379:6379"
     volumes:
@@ -89,7 +116,7 @@ services:
     container_name: jtoye-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS must be set}
     ports:
       - "5672:5672"   # AMQP
       - "15672:15672" # Management UI
@@ -118,17 +145,17 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile
       # exposes only health,info — see application.yml management comment).
       # SecurityConfig permits /actuator/prometheus in non-prod profiles only.
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
       REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
       STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}
       STOMP_RELAY_HOST: rabbitmq
       STOMP_RELAY_PORT: "61613"
@@ -141,8 +168,8 @@ services:
       NOTIFICATION_EMAIL_ENABLED: "true"
       NOTIFICATION_EMAIL_TRACKING_BASE_URL: "http://localhost:3000"
       S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
       S3_BUCKET: jtoye-images
       S3_PUBLIC_URL: http://localhost:9000/jtoye-images
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
@@ -216,9 +243,9 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:9090
       NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}
       KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
       KEYCLOAK_ISSUER_INTERNAL: http://keycloak:8080/realms/jtoye-dev
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev
@@ -249,8 +276,8 @@ services:
     container_name: jtoye-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Console UI
@@ -271,9 +298,12 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} &&
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
       mc mb --ignore-existing local/jtoye-images &&
       mc anonymous set download local/jtoye-images &&
       echo 'Bucket jtoye-images ready with public-read policy'

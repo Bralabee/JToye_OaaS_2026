@@ -11,12 +11,6 @@ paths = [
   '''\.env\.example$''',
   '''k8s/base/secrets-template\.yaml$''',
   '''\.gitleaks\.toml$''',
-  # Keycloak realm import for local docker-compose bootstrap. Contains
-  # hardcoded dev-only OIDC client secrets (e.g. core-api-secret-2026) that
-  # are used exclusively for localhost dev. Flagged for follow-up: template
-  # these via env-var substitution before any staging/prod realm import.
-  # See .planning/phases/09-repository-secrets-alerting/deferred-items.md
-  '''infra/keycloak/realm-export\.json$''',
   # Planning artifacts contain curl examples with env var placeholders
   # (e.g. curl -u ${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}).
   # These are code snippets, not actual credentials.
