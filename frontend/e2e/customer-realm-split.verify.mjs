@@ -9,7 +9,12 @@
 // The flow is driven through the real storefront "Sign in" button so it proves
 // the frontend is actually repointed at the customer realm end-to-end.
 //
-// Scenarios B and C are filled in by Plan 18-02 (see TODO stubs at the bottom).
+// Scenario B (Plan 18-02): the admin dashboard login still works on the
+// `jtoye-dev` staff realm AND its `core-api` login page shows NO Register/New-user
+// link — proving self-registration was disabled by the realm hardening.
+// Scenario C (Plan 18-02, admin-API): the two identity pools are disjoint — the
+// Scenario-A test customer is absent from `jtoye-dev`, `admin-user` is absent from
+// `jtoye-customers`, and `storefront-client` is gone from `jtoye-dev`.
 //
 // Run:
 //   NODE_PATH=frontend/node_modules PLAYWRIGHT_BASE_URL=http://localhost:3100 \
@@ -23,7 +28,7 @@
 // frontend/node_modules through Node's normal ESM directory walk.
 
 import { chromium } from "@playwright/test"
-import { writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 
@@ -31,6 +36,17 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3100"
 const CUSTOMER_PASSWORD = process.env.KC_SEED_USER_PASSWORD // policy-compliant, never logged
 const EXPECTED_REALM = "jtoye-customers"
 const FORBIDDEN_REALM = "jtoye-dev"
+
+// Scenario B/C identity surfaces. STAFF_REALM/CUSTOMER_REALM alias the two realm
+// names for readability; the seed staff admin and its password come from .env.
+const STAFF_REALM = FORBIDDEN_REALM
+const CUSTOMER_REALM = EXPECTED_REALM
+const ADMIN_USERNAME = "admin-user"
+const ADMIN_LOGIN_PASSWORD = process.env.KC_SEED_USER_PASSWORD // never logged
+// Keycloak admin-API base (host-facing). Override via KC_ADMIN_BASE if needed.
+const KC_ADMIN_BASE = process.env.KC_ADMIN_BASE || "http://localhost:8085"
+
+const arrLen = (x) => (Array.isArray(x) ? x.length : -1)
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const EMAIL_OUT = join(scriptDir, ".last-customer-email")
@@ -132,20 +148,154 @@ async function scenarioA() {
 }
 
 // ---------------------------------------------------------------------------
-// TODO(18-02) Scenario B — admin dashboard login still works on jtoye-dev AND
-//            the admin (core-api) login page shows NO "Register" link, proving
-//            staff self-registration is disabled after the realm hardening.
-// TODO(18-02) Scenario C — separate identity pools: the Scenario-A test customer
-//            (read from .last-customer-email) is ABSENT from jtoye-dev, and
-//            admin-user is ABSENT from jtoye-customers (admin-API user lookup
-//            per realm). Confirms the two user stores are fully isolated.
+// Scenario B — admin dashboard login still works on jtoye-dev AND the admin
+// (core-api) login page shows NO "Register" link, proving staff self-registration
+// is disabled after the realm hardening.
 // ---------------------------------------------------------------------------
+async function scenarioB() {
+  console.log(`\nScenario B — admin login on ${STAFF_REALM}, NO Register link`)
+
+  if (!ADMIN_LOGIN_PASSWORD) {
+    check("KC_SEED_USER_PASSWORD is available from .env (needed for admin login)", false)
+    return
+  }
+
+  const browser = await chromium.launch()
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  let realmSeen = "none"
+  try {
+    // 1) Start at the admin sign-in page and click "Sign in with Keycloak"; the
+    //    NextAuth core-api provider redirects the browser into the jtoye-dev realm.
+    await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
+    const kcButton = page.getByRole("button", { name: /sign in with keycloak/i }).first()
+    await kcButton.waitFor({ state: "visible", timeout: 20000 })
+    await Promise.all([
+      page.waitForURL(/\/realms\//, { timeout: 30000 }),
+      kcButton.click(),
+    ])
+    realmSeen = realmOf(page.url())
+
+    // 2) The admin login page MUST be served by the jtoye-dev staff realm.
+    check(`admin sign-in targets the ${STAFF_REALM} staff realm (saw: ${realmSeen})`,
+      page.url().includes(`/realms/${STAFF_REALM}/`))
+
+    // 3) The staff login page must offer NO self-registration affordance. After
+    //    hardening (registrationAllowed:false), Keycloak renders no #kc-registration
+    //    block and no anchor into /login-actions/registration (nor /registrations).
+    await page.locator("input#username").first().waitFor({ state: "visible", timeout: 15000 })
+    const registerLinks = page.locator(
+      "#kc-registration a, #kc-registration-container a, a[href*='/registration'], a[href*='/registrations']"
+    )
+    const registerCount = await registerLinks.count()
+    check(`staff login page shows NO Register/New-user link (found ${registerCount})`,
+      registerCount === 0)
+
+    // 4) Admin login STILL works: sign in as admin-user and land on /dashboard.
+    await page.fill("#username", ADMIN_USERNAME)
+    await page.fill("#password", ADMIN_LOGIN_PASSWORD)
+    await page.locator("#kc-login, input[type=submit], button[type=submit]").first().click()
+    await page.waitForURL((u) => u.href.startsWith(`${BASE}/dashboard`), { timeout: 45000 })
+    check(`${ADMIN_USERNAME} still signs in and lands on /dashboard`,
+      page.url().startsWith(`${BASE}/dashboard`))
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err)
+    console.log(`  FAIL  Scenario B threw: ${msg}`)
+    console.log(`        last realm in flow: ${realmSeen}`)
+    failures.push("Scenario B exception")
+  } finally {
+    await browser.close()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario C — separate identity pools (admin-API): the Scenario-A test customer
+// (read from .last-customer-email) is ABSENT from jtoye-dev, admin-user is ABSENT
+// from jtoye-customers, and storefront-client is GONE from jtoye-dev. Confirms
+// the two user/client stores are fully isolated.
+// ---------------------------------------------------------------------------
+async function scenarioC() {
+  console.log(`\nScenario C — separate identity pools (admin-API)`)
+
+  const kcAdmin = process.env.KEYCLOAK_ADMIN
+  const kcAdminPw = process.env.KEYCLOAK_ADMIN_PASSWORD
+  if (!kcAdmin || !kcAdminPw) {
+    check("KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD available from .env (admin-API)", false)
+    return
+  }
+
+  let customerEmail = ""
+  try {
+    customerEmail = readFileSync(EMAIL_OUT, "utf8").trim()
+  } catch { /* handled by the check below */ }
+  if (!customerEmail) {
+    check("test-customer email available from .last-customer-email (Scenario A output)", false)
+    return
+  }
+
+  try {
+    // Bootstrap a master admin-cli token for privileged per-realm lookups.
+    const tokenRes = await fetch(
+      `${KC_ADMIN_BASE}/realms/master/protocol/openid-connect/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "password",
+          client_id: "admin-cli",
+          username: kcAdmin,
+          password: kcAdminPw,
+        }),
+      }
+    )
+    check("obtained a Keycloak master admin token", tokenRes.status === 200)
+    const tokenBody = await tokenRes.json().catch(() => ({}))
+    const adminToken = tokenBody.access_token
+    if (!adminToken) {
+      check("master admin token carries an access_token", false)
+      return
+    }
+    const authHeaders = { Authorization: `Bearer ${adminToken}` }
+    const getJson = async (path) => {
+      const r = await fetch(`${KC_ADMIN_BASE}${path}`, { headers: authHeaders })
+      const b = await r.json().catch(() => [])
+      return { status: r.status, body: b }
+    }
+
+    // 1) The Scenario-A test customer must be ABSENT from the jtoye-dev staff realm.
+    const custInStaff = await getJson(
+      `/admin/realms/${STAFF_REALM}/users?email=${encodeURIComponent(customerEmail)}`
+    )
+    check(`test customer is ABSENT from ${STAFF_REALM} (found ${arrLen(custInStaff.body)})`,
+      arrLen(custInStaff.body) === 0)
+
+    // 2) admin-user must be ABSENT from the jtoye-customers realm.
+    const adminInCust = await getJson(
+      `/admin/realms/${CUSTOMER_REALM}/users?username=${ADMIN_USERNAME}`
+    )
+    check(`${ADMIN_USERNAME} is ABSENT from ${CUSTOMER_REALM} (found ${arrLen(adminInCust.body)})`,
+      arrLen(adminInCust.body) === 0)
+
+    // 3) storefront-client must be REMOVED from jtoye-dev (it lives only in jtoye-customers).
+    const sfInStaff = await getJson(
+      `/admin/realms/${STAFF_REALM}/clients?clientId=storefront-client`
+    )
+    check(`storefront-client is REMOVED from ${STAFF_REALM} (found ${arrLen(sfInStaff.body)})`,
+      arrLen(sfInStaff.body) === 0)
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err)
+    console.log(`  FAIL  Scenario C threw: ${msg}`)
+    failures.push("Scenario C exception")
+  }
+}
 
 await scenarioA()
+await scenarioB()
+await scenarioC()
 
 if (failures.length > 0) {
   console.log(`\nRESULT: FAIL (${failures.length} failed assertion(s))`)
   process.exit(1)
 }
-console.log("\nRESULT: PASS (Scenario A green)")
+console.log("\nRESULT: PASS (Scenarios A + B + C green)")
 process.exit(0)
