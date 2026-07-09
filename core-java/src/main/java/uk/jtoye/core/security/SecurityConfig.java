@@ -44,8 +44,21 @@ public class SecurityConfig {
         return converter;
     }
 
+    // Internal issuer-uri: used to LOCATE the JWKS endpoint (must be reachable
+    // from this container, e.g. http://keycloak:8080/...). It is NOT reused as
+    // the expected 'iss' claim — see expectedIssuer below (issue #87 split-horizon fix).
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
+
+    // issue #87 follow-up (split-horizon issuer fix): the value required in the
+    // token 'iss' claim. Keycloak stamps its PUBLIC frontend issuer (KC_HOSTNAME,
+    // e.g. http://localhost:8085/...), which differs from the INTERNAL JWKS host
+    // (issuerUri) in a containerised topology. Validating 'iss' against issuerUri
+    // rejected every real token ("The iss claim is not valid"); this decouples the
+    // two. Defaults to issuerUri (application.yml) so single-host/Testcontainers
+    // setups are unaffected. Env-overridable via JWT_EXPECTED_ISSUER.
+    @Value("${jtoye.security.jwt.expected-issuer}")
+    private String expectedIssuer;
 
     // issue #87 P1-5: expected 'aud' claim on inbound access tokens. Env-overridable
     // (JWT_EXPECTED_AUDIENCE), never hardcoded — see application.yml. AudienceValidator
@@ -79,10 +92,12 @@ public class SecurityConfig {
         // withJwkSetUri gives a decoder whose default validator is TIMESTAMP ONLY;
         // createDefaultWithIssuer STRENGTHENS this by adding issuer validation, and
         // AudienceValidator rejects tokens minted for another client in the same realm.
+        // Issuer is validated against expectedIssuer (the PUBLIC issuer Keycloak stamps),
+        // NOT issuerUri (the INTERNAL JWKS host) — see split-horizon note on the field.
         // This does NOT touch the #83 jwtAuthenticationConverter (role mapping) wired
         // on the resource server below.
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(issuerUri),
+                JwtValidators.createDefaultWithIssuer(expectedIssuer),
                 new AudienceValidator(expectedAudience)));
         return decoder;
     }

@@ -129,8 +129,16 @@ func main() {
 
 	// Configuration from environment
 	coreAPIURL := getEnv("CORE_API_URL", "http://localhost:9090")
+	// KC_ISSUER_URI is the INTERNAL Keycloak host (reachable in-network) used only
+	// to LOCATE the JWKS endpoint. It is NOT reused as the expected 'iss' claim:
+	// Keycloak stamps its PUBLIC frontend issuer (KC_HOSTNAME, e.g. localhost:8085),
+	// which differs from the internal host in a containerised topology. Validating
+	// 'iss' against the internal host rejected every real token ("invalid issuer");
+	// JWT_EXPECTED_ISSUER decouples the two (issue #87 follow-up), defaulting to the
+	// JWKS host so single-host setups and existing tests are unaffected.
 	keycloakIssuer := getEnv("KC_ISSUER_URI", "http://localhost:8085/realms/jtoye-dev")
 	jwksURL := keycloakIssuer + "/protocol/openid-connect/certs"
+	expectedIssuer := getEnv("JWT_EXPECTED_ISSUER", keycloakIssuer)
 	port := getEnv("PORT", "8080")
 	defaultShopID := getEnv("WHATSAPP_DEFAULT_SHOP_ID", "")
 	// WhatsApp intake is a signature-only public route; these scope the
@@ -143,7 +151,7 @@ func main() {
 	coreClient := core.NewClient(coreAPIURL, logger)
 
 	// Initialize JWT middleware
-	jwtMiddleware := middleware.NewJWTMiddleware(jwksURL, keycloakIssuer, logger)
+	jwtMiddleware := middleware.NewJWTMiddleware(jwksURL, expectedIssuer, logger)
 
 	// Client-credentials provider used by the public WhatsApp webhook to
 	// authenticate to Core (Meta cannot present a Keycloak JWT).

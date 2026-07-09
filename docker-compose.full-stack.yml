@@ -146,7 +146,12 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),
+      # so validate the 'iss' claim against that. Without this split the resource
+      # server rejects every real token with "The iss claim is not valid" (issue #87 follow-up).
+      JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-dev
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile
       # exposes only health,info — see application.yml management comment).
       # SecurityConfig permits /actuator/prometheus in non-prod profiles only.
@@ -214,7 +219,10 @@ services:
     container_name: jtoye-edge-go
     environment:
       CORE_API_URL: http://core-java:9090
+      # JWKS fetched from INTERNAL host; 'iss' validated against the PUBLIC issuer
+      # (same split-horizon fix as core-java — issue #87 follow-up).
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-dev
       # issue #87 P1-5: explicit fail-closed audience. The code already defaults
       # to "core-api" when unset; set it here so the running edge documents and
       # pins the expected aud (override per-env via EDGE_JWT_AUDIENCE).
