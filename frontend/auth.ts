@@ -1,5 +1,6 @@
 import NextAuth from "next-auth"
 import Keycloak from "next-auth/providers/keycloak"
+import { buildSession } from "@/lib/session-callback"
 
 async function refreshAccessToken(token: {
   refreshToken?: string
@@ -96,10 +97,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken as string
-      session.refreshToken = token.refreshToken as string
-      session.idToken = token.idToken as string
-      return session
+      // issue #87 P1-5 (threat T-bl2-05): copy accessToken + idToken onto the
+      // client-visible session but NOT the refresh token — it stays on the
+      // server-side JWT (callbacks.jwt + refreshAccessToken) so refresh works.
+      return buildSession(session, token)
     },
   },
   pages: {

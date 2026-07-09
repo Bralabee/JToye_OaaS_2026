@@ -35,7 +35,7 @@
   "duplicateEmailsAllowed" : false,
   "resetPasswordAllowed" : false,
   "editUsernameAllowed" : false,
-  "bruteForceProtected" : false,
+  "bruteForceProtected" : true,
   "permanentLockout" : false,
   "maxTemporaryLockouts" : 0,
   "maxFailureWaitSeconds" : 900,
@@ -44,6 +44,7 @@
   "quickLoginCheckMilliSeconds" : 1000,
   "maxDeltaTimeSeconds" : 43200,
   "failureFactor" : 30,
+  "passwordPolicy" : "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername",
   "roles" : {
     "realm" : [ {
       "id" : "73a162d3-990e-4ede-a1c5-bd5c01f30e36",
@@ -699,6 +700,18 @@
         "access.token.claim" : "true",
         "claim.name" : "tenant_id",
         "jsonType.label" : "String"
+      }
+    }, {
+      "id" : "a5e0b7c1-8f34-4d21-9b6e-3c8f27d10a55",
+      "name" : "core-api-audience-mapper",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "included.client.audience" : "core-api",
+        "access.token.claim" : "true",
+        "id.token.claim" : "false",
+        "introspection.token.claim" : "true"
       }
     } ],
     "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
