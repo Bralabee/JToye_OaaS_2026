@@ -264,7 +264,9 @@ services:
         NEXT_PUBLIC_API_URL: http://localhost:9090
         # Phase 18: baked into the browser bundle so customer-auth.ts targets the
         # jtoye-customers realm (NEXT_PUBLIC_* must be present at BUILD time).
-        NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL}
+        # Required (`:?`) — a missing var would bake an empty string into the client
+        # bundle; the runtime `environment:` default below cannot fix a build-time bake.
+        NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:?NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL must be set (baked into browser bundle)}
     container_name: jtoye-frontend
     environment:
       NODE_ENV: production
