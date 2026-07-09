@@ -258,14 +258,18 @@ async function scenarioC() {
     const authHeaders = { Authorization: `Bearer ${adminToken}` }
     const getJson = async (path) => {
       const r = await fetch(`${KC_ADMIN_BASE}${path}`, { headers: authHeaders })
-      const b = await r.json().catch(() => [])
-      return { status: r.status, body: b }
+      // Coerce non-array bodies (401/403/5xx, connection reset) to null so a failed
+      // query can never masquerade as an empty result and false-PASS an ABSENT check.
+      const b = await r.json().catch(() => null)
+      return { status: r.status, ok: r.ok, body: Array.isArray(b) ? b : null }
     }
 
     // 1) The Scenario-A test customer must be ABSENT from the jtoye-dev staff realm.
     const custInStaff = await getJson(
       `/admin/realms/${STAFF_REALM}/users?email=${encodeURIComponent(customerEmail)}`
     )
+    check(`${STAFF_REALM} user query succeeded (HTTP ${custInStaff.status})`,
+      custInStaff.ok && custInStaff.body !== null)
     check(`test customer is ABSENT from ${STAFF_REALM} (found ${arrLen(custInStaff.body)})`,
       arrLen(custInStaff.body) === 0)
 
@@ -273,6 +277,8 @@ async function scenarioC() {
     const adminInCust = await getJson(
       `/admin/realms/${CUSTOMER_REALM}/users?username=${ADMIN_USERNAME}`
     )
+    check(`${CUSTOMER_REALM} user query succeeded (HTTP ${adminInCust.status})`,
+      adminInCust.ok && adminInCust.body !== null)
     check(`${ADMIN_USERNAME} is ABSENT from ${CUSTOMER_REALM} (found ${arrLen(adminInCust.body)})`,
       arrLen(adminInCust.body) === 0)
 
@@ -280,6 +286,8 @@ async function scenarioC() {
     const sfInStaff = await getJson(
       `/admin/realms/${STAFF_REALM}/clients?clientId=storefront-client`
     )
+    check(`${STAFF_REALM} client query succeeded (HTTP ${sfInStaff.status})`,
+      sfInStaff.ok && sfInStaff.body !== null)
     check(`storefront-client is REMOVED from ${STAFF_REALM} (found ${arrLen(sfInStaff.body)})`,
       arrLen(sfInStaff.body) === 0)
   } catch (err) {
