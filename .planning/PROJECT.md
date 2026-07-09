@@ -63,6 +63,7 @@ Vendor operations (Work Order E):
 - ✓ **[v2.2 VOPS-02]** `POST /api/v1/orders/{id}/refund` wired to Stripe `Refund.create` with stored-first idempotency; refund.created/refund.updated/refund.failed webhook lifecycle (after Phase 16.1 dedup); V36 refunds + refunds_aud + RLS migration; `RefundEventPublisher` writes `order.refunded` to outbox — Phase 17
 - ✓ **[v2.2 VOPS-03]** Order state machine extended with `REFUND_REQUESTED` event + `REFUNDED` state + 4 transitions (`CONFIRMED|PREPARING|READY|COMPLETED → REFUNDED`); idempotent (service-level short-circuit on already-refunded); audited via Hibernate Envers — Phase 17
 - ⚠ **[v2.2 VOPS-01]** `/dashboard/orders/[id]` route + `OrderDetailPanel` (header, customer, items, payment block, refund history) — header-level **state-transition timeline subcomponent NOT implemented**; tracked in `17-VERIFICATION.md` gaps + `17-HUMAN-UAT.md` — Phase 17
+- ✓ **[v2.2 CID-01]** Customer Identity Realm Split (B2C/B2B) — new `jtoye-customers` Keycloak realm from a committed envsubst template (survives `--import-realm`) with public-PKCE `storefront-client` (env-driven redirect URIs incl. :3100) + `customer` default role + self-registration; `jtoye-dev` hardened (self-registration disabled, `storefront-client` removed → no Register link on admin login); frontend `customer-auth.ts` repointed via `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL`; backend UNTOUCHED (customer tokens frontend-only, verified). Live 10/10 must-haves, 3-scenario E2E green; Google/social login deferred to Phase 2 — Phase 18
 
 ### Active
 
@@ -152,4 +153,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Phase 17 (Vendor Order Detail + Stripe Refund Flow) complete; VOPS-02 + VOPS-03 fully validated, VOPS-01 partial (state-transition timeline pending — tracked in 17-HUMAN-UAT.md)*
+*Last updated: 2026-07-09 — Phase 18 (Customer Identity Realm Split B2C/B2B — MVP) complete; CID-01 fully validated (10/10 must-haves, live 3-scenario E2E green). VOPS-02 + VOPS-03 fully validated, VOPS-01 partial (state-transition timeline pending — tracked in 17-HUMAN-UAT.md)*
