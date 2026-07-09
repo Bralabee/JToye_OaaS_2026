@@ -11,14 +11,9 @@
  * a NextAuth runtime.
  */
 
-/** The token fields buildSession reads off the server-side NextAuth JWT. */
-interface SessionTokens {
-  accessToken?: unknown
-  idToken?: unknown
-  refreshToken?: unknown
-}
+import type { JWT } from "next-auth/jwt"
 
-export function buildSession<T>(session: T, token: SessionTokens): T {
+export function buildSession<T>(session: T, token: JWT): T {
   const s = session as Record<string, unknown>
   s.accessToken = token.accessToken
   s.idToken = token.idToken
