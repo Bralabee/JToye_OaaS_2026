@@ -15,7 +15,14 @@
  * Separate from vendor NextAuth to avoid config conflicts.
  */
 
-const KC_BASE = process.env.NEXT_PUBLIC_KEYCLOAK_URL || "http://localhost:8085/realms/jtoye-dev"
+// Phase 18: customer identity lives in its own realm (jtoye-customers), decoupled
+// from the B2B staff/vendor realm (jtoye-dev). Prefer the dedicated customer base
+// URL; fall back to the legacy shared var, then a jtoye-customers dev default.
+// Admin NextAuth (frontend/auth.ts, client core-api) stays on jtoye-dev — untouched.
+const KC_BASE =
+  process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL ||
+  process.env.NEXT_PUBLIC_KEYCLOAK_URL ||
+  "http://localhost:8085/realms/jtoye-customers"
 const CLIENT_ID = "storefront-client"
 const REDIRECT_URI = typeof window !== "undefined" ? `${window.location.origin}/shop/auth/callback` : ""
 

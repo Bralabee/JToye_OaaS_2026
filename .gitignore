@@ -144,5 +144,12 @@ infra/monitoring/alertmanager/alertmanager.yml
 # Rendered Keycloak realm import (issue #80 — envsubst renders this from
 # realm-export.template.json at container start; carries resolved secrets, NEVER commit)
 infra/keycloak/realm-export.json
+
+# Rendered customer realm import (Phase 18 — envsubst renders this from
+# realm-export-customers.template.json; env-specific redirect URIs, NEVER commit)
+infra/keycloak/realm-export-customers.json
+
+# Phase 18 verify-script output: last self-registered customer email (test artifact)
+frontend/e2e/.last-customer-email
 .qa-council/
 docker-compose.frontend-3100.yml
