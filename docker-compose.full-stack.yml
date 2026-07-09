@@ -215,6 +215,10 @@ services:
     environment:
       CORE_API_URL: http://core-java:9090
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
+      # issue #87 P1-5: explicit fail-closed audience. The code already defaults
+      # to "core-api" when unset; set it here so the running edge documents and
+      # pins the expected aud (override per-env via EDGE_JWT_AUDIENCE).
+      EDGE_JWT_AUDIENCE: ${EDGE_JWT_AUDIENCE:-core-api}
       PORT: 8080
     ports:
       - "8089:8080"
