@@ -41,6 +41,41 @@ export interface CustomerSession {
   expiresAt: number
 }
 
+interface IdTokenClaims {
+  sub?: string
+  email?: string
+  name?: string
+  preferred_username?: string
+  email_verified?: boolean
+  exp?: number
+}
+
+/**
+ * Decode a JWT payload segment in the browser. JWT segments are **base64url**
+ * (alphabet includes `-` and `_`), which `atob` (standard base64) rejects with
+ * `InvalidCharacterError` — so translate to standard base64, re-pad, then UTF-8
+ * decode so multi-byte characters (e.g. accented customer names) survive.
+ * Returns null on any malformed input rather than throwing.
+ */
+function decodeJwtPayload(token: string): IdTokenClaims | null {
+  try {
+    const seg = token.split(".")[1]
+    if (!seg) return null
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+    const pad = b64.length % 4 === 0 ? "" : "=".repeat(4 - (b64.length % 4))
+    const bytes = atob(b64 + pad)
+    const json = decodeURIComponent(
+      bytes
+        .split("")
+        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+        .join("")
+    )
+    return JSON.parse(json) as IdTokenClaims
+  } catch {
+    return null
+  }
+}
+
 function setMarker(expiresAt: number) {
   if (typeof window === "undefined") return
   try {
@@ -189,9 +224,11 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
     if (!loginRes.ok) return null
 
     // Decode ID token to get profile for returning to the caller (non-sensitive).
-    const payload = JSON.parse(atob(data.id_token.split(".")[1]))
+    // Use a base64url-safe, UTF-8-aware decode so accented names don't throw.
+    const payload = decodeJwtPayload(data.id_token)
+    if (!payload) return null
     const profile: CustomerProfile = {
-      sub: payload.sub,
+      sub: payload.sub ?? "",
       email: payload.email || "",
       name: payload.name || payload.preferred_username || "",
       emailVerified: payload.email_verified || false,
