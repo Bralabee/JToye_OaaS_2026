@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: milestone_complete
-stopped_at: v2.2 SHIPPED (all 7 phases; Phase 17 merged via PR #57 on 2026-07-06). Post-milestone hardening since — see Post-Milestone Activity below. No v2.3 milestone started yet.
-last_updated: "2026-07-07T23:59:00.000Z"
-last_activity: 2026-07-07 -- QA-council remediation (PR #70), edge-go pipeline fix (PR #72), observability restore (PR #73), RLS integration-suite CI enablement (#71)
+status: executing
+stopped_at: "Completed 18-01-PLAN.md (customer realm split — Scenario A GREEN); next: 18-02 harden jtoye-dev + Scenarios B/C"
+last_updated: "2026-07-09T21:07:59.497Z"
+last_activity: 2026-07-09
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 8
+  completed_phases: 5
+  total_plans: 17
+  completed_plans: 18
+  percent: 63
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 17 — vendor-order-detail-stripe-refund-flow
+**Current focus:** Phase 18 — customer-identity-realm-split-b2c-b2b-mvp
 
 ## Current Position
 
-Phase: 17 (final) — complete
-Plan: —
-Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-09 - Completed quick task 260709-iro: Issue #88 P1-6 public-path rate limiting — IP-keyed limiter for tenant-less /public/** (closes the tenant-empty return-true bypass), ClientIpResolver (XFF-first, getRemoteAddr fallback, spoofing caveat documented), distinct rl:public:{ip} Redis namespace (no tenant-bucket collision), 429 + Retry-After, limits env-injected via rate-limiting.public.*, INSIDE #86 fail-open try/catch (Redis blip → allowed not 500); +ClientIpResolverTest +PublicRateLimitIntegrationTest (flood→429, tenant unaffected, fail-open on redis.stop()); full gate green (463 unit + 101 integration, docs 767). ALL P1 (#83-#88) DONE. RUNTIME FOLLOW-UP (from #87): Keycloak realm needs DB drop + re-import to emit aud=core-api; live tokens fail-closed until then.
+Phase: 18 (customer-identity-realm-split-b2c-b2b-mvp) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-07-09
 
 Progress: [██████████] 100%
 
@@ -88,6 +88,7 @@ Progress: [██████████] 100%
 | Phase 16.1 P04 | 10min | 2 tasks | 3 files |
 | Phase 16.1 P05 | 22min | 2 tasks | 2 files |
 | Phase 16.1 P06 | ~5min | 3 tasks | 4 files |
+| Phase 18 P01 | 30min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 16.1-05]: Drop SUPERUSER via SET LOCAL ROLE rls_test_role in Testcontainers RLS-denial tests — postgres:15 testcontainer creates the test user as SUPERUSER which bypasses RLS regardless of NOBYPASSRLS / FORCE; provisioning a dedicated NOSUPERUSER NOBYPASSRLS LOGIN role and SET LOCAL ROLE-ing to it for each RLS-sensitive test transaction is the canonical pattern.
 - [Phase ?]: [Phase 16.1-05]: EXEMPT_TABLES list expanded to 4 entries (flyway_schema_history, processed_stripe_events, tenants, revinfo) — tenants and revinfo are infrastructure tables with no tenant column and were caught by the schema-walk; each carries a written code-comment justification per the LOCKED 'add with justification' rule.
 - [Phase ?]: [Phase 16.1-05]: Storefront review-submit wiring confirmed correct as-is — ReviewService.createReview sets TenantContext, TenantSetLocalAspect translates to set_config('app.current_tenant_id', ?, true), and the V35 policy's app branch fires. The customer-email branch exists for defense-in-depth and is exercised in the test only. No production code change required.
+- [Phase 18]: [Phase 18-01]: jtoye-customers realm created via the SAME envsubst render-sidecar (explicit customer var list so i18n role placeholders survive) + --import-realm — new realm created, jtoye-dev untouched, no volume reset. Customer template ships the full standard clientScope set explicitly (not relying on Keycloak import-order auto-creation) so the ID token carries email/name/sub on first import. Backend UNTOUCHED (customer tokens frontend-only).
 
 ### Pending Todos
 
@@ -170,6 +172,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-28T00:18:25Z
-Stopped at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
+Last session: 2026-07-09T21:07:59.486Z
+Stopped at: Completed 18-01-PLAN.md (customer realm split — Scenario A GREEN); next: 18-02 harden jtoye-dev + Scenarios B/C
 Resume file: None

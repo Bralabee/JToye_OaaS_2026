@@ -189,7 +189,7 @@ Plans:
   5. Playwright E2E on the rebuilt stack (:3100): (a) a customer self-registers + logs in on `jtoye-customers` and lands logged-in on `/shop`; (b) admin dashboard login still works on `jtoye-dev` with NO Register link; (c) separate pools — the test customer is absent from `jtoye-dev` and `admin-user` is absent from `jtoye-customers`.
 **Deferred to Phase 2**: Google/social IdP brokering (needs user-supplied Google OAuth client id/secret; redirect URI `http://localhost:8085/realms/jtoye-customers/broker/google/endpoint`).
 **Plans**: 2 plans (MVP vertical slices)
-- [ ] 18-01-PLAN.md — Customer realm slice: committed jtoye-customers render template (storefront-client public+PKCE, customer default role, self-registration, env-driven redirect URIs incl :3100) + second compose render/import + repoint frontend customer-auth at the customer realm; browser-verify customer self-register+login lands on /shop [Wave 1]
+- [x] 18-01-PLAN.md — Customer realm slice: committed jtoye-customers render template (storefront-client public+PKCE, customer default role, self-registration, env-driven redirect URIs incl :3100) + second compose render/import + repoint frontend customer-auth at the customer realm; browser-verify customer self-register+login lands on /shop [Wave 1]
 - [ ] 18-02-PLAN.md — Harden jtoye-dev (disable self-registration, remove storefront-client from configure-keycloak.sh + live realm) so admin login has no Register link; prove separate user pools; verify backend (core-java/edge-go) untouched; full 3-scenario Playwright E2E [Wave 2; depends on 18-01]
 
 **UI hint**: yes
