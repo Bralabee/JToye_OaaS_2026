@@ -445,7 +445,6 @@ export default function ProductsPage() {
                                       variant="outline"
                                       className="bg-orange-50 text-orange-700 border-orange-200"
                                     >
-                                      <span className="mr-1">{allergen?.icon}</span>
                                       {name}
                                     </Badge>
                                   )
@@ -825,7 +824,6 @@ export default function ProductsPage() {
                       onChange={() => toggleAllergenBit(allergen.bit)}
                       className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                     />
-                    <span className="text-lg">{allergen.icon}</span>
                     <span className="text-sm font-medium">{allergen.name}</span>
                   </label>
                 ))}

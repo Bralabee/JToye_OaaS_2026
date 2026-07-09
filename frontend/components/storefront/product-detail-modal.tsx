@@ -239,7 +239,6 @@ export function ProductDetailModal({
                       key={a.bit}
                       className="inline-flex items-center gap-1 bg-white rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700"
                     >
-                      <span>{a.icon}</span>
                       {a.name}
                     </span>
                   ))}

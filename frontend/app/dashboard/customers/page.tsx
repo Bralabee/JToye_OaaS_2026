@@ -330,7 +330,6 @@ export default function CustomersPage() {
                                       variant="outline"
                                       className="bg-red-50 text-red-700 border-red-200"
                                     >
-                                      <span className="mr-1">{allergen?.icon}</span>
                                       {name}
                                     </Badge>
                                   )
@@ -465,7 +464,6 @@ export default function CustomersPage() {
                       onChange={() => toggleAllergenBit(allergen.bit)}
                       className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
-                    <span className="text-lg">{allergen.icon}</span>
                     <span className="text-sm font-medium">{allergen.name}</span>
                   </label>
                 ))}

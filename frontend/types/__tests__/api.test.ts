@@ -100,10 +100,8 @@ describe('Allergen Utility Functions', () => {
       ALLERGENS.forEach(allergen => {
         expect(allergen).toHaveProperty('bit')
         expect(allergen).toHaveProperty('name')
-        expect(allergen).toHaveProperty('icon')
         expect(typeof allergen.bit).toBe('number')
         expect(typeof allergen.name).toBe('string')
-        expect(typeof allergen.icon).toBe('string')
       })
     })
   })
