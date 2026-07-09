@@ -22,6 +22,14 @@ import (
 // Keycloak JWKS document when JWKS_REFRESH_INTERVAL is unset or invalid.
 const defaultJWKSRefreshInterval = 5 * time.Minute
 
+// defaultJWTAudience is the fail-closed expected "aud" claim used when
+// EDGE_JWT_AUDIENCE is unset (issue #87 P1-5, threat T-bl2-02). Audience
+// enforcement is ALWAYS on — there is no inert path — so a token minted for
+// a different Keycloak client is rejected at the edge even in a
+// misconfigured deployment. Mirrors the canonical core-api client audience;
+// override per-environment via EDGE_JWT_AUDIENCE (see docker-compose).
+const defaultJWTAudience = "core-api"
+
 // JWKSResponse represents the response from Keycloak JWKS endpoint
 type JWKSResponse struct {
 	Keys []JWK `json:"keys"`
@@ -66,13 +74,15 @@ type JWTMiddleware struct {
 // the default with a warning log.
 func NewJWTMiddleware(jwksURL, issuer string, logger *zap.Logger) *JWTMiddleware {
 	refreshInterval := defaultJWKSRefreshInterval
-	// EDGE_JWT_AUDIENCE, when set, pins the expected "aud" claim so the edge
-	// fails fast on tokens minted for a different audience. Left unset the
-	// audience check is inert (backward compatible).
+	// EDGE_JWT_AUDIENCE pins the expected "aud" claim. Enforcement is fail-closed:
+	// when unset we fall back to defaultJWTAudience rather than disabling the
+	// check, so the edge always rejects tokens minted for a different audience
+	// (issue #87 P1-5, threat T-bl2-02).
 	audience := os.Getenv("EDGE_JWT_AUDIENCE")
-	if audience != "" {
-		logger.Info("JWT audience validation enabled", zap.String("audience", audience))
+	if audience == "" {
+		audience = defaultJWTAudience
 	}
+	logger.Info("JWT audience validation enabled", zap.String("audience", audience))
 	if raw := os.Getenv("JWKS_REFRESH_INTERVAL"); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
 			refreshInterval = parsed
@@ -173,9 +183,11 @@ func (m *JWTMiddleware) Validate() gin.HandlerFunc {
 			return
 		}
 
-		// Verify audience when configured. Fails fast at the edge rather than
-		// deferring to Core, and stays inert when EDGE_JWT_AUDIENCE is unset.
-		if m.audience != "" && !hasAudience(claims, m.audience) {
+		// Verify audience — always on (fail-closed, issue #87 P1-5, threat
+		// T-bl2-02). m.audience is never empty (defaults to defaultJWTAudience
+		// in NewJWTMiddleware). Runs before the tenant check below, so a token
+		// with a wrong/missing aud is rejected as "invalid audience".
+		if !hasAudience(claims, m.audience) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid audience"})
 			return
 		}
