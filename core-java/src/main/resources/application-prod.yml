@@ -118,3 +118,8 @@ rate-limiting:
   enabled: true
   default-limit: 100
   burst-capacity: 20
+  # issue #88 [P1-6]: public (tenant-less) IP-keyed limiter — prod-style literals.
+  public:
+    requests-per-minute: 30
+    burst: 10
+    window-seconds: 60
