@@ -79,6 +79,18 @@ spring:
         jwt:
           issuer-uri: ${KC_ISSUER_URI:http://localhost:8085/realms/jtoye-dev}
 
+# issue #87 P1-5: expected 'aud' claim on inbound access tokens. Mirrors the
+# issuer-uri env-override pattern above (NOT hardcoded); default "core-api"
+# matches KEYCLOAK_CLIENT_ID and the aud emitted by the realm's core-api
+# audience mapper (see infra/keycloak/realm-export.template.json, Task 3).
+# NOTE: spring.security.oauth2.resourceserver.jwt.audiences is intentionally
+# NOT used because this project supplies a custom JwtDecoder bean — that
+# property only applies to Spring's auto-configured decoder.
+jtoye:
+  security:
+    jwt:
+      expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}
+
 stomp:
   broker:
     mode: ${STOMP_BROKER_MODE:in-memory}

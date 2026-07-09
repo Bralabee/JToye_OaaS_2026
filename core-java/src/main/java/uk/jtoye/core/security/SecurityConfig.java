@@ -11,7 +11,9 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
@@ -45,6 +47,12 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
+    // issue #87 P1-5: expected 'aud' claim on inbound access tokens. Env-overridable
+    // (JWT_EXPECTED_AUDIENCE), never hardcoded — see application.yml. AudienceValidator
+    // throws at construction on a blank value so enforcement can never silently no-op.
+    @Value("${jtoye.security.jwt.expected-audience}")
+    private String expectedAudience;
+
     /**
      * Configure JwtDecoder with timeouts to prevent hanging during JWKS fetch.
      * Uses RestTemplate with connection and read timeouts.
@@ -62,9 +70,21 @@ public class SecurityConfig {
                 .build();
 
         // Build JwtDecoder with custom RestOperations for JWKS fetching
-        return NimbusJwtDecoder.withJwkSetUri(issuerUri + "/protocol/openid-connect/certs")
-                .restOperations(restOperations)
-                .build();
+        NimbusJwtDecoder decoder =
+                NimbusJwtDecoder.withJwkSetUri(issuerUri + "/protocol/openid-connect/certs")
+                        .restOperations(restOperations)
+                        .build();
+
+        // issue #87 P1-5 (threats T-bl2-01, T-bl2-03): enforce audience ADDITIVELY.
+        // withJwkSetUri gives a decoder whose default validator is TIMESTAMP ONLY;
+        // createDefaultWithIssuer STRENGTHENS this by adding issuer validation, and
+        // AudienceValidator rejects tokens minted for another client in the same realm.
+        // This does NOT touch the #83 jwtAuthenticationConverter (role mapping) wired
+        // on the resource server below.
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(issuerUri),
+                new AudienceValidator(expectedAudience)));
+        return decoder;
     }
 
     @Bean
