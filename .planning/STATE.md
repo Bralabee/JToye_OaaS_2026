@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: "Completed 18-01-PLAN.md (customer realm split — Scenario A GREEN); next: 18-02 harden jtoye-dev + Scenarios B/C"
-last_updated: "2026-07-09T21:07:59.497Z"
+status: verifying
+stopped_at: Completed 18-02-PLAN.md (jtoye-dev hardened; no Register link; storefront-client removed; Scenarios A+B+C green; backend untouched) — Phase 18 functionally complete
+last_updated: "2026-07-09T21:20:34.254Z"
 last_activity: 2026-07-09
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 17
-  completed_plans: 18
-  percent: 63
+  completed_plans: 19
+  percent: 75
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 Phase: 18 (customer-identity-realm-split-b2c-b2b-mvp) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-09
 
 Progress: [██████████] 100%
@@ -89,6 +89,7 @@ Progress: [██████████] 100%
 | Phase 16.1 P05 | 22min | 2 tasks | 2 files |
 | Phase 16.1 P06 | ~5min | 3 tasks | 4 files |
 | Phase 18 P01 | 30min | 2 tasks | 8 files |
+| Phase 18 P02 | 12min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 16.1-05]: EXEMPT_TABLES list expanded to 4 entries (flyway_schema_history, processed_stripe_events, tenants, revinfo) — tenants and revinfo are infrastructure tables with no tenant column and were caught by the schema-walk; each carries a written code-comment justification per the LOCKED 'add with justification' rule.
 - [Phase ?]: [Phase 16.1-05]: Storefront review-submit wiring confirmed correct as-is — ReviewService.createReview sets TenantContext, TenantSetLocalAspect translates to set_config('app.current_tenant_id', ?, true), and the V35 policy's app branch fires. The customer-email branch exists for defense-in-depth and is exercised in the test only. No production code change required.
 - [Phase 18]: [Phase 18-01]: jtoye-customers realm created via the SAME envsubst render-sidecar (explicit customer var list so i18n role placeholders survive) + --import-realm — new realm created, jtoye-dev untouched, no volume reset. Customer template ships the full standard clientScope set explicitly (not relying on Keycloak import-order auto-creation) so the ID token carries email/name/sub on first import. Backend UNTOUCHED (customer tokens frontend-only).
+- [Phase ?]: [Phase 18-02]: Reconciled the running jtoye-dev realm via master admin-API (registrationAllowed:false, registrationEmailAsUsername:false, DELETE storefront-client) — --import-realm never overwrites an existing realm and down -v is forbidden (shared app+keycloak Postgres); committed script/template are the durable source of truth.
+- [Phase ?]: [Phase 18-02]: Left the residual 'customer' realm role on jtoye-dev (harmless with no registration path) rather than risk touching default-roles composites that admin-user staff login depends on.
 
 ### Pending Todos
 
@@ -172,6 +175,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-07-09T21:07:59.486Z
-Stopped at: Completed 18-01-PLAN.md (customer realm split — Scenario A GREEN); next: 18-02 harden jtoye-dev + Scenarios B/C
+Last session: 2026-07-09T21:20:24.458Z
+Stopped at: Completed 18-02-PLAN.md (jtoye-dev hardened; no Register link; storefront-client removed; Scenarios A+B+C green; backend untouched) — Phase 18 functionally complete
 Resume file: None
