@@ -80,6 +80,7 @@ func TestJWTMiddleware_Validate_ValidTokenWithTenant(t *testing.T) {
 	token := sign(jwt.MapClaims{
 		"iss":       issuer,
 		"sub":       "test-user-123",
+		"aud":       "core-api", // fail-closed default audience (#87 P1-5)
 		"tenant_id": "00000000-0000-0000-0000-000000000001",
 		"exp":       time.Now().Add(time.Hour).Unix(),
 		"iat":       time.Now().Unix(),
@@ -96,6 +97,10 @@ func TestJWTMiddleware_Validate_MissingTenantRejected(t *testing.T) {
 	token := sign(jwt.MapClaims{
 		"iss": issuer,
 		"sub": "test-user-123",
+		// Carry the default audience so the request passes the (now always-on)
+		// audience gate and reaches the tenant check — otherwise it would 401
+		// with "invalid audience" instead of "missing tenant claim" (#87 P1-5).
+		"aud": "core-api",
 		"exp": time.Now().Add(time.Hour).Unix(),
 		"iat": time.Now().Unix(),
 	})
@@ -153,6 +158,51 @@ func TestJWTMiddleware_Validate_Audience(t *testing.T) {
 	})
 }
 
+// TestJWTMiddleware_Validate_Audience_DefaultWhenUnset proves the fail-closed
+// default (#87 P1-5, threat T-bl2-02): with EDGE_JWT_AUDIENCE unset the edge
+// still enforces defaultJWTAudience ("core-api"), rejecting wrong/missing aud.
+// It deliberately does NOT call t.Setenv, and asserts m.audience resolved to
+// the default constant to guard against ambient-env contamination in the
+// shared test process.
+func TestJWTMiddleware_Validate_Audience_DefaultWhenUnset(t *testing.T) {
+	const issuer = "http://test-issuer.com"
+	m, sign := newTestMiddleware(t, issuer)
+	if m.audience != defaultJWTAudience {
+		t.Fatalf("expected default audience %q, got %q (ambient EDGE_JWT_AUDIENCE set?)",
+			defaultJWTAudience, m.audience)
+	}
+
+	base := func() jwt.MapClaims {
+		return jwt.MapClaims{
+			"iss":       issuer,
+			"sub":       "u1",
+			"tenant_id": "00000000-0000-0000-0000-000000000001",
+			"exp":       time.Now().Add(time.Hour).Unix(),
+			"iat":       time.Now().Unix(),
+		}
+	}
+
+	t.Run("default audience core-api passes", func(t *testing.T) {
+		claims := base()
+		claims["aud"] = "core-api"
+		if w := runValidate(m, sign(claims)); w.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d (%s)", w.Code, w.Body.String())
+		}
+	})
+	t.Run("wrong aud rejected under default", func(t *testing.T) {
+		claims := base()
+		claims["aud"] = "someone-else"
+		if w := runValidate(m, sign(claims)); w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for wrong audience, got %d", w.Code)
+		}
+	})
+	t.Run("missing aud rejected under default", func(t *testing.T) {
+		if w := runValidate(m, sign(base())); w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for missing audience, got %d", w.Code)
+		}
+	})
+}
+
 func TestHasAudience(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -188,6 +238,7 @@ func TestJWTMiddleware_ConcurrentRefresh(t *testing.T) {
 	token := sign(jwt.MapClaims{
 		"iss":       issuer,
 		"sub":       "u1",
+		"aud":       "core-api", // fail-closed default audience (#87 P1-5)
 		"tenant_id": "00000000-0000-0000-0000-000000000001",
 		"exp":       time.Now().Add(time.Hour).Unix(),
 		"iat":       time.Now().Unix(),
@@ -285,6 +336,7 @@ func TestJWTMiddleware_Validate_ValidToken(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss":       "http://test-issuer.com",
 		"sub":       "test-user-123",
+		"aud":       "core-api", // fail-closed default audience (#87 P1-5)
 		"tenant_id": "00000000-0000-0000-0000-000000000001",
 		"exp":       time.Now().Add(time.Hour).Unix(),
 		"iat":       time.Now().Unix(),
