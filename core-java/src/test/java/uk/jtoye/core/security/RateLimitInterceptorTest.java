@@ -51,6 +51,10 @@ class RateLimitInterceptorTest {
 
     private Bucket bucket;
 
+    // issue #88 [P1-6]: promoted to a field so the public-path tests can assert the
+    // Redis bucket key argument (rl:public:{ip} vs rate_limit::{tenant}).
+    private RemoteBucketBuilder builder;
+
     @InjectMocks
     private RateLimitInterceptor interceptor;
 
@@ -71,7 +75,7 @@ class RateLimitInterceptorTest {
         ReflectionTestUtils.setField(interceptor, "proxyManager", proxyManager);
 
         // Setup proxy manager mock
-        RemoteBucketBuilder builder = mock(RemoteBucketBuilder.class);
+        builder = mock(RemoteBucketBuilder.class);
         doReturn(builder).when(proxyManager).builder();
         doAnswer(invocation -> bucket).when(builder).build(anyString(), any(Supplier.class));
     }
@@ -281,5 +285,117 @@ class RateLimitInterceptorTest {
 
         // Cleanup
         TenantContext.clear();
+    }
+
+    // ------------------------------------------------------------------
+    // issue #88 [P1-6]: tenant-less /public/** IP-keyed rate limiting.
+    // ------------------------------------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testPublicPath_UnderLimit_AllowedAndKeyedByClientIp() throws Exception {
+        // Arrange: NO tenant context (guest request), a public path, and an XFF client IP.
+        TenantContext.clear();
+        when(request.getRequestURI()).thenReturn("/public/shops");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.7");
+
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(true);
+        when(probe.getRemainingTokens()).thenReturn(29L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        // Act
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        // Assert: allowed, public-tier headers, and the bucket keyed by rl:public:{ip}
+        // (NOT the tenant "rate_limit::" namespace).
+        assertTrue(result, "Public request under limit should be allowed");
+        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(response).setHeader("X-RateLimit-Remaining", "29");
+        verify(bucket).tryConsumeAndReturnRemaining(1);
+        verify(builder).build(
+                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.7")),
+                any(Supplier.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testPublicPath_OverLimit_Returns429WithRetryAfter_NoTenantIdLeaked() throws Exception {
+        // Arrange: tenant-less public flood.
+        TenantContext.clear();
+        when(request.getRequestURI()).thenReturn("/public/shops/acme/orders");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.99");
+
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(false);
+        when(probe.getNanosToWaitForRefill()).thenReturn(15_000_000_000L); // 15 seconds
+
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        StringWriter stringWriter = new StringWriter();
+        PrintWriter writer = new PrintWriter(stringWriter);
+        when(response.getWriter()).thenReturn(writer);
+
+        // Act
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        // Assert: 429 + Retry-After, keyed rl:public:, and NO tenantId in the guest body.
+        assertFalse(result, "Public request over limit should be blocked");
+        verify(response).setStatus(429);
+        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(response).setHeader("X-RateLimit-Remaining", "0");
+        verify(response).setHeader(eq("Retry-After"), eq("15"));
+        verify(response).setContentType("application/json");
+        verify(builder).build(argThat((String key) -> key.startsWith("rl:public:")), any(Supplier.class));
+
+        String body = stringWriter.toString();
+        assertTrue(body.contains("Too Many Requests"), "body should be the generic 429 message");
+        assertFalse(body.contains("tenantId"), "public 429 body must not leak a tenantId field");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testTenantPath_UsesTenantKeyspace_NotPublic() throws Exception {
+        // Arrange: a tenant-present API request must still use the tenant bucket keyspace.
+        TenantContext.set(testTenantId);
+        when(request.getRequestURI()).thenReturn("/api/v1/products");
+
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(true);
+        when(probe.getRemainingTokens()).thenReturn(50L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        // Act
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        // Assert: keyed by rate_limit::{tenant}, independent of the public namespace.
+        assertTrue(result);
+        verify(builder).build(
+                argThat((String key) -> key.startsWith("rate_limit::") && key.contains(testTenantId.toString())),
+                any(Supplier.class));
+
+        // Cleanup
+        TenantContext.clear();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testPublicPath_RedisThrows_FailsOpen() throws Exception {
+        // Arrange: tenant-less public request where the Redis bucket build blows up.
+        TenantContext.clear();
+        when(request.getRequestURI()).thenReturn("/public/shops");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.7");
+
+        RemoteBucketBuilder throwingBuilder = mock(RemoteBucketBuilder.class);
+        doReturn(throwingBuilder).when(proxyManager).builder();
+        when(throwingBuilder.build(anyString(), any(Supplier.class)))
+                .thenThrow(new RuntimeException("simulated Redis outage — connection refused"));
+
+        // Act
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        // Assert: fail OPEN (no 429, no 500) — issue #86 semantics preserved for public.
+        assertTrue(result, "Public path must fail open when Redis is unavailable");
+        verify(response, never()).setStatus(429);
     }
 }
