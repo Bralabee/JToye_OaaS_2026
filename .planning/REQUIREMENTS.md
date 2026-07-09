@@ -134,6 +134,9 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | VOPS-01 | Phase 17 | Complete |
 | VOPS-02 | Phase 17 | Complete |
 | VOPS-03 | Phase 17 | Complete |
+| CID-01 | Phase 18 | Planned (2026-07-09) |
+
+**CID-01 — Customer Identity Separation (B2C/B2B):** Storefront customers authenticate against a dedicated Keycloak realm (`jtoye-customers`) with self-registration + email/password, isolated from the staff/vendor realm (`jtoye-dev`); the admin login no longer exposes customer self-registration. Backend unchanged (customer tokens are frontend-only). Social/Google login deferred (Phase 2).
 
 **Coverage:**
 - v1 requirements: 11 + 5 (AUDIT-W0) = 16 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3)

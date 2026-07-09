@@ -58,6 +58,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
 - [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
 - [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
+- [ ] **Phase 18: Customer Identity Realm Split (B2C/B2B) — MVP** - New `jtoye-customers` Keycloak realm (own render template, survives `--import-realm`) with `storefront-client` (public PKCE, env-driven redirect URIs incl. :3100) + `customer` role + self-registration; harden `jtoye-dev` (disable self-registration, remove `storefront-client` → no Register link on admin login); repoint frontend `customer-auth.ts` at the customer realm (public+internal issuer split); backend UNTOUCHED (customer tokens are frontend-only — verified). Google/social login deferred to Phase 2. (CID-01)
 
 ## Phase Details
 
@@ -172,6 +173,24 @@ Plans:
 - [x] 17-02-PLAN.md — PaymentEventOutbox.exchange field + Flusher per-row routing + RefundEvent record + RefundEventPublisher [Wave 1; consumes V36 column from 17-01]
 - [x] 17-03-PLAN.md — RefundController (POST /orders/{id}/refund + Idempotency-Key + GET /orders/{id}/refunds) + PaymentService webhook refund.* cases (after Phase 16.1 dedup) + OrderDetailDto extension + GlobalExceptionHandler StripeException→502 + RefundWebhookHandlingIntegrationTest (Testcontainers) [Wave 2; depends on 17-01 + 17-02]
 - [x] 17-04-PLAN.md — Frontend /dashboard/orders/[id] route + OrderDetailPanel extraction + RefundDialog (Zod + Idempotency-Key) + OrderStatus REFUNDED type extension + Jest unit tests + Playwright vendor-refund-flow E2E (port 3100) [Wave 3; depends on 17-03]
+
+**UI hint**: yes
+
+### Phase 18: Customer Identity Realm Split (B2C/B2B) — MVP
+**Goal**: As a storefront customer, I want to register and log in against a dedicated customer identity realm separate from staff/vendor accounts, so that customer and staff logins are isolated and the admin dashboard no longer offers customer self-registration.
+**Mode:** mvp
+**Depends on**: none (frontend + Keycloak only; backend untouched)
+**Requirements**: CID-01 (Customer Identity Separation)
+**Success Criteria** (what must be TRUE):
+  1. New Keycloak realm `jtoye-customers` created reproducibly from a committed, gitignored-rendered template (envsubst sidecar, same pattern as `jtoye-dev`) that survives `docker compose ... --import-realm` — containing `storefront-client` (public, standard+PKCE, redirect URIs/web-origins injected from env incl. the :3100 workaround, NOT hardcoded), a `customer` default role, and self-registration enabled.
+  2. Staff realm `jtoye-dev`: self-registration disabled and `storefront-client` removed; the admin login (`core-api`) no longer renders a "Register/New user" link; `core-api`/`edge-api` clients and seed staff users unchanged.
+  3. Frontend `frontend/lib/customer-auth.ts` targets the new customer realm (new public + internal issuer envs mirroring `KEYCLOAK_ISSUER` / `KEYCLOAK_ISSUER_INTERNAL`); admin NextAuth stays on `jtoye-dev`.
+  4. Backend (core-java, edge-go) unchanged — verified no JWT-validation edits; customer tokens remain frontend-only (all storefront data via `/public/**`).
+  5. Playwright E2E on the rebuilt stack (:3100): (a) a customer self-registers + logs in on `jtoye-customers` and lands logged-in on `/shop`; (b) admin dashboard login still works on `jtoye-dev` with NO Register link; (c) separate pools — the test customer is absent from `jtoye-dev` and `admin-user` is absent from `jtoye-customers`.
+**Deferred to Phase 2**: Google/social IdP brokering (needs user-supplied Google OAuth client id/secret; redirect URI `http://localhost:8085/realms/jtoye-customers/broker/google/endpoint`).
+**Plans**: 2 plans (MVP vertical slices)
+- [ ] 18-01-PLAN.md — Customer realm slice: committed jtoye-customers render template (storefront-client public+PKCE, customer default role, self-registration, env-driven redirect URIs incl :3100) + second compose render/import + repoint frontend customer-auth at the customer realm; browser-verify customer self-register+login lands on /shop [Wave 1]
+- [ ] 18-02-PLAN.md — Harden jtoye-dev (disable self-registration, remove storefront-client from configure-keycloak.sh + live realm) so admin login has no Register link; prove separate user pools; verify backend (core-java/edge-go) untouched; full 3-scenario Playwright E2E [Wave 2; depends on 18-01]
 
 **UI hint**: yes
 
