@@ -40,6 +40,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private static final Logger logger = LoggerFactory.getLogger(RateLimitInterceptor.class);
     private static final String RATE_LIMIT_KEY_PREFIX = "rate_limit::";
+    // issue #88 [P1-6]: distinct namespace for tenant-less public (guest) IP buckets so
+    // a public flood can never consume a tenant's tokens and vice-versa (T-88-03).
+    private static final String PUBLIC_RATE_LIMIT_KEY_PREFIX = "rl:public:";
 
     // HTTP Headers for rate limit information
     private static final String HEADER_LIMIT = "X-RateLimit-Limit";
@@ -73,6 +76,17 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Value("${rate-limiting.burst-capacity:20}")
     private int burstCapacity;
 
+    // issue #88 [P1-6]: public (tenant-less) IP-keyed limiter. Injected from
+    // rate-limiting.public.* with env override — never hardcoded literals.
+    @Value("${rate-limiting.public.requests-per-minute:30}")
+    private int publicRequestsPerMinute;
+
+    @Value("${rate-limiting.public.burst:10}")
+    private int publicBurstCapacity;
+
+    @Value("${rate-limiting.public.window-seconds:60}")
+    private int publicWindowSeconds;
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         // Skip if rate limiting is disabled
@@ -84,6 +98,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         String requestPath = request.getRequestURI();
         if (isExcludedPath(requestPath)) {
             return true;
+        }
+
+        // issue #88 [P1-6]: tenant-less public storefront paths (/public/**) never carry a
+        // TenantContext, so they would otherwise hit the tenant-less allow-through below and
+        // bypass throttling entirely. Bound guest abuse with an IP-keyed bucket in its own
+        // Redis namespace, independent of any tenant bucket, before the tenant logic runs.
+        if (isPublicPath(requestPath)) {
+            return handlePublicRateLimit(request, response, requestPath);
         }
 
         // Get tenant ID from TenantContext
@@ -167,6 +189,99 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         Bandwidth limit = Bandwidth.builder()
                 .capacity(defaultLimit + burstCapacity)
                 .refillIntervally(defaultLimit, Duration.ofMinutes(1))
+                .build();
+
+        return BucketConfiguration.builder()
+                .addLimit(limit)
+                .build();
+    }
+
+    /**
+     * issue #88 [P1-6]: identifies tenant-less public storefront paths ({@code /public/**})
+     * that must be throttled by client IP rather than by tenant.
+     *
+     * @param path the request path
+     * @return true for {@code /public} and any {@code /public/...} sub-path
+     */
+    private boolean isPublicPath(String path) {
+        return path.equals("/public") || path.startsWith("/public/");
+    }
+
+    /**
+     * issue #88 [P1-6]: enforces an IP-keyed rate limit for tenant-less public paths.
+     *
+     * <p>Keys the Redis bucket by {@code rl:public:{clientIp}} — a namespace distinct from
+     * the tenant {@code rate_limit::} keyspace (T-88-03) — so a public flood cannot exhaust
+     * a tenant's bucket and vice-versa. On limit exceeded it returns HTTP 429 with a
+     * {@code Retry-After} header and a generic body (no tenantId is leaked to guests).
+     *
+     * <p>The Redis-touching section runs inside the SAME issue #86 fail-open-with-alarm
+     * try/catch as the tenant path: on any Redis error it increments
+     * {@code jtoye.ratelimit.fail_open} and returns true within the bounded Lettuce command
+     * timeout, so a Redis blip degrades a public request to allowed rather than to a 500/hang.
+     *
+     * @return true if the request may proceed (allowed or failed-open); false if throttled (429)
+     */
+    private boolean handlePublicRateLimit(HttpServletRequest request, HttpServletResponse response, String requestPath) throws Exception {
+        String clientIp = ClientIpResolver.resolveClientIp(request);
+        String rateLimitKey = PUBLIC_RATE_LIMIT_KEY_PREFIX + clientIp;
+
+        Supplier<BucketConfiguration> configSupplier = this::createPublicBucketConfiguration;
+
+        try {
+            var bucket = proxyManager.builder().build(rateLimitKey, configSupplier);
+            var probe = bucket.tryConsumeAndReturnRemaining(1);
+
+            if (probe.isConsumed()) {
+                response.setHeader(HEADER_LIMIT, String.valueOf(publicRequestsPerMinute));
+                response.setHeader(HEADER_REMAINING, String.valueOf(probe.getRemainingTokens()));
+                response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + publicWindowSeconds));
+
+                logger.debug("Public rate limit check passed for client {} - {} tokens remaining", clientIp, probe.getRemainingTokens());
+                return true;
+            } else {
+                long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
+                response.setStatus(429); // HTTP 429 Too Many Requests
+                response.setHeader(HEADER_LIMIT, String.valueOf(publicRequestsPerMinute));
+                response.setHeader(HEADER_REMAINING, "0");
+                response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
+                response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
+                response.setContentType("application/json");
+                // Generic body — no tenantId to leak for a tenant-less guest request.
+                response.getWriter().write(String.format(
+                    "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in %d seconds.\"}",
+                    waitForRefill
+                ));
+
+                logger.warn("Public rate limit exceeded for client {} on path {} - retry after {} seconds",
+                           clientIp, requestPath, waitForRefill);
+                return false;
+            }
+        } catch (Exception e) {
+            // issue #86 [P1-4]: fail OPEN with an alarm on ANY Redis error (availability over
+            // enforcement) within the bounded command timeout — a Redis blip must not turn a
+            // public request into a 500/hang.
+            if (failOpenCounter != null) {
+                failOpenCounter.increment();
+            }
+            logger.warn("Public rate limiter degraded — failing open for client {} on path {}: {}",
+                    clientIp, requestPath, e.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Creates the bucket configuration for tenant-less public paths (issue #88 [P1-6]).
+     * Capacity = publicRequestsPerMinute + publicBurstCapacity, refilling
+     * publicRequestsPerMinute tokens per publicWindowSeconds. All values are injected
+     * from {@code rate-limiting.public.*} (no hardcoded literals).
+     *
+     * @return BucketConfiguration for the public IP-keyed limiter
+     */
+    private BucketConfiguration createPublicBucketConfiguration() {
+        Bandwidth limit = Bandwidth.builder()
+                .capacity(publicRequestsPerMinute + publicBurstCapacity)
+                .refillIntervally(publicRequestsPerMinute, Duration.ofSeconds(publicWindowSeconds))
                 .build();
 
         return BucketConfiguration.builder()
