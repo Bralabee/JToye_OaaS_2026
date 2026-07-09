@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: verifying
-stopped_at: Completed 18-02-PLAN.md (jtoye-dev hardened; no Register link; storefront-client removed; Scenarios A+B+C green; backend untouched) — Phase 18 functionally complete
-last_updated: "2026-07-09T21:20:34.254Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 18 was final phase)
+last_updated: 2026-07-09T21:37:35.309Z
 last_activity: 2026-07-09
 progress:
   total_phases: 8
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 18 — customer-identity-realm-split-b2c-b2b-mvp
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 18 (customer-identity-realm-split-b2c-b2b-mvp) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
+Phase: 18
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-07-09
 
 Progress: [██████████] 100%
@@ -63,6 +63,7 @@ Progress: [██████████] 100%
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
 | 17 | 4 | - | - |
+| 18 | 2 | - | - |
 
 **Milestone v2.2 (executing):**
 
