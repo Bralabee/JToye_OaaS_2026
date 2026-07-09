@@ -161,89 +161,15 @@ else
 fi
 echo ""
 
-# Enable self-service registration on the realm
-echo "Enabling self-service registration on realm..."
-curl -s -X PUT "${KEYCLOAK_URL}/admin/realms/${REALM}" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "registrationAllowed": true,
-    "registrationEmailAsUsername": true,
-    "verifyEmail": false,
-    "resetPasswordAllowed": true,
-    "loginWithEmailAllowed": true
-  }'
-echo "  ✓ Self-service registration enabled"
-echo ""
-
-# Create or update storefront-client (public, for customer auth)
-echo "Configuring storefront-client..."
-SF_CLIENT_ID=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq -r '.[] | select(.clientId=="storefront-client") | .id')
-
-if [ -z "$SF_CLIENT_ID" ] || [ "$SF_CLIENT_ID" == "null" ]; then
-    echo "  Creating storefront-client..."
-    curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" \
-      -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "clientId": "storefront-client",
-        "name": "J'\''Toye Customer Storefront",
-        "enabled": true,
-        "publicClient": true,
-        "directAccessGrantsEnabled": true,
-        "standardFlowEnabled": true,
-        "implicitFlowEnabled": false,
-        "protocol": "openid-connect",
-        "rootUrl": "http://localhost:3000",
-        "baseUrl": "/shop",
-        "redirectUris": [
-          "http://localhost:3000/*",
-          "http://localhost:3001/*"
-        ],
-        "webOrigins": [
-          "http://localhost:3000",
-          "http://localhost:3001"
-        ],
-        "defaultClientScopes": ["openid", "email", "profile"],
-        "attributes": {
-          "post.logout.redirect.uris": "http://localhost:3000/shop"
-        }
-      }'
-    echo "  ✓ storefront-client created"
-else
-    echo "  ✓ storefront-client already exists"
-fi
-
-# Create customer realm role
-echo "Creating customer realm role..."
-curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/roles" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "customer",
-    "description": "Customer role for storefront users"
-  }' 2>/dev/null || echo "  (role may already exist)"
-echo "  ✓ customer role configured"
-
-# Set customer as default role for new registrations
-echo "Setting customer as default role..."
-CUSTOMER_ROLE=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM}/roles/customer" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}")
-CUSTOMER_ROLE_ID=$(echo "$CUSTOMER_ROLE" | jq -r '.id')
-if [ -n "$CUSTOMER_ROLE_ID" ] && [ "$CUSTOMER_ROLE_ID" != "null" ]; then
-    # Get default-roles composite and add customer to it
-    DEFAULT_ROLES_ID=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM}/roles" \
-      -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq -r '.[] | select(.name | startswith("default-roles")) | .id')
-    if [ -n "$DEFAULT_ROLES_ID" ]; then
-        curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/roles-by-id/${DEFAULT_ROLES_ID}/composites" \
-          -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-          -H "Content-Type: application/json" \
-          -d "[{\"id\":\"${CUSTOMER_ROLE_ID}\",\"name\":\"customer\"}]" 2>/dev/null
-        echo "  ✓ customer added to default roles"
-    fi
-fi
-echo ""
+# NOTE (Phase 18 — B2C/B2B customer identity realm split):
+# jtoye-dev is now a STAFF / VENDOR-ONLY surface. The former self-service
+# registration PUT, the public storefront OIDC client creation, and the customer
+# realm-role + default-role branches were REMOVED here. Customer identity now
+# lives exclusively in the dedicated jtoye-customers realm (committed template
+# infra/keycloak/realm-export-customers.template.json). jtoye-dev keeps
+# registrationAllowed:false in its committed template
+# (infra/keycloak/realm-export.template.json) so the admin core-api login page
+# renders NO Register link. Do NOT re-add customer self-signup to jtoye-dev here.
 
 echo "=== Configuration Complete ==="
 echo ""
