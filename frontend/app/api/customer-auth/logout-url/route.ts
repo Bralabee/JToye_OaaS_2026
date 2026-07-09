@@ -10,8 +10,13 @@ import { NextRequest, NextResponse } from "next/server"
 
 const ID_COOKIE = "jtoye-customer-id"
 
+// Phase 18: customer logout targets the jtoye-customers realm end-session endpoint.
+// Prefer the dedicated customer base URL; fall back to the legacy shared var, then
+// a jtoye-customers dev default. Admin logout (NextAuth) is unaffected.
 const KC_BASE =
-  process.env.NEXT_PUBLIC_KEYCLOAK_URL || "http://localhost:8085/realms/jtoye-dev"
+  process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL ||
+  process.env.NEXT_PUBLIC_KEYCLOAK_URL ||
+  "http://localhost:8085/realms/jtoye-customers"
 
 export async function GET(req: NextRequest) {
   const id = req.cookies.get(ID_COOKIE)?.value

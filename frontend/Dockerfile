@@ -30,6 +30,11 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Phase 18: customer identity realm base URL. NEXT_PUBLIC_* is inlined into the
+# browser bundle at build time, so customer-auth.ts targets jtoye-customers.
+ARG NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL
+ENV NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL=${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL}
+
 RUN npm run build
 
 # Stage 3: Runner
