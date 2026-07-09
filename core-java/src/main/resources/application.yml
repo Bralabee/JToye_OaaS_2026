@@ -189,6 +189,12 @@ rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}
   default-limit: ${RATE_LIMIT_PER_MINUTE:100}
   burst-capacity: ${RATE_LIMIT_BURST:20}
+  # issue #88 [P1-6]: tenant-less public storefront paths (/public/**) are throttled by
+  # client IP in a distinct Redis namespace (rl:public:{ip}), independent of tenant buckets.
+  public:
+    requests-per-minute: ${RATE_LIMIT_PUBLIC_PER_MINUTE:30}
+    burst: ${RATE_LIMIT_PUBLIC_BURST:10}
+    window-seconds: ${RATE_LIMIT_PUBLIC_WINDOW_SECONDS:60}
 
 resilience4j:
   circuitbreaker:

@@ -72,6 +72,10 @@ class RateLimitInterceptorTest {
         ReflectionTestUtils.setField(interceptor, "rateLimitingEnabled", true);
         ReflectionTestUtils.setField(interceptor, "defaultLimit", 100);
         ReflectionTestUtils.setField(interceptor, "burstCapacity", 20);
+        // issue #88 [P1-6]: public-tier limits (mirror the application*.yml defaults).
+        ReflectionTestUtils.setField(interceptor, "publicRequestsPerMinute", 30);
+        ReflectionTestUtils.setField(interceptor, "publicBurstCapacity", 10);
+        ReflectionTestUtils.setField(interceptor, "publicWindowSeconds", 60);
         ReflectionTestUtils.setField(interceptor, "proxyManager", proxyManager);
 
         // Setup proxy manager mock
