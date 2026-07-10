@@ -18,7 +18,7 @@ function CallbackContent() {
       return
     }
 
-    handleCallback(code).then((profile) => {
+    handleCallback(code, searchParams.get("state")).then((profile) => {
       if (profile) {
         const returnTo = getAuthReturnUrl()
         router.replace(returnTo)

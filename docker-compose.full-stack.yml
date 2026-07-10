@@ -41,6 +41,10 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client + feeds frontend NextAuth)}
       EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
+      # Customer realm (jtoye-customers, Phase 18) render inputs — non-secret local-dev config.
+      CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
+      CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
+      CUSTOMER_VERIFY_EMAIL: ${CUSTOMER_VERIFY_EMAIL:-false}
     volumes:
       - ./infra/keycloak:/keycloak
     entrypoint:
@@ -52,6 +56,11 @@ services:
         envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
+        # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit
+        # customer var list so Keycloak i18n role placeholders survive (issue #80 pattern).
+        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL' \
+          < /keycloak/realm-export-customers.template.json > /keycloak/realm-export-customers.json
+        echo "Rendered infra/keycloak/realm-export-customers.json from template"
     networks:
       - jtoye-network
 
@@ -77,6 +86,9 @@ services:
       - "8085:8080"
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # Phase 18: second realm import (jtoye-customers). --import-realm creates realms
+      # that do not yet exist and leaves the existing jtoye-dev realm untouched.
+      - ./infra/keycloak/realm-export-customers.json:/opt/keycloak/data/import/realm-export-customers.json:ro
       - keycloak_data:/opt/keycloak/data
     depends_on:
       postgres:
@@ -250,6 +262,11 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://localhost:9090
+        # Phase 18: baked into the browser bundle so customer-auth.ts targets the
+        # jtoye-customers realm (NEXT_PUBLIC_* must be present at BUILD time).
+        # Required (`:?`) — a missing var would bake an empty string into the client
+        # bundle; the runtime `environment:` default below cannot fix a build-time bake.
+        NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:?NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL must be set (baked into browser bundle)}
     container_name: jtoye-frontend
     environment:
       NODE_ENV: production
@@ -261,6 +278,11 @@ services:
       KEYCLOAK_ISSUER: http://localhost:8085/realms/jtoye-dev
       KEYCLOAK_ISSUER_INTERNAL: http://keycloak:8080/realms/jtoye-dev
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8085/realms/jtoye-dev
+      # Phase 18: customer identity realm (jtoye-customers) — frontend customer-auth only.
+      # Admin NextAuth (frontend/auth.ts) stays on jtoye-dev above; these are additive.
+      CUSTOMER_KEYCLOAK_ISSUER: ${CUSTOMER_KEYCLOAK_ISSUER:-http://localhost:8085/realms/jtoye-customers}
+      CUSTOMER_KEYCLOAK_ISSUER_INTERNAL: ${CUSTOMER_KEYCLOAK_ISSUER_INTERNAL:-http://keycloak:8080/realms/jtoye-customers}
+      NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:-http://localhost:8085/realms/jtoye-customers}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       PORT: 3000
       HOSTNAME: "0.0.0.0"
