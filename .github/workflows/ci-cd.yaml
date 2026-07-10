@@ -228,7 +228,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          # frontend is amd64-only: its arm64 build runs under QEMU emulation
+          # (Next.js npm-install + next build) and took ~30 min vs ~1-7 min for
+          # the Go/Java services, whose arm64 builds are cheap. Drop arm64 for
+          # frontend, keep multi-arch for core-java/edge-go.
+          platforms: ${{ matrix.service == 'frontend' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
 
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@master
