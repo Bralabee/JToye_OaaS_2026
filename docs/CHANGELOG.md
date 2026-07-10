@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P1 remediation sprint (backlog #83–#88) — 2026-07-09
+
+Six P1 items from the 2026-07-08 enterprise-readiness audit (`docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md`), each planned → executed → verified against the full test gate → merged via PR after CI passed. Test baseline 726 → 767 logical invocations; schema V41 → V42.
+
+#### Security
+- **Role-based access control (#83, P1-1).** Enabled Spring method security; a new `KeycloakRealmRoleConverter` maps the JWT `realm_access.roles` claim to `ROLE_*` authorities, and class-level `@PreAuthorize("hasRole('admin')")` now gates Stripe refunds, the financial ledger, GDPR export/erasure, and dev-tenant creation. Previously any authenticated tenant user could reach all of these. A low-privilege token receives 403 (asserted in `RoleBasedAccessIntegrationTest`). (PR #126)
+- **JWT audience validation + realm hardening + session refresh-token leak (#87, P1-5).** core-java now validates the token `aud` additively via `DelegatingOAuth2TokenValidator` (issuer + audience + timestamp) with `AudienceValidator` — this also strengthens issuer validation, which the custom decoder was not enforcing. edge-go audience enforcement is now fail-closed (was opt-in/inert). The Keycloak realm template gains `bruteForceProtected`, a password policy, and a `core-api` audience mapper. The vendor NextAuth session no longer copies the refresh token to the client (it stays on the server-side JWT). (PR #130)
+- **Public storefront endpoints rate-limited at Core (#88, P1-6).** Closed the bypass where `RateLimitInterceptor` allowed any request lacking a `TenantContext` — i.e. every tenant-less `/public/**` guest path. A new IP-keyed bucket (`rl:public:{ip}`, a Redis namespace distinct from tenant buckets) throttles guest traffic and returns 429 + `Retry-After`; it runs inside the #86 fail-open guard so a Redis outage degrades to allowed, not 500. (PR #131)
+
+#### Compliance
+- **GDPR erasure completeness (#84, P1-2).** Erasure now reaches guest storefront orders (matched by email, not just `customerId`), scrubs pre-erasure PII from the Envers `orders_aud`/`customers_aud` history via tenant-scoped native UPDATEs (V42 adds the required UPDATE RLS policies — the audit tables previously had SELECT+INSERT only, so the scrub was silently denied), deletes orphaned S3/MinIO review photos, and persists a durable PII-free `erasure_records` row (SHA-256 email hash). (PR #127)
+
+#### Fixed
+- **Guest-checkout double-decrement + TOCTOU (#85, P1-3).** A verify-first characterization test confirmed stock was decremented twice — once eagerly at guest-order creation and again at CONFIRM. Converged to a single retry-safe decrement at the CONFIRMED transition via `StockService` (removed the naked read-modify-write in `PublicStorefrontService.createGuestOrder`), eliminating the double-count and the concurrent-checkout 500. (PR #128)
+- **Redis outage resilience (#86, P1-4).** Added a `RedisCacheErrorHandler` that degrades cache GET/PUT/EVICT/CLEAR failures to source-of-truth (a Redis blip is now a cache miss, not a 500); set an explicit Lettuce command timeout from the per-profile `spring.data.redis.timeout` (replacing the 60s default that made requests hang); wrapped the rate limiter in a bounded try/catch that fails open with an alarm (`jtoye.ratelimit.fail_open` counter). (PR #129)
+
+#### Added
+- `V42__gdpr_erasure_completeness.sql` (erasure_records + `orders_aud`/`customers_aud` UPDATE policies); `KeycloakRealmRoleConverter`, `AudienceValidator`, `ClientIpResolver`, `RedisCacheErrorHandler`, `ErasureRecord`; `RoleBasedAccessIntegrationTest`, `GdprErasureIntegrationTest`, `GuestCheckoutStockConvergenceIntegrationTest`, `RedisFaultInjectionIntegrationTest`, `PublicRateLimitIntegrationTest` (all Testcontainers) plus unit tests. Config keys: `jtoye.security.jwt.expected-audience`, `rate-limiting.public.*`.
+
+#### Deferred / follow-ups
+- **Keycloak realm re-import (from #87).** The new `core-api` audience mapper only affects live token contents after a Keycloak DB drop + realm re-import; until then live tokens lack `aud=core-api` and are correctly rejected fail-closed. CI validates the realm JSON only.
+
 ### P0 remediation sprint (backlog #77–#82) — 2026-07-08
 
 Six P0 items from the 2026-07-08 enterprise-readiness audit (`docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md`), each planned → executed → verified against the live stack → merged via PR.
