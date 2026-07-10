@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 echo "=== Keycloak Configuration Script ==="
 echo "This script configures the jtoye-dev realm with multi-tenant support"
@@ -27,7 +27,7 @@ echo ""
 echo "Getting admin access token..."
 ADMIN_TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin" \
+  -d "username=${KEYCLOAK_ADMIN:-admin}" \
   -d "password=${KC_ADMIN_PASSWORD}" \
   -d "grant_type=password" \
   -d "client_id=admin-cli" | jq -r '.access_token')
