@@ -7,7 +7,7 @@
   "accessTokenLifespanForImplicitFlow" : 300,
   "ssoSessionIdleTimeout" : 1800,
   "ssoSessionMaxLifespan" : 7200,
-  "revokeRefreshToken" : false,
+  "revokeRefreshToken" : true,
   "refreshTokenMaxReuse" : 0,
   "registrationAllowed" : true,
   "registrationEmailAsUsername" : true,
