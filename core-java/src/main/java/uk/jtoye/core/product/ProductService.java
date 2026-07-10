@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,9 +18,12 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService.ImageType;
 import uk.jtoye.core.storage.StorageService;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for product management operations.
@@ -108,14 +113,55 @@ public class ProductService {
     }
 
     /**
-     * Search products by title or SKU (tenant-scoped).
+     * Full-text product search (tenant-scoped via RLS), paginated.
+     *
+     * <p>Strategy (Issue #96): each whitespace-separated word is sanitised to
+     * letters/digits and turned into a prefix lexeme ({@code chick:*}), joined
+     * with {@code &} — multi-word queries must match every word, and partial
+     * words still match ("chick" finds "Chicken"). SKU lookup is preserved via
+     * an anchored, LIKE-escaped prefix on the raw query. Caller-provided sorts
+     * are dropped: the native query owns ordering (ts_rank relevance), and
+     * Spring Data would otherwise append the sort to the native SQL.
+     *
+     * <p>Queries that sanitise to nothing (blank, punctuation-only) return an
+     * empty page rather than everything — the old LIKE path matched all rows
+     * on '%', which no caller relied on.
      */
     @Transactional(readOnly = true)
-    public List<ProductDto> search(String query) {
+    public Page<ProductDto> search(String query, Pageable pageable) {
         log.debug("Searching products with query: {}", query);
-        return productRepository.search(query).stream()
-                .map(productMapper::toDto)
-                .toList();
+        String tsQuery = toPrefixTsQuery(query);
+        if (tsQuery.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+        String skuPrefix = escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%";
+        return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
+                .map(productMapper::toDto);
+    }
+
+    /**
+     * Builds a prefix tsquery ("chicken curry" -> "chicken:* & curry:*").
+     * Tokens are stripped to letters/digits so tsquery operators in user input
+     * ({@code & | ! ( ) : *}) can never inject syntax or raise SQL errors.
+     */
+    private static String toPrefixTsQuery(String query) {
+        if (query == null || query.isBlank()) {
+            return "";
+        }
+        return Arrays.stream(query.trim().split("\\s+"))
+                .map(token -> token.replaceAll("[^\\p{L}\\p{N}]", ""))
+                .filter(token -> !token.isEmpty())
+                .map(token -> token + ":*")
+                .collect(Collectors.joining(" & "));
+    }
+
+    /**
+     * Escapes LIKE wildcards for the SKU-prefix branch (ESCAPE '!' in the query),
+     * so '%' and '_' in user input match literally instead of as wildcards.
+     */
+    private static String escapeLike(String s) {
+        return s.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     /**
