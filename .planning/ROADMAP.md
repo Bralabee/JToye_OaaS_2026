@@ -17,7 +17,7 @@ Milestone v2.2 closes the 8 highest-priority P2 security/quality items from the 
 
 - ✅ **v2.0 Tier 3 Enhancements** — Phases 1-8 (shipped 2026-04-10, PR #27)
 - ✅ **v2.1 Post-Audit Hardening + Storefront Completion** — Phases 9-11 (shipped 2026-04-16, archived 2026-04-18)
-- 🚧 **v2.2 Production Hardening + Vendor Order Operations** — Phases 12-17 (in progress, started 2026-04-18)
+- 🚧 **v2.2 Production Hardening + Vendor Order Operations** — Phases 12-18 (in progress, started 2026-04-18)
 - 📋 **v2.3+** — unscoped; likely candidates: 6 remaining P2 HANDOFF items, Work Orders F/J/K, Postgres PITR
 
 ## Phases
@@ -58,6 +58,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
 - [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
 - [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
+- [ ] **Phase 18: Vendor Onboarding — First Slice (MVP)** — `vendor_onboarding` state machine + gate chain (Flyway V43): auto-verify business (Companies House) + food-hygiene rating (FSA FHRS, `min-rating=2`) at signup, gate go-live on allergen completeness, state machine as sole writer of `Shop.published`. Seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`. — planning via `/gsd plan-phase 18` (MVP mode)
 
 ## Phase Details
 
@@ -175,6 +176,18 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 18: Vendor Onboarding — First Slice
+**Goal:** As a food vendor, I want to auto-verify my business and hygiene rating at signup, so that my shop goes live without manual review.
+**Mode:** mvp
+**Requirements**: (new capability — to be mapped during planning; scope seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`)
+**Success Criteria** (what must be TRUE):
+  1. A tenant-scoped `vendor_onboarding` aggregate with a state machine (DRAFT → VERIFYING → ACTION_REQUIRED/PENDING_APPROVAL → APPROVED → LIVE) persists under RLS via Flyway V43, mirroring the Order state-machine pattern; the state machine is the sole writer of `Shop.published`.
+  2. On submit, the `BUSINESS_VERIFIED` (Companies House) and `FOOD_HYGIENE_RATING` (FSA FHRS, threshold `min-rating=2`, header `x-api-version: 2`) gates run automatically, recording pass/fail + evidence; no/ambiguous FHRS match → `MANUAL_REVIEW` (never hard-fail).
+  3. The `ALLERGEN_DATA_COMPLETE` gate blocks `GO_LIVE` until every product carries required allergen data (V41 fields).
+  4. FHRS threshold and API base URLs are injected via config (`onboarding.*`, `${ENV:default}`), never literals.
+  5. Tests added (state-machine transitions, RLS Testcontainers, gate evaluators) and `docs/metrics.json` bumped so the `docs-freshness` gate stays green.
+**Plans**: TBD — planned via `/gsd plan-phase 18` (MVP mode)
+
 ## Progress
 
 **Execution Order:**
@@ -207,3 +220,4 @@ Suggested wave layout:
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
+| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 0/? | Not started | - |
