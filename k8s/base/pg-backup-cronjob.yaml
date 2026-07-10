@@ -28,91 +28,75 @@ spec:
             fsGroup: 1000
           containers:
             - name: pg-backup
-              image: postgres:15-alpine
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  set -euo pipefail
-                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-                  FILENAME="jtoye-backup-${TIMESTAMP}.sql.gz"
-
-                  echo "Starting backup: ${FILENAME}"
-                  pg_dump \
-                    -h "${DB_HOST}" \
-                    -p "${DB_PORT}" \
-                    -U "${DB_USER}" \
-                    -d "${DB_NAME}" \
-                    --no-owner \
-                    --no-acl \
-                    --format=custom \
-                    | gzip > "/tmp/${FILENAME}"
-
-                  echo "Uploading to S3: s3://${S3_BUCKET}/backups/${FILENAME}"
-                  # Install and use AWS CLI for S3 upload
-                  apk add --no-cache aws-cli > /dev/null 2>&1
-                  aws s3 cp "/tmp/${FILENAME}" "s3://${S3_BUCKET}/backups/${FILENAME}" \
-                    --endpoint-url "${S3_ENDPOINT}"
-
-                  # Prune backups older than 30 days
-                  CUTOFF=$(date -d "-30 days" +%Y%m%d 2>/dev/null || date -v-30d +%Y%m%d)
-                  aws s3 ls "s3://${S3_BUCKET}/backups/" --endpoint-url "${S3_ENDPOINT}" \
-                    | awk '{print $4}' \
-                    | while read -r file; do
-                        FILE_DATE=$(echo "${file}" | grep -oP '\d{8}' | head -1)
-                        if [ -n "${FILE_DATE}" ] && [ "${FILE_DATE}" -lt "${CUTOFF}" ]; then
-                          echo "Pruning old backup: ${file}"
-                          aws s3 rm "s3://${S3_BUCKET}/backups/${file}" --endpoint-url "${S3_ENDPOINT}"
-                        fi
-                      done
-
-                  rm -f "/tmp/${FILENAME}"
-                  echo "Backup complete: ${FILENAME}"
+              # Purpose-built image (infra/backups/Dockerfile): pg_dump/pg_restore
+              # + aws-cli + GNU coreutils baked in, and the hardened k8s-backup.sh
+              # as its ENTRYPOINT. No runtime `apk add` (blocked by default-deny
+              # NetworkPolicy), no busybox GNU-isms. Tag must track the built image.
+              image: ghcr.io/bralabee/jtoye-pg-backup:15
+              imagePullPolicy: IfNotPresent
               env:
+                # --- database (dumps as the BYPASSRLS backup role, see
+                #     infra/backups/create-backup-role.sql — the app role would
+                #     capture 0 rows from FORCE-RLS tenant tables) ---
                 - name: DB_HOST
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: db-host
+                      name: postgres-credentials
+                      key: host
                 - name: DB_PORT
-                  value: "5432"
-                - name: DB_USER
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: db-user
+                      name: postgres-credentials
+                      key: port
                 - name: DB_NAME
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: db-name
+                      name: postgres-credentials
+                      key: database
+                - name: DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: backup-username
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: db-password
+                      name: postgres-credentials
+                      key: backup-password
+                # --- S3 target ---
                 - name: S3_BUCKET
                   valueFrom:
                     configMapKeyRef:
-                      name: jtoye-config
-                      key: s3-bucket
+                      name: app-config
+                      key: s3.backup.bucket
+                - name: S3_PREFIX
+                  valueFrom:
+                    configMapKeyRef:
+                      name: app-config
+                      key: s3.backup.prefix
                 - name: S3_ENDPOINT
                   valueFrom:
                     configMapKeyRef:
-                      name: jtoye-config
-                      key: s3-endpoint
+                      name: app-config
+                      key: s3.backup.endpoint
+                - name: AWS_DEFAULT_REGION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: app-config
+                      key: s3.backup.region
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: s3-access-key
+                      name: s3-backup-credentials
+                      key: access-key
                 - name: AWS_SECRET_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: jtoye-secrets
-                      key: s3-secret-key
-                - name: AWS_DEFAULT_REGION
-                  value: eu-west-2
+                      name: s3-backup-credentials
+                      key: secret-key
+                # --- retention ---
+                - name: RETENTION_DAYS
+                  value: "30"
               resources:
                 requests:
                   memory: 256Mi
