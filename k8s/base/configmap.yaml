@@ -27,3 +27,10 @@ data:
   stomp.broker.mode: "relay"
   stomp.broker.relay-host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
   stomp.broker.relay-port: "61613"
+
+  # pg-backup CronJob S3 target (#90). Leave s3.backup.endpoint empty for real
+  # AWS S3; set it to a MinIO/other S3 endpoint URL for non-AWS targets.
+  s3.backup.bucket: "jtoye-db-backups"
+  s3.backup.prefix: "backups"
+  s3.backup.region: "eu-west-2"
+  s3.backup.endpoint: ""

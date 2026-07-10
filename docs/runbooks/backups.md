@@ -1,9 +1,11 @@
 # Database Backup Runbook
 
-Operational reference for the JToye OaaS PostgreSQL backup job
-(`infra/backups/backup.sh`). Covers how backups run, how to verify one, the
-metrics the script emits, the alert that should fire when backups go stale, and
-the restore-testing cadence.
+Operational reference for the JToye OaaS PostgreSQL backups. Two paths exist: the
+host script (`infra/backups/backup.sh`, local/docker → gzip'd plain dump) covered
+first, and the in-cluster **Kubernetes CronJob** (`k8s/base/pg-backup-cronjob.yaml`
+→ custom-format dump to S3) covered in [Kubernetes CronJob backups to S3](#kubernetes-cronjob-backups-to-s3-90).
+Covers how backups run, how to verify one, the metrics the script emits, the alert
+that should fire when backups go stale, and the restore-testing cadence.
 
 Related: alert first-response lives in [`alerts.md`](./alerts.md).
 
@@ -180,14 +182,78 @@ A backup that has never been restored is a hypothesis, not a safeguard.
 
 ---
 
-## Deferred work (#90)
+## Kubernetes CronJob backups to S3 (#90)
 
-The following are **out of scope for #119** and tracked under **#90**
-(cluster-dependent):
+The in-cluster nightly backup (`k8s/base/pg-backup-cronjob.yaml`) is separate from
+the host `backup.sh` above: it streams a **custom-format** dump straight to S3.
 
-- `k8s/base/pg-backup-cronjob.yaml` busybox/GNU-ism cleanup + runtime `apk add`.
-- A dedicated `BYPASSRLS` dump role for the in-cluster CronJob.
-- An automated **S3 restore drill** (upload to object storage + periodic
-  restore-into-scratch-DB verification in CI/cron).
+### The image
+Built from `infra/backups/Dockerfile` (`FROM postgres:15-bookworm`) with `pg_dump`,
+`pg_restore`, **aws-cli**, and GNU coreutils/grep baked in, running
+`infra/backups/k8s-backup.sh` as its ENTRYPOINT. This replaces the old
+`postgres:15-alpine` + runtime `apk add aws-cli` (which failed on busybox GNU-isms
+and under the default-deny NetworkPolicy). Build & push so the tag matches the
+manifest:
+```bash
+docker build -t ghcr.io/bralabee/jtoye-pg-backup:15 infra/backups
+docker push ghcr.io/bralabee/jtoye-pg-backup:15
+```
 
-Until #90 lands, the quarterly restore drill above is performed manually.
+### The BYPASSRLS dump role (critical — FORCE RLS trap)
+Tenant tables use **FORCE ROW LEVEL SECURITY**, which applies RLS even to the table
+owner. A `pg_dump` run as the app role with no `app.tenant_id` GUC set therefore
+**silently captures ZERO rows** from every tenant table. Proven against the live DB:
+
+| Connected as | `SELECT count(*) FROM products` |
+| --- | --- |
+| `jtoye_app` (app role, FORCE RLS, no tenant) | **0** ← the trap |
+| superuser / `jtoye_backup` (BYPASSRLS) | **25** |
+
+Create the least-privilege dump role **as the postgres superuser** (not a Flyway
+migration — the app role can't grant `BYPASSRLS`). It needs SELECT on tables **and
+sequences** (`pg_dump` reads `last_value`, else it fails with "permission denied for
+sequence revinfo_seq"):
+```bash
+psql -U <superuser> -d jtoye \
+  -v backup_password="$(<secret manager>)" \
+  -f infra/backups/create-backup-role.sql
+```
+Put the same password in the `postgres-credentials` secret's `backup-password` key,
+and the S3 creds in `s3-backup-credentials` (see `k8s/base/secrets-template.yaml`).
+
+### Local end-to-end proof (2026-07-10, dev-sized DB)
+Run against the local stack (Postgres + MinIO), backup image + restore drill:
+
+- **Backup:** exit **0**; 133 KiB custom-format dump; verified (size floor +
+  `pg_restore --list`); uploaded to `s3://jtoye-db-backups/backups/`.
+- **Retention:** a seeded `…-20250101-…` object was **pruned**; recent kept; job did
+  not abort (`Pruned 1 old backup(s)`).
+- **Restore drill:** downloaded from S3 → `pg_restore` into a scratch DB in **~5s
+  (RTO)**; restored row counts **products=25, orders=57, customers=4, shops=10** —
+  i.e. the BYPASSRLS dump captured the full tenant data the app-role dump would have
+  dropped.
+- **RPO:** nightly schedule → **≤24h**; dump itself completes in ~2s on the dev DB.
+
+> These figures are from the **dev-sized** DB. RPO/RTO scale with data volume —
+> re-measure on the first prod-cluster drill and record here.
+
+### Restore procedure (custom format)
+```bash
+aws s3 cp s3://<bucket>/backups/<file>.dump /tmp/r.dump   # + --endpoint-url for MinIO
+createdb -U <superuser> jtoye_restore_drill
+pg_restore -U <superuser> -d jtoye_restore_drill --no-owner --no-acl /tmp/r.dump
+psql -U <superuser> -d jtoye_restore_drill -c 'SELECT count(*) FROM products;'
+dropdb -U <superuser> jtoye_restore_drill
+```
+
+### Pending (needs a live cluster — flagged, not yet done)
+The following ACs require the prod/staging cluster (AKS `sipbihs2aks` currently
+unreachable; no local cluster):
+
+- [ ] CronJob completes **in-cluster** (exit 0) with the artifact in the **prod** S3
+  bucket.
+- [ ] A **prod restore drill** executed against prod S3, with prod-scale RPO/RTO
+  recorded above.
+
+The mechanism for both is proven locally (above); only the in-cluster execution is
+outstanding.
