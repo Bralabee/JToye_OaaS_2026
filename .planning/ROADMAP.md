@@ -179,14 +179,22 @@ Plans:
 ### Phase 18: Vendor Onboarding — First Slice
 **Goal:** As a food vendor, I want to auto-verify my business and hygiene rating at signup, so that my shop goes live without manual review.
 **Mode:** mvp
-**Requirements**: (new capability — to be mapped during planning; scope seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`)
+**Requirements**: VOB-01, VOB-02, VOB-03, VOB-04, VOB-05 (new capability; minted during Phase 18 planning — registered in REQUIREMENTS.md by Plan 18-06; scope seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`)
 **Success Criteria** (what must be TRUE):
   1. A tenant-scoped `vendor_onboarding` aggregate with a state machine (DRAFT → VERIFYING → ACTION_REQUIRED/PENDING_APPROVAL → APPROVED → LIVE) persists under RLS via Flyway V43, mirroring the Order state-machine pattern; the state machine is the sole writer of `Shop.published`.
   2. On submit, the `BUSINESS_VERIFIED` (Companies House) and `FOOD_HYGIENE_RATING` (FSA FHRS, threshold `min-rating=2`, header `x-api-version: 2`) gates run automatically, recording pass/fail + evidence; no/ambiguous FHRS match → `MANUAL_REVIEW` (never hard-fail).
   3. The `ALLERGEN_DATA_COMPLETE` gate blocks `GO_LIVE` until every product carries required allergen data (V41 fields).
   4. FHRS threshold and API base URLs are injected via config (`onboarding.*`, `${ENV:default}`), never literals.
   5. Tests added (state-machine transitions, RLS Testcontainers, gate evaluators) and `docs/metrics.json` bumped so the `docs-freshness` gate stays green.
-**Plans**: TBD — planned via `/gsd plan-phase 18` (MVP mode)
+**Plans**: 6 plans (MVP vertical slices; planned 2026-07-10)
+
+Plans:
+- [ ] 18-01-PLAN.md — Persistence foundation: Flyway V43 (vendor_onboarding + _gate + _aud, FORCE RLS), enums, audited entities/repos, OnboardingProperties + config [Wave 1]
+- [ ] 18-02-PLAN.md — Submit slice: onboarding state machine (sole writer of Shop.published) + VendorOnboardingService + gate-chain registry/runner + create/submit/status API [Wave 2]
+- [ ] 18-03-PLAN.md — FOOD_HYGIENE_RATING gate: FhrsClient (x-api-version:2 + circuit breaker) + FhrsGate (min-rating=2, MANUAL_REVIEW fallback) [Wave 3]
+- [ ] 18-04-PLAN.md — BUSINESS_VERIFIED gate: CompaniesHouseClient (HTTP Basic + circuit breaker) + CompaniesHouseGate (active->PASSED, sole trader->WAIVED) [Wave 3]
+- [ ] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
+- [ ] 18-06-PLAN.md — Cross-gate end-to-end proof + docs/metrics.json reconcile (docs-freshness) + REQUIREMENTS/ROADMAP/CHANGELOG closure [Wave 4]
 
 ## Progress
 
@@ -220,4 +228,4 @@ Suggested wave layout:
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
-| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 0/? | Not started | - |
+| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 0/6 | Planned | - |
