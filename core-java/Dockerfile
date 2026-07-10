@@ -2,7 +2,7 @@
 # Optimized for production: small size, security, fast startup
 
 # Stage 1: Build stage
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ COPY core-java/src core-java/src
 RUN ./gradlew :core-java:bootJar -x test --no-daemon
 
 # Stage 2: Runtime stage
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 # Install curl for health checks
 RUN apk add --no-cache curl
