@@ -168,11 +168,14 @@ function CustomerOrdersContent() {
       // NOTE: /public/orders?email= has a soft enumeration risk — tracked as a
       // milestone-4+ follow-up. See
       // .planning/phases/10-storefront-marketing-render-missing-customer-routes/10-RESEARCH.md §Pitfall 5
-      const res = await publicApiClient.get<OrderSummary[]>(
+      // Issue #95: the endpoint is paginated now (Spring Page response) and the
+      // server caps page size at 100. Request the max so the client-side
+      // filter/pagination below keeps working over the 100 most recent orders.
+      const res = await publicApiClient.get<{ content: OrderSummary[] }>(
         "/public/orders",
-        { params: { email } }
+        { params: { email, size: 100 } }
       )
-      setOrders(res.data)
+      setOrders(res.data.content ?? [])
     } catch {
       setOrders([])
     } finally {

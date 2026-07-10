@@ -300,19 +300,19 @@ function OrdersPageInner() {
   const fetchData = async () => {
     try {
       setLoading(true)
+      // Issue #95: /orders/customer/{id} is paginated now (Page response, same
+      // shape as /orders) — the old bare-array special case is gone.
       const ordersPromise = customerIdParam
-        ? apiClient.get(`/api/v1/orders/customer/${customerIdParam}`)
+        ? apiClient.get(`/api/v1/orders/customer/${customerIdParam}?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
         : apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       const [ordersRes, shopsRes, productsRes] = await Promise.all([
         ordersPromise,
         apiClient.get("/api/v1/shops?size=100"),
         apiClient.get("/api/v1/products?size=100"),
       ])
-      // Customer endpoint returns array; paginated returns {content, ...}
-      const orderData = customerIdParam ? ordersRes.data : ordersRes.data.content
-      setOrders(orderData || [])
-      setTotalPages(customerIdParam ? 1 : (ordersRes.data.totalPages || 0))
-      setTotalElements(customerIdParam ? (orderData?.length || 0) : (ordersRes.data.totalElements || 0))
+      setOrders(ordersRes.data.content || [])
+      setTotalPages(ordersRes.data.totalPages || 0)
+      setTotalElements(ordersRes.data.totalElements || 0)
       setShops(shopsRes.data.content || [])
       setProducts(productsRes.data.content || [])
     } catch (error: unknown) {
