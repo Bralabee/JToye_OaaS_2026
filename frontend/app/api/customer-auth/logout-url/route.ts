@@ -18,11 +18,25 @@ const KC_BASE =
   process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL ||
   "http://localhost:8085/realms/jtoye-customers" // never fall back to jtoye-dev (staff realm)
 
+/**
+ * Restrict the post-logout redirect to a same-origin storefront path. The value
+ * is user-controlled; only accept a relative path beginning with a single "/"
+ * (reject protocol-relative "//host", backslash tricks "/\\host", and absolute
+ * URLs) so the returned URL can never escape this origin. Falls back to "/shop".
+ */
+function sanitizeRedirect(raw: string | null): string {
+  const fallback = "/shop"
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return fallback
+  }
+  return raw
+}
+
 export async function GET(req: NextRequest) {
   const id = req.cookies.get(ID_COOKIE)?.value
-  const redirect = req.nextUrl.searchParams.get("redirect") || "/shop"
+  const redirect = sanitizeRedirect(req.nextUrl.searchParams.get("redirect"))
   const origin = req.nextUrl.origin
-  const postLogoutRedirectUri = `${origin}${redirect.startsWith("/") ? redirect : `/${redirect}`}`
+  const postLogoutRedirectUri = `${origin}${redirect}`
 
   if (!id) {
     // No session — just bounce back to the redirect target
