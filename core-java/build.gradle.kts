@@ -23,7 +23,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.retry:spring-retry")
-    implementation("org.springframework.statemachine:spring-statemachine-starter:3.2.1")
+    implementation("org.springframework.statemachine:spring-statemachine-starter:4.0.2")
 
     // Redis caching dependencies
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
