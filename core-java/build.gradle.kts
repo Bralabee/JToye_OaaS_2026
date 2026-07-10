@@ -61,7 +61,7 @@ dependencies {
     implementation("com.stripe:stripe-java:28.2.0")
 
     // PDF generation for allergen labels
-    implementation("com.github.librepdf:openpdf:2.0.3")
+    implementation("com.github.librepdf:openpdf:3.0.5")
 
     // Use Spring Boot managed Hibernate ORM version to avoid mismatch
     implementation("org.hibernate.orm:hibernate-envers")
