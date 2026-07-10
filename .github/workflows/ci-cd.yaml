@@ -143,6 +143,29 @@ jobs:
           name: integration-test-results
           path: core-java/build-local/reports/tests/integrationTest/
 
+  # Job 1c: K8s manifest validation (#100 / P2-9).
+  # Client-side only — builds k8s/base + every overlay with `kubectl kustomize`
+  # and fails if any output contains a top-level `kind: Secret` (committed
+  # plaintext/placeholder Secret material) or a REPLACE_WITH_* placeholder in
+  # anything other than the known deployment.timestamp annotation.
+  # SealedSecret manifests (ciphertext) are allowed.
+  k8s-validate:
+    name: K8s Kustomize Secret Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@901a10e89ea615cf61f57ac05cecdf23e7de06d8 # v3
+        with:
+          version: 'v1.33.3'
+
+      - name: Assert no plaintext Secrets in any kustomize build
+        run: |
+          chmod +x ./k8s/scripts/check-no-plaintext-secrets.sh
+          ./k8s/scripts/check-no-plaintext-secrets.sh
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan
