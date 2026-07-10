@@ -156,7 +156,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner (filesystem)
+      - name: Run Trivy vulnerability scanner (filesystem, SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
@@ -164,7 +164,6 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
           ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security
@@ -172,6 +171,20 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+
+      - name: Trivy gate — fail build on fixable CRITICAL/HIGH
+        # Separate step from the SARIF report above: `format: sarif` forces Trivy
+        # to scan ALL severities, so pairing it with exit-code would gate on
+        # LOW/MEDIUM too. This table-format step gates precisely on fixable
+        # CRITICAL,HIGH and prints the offending CVEs in the job log.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
 
       - name: Run Snyk security scan
         # Real gate on HIGH+ vulns. Skipped (not failed) when SNYK_TOKEN is
@@ -238,14 +251,13 @@ jobs:
           # frontend, keep multi-arch for core-java/edge-go.
           platforms: ${{ matrix.service == 'frontend' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
 
-      - name: Scan Docker image with Trivy
+      - name: Scan Docker image with Trivy (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: 'sarif'
           output: 'trivy-image-results.sarif'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
           ignore-unfixed: true
 
       - name: Upload image scan results
@@ -253,6 +265,17 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-image-results.sarif'
+
+      - name: Trivy image gate — fail on fixable CRITICAL/HIGH
+        # Table-format gate (see filesystem gate rationale): precise CRITICAL,HIGH
+        # gating with the offending CVEs printed in the job log.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
 
   # Job 4: Deploy to staging
   deploy-staging:
