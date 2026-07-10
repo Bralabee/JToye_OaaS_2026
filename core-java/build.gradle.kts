@@ -58,7 +58,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
 
     // Stripe payment processing
-    implementation("com.stripe:stripe-java:28.2.0")
+    implementation("com.stripe:stripe-java:33.1.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
