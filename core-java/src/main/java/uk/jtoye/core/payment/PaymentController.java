@@ -10,9 +10,19 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+/**
+ * Public Stripe payment endpoints.
+ *
+ * <p><b>Versioning (issue #97 [P2-6]):</b> canonical path is
+ * {@code /api/v1/public/payments/**}; the bare {@code /public/payments/**}
+ * mapping is a legacy alias that MUST stay — the Stripe dashboard webhook is
+ * configured against {@code /public/payments/webhook} and removing it would
+ * silently drop payment events. Re-point Stripe at the versioned path before
+ * ever retiring the alias.
+ */
 @RestController
-@RequestMapping("/public/payments")
-@Tag(name = "Payments", description = "Stripe payment processing endpoints (public, no auth required)")
+@RequestMapping({"/public/payments", "/api/v1/public/payments"})
+@Tag(name = "Payments", description = "Stripe payment processing endpoints (public, no auth required). Canonical prefix /api/v1/public/payments; bare /public/payments is a deprecated legacy alias kept for the configured Stripe webhook.")
 public class PaymentController {
     private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
 

@@ -13,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.shop.dto.AnnouncementDto;
 import uk.jtoye.core.shop.dto.CreateAnnouncementRequest;
 
@@ -69,7 +70,12 @@ public class AnnouncementController {
     public ResponseEntity<AnnouncementDto> create(
             @Parameter(description = "Announcement creation request") @Valid @RequestBody CreateAnnouncementRequest request) {
         AnnouncementDto dto = announcementService.createAnnouncement(request);
-        return ResponseEntity.created(URI.create("/announcements/" + dto.getId())).body(dto);
+        // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(dto.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @PutMapping("/{id}")

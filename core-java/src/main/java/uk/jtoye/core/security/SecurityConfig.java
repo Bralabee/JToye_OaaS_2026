@@ -125,7 +125,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/info").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                    .requestMatchers("/public/**").permitAll()
+                    // issue #97 [P2-6]: /api/v1/public/** is the canonical versioned
+                    // alias of the legacy /public/** surface — both must stay public.
+                    .requestMatchers("/public/**", "/api/v1/public/**").permitAll()
                     .requestMatchers("/ws/**").permitAll();
                 // Prometheus scrape endpoint: permitted in non-prod only, mirroring
                 // the HSTS runtime-profile pattern below. Exposure is additionally

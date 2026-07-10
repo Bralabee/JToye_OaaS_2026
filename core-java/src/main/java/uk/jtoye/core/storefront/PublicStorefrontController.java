@@ -26,9 +26,21 @@ import uk.jtoye.core.storefront.dto.PublicShopDto;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Public storefront API.
+ *
+ * <p><b>Versioning (issue #97 [P2-6]):</b> the canonical path is
+ * {@code /api/v1/public/**}; the bare {@code /public/**} mapping is a legacy
+ * alias kept for the deployed frontend/edge callers and MUST NOT be removed
+ * until they migrate (removal would be a breaking change — announce +
+ * deprecation window first). Both aliases serve identical handlers. New
+ * clients should call {@code /api/v1/public/**}. The storefront package is
+ * deliberately NOT in {@code WebConfig.API_V1_PACKAGES} — the alias pair is
+ * explicit here so the legacy path survives.
+ */
 @RestController
-@RequestMapping("/public")
-@Tag(name = "Public Storefront", description = "Public endpoints for customer-facing shop discovery, product browsing, order tracking, and reviews")
+@RequestMapping({"/public", "/api/v1/public"})
+@Tag(name = "Public Storefront", description = "Public endpoints for customer-facing shop discovery, product browsing, order tracking, and reviews. Canonical prefix /api/v1/public; bare /public is a deprecated legacy alias.")
 public class PublicStorefrontController {
 
     private final PublicStorefrontService storefrontService;

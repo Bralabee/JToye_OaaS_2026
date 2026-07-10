@@ -200,11 +200,17 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      * issue #88 [P1-6]: identifies tenant-less public storefront paths ({@code /public/**})
      * that must be throttled by client IP rather than by tenant.
      *
+     * <p>issue #97 [P2-6]: {@code /api/v1/public/**} is the canonical versioned alias of
+     * the same surface (see {@code PublicStorefrontController}/{@code PaymentController})
+     * and must share the SAME IP-keyed public tier — otherwise a guest flood could pick
+     * the alias and fall through to the tenant-less allow-through.
+     *
      * @param path the request path
-     * @return true for {@code /public} and any {@code /public/...} sub-path
+     * @return true for {@code /public}, {@code /api/v1/public}, and any of their sub-paths
      */
     private boolean isPublicPath(String path) {
-        return path.equals("/public") || path.startsWith("/public/");
+        return path.equals("/public") || path.startsWith("/public/")
+                || path.equals("/api/v1/public") || path.startsWith("/api/v1/public/");
     }
 
     /**

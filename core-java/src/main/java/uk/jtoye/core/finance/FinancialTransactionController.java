@@ -14,6 +14,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
@@ -82,7 +83,12 @@ public class FinancialTransactionController {
     public ResponseEntity<FinancialTransactionDto> createTransaction(
             @Parameter(description = "Transaction creation request") @Valid @RequestBody CreateTransactionRequest request) {
         FinancialTransactionDto dto = financialTransactionService.createTransaction(request);
-        return ResponseEntity.created(URI.create("/financial-transactions/" + dto.id())).body(dto);
+        // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(dto.id())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @GetMapping("/summary")

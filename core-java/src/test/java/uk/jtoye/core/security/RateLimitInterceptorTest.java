@@ -324,6 +324,30 @@ class RateLimitInterceptorTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void testVersionedPublicAlias_TreatedAsPublicPath_KeyedByClientIp() throws Exception {
+        // issue #97 [P2-6]: /api/v1/public/** is the canonical versioned alias of the
+        // /public/** surface and must hit the SAME IP-keyed public tier — otherwise a
+        // guest flood could pick the alias and bypass the public bucket entirely.
+        TenantContext.clear();
+        when(request.getRequestURI()).thenReturn("/api/v1/public/shops");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.42");
+
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(true);
+        when(probe.getRemainingTokens()).thenReturn(29L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertTrue(result, "Versioned public alias request under limit should be allowed");
+        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(builder).build(
+                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.42")),
+                any(Supplier.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void testPublicPath_OverLimit_Returns429WithRetryAfter_NoTenantIdLeaked() throws Exception {
         // Arrange: tenant-less public flood.
         TenantContext.clear();
