@@ -87,4 +87,24 @@ class PaymentControllerTest {
                         .content(payload))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void webhookVersionedAlias_mapsToSameHandler() throws Exception {
+        // issue #97 [P2-6]: /api/v1/public/payments/webhook is the canonical
+        // versioned alias; the legacy /public/payments/webhook mapping stays for
+        // the configured Stripe endpoint. Both must resolve to the same handler.
+        String payload = "{\"type\":\"payment_intent.succeeded\"}";
+        String sigHeader = "t=123,v1=abc";
+
+        doNothing().when(paymentService).handleWebhookEvent(eq(payload), eq(sigHeader));
+
+        mockMvc.perform(post("/api/v1/public/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)
+                        .header("Stripe-Signature", sigHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"));
+
+        verify(paymentService).handleWebhookEvent(eq(payload), eq(sigHeader));
+    }
 }
