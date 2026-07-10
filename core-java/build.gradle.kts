@@ -65,7 +65,7 @@ dependencies {
 
     // Use Spring Boot managed Hibernate ORM version to avoid mismatch
     implementation("org.hibernate.orm:hibernate-envers")
-    implementation("net.sf.jasperreports:jasperreports:6.21.3")
+    implementation("net.sf.jasperreports:jasperreports:7.0.7")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.3")
