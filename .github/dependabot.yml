@@ -1,0 +1,84 @@
+# Dependabot configuration (v2) — supply-chain gate (#91).
+# Weekly update PRs across every dependency surface in the repo. Minor + patch
+# updates are grouped per ecosystem to avoid PR spam; majors still open singly
+# so breaking bumps get individual review. open-pull-requests-limit caps churn.
+# Manages GitHub-owned actions/* + github/codeql-action/* pins that the
+# workflow deliberately leaves on @vN float.
+version: 2
+updates:
+  # --- Java / Spring Boot (Gradle) ---
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "gradle"
+    directory: "/core-java"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Edge gateway (Go modules) ---
+  - package-ecosystem: "gomod"
+    directory: "/edge-go"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Frontend (npm) ---
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Container base images (Docker) ---
+  - package-ecosystem: "docker"
+    directory: "/core-java"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "docker"
+    directory: "/edge-go"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # --- GitHub Actions (pins the actions/* left on @vN float) ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
