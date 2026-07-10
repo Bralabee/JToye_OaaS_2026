@@ -4,7 +4,7 @@
 # Stage 1: Build stage
 # Go version must match the go directive in go.mod (1.25.0) and the CI
 # setup-go pin in .github/workflows/ci-cd.yaml — bump all three in lockstep.
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
