@@ -12,6 +12,9 @@ This document is the first-response reference for every Prometheus alert rule de
 **Alertmanager UI:** http://localhost:9093
 **Prometheus UI:** http://localhost:9091
 
+> Database backup alerts (`DatabaseBackupStale` / `DatabaseBackupFailing`) and the
+> restore-testing cadence live in [`backups.md`](./backups.md) (Issue #119).
+
 ---
 
 ## ServiceDown

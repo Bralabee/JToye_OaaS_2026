@@ -42,6 +42,19 @@ DOCKER_CONTAINER="${DOCKER_CONTAINER:-jtoye-postgres}"
 # Notification email (optional)
 NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
+# Minimum acceptable compressed dump size in bytes (Issue #119). A real gzipped
+# pg_dump is far larger than this; anything smaller is treated as an error-log
+# gzip / truncated dump and rejected by verify_backup. Override via env.
+MIN_BACKUP_BYTES="${MIN_BACKUP_BYTES:-1000}"
+
+# Metrics sinks (Issue #119). Both are env-gated and OFF by default, so this
+# script has NO hard dependency on a node-exporter textfile collector or a
+# Pushgateway existing in the stack — enable them only where one is wired up.
+#   METRICS_TEXTFILE_DIR: a directory a node-exporter textfile collector scrapes.
+#   PUSHGATEWAY_URL:       base URL of a Prometheus Pushgateway (no trailing /metrics).
+METRICS_TEXTFILE_DIR="${METRICS_TEXTFILE_DIR:-}"
+PUSHGATEWAY_URL="${PUSHGATEWAY_URL:-}"
+
 # ===========================
 # COLORS
 # ===========================
@@ -79,6 +92,95 @@ send_notification() {
     if [ -n "$NOTIFY_EMAIL" ]; then
         echo "$message" | mail -s "$subject" "$NOTIFY_EMAIL" 2>/dev/null || true
     fi
+}
+
+# Emit the backup outcome as Prometheus metrics (Issue #119). Both sinks are
+# env-gated and OFF by default, so this is a no-op unless an operator wires one
+# up. Never fails the backup — always returns 0.
+#   arg1: 1 = success, 0 = failure
+emit_metrics() {
+    local status="$1"
+    local now
+    now=$(date +%s)
+
+    # --- node-exporter textfile collector sink ---
+    if [ -n "$METRICS_TEXTFILE_DIR" ]; then
+        if [ -d "$METRICS_TEXTFILE_DIR" ] && [ -w "$METRICS_TEXTFILE_DIR" ]; then
+            local promfile="$METRICS_TEXTFILE_DIR/jtoye_db_backup.prom"
+
+            # Preserve the previous success timestamp on a failure so a staleness
+            # alert keeps counting from the last GOOD backup, not from "now".
+            local last_success_ts=""
+            if [ "$status" -eq 1 ]; then
+                last_success_ts="$now"
+            elif [ -f "$promfile" ]; then
+                last_success_ts=$(grep -E '^jtoye_db_backup_last_success_timestamp_seconds ' "$promfile" 2>/dev/null | awk '{print $2}' | tail -n1 || true)
+            fi
+
+            # Atomic write (tmp + mv) so the collector never reads a half-written file.
+            local tmpfile
+            tmpfile=$(mktemp "${promfile}.XXXXXX")
+            {
+                echo "# HELP jtoye_db_backup_success Result of the last DB backup run (1=success, 0=failure)."
+                echo "# TYPE jtoye_db_backup_success gauge"
+                echo "jtoye_db_backup_success $status"
+                echo "# HELP jtoye_db_backup_last_success_timestamp_seconds Unix time of the last successful DB backup."
+                echo "# TYPE jtoye_db_backup_last_success_timestamp_seconds gauge"
+                if [ -n "$last_success_ts" ]; then
+                    echo "jtoye_db_backup_last_success_timestamp_seconds $last_success_ts"
+                fi
+            } > "$tmpfile"
+            mv -f "$tmpfile" "$promfile"
+            log_info "Wrote backup metrics to $promfile (success=$status)"
+        else
+            log_warning "METRICS_TEXTFILE_DIR is set but not a writable directory: $METRICS_TEXTFILE_DIR"
+        fi
+    fi
+
+    # --- Pushgateway sink ---
+    if [ -n "$PUSHGATEWAY_URL" ]; then
+        if command -v curl &> /dev/null; then
+            local url="${PUSHGATEWAY_URL%/}/metrics/job/jtoye_db_backup/instance/${DB_NAME}"
+            local body="jtoye_db_backup_success ${status}"$'\n'
+            if [ "$status" -eq 1 ]; then
+                body="${body}jtoye_db_backup_last_success_timestamp_seconds ${now}"$'\n'
+            fi
+            if curl -s --max-time 10 --data-binary "$body" "$url" >/dev/null 2>&1; then
+                log_info "Pushed backup metrics to $PUSHGATEWAY_URL"
+            else
+                log_warning "Failed to push metrics to $PUSHGATEWAY_URL (non-fatal)"
+            fi
+        else
+            log_warning "PUSHGATEWAY_URL is set but curl is not available — skipping push"
+        fi
+    fi
+
+    return 0
+}
+
+# Centralised failure handling (Issue #119): log the pg_dump error tail, discard
+# any half-written artifact so no plausible-looking dump is left behind, raise
+# the failure alert signal, and notify. Caller must still `exit 1` afterwards.
+handle_backup_failure() {
+    local gz="$1"
+    local errlog="$2"
+    local reason="$3"
+
+    log_error "$reason"
+    if [ -f "$errlog" ] && [ -s "$errlog" ]; then
+        log_error "pg_dump error log tail ($errlog):"
+        while IFS= read -r line; do log_error "  $line"; done < <(tail -n 5 "$errlog")
+    fi
+
+    # Leave nothing behind that could be mistaken for a valid backup.
+    rm -f "$gz"
+
+    emit_metrics 0
+
+    send_notification \
+        "JToye Backup FAILED - $DB_NAME" \
+        "Backup failed at $(date): ${reason}
+Check the pg_dump error log for details: ${errlog}"
 }
 
 check_prerequisites() {
@@ -120,51 +222,72 @@ check_prerequisites() {
 }
 
 create_backup() {
-    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
     local backup_file="$BACKUP_DIR/jtoye_${DB_NAME}_${timestamp}.sql"
     local backup_file_gz="${backup_file}.gz"
+    # pg_dump stderr is captured here so ONLY SQL ever lands in the .sql.gz.
+    local errlog="${backup_file}.pg_dump.log"
+    local pipestat dump_rc gzip_rc
 
     log_info "Starting backup: $DB_NAME"
     log_info "Backup file: $backup_file_gz"
 
-    # Perform backup
+    # Perform backup. `set -e`/`pipefail` are active, so disable them around the
+    # pipe and read PIPESTATUS directly — otherwise the script would abort on a
+    # pg_dump failure before we can clean up, and $? would only reflect gzip.
+    set +e
     if [ "$USE_DOCKER" = true ]; then
         log_info "Using Docker exec for backup..."
-        docker exec "$DOCKER_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --verbose 2>&1 | \
-            gzip > "$backup_file_gz"
+        docker exec "$DOCKER_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" \
+            --clean --if-exists 2>"$errlog" | gzip > "$backup_file_gz"
+        pipestat=("${PIPESTATUS[@]}")
     else
         log_info "Using direct pg_dump connection..."
         PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-            --clean --if-exists --verbose 2>&1 | gzip > "$backup_file_gz"
+            --clean --if-exists 2>"$errlog" | gzip > "$backup_file_gz"
+        pipestat=("${PIPESTATUS[@]}")
     fi
+    set -e
+    dump_rc="${pipestat[0]}"
+    gzip_rc="${pipestat[1]}"
 
-    if [ $? -eq 0 ]; then
-        local file_size=$(du -h "$backup_file_gz" | cut -f1)
-        log_success "Backup completed successfully"
-        log_info "Backup size: $file_size"
-
-        # Verify backup integrity
-        verify_backup "$backup_file_gz"
-
-        # Apply retention policy
-        apply_retention_policy
-
-        # Send success notification
-        send_notification \
-            "JToye Backup Success - $DB_NAME" \
-            "Backup completed successfully at $(date)
-            File: $backup_file_gz
-            Size: $file_size"
-
-        echo "$backup_file_gz"
-    else
-        log_error "Backup failed"
-        send_notification \
-            "JToye Backup FAILED - $DB_NAME" \
-            "Backup failed at $(date)
-            Check logs for details."
+    # Require BOTH pg_dump (index 0) and gzip (index 1) to have succeeded.
+    if [ "$dump_rc" -ne 0 ] || [ "$gzip_rc" -ne 0 ]; then
+        handle_backup_failure "$backup_file_gz" "$errlog" \
+            "Backup failed (pg_dump exit=${dump_rc}, gzip exit=${gzip_rc})"
         exit 1
     fi
+
+    # Content verification — reject truncated dumps / error-log gzips.
+    if ! verify_backup "$backup_file_gz"; then
+        handle_backup_failure "$backup_file_gz" "$errlog" \
+            "Backup verification failed — content check did not pass"
+        exit 1
+    fi
+
+    local file_size
+    file_size=$(du -h "$backup_file_gz" | cut -f1)
+    log_success "Backup completed successfully"
+    log_info "Backup size: $file_size"
+
+    # Without --verbose pg_dump is silent on success, so the errlog is normally
+    # empty — drop it to keep the backup dir clean; keep it only if it has content.
+    [ -s "$errlog" ] || rm -f "$errlog"
+
+    # Apply retention policy
+    apply_retention_policy
+
+    # Success signal: metrics + optional email.
+    emit_metrics 1
+
+    send_notification \
+        "JToye Backup Success - $DB_NAME" \
+        "Backup completed successfully at $(date)
+        File: $backup_file_gz
+        Size: $file_size"
+
+    echo "$backup_file_gz"
 }
 
 verify_backup() {
@@ -183,12 +306,29 @@ verify_backup() {
         return 1
     fi
 
+    # Size floor — a real compressed dump is well above this; a tiny file is an
+    # error-log gzip or a truncated dump (Issue #119).
+    local size_bytes
+    size_bytes=$(stat -c%s "$backup_file" 2>/dev/null || wc -c < "$backup_file")
+    if [ "$size_bytes" -lt "$MIN_BACKUP_BYTES" ]; then
+        log_error "Backup below minimum size floor (${size_bytes} < ${MIN_BACKUP_BYTES} bytes): $backup_file"
+        return 1
+    fi
+
     # Check gzip integrity
-    if gzip -t "$backup_file" 2>/dev/null; then
-        log_success "Backup file integrity verified"
+    if ! gzip -t "$backup_file" 2>/dev/null; then
+        log_error "Backup file is corrupted (gzip -t failed)"
+        return 1
+    fi
+
+    # Content marker — a complete plain-format pg_dump ends with this comment.
+    # `tail` drains the whole decompressed stream (so gunzip never takes SIGPIPE
+    # under pipefail) before grep checks the final lines.
+    if gunzip -c "$backup_file" 2>/dev/null | tail -n 20 | grep -q "PostgreSQL database dump complete"; then
+        log_success "Backup file integrity + content verified"
         return 0
     else
-        log_error "Backup file is corrupted"
+        log_error "Backup missing pg_dump completion marker — not a valid dump: $backup_file"
         return 1
     fi
 }
@@ -198,22 +338,26 @@ apply_retention_policy() {
 
     local deleted_count=0
 
-    # Find and delete old backups
-    find "$BACKUP_DIR" -name "jtoye_*.sql.gz" -type f -mtime +$RETENTION_DAYS -print0 | \
+    # Find and delete old backups. Feed the loop via process substitution (not a
+    # `find | while` pipe) so `deleted_count` survives in THIS shell, and use
+    # `deleted_count=$((deleted_count + 1))` instead of `((deleted_count++))` —
+    # the latter returns exit 1 when the pre-increment value is 0 and would abort
+    # the whole run under `set -e` on the very first prune (Issue #119).
     while IFS= read -r -d '' file; do
         log_info "Deleting old backup: $(basename "$file")"
         rm -f "$file"
-        ((deleted_count++))
-    done
+        deleted_count=$((deleted_count + 1))
+    done < <(find "$BACKUP_DIR" -name "jtoye_*.sql.gz" -type f -mtime +"$RETENTION_DAYS" -print0)
 
-    if [ $deleted_count -gt 0 ]; then
+    if [ "$deleted_count" -gt 0 ]; then
         log_info "Deleted $deleted_count old backup(s)"
     else
         log_info "No old backups to delete"
     fi
 
     # Show current backups
-    local backup_count=$(find "$BACKUP_DIR" -name "jtoye_*.sql.gz" -type f | wc -l)
+    local backup_count
+    backup_count=$(find "$BACKUP_DIR" -name "jtoye_*.sql.gz" -type f | wc -l)
     log_info "Total backups retained: $backup_count"
 }
 
@@ -306,6 +450,9 @@ Environment Variables:
     DOCKER_CONTAINER        Docker container name (default: jtoye-postgres)
     RETENTION_DAYS          Backup retention in days (default: 30)
     NOTIFY_EMAIL            Email for notifications (optional)
+    MIN_BACKUP_BYTES        Minimum valid compressed dump size (default: 1000)
+    METRICS_TEXTFILE_DIR    node-exporter textfile collector dir (optional, off if unset)
+    PUSHGATEWAY_URL         Prometheus Pushgateway base URL (optional, off if unset)
 
 Examples:
     # Create backup
