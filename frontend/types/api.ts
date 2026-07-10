@@ -316,22 +316,25 @@ export interface OrderStateChangeEvent {
   timestamp: string
 }
 
-// Allergen constants
+// Allergen constants (UK FSA 14). Name-only — the previous decorative emoji icons
+// were dropped: several were ambiguous or inaccurate (one bean glyph was reused for
+// both Soybeans and Sesame, a hot-dog glyph stood in for Mustard), and the name is
+// the authoritative label already rendered alongside them everywhere.
 export const ALLERGENS = [
-  { bit: 0, name: "Gluten", icon: "🌾" },
-  { bit: 1, name: "Crustaceans", icon: "🦐" },
-  { bit: 2, name: "Eggs", icon: "🥚" },
-  { bit: 3, name: "Fish", icon: "🐟" },
-  { bit: 4, name: "Peanuts", icon: "🥜" },
-  { bit: 5, name: "Soybeans", icon: "🫘" },
-  { bit: 6, name: "Milk", icon: "🥛" },
-  { bit: 7, name: "Nuts", icon: "🌰" },
-  { bit: 8, name: "Celery", icon: "🥬" },
-  { bit: 9, name: "Mustard", icon: "🌭" },
-  { bit: 10, name: "Sesame", icon: "🫘" },
-  { bit: 11, name: "Sulphites", icon: "🍷" },
-  { bit: 12, name: "Lupin", icon: "🌸" },
-  { bit: 13, name: "Molluscs", icon: "🦪" },
+  { bit: 0, name: "Gluten" },
+  { bit: 1, name: "Crustaceans" },
+  { bit: 2, name: "Eggs" },
+  { bit: 3, name: "Fish" },
+  { bit: 4, name: "Peanuts" },
+  { bit: 5, name: "Soybeans" },
+  { bit: 6, name: "Milk" },
+  { bit: 7, name: "Nuts" },
+  { bit: 8, name: "Celery" },
+  { bit: 9, name: "Mustard" },
+  { bit: 10, name: "Sesame" },
+  { bit: 11, name: "Sulphites" },
+  { bit: 12, name: "Lupin" },
+  { bit: 13, name: "Molluscs" },
 ]
 
 export function hasAllergen(mask: number, bit: number): boolean {
