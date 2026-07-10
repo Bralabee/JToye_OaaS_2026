@@ -43,7 +43,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.25.60"))
+    implementation(platform("software.amazon.awssdk:bom:2.47.4"))
     implementation("software.amazon.awssdk:s3")
 
     // Spring WebFlux for non-blocking HTTP client (Claude API calls)
@@ -55,7 +55,7 @@ dependencies {
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
 
     // Resilience4j circuit breaker
-    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.4.0")
 
     // Stripe payment processing
     implementation("com.stripe:stripe-java:28.2.0")
@@ -68,7 +68,7 @@ dependencies {
     implementation("net.sf.jasperreports:jasperreports:6.21.3")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
-    implementation("org.postgresql:postgresql:42.7.3")
+    implementation("org.postgresql:postgresql:42.7.13")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
 
     // Lombok for boilerplate reduction
@@ -76,16 +76,16 @@ dependencies {
     annotationProcessor("org.projectlombok:lombok")
 
     // MapStruct for compile-time safe DTO mapping
-    implementation("org.mapstruct:mapstruct:1.5.5.Final")
-    annotationProcessor("org.mapstruct:mapstruct-processor:1.5.5.Final")
+    implementation("org.mapstruct:mapstruct:1.6.3")
+    annotationProcessor("org.mapstruct:mapstruct-processor:1.6.3")
     // Lombok-MapStruct binding to ensure Lombok runs BEFORE MapStruct
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("org.testcontainers:testcontainers:1.21.3")
-    testImplementation("org.testcontainers:postgresql:1.21.3")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.3")
+    testImplementation("org.testcontainers:testcontainers:1.21.4")
+    testImplementation("org.testcontainers:postgresql:1.21.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
     testImplementation("com.h2database:h2") // for lightweight unit tests
 }
 
