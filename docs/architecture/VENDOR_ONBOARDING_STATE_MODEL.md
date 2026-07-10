@@ -111,7 +111,7 @@ Each gate declares: whether it runs **automatically**, whether it's **mandatory 
 | `GateType` | Auto? | Marketplace | White-label | Satisfied by | Provider (research §6) |
 |---|---|---|---|---|---|
 | `BUSINESS_VERIFIED` | ✅ | mandatory¹ | mandatory¹ | Company is `active` on Companies House | Companies House API (free) |
-| `FOOD_HYGIENE_RATING` | ✅ | **mandatory** | **mandatory** | FHRS rating ≥ threshold (or FHIS `Pass`) | FSA FHRS API (free) |
+| `FOOD_HYGIENE_RATING` | ✅ | **mandatory** | **mandatory** | FHRS rating **≥ 2** (config `min-rating`, default 2) or FHIS `Pass` | FSA FHRS API (free) |
 | `FOOD_BUSINESS_REGISTRATION` | ⚠️ attest | **mandatory** | **mandatory** | Vendor attests LA registration + FSA ID; spot-checked | Manual / attestation |
 | `IDENTITY_KYC` | ✅ | **mandatory** | optional | Stripe Connect account KYC complete | Stripe Connect (bundles KYC/AML) |
 | `PAYMENTS_CONNECTED` | ✅ | **mandatory** | n/a² | Stripe `charges_enabled = true` | Stripe Connect |
@@ -371,7 +371,7 @@ onboarding:
   menu-minimum: ${ONBOARDING_MENU_MINIMUM:1}
   fhrs:
     base-url: ${FHRS_BASE_URL:https://api.ratings.food.gov.uk}
-    min-rating: ${FHRS_MIN_RATING:2}          # research: Deliveroo/Uber 2+, Just Eat 3+ — DECISION §9
+    min-rating: ${FHRS_MIN_RATING:2}          # DECIDED: 2 (Deliveroo/Uber parity); env-overridable — see §9
     api-version: ${FHRS_API_VERSION:2}
   companies-house:
     base-url: ${COMPANIES_HOUSE_BASE_URL:https://api.company-information.service.gov.uk}
@@ -410,7 +410,7 @@ The research shows platforms **re-check FHRS and delist** on a drop. A `@Schedul
 ## 9. Open decisions (carry from research → confirm before build)
 
 1. **Auto-approve vs human gate.** Does `PENDING_APPROVAL → APPROVED` fire automatically once gates are green (`onboarding.auto-approve=true`), or always require an admin? (Marketplace likely manual first, white-label auto.)
-2. **FHRS threshold.** Default `min-rating = 2` (Deliveroo/Uber) or `3` (Just Eat)? Plus: how to treat **"awaiting inspection"** (admit provisionally?) and map **Scotland FHIS `Pass`**.
+2. **FHRS threshold — DECIDED: `min-rating = 2`** (Deliveroo/Uber parity — the permissive end, so smaller/newer vendors aren't shut out; override per environment via `FHRS_MIN_RATING`). *Still open:* how to treat **"awaiting inspection"** (admit provisionally?) and how to map **Scotland FHIS `Pass`** onto this threshold.
 3. **Onboarding granularity.** One-per-tenant (MVP `UNIQUE(tenant_id)`) vs one-per-shop for multi-shop tenants (business/KYC gates would hoist to tenant level).
 4. **Sole traders.** No Companies House record → `BUSINESS_VERIFIED = WAIVED` and require stronger `IDENTITY_KYC`? Confirm the substitution rule.
 5. **Nations.** England-only first, or branch Wales/NI/Scotland rules (hygiene-display, Natasha's Law SIs, alcohol licensing) at onboarding? (Research §2 nation table.)
