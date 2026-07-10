@@ -1,127 +1,187 @@
 ---
 phase: 18-customer-identity-realm-split-b2c-b2b-mvp
-fixed_at: 2026-07-09T22:52:07Z
+fixed_at: 2026-07-10T06:49:31Z
 review_path: .planning/phases/18-customer-identity-realm-split-b2c-b2b-mvp/18-REVIEW.md
-iteration: 1
-fix_scope: critical_warning
-findings_in_scope: 4
-fixed: 4
+iteration: 2
+fix_scope: all
+findings_in_scope: 10
+fixed: 10
 skipped: 0
-out_of_scope: 6
 status: all_fixed
 ---
 
 # Phase 18: Code Review Fix Report
 
-**Fixed at:** 2026-07-09T22:52:07Z
+**Fixed at:** 2026-07-10T06:49:31Z
 **Source review:** .planning/phases/18-customer-identity-realm-split-b2c-b2b-mvp/18-REVIEW.md
-**Iteration:** 1
-**Fix scope:** `critical_warning` (4 Warnings; the 6 Info findings are out of scope for this run)
+**Iteration:** 2
+**Fix scope:** `all` (4 Warnings + 6 Info)
 
 **Summary:**
-- Findings in scope: 4 (WR-01, WR-02, WR-03, WR-04)
-- Fixed: 4
+- Findings in scope: 10 (WR-01..WR-04, IN-01..IN-06)
+- Fixed: 10 (4 Warnings applied in iteration 1 + 6 Info applied this run)
 - Skipped: 0
-- Out of scope (not attempted): 6 (IN-01 .. IN-06)
 
-All fixes were applied inside an isolated git worktree, validated, and committed
-atomically (one commit per finding). TypeScript changes were validated with
-`cd frontend && npm run build` (Next.js production build, exit 0). The `.mjs`
-verification script change was validated with `node --check`. The compose change was
-validated by parsing the YAML and confirming the build-arg scalar is intact.
+This iteration completes the phase-18 review: the 4 Warnings were fixed and
+committed in iteration 1 (verified still applied in the working tree, see below),
+and this run applied all 6 Info findings. All work was performed in an isolated git
+worktree, verified per-fix, committed atomically (one commit per finding), then
+fast-forwarded onto `feature/phase-18-customer-realm-split`. Frontend TypeScript
+changes were gated on `cd frontend && npm run build` (Next.js production build,
+exit 0). The shell change was gated on `bash -n`. The realm template was
+parse-validated as JSON (env placeholders substituted). The Dockerfile was verified
+structurally (no build/rebuild performed here — the orchestrator rebuilds images and
+re-runs the 3-scenario E2E after this report).
 
 ## Fixed Issues
 
-### WR-01: `handleCallback` decoded the id_token with `atob()` — threw on base64url payloads
+### Warnings (applied in iteration 1 — verified still present)
+
+These four were fixed and committed in the prior pass. This run confirmed each is
+still applied in the working tree before proceeding; none were re-applied or
+duplicated.
+
+- **WR-01** — id_token decoded as base64url (UTF-8-safe `decodeJwtPayload`) in
+  `frontend/lib/customer-auth.ts`. Commit `73b6b76`. Verified: the
+  `decodeJwtPayload` helper is present and used at the callback site.
+- **WR-02** — staff-realm (`NEXT_PUBLIC_KEYCLOAK_URL`) link removed from both
+  `KC_BASE` fallback chains (`frontend/lib/customer-auth.ts`,
+  `frontend/app/api/customer-auth/logout-url/route.ts`). Commit `75af492`. Verified:
+  both chains fall back only to the `jtoye-customers` dev default.
+- **WR-03** — `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` build arg made required
+  (`${...:?...}`) in `docker-compose.full-stack.yml`. Commit `11cf4bd`. Verified at
+  line 269.
+- **WR-04** — Scenario C admin-API queries now assert HTTP status; `getJson` returns
+  `{status, ok, body}` with non-array bodies coerced to `null`
+  (`frontend/e2e/customer-realm-split.verify.mjs`). Commit `6ef9d7b`. Verified.
+
+### Info (applied this run)
+
+### IN-01: `configure-keycloak.sh` hardcoded `username=admin` and lacked `pipefail`
+
+**Files modified:** `infra/keycloak/configure-keycloak.sh`
+**Commit:** `ade4c72`
+**Applied fix:** Changed `set -e` → `set -eo pipefail` (line 2) so a failing `curl`
+in any `curl ... | jq` pipeline is no longer masked by jq's exit status. Changed the
+admin-token request from the literal `-d "username=admin"` → `-d
+"username=${KEYCLOAK_ADMIN:-admin}"` so the username tracks the compose-provided
+`KEYCLOAK_ADMIN` var while defaulting to `admin` (unchanged behaviour when the var is
+absent). No change to the target realm (`jtoye-dev` only); staff/test fixtures
+(test-client, tenant-a-user, tenant-b-user, tenant_id mapper) untouched.
+**Verification:** `bash -n infra/keycloak/configure-keycloak.sh` exit 0. The added
+`pipefail` does not affect the happy path (curl+jq both exit 0 normally); it only
+tightens failure detection.
+
+### IN-02: `expiresAt` became `NaN` when the token response omits `expires_in`
 
 **Files modified:** `frontend/lib/customer-auth.ts`
-**Commit:** `73b6b76`
-**Applied fix:** Added a browser-safe `decodeJwtPayload(token)` helper (typed
-`IdTokenClaims`) that translates base64url → standard base64 (`-`→`+`, `_`→`/`),
-re-pads, then UTF-8-decodes via `decodeURIComponent(...)` so multi-byte characters
-(accented names) survive. Replaced the throwing
-`JSON.parse(atob(data.id_token.split(".")[1]))` at the callback site with
-`decodeJwtPayload(data.id_token)` plus a `null` guard (`if (!payload) return null`),
-and made `sub` null-safe (`payload.sub ?? ""`). This mirrors the correct base64url
-handling already present server-side in
-`frontend/app/api/customer-auth/session/route.ts` (that route uses Node `Buffer` and
-was already correct, so it was left untouched — the bug was browser-only).
-
-**Verification:** `npm run build` exit 0. Additional behavioral check (node,
-replicating the helper): confirmed the OLD `atob()` throws `InvalidCharacterError`
-on a base64url payload containing `_`, while the NEW decoder returns the correct
-claims and preserves accented names (`Zoë Ürström`, `Tëst Custømer`). Behavioral
-confirmation on the live login path will be covered by the orchestrator's 3-scenario
-E2E re-run after the frontend image is rebuilt (the browser bundle only picks up
-`customer-auth.ts` changes after a rebuild).
-
-### WR-02: Customer-auth fallback chain pointed at the STAFF realm, defeating the B2C/B2B split
-
-**Files modified:** `frontend/lib/customer-auth.ts`, `frontend/app/api/customer-auth/logout-url/route.ts`
-**Commit:** `75af492`
-**Applied fix:** Removed the `process.env.NEXT_PUBLIC_KEYCLOAK_URL` (the `jtoye-dev`
-staff/vendor realm) middle link from both `KC_BASE` fallback chains. `KC_BASE` now
-resolves to `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` or, if unset, the
-`http://localhost:8085/realms/jtoye-customers` dev default only — it can never
-silently fall through to the staff realm. Updated the explanatory comments in both
-files to document the "never fall back to jtoye-dev" invariant. Happy path is
-preserved: `.env` sets `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL`, so the first link still
-wins on the working stack.
-
+**Commit:** `4286933`
+**Applied fix:** Guarded the expiry computation in `handleCallback`:
+`Math.floor(Date.now()/1000) + (Number(data.expires_in) || 300)`. A missing/invalid
+`expires_in` now yields a finite timestamp (300s default) instead of `NaN`, which
+would otherwise poison the cookie payload and the localStorage marker and make
+`isLoggedIn()` always false. (Note: the live line drifted from the review's cited
+`:172` to `:208` because iteration 1's WR-01 helper was inserted above; the fix was
+adapted to the current code.)
 **Verification:** `npm run build` exit 0.
 
-### WR-03: `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` build arg had no default — silent empty bake into browser bundle
+### IN-03: Customer OAuth flow omitted `state` and `nonce`
 
-**Files modified:** `docker-compose.full-stack.yml`
-**Commit:** `11cf4bd`
-**Applied fix:** Changed the frontend `build.args` entry from
-`${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL}` to
-`${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:?NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL must be set (baked into browser bundle)}`,
-making the var required at build time so a missing value fails the build loudly
-instead of baking an empty string into the client bundle. Added a comment explaining
-why the runtime `environment:` default (line ~284) cannot compensate for a build-time
-bake. Does not break the working stack: the var is present in `.env`.
+**Files modified:** `frontend/lib/customer-auth.ts`,
+`frontend/app/shop/auth/callback/page.tsx`
+**Commit:** `233ec5d`
+**Applied fix:** Implemented `state` (CSRF/mix-up defence) and `nonce` (id_token
+replay defence) end-to-end, using the SAME `sessionStorage` mechanism the PKCE
+verifier already uses:
+- Added a `randomToken()` CSPRNG helper (32 bytes, URL-safe base64) and refactored
+  `generateCodeVerifier()` to reuse it (identical output).
+- Added `storeAuthTransients(verifier, state, nonce)` / `clearAuthTransients()` and
+  three key constants (`jtoye-pkce-verifier`, `jtoye-oauth-state`,
+  `jtoye-oauth-nonce`).
+- `customerLogin` and `customerRegister` now generate a fresh `state` + `nonce`,
+  persist all three transients together, and append `state` & `nonce` to the
+  authorization request.
+- `handleCallback(code, returnedState)` now validates `returnedState === storedState`
+  BEFORE the token exchange (rejects + clears transients on mismatch), and after
+  decoding the id_token validates `payload.nonce === storedNonce`. Added `nonce?` to
+  `IdTokenClaims`. On success it clears all transients via `clearAuthTransients()`
+  (replacing the previous single verifier removal).
+- Updated the sole caller (`frontend/app/shop/auth/callback/page.tsx`) to pass
+  `searchParams.get("state")`.
+Happy path preserved: Keycloak echoes the exact `state` and mints the id_token with
+the exact `nonce` we send, so a legitimate login validates cleanly; the code can only
+be exchanged once regardless.
+**Verification:** `npm run build` exit 0. **Requires human/E2E verification:** this
+adds new security-gating logic on the live login path. Syntax/type checks pass, but
+the happy-path login (state matches, nonce present in id_token) must be confirmed by
+the orchestrator's 3-scenario E2E re-run after the frontend image rebuild — the
+browser bundle only picks up `customer-auth.ts` changes after a rebuild.
 
-**Verification:** Parsed the compose file with a YAML parser and confirmed
-`services.frontend.build.args.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` is the intact
-single-scalar required-var expression (the `:?...` message contains no unquoted
-`colon-space`, so it does not mis-parse as a nested mapping).
+### IN-04: Public storefront client had refresh-token rotation disabled
 
-### WR-04: Scenario C reported PASS even when its admin-API queries failed
+**Files modified:** `infra/keycloak/realm-export-customers.template.json`
+**Commit:** `32fd85a`
+**Applied fix:** Set `"revokeRefreshToken" : true` (was `false`), enabling
+refresh-token rotation — the recommended posture for a public SPA/PKCE client whose
+refresh token lives in a browser-managed cookie. Left `"refreshTokenMaxReuse" : 0`
+(now meaningful under rotation: strict, no reuse). This edits the committed template
+(the source of truth); a live realm re-import is NOT triggered by this change and is
+left to the deployment step.
+**Verification:** JSON parse-validated after substituting the `${...}` env
+placeholders with valid tokens; confirmed `revokeRefreshToken === true` and
+`refreshTokenMaxReuse === 0`.
 
-**Files modified:** `frontend/e2e/customer-realm-split.verify.mjs`
-**Commit:** `6ef9d7b`
-**Applied fix:** Hardened `getJson` to return `{ status, ok, body }` where the body is
-coerced to `null` for any non-array response (so a 401/403/5xx or connection reset can
-no longer masquerade as an empty result — `catch(() => [])` became
-`catch(() => null)` with `Array.isArray(b) ? b : null`). Added an explicit
-`... query succeeded (HTTP <status>)` assertion (`r.ok && body !== null`) before each
-of the three ABSENT/REMOVED checks. Because `arrLen(null)` returns `-1`, a null body
-now also fails the downstream `=== 0` check, fully closing the false-PASS path. Kept
-the file a standalone `.verify.mjs` and added NO `test()`/`it()` blocks, so the
-`docs-freshness` gate (771 / 5 counts) stays green.
+### IN-05: `frontend/Dockerfile` used a deprecated npm flag and a dead deps stage
 
-**Verification:** `node --check` exit 0; confirmed zero real `test()`/`it()`
-invocations (the only regex match is a prose comment documenting the gate).
+**Files modified:** `frontend/Dockerfile`
+**Commit:** `2a6c513`
+**Applied fix:** Removed the entire `deps` stage (its `npm ci --only=production`
+`node_modules` was immediately overwritten by the builder's `npm ci` and never used
+by the runner, which pulls deps from `.next/standalone`). The builder is now stage 1
+and installs all deps directly (`COPY package.json package-lock.json* ./` → `npm ci`
+→ `COPY . .`, with `node_modules` excluded via `.dockerignore`). Modernized every
+legacy space-separated `ENV` to the `KEY=value` form
+(`NEXT_TELEMETRY_DISABLED=1`, `NODE_ENV=production`, `PORT=3000`,
+`HOSTNAME="0.0.0.0"`) to clear the BuildKit deprecation warnings. The two remaining
+stages (builder, runner), standalone COPYs, non-root user, healthcheck, ports, and
+labels are unchanged.
+**Verification:** Re-read; grep confirms no remaining `--only=production`, no `deps`
+references, and no legacy `ENV key value` lines. hadolint not available (Tier 2
+skipped). No image build performed here — the orchestrator rebuilds and validates.
+
+### IN-06: `logout-url` redirect parameter was unvalidated
+
+**Files modified:** `frontend/app/api/customer-auth/logout-url/route.ts`
+**Commit:** `66c3b6b`
+**Applied fix:** Added a `sanitizeRedirect()` allow-list that only accepts a
+same-origin relative path beginning with a single `/` — rejecting protocol-relative
+`//host`, backslash tricks `/\\host`, and absolute URLs — falling back to `/shop`.
+The GET handler now runs the user-controlled `redirect` query param through it before
+composing `post_logout_redirect_uri`, closing the theoretical open-redirect in the
+no-session branch (which returns the URL without Keycloak validation). The only
+caller passes a fixed `/shop`, so the happy path is unchanged.
+**Verification:** `npm run build` exit 0.
 
 ## Skipped Issues
 
-None — all 4 in-scope findings were fixed.
+None — all 10 in-scope findings are fixed (4 in iteration 1, 6 in this run).
 
-## Out of Scope (Not Attempted)
+## Notes for the orchestrator
 
-The following Info findings are outside this run's `critical_warning` scope and were
-intentionally not attempted. Left for a future `--fix all` pass or manual triage:
-
-- **IN-01** — `configure-keycloak.sh` hardcodes `username=admin` and lacks `pipefail` (`infra/keycloak/configure-keycloak.sh:30, :2`).
-- **IN-02** — `expiresAt` becomes `NaN` when the token response omits `expires_in` (`frontend/lib/customer-auth.ts:172`).
-- **IN-03** — Customer OAuth flow omits `state` and `nonce` (`frontend/lib/customer-auth.ts:113-122, 135-144`).
-- **IN-04** — Public storefront client has refresh-token rotation disabled (`infra/keycloak/realm-export-customers.template.json:10-11`).
-- **IN-05** — `frontend/Dockerfile` uses a deprecated npm flag and an unused deps stage (`frontend/Dockerfile:11, :27, :46, :47`).
-- **IN-06** — `logout-url` redirect parameter is unvalidated (bounded, low risk) (`frontend/app/api/customer-auth/logout-url/route.ts:23-25`).
+- **IN-03 needs live confirmation.** It gates the customer login on `state`/`nonce`
+  validation. The build passes, but only the E2E re-run (Scenario A, real Keycloak
+  login) confirms the happy path still succeeds. If Scenario A regresses, inspect
+  commit `233ec5d`.
+- **Rebuild required for frontend behaviour.** IN-02, IN-03, IN-06 change
+  browser/route code; the running frontend image must be rebuilt before E2E.
+- **IN-04 is template-only.** The committed realm template now sets
+  `revokeRefreshToken: true`; the live `jtoye-customers` realm is unchanged until a
+  re-import.
+- **docs-freshness untouched.** No `test()`/`it()`/`Test*` invocations were added or
+  removed; `.verify.mjs` remains a non-counted script. Counts stay 771 / 5.
 
 ---
 
-_Fixed: 2026-07-09T22:52:07Z_
+_Fixed: 2026-07-10T06:49:31Z_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_
