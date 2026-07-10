@@ -1,33 +1,92 @@
 /**
- * Jest unit test for Next.js security response headers (SEC-02 / ASVS 14.4.x).
+ * Jest unit tests for the security response headers (SEC-02 / ASVS 14.4.x).
  *
- * Imports next.config.mjs and parses the output of its async headers() function.
- * This test is the CI gate wired in ci-cd.yaml (Task 12-02-06) — any future edit
- * that drops Stripe from frame-src, strips the nosniff header, or breaks the
- * Keycloak form-action allowlist MUST fail this suite.
+ * Since issue #89 (P1-7) the Content-Security-Policy is built PER-REQUEST in
+ * middleware.ts via buildCsp() (lib/security-headers.ts) so it can carry a
+ * nonce and drop `script-src 'unsafe-inline'`. This suite therefore splits into:
+ *   1. buildCsp() — the CSP directive assertions (nonce, strict-dynamic, no
+ *      unsafe-inline in script-src, Stripe/Keycloak allowlists).
+ *   2. next.config.mjs headers() — the remaining STATIC headers, and a guard
+ *      that CSP is no longer emitted statically (it must come from middleware).
  *
- * Task 12-02-01 (RED): next.config.mjs does NOT yet declare headers(); all
- * tests are expected to fail until Task 12-02-02 adds the headers() function.
+ * This is the CI gate wired in ci-cd.yaml — any edit that reintroduces
+ * 'unsafe-inline' to script-src, drops Stripe from an allowlist, or strips the
+ * nosniff header MUST fail this suite.
  */
 
+import { buildCsp } from "../lib/security-headers"
+
 /**
- * Parse a CSP header string ("default-src 'self'; script-src 'self' ...")
- * into a map of directive name -> space-separated value tokens.
- * Used to make per-directive assertions so a regression that drops Stripe
- * from frame-src (but keeps it in script-src) is caught.
+ * Parse a CSP header string into a map of directive name -> value tokens.
  */
 function parseCsp(csp: string): Record<string, string> {
   const map: Record<string, string> = {}
-  for (const raw of csp.split('; ')) {
+  for (const raw of csp.split("; ")) {
     const trimmed = raw.trim()
     if (!trimmed) continue
-    const [name, ...rest] = trimmed.split(' ')
-    map[name] = rest.join(' ')
+    const [name, ...rest] = trimmed.split(" ")
+    map[name] = rest.join(" ")
   }
   return map
 }
 
-describe('Next.js security response headers (next.config.mjs)', () => {
+describe("buildCsp() — Content-Security-Policy directives", () => {
+  const base = {
+    nonce: "TEST_NONCE_abc123",
+    isDev: false,
+    keycloakOrigin: "https://keycloak.example.test",
+    apiOrigin: "https://api.example.test",
+  }
+
+  it("has the baseline directives", () => {
+    const csp = buildCsp(base)
+    expect(csp).toContain("default-src 'self'")
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).toContain("base-uri 'self'")
+    expect(csp).toContain("object-src 'none'")
+  })
+
+  it("script-src is nonce + strict-dynamic and has NO 'unsafe-inline'", () => {
+    const directives = parseCsp(buildCsp(base))
+    const scriptSrc = directives["script-src"]
+    expect(scriptSrc).toContain(`'nonce-${base.nonce}'`)
+    expect(scriptSrc).toContain("'strict-dynamic'")
+    expect(scriptSrc).not.toContain("'unsafe-inline'")
+  })
+
+  it("does not add 'unsafe-eval' in production, but does in dev", () => {
+    expect(parseCsp(buildCsp(base))["script-src"]).not.toContain("'unsafe-eval'")
+    expect(parseCsp(buildCsp({ ...base, isDev: true }))["script-src"]).toContain("'unsafe-eval'")
+  })
+
+  it("allowlists Stripe in the correct directives (script-src, frame-src, connect-src)", () => {
+    const directives = parseCsp(buildCsp(base))
+    expect(directives["script-src"]).toContain("https://js.stripe.com")
+    expect(directives["frame-src"]).toContain("https://js.stripe.com")
+    expect(directives["frame-src"]).toContain("https://hooks.stripe.com")
+    expect(directives["connect-src"]).toContain("https://api.stripe.com")
+  })
+
+  it("form-action includes the configured Keycloak origin", () => {
+    expect(buildCsp(base)).toContain("form-action 'self' https://keycloak.example.test")
+  })
+
+  it("connect-src derives the wss:// origin from the API origin", () => {
+    const directives = parseCsp(buildCsp(base))
+    expect(directives["connect-src"]).toContain("https://api.example.test")
+    expect(directives["connect-src"]).toContain("wss://api.example.test")
+  })
+
+  it("emits upgrade-insecure-requests only when explicitly enabled (and not in dev)", () => {
+    expect(buildCsp(base)).not.toContain("upgrade-insecure-requests")
+    expect(buildCsp({ ...base, upgradeInsecure: true })).toContain("upgrade-insecure-requests")
+    expect(buildCsp({ ...base, upgradeInsecure: true, isDev: true })).not.toContain(
+      "upgrade-insecure-requests",
+    )
+  })
+})
+
+describe("next.config.mjs static security headers", () => {
   const ORIGINAL_ENV = { ...process.env }
 
   beforeEach(() => {
@@ -40,84 +99,33 @@ describe('Next.js security response headers (next.config.mjs)', () => {
   })
 
   async function loadHeaders() {
-    const mod: any = await import('../next.config.mjs')
-    const config = mod.default
-    return config.headers()
+    const mod: any = await import("../next.config.mjs")
+    return mod.default.headers()
   }
 
-  it('returns a single route matching all paths', async () => {
+  it("returns a single route matching all paths", async () => {
     const routes = await loadHeaders()
     expect(routes).toHaveLength(1)
-    expect(routes[0].source).toBe('/:path*')
+    expect(routes[0].source).toBe("/:path*")
   })
 
-  it('emits a Content-Security-Policy or Content-Security-Policy-Report-Only header', async () => {
-    const routes = await loadHeaders()
-    const cspHeader = routes[0].headers.find(
-      (h: { key: string }) =>
-        h.key === 'Content-Security-Policy' || h.key === 'Content-Security-Policy-Report-Only'
-    )
-    expect(cspHeader).toBeDefined()
-  })
-
-  it('has baseline directives (default-src, frame-ancestors, base-uri, object-src)', async () => {
-    const routes = await loadHeaders()
-    const cspHeader = routes[0].headers.find(
-      (h: { key: string }) =>
-        h.key === 'Content-Security-Policy' || h.key === 'Content-Security-Policy-Report-Only'
-    )
-    expect(cspHeader).toBeDefined()
-    const value = cspHeader!.value as string
-    expect(value).toContain("default-src 'self'")
-    expect(value).toContain("frame-ancestors 'none'")
-    expect(value).toContain("base-uri 'self'")
-    expect(value).toContain("object-src 'none'")
-  })
-
-  it('allowlists Stripe in the correct directives (script-src, frame-src, connect-src) — per-directive', async () => {
-    const routes = await loadHeaders()
-    const cspHeader = routes[0].headers.find(
-      (h: { key: string }) =>
-        h.key === 'Content-Security-Policy' || h.key === 'Content-Security-Policy-Report-Only'
-    )
-    expect(cspHeader).toBeDefined()
-    const directives = parseCsp(cspHeader!.value as string)
-    expect(directives['script-src']).toContain('https://js.stripe.com')
-    expect(directives['frame-src']).toContain('https://js.stripe.com')
-    expect(directives['frame-src']).toContain('https://hooks.stripe.com')
-    expect(directives['connect-src']).toContain('https://api.stripe.com')
-  })
-
-  it('form-action includes the configured Keycloak origin', async () => {
-    process.env.NEXT_PUBLIC_KEYCLOAK_URL = 'https://keycloak.example.test'
-    const routes = await loadHeaders()
-    const cspHeader = routes[0].headers.find(
-      (h: { key: string }) =>
-        h.key === 'Content-Security-Policy' || h.key === 'Content-Security-Policy-Report-Only'
-    )
-    expect(cspHeader).toBeDefined()
-    const value = cspHeader!.value as string
-    expect(value).toContain("form-action 'self' https://keycloak.example.test")
-  })
-
-  it('connect-src derives wss:// origin from NEXT_PUBLIC_API_URL', async () => {
-    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
-    const routes = await loadHeaders()
-    const cspHeader = routes[0].headers.find(
-      (h: { key: string }) =>
-        h.key === 'Content-Security-Policy' || h.key === 'Content-Security-Policy-Report-Only'
-    )
-    expect(cspHeader).toBeDefined()
-    const directives = parseCsp(cspHeader!.value as string)
-    expect(directives['connect-src']).toContain('https://api.example.test')
-    expect(directives['connect-src']).toContain('wss://api.example.test')
-  })
-
-  it('emits X-Content-Type-Options nosniff, Referrer-Policy, and Permissions-Policy headers', async () => {
+  it("emits X-Content-Type-Options nosniff, Referrer-Policy, and Permissions-Policy", async () => {
     const routes = await loadHeaders()
     const headers = routes[0].headers as Array<{ key: string; value: string }>
-    expect(headers.find((h) => h.key === 'X-Content-Type-Options')?.value).toBe('nosniff')
-    expect(headers.find((h) => h.key === 'Referrer-Policy')).toBeDefined()
-    expect(headers.find((h) => h.key === 'Permissions-Policy')).toBeDefined()
+    expect(headers.find((h) => h.key === "X-Content-Type-Options")?.value).toBe("nosniff")
+    expect(headers.find((h) => h.key === "Referrer-Policy")).toBeDefined()
+    expect(headers.find((h) => h.key === "Permissions-Policy")).toBeDefined()
+  })
+
+  it("does NOT emit CSP statically — it must be per-request from middleware", async () => {
+    const routes = await loadHeaders()
+    const headers = routes[0].headers as Array<{ key: string }>
+    expect(
+      headers.find(
+        (h) =>
+          h.key === "Content-Security-Policy" ||
+          h.key === "Content-Security-Policy-Report-Only",
+      ),
+    ).toBeUndefined()
   })
 })
