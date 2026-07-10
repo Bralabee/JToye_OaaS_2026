@@ -49,6 +49,7 @@ interface IdTokenClaims {
   preferred_username?: string
   email_verified?: boolean
   exp?: number
+  nonce?: string
 }
 
 /**
@@ -116,14 +117,47 @@ export function isLoggedIn(): boolean {
   }
 }
 
-// Generate PKCE code verifier and challenge
-function generateCodeVerifier(): string {
+// Generate a URL-safe token with 32 bytes of CSPRNG entropy. Shared by the PKCE
+// code verifier and the OAuth `state` / `nonce` parameters.
+function randomToken(): string {
   const array = new Uint8Array(32)
   crypto.getRandomValues(array)
   return btoa(String.fromCharCode(...array))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "")
+}
+
+// Generate PKCE code verifier and challenge
+function generateCodeVerifier(): string {
+  return randomToken()
+}
+
+// Session-storage keys for the transient values that must survive the redirect
+// to Keycloak and back: the PKCE verifier plus the CSRF `state` and replay
+// `nonce`. Kept in sessionStorage (same mechanism as the verifier) so they are
+// tab-scoped and cleared once the callback completes.
+const PKCE_VERIFIER_KEY = "jtoye-pkce-verifier"
+const OAUTH_STATE_KEY = "jtoye-oauth-state"
+const OAUTH_NONCE_KEY = "jtoye-oauth-nonce"
+
+// Persist the per-login transients (verifier + state + nonce) together.
+function storeAuthTransients(verifier: string, state: string, nonce: string) {
+  sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier)
+  sessionStorage.setItem(OAUTH_STATE_KEY, state)
+  sessionStorage.setItem(OAUTH_NONCE_KEY, nonce)
+}
+
+// Remove the per-login transients once the callback has consumed them.
+function clearAuthTransients() {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.removeItem(PKCE_VERIFIER_KEY)
+    sessionStorage.removeItem(OAUTH_STATE_KEY)
+    sessionStorage.removeItem(OAUTH_NONCE_KEY)
+  } catch {
+    /* ignore */
+  }
 }
 
 async function generateCodeChallenge(verifier: string): Promise<string> {
@@ -142,8 +176,10 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
 export async function customerLogin(returnTo?: string) {
   const verifier = generateCodeVerifier()
   const challenge = await generateCodeChallenge(verifier)
+  const state = randomToken()
+  const nonce = randomToken()
 
-  sessionStorage.setItem("jtoye-pkce-verifier", verifier)
+  storeAuthTransients(verifier, state, nonce)
   if (returnTo) sessionStorage.setItem("jtoye-auth-return", returnTo)
 
   const params = new URLSearchParams({
@@ -153,6 +189,8 @@ export async function customerLogin(returnTo?: string) {
     scope: "openid email profile",
     code_challenge: challenge,
     code_challenge_method: "S256",
+    state,
+    nonce,
   })
 
   window.location.href = `${KC_BASE}/protocol/openid-connect/auth?${params}`
@@ -164,8 +202,10 @@ export async function customerLogin(returnTo?: string) {
 export async function customerRegister(returnTo?: string) {
   const verifier = generateCodeVerifier()
   const challenge = await generateCodeChallenge(verifier)
+  const state = randomToken()
+  const nonce = randomToken()
 
-  sessionStorage.setItem("jtoye-pkce-verifier", verifier)
+  storeAuthTransients(verifier, state, nonce)
   if (returnTo) sessionStorage.setItem("jtoye-auth-return", returnTo)
 
   const params = new URLSearchParams({
@@ -175,6 +215,8 @@ export async function customerRegister(returnTo?: string) {
     scope: "openid email profile",
     code_challenge: challenge,
     code_challenge_method: "S256",
+    state,
+    nonce,
   })
 
   window.location.href = `${KC_BASE}/protocol/openid-connect/registrations?${params}`
@@ -185,9 +227,22 @@ export async function customerRegister(returnTo?: string) {
  * server to be stored as HttpOnly cookies. Returns the profile parsed from
  * the id token (profile data is not sensitive; only the raw tokens are).
  */
-export async function handleCallback(code: string): Promise<CustomerProfile | null> {
-  const verifier = sessionStorage.getItem("jtoye-pkce-verifier")
+export async function handleCallback(
+  code: string,
+  returnedState?: string | null
+): Promise<CustomerProfile | null> {
+  const verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY)
+  const storedState = sessionStorage.getItem(OAUTH_STATE_KEY)
+  const storedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY)
   if (!verifier) return null
+
+  // CSRF / mix-up defence: the `state` echoed back by Keycloak must match the
+  // one generated at login time and stashed alongside the PKCE verifier. Reject
+  // (and clear the transients) on any mismatch or missing value.
+  if (!storedState || returnedState !== storedState) {
+    clearAuthTransients()
+    return null
+  }
 
   try {
     const response = await fetch(`${KC_BASE}/protocol/openid-connect/token`, {
@@ -231,6 +286,12 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
     // Use a base64url-safe, UTF-8-aware decode so accented names don't throw.
     const payload = decodeJwtPayload(data.id_token)
     if (!payload) return null
+
+    // Replay defence: the id_token must carry back the exact `nonce` we sent in
+    // the authorization request. A missing/mismatched nonce means the token is
+    // not the one minted for this login attempt.
+    if (storedNonce && payload.nonce !== storedNonce) return null
+
     const profile: CustomerProfile = {
       sub: payload.sub ?? "",
       email: payload.email || "",
@@ -239,7 +300,7 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
     }
 
     setMarker(expiresAt)
-    sessionStorage.removeItem("jtoye-pkce-verifier")
+    clearAuthTransients()
 
     return profile
   } catch {
