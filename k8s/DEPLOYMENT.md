@@ -80,15 +80,35 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 
 ### 3. Secret Management
 
+> **REQUIRED BEFORE `kubectl apply -k` (issue #100):** the kustomize builds
+> ship NO `kind: Secret` objects — the old plaintext template is now the
+> reference-only file `k8s/base/secrets-template.yaml.example`. Every secret
+> below must exist in the target namespace before deployment, or pods stay in
+> `CreateContainerConfigError` and the pg-backup CronJob fails:
+> `postgres-credentials` (incl. `backup-username`/`backup-password`),
+> `s3-backup-credentials`, `keycloak-credentials`, `nextauth-secret`,
+> `redis-credentials`, `rabbitmq-credentials`.
+> CI guard: `k8s/scripts/check-no-plaintext-secrets.sh`.
+
 #### Option A: Manual Secret Creation (Not Recommended for Production)
 ```bash
-# PostgreSQL credentials
+# PostgreSQL credentials (backup-* keys: BYPASSRLS dump role for pg-backup, #90 —
+# create the role via infra/backups/create-backup-role.sql)
 kubectl create secret generic postgres-credentials \
   --from-literal=host=postgresql-primary.jtoye-infrastructure.svc.cluster.local \
   --from-literal=port=5432 \
   --from-literal=database=jtoye \
   --from-literal=username=jtoye \
   --from-literal=password='YOUR_SECURE_PASSWORD_HERE' \
+  --from-literal=backup-username=jtoye_backup \
+  --from-literal=backup-password='YOUR_BACKUP_ROLE_PASSWORD_HERE' \
+  -n jtoye-production
+
+# S3 credentials for the pg-backup CronJob (#90) — scope to a bucket-limited
+# IAM user / MinIO service account (PutObject/ListBucket/DeleteObject only)
+kubectl create secret generic s3-backup-credentials \
+  --from-literal=access-key='YOUR_S3_ACCESS_KEY' \
+  --from-literal=secret-key='YOUR_S3_SECRET_KEY' \
   -n jtoye-production
 
 # Redis credentials
@@ -96,10 +116,12 @@ kubectl create secret generic redis-credentials \
   --from-literal=password='YOUR_REDIS_PASSWORD_HERE' \
   -n jtoye-production
 
-# RabbitMQ credentials
+# RabbitMQ credentials (stomp-* keys: STOMP relay login consumed by core-java)
 kubectl create secret generic rabbitmq-credentials \
   --from-literal=username=jtoye \
   --from-literal=password='YOUR_RABBITMQ_PASSWORD_HERE' \
+  --from-literal=stomp-login=jtoye \
+  --from-literal=stomp-passcode='YOUR_RABBITMQ_PASSWORD_HERE' \
   -n jtoye-production
 
 # Keycloak credentials
@@ -123,8 +145,13 @@ helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
 helm install sealed-secrets sealed-secrets/sealed-secrets \
   --namespace kube-system
 
-# Create sealed secrets
-kubeseal --format=yaml < k8s/base/secrets-template.yaml > k8s/production/sealed-secrets.yaml
+# Create sealed secrets: copy the reference shape, substitute real values,
+# seal, then SHRED the plaintext. Full workflow (incl. the batch script
+# k8s/scripts/seal-secrets.sh): docs/runbooks/sealed-secrets.md
+cp k8s/base/secrets-template.yaml.example /tmp/plaintext-secrets.yaml
+# ... edit /tmp/plaintext-secrets.yaml: replace every REPLACE_WITH_* ...
+kubeseal --format=yaml < /tmp/plaintext-secrets.yaml > k8s/production/sealed-secrets.yaml
+shred -u /tmp/plaintext-secrets.yaml
 kubectl apply -f k8s/production/sealed-secrets.yaml
 ```
 
