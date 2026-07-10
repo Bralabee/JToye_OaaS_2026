@@ -69,7 +69,7 @@ Pre-configured realm (`jtoye-dev`) with:
 |------|-----------|
 | `namespace.yaml` | 3 namespaces: jtoye-production, jtoye-staging, jtoye-dev |
 | `configmap.yaml` | App config: URLs, hosts, log levels |
-| `secrets-template.yaml` | Template (requires population) |
+| `secrets-template.yaml.example` | Reference-only Secret shapes — NOT a kustomize resource since #100; secrets are created out-of-band (SealedSecrets / kubectl) |
 | `core-java-deployment.yaml` | Deployment (3 replicas, 500m/512Mi -> 1000m/1Gi) + Service + HPA (3-10) + PDB (min 2) |
 | `edge-go-deployment.yaml` | Deployment (5 replicas, 100m/64Mi -> 500m/256Mi) + Service + HPA (5-20) + PDB (min 3) |
 | `frontend-deployment.yaml` | Deployment (3 replicas, 200m/256Mi -> 500m/512Mi) + Service + HPA (3-10) + PDB (min 2) |

@@ -9,7 +9,10 @@ description = "Placeholder template files containing CHANGE_ME / REPLACE_WITH_*"
 condition = "OR"
 paths = [
   '''\.env\.example$''',
+  # Old path kept for full-history scans (fetch-depth 0); renamed to
+  # *.yaml.example by #100 so it is no longer a live kustomize resource.
   '''k8s/base/secrets-template\.yaml$''',
+  '''k8s/base/secrets-template\.yaml\.example$''',
   '''\.gitleaks\.toml$''',
   # Planning artifacts contain curl examples with env var placeholders
   # (e.g. curl -u ${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}).

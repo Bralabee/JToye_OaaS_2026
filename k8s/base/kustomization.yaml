@@ -6,9 +6,17 @@ kind: Kustomization
 # not the base. A base that shipped all env namespaces made every overlay's
 # `namespace:` transformer collapse them to one name -> "namespace transformation
 # produces ID conflict". Keep environment namespaces out of the shared base.
+# SECURITY (#100 / P2-9): no Secret manifests are kustomize resources. The
+# former secrets-template.yaml shipped placeholder plaintext Secrets to the
+# cluster on every `kubectl apply -k`. It now lives on disk as
+# secrets-template.yaml.example (reference shape only, never applied).
+# All secrets it describes MUST exist out-of-band BEFORE apply — via
+# SealedSecrets (docs/runbooks/sealed-secrets.md) or `kubectl create secret`
+# (k8s/QUICK_START.md Step 1). CI guard:
+# k8s/scripts/check-no-plaintext-secrets.sh fails the build if any overlay
+# ever emits a `kind: Secret` again.
 resources:
   - configmap.yaml
-  - secrets-template.yaml
   - core-java-deployment.yaml
   - edge-go-deployment.yaml
   - frontend-deployment.yaml

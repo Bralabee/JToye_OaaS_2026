@@ -219,7 +219,10 @@ psql -U <superuser> -d jtoye \
   -f infra/backups/create-backup-role.sql
 ```
 Put the same password in the `postgres-credentials` secret's `backup-password` key,
-and the S3 creds in `s3-backup-credentials` (see `k8s/base/secrets-template.yaml`).
+and the S3 creds in `s3-backup-credentials` (reference shape:
+`k8s/base/secrets-template.yaml.example`). Both secrets must be created
+out-of-band — the kustomize builds ship no Secret objects (#100); see
+`docs/runbooks/sealed-secrets.md` for the required-secrets table.
 
 ### Local end-to-end proof (2026-07-10, dev-sized DB)
 Run against the local stack (Postgres + MinIO), backup image + restore drill:
