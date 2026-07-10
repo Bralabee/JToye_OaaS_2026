@@ -205,7 +205,10 @@ export async function handleCallback(code: string): Promise<CustomerProfile | nu
     if (!response.ok) return null
 
     const data = await response.json()
-    const expiresAt = Math.floor(Date.now() / 1000) + data.expires_in
+    // Guard against a token response that omits `expires_in`: falling back to a
+    // 300s default keeps `expiresAt` a finite number (a NaN here would poison the
+    // cookie payload + localStorage marker and make isLoggedIn() always false).
+    const expiresAt = Math.floor(Date.now() / 1000) + (Number(data.expires_in) || 300)
 
     // Hand tokens to the server — they become HttpOnly cookies and then the
     // access/refresh/id strings never touch JS again.
