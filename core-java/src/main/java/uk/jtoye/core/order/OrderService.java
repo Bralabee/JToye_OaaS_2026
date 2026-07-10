@@ -243,33 +243,30 @@ public class OrderService {
     }
 
     /**
-     * Get orders by status (tenant-scoped).
+     * Get orders by status (tenant-scoped, pageable — Issue #95).
      */
     @Transactional(readOnly = true)
-    public List<OrderDto> getOrdersByStatus(OrderStatus status) {
-        return orderRepository.findByStatus(status).stream()
-                .map(orderMapper::toDto)
-                .toList();
+    public Page<OrderDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByStatus(status, pageable)
+                .map(orderMapper::toDto);
     }
 
     /**
-     * Get orders by shop (tenant-scoped).
+     * Get orders by shop (tenant-scoped, pageable — Issue #95).
      */
     @Transactional(readOnly = true)
-    public List<OrderDto> getOrdersByShop(UUID shopId) {
-        return orderRepository.findByShopId(shopId).stream()
-                .map(orderMapper::toDto)
-                .toList();
+    public Page<OrderDto> getOrdersByShop(UUID shopId, Pageable pageable) {
+        return orderRepository.findByShopId(shopId, pageable)
+                .map(orderMapper::toDto);
     }
 
     /**
-     * Get orders by customer (tenant-scoped).
+     * Get orders by customer (tenant-scoped, pageable — Issue #95).
      */
     @Transactional(readOnly = true)
-    public List<OrderDto> getOrdersByCustomer(UUID customerId) {
-        return orderRepository.findByCustomerId(customerId).stream()
-                .map(orderMapper::toDto)
-                .toList();
+    public Page<OrderDto> getOrdersByCustomer(UUID customerId, Pageable pageable) {
+        return orderRepository.findByCustomerId(customerId, pageable)
+                .map(orderMapper::toDto);
     }
 
     /**
