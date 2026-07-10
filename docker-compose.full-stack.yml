@@ -13,6 +13,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: jtoye-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -101,7 +102,7 @@ services:
       timeout: 10s
       retries: 15
       start_period: 90s
-    restart: on-failure:3
+    restart: unless-stopped
     networks:
       - jtoye-network
 
@@ -109,6 +110,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: jtoye-redis
+    restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
       - "6379:6379"
@@ -126,6 +128,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     container_name: jtoye-rabbitmq
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS must be set}
@@ -211,7 +214,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    restart: on-failure:5
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health"]
       interval: 30s
@@ -229,6 +232,7 @@ services:
       context: ./edge-go
       dockerfile: Dockerfile
     container_name: jtoye-edge-go
+    restart: unless-stopped
     environment:
       CORE_API_URL: http://core-java:9090
       # JWKS fetched from INTERNAL host; 'iss' validated against the PUBLIC issuer
@@ -268,6 +272,7 @@ services:
         # bundle; the runtime `environment:` default below cannot fix a build-time bake.
         NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:?NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL must be set (baked into browser bundle)}
     container_name: jtoye-frontend
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:9090
@@ -308,6 +313,7 @@ services:
   minio:
     image: minio/minio:${MINIO_IMAGE_TAG:-latest}
     container_name: jtoye-minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
@@ -349,6 +355,7 @@ services:
   ollama:
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     container_name: jtoye-ollama
+    restart: unless-stopped
     ports:
       - "11434:11434"
     volumes:
@@ -389,6 +396,7 @@ services:
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: jtoye-mailhog
+    restart: unless-stopped
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI
