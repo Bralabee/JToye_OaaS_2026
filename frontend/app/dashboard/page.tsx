@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
+import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,8 +17,39 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCcw,
+  X,
 } from "lucide-react"
-import type { Order, OrderStatus, FinancialSummary } from "@/types/api"
+import type { Order, OrderStatus, FinancialSummary, OnboardingState } from "@/types/api"
+
+// Incomplete-onboarding banner (Surface 4). "NONE" = no onboarding yet (404);
+// "HIDDEN" = still loading or a non-404 fetch error (banner simply hides).
+type OnboardingBanner = OnboardingState | "NONE" | "HIDDEN"
+
+function onboardingBannerContent(
+  state: OnboardingBanner
+): { className: string; message: string; cta: string } | null {
+  if (state === "HIDDEN" || state === "LIVE") return null
+  if (state === "VERIFYING" || state === "PENDING_APPROVAL" || state === "APPROVED") {
+    return {
+      className: "bg-blue-50 border border-blue-200 text-blue-800",
+      message: "Your onboarding is in progress.",
+      cta: "View status",
+    }
+  }
+  // NONE / DRAFT / ACTION_REQUIRED / SUSPENDED / REJECTED / WITHDRAWN
+  return {
+    className: "bg-amber-50 border border-amber-200 text-amber-800",
+    message: "Finish setting up your shop to go live.",
+    cta: "Start onboarding",
+  }
+}
+
+function onboardingHttpStatus(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "response" in err) {
+    return (err as { response?: { status?: number } }).response?.status
+  }
+  return undefined
+}
 import { formatDistanceToNow } from "date-fns"
 import {
   PieChart,
@@ -68,13 +100,27 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [allOrders, setAllOrders] = useState<Order[]>([])
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null)
+  const [onboardingBanner, setOnboardingBanner] = useState<OnboardingBanner>("HIDDEN")
+  const [bannerDismissed, setBannerDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
   useEffect(() => {
     fetchDashboardData()
+    fetchOnboardingStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Non-critical: a failed /me fetch must never break the dashboard render.
+  const fetchOnboardingStatus = async () => {
+    try {
+      const res = await apiClient.get("/api/v1/onboarding/me")
+      setOnboardingBanner((res.data?.status as OnboardingState) ?? "NONE")
+    } catch (error: unknown) {
+      // 404 -> no onboarding yet (prompt to start); any other error -> hide.
+      setOnboardingBanner(onboardingHttpStatus(error) === 404 ? "NONE" : "HIDDEN")
+    }
+  }
 
   const fetchDashboardData = async () => {
     try {
@@ -175,6 +221,33 @@ export default function DashboardPage() {
           Welcome to your J&apos;Toye OaaS management dashboard
         </p>
       </motion.div>
+
+      {/* Incomplete-onboarding banner (hidden once LIVE) */}
+      {!bannerDismissed &&
+        (() => {
+          const banner = onboardingBannerContent(onboardingBanner)
+          if (!banner) return null
+          return (
+            <div
+              className={`flex items-center justify-between gap-4 rounded-lg p-4 text-sm ${banner.className}`}
+            >
+              <span>{banner.message}</span>
+              <div className="flex items-center gap-4">
+                <Link href="/dashboard/onboarding" className="font-semibold underline">
+                  {banner.cta}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setBannerDismissed(true)}
+                  aria-label="Dismiss"
+                  className="opacity-70 transition-opacity hover:opacity-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
       {/* Stats Cards */}
       <motion.div

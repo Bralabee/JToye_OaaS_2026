@@ -13,6 +13,7 @@ import {
   Banknote,
   Megaphone,
   UtensilsCrossed,
+  Rocket,
   LogOut,
   Moon,
   Sun,
@@ -29,6 +30,7 @@ const navigation = [
   { name: "Finance", href: "/dashboard/finance", icon: Banknote },
   { name: "Marketing", href: "/dashboard/marketing", icon: Megaphone },
   { name: "Kitchen", href: "/dashboard/kitchen", icon: UtensilsCrossed },
+  { name: "Go live", href: "/dashboard/onboarding", icon: Rocket },
 ]
 
 export function Sidebar() {

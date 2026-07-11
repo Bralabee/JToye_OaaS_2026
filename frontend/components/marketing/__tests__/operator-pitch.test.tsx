@@ -21,6 +21,13 @@ describe("OperatorPitch", () => {
     expect(screen.getByText(/edition 10 July 2026/i)).toBeInTheDocument()
   })
 
+  it("offers a 'Start your application' CTA linking to onboarding", () => {
+    render(<OperatorPitch />)
+
+    const cta = screen.getByRole("link", { name: /start your application/i })
+    expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+  })
+
   it("keeps the takeaway and catering cohorts distinct", () => {
     render(<OperatorPitch />)
 
