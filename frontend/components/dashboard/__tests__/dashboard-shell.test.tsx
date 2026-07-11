@@ -25,3 +25,34 @@ describe("DashboardShell", () => {
     expect(screen.getByTestId("content")).toHaveTextContent("hello")
   })
 })
+
+describe("Sidebar navigation", () => {
+  // The shell test above stubs the Sidebar; render the REAL one here to assert
+  // the "Go live" nav item ships. next-auth/next-navigation are mocked globally
+  // in jest.setup.js. jsdom lacks matchMedia, which the sidebar's theme effect
+  // reads — stub it here.
+  beforeAll(() => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }),
+    })
+  })
+
+  it("shows a 'Go live' link to /dashboard/onboarding", () => {
+    const { Sidebar } = jest.requireActual("@/components/dashboard/sidebar") as {
+      Sidebar: () => JSX.Element
+    }
+    render(<Sidebar />)
+    const link = screen.getByRole("link", { name: /go live/i })
+    expect(link).toHaveAttribute("href", "/dashboard/onboarding")
+  })
+})

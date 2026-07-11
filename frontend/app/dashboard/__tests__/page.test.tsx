@@ -41,6 +41,10 @@ const defaultMock = (url: string) => {
   if (url === '/api/v1/financial-transactions/summary') {
     return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
   }
+  if (url.startsWith('/api/v1/onboarding/me')) {
+    // Default: no onboarding yet (404) — the banner falls back to "not started".
+    return Promise.reject({ response: { status: 404 } })
+  }
   return Promise.resolve({ data: { content: [], totalElements: 0 } })
 }
 
@@ -157,5 +161,45 @@ describe('Dashboard Page', () => {
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=100&sort=createdAt,desc')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/financial-transactions/summary')
     })
+  })
+
+  it('shows the incomplete-onboarding banner while onboarding is not LIVE', async () => {
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/onboarding/me')) {
+        return Promise.resolve({ data: { id: 'onb-1', status: 'VERIFYING', gates: [] } })
+      }
+      if (url === '/api/v1/financial-transactions/summary') {
+        return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
+      }
+      return Promise.resolve({ data: { content: [], totalElements: 0 } })
+    })
+
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Your onboarding is in progress.')).toBeInTheDocument()
+    })
+    const link = screen.getByRole('link', { name: /view status/i })
+    expect(link).toHaveAttribute('href', '/dashboard/onboarding')
+  })
+
+  it('hides the banner when onboarding is LIVE', async () => {
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/onboarding/me')) {
+        return Promise.resolve({ data: { id: 'onb-1', status: 'LIVE', gates: [] } })
+      }
+      if (url === '/api/v1/financial-transactions/summary') {
+        return Promise.resolve({ data: { totalRevenuePennies: 0, totalExpensesPennies: 0, netAmountPennies: 0, totalVatPennies: 0, transactionCount: 0, vatBreakdown: [] } })
+      }
+      return Promise.resolve({ data: { content: [], totalElements: 0 } })
+    })
+
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Your onboarding is in progress.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Finish setting up your shop to go live.')).not.toBeInTheDocument()
   })
 })
