@@ -278,7 +278,18 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       {/* Actions */}
       <div className="space-y-3">
         <Link
-          href={`/track?order=${orderNumber}&email=${encodeURIComponent(email)}`}
+          href={`/track?order=${orderNumber}`}
+          onClick={() => {
+            // WR-09: hand the email to /track out-of-band. Embedding it in the
+            // URL left PII in browser history, proxy/access logs and anything
+            // that captures location.search — on a platform whose GDPR erasure
+            // machinery scrubs exactly this address elsewhere.
+            try {
+              if (email) sessionStorage.setItem("jtoye-track-email", email)
+            } catch {
+              /* storage may be unavailable — /track falls back to its prompt */
+            }
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 py-2.5 text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors"
         >
           <Package className="h-4 w-4" />

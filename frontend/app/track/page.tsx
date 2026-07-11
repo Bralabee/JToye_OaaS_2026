@@ -55,7 +55,21 @@ export default function TrackOrderPage() {
 function TrackOrderContent() {
   const searchParams = useSearchParams()
   const [orderNumber, setOrderNumber] = useState(searchParams.get("order") || "")
-  const [email, setEmail] = useState(searchParams.get("email") || "")
+  // WR-09: the email arrives OUT-OF-BAND — via the sessionStorage handoff set
+  // by the confirmation/My-Orders links, or the customer-session pre-fill
+  // below — never minted into our own URLs (PII in query strings persists in
+  // history and access logs). A legacy ?email= param is still honoured so old
+  // bookmarks keep working, but no page links with it any more.
+  const [email, setEmail] = useState(() => {
+    const fromParam = searchParams.get("email") || ""
+    if (fromParam) return fromParam
+    if (typeof window === "undefined") return ""
+    try {
+      return sessionStorage.getItem("jtoye-track-email") || ""
+    } catch {
+      return ""
+    }
+  })
 
   // Convenience pre-fill from a customer session — never a requirement.
   useEffect(() => {
@@ -75,9 +89,11 @@ function TrackOrderContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Auto-search if URL carries both params (e.g. from the confirmation page link).
+  // Auto-search when the URL carries the order number and the email is
+  // available from any out-of-band source (sessionStorage handoff / legacy
+  // param) — e.g. arriving from the confirmation page link (WR-09).
   useEffect(() => {
-    if (searchParams.get("order") && searchParams.get("email")) {
+    if (searchParams.get("order") && email) {
       handleSearch()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

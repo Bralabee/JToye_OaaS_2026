@@ -98,13 +98,26 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
   const Icon = cfg.icon
   const isActive = !["COMPLETED", "CANCELLED"].includes(order.status)
-  const emailParam = email ? `?email=${encodeURIComponent(email)}` : ""
+  // WR-09: never embed the customer email in tracking URLs (PII in query
+  // strings lands in history/proxy logs/analytics). It is handed over via a
+  // sessionStorage handoff on click; the destination pages also pre-fill from
+  // the cookie-backed customer session.
   const trackUrl = shopSlug
-    ? `/shop/${shopSlug}/orders/${order.orderNumber}${emailParam}`
-    : `/track?order=${order.orderNumber}${email ? `&email=${encodeURIComponent(email)}` : ""}`
+    ? `/shop/${shopSlug}/orders/${order.orderNumber}`
+    : `/track?order=${order.orderNumber}`
 
   return (
-    <Link href={trackUrl} className="block group">
+    <Link
+      href={trackUrl}
+      onClick={() => {
+        try {
+          if (email) sessionStorage.setItem("jtoye-track-email", email)
+        } catch {
+          /* ignore — destination falls back to session pre-fill / prompt */
+        }
+      }}
+      className="block group"
+    >
       <div className={`rounded-xl bg-white border ${isActive ? "border-orange-200 shadow-sm" : "border-slate-100"} p-4 transition-all group-hover:shadow-md group-hover:-translate-y-0.5`}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
