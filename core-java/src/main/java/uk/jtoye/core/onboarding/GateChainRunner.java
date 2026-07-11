@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.security.TenantContext;
 
 import java.time.OffsetDateTime;
@@ -163,12 +164,30 @@ public class GateChainRunner {
                 // APPROVE guard (which re-checks all mandatory gates PASSED/WAIVED
                 // and can still veto). Default false stops at PENDING_APPROVAL.
                 if (onboardingProperties.isAutoApprove()) {
-                    vendorOnboardingService.transition(onboardingId, OnboardingEvent.APPROVE);
+                    // WR-01: a vetoed auto-APPROVE must NOT roll back the committed gate
+                    // evaluations and the already-fired GATES_PASSED. Catch the veto here
+                    // so this transaction still commits — the onboarding simply parks at
+                    // PENDING_APPROVAL for a human, and every gate's evidence survives
+                    // (without this catch the InvalidStateTransitionException would reach
+                    // the @Transactional boundary and roll the whole run back, re-stranding
+                    // it in VERIFYING with the external API calls already consumed).
+                    try {
+                        vendorOnboardingService.transition(onboardingId, OnboardingEvent.APPROVE);
+                    } catch (InvalidStateTransitionException e) {
+                        log.warn("Auto-approve vetoed for onboarding {}: {}", onboardingId, e.getMessage());
+                    }
                 }
             } else if (anyFailed) {
                 vendorOnboardingService.transition(onboardingId, OnboardingEvent.GATE_FAILED);
             }
             // else: still-PENDING gates await webhooks/resubmit -> leave in VERIFYING
+        } catch (RuntimeException e) {
+            // WR-01: make an otherwise-silent async failure observable. Spring's default
+            // async uncaught-exception handler only emits a bare stack; log at ERROR with
+            // the onboarding id first, then rethrow so the transaction still rolls back.
+            log.error("Gate-chain recompute failed for onboarding {} (tenant {}): {}",
+                    onboardingId, tenantId, e.getMessage(), e);
+            throw e;
         } finally {
             TenantContext.clear();
         }
