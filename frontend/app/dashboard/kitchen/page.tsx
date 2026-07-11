@@ -43,7 +43,7 @@ const statusConfig: Record<
   { label: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", bgColor: "bg-purple-500", icon: ChefHat },
+  PREPARING: { label: "Preparing", bgColor: "bg-amber-500", icon: ChefHat },
   READY: { label: "Ready", bgColor: "bg-green-500", icon: Package },
 }
 
@@ -56,7 +56,7 @@ interface BumpAction {
 }
 
 const bumpActions: Record<string, BumpAction> = {
-  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-purple-600 hover:bg-purple-700" },
+  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-amber-600 hover:bg-amber-700" },
   PREPARING: { label: "Mark Ready", endpoint: "mark-ready", color: "bg-green-600 hover:bg-green-700" },
   READY: { label: "Complete", endpoint: "complete", color: "bg-emerald-600 hover:bg-emerald-700" },
 }

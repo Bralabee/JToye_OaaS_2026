@@ -408,8 +408,8 @@ export default function ProductsPage() {
                                 src={product.imageUrl}
                                 alt={product.title}
                                 className="h-8 w-8 rounded-lg object-cover"
-                                fallbackClassName="h-8 w-8 rounded-lg bg-purple-100"
-                                fallbackIcon={<Package className="h-4 w-4 text-purple-600" />}
+                                fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                                fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
                               />
                               <div>
                                 <div className="font-medium">{product.title}</div>
