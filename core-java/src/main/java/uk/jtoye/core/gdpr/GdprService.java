@@ -170,6 +170,12 @@ public class GdprService {
             order.setCustomerEmail(null);
             order.setCustomerPhone(null);
             order.setNotes(null);
+            // Delivery address is PII (V45) — Article-17 erasure must null it on
+            // the live row too; the matching orders_aud scrub runs below.
+            order.setAddressLine1(null);
+            order.setAddressLine2(null);
+            order.setAddressCity(null);
+            order.setAddressPostcode(null);
             order.setUpdatedAt(OffsetDateTime.now());
         }
         int ordersAnonymised = ordersById.size();

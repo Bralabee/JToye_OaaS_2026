@@ -1,5 +1,6 @@
 package uk.jtoye.core.order.dto;
 
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.payment.dto.RefundDto;
@@ -30,6 +31,15 @@ public class OrderDetailDto {
     private String paymentReference;
     private String paymentMethod;
     private List<RefundDto> refunds;
+
+    // Phase 19 UIX-04 — fulfilment + delivery address for the
+    // /dashboard/orders/[id] detail page. Nullable: pre-V45 orders default to
+    // DELIVERY with no persisted address; COLLECTION orders have no address.
+    private FulfilmentType fulfilmentType;
+    private String addressLine1;
+    private String addressLine2;
+    private String addressCity;
+    private String addressPostcode;
 
     // Getters and Setters
     public UUID getId() { return id; }
@@ -82,4 +92,19 @@ public class OrderDetailDto {
 
     public List<RefundDto> getRefunds() { return refunds; }
     public void setRefunds(List<RefundDto> refunds) { this.refunds = refunds; }
+
+    public FulfilmentType getFulfilmentType() { return fulfilmentType; }
+    public void setFulfilmentType(FulfilmentType fulfilmentType) { this.fulfilmentType = fulfilmentType; }
+
+    public String getAddressLine1() { return addressLine1; }
+    public void setAddressLine1(String addressLine1) { this.addressLine1 = addressLine1; }
+
+    public String getAddressLine2() { return addressLine2; }
+    public void setAddressLine2(String addressLine2) { this.addressLine2 = addressLine2; }
+
+    public String getAddressCity() { return addressCity; }
+    public void setAddressCity(String addressCity) { this.addressCity = addressCity; }
+
+    public String getAddressPostcode() { return addressPostcode; }
+    public void setAddressPostcode(String addressPostcode) { this.addressPostcode = addressPostcode; }
 }
