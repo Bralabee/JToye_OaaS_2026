@@ -5,7 +5,7 @@ import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
   Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
-  ShoppingBag, Plus as PlusIcon, Minus
+  ShoppingBag, Plus as PlusIcon, Minus, UtensilsCrossed
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
@@ -582,15 +582,16 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           </section>
         ))}
 
-        {/* Empty state */}
+        {/* Menu empty state — a shop with zero assigned products (per-shop
+            scoping from 19-02 can now surface this legitimately). */}
         {categories.length === 0 && (
-          <div className="text-center py-16">
-            <Store className="mx-auto h-12 w-12 text-slate-300" />
-            <h3 className="mt-4 text-base font-medium text-slate-900">
-              Menu coming soon
+          <div className="flex min-h-[40vh] flex-col items-center justify-center text-center py-12">
+            <UtensilsCrossed className="h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-900">
+              No items yet
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              This shop hasn&apos;t added any products yet.
+              This kitchen hasn&apos;t added anything to its menu.
             </p>
           </div>
         )}
