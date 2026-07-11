@@ -22,7 +22,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * (a) capture the outgoing {@link ClientRequest} and assert the mandatory
  * {@code x-api-version: 2} header + query params, and (b) assert JSON parsing
  * for FHRS/FHIS/no-match bodies and that a 5xx surfaces (never a silent pass).
- * No WireMock / MockWebServer — the ExchangeFunction stub is sufficient.
+ * No extra HTTP-mock library is added — the in-memory ExchangeFunction stub plus
+ * the already-present test toolkit is sufficient.
  */
 class FhrsClientTest {
 
