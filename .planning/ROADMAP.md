@@ -211,8 +211,20 @@ Plans:
   4. Checkout collects a delivery address (persisted via V45 — V44 stays reserved for #96) and shows the fee breakdown (subtotal + delivery + VAT) BEFORE payment; Playwright checkout e2e updated.
   5. Each shop renders its own menu: seeded/live products assigned `shop_id`, `ProductRepository` `IS NULL` fallback behaviour resolved deliberately (kept only if product-decision says tenant-wide items are a feature — then rendered as such, not duplicated).
   6. All 15 audit backlog items closed or explicitly deferred with reason; existing 921 logical test invocations stay green; palette stays orange/emerald/slate (no editorial/serif redesign).
-**Plans**: TBD via `/gsd-ui-phase 19` (UI-SPEC design contract) then `/gsd-plan-phase 19`
-**UI hint**: yes — UI-SPEC required before planning
+**Plans**: 9 plans (4 waves) — planned 2026-07-11 (UI-SPEC + RESEARCH + PATTERNS + VALIDATION → 9 executable plans)
+
+Plans:
+- [ ] 19-01-PLAN.md — Backend order-creation completeness: V45 fulfilment/address (+orders_aud mirror) + productName snapshot fix + backfill + GDPR address scrub + audited-write proof (UIX-03, UIX-04) [Wave 1]
+- [ ] 19-02-PLAN.md — Per-shop menus: dev-profile DemoDataSeeder (realistic UK data, shop_id assigned) + ProductRepository scoping (drop IS NULL bleed) + Testcontainers isolation (UIX-05) [Wave 1]
+- [ ] 19-03-PLAN.md — Public shell + persona landing page + sheet primitive + IA cross-links + static link-graph orphan guard (UIX-01) [Wave 1]
+- [ ] 19-04-PLAN.md — Dashboard responsive shell: exported navigation + mobile bottom tab bar (4 + More sheet) + Playwright mobile spec (UIX-02) [Wave 2]
+- [ ] 19-05-PLAN.md — Marketing token re-skin (operator-pitch + business-model-guide) + /track guest lookup (no auth wall) + PublicShell (UIX-01) [Wave 2]
+- [ ] 19-06-PLAN.md — Checkout fulfilment toggle + UK address + fee-before-payment + empty-state centring + menu empty state (UIX-04) [Wave 2]
+- [ ] 19-07-PLAN.md — Kitchen + order-detail: badge-clip fix + elapsed cap + real product-name render + e2e (UIX-06) [Wave 2]
+- [ ] 19-08-PLAN.md — Cross-cutting sweep: purple→amber/blue + text-[10px]→text-xs + VERIFY-FIRST 401 quiet + discipline test (UIX-06) [Wave 3]
+- [ ] 19-09-PLAN.md — Closure: UIX-01..06 registration + docs-freshness reconcile (schema 45) + full gate + browser UAT (UIX-06) [Wave 4]
+
+**UI hint**: yes — UI-SPEC approved (checker 6/6)
 
 ## Progress
 
@@ -247,4 +259,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 0/? | Not started (UI-SPEC next) | - |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 0/9 | Planned (9 plans, 4 waves) | - |
