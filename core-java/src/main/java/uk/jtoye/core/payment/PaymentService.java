@@ -224,7 +224,8 @@ public class PaymentService {
             order.setUpdatedAt(java.time.OffsetDateTime.now());
             orderRepository.save(order);
 
-            // Publish state change event
+            // Record the state change in the transactional outbox (#93) —
+            // joins the webhook transaction, published post-commit by the flusher.
             eventPublisher.publishStateChange(
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
                     OrderStatus.DRAFT, OrderStatus.PENDING);

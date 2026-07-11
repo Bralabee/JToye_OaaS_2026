@@ -38,8 +38,6 @@ import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
 import uk.jtoye.core.storefront.dto.PublicShopDto;
 
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -541,17 +539,16 @@ public class PublicStorefrontService {
             // guard above stays as an early UX availability check — it is NOT a
             // reservation.
 
-            // Publish event for COD orders (Stripe orders get event on webhook)
+            // Publish event for COD orders (Stripe orders get event on webhook).
+            // Issue #93: OrderEventPublisher is outbox-backed — the event row
+            // joins THIS transaction and the flusher only publishes committed
+            // rows, so the former afterCommit TransactionSynchronization
+            // wrapper is no longer needed (and would run the outbox INSERT
+            // outside the transaction it must join).
             if (clientSecret == null) {
-                final Order savedOrder = order;
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        eventPublisher.publishStateChange(
-                                savedOrder.getId(), savedOrder.getTenantId(), savedOrder.getOrderNumber(),
-                                OrderStatus.DRAFT, OrderStatus.PENDING);
-                    }
-                });
+                eventPublisher.publishStateChange(
+                        order.getId(), order.getTenantId(), order.getOrderNumber(),
+                        OrderStatus.DRAFT, OrderStatus.PENDING);
             }
 
             log.info("Created guest order {} with {} items, total: {} pennies (VAT: {} {}) for shop {}{}",
