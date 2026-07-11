@@ -8,9 +8,17 @@
 #
 # This document exists so SPRING_PROFILES_ACTIVE=dev resolves to a REAL profile
 # document rather than a phantom profile that silently loads nothing (the class
-# of misconfiguration behind Issue #78 [P0-2]). It is intentionally
-# behaviour-neutral — the single key below is identical to the base
-# application.yml LOG_LEVEL default, so it changes no effective behaviour.
+# of misconfiguration behind Issue #78 [P0-2]).
 logging:
   level:
     uk.jtoye: ${LOG_LEVEL:INFO}
+
+# Issue #179 defect 1: the dev customers realm ships with email verification
+# OFF (CUSTOMER_VERIFY_EMAIL=false in .env.example / compose), so dev tokens
+# carry email_verified=false. Relax the CustomerJwtVerifier gate here ONLY —
+# the base application.yml default stays true (staging/prod keep the
+# anti-impersonation protection unless explicitly overridden).
+jtoye:
+  security:
+    customer-jwt:
+      require-verified-email: ${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:false}

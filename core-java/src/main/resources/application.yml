@@ -101,6 +101,23 @@ jtoye:
       # Testcontainers setups (where the two coincide) keep passing unchanged;
       # override via JWT_EXPECTED_ISSUER in split-host deployments.
       expected-issuer: ${JWT_EXPECTED_ISSUER:${spring.security.oauth2.resourceserver.jwt.issuer-uri}}
+    # Issue #179 defect 1: B2C customer-session order history
+    # (GET /public/orders/mine, X-Customer-Token header). Tokens are minted by
+    # the jtoye-customers realm (Phase 18 realm split) and verified by
+    # CustomerJwtVerifier — a decoder deliberately SEPARATE from the staff
+    # resource-server decoder above. Same split-horizon pattern as issue #87:
+    # issuer-uri locates the JWKS (INTERNAL host, e.g. http://keycloak:8080/...),
+    # expected-issuer is the PUBLIC issuer Keycloak stamps into tokens
+    # (e.g. http://localhost:8085/...); they default to the same value for
+    # single-host/Testcontainers setups.
+    customer-jwt:
+      issuer-uri: ${CUSTOMER_KC_ISSUER_URI:http://localhost:8085/realms/jtoye-customers}
+      expected-issuer: ${CUSTOMER_JWT_EXPECTED_ISSUER:${jtoye.security.customer-jwt.issuer-uri}}
+      # Anti-impersonation gate: require email_verified=true in the token so a
+      # self-registered account with a victim's (unverified) address cannot list
+      # the victim's order history. Secure default ON; dev profile relaxes it to
+      # match the dev realm's CUSTOMER_VERIFY_EMAIL=false (see application-dev.yml).
+      require-verified-email: ${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:true}
 
 stomp:
   broker:

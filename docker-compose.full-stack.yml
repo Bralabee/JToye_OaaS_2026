@@ -167,6 +167,11 @@ services:
       # so validate the 'iss' claim against that. Without this split the resource
       # server rejects every real token with "The iss claim is not valid" (issue #87 follow-up).
       JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-dev
+      # Issue #179 defect 1: customer-session order history (/public/orders/mine).
+      # Same split-horizon pattern as above, for the jtoye-customers realm:
+      # JWKS via the internal host, 'iss' validated against the public issuer.
+      CUSTOMER_KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-customers
+      CUSTOMER_JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-customers
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile
       # exposes only health,info — see application.yml management comment).
       # SecurityConfig permits /actuator/prometheus in non-prod profiles only.

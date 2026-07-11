@@ -41,6 +41,12 @@ class PublicStorefrontControllerTest {
     @MockitoBean
     private ReviewService reviewService;
 
+    // Issue #179: controller dependency for /public/orders/mine — not exercised
+    // here (see PublicStorefrontControllerMyOrdersTest) but required to build
+    // the controller in this slice.
+    @MockitoBean
+    private uk.jtoye.core.security.CustomerJwtVerifier customerJwtVerifier;
+
     // --- Helper methods ---
 
     private PublicShopDto buildShopDto(String slug, String name) {

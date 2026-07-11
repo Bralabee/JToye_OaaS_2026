@@ -54,6 +54,13 @@ class PublicStorefrontControllerIdorTest {
     @MockitoBean
     private ReviewService reviewService;
 
+    // Issue #179: controller dependency for /public/orders/mine — the
+    // session-authenticated variant has its own IDOR coverage in
+    // PublicStorefrontControllerMyOrdersTest; the verify-gated contract locked
+    // here is unchanged.
+    @MockitoBean
+    private uk.jtoye.core.security.CustomerJwtVerifier customerJwtVerifier;
+
     @Test
     void getCustomerOrders_withoutVerify_returns400() throws Exception {
         mockMvc.perform(get("/public/orders").param("email", "victim@example.com"))
