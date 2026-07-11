@@ -58,7 +58,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
 - [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
 - [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
-- [ ] **Phase 18: Vendor Onboarding — First Slice (MVP)** — `vendor_onboarding` state machine + gate chain (Flyway V43): auto-verify business (Companies House) + food-hygiene rating (FSA FHRS, `min-rating=2`) at signup, gate go-live on allergen completeness, state machine as sole writer of `Shop.published`. Seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`. — planning via `/gsd plan-phase 18` (MVP mode)
+- [x] **Phase 18: Vendor Onboarding — First Slice (MVP)** — `vendor_onboarding` state machine + gate chain (Flyway V43): auto-verify business (Companies House) + food-hygiene rating (FSA FHRS, `min-rating=2`) at signup, gate go-live on allergen completeness, state machine as sole writer of `Shop.published`. Seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`. — planning via `/gsd plan-phase 18` (MVP mode) (completed 2026-07-11)
 
 ## Phase Details
 
@@ -191,10 +191,10 @@ Plans:
 Plans:
 - [x] 18-01-PLAN.md — Persistence foundation: Flyway V43 (vendor_onboarding + _gate + _aud, FORCE RLS), enums, audited entities/repos, OnboardingProperties + config [Wave 1]
 - [x] 18-02-PLAN.md — Submit slice: onboarding state machine (sole writer of Shop.published) + VendorOnboardingService + gate-chain registry/runner + create/submit/status API [Wave 2]
-- [ ] 18-03-PLAN.md — FOOD_HYGIENE_RATING gate: FhrsClient (x-api-version:2 + circuit breaker) + FhrsGate (min-rating=2, MANUAL_REVIEW fallback) [Wave 3]
-- [ ] 18-04-PLAN.md — BUSINESS_VERIFIED gate: CompaniesHouseClient (HTTP Basic + circuit breaker) + CompaniesHouseGate (active->PASSED, sole trader->WAIVED) [Wave 3]
-- [ ] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
-- [ ] 18-06-PLAN.md — Cross-gate end-to-end proof + docs/metrics.json reconcile (docs-freshness) + REQUIREMENTS/ROADMAP/CHANGELOG closure [Wave 4]
+- [x] 18-03-PLAN.md — FOOD_HYGIENE_RATING gate: FhrsClient (x-api-version:2 + circuit breaker) + FhrsGate (min-rating=2, MANUAL_REVIEW fallback) [Wave 3]
+- [x] 18-04-PLAN.md — BUSINESS_VERIFIED gate: CompaniesHouseClient (HTTP Basic + circuit breaker) + CompaniesHouseGate (active->PASSED, sole trader->WAIVED) [Wave 3]
+- [x] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
+- [x] 18-06-PLAN.md — Cross-gate end-to-end proof + docs/metrics.json reconcile (docs-freshness) + REQUIREMENTS/ROADMAP/CHANGELOG closure [Wave 4]
 
 ## Progress
 
@@ -228,4 +228,4 @@ Suggested wave layout:
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
-| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 2/6 | In Progress|  |
+| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 6/6 | Complete   | 2026-07-11 |
