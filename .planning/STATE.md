@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 18
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-07-11 - Completed quick task 260711-bej: recorded onboarding auto-approve + Stripe Connect decisions; model-aware auto-approve shipped
+Phase: 19 (Full-Frontend Experience Overhaul — v2.3 opener)
+Plan: Not started (UI-SPEC via /gsd-ui-phase 19, then /gsd-plan-phase 19)
+Status: Phase added from full-frontend UI audit (18-UI-REVIEW.md, 42/72, 15-item backlog)
+Last activity: 2026-07-11 - Full-frontend UI audit complete + Phase 19 roadmapped; earlier: quick task 260711-bej (auto-approve + Stripe decisions, PR #180 merged)
 
 Progress: [██████████] 100%
 

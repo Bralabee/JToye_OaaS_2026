@@ -17,8 +17,8 @@ Milestone v2.2 closes the 8 highest-priority P2 security/quality items from the 
 
 - ✅ **v2.0 Tier 3 Enhancements** — Phases 1-8 (shipped 2026-04-10, PR #27)
 - ✅ **v2.1 Post-Audit Hardening + Storefront Completion** — Phases 9-11 (shipped 2026-04-16, archived 2026-04-18)
-- 🚧 **v2.2 Production Hardening + Vendor Order Operations** — Phases 12-18 (in progress, started 2026-04-18)
-- 📋 **v2.3+** — unscoped; likely candidates: 6 remaining P2 HANDOFF items, Work Orders F/J/K, Postgres PITR
+- ✅ **v2.2 Production Hardening + Vendor Order Operations** — Phases 12-18 (finished 2026-07-11, PR #176)
+- 🚧 **v2.3 Experience Overhaul + P2 Scale-out** — Phase 19+ (started 2026-07-11); backlog candidates: P2 #92-#94, 6 remaining P2 HANDOFF items, Work Orders F/J/K, Postgres PITR
 
 ## Phases
 
@@ -59,6 +59,10 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 - [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
 - [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
 - [x] **Phase 18: Vendor Onboarding — First Slice (MVP)** — `vendor_onboarding` state machine + gate chain (Flyway V43): auto-verify business (Companies House) + food-hygiene rating (FSA FHRS, `min-rating=2`) at signup, gate go-live on allergen completeness, state machine as sole writer of `Shop.published`. Seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`. — planning via `/gsd plan-phase 18` (MVP mode) (completed 2026-07-11)
+
+### 🚧 v2.3 Phases (in progress)
+
+- [ ] **Phase 19: Full-Frontend Experience Overhaul** — Close the 15-item remediation backlog from the full-frontend UI audit (18-UI-REVIEW.md, whole-app 42/72): public landing page + information architecture (kill the `/` blind redirect, connect the 3 surfaces, de-orphan every route), responsive dashboard shell, real product names in kitchen/orders, checkout delivery address + fee transparency (V45 migration — V44 stays reserved for #96), per-shop menus, and comparator-grade polish (Deliveroo/Just Eat storefront bar; Square/Toast dashboard bar). Constraints: keep orange/emerald/slate food-delivery palette (editorial redesign explicitly rejected), mobile-first, zero regression of the 921 logical test invocations.
 
 ## Phase Details
 
@@ -196,6 +200,20 @@ Plans:
 - [x] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
 - [x] 18-06-PLAN.md — Cross-gate end-to-end proof + docs/metrics.json reconcile (docs-freshness) + REQUIREMENTS/ROADMAP/CHANGELOG closure [Wave 4]
 
+### Phase 19: Full-Frontend Experience Overhaul
+**Goal:** Every visitor — customer, prospective vendor, or operator — lands on a coherent product: a real front door routes them to their surface, every page is reachable through navigation, every flow is complete and comparator-grade (Deliveroo/Just Eat for storefront, Square/Toast for dashboard), on mobile first.
+**Depends on**: Phase 18 (onboarding UI is the quality reference — replicate its pattern, do not regress it)
+**Requirements**: UIX-01..UIX-06 (minted from `phases/18-vendor-onboarding-first-slice/18-UI-REVIEW.md` remediation backlog — register in REQUIREMENTS.md during planning)
+**Success Criteria** (what must be TRUE):
+  1. `/` renders a public landing page (no blind redirect) routing the 3 personas: order food → shop directory, run your food business → `/for-operators`, sign in → dashboard; shared public header/footer connects `/`, `/for-operators`, `/business-model-guide`, `/track`, `/shop` — zero orphan routes (every route ≥1 inbound nav link, verified by a link-graph test).
+  2. All 11 dashboard routes usable at 390px (sidebar collapses to drawer/bottom nav); Playwright mobile viewport spec passes.
+  3. Kitchen display and order detail show real product names on live orders — `OrderItem` snapshot populated at order creation; "Unknown Product" never renders for a product that exists.
+  4. Checkout collects a delivery address (persisted via V45 — V44 stays reserved for #96) and shows the fee breakdown (subtotal + delivery + VAT) BEFORE payment; Playwright checkout e2e updated.
+  5. Each shop renders its own menu: seeded/live products assigned `shop_id`, `ProductRepository` `IS NULL` fallback behaviour resolved deliberately (kept only if product-decision says tenant-wide items are a feature — then rendered as such, not duplicated).
+  6. All 15 audit backlog items closed or explicitly deferred with reason; existing 921 logical test invocations stay green; palette stays orange/emerald/slate (no editorial/serif redesign).
+**Plans**: TBD via `/gsd-ui-phase 19` (UI-SPEC design contract) then `/gsd-plan-phase 19`
+**UI hint**: yes — UI-SPEC required before planning
+
 ## Progress
 
 **Execution Order:**
@@ -229,3 +247,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 0/? | Not started (UI-SPEC next) | - |
