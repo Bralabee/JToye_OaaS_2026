@@ -37,6 +37,7 @@
 | **What's the project overview?** | [README.md](../README.md) |
 | **What business model should J'Toye pursue?** | [analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md) |
 | **Where is the prospective-vendor pitch?** | [`/for-operators`](http://localhost:3200/for-operators) |
+| **What pages exist in the frontend?** | [SITEMAP.md](SITEMAP.md) |
 | **How do I deploy to production?** | guides/DEPLOYMENT_GUIDE.md |
 
 ---
