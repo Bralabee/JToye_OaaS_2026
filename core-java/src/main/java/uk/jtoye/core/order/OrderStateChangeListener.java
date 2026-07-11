@@ -13,24 +13,33 @@ import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.notification.EmailNotificationService;
 import uk.jtoye.core.security.TenantContext;
 
+/**
+ * Competing-consumer listener on the durable {@code order.state-changes}
+ * queue: at N replicas each event is handled by exactly ONE instance, which is
+ * the required semantic for everything in here — customer email, business
+ * metrics, and the KDS WebSocket publish (the STOMP relay broker fans that out
+ * to every replica's WS clients, so publishing once is correct; publishing
+ * from every replica would duplicate).
+ *
+ * <p>SSE broadcasting deliberately does NOT live here (#92): emitters are
+ * per-JVM, so it moved to {@link OrderSseFanoutListener}, which consumes a
+ * per-instance fan-out queue and therefore runs on every replica.</p>
+ */
 @Component
 public class OrderStateChangeListener {
     private static final Logger log = LoggerFactory.getLogger(OrderStateChangeListener.class);
 
-    private final OrderSseService sseService;
     private final OrderRepository orderRepository;
     private final EmailNotificationService emailService;
     private final EntityManager entityManager;
     private final BusinessMetricsService metrics;
     private final SimpMessagingTemplate simpMessagingTemplate;
 
-    public OrderStateChangeListener(OrderSseService sseService,
-                                     OrderRepository orderRepository,
+    public OrderStateChangeListener(OrderRepository orderRepository,
                                      EmailNotificationService emailService,
                                      EntityManager entityManager,
                                      BusinessMetricsService metrics,
                                      SimpMessagingTemplate simpMessagingTemplate) {
-        this.sseService = sseService;
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.entityManager = entityManager;
@@ -43,9 +52,6 @@ public class OrderStateChangeListener {
     public void handleOrderStateChange(OrderStateChangeEvent event) {
         log.info("Order state change received: order={} tenant={} {} -> {}",
                 event.orderNumber(), event.tenantId(), event.previousStatus(), event.newStatus());
-
-        // Broadcast to SSE clients for real-time UI updates
-        sseService.broadcast(event);
 
         // WebSocket broadcast to KDS topic (fire-and-forget per D-06)
         try {

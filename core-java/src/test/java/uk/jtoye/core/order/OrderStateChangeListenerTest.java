@@ -59,7 +59,9 @@ class OrderStateChangeListenerTest {
         java.sql.PreparedStatement mockStmt = mock(java.sql.PreparedStatement.class);
         lenient().when(mockConn.prepareStatement(any(String.class))).thenReturn(mockStmt);
         lenient().doAnswer(inv -> { inv.<org.hibernate.jdbc.Work>getArgument(0).execute(mockConn); return null; }).when(hibernateSession).doWork(any());
-        listener = new OrderStateChangeListener(new OrderSseService(), orderRepository, emailService, entityManager, metrics, simpMessagingTemplate);
+        // #92: SSE broadcasting moved to OrderSseFanoutListener (per-instance
+        // fan-out queue); this competing-consumer listener no longer touches SSE.
+        listener = new OrderStateChangeListener(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
