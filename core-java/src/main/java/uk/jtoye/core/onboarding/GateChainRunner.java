@@ -94,10 +94,19 @@ public class GateChainRunner {
      * Async gate evaluation + recompute. Re-establishes the tenant on the worker
      * thread, evaluates every automatic gate, then recomputes over the gate rows:
      * if there is ≥1 mandatory row AND all mandatory rows are PASSED/WAIVED, fire
-     * GATES_PASSED and — when {@code onboarding.auto-approve} is true — immediately
+     * GATES_PASSED and — when the model-aware auto-approve policy applies — immediately
      * fire APPROVE (the APPROVE guard still enforces the gates and can veto); if a
      * mandatory row FAILED, fire GATE_FAILED; otherwise leave it in VERIFYING for
      * webhooks/resubmit.
+     *
+     * <p><strong>Auto-approve policy (#178 item 1 / ADR-0001):</strong> the APPROVE step
+     * fires when the global {@code onboarding.auto-approve} force-on flag is true OR the
+     * onboarding's {@link OnboardingModel} is in {@code onboarding.auto-approve-models}
+     * (default {@code [WHITE_LABEL]}). So under the default config WHITE_LABEL auto-approves
+     * on green gates while MARKETPLACE parks at PENDING_APPROVAL for a human (admin
+     * approve/reject queue = #178 slice 2). The two conditions are evaluated as separate
+     * external calls on {@link OnboardingProperties} so the Phase 18 {@code @SpyBean} stub
+     * on {@code isAutoApprove()} still governs the global-force E2E path.
      */
     @Async
     @Transactional
@@ -160,10 +169,17 @@ public class GateChainRunner {
 
             if (allPassed) {
                 vendorOnboardingService.transition(onboardingId, OnboardingEvent.GATES_PASSED);
-                // Consume onboarding.auto-approve: skip human review but NOT the
-                // APPROVE guard (which re-checks all mandatory gates PASSED/WAIVED
-                // and can still veto). Default false stops at PENDING_APPROVAL.
-                if (onboardingProperties.isAutoApprove()) {
+                // Consume the model-aware auto-approve policy (#178 item 1 / ADR-0001):
+                // the global force-on flag OR the per-model default (WHITE_LABEL auto,
+                // MARKETPLACE manual). Evaluated as TWO external calls on the properties
+                // bean so the Phase 18 @SpyBean stub on isAutoApprove() still governs the
+                // global path (a spy does not intercept this.-self-invocations). This skips
+                // human review but NOT the APPROVE guard (which re-checks all mandatory
+                // gates PASSED/WAIVED and can still veto); when neither applies it stops at
+                // PENDING_APPROVAL for a human.
+                boolean autoApprove = onboardingProperties.isAutoApprove()
+                        || onboardingProperties.autoApprovesModel(onboarding.getModel());
+                if (autoApprove) {
                     // WR-01: a vetoed auto-APPROVE must NOT roll back the committed gate
                     // evaluations and the already-fired GATES_PASSED. Catch the veto here
                     // so this transaction still commits — the onboarding simply parks at

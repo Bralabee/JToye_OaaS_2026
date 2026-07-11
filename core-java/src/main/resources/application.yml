@@ -191,7 +191,11 @@ stripe:
 # (house convention). FHRS is free/no-key but requires x-api-version:2; Companies
 # House is free with an API key (HTTP Basic, key as username).
 onboarding:
+  # GLOBAL FORCE-ON override: when true, EVERY model auto-approves on green gates;
+  # when false (default), per-model policy in auto-approve-models applies (#178, ADR-0001).
   auto-approve: ${ONBOARDING_AUTO_APPROVE:false}
+  # Per-model auto-approve list — default WHITE_LABEL auto / MARKETPLACE manual (#178 item 1).
+  auto-approve-models: ${ONBOARDING_AUTO_APPROVE_MODELS:WHITE_LABEL}
   menu-minimum: ${ONBOARDING_MENU_MINIMUM:1}
   fhrs:
     base-url: ${FHRS_BASE_URL:https://api.ratings.food.gov.uk}

@@ -131,6 +131,42 @@ class GateChainRunnerTest {
     }
 
     @Test
+    @DisplayName("runAndRecompute auto-approves WHITE_LABEL on green gates even with global auto-approve off (#178)")
+    void recomputeAutoApprovesWhiteLabelByModel() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        onboardingProperties.setAutoApprove(false); // global force-on OFF: per-model policy applies
+        VendorOnboarding onboarding = onboardingIn(OnboardingState.VERIFYING, onboardingId, tenantId);
+        onboarding.setModel(OnboardingModel.WHITE_LABEL);
+        when(onboardingRepository.findById(onboardingId)).thenReturn(Optional.of(onboarding));
+        when(gateRepository.findByOnboardingId(onboardingId))
+                .thenReturn(List.of(gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true)));
+
+        runner(List.of()).runAndRecompute(onboardingId, tenantId);
+
+        verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATES_PASSED);
+        verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.APPROVE);
+    }
+
+    @Test
+    @DisplayName("runAndRecompute halts MARKETPLACE at PENDING_APPROVAL with global auto-approve off (#178)")
+    void recomputeHaltsMarketplaceByModel() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        onboardingProperties.setAutoApprove(false); // MARKETPLACE not in the default auto-approve list
+        VendorOnboarding onboarding = onboardingIn(OnboardingState.VERIFYING, onboardingId, tenantId);
+        onboarding.setModel(OnboardingModel.MARKETPLACE);
+        when(onboardingRepository.findById(onboardingId)).thenReturn(Optional.of(onboarding));
+        when(gateRepository.findByOnboardingId(onboardingId))
+                .thenReturn(List.of(gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true)));
+
+        runner(List.of()).runAndRecompute(onboardingId, tenantId);
+
+        verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATES_PASSED);
+        verify(vendorOnboardingService, never()).transition(onboardingId, OnboardingEvent.APPROVE);
+    }
+
+    @Test
     @DisplayName("runAndRecompute also fires APPROVE when auto-approve is on")
     void recomputeAutoApproves() {
         UUID onboardingId = UUID.randomUUID();
