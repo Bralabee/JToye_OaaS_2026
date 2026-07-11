@@ -178,6 +178,10 @@ export interface OrderItem {
   createdAt: string
 }
 
+// How an order is fulfilled — mirrors backend uk.jtoye.core.order.FulfilmentType
+// (V45, Phase 19-01). COLLECTION orders carry no delivery address.
+export type FulfilmentType = "DELIVERY" | "COLLECTION"
+
 export interface OrderDetail {
   id: string
   tenantId: string
@@ -198,6 +202,14 @@ export interface OrderDetail {
   paymentReference?: string | null
   paymentMethod?: string | null
   refunds?: Refund[]
+  // Phase 19-01 (UIX-04/UIX-06): OrderDetailDto now exposes fulfilment +
+  // delivery address. Nullable: pre-V45 orders default to DELIVERY with no
+  // persisted address; COLLECTION orders carry no address.
+  fulfilmentType?: FulfilmentType
+  addressLine1?: string | null
+  addressLine2?: string | null
+  addressCity?: string | null
+  addressPostcode?: string | null
 }
 
 export interface CreateOrderRequest {

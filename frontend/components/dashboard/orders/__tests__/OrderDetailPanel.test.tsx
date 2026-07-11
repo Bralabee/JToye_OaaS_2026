@@ -95,7 +95,8 @@ describe("OrderDetailPanel", () => {
     expect(screen.getByText("card")).toBeInTheDocument()
     expect(screen.getByText("pi_test_123")).toBeInTheDocument()
 
-    // Line items block
+    // Line items block — renders the real product name (from the snapshotted
+    // OrderItem.productName populated by 19-01), qty, and unit price.
     expect(screen.getByText(/Items \(1\)/)).toBeInTheDocument()
     expect(screen.getByText("Jollof Rice")).toBeInTheDocument()
 
@@ -104,6 +105,43 @@ describe("OrderDetailPanel", () => {
     expect(
       screen.getByRole("button", { name: /Issue refund/i })
     ).toBeInTheDocument()
+  })
+
+  it("never renders 'Unknown Product' for a line item that references a real product (#2)", () => {
+    render(<OrderDetailPanel order={makeOrder()} />)
+    // The snapshotted productName renders; the last-resort "Unknown Product"
+    // fallback (backlog #2) must never appear for an existing product.
+    expect(screen.getByText("Jollof Rice")).toBeInTheDocument()
+    expect(screen.queryByText("Unknown Product")).not.toBeInTheDocument()
+  })
+
+  it("renders the delivery-address block for a DELIVERY order", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({
+          fulfilmentType: "DELIVERY",
+          addressLine1: "12 Rye Lane",
+          addressLine2: "Flat 2",
+          addressCity: "London",
+          addressPostcode: "SE15 5BS",
+        })}
+      />
+    )
+    expect(screen.getByTestId("delivery-address")).toBeInTheDocument()
+    expect(screen.getByText("Delivery")).toBeInTheDocument()
+    expect(screen.getByText("12 Rye Lane")).toBeInTheDocument()
+    expect(screen.getByText("Flat 2")).toBeInTheDocument()
+    expect(screen.getByText("London")).toBeInTheDocument()
+    expect(screen.getByText("SE15 5BS")).toBeInTheDocument()
+  })
+
+  it("omits the delivery-address block for a COLLECTION order", () => {
+    render(
+      <OrderDetailPanel order={makeOrder({ fulfilmentType: "COLLECTION" })} />
+    )
+    expect(screen.queryByTestId("delivery-address")).not.toBeInTheDocument()
+    // The fulfilment label still shows so the vendor knows it is a collection.
+    expect(screen.getByText("Collection")).toBeInTheDocument()
   })
 
   it("renders refund history when refunds.length > 0", () => {
