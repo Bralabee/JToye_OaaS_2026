@@ -28,16 +28,30 @@ function formatPrice(pennies: number): string {
 
 function isOpenNow(hours: Record<string, string> | null): boolean {
   if (!hours || Object.keys(hours).length === 0) return true  // No hours = always open (matches backend)
-  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
-  const now = new Date(new Date().toLocaleString("en-GB", { timeZone: "Europe/London" }))
-  const dayKey = days[now.getDay()]
+  // WR-05: never round-trip through a locale string. The old
+  // `new Date(new Date().toLocaleString("en-GB", ...))` re-parsed a
+  // dd/mm/yyyy string with the mm/dd-first JS Date parser: for days 1-12 the
+  // day/month silently swapped (wrong weekday row), and for days 13-31 it was
+  // Invalid Date — so the "Closed" pill showed for open shops most of the
+  // month. Intl.DateTimeFormat parts give the UK-local weekday/time directly.
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date())
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? ""
+  const dayKey = part("weekday").toLowerCase().slice(0, 3) // "mon".."sun"
   const todayHours = hours[dayKey]
   if (!todayHours || todayHours.toLowerCase() === "closed") return false
   const match = todayHours.match(/(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})/)
   if (!match) return false
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
-  return nowMinutes >= parseInt(match[1]) * 60 + parseInt(match[2]) &&
-    nowMinutes < parseInt(match[3]) * 60 + parseInt(match[4])
+  // Some engines render midnight as "24" with hour12:false — normalise.
+  const nowMinutes = (parseInt(part("hour"), 10) % 24) * 60 + parseInt(part("minute"), 10)
+  const openMinutes = parseInt(match[1]) * 60 + parseInt(match[2])
+  const closeMinutes = parseInt(match[3]) * 60 + parseInt(match[4])
+  return nowMinutes >= openMinutes && nowMinutes < closeMinutes
 }
 
 const DAY_LABELS: Record<string, string> = {
