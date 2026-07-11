@@ -20,11 +20,48 @@
  * Run: npx playwright test e2e/kitchen-flow.spec.ts
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 
 // Honour PLAYWRIGHT_BASE_URL (dev stack runs on :3100). Mirrors playwright.config.ts.
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
+
+// Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account; the
+// password is supplied via E2E_VENDOR_PASSWORD (never committed). A fake session
+// cookie no longer passes the server-side dashboard auth gate (NextAuth middleware,
+// #89), so this spec performs the genuine SSO login like dashboard-mobile.spec.ts.
+const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
+const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
+
+async function vendorLogin(page: Page) {
+  await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
+  const ssoButton = page.getByRole("button", { name: /sign in with keycloak/i })
+  if ((await ssoButton.count()) === 0) {
+    test.skip(true, "No sign-in method found on /auth/signin — unknown auth flow")
+  }
+  await ssoButton.waitFor({ state: "visible", timeout: 10_000 })
+  // Let React hydrate before clicking — a click on `domcontentloaded` can land
+  // before the onClick handler is attached and silently no-op (login hangs).
+  await page.waitForLoadState("networkidle").catch(() => {})
+  await page.waitForTimeout(400)
+  await ssoButton.click()
+  // A live SSO cookie may skip the hosted form and land straight on /dashboard.
+  // Retry once if the first click raced hydration (still on /auth/signin).
+  try {
+    await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 25_000 })
+  } catch {
+    if (page.url().includes("/auth/signin")) {
+      await ssoButton.click({ force: true }).catch(() => {})
+    }
+    await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 20_000 })
+  }
+  if (!page.url().includes("/dashboard")) {
+    await page.fill("#username", VENDOR_USERNAME)
+    await page.fill("#password", VENDOR_PASSWORD)
+    await page.click("#kc-login")
+  }
+  await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
+}
 
 // Pin the order age so the elapsed-time cap is deterministic: 2245 minutes is
 // the exact raw value the audit flagged (#12). Capped, it renders "1d ago".
@@ -106,7 +143,7 @@ const orderDetailResponse = {
 }
 
 test.describe("Kitchen display + order detail — product names & fixes (Surface F)", () => {
-  test.beforeEach(async ({ context }) => {
+  test.beforeEach(async ({ context, page }) => {
     // Stub the STOMP websocket endpoint so a real broker is not needed — the
     // client can fail fast and the page still renders its HTTP-fetched state.
     await context.route("**/ws**", (route) => route.abort())
@@ -137,19 +174,11 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
       })
     )
 
-    // Fake a NextAuth session cookie so the dashboard layout lets us through.
-    // (The real value is opaque to tests — server-side auth is exercised in
-    // its own unit test; here we just need the client to render.)
-    await context.addCookies([
-      {
-        name: "authjs.session-token",
-        value: "e2e-stub",
-        domain: "localhost",
-        path: "/",
-        httpOnly: true,
-        sameSite: "Lax",
-      },
-    ])
+    // Perform the genuine vendor SSO login so the server-side dashboard auth
+    // gate (NextAuth middleware) lets us through. The /api/v1 route stubs above
+    // are client-side and never touch the Keycloak login origin, so the mocked
+    // order data still drives the rendered kitchen/order-detail views.
+    await vendorLogin(page)
   })
 
   test("kitchen display shows real product names, a clean badge, and capped elapsed time", async ({

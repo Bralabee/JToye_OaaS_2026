@@ -29,9 +29,11 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test"
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
-// Keycloak dev-realm vendor (docs/setup/SETUP.md); tenant-a-user maps to
-// tenant 00000000-…-000000000001. Overridable for other environments.
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "tenant-a-user"
+// Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev realm account and
+// maps to tenant 00000000-…-000000000001 (the DemoDataSeeder demo tenant). The
+// password is deployment-specific and MUST be supplied via E2E_VENDOR_PASSWORD —
+// it is never committed (secret-scanning gate). Both are overridable per env.
+const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
 const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 /**
@@ -57,11 +59,24 @@ async function vendorLogin(page: Page) {
   if ((await ssoButton.count()) === 0) {
     test.skip(true, "No sign-in method found on /auth/signin — unknown auth flow")
   }
+  await ssoButton.waitFor({ state: "visible", timeout: 10_000 })
+  // Let React hydrate before clicking — a click on `domcontentloaded` can land
+  // before the onClick handler is attached and silently no-op (login hangs).
+  await page.waitForLoadState("networkidle").catch(() => {})
+  await page.waitForTimeout(400)
   await ssoButton.click()
 
   // A live Keycloak SSO cookie can skip the hosted form and land straight on
-  // /dashboard — handle both arrivals.
-  await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 15_000 })
+  // /dashboard — handle both arrivals. Retry once if the first click raced
+  // hydration (we are still sitting on /auth/signin).
+  try {
+    await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 20_000 })
+  } catch {
+    if (page.url().includes("/auth/signin")) {
+      await ssoButton.click({ force: true }).catch(() => {})
+    }
+    await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 20_000 })
+  }
   if (!page.url().includes("/dashboard")) {
     await page.fill("#username", VENDOR_USERNAME)
     await page.fill("#password", VENDOR_PASSWORD)
@@ -104,6 +119,19 @@ const shopsResponse = {
 }
 
 const emptyPage = { content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 }
+
+// The finance summary is an OBJECT, not a Page. The dashboard reads
+// `financialSummary.vatBreakdown.map(...)` and the finance page reads the
+// *Pennies fields, so the empty-Page catch-all shape makes them throw during
+// render → the route error boundary ("Dashboard error"). Stub the real shape.
+const financialSummaryResponse = {
+  totalRevenuePennies: 0,
+  totalExpensesPennies: 0,
+  netAmountPennies: 0,
+  totalVatPennies: 0,
+  transactionCount: 0,
+  vatBreakdown: [],
+}
 
 const orderSummaryResponse = {
   content: [
@@ -191,6 +219,11 @@ async function setupStubs(context: BrowserContext) {
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shopsResponse) })
   )
 
+  // Finance summary (object shape) — must win over the empty-Page catch-all.
+  await context.route(`${API}/api/v1/financial-transactions/summary`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(financialSummaryResponse) })
+  )
+
   await context.route(`${API}/api/v1/orders?**`, (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(orderSummaryResponse) })
   )
@@ -212,6 +245,12 @@ async function setupStubs(context: BrowserContext) {
 }
 
 test.describe("Dashboard mobile shell (390px)", () => {
+  // This is inherently a 390px phone-shell contract (bottom tab bar visible,
+  // 256px sidebar hidden). Pin the viewport so it is exercised correctly under
+  // BOTH the `mobile` and `desktop` Playwright projects — at a 1440px desktop
+  // viewport the tab bar hides and the sidebar shows, which would be a false red.
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true })
+
   test.beforeEach(async ({ context, page }) => {
     // Stub the API data first (no effect on the Keycloak login origin), then
     // perform the real vendor sign-in so the server-side dashboard auth gate
@@ -237,16 +276,28 @@ test.describe("Dashboard mobile shell (390px)", () => {
       if (route.titleHasH1) {
         const h1 = page.locator("main h1").first()
         await expect(h1).toBeVisible({ timeout: 10_000 })
-        const metrics = await h1.evaluate((el) => ({
-          scrollWidth: el.scrollWidth,
-          clientWidth: el.clientWidth,
-        }))
+        const metrics = await h1.evaluate((el) => {
+          const cs = getComputedStyle(el)
+          const lineHeight = parseFloat(cs.lineHeight) || el.clientHeight || 1
+          const main = el.closest("main") as HTMLElement | null
+          return {
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            // How many text lines the title wraps to.
+            lines: Math.max(1, Math.round(el.scrollHeight / lineHeight)),
+            // Width of the content column the title lives in.
+            mainWidth: main?.clientWidth ?? 0,
+          }
+        })
         // No forced horizontal overflow (+1px tolerance for sub-pixel rounding).
         expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
-        // The title column is wide, proving the sidebar is not stealing ~66%
-        // of the 390px viewport any more (old squeezed column was ~130px).
-        const box = await h1.boundingBox()
-        expect(box?.width ?? 0).toBeGreaterThanOrEqual(260)
+        // The title is NOT squeezed into a one-word-per-line column (the old bug
+        // wrapped titles vertically inside a ~130px column stolen by the sidebar).
+        expect(metrics.lines).toBeLessThanOrEqual(1)
+        // The content column is wide — the sidebar is not stealing ~66% of the
+        // 390px viewport any more. (h1 text width varies by title length, so we
+        // measure the column, not the shrink-wrapped h1 in its flex header.)
+        expect(metrics.mainWidth).toBeGreaterThanOrEqual(300)
       }
     })
   }
