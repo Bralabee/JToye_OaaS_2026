@@ -43,7 +43,7 @@ const statusConfig: Record<
   { label: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", bgColor: "bg-purple-500", icon: ChefHat },
+  PREPARING: { label: "Preparing", bgColor: "bg-amber-500", icon: ChefHat },
   READY: { label: "Ready", bgColor: "bg-green-500", icon: Package },
 }
 
@@ -56,7 +56,7 @@ interface BumpAction {
 }
 
 const bumpActions: Record<string, BumpAction> = {
-  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-purple-600 hover:bg-purple-700" },
+  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-amber-600 hover:bg-amber-700" },
   PREPARING: { label: "Mark Ready", endpoint: "mark-ready", color: "bg-green-600 hover:bg-green-700" },
   READY: { label: "Complete", endpoint: "complete", color: "bg-emerald-600 hover:bg-emerald-700" },
 }
@@ -72,10 +72,17 @@ function ageBorderClass(createdAt: string): string {
 
 // --- Elapsed time display ---
 
+// Cap/format the elapsed time so a stale order never renders raw uncapped
+// minutes (the old "2245m ago" bug, backlog #12): <1m → "just now",
+// <60m → "Xm ago", <24h → "Xh ago", ≥24h → "Xd ago".
 function elapsedText(createdAt: string): string {
-  const minutes = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
-  if (minutes < 1) return "<1m ago"
-  return `${minutes}m ago`
+  const totalMinutes = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+  if (totalMinutes < 1) return "just now"
+  if (totalMinutes < 60) return `${totalMinutes}m ago`
+  const totalHours = Math.floor(totalMinutes / 60)
+  if (totalHours < 24) return `${totalHours}h ago`
+  const totalDays = Math.floor(totalHours / 24)
+  return `${totalDays}d ago`
 }
 
 // --- Audio beep ---
@@ -420,12 +427,12 @@ export default function KitchenPage() {
                 className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
               >
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-2xl font-bold">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="min-w-0 truncate text-lg font-semibold">
                       {order.orderNumber || `#${order.id.substring(0, 6)}`}
                     </CardTitle>
                     {config && (
-                      <Badge className={`${config.bgColor} flex items-center gap-1 text-white`}>
+                      <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
                         <StatusIcon className="h-3 w-3" />
                         {config.label}
                       </Badge>

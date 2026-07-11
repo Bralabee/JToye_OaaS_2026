@@ -12,7 +12,33 @@ const DIMENSION_REQUIREMENTS = {
 
 /** Max dimension before we compress — keeps uploads fast and storage lean */
 const MAX_DIMENSION = 1600
+/** First rung of the JPEG quality ladder (best visual quality). */
 const JPEG_QUALITY = 0.85
+
+/**
+ * Authoritative upload cap, mirrored from the server so we never POST a file the
+ * server will reject. Keep in sync with core-java application.yml:
+ *   spring.servlet.multipart.max-file-size: 5MB
+ *   storage.max-file-size-bytes: 5242880
+ * The server is the source of truth — do NOT relax this client mirror.
+ */
+export const SERVER_MAX_BYTES = 5 * 1024 * 1024
+
+/**
+ * Browser-safety cap. This is NOT the upload limit — it only guards the canvas
+ * decoder from absurdly large files that could exhaust browser memory/CPU before
+ * compression even gets a chance. Normal phone photos (12-20MB) sit well under it.
+ */
+export const BROWSER_SAFETY_MAX_BYTES = 50 * 1024 * 1024
+
+/**
+ * JPEG re-encode quality ladder. Compression steps down through these rungs until
+ * the output fits under SERVER_MAX_BYTES, trading a little quality for size only
+ * when a file is stubbornly large.
+ */
+export const JPEG_QUALITY_LADDER = [JPEG_QUALITY, 0.75, 0.65]
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 
 export interface AiSuggestions {
   identifiedName?: string
@@ -37,6 +63,75 @@ interface ImageUploaderProps {
 }
 
 /**
+ * Pure type gate. Returns an error string for unsupported types, else null.
+ * DOM-free so it is unit-testable without a browser.
+ */
+export function validateFileType(fileType: string): string | null {
+  if (!ALLOWED_TYPES.includes(fileType)) {
+    return "Invalid file type. Use JPEG, PNG, WebP, or GIF."
+  }
+  return null
+}
+
+/**
+ * Pure door gate that runs BEFORE compression. Its job is only to reject files
+ * that compression genuinely cannot rescue — it must let normal large phone
+ * photos (12-20MB) through so the canvas pipeline can shrink them.
+ *
+ * Rules:
+ *  (a) Animated GIFs cannot survive canvas compression (animation is lost), so
+ *      the 5MB server cap is firm for GIFs and enforced up front.
+ *  (b) Any file above the 50MB browser-safety cap is rejected honestly — we do
+ *      not promise compression we cannot safely deliver on a huge file.
+ *  (c) Everything else passes; the 5MB enforcement happens AFTER compression.
+ *
+ * DOM-free (reads only file.type / file.size) so it is unit-testable.
+ */
+export function preflightSizeGate(file: { type: string; size: number }): string | null {
+  if (file.type === "image/gif" && file.size > SERVER_MAX_BYTES) {
+    return "Animated GIFs can't be compressed without losing their animation, so the 5MB limit is firm for GIFs. Please upload a GIF under 5MB, or use a JPEG or PNG."
+  }
+  if (file.size > BROWSER_SAFETY_MAX_BYTES) {
+    return "That image is too large to process in your browser (over 50MB). Please choose an image under 50MB."
+  }
+  return null
+}
+
+/**
+ * Pure encoding policy. Decides the output type and JPEG quality ladder for the
+ * canvas orchestrator:
+ *  - GIF -> keep as GIF, no re-encode (animation must be preserved).
+ *  - PNG WITH transparency -> keep as lossless PNG (JPEG has no alpha channel).
+ *  - Everything else (JPEG, WebP, and NON-transparent PNG) -> JPEG with the
+ *    quality ladder (JPEG is the right format for opaque photos).
+ * DOM-free so it is unit-testable.
+ */
+export function chooseEncoding(
+  fileType: string,
+  hasAlpha: boolean
+): { type: string; qualities: number[] } {
+  if (fileType === "image/gif") {
+    return { type: "image/gif", qualities: [] }
+  }
+  if (fileType === "image/png" && hasAlpha) {
+    return { type: "image/png", qualities: [] }
+  }
+  return { type: "image/jpeg", qualities: JPEG_QUALITY_LADDER }
+}
+
+/**
+ * Pure server-limit enforcement, applied to the COMPRESSED result. Returns an
+ * honest error when compression could not get the image under the 5MB server
+ * cap, else null. DOM-free so it is unit-testable.
+ */
+export function enforceServerLimit(sizeBytes: number): string | null {
+  if (sizeBytes > SERVER_MAX_BYTES) {
+    return "We couldn't compress this image under the 5MB upload limit. Please try a smaller image."
+  }
+  return null
+}
+
+/**
  * Load an image file into an HTMLImageElement to read its dimensions.
  */
 function loadImage(file: File): Promise<HTMLImageElement> {
@@ -49,21 +144,56 @@ function loadImage(file: File): Promise<HTMLImageElement> {
 }
 
 /**
- * Compress and resize an image using canvas.
- * - Scales down to MAX_DIMENSION if larger
- * - Outputs as JPEG at JPEG_QUALITY (unless PNG with transparency needed)
+ * Sample a 2D canvas and report whether any pixel is even partially transparent.
+ * Canvas-dependent, so it stays internal and is not unit-tested in jsdom.
+ */
+function hasAlphaChannel(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): boolean {
+  const { data } = ctx.getImageData(0, 0, width, height)
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Encode a canvas to a Blob at the given type/quality, promisified.
+ */
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality?: number
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
+}
+
+/**
+ * Compress and resize an image using canvas — the orchestrator that turns a big
+ * phone photo into an upload-sized file.
+ *  - GIFs reaching here are already <= 5MB (preflight rejects larger); returned
+ *    unchanged so animation is preserved.
+ *  - Dimensions are only ever shrunk to MAX_DIMENSION, never upscaled.
+ *  - Non-transparent PNGs are re-encoded as JPEG; JPEG quality steps down through
+ *    the ladder until the output fits under the 5MB server cap.
+ * The final 5MB enforcement lives in handleFile via enforceServerLimit — this
+ * function does its best and never upscales to try harder.
  */
 async function compressImage(file: File): Promise<File> {
-  const img = await loadImage(file)
-  const { naturalWidth: w, naturalHeight: h } = img
-
-  // Skip compression for small images or GIFs (animation lost on canvas)
-  if ((w <= MAX_DIMENSION && h <= MAX_DIMENSION && file.size < 500_000) || file.type === "image/gif") {
-    URL.revokeObjectURL(img.src)
+  // Animated GIFs cannot be redrawn without losing animation. Preflight already
+  // guaranteed GIFs here are within the server cap, so pass through untouched.
+  if (file.type === "image/gif") {
     return file
   }
 
-  // Calculate target dimensions (maintain aspect ratio)
+  const img = await loadImage(file)
+  const { naturalWidth: w, naturalHeight: h } = img
+
+  // Only shrink; never upscale. Keep native size when already within bounds.
   let targetW = w
   let targetH = h
   if (w > MAX_DIMENSION || h > MAX_DIMENSION) {
@@ -79,25 +209,40 @@ async function compressImage(file: File): Promise<File> {
   ctx.drawImage(img, 0, 0, targetW, targetH)
   URL.revokeObjectURL(img.src)
 
-  // Output as JPEG (best compression for photos) unless PNG is needed for transparency
-  const outputType = file.type === "image/png" ? "image/png" : "image/jpeg"
-  const quality = outputType === "image/jpeg" ? JPEG_QUALITY : undefined
+  // Transparency only matters for PNG (the one lossless-with-alpha format we keep).
+  const hasAlpha = file.type === "image/png" ? hasAlphaChannel(ctx, targetW, targetH) : false
+  const plan = chooseEncoding(file.type, hasAlpha)
 
-  return new Promise((resolve) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          resolve(file) // Fallback to original
-          return
-        }
-        const ext = outputType === "image/png" ? ".png" : ".jpg"
-        const name = file.name.replace(/\.[^.]+$/, ext)
-        resolve(new File([blob], name, { type: outputType }))
-      },
-      outputType,
-      quality
-    )
-  })
+  const toFile = (blob: Blob, type: string): File => {
+    const ext = type === "image/png" ? ".png" : ".jpg"
+    const name = file.name.replace(/\.[^.]+$/, ext)
+    return new File([blob], name, { type })
+  }
+
+  // Transparent PNG: single lossless encode, no quality ladder.
+  if (plan.qualities.length === 0) {
+    const blob = await canvasToBlob(canvas, plan.type)
+    return blob ? toFile(blob, plan.type) : file
+  }
+
+  // JPEG ladder: step down quality until the output fits under the server cap.
+  // Track the smallest blob produced so we can return it if none fit — we never
+  // upscale or raise dimensions; handleFile's enforceServerLimit rejects honestly.
+  let smallest: Blob | null = null
+  for (const quality of plan.qualities) {
+    const blob = await canvasToBlob(canvas, plan.type, quality)
+    if (!blob) {
+      continue
+    }
+    if (!smallest || blob.size < smallest.size) {
+      smallest = blob
+    }
+    if (blob.size <= SERVER_MAX_BYTES) {
+      return toFile(blob, plan.type)
+    }
+  }
+
+  return smallest ? toFile(smallest, plan.type) : file
 }
 
 export function ImageUploader({
@@ -133,18 +278,22 @@ export function ImageUploader({
       setError(null)
       setImgBroken(false)
 
-      // Type check
-      const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"]
-      if (!allowed.includes(file.type)) {
-        setError("Invalid file type. Use JPEG, PNG, WebP, or GIF.")
-        return
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        setError("File too large. Maximum 10MB (will be compressed before upload).")
+      // 1. Type gate.
+      const typeError = validateFileType(file.type)
+      if (typeError) {
+        setError(typeError)
         return
       }
 
-      // Dimension validation
+      // 2. Door gate — browser-safety cap only. This lets normal large phone
+      // photos through; the 5MB server cap is enforced AFTER compression.
+      const preflightError = preflightSizeGate(file)
+      if (preflightError) {
+        setError(preflightError)
+        return
+      }
+
+      // 3. Dimension validation.
       try {
         const img = await loadImage(file)
         const { naturalWidth: w, naturalHeight: h } = img
@@ -161,16 +310,26 @@ export function ImageUploader({
         return
       }
 
-      // Show local preview immediately
+      // 4. Show local preview immediately.
       const objectUrl = URL.createObjectURL(file)
       setPreview(objectUrl)
       setUploading(true)
       setProgress(0)
 
       try {
-        // Compress before upload
+        // 5. Compress before the size gate.
         const compressed = await compressImage(file)
 
+        // 6. Enforce the 5MB server cap on the compressed result. If it still
+        // does not fit, reject honestly and do NOT POST an oversized multipart.
+        const overLimit = enforceServerLimit(compressed.size)
+        if (overLimit) {
+          setError(overLimit)
+          setPreview(null)
+          return
+        }
+
+        // 7. Upload the compressed file.
         const formData = new FormData()
         formData.append("file", compressed)
 

@@ -42,7 +42,13 @@ export default function StorefrontLayout({
             <p className="text-sm text-slate-500">
               &copy; {new Date().getFullYear()} J&apos;Toye OaaS. All rights reserved.
             </p>
-            <div className="flex gap-6 text-sm text-slate-500">
+            <div className="flex items-center gap-6 text-sm text-slate-500">
+              <Link
+                href="/for-operators"
+                className="transition-colors hover:text-slate-900"
+              >
+                For operators
+              </Link>
               <span>Allergen info available on all products</span>
             </div>
           </div>

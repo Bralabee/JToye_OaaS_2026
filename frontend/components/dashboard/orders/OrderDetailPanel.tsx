@@ -54,7 +54,7 @@ const STATUS_CONFIG: Record<OrderStatus, StatusUiConfig> = {
   DRAFT:     { label: "Draft",     bgColor: "bg-slate-500",   icon: Clock },
   PENDING:   { label: "Pending",   bgColor: "bg-yellow-500",  icon: Clock },
   CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500",    icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", bgColor: "bg-purple-500",  icon: ChefHat },
+  PREPARING: { label: "Preparing", bgColor: "bg-amber-500",  icon: ChefHat },
   READY:     { label: "Ready",     bgColor: "bg-green-500",   icon: PackageIcon },
   COMPLETED: { label: "Completed", bgColor: "bg-emerald-600", icon: FileCheck },
   CANCELLED: { label: "Cancelled", bgColor: "bg-red-500",     icon: XCircle },
@@ -206,6 +206,42 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
               <p className="break-all font-mono text-xs text-slate-700">
                 {order.paymentReference}
               </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Fulfilment block — delivery/collection + (for delivery) the address.
+          Read-only render of PII (T-19-07-01): the address is never logged. */}
+      {order.fulfilmentType && (
+        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Fulfilment
+            </p>
+            <p className="font-medium text-slate-900">
+              {order.fulfilmentType === "COLLECTION" ? "Collection" : "Delivery"}
+            </p>
+          </div>
+          {order.fulfilmentType === "DELIVERY" && (
+            <div data-testid="delivery-address">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Delivery address
+              </p>
+              <address className="text-sm not-italic text-slate-700">
+                {order.addressLine1 && (
+                  <span className="block">{order.addressLine1}</span>
+                )}
+                {order.addressLine2 && (
+                  <span className="block">{order.addressLine2}</span>
+                )}
+                {order.addressCity && (
+                  <span className="block">{order.addressCity}</span>
+                )}
+                {order.addressPostcode && (
+                  <span className="block font-medium">{order.addressPostcode}</span>
+                )}
+              </address>
             </div>
           )}
         </div>

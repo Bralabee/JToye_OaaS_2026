@@ -265,8 +265,25 @@ export async function handleCallback(
     // cookie payload + localStorage marker and make isLoggedIn() always false).
     const expiresAt = Math.floor(Date.now() / 1000) + (Number(data.expires_in) || 300)
 
-    // Hand tokens to the server — they become HttpOnly cookies and then the
-    // access/refresh/id strings never touch JS again.
+    // Decode the ID token and verify the replay `nonce` BEFORE any cookie is
+    // set (WR-04). The previous ordering established the HttpOnly session
+    // first and only then checked the nonce — so a replayed/mixed-up token
+    // still yielded a live session, and the defence merely hid the UI profile.
+    // A missing stored nonce is also a hard reject: customerLogin/
+    // customerRegister always stash one, so its absence means this callback
+    // was not initiated by us.
+    const payload = decodeJwtPayload(data.id_token)
+    if (!payload) {
+      clearAuthTransients()
+      return null
+    }
+    if (!storedNonce || payload.nonce !== storedNonce) {
+      clearAuthTransients()
+      return null
+    }
+
+    // Nonce verified — NOW hand tokens to the server. They become HttpOnly
+    // cookies and the access/refresh/id strings never touch JS again.
     const loginRes = await fetch("/api/customer-auth/login", {
       method: "POST",
       credentials: "include",
@@ -281,16 +298,6 @@ export async function handleCallback(
       }),
     })
     if (!loginRes.ok) return null
-
-    // Decode ID token to get profile for returning to the caller (non-sensitive).
-    // Use a base64url-safe, UTF-8-aware decode so accented names don't throw.
-    const payload = decodeJwtPayload(data.id_token)
-    if (!payload) return null
-
-    // Replay defence: the id_token must carry back the exact `nonce` we sent in
-    // the authorization request. A missing/mismatched nonce means the token is
-    // not the one minted for this login attempt.
-    if (storedNonce && payload.nonce !== storedNonce) return null
 
     const profile: CustomerProfile = {
       sub: payload.sub ?? "",
@@ -312,6 +319,13 @@ export async function handleCallback(
  * Fetch the current customer session from the server (cookie-backed).
  * Returns null when the customer is not logged in or the session expired.
  *
+ * The probe (/api/customer-auth/session) returns HTTP 200 with
+ * `{ authenticated: false }` for the no-session/expired case — NOT 401 — so the
+ * browser does not log a failed request on every anonymous public page view
+ * (#13). We therefore key the "logged out" decision off the body's
+ * `authenticated` flag, not the HTTP status. The `!res.ok` branch stays as a
+ * defensive fallback for genuine server/network errors (5xx) only.
+ *
  * NOTE: This is async. Components that need the profile should `await` it
  * in a `useEffect`. For "should I render the nav as logged in" synchronous
  * checks, use `isLoggedIn()`.
@@ -323,6 +337,8 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
       cache: "no-store",
     })
     if (!res.ok) {
+      // Defensive fallback: an unexpected 5xx/network error, not the normal
+      // logged-out path (which now arrives as 200 { authenticated: false }).
       clearMarker()
       return null
     }

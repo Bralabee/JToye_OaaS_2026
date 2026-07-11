@@ -69,6 +69,41 @@ The vendor-onboarding first slice (Phase 18): a tenant can self-onboard through 
 - [x] **VOB-04**: FHRS min-rating threshold + both provider API base URLs injected via `onboarding.*` config (`${ENV:default}`), never literals; the Companies House key is redacted in `toString` and never logged. **DONE 2026-07-11 — Phase 18 (Plan 18-01).**
 - [x] **VOB-05**: Test coverage (state-machine, RLS Testcontainers, gate evaluators, `onboarding.auto-approve` toggle both ways, cross-gate fully-automatic e2e) + `docs/metrics.json` reconciliation keeping the `docs-freshness` CI gate green (schema 43, 15 controllers). **DONE 2026-07-11 — Phase 18 (Plans 18-01..18-06).**
 
+### Experience overhaul (UIX) — v2.3 — added 2026-07-11
+
+The full-frontend experience overhaul (Phase 19): close the 15-item remediation backlog from the whole-app UI audit (`phases/18-vendor-onboarding-first-slice/18-UI-REVIEW.md`, whole-app 42/72) so every visitor lands on a coherent, comparator-grade product on mobile first. Requirements registered verbatim from the ROADMAP Phase 19 success criteria; palette stays orange/emerald/slate (the editorial/serif redesign of PR #49 was explicitly rejected). All delivered across the 9 plans of Phase 19.
+
+- [x] **UIX-01**: `/` renders a public landing page (no blind redirect) routing the 3 personas: order food → shop directory, run your food business → `/for-operators`, sign in → dashboard; a shared public header/footer connects `/`, `/for-operators`, `/business-model-guide`, `/track`, `/shop` — zero orphan routes (every route ≥1 inbound nav link, verified by a link-graph test). Closes backlog #4 (no landing page), #5 (orphan routes / cross-links), #9 (`/track` guest lookup, shared with UIX via 19-05), #7 (marketing hardcoded-hex re-skin onto tokens). **DONE 2026-07-11 — Phase 19 (Plans 19-03 public shell + persona landing + link-graph guard; 19-05 marketing token re-skin + `/track` guest lookup + PublicShell).**
+- [x] **UIX-02**: All 11 dashboard routes usable at 390px (the fixed `w-64` sidebar collapses to a drawer/bottom nav under `md:`); the Playwright mobile-viewport spec passes. Closes backlog #1 (no responsive sidebar). **DONE 2026-07-11 — Phase 19 (Plan 19-04 mobile bottom tab bar + desktop-only sidebar + `e2e/dashboard-mobile.spec.ts`).**
+- [x] **UIX-03**: Kitchen display and order detail show real product names on live orders — the `OrderItem` snapshot is populated at order creation; "Unknown Product" never renders for a product that exists. Closes backlog #2 (Unknown Product), #8 (kitchen badge clip), #12 (KDS elapsed cap). **DONE 2026-07-11 — Phase 19 (Plan 19-01 `OrderItem.productName` snapshot at creation + backfill + audited-write proof; Plan 19-07 kitchen/order-detail real-name render + badge-clip fix + elapsed cap + e2e).**
+- [x] **UIX-04**: Checkout collects a delivery address (persisted via Flyway V45 — V44 stays reserved for #96) and shows the fee breakdown (subtotal + delivery + VAT) BEFORE payment; the Playwright checkout e2e is updated. Closes backlog #3 (no address / fee hidden until after pay). **DONE 2026-07-11 — Phase 19 (Plan 19-01 V45 fulfilment/address backend + GDPR address scrub; Plan 19-06 checkout fulfilment toggle + UK address + fee-before-pay + storefront e2e).**
+- [x] **UIX-05**: Each shop renders its own menu: seeded/live products are assigned `shop_id`, and the `ProductRepository` `IS NULL` fallback behaviour is resolved deliberately (scoping dropped the cross-shop bleed; tenant-wide items are not silently duplicated). Closes backlog #6 (multi-shop product bleed) and the duplicate-menu-rows part of #15. **DONE 2026-07-11 — Phase 19 (Plan 19-02 strict per-shop product scoping + dev-profile `DemoDataSeeder` (realistic UK data, `shop_id` assigned) + Testcontainers isolation).**
+- [x] **UIX-06**: All 15 audit backlog items closed or explicitly deferred with reason; the existing 921 logical test invocations stay green (grow, not regress); the palette stays orange/emerald/slate (no editorial/serif redesign). Closes backlog #10 (purple hue), #11 (`text-[10px]`), #13 (401 console spam); documents #14 (error boundary) as LEAVE-AS-IS; and is the closure gate for the whole set. **DONE 2026-07-11 — Phase 19 (Plan 19-07 kitchen render; Plan 19-08 purple→amber/blue + sub-12px sweep + VERIFY-FIRST 401 quiet + palette-discipline test; Plan 19-09 closure — registration + docs-freshness reconcile + full gate + browser UAT).**
+
+#### 15-item backlog closure (18-UI-REVIEW.md § Remediation Backlog)
+
+Every one of the 15 audit backlog items maps to a closing plan, or is a documented leave-as-is / deferred edge case:
+
+| # | Severity | Finding | Closing plan(s) / disposition |
+|---|----------|---------|-------------------------------|
+| 1 | Blocker | No responsive sidebar (all 11 dashboard routes) | 19-04 (mobile bottom tab bar + desktop-only sidebar) |
+| 2 | Blocker | "Unknown Product" on real orders | 19-01 (populate `OrderItem.productName` at creation + backfill) + 19-07 (kitchen/order-detail render) |
+| 3 | Blocker | Checkout: no address, fee hidden until after pay | 19-01 (V45 fulfilment/address backend) + 19-06 (address + fee-before-pay UI) |
+| 4 | Blocker | No public landing page (`/` → login wall) | 19-03 (persona-routed landing page) |
+| 5 | Blocker | Orphan routes; no cross-surface nav | 19-03 (public shell + link-graph orphan guard) + 19-05 (PublicShell cross-links) |
+| 6 | Critical | Multi-shop product bleed / duplicated menus | 19-02 (strict `shop_id` scoping + clean re-seed) |
+| 7 | Major | Marketing pages hardcode hex, bypass tokens | 19-05 (re-skin `operator-pitch`/`business-model-guide` onto palette tokens) |
+| 8 | Major | Kitchen card status badge clipped on wrapped IDs | 19-07 (badge-clip fix) |
+| 9 | Major | `/track` forces sign-in, no guest lookup | 19-05 (guest `/track` order-number + email lookup, no auth wall) |
+| 10 | Minor | Undocumented purple hue | 19-08 (purple → amber/blue on the semantic palette) |
+| 11 | Minor | `text-[10px]` off-scale (36× / 9 files) | 19-08 (sub-12px sweep → `text-xs`) |
+| 12 | Minor | KDS elapsed time uncapped ("2245m ago") | 19-07 (elapsed cap → hours/days) |
+| 13 | Minor | Repeated expected-401 console spam | 19-08 (VERIFY-FIRST customer-session 401→200 quiet handling) |
+| 14 | Minor | Generic global error-boundary copy | **LEAVE-AS-IS** — acceptable last-resort fallback per `19-UI-SPEC.md` § Interaction Contracts; no code task. `app/error.tsx` intentionally unchanged. |
+| 15 | Minor | Demo/seed data pollution (names, images, dupes) | 19-02 (realistic UK shop/product/customer names + dedupe). **Image sub-finding:** addressed via the SafeImage branded fallback per `19-UI-SPEC.md` Surface G — **no product photography was added** (fallback-not-photography; not rolled up as a blanket close). |
+
+**Deferred edge case (RESEARCH OQ3).** Collection-only shops / minimum-order interplay with the fulfilment toggle is outside the 15-item backlog's explicit scope and is an **accepted deferred edge case**: the toggle ships with **Delivery as default + Collection selectable for all shops**; forcing Collection for no-delivery shops is not implemented this phase (documented in `19-RESEARCH.md` OQ3).
+
 ## Future Requirements
 
 Deferred to v2.3+. These roll over from HANDOFF.md P2 + Work Orders that v2.2 didn't scope.
@@ -149,10 +184,16 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | VOB-03 | Phase 18 (Plan 18-05) | Complete (2026-07-11) |
 | VOB-04 | Phase 18 (Plan 18-01) | Complete (2026-07-11) |
 | VOB-05 | Phase 18 (Plans 18-01..18-06) | Complete (2026-07-11) |
+| UIX-01 | Phase 19 (Plans 19-03, 19-05) | Complete (2026-07-11) |
+| UIX-02 | Phase 19 (Plan 19-04) | Complete (2026-07-11) |
+| UIX-03 | Phase 19 (Plans 19-01, 19-07) | Complete (2026-07-11) |
+| UIX-04 | Phase 19 (Plans 19-01, 19-06) | Complete (2026-07-11) |
+| UIX-05 | Phase 19 (Plan 19-02) | Complete (2026-07-11) |
+| UIX-06 | Phase 19 (Plans 19-07, 19-08, 19-09) | Complete (2026-07-11) |
 
 **Coverage:**
-- v1 requirements: 11 + 5 (AUDIT-W0) + 5 (VOB) = 21 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3 + VOB ×5)
-- Mapped to phases: 21 (phases 12–18 incl. inserted 16.1)
+- v1 requirements: 11 + 5 (AUDIT-W0) + 5 (VOB) + 6 (UIX) = 27 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3 + VOB ×5 + UIX ×6)
+- Mapped to phases: 27 (phases 12–19 incl. inserted 16.1)
 - Unmapped: 0 ✓
 
 ---
@@ -160,3 +201,4 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 *Last updated: 2026-04-18 — initial scope for milestone v2.2*
 *Last updated: 2026-04-27 — registered AUDIT-W0-01..05 retrospectively from the 2026-04-27 council audit (Phase 16.1 closure).*
 *Last updated: 2026-07-11 — registered VOB-01..05 (vendor onboarding first slice, Phase 18 closure).*
+*Last updated: 2026-07-11 — registered UIX-01..06 (full-frontend experience overhaul, Phase 19 closure); 15-item UI-audit backlog closed/deferred (#14 LEAVE-AS-IS, #15 image sub-finding = SafeImage fallback not photography, RESEARCH OQ3 deferred edge case).*

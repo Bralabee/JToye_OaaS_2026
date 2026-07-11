@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { User, LogOut, Package } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { User, LogOut, Package, MapPin } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { getCustomerSession, customerLogin, customerLogout } from "@/lib/customer-auth"
 
 interface CustomerProfile {
@@ -12,6 +14,9 @@ interface CustomerProfile {
 
 export function StorefrontNav() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  const pathname = usePathname()
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`)
 
   const checkSession = useCallback(async () => {
     const session = await getCustomerSession()
@@ -56,9 +61,26 @@ export function StorefrontNav() {
     <nav className="flex items-center gap-3 sm:gap-4 text-sm">
       <Link
         href="/shop"
-        className="text-slate-600 hover:text-slate-900 transition-colors"
+        className={cn(
+          "transition-colors",
+          isActive("/shop") && pathname === "/shop"
+            ? "text-slate-900 font-semibold"
+            : "text-slate-600 hover:text-slate-900"
+        )}
       >
         Browse
+      </Link>
+      <Link
+        href="/track"
+        className={cn(
+          "flex items-center gap-1 transition-colors",
+          isActive("/track")
+            ? "text-slate-900 font-semibold"
+            : "text-slate-600 hover:text-slate-900"
+        )}
+      >
+        <MapPin className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Track order</span>
       </Link>
       {profile && (
         <Link

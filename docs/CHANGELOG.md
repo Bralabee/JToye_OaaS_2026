@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Full-frontend experience overhaul (Phase 19) — 2026-07-11
+
+The whole-app UI overhaul that closes the 15-item remediation backlog from the full-frontend audit (`18-UI-REVIEW.md`, whole-app 42/72). Every visitor now lands on a coherent, comparator-grade product on mobile first: a real front door routes the three personas, every route is reachable, checkout can take an address and shows the fee before payment, the kitchen display names what to cook, and each shop shows its own menu. Registered **UIX-01..06**. Palette stayed orange/emerald/slate (the editorial/serif redesign of PR #49 was explicitly rejected). Test baseline **921 → 988 logical invocations** (703 Java `@Test` + 182 Jest + 75 Go + 28 Playwright); schema **V43 → V45** (V44 stays reserved for #96). 9 plans across 4 waves on `feature/19-ui-overhaul`.
+
+#### Added
+- **Public landing page + shared shell + de-orphaned IA (UIX-01).** `/` renders a persona-routed landing page instead of blind-redirecting to the login wall: order food → shop directory, run your food business → `/for-operators`, sign in → dashboard. A shared `PublicShell` header/footer cross-links `/`, `/for-operators`, `/business-model-guide`, `/track`, `/shop`; a static **link-graph orphan guard** test asserts every route has ≥1 inbound nav link. The two hand-rolled marketing palettes were re-skinned onto the design tokens (no more hardcoded hex), and `/track` gained a guest order-number + email lookup (no auth wall). (Plans 19-03, 19-05)
+- **Responsive dashboard shell (UIX-02).** The fixed `w-64` sidebar now collapses under `md:` to a mobile bottom tab bar (4 tabs + a More sheet); all 11 dashboard routes are usable at 390px. Playwright `e2e/dashboard-mobile.spec.ts` pins the mobile viewport. (Plan 19-04)
+- **Real product names on live orders (UIX-03).** `OrderItem.productName` is now snapshotted at order creation (was defaulting to the `"Unknown Product"` fallback), with a backfill of affected rows and an audited-write proof; the kitchen display and order-detail page render the real names, the status badge no longer clips on wrapped order IDs, and elapsed time is capped to hours/days. (Plans 19-01, 19-07)
+- **Checkout address + fee-before-payment (UIX-04).** `V45__order_fulfilment_address.sql` adds fulfilment type + UK delivery address (with `orders_aud` mirror and GDPR address scrub wired into erasure). Checkout gained a Delivery/Collection toggle, a UK address form, and the Subtotal + Delivery + VAT + Total breakdown now shows **before** payment (the "confirmed after order" footnote is gone). Storefront checkout e2e updated. (Plans 19-01, 19-06)
+- **Per-shop menus (UIX-05).** `ProductRepository` dropped the `shopId IS NULL` fallback that leaked tenant-wide products into every shop; products are scoped strictly by `shop_id`, proven by a Testcontainers isolation test. A dev-profile `DemoDataSeeder` seeds three realistic UK shops with per-shop products and credible customer names (no more `Test Shop`/duplicate rows). (Plan 19-02)
+
+#### Fixed
+- **Palette + type + console discipline (UIX-06).** Removed the undocumented purple hue (`Preparing` status + Finance VAT bar → amber/blue on the semantic palette), swept the 36× `text-[10px]` off-scale size up to `text-xs`, and quieted the repeated expected-401 console spam from customer-session probing (VERIFY-FIRST 401→200 handling). A palette-discipline test guards against regressions. (Plans 19-07, 19-08)
+
+#### Closure gate (19-09)
+- **Pristine demo data + live E2E green.** `DemoDataSeeder` was rewritten to UPSERT-and-enrich the three curated shops (cuisine tags, branded logos, featured "Popular" items, Halal/dietary tags) and to **quarantine every non-curated product into a hidden archive shop** — removing the duplicate `Jollof Rice`/`Fried Plantain` line items and placeholder junk (`Label Cake 057999`, `Validation Shop`) that violated UIX-05. The live Playwright suite was triaged from **48 → 0 in-scope failures** against the freshly-rebuilt stack (real `admin-user` SSO with a hydration-safe login; seeded-shop targeting; Surface-H `/track` guest lookup; SafeImage image contract; no-Stripe COD checkout). Full gate green: backend `test`+`integrationTest`, jest (177) + `next build`, all four UIX grep gates, and `docs-freshness` (988, schema V45). Residual: the Phase-18 customer B2C self-registration E2E (`storefront-client` PKCE) — a pre-existing customer-auth flow, not a UIX-01..06 criterion (tracked in `deferred-items.md`).
+
+#### Deferred / leave-as-is
+- **Backlog #14 (generic error-boundary copy) — LEAVE-AS-IS.** Acceptable last-resort fallback per `19-UI-SPEC.md` § Interaction Contracts; `app/error.tsx` intentionally unchanged (no code task).
+- **Backlog #15 image sub-finding.** The "zero product images" note is addressed via the **SafeImage branded fallback** (per `19-UI-SPEC.md` Surface G) — **no product photography was added**; not rolled up as a blanket close.
+- **RESEARCH OQ3 (collection-only shops / minimum-order interplay) — deferred edge case.** The fulfilment toggle ships Delivery-default + Collection selectable for all shops; forcing Collection for no-delivery shops is out of the 15-item scope.
+
+### Onboarding approval stance + Stripe money-flow decisions (PR #180) — 2026-07-11
+
+- **feat(onboarding): model-aware auto-approve (#178 item 1).** New `onboarding.auto-approve-models` (default `[WHITE_LABEL]`, env `ONBOARDING_AUTO_APPROVE_MODELS`); `GateChainRunner` fires APPROVE on the global force-on flag OR the per-model policy, so WHITE_LABEL auto-approves on green gates while MARKETPLACE parks at `PENDING_APPROVAL` for a human (admin queue = #178 slice 2). Tests 918 → 921; no schema change.
+- **docs: ADR-0001** (`docs/architecture/decisions/`) records both product decisions: the hybrid approval stance above, and **Stripe Connect keyed to onboarding model** for #102 (destination charges for MARKETPLACE first, direct charges + application fee for WHITE_LABEL; implementation deferred to a future phase). State-model §9 item 1 → DECIDED; Phase 18 UAT item 5 → PASS (5/5).
+
 ### Vendor onboarding — first slice (Phase 18) — 2026-07-11
 
 The first slice of vendor self-onboarding: a tenant submits, three automatic compliance gates evaluate, and — when all pass — the onboarding auto-approves and the vendor can go live **without manual review**. Test baseline 802 → 918 logical invocations (873 at backend closure, +45 from the UI slice and the review-fix round); schema V42 → V43.

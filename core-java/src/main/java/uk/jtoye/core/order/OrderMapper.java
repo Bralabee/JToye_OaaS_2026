@@ -35,6 +35,13 @@ public interface OrderMapper {
     @Mapping(target = "paymentStatus", source = "paymentStatus")
     @Mapping(target = "paymentReference", source = "paymentReference")
     @Mapping(target = "paymentMethod", source = "paymentMethod")
+    // Fulfilment + delivery address (V45) so /dashboard/orders/[id] can render
+    // how + where the order is fulfilled.
+    @Mapping(target = "fulfilmentType", source = "fulfilmentType")
+    @Mapping(target = "addressLine1", source = "addressLine1")
+    @Mapping(target = "addressLine2", source = "addressLine2")
+    @Mapping(target = "addressCity", source = "addressCity")
+    @Mapping(target = "addressPostcode", source = "addressPostcode")
     // refunds is populated by OrderService.getOrderDetailById post-mapping —
     // the Refund aggregate lives in a different package and the mapper does
     // not depend on RefundService.

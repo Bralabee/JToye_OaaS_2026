@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: milestone_complete
-stopped_at: Milestone complete (Phase 18 was final phase)
-last_updated: 2026-07-11T05:36:03.937Z
-last_activity: 2026-07-11 -- Phase 18 execution started
+stopped_at: Milestone complete (Phase 19 was final phase)
+last_updated: 2026-07-11T20:36:47.571Z
+last_activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
 progress:
-  total_phases: 8
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 24
-  percent: 75
+  total_phases: 9
+  completed_phases: 7
+  total_plans: 31
+  completed_plans: 33
+  percent: 78
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 18
+Phase: 19
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-07-11 - Completed quick task 260711-bej: recorded onboarding auto-approve + Stripe Connect decisions; model-aware auto-approve shipped
+Last activity: 2026-07-11 - Completed quick task 260711-u22: image uploader compress-before-gate fix
 
 Progress: [██████████] 100%
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | 11 | 3 | - | - |
 | 17 | 4 | - | - |
 | 18 | 7 | - | - |
+| 19 | 9 | - | - |
 
 **Milestone v2.2 (executing):**
 
@@ -158,6 +159,7 @@ Recent decisions affecting current work:
 | 260710-s6d | Issue #89 P1-7: CSP enforce + drop script-src 'unsafe-inline' via nonce. Moved CSP from static next.config headers() into middleware.ts (per-request nonce + 'strict-dynamic', canonical Next recipe: x-nonce+CSP on request so Next stamps its scripts, enforcing by default, CSP_REPORT_ONLY opt-out) wrapped in NextAuth auth (matcher broadened; /dashboard still gated server-side, no authorized callback). New lib/security-headers.ts buildCsp() (testable, no unsafe-inline in script-src, style-src unsafe-inline kept per AC, upgrade-insecure-requests gated behind CSP_UPGRADE_INSECURE_REQUESTS off-by-default so local http+MinIO images work). CRITICAL live-E2E find: nonce can't reach statically-prerendered pages → their inline/chunk scripts blocked (homepage+dashboard failed first run); fixed via app/layout.tsx export const dynamic='force-dynamic' (app already mostly dynamic — only auth/utility pages were static). Reworked csp-headers.test + header-snapshot (+snap regen); metrics 105→109 jest / 771→775 total; CLAUDE.md count synced. PROOF: jest 108 green, build green (27 routes ƒ), curl shows enforcing CSP w/ nonce no unsafe-inline, Playwright csp-no-violations 6/6 green, storefront screenshot renders (11 imgs, 0 violations). Stripe 3DS verified by config only (allowlists intact, no live card). MERGED #166 → main 59cb1d4, #89 CLOSED | 2026-07-10 | 59cb1d4 | [260710-s6d-enforce-csp-by-default-drop-script-src-u](./quick/260710-s6d-enforce-csp-by-default-drop-script-src-u/) |
 | 260710-u1q | Issue #90 P1-8: k8s backup hardening. Root causes all confirmed: postgres:15-alpine busybox (GNU date -d/grep -oP fail under set -e), runtime apk add aws-cli (default-deny NetworkPolicy blocks), no BYPASSRLS role (FORCE RLS → app-role dump captures 0 tenant rows), CronJob referenced NON-EXISTENT resources (jtoye-secrets/jtoye-config vs real postgres-credentials/app-config → pod never started). Fix: new infra/backups/Dockerfile (postgres:15-bookworm + aws-cli + GNU baked) running new hardened infra/backups/k8s-backup.sh (custom-format, fail-loud, size-floor + pg_restore --list verify, empty-bucket-safe prune); infra/backups/create-backup-role.sql (least-priv jtoye_backup BYPASSRLS, SELECT tables+SEQUENCES — sequence grant added after live test caught revinfo_seq perm error); rewired cronjob to real secret/configmap + backup role; added backup-username/password + s3-backup-credentials + s3.backup.* keys (REPLACE_WITH placeholders). PROVEN LOCALLY end-to-end vs live pg+MinIO: AC#2 app-role=0/BYPASSRLS=25 products; AC#1 image runs exit0, 133KiB dump→MinIO S3; AC#3 seeded 2025 object PRUNED (job exit0); AC#4 restore drill S3→pg_restore scratch DB ~5s RTO, restored products=25/orders=57/customers=4/shops=10, RPO≤24h. kubectl kustomize builds (27 res), all env refs resolve, bash -n clean. PENDING (no cluster — AKS unreachable): in-cluster exit0 to PROD S3 + prod restore drill; image needs build+push to registry (not in CI). PR pending | 2026-07-10 | (pending) | [260710-u1q-harden-k8s-pg-backup-cronjob-bypassrls-d](./quick/260710-u1q-harden-k8s-pg-backup-cronjob-bypassrls-d/) |
 | 260711-bej | Two USER decisions recorded + code: (1) #178 item 1 auto-approve stance = HYBRID BY MODEL — new onboarding.auto-approve-models (default [WHITE_LABEL]) + OnboardingProperties.autoApprovesModel(); GateChainRunner fires APPROVE on global force-on OR per-model policy (two external calls preserve @SpyBean E2E path); WHITE_LABEL auto-approves on green gates, MARKETPLACE parks at PENDING_APPROVAL (admin queue = #178 slice 2). (2) #102 Stripe = CONNECT KEYED TO MODEL — destination charges MARKETPLACE / direct charges + app fee WHITE_LABEL, destination first in future phase, decision-only (no Stripe code). ADR-0001 seeded (docs/architecture/decisions/), state-model §9 item 1 DECIDED, 18-HUMAN-UAT item 5 PASS (5/5), decision comments on #178+#102 (both stay open). Tests 918→921 (693 Java @Test), docs-freshness green, no migration (V43) | 2026-07-11 | d936d6e | [260711-bej-record-onboarding-auto-approve-stripe-co](./quick/260711-bej-record-onboarding-auto-approve-stripe-co/) |
+| 260711-u22 | Fix image uploader: compress BEFORE size gate (preflight 50MB browser cap → canvas compress 1600px/0.85 → enforce 5MB server cap; non-transparent PNG→JPEG quality ladder 0.85/0.75/0.65; GIF-only 5MB hard limit; honest error copy). 13 new jest tests (190 total), metrics 988→1001 | 2026-07-11 | e6b202e | [260711-u22-fix-image-uploader-compress-before-size-](./quick/260711-u22-fix-image-uploader-compress-before-size-/) |
 
 ## Deferred Items
 
@@ -175,6 +177,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-07-11T03:21:17.699Z
-Stopped at: Phase 18 UI-SPEC approved; planning 18-07 UI slice
-Resume file: .planning/phases/18-vendor-onboarding-first-slice/18-UI-SPEC.md
+Last session: 2026-07-11 — Phase 19 closure (19-09) Task 2 full gate green; awaiting human UAT
+Stopped at: 19-09 Task 3 — human whole-app browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate)
+Resume file: .planning/phases/19-full-frontend-experience-overhaul/19-09-SUMMARY.md

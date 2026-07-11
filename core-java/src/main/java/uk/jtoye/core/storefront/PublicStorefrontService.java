@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
@@ -203,7 +204,8 @@ public class PublicStorefrontService {
     /**
      * Get available products for a published shop, grouped by category.
      * Sets TenantContext from the shop's tenant_id so RLS allows product queries.
-     * Filters to products assigned to this shop (or unassigned = tenant-wide).
+     * Filters strictly to products assigned to this shop (UIX-05 — no tenant-wide
+     * fallback; every product belongs to exactly one shop).
      */
     public Map<String, List<PublicProductDto>> getShopProducts(String slug) {
         log.debug("Fetching products for shop: {}", slug);
@@ -211,7 +213,8 @@ public class PublicStorefrontService {
         // SEC-01 gate + TenantContext set atomically (Phase 13).
         Shop shop = resolvePublicShopForSlug(slug);
         try {
-            // Filter: products assigned to this shop OR unassigned (shop_id IS NULL = tenant-wide)
+            // Filter: products assigned to THIS shop only (UIX-05 — the shop_id IS NULL
+            // "tenant-wide" bleed was removed so a second shop shows its own menu).
             List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
 
             // Group by category, preserving order; uncategorized items go under "Other"
@@ -335,6 +338,25 @@ public class PublicStorefrontService {
                     Order existingOrder = existing.get();
                     log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
                             idempotencyKey, existingOrder.getOrderNumber());
+                    // WR-02: the paymentReference is the Stripe PaymentIntent ID
+                    // (pi_...), NOT a client secret — returning it in the
+                    // clientSecret slot mounted Stripe Elements with an unusable
+                    // value AND disclosed the raw PI id to the guest. For a
+                    // still-payable DRAFT order, re-fetch the REAL client secret
+                    // from Stripe so the retry resumes payment; otherwise return
+                    // null and the client renders the placed-order confirmation.
+                    String existingClientSecret = null;
+                    if (existingOrder.getStatus() == OrderStatus.DRAFT
+                            && existingOrder.getPaymentReference() != null
+                            && paymentService.isConfigured()) {
+                        try {
+                            existingClientSecret = paymentService.retrieveClientSecret(
+                                    existingOrder.getPaymentReference());
+                        } catch (com.stripe.exception.StripeException e) {
+                            log.warn("Could not re-fetch client secret for idempotent retry of order {}",
+                                    existingOrder.getOrderNumber(), e);
+                        }
+                    }
                     return new GuestOrderConfirmation(
                             existingOrder.getOrderNumber(),
                             existingOrder.getStatus().name(),
@@ -345,7 +367,7 @@ public class PublicStorefrontService {
                             existingOrder.getTotalAmountPennies(),
                             shop.getName(),
                             existingOrder.getItemCount(),
-                            existingOrder.getPaymentReference(),
+                            existingClientSecret,
                             List.of()
                     );
                 }
@@ -366,6 +388,25 @@ public class PublicStorefrontService {
             }
             order.setUpdatedAt(OffsetDateTime.now());
 
+            // Resolve fulfilment type server-side (UIX-04). The client sends the
+            // enum string; an unknown value is a 400, not a silent DELIVERY.
+            FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
+            order.setFulfilmentType(fulfilmentType);
+            if (fulfilmentType == FulfilmentType.DELIVERY) {
+                // Conditional-required: a delivery order MUST carry a UK address.
+                if (isBlank(request.getAddressLine1())
+                        || isBlank(request.getAddressCity())
+                        || isBlank(request.getAddressPostcode())) {
+                    throw new IllegalArgumentException(
+                            "Delivery address (line 1, city and postcode) is required for delivery orders.");
+                }
+                order.setAddressLine1(request.getAddressLine1());
+                order.setAddressLine2(request.getAddressLine2());
+                order.setAddressCity(request.getAddressCity());
+                order.setAddressPostcode(request.getAddressPostcode());
+            }
+            // COLLECTION: no address persisted; the delivery fee is forced to £0 below.
+
             // Add items with server-side price lookup + allergen cross-check
             List<String> allergenWarnings = new ArrayList<>();
             Integer customerAllergenMask = request.getCustomerAllergenMask();
@@ -379,6 +420,19 @@ public class PublicStorefrontService {
                 Product product = productRepository.findById(itemReq.getProductId())
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Product not found: " + itemReq.getProductId()));
+
+                // UIX-05 invariant (CR-01): an order for shop X may only contain
+                // shop X's products. RLS scopes findById to the TENANT, not the
+                // shop, so without this check an unauthenticated client could
+                // order any product of the tenant — including items quarantined
+                // into the unpublished archive shop — through this storefront.
+                // Deliberately the SAME exception type + message shape as the
+                // absent-row case above so the response does not disclose that a
+                // product exists in another shop (no title, no shop id).
+                if (!shop.getId().equals(product.getShopId())) {
+                    throw new ResourceNotFoundException(
+                            "Product not found: " + itemReq.getProductId());
+                }
 
                 if (!Boolean.TRUE.equals(product.getAvailable())) {
                     throw new IllegalArgumentException("Product is not available: " + product.getTitle());
@@ -407,6 +461,10 @@ public class PublicStorefrontService {
                         product.getPricePennies() // Server-side price — never trust client
                 );
                 item.setTenantId(tenantId);
+                // UIX-03 root-cause fix: snapshot the REAL product title (server-side,
+                // authoritative) so OrderItem.productName never persists its
+                // "Unknown Product" default onto the kitchen display / order detail.
+                item.setProductName(product.getTitle());
                 order.addItem(item);
                 lineRates.add(new VatCalculator.LineRate(
                         item.getTotalPricePennies(), product.getVatRate()));
@@ -417,14 +475,35 @@ public class PublicStorefrontService {
             // this predominant liability via calculateTotal().
             order.setVatRate(VatCalculator.predominantRate(lineRates));
 
-            // Calculate delivery fee — waived if subtotal exceeds free delivery threshold
+            // Calculate delivery fee — server-authoritative (client value is
+            // preview-only and NEVER read). COLLECTION always costs £0; DELIVERY
+            // uses the shop's fee, waived when the subtotal clears the free-delivery
+            // threshold. Tampering with fulfilmentType to underpay is neutralised
+            // because the total is recomputed here, not taken from the request.
             long itemSubtotal = order.getItems().stream()
                     .mapToLong(item -> item.getTotalPricePennies())
                     .sum();
-            long deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
-            if (shop.getFreeDeliveryThresholdPennies() != null
-                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+
+            // WR-01: enforce the shop's advertised minimum order value on the
+            // item subtotal (delivery fee excluded), server-side. The storefront
+            // renders "Min order £X" and the checkout disables submit below it,
+            // but those are advisory — this is the authoritative gate.
+            if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
+                    && itemSubtotal < shop.getMinimumOrderPennies()) {
+                throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
+                        "Order is below this shop's minimum order value of £%.2f.",
+                        shop.getMinimumOrderPennies() / 100.0));
+            }
+
+            long deliveryFee;
+            if (fulfilmentType == FulfilmentType.COLLECTION) {
                 deliveryFee = 0L;
+            } else {
+                deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
+                if (shop.getFreeDeliveryThresholdPennies() != null
+                        && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+                    deliveryFee = 0L;
+                }
             }
             order.setDeliveryFeePennies(deliveryFee);
 
@@ -542,6 +621,28 @@ public class PublicStorefrontService {
         return shop;
     }
 
+    /**
+     * Parse the client-supplied fulfilment string into a {@link FulfilmentType},
+     * server-authoritatively. An absent value defaults to DELIVERY (the safe,
+     * fee-bearing choice); an unknown value is rejected with a 400 rather than
+     * silently coerced.
+     */
+    private static FulfilmentType parseFulfilmentType(String raw) {
+        if (isBlank(raw)) {
+            return FulfilmentType.DELIVERY;
+        }
+        try {
+            return FulfilmentType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid fulfilment type: " + raw
+                    + " (expected DELIVERY or COLLECTION)");
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
     private String generateOrderNumber(UUID tenantId) {
         String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
         String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
@@ -619,7 +720,15 @@ public class PublicStorefrontService {
         LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
         LocalTime now = LocalTime.now(UK_ZONE);
 
-        if (now.isBefore(open) || !now.isBefore(close)) {
+        // WR-06: an overnight window ("18:00 - 02:00", close < open — normal
+        // for a takeaway) wraps past midnight. The old predicate
+        // (now.isBefore(open) || !now.isBefore(close)) rejected EVERY time of
+        // day for such windows, refusing orders during real trading hours.
+        boolean overnight = close.isBefore(open);
+        boolean openNow = overnight
+                ? !now.isBefore(open) || now.isBefore(close)
+                : !now.isBefore(open) && now.isBefore(close);
+        if (!openNow) {
             throw new IllegalArgumentException(
                     shop.getName() + " is currently closed. Opening hours today: " + todayHours + ". Please try again later.");
         }

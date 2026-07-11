@@ -32,9 +32,10 @@ import { test, expect } from "@playwright/test"
 
 const BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100"
-// Keycloak dev-realm test vendor (docs/setup/SETUP.md); tenant-a-user maps to
-// tenant 00000000-…-000000000001 via the realm's tenant_id attribute.
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "tenant-a-user"
+// Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account, mapping
+// to tenant 00000000-…-000000000001 via the realm's tenant_id attribute. The
+// password is deployment-specific — supply via E2E_VENDOR_PASSWORD (never committed).
+const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
 const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 async function vendorLogin(page: import("@playwright/test").Page) {

@@ -21,7 +21,7 @@ import {
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 
-const navigation = [
+export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Shops", href: "/dashboard/shops", icon: Store },
   { name: "Products", href: "/dashboard/products", icon: Package },
@@ -53,7 +53,7 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col bg-slate-900 text-white">
+    <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2 border-b border-slate-800 px-6">
         <Store className="h-8 w-8 text-blue-400" />
@@ -67,7 +67,7 @@ export function Sidebar() {
       {session?.user && (
         <div className="border-b border-slate-800 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center font-semibold">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center font-semibold">
               {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
             </div>
             <div className="flex-1 min-w-0">

@@ -5,6 +5,9 @@
  *  - orders render once fetched
  *  - mute toggle persists to localStorage and flips icon
  *  - empty state renders when there are no active orders
+ *  - card header truncates long order numbers without the badge overlapping (#8)
+ *  - elapsed time is capped/formatted, never raw uncapped minutes (#12)
+ *  - age-border colour logic is preserved (green for a fresh order)
  */
 
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
@@ -127,7 +130,8 @@ function ordersPayload(statuses: string[]) {
   }
 }
 
-function orderDetailPayload(id: string, status: string) {
+function orderDetailPayload(id: string, status: string, createdAt?: string) {
+  const ts = createdAt ?? new Date().toISOString()
   return {
     id,
     tenantId: "tenant-1",
@@ -144,15 +148,17 @@ function orderDetailPayload(id: string, status: string) {
         quantity: 2,
         unitPricePennies: 500,
         totalPricePennies: 1000,
-        createdAt: new Date().toISOString(),
+        createdAt: ts,
       },
     ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: ts,
+    updatedAt: ts,
   }
 }
 
-function stubApi(activeStatuses: string[]) {
+// `createdAt` (optional) lets a test pin the order age so the elapsed-time and
+// age-border formatting can be asserted deterministically.
+function stubApi(activeStatuses: string[], createdAt?: string) {
   mockGet.mockReset()
   mockGet.mockImplementation((url: string) => {
     if (url.startsWith("/api/v1/shops")) {
@@ -165,7 +171,9 @@ function stubApi(activeStatuses: string[]) {
     if (match) {
       const id = match[1]
       const idx = Number(id.replace("order-", ""))
-      return Promise.resolve({ data: orderDetailPayload(id, activeStatuses[idx]) })
+      return Promise.resolve({
+        data: orderDetailPayload(id, activeStatuses[idx], createdAt),
+      })
     }
     return Promise.resolve({ data: {} })
   })
@@ -226,5 +234,70 @@ describe("KitchenPage", () => {
     render(<KitchenPage />)
     // When muted=true the button title is "Unmute alerts"
     expect(await screen.findByTitle(/Unmute alerts/)).toBeInTheDocument()
+  })
+
+  // --- #8: card header badge-clip fix ---
+
+  it("truncates a long order number and shields the status badge from clipping", async () => {
+    stubApi(["CONFIRMED"])
+    render(<KitchenPage />)
+    // The order number renders as ORD-order-0 (orderNumber: `ORD-${id}`).
+    const title = await screen.findByText("ORD-order-0")
+    // Truncate + min-w-0 let a long ORD-… number ellipsize instead of wrapping
+    // under the badge; text-lg replaces the old text-2xl.
+    expect(title).toHaveClass("truncate")
+    expect(title).toHaveClass("min-w-0")
+    expect(title).toHaveClass("text-lg")
+    expect(title).toHaveClass("font-semibold")
+    // twMerge should have dropped the previous text-2xl sizing.
+    expect(title).not.toHaveClass("text-2xl")
+
+    // The status badge is flex-shrink-0 so it keeps its width and never
+    // overlaps the (truncating) order number.
+    const badge = screen.getByText("Confirmed")
+    expect(badge).toHaveClass("flex-shrink-0")
+  })
+
+  // --- #12: elapsed-time cap/format ---
+
+  it("shows 'just now' for an order created moments ago", async () => {
+    stubApi(["CONFIRMED"], new Date().toISOString())
+    render(<KitchenPage />)
+    expect(await screen.findByText("just now")).toBeInTheDocument()
+  })
+
+  it("shows minutes for an order under an hour old", async () => {
+    const created = new Date(Date.now() - 42 * 60 * 1000).toISOString()
+    stubApi(["CONFIRMED"], created)
+    render(<KitchenPage />)
+    expect(await screen.findByText("42m ago")).toBeInTheDocument()
+  })
+
+  it("shows hours for an order between 1 and 24 hours old", async () => {
+    const created = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+    stubApi(["CONFIRMED"], created)
+    render(<KitchenPage />)
+    expect(await screen.findByText("3h ago")).toBeInTheDocument()
+  })
+
+  it("caps a very old order to a day form (no raw '2245m ago')", async () => {
+    // 2245 minutes ≈ 1.56 days — the exact value the audit flagged (#12).
+    const created = new Date(Date.now() - 2245 * 60 * 1000).toISOString()
+    stubApi(["CONFIRMED"], created)
+    render(<KitchenPage />)
+    expect(await screen.findByText("1d ago")).toBeInTheDocument()
+    expect(screen.queryByText(/2245m/)).not.toBeInTheDocument()
+  })
+
+  // --- age-border colour logic preserved (unchanged) ---
+
+  it("keeps the green age border for a fresh order", async () => {
+    stubApi(["CONFIRMED"], new Date().toISOString())
+    render(<KitchenPage />)
+    const title = await screen.findByText("ORD-order-0")
+    // Walk up to the Card (its className includes transition-colors).
+    const card = title.closest(".transition-colors")
+    expect(card).not.toBeNull()
+    expect(card).toHaveClass("border-green-500")
   })
 })

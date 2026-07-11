@@ -87,10 +87,15 @@ describe("/api/customer-auth/logout", () => {
 })
 
 describe("/api/customer-auth/session", () => {
-  it("returns 401 without cookies", async () => {
+  it("returns 200 { authenticated: false } (no profile) without cookies — quiet probe, #13", async () => {
     const req = new NextRequest("http://localhost/api/customer-auth/session")
     const res = await sessionGET(req)
-    expect(res.status).toBe(401)
+    // 200 (not 401) so the browser doesn't log a failed request on every
+    // anonymous public page view; the body carries no session data.
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.authenticated).toBe(false)
+    expect(body.profile).toBeUndefined()
   })
 
   it("returns profile but never the raw tokens when the session is valid", async () => {
@@ -125,7 +130,7 @@ describe("/api/customer-auth/session", () => {
     expect(serialized).not.toContain(idToken)
   })
 
-  it("returns 401 when the id token is expired", async () => {
+  it("returns 200 { authenticated: false } (no profile) when the id token is expired — quiet probe, #13", async () => {
     const exp = Math.floor(Date.now() / 1000) - 60
     const idToken = fakeJwt({ sub: "user-1", exp })
     const req = new NextRequest("http://localhost/api/customer-auth/session", {
@@ -137,6 +142,9 @@ describe("/api/customer-auth/session", () => {
       },
     })
     const res = await sessionGET(req)
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.authenticated).toBe(false)
+    expect(body.profile).toBeUndefined()
   })
 })

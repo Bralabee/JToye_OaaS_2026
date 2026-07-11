@@ -87,7 +87,7 @@ const statusConfig: Record<
   DRAFT: { label: "Draft", color: "bg-gray-500", chartColor: "#6b7280", icon: Clock },
   PENDING: { label: "Pending", color: "bg-yellow-500", chartColor: "#eab308", icon: Clock },
   CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: "#3b82f6", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", color: "bg-purple-500", chartColor: "#a855f7", icon: Clock },
+  PREPARING: { label: "Preparing", color: "bg-amber-500", chartColor: "#f59e0b", icon: Clock },
   READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },
   COMPLETED: { label: "Completed", color: "bg-emerald-600", chartColor: "#059669", icon: CheckCircle2 },
   CANCELLED: { label: "Cancelled", color: "bg-red-500", chartColor: "#ef4444", icon: XCircle },
@@ -211,7 +211,7 @@ export default function DashboardPage() {
 
   const statCards = [
     { title: "Shops", value: stats?.shops || 0, icon: Store, color: "text-blue-600", bgColor: "bg-blue-100" },
-    { title: "Products", value: stats?.products || 0, icon: Package, color: "text-purple-600", bgColor: "bg-purple-100" },
+    { title: "Products", value: stats?.products || 0, icon: Package, color: "text-blue-600", bgColor: "bg-blue-100" },
     { title: "Orders", value: stats?.orders || 0, icon: ShoppingCart, color: "text-green-600", bgColor: "bg-green-100" },
     { title: "Customers", value: stats?.customers || 0, icon: Users, color: "text-orange-600", bgColor: "bg-orange-100" },
   ]
@@ -361,7 +361,7 @@ export default function DashboardPage() {
                     <Tooltip formatter={(value) => [`£${Number(value).toFixed(2)}`, ""]} />
                     <Legend />
                     <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="vat" name="VAT" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="vat" name="VAT" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}

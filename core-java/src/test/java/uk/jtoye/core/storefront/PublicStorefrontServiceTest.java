@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -14,7 +15,9 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
@@ -274,6 +277,315 @@ class PublicStorefrontServiceTest {
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
+    }
+
+    private static final java.time.ZoneId UK_ZONE = java.time.ZoneId.of("Europe/London");
+    private static final java.time.format.DateTimeFormatter HHMM =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+
+    /** The opening-hours key for "today" in the UK zone the service evaluates. */
+    private static String todayKeyUk() {
+        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+        return dayKeys[LocalDate.now(UK_ZONE).getDayOfWeek().getValue() % 7];
+    }
+
+    @Test
+    @DisplayName("createGuestOrder accepts an order inside a service window whose close time precedes its open time (WR-06 overnight)")
+    void createGuestOrder_acceptsInsideOvernightWindow() throws Exception {
+        // Window opens 1h ago and "closes" 2h ago: whenever close < open this is
+        // an overnight window that CONTAINS now; when the subtraction wraps
+        // midnight it degenerates to a plain window that also contains now. The
+        // pre-fix predicate rejected the overnight shape at every time of day.
+        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
+        String window = nowUk.minusHours(1).format(HHMM) + " - " + nowUk.minusHours(2).format(HHMM);
+        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+        publishedShop.setDeliveryFeePennies(0L);
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Midnight Suya", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertDoesNotThrow(() -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(product)),
+                "an order inside the overnight trading window must be accepted");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder still rejects an order outside the window when close precedes open (WR-06 overnight)")
+    void createGuestOrder_rejectsOutsideOvernightWindow() {
+        // Window opens in 1h and closed 1h ago: now sits OUTSIDE it under both
+        // the overnight and the plain (midnight-wrapped) interpretation.
+        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
+        String window = nowUk.plusHours(1).format(HHMM) + " - " + nowUk.minusHours(1).format(HHMM);
+        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Night Owl");
+        request.setCustomerEmail("owl@example.com");
+        request.setCustomerPhone("07700900005");
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("closed"));
+    }
+
+    // ========================================================================
+    // Phase 19 UIX-03 / UIX-04 — guest order name snapshot + fulfilment/address
+    // ========================================================================
+
+    /**
+     * An available, unlimited-stock product with a STANDARD VAT rate, homed in
+     * the ordered shop (CR-01: createGuestOrder rejects products whose shopId
+     * does not match the storefront's shop).
+     */
+    private Product availableProduct(String title, long pricePennies) {
+        Product product = new Product();
+        setField(product, "id", UUID.randomUUID());
+        product.setTitle(title);
+        product.setPricePennies(pricePennies);
+        product.setAvailable(true);
+        product.setVatRate(VatRate.STANDARD);
+        product.setAllergenMask(0);
+        product.setShopId(publishedShop.getId());
+        return product;
+    }
+
+    private GuestOrderItemRequest itemFor(Product product, int quantity) {
+        GuestOrderItemRequest itemReq = new GuestOrderItemRequest();
+        itemReq.setProductId(product.getId());
+        itemReq.setQuantity(quantity);
+        return itemReq;
+    }
+
+    private GuestOrderRequest deliveryRequest(Product product) {
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Ada Lovelace");
+        request.setCustomerEmail("ada@example.com");
+        request.setCustomerPhone("07700900000");
+        request.setFulfilmentType("DELIVERY");
+        request.setAddressLine1("1 High Street");
+        request.setAddressCity("London");
+        request.setAddressPostcode("E1 6AN");
+        request.setItems(List.of(itemFor(product, 2)));
+        return request;
+    }
+
+    @Test
+    @DisplayName("createGuestOrder snapshots the real product title (never 'Unknown Product') and persists fulfilment + address")
+    void createGuestOrder_snapshotsProductNameAndPersistsFulfilment() throws Exception {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        // Stripe "configured" so the COD TransactionSynchronization branch is skipped.
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(1, saved.getItems().size());
+        assertEquals("Jollof Rice", saved.getItems().get(0).getProductName(),
+                "guest order must snapshot the real product title");
+        assertNotEquals("Unknown Product", saved.getItems().get(0).getProductName());
+        assertEquals(FulfilmentType.DELIVERY, saved.getFulfilmentType());
+        assertEquals("1 High Street", saved.getAddressLine1());
+        assertEquals("London", saved.getAddressCity());
+        assertEquals("E1 6AN", saved.getAddressPostcode());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder forces £0 delivery fee for COLLECTION even when the shop charges a fee")
+    void createGuestOrder_collectionForcesZeroFee() throws Exception {
+        publishedShop.setDeliveryFeePennies(500L); // shop DOES charge for delivery
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Chapman", 450L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Grace Hopper");
+        request.setCustomerEmail("grace@example.com");
+        request.setCustomerPhone("07700900001");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1)));
+
+        service.createGuestOrder("test-shop-abc12345", request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(FulfilmentType.COLLECTION, saved.getFulfilmentType());
+        assertEquals(0L, saved.getDeliveryFeePennies(),
+                "COLLECTION must force the delivery fee to £0, ignoring the shop fee");
+        assertNull(saved.getAddressLine1(), "COLLECTION order must not persist an address");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder charges the shop's server-side delivery fee for DELIVERY (client value never trusted)")
+    void createGuestOrder_deliveryUsesServerFee() throws Exception {
+        publishedShop.setDeliveryFeePennies(500L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        assertEquals(500L, captor.getValue().getDeliveryFeePennies(),
+                "DELIVERY fee must come from the shop, computed server-side");
+    }
+
+    /** A persisted order as the idempotency lookup would return it (WR-02). */
+    private Order existingOrder(OrderStatus status, String paymentReference) {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-EXISTING-0001");
+        order.setStatus(status);
+        order.setSubtotalPennies(1798L);
+        order.setDeliveryFeePennies(0L);
+        order.setVatRate(VatRate.STANDARD);
+        order.setVatAmountPennies(300L);
+        order.setTotalAmountPennies(1798L);
+        order.setItemCount(2);
+        order.setPaymentReference(paymentReference);
+        return order;
+    }
+
+    private GuestOrderRequest idempotentRetryRequest() {
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Retry Customer");
+        request.setCustomerEmail("retry@example.com");
+        request.setCustomerPhone("07700900004");
+        request.setFulfilmentType("COLLECTION");
+        request.setIdempotencyKey("retry-key-123");
+        request.setItems(List.of());
+        return request;
+    }
+
+    @Test
+    @DisplayName("createGuestOrder idempotent retry of a payable DRAFT order re-fetches the REAL client secret, never the PaymentIntent id (WR-02)")
+    void createGuestOrder_idempotentRetryDraft_refetchesRealClientSecret() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(existingOrder(OrderStatus.DRAFT, "pi_123")));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.retrieveClientSecret("pi_123")).thenReturn("pi_123_secret_real");
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals("pi_123_secret_real", confirmation.getClientSecret(),
+                "retry must resume payment with the real client secret");
+        assertNotEquals("pi_123", confirmation.getClientSecret(),
+                "the raw PaymentIntent id must never occupy the clientSecret slot");
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder idempotent retry of an already-paid order returns a null clientSecret (WR-02)")
+    void createGuestOrder_idempotentRetryPaid_returnsNullClientSecret() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(existingOrder(OrderStatus.PENDING, "pi_456")));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertNull(confirmation.getClientSecret(),
+                "a non-DRAFT duplicate must not disclose any payment reference");
+        assertEquals("PENDING", confirmation.getStatus());
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects an order below the shop's minimum order value (WR-01)")
+    void createGuestOrder_rejectsBelowMinimumOrder() {
+        publishedShop.setMinimumOrderPennies(1000L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Zobo", 300L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Min Checker");
+        request.setCustomerEmail("min@example.com");
+        request.setCustomerPhone("07700900003");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("minimum order value of £10.00"));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects a product from another shop of the same tenant (CR-01 / UIX-05) without leaking its existence")
+    void createGuestOrder_rejectsProductFromAnotherShop() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        // Same tenant, DIFFERENT shop (e.g. the unpublished archive shop) —
+        // RLS alone would let this row through, the service check must not.
+        Product foreignProduct = availableProduct("Label Cake 057999", 250L);
+        foreignProduct.setShopId(UUID.randomUUID());
+        when(productRepository.findById(foreignProduct.getId()))
+                .thenReturn(Optional.of(foreignProduct));
+
+        var ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(foreignProduct)));
+
+        // Response must be indistinguishable from a nonexistent product: no
+        // title, no shop detail — only the id the caller already supplied.
+        assertFalse(ex.getMessage().contains("Label Cake"),
+                "rejection must not leak the foreign product's title");
+        assertTrue(ex.getMessage().contains(foreignProduct.getId().toString()));
+
+        // No order row may be minted for the rejected request.
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects a DELIVERY order with no address (conditional-required)")
+    void createGuestOrder_deliveryRequiresAddress() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("No Address");
+        request.setCustomerEmail("no-address@example.com");
+        request.setCustomerPhone("07700900002");
+        request.setFulfilmentType("DELIVERY");
+        // no address fields set
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().toLowerCase().contains("address"));
     }
 
     @Test
