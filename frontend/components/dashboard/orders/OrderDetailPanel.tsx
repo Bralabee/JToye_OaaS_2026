@@ -211,6 +211,42 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
         </div>
       )}
 
+      {/* Fulfilment block — delivery/collection + (for delivery) the address.
+          Read-only render of PII (T-19-07-01): the address is never logged. */}
+      {order.fulfilmentType && (
+        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Fulfilment
+            </p>
+            <p className="font-medium text-slate-900">
+              {order.fulfilmentType === "COLLECTION" ? "Collection" : "Delivery"}
+            </p>
+          </div>
+          {order.fulfilmentType === "DELIVERY" && (
+            <div data-testid="delivery-address">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Delivery address
+              </p>
+              <address className="text-sm not-italic text-slate-700">
+                {order.addressLine1 && (
+                  <span className="block">{order.addressLine1}</span>
+                )}
+                {order.addressLine2 && (
+                  <span className="block">{order.addressLine2}</span>
+                )}
+                {order.addressCity && (
+                  <span className="block">{order.addressCity}</span>
+                )}
+                {order.addressPostcode && (
+                  <span className="block font-medium">{order.addressPostcode}</span>
+                )}
+              </address>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Line items block */}
       <div>
         <h3 className="mb-3 text-sm font-semibold text-slate-700">
