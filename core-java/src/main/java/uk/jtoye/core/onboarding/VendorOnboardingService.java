@@ -112,6 +112,38 @@ public class VendorOnboardingService {
     }
 
     /**
+     * Resubmit the caller's onboarding after ACTION_REQUIRED (CR-03): ACTION_REQUIRED
+     * → VERIFYING, then reset every FAILED / MANUAL_REVIEW gate row to PENDING (PASSED
+     * / WAIVED rows stay trusted and are never re-run), and re-kick the async gate
+     * chain after commit. The runner only (re)evaluates PENDING rows, so resetting the
+     * flagged rows is what makes a re-run actually re-check them. The state machine
+     * rejects RESUBMIT from any state other than ACTION_REQUIRED →
+     * {@code InvalidStateTransitionException} → HTTP 400.
+     */
+    public OnboardingDto resubmit() {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        transition(onboarding, OnboardingEvent.RESUBMIT);
+
+        UUID onboardingId = onboarding.getId();
+        for (VendorOnboardingGate gate : gateRepository.findByOnboardingId(onboardingId)) {
+            if (gate.getStatus() == GateStatus.FAILED || gate.getStatus() == GateStatus.MANUAL_REVIEW) {
+                gate.setStatus(GateStatus.PENDING);
+                gate.setEvidence(null);
+                gate.setExternalRef(null);
+                gate.setReason(null);
+                gate.setCheckedAt(null);
+                gateRepository.save(gate);
+            }
+        }
+
+        kickGateChainAfterCommit(onboardingId, tenantId);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
+    }
+
+    /**
      * Take the caller's onboarding LIVE (APPROVED → LIVE). Fires GO_LIVE through
      * the single canonical {@link #transition} path; the GO_LIVE guard (18-02)
      * requires every mandatory gate PASSED/WAIVED AND a PASSED
