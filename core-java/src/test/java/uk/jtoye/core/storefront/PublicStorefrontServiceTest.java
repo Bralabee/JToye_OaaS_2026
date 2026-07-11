@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -14,7 +15,9 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
@@ -274,6 +277,141 @@ class PublicStorefrontServiceTest {
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
+    }
+
+    // ========================================================================
+    // Phase 19 UIX-03 / UIX-04 — guest order name snapshot + fulfilment/address
+    // ========================================================================
+
+    /** An available, unlimited-stock product with a STANDARD VAT rate. */
+    private Product availableProduct(String title, long pricePennies) {
+        Product product = new Product();
+        setField(product, "id", UUID.randomUUID());
+        product.setTitle(title);
+        product.setPricePennies(pricePennies);
+        product.setAvailable(true);
+        product.setVatRate(VatRate.STANDARD);
+        product.setAllergenMask(0);
+        return product;
+    }
+
+    private GuestOrderItemRequest itemFor(Product product, int quantity) {
+        GuestOrderItemRequest itemReq = new GuestOrderItemRequest();
+        itemReq.setProductId(product.getId());
+        itemReq.setQuantity(quantity);
+        return itemReq;
+    }
+
+    private GuestOrderRequest deliveryRequest(Product product) {
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Ada Lovelace");
+        request.setCustomerEmail("ada@example.com");
+        request.setCustomerPhone("07700900000");
+        request.setFulfilmentType("DELIVERY");
+        request.setAddressLine1("1 High Street");
+        request.setAddressCity("London");
+        request.setAddressPostcode("E1 6AN");
+        request.setItems(List.of(itemFor(product, 2)));
+        return request;
+    }
+
+    @Test
+    @DisplayName("createGuestOrder snapshots the real product title (never 'Unknown Product') and persists fulfilment + address")
+    void createGuestOrder_snapshotsProductNameAndPersistsFulfilment() throws Exception {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        // Stripe "configured" so the COD TransactionSynchronization branch is skipped.
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(1, saved.getItems().size());
+        assertEquals("Jollof Rice", saved.getItems().get(0).getProductName(),
+                "guest order must snapshot the real product title");
+        assertNotEquals("Unknown Product", saved.getItems().get(0).getProductName());
+        assertEquals(FulfilmentType.DELIVERY, saved.getFulfilmentType());
+        assertEquals("1 High Street", saved.getAddressLine1());
+        assertEquals("London", saved.getAddressCity());
+        assertEquals("E1 6AN", saved.getAddressPostcode());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder forces £0 delivery fee for COLLECTION even when the shop charges a fee")
+    void createGuestOrder_collectionForcesZeroFee() throws Exception {
+        publishedShop.setDeliveryFeePennies(500L); // shop DOES charge for delivery
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Chapman", 450L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Grace Hopper");
+        request.setCustomerEmail("grace@example.com");
+        request.setCustomerPhone("07700900001");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1)));
+
+        service.createGuestOrder("test-shop-abc12345", request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(FulfilmentType.COLLECTION, saved.getFulfilmentType());
+        assertEquals(0L, saved.getDeliveryFeePennies(),
+                "COLLECTION must force the delivery fee to £0, ignoring the shop fee");
+        assertNull(saved.getAddressLine1(), "COLLECTION order must not persist an address");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder charges the shop's server-side delivery fee for DELIVERY (client value never trusted)")
+    void createGuestOrder_deliveryUsesServerFee() throws Exception {
+        publishedShop.setDeliveryFeePennies(500L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        assertEquals(500L, captor.getValue().getDeliveryFeePennies(),
+                "DELIVERY fee must come from the shop, computed server-side");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects a DELIVERY order with no address (conditional-required)")
+    void createGuestOrder_deliveryRequiresAddress() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("No Address");
+        request.setCustomerEmail("no-address@example.com");
+        request.setCustomerPhone("07700900002");
+        request.setFulfilmentType("DELIVERY");
+        // no address fields set
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().toLowerCase().contains("address"));
     }
 
     @Test

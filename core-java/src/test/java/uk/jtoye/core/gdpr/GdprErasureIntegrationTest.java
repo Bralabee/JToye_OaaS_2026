@@ -159,6 +159,61 @@ class GdprErasureIntegrationTest {
         assertThat(hash).isNotEqualTo(SUBJECT_EMAIL);
     }
 
+    @Test
+    @DisplayName("Erasure scrubs the delivery address (PII) from both orders and orders_aud")
+    void erasureScrubsDeliveryAddress() {
+        // Distinct subject so this test's email sweep can't touch the other test's
+        // rows (the class is NOT @Transactional — data persists across methods).
+        final String addrEmail = "address-subject@example.com";
+
+        Customer customer = new Customer("Address Subject", addrEmail);
+        customer.setTenantId(TENANT_A);
+        customer.setPhone("+447700900222");
+        UUID customerId = customerRepository.saveAndFlush(customer).getId();
+
+        // A DELIVERY guest order carrying a full UK address (PII, V45). Committing
+        // it makes Envers persist an orders_aud row holding the address.
+        Order guest = new Order();
+        guest.setTenantId(TENANT_A);
+        guest.setShopId(SHOP_A);
+        guest.setOrderNumber("ORD-GUEST-ADDR-19");
+        guest.setCustomerId(null);
+        guest.setCustomerName("Address Subject");
+        guest.setCustomerEmail(addrEmail);
+        guest.setCustomerPhone("+447700900222");
+        guest.setAddressLine1("221B Baker Street");
+        guest.setAddressLine2("Marylebone");
+        guest.setAddressCity("London");
+        guest.setAddressPostcode("NW1 6XE");
+        UUID guestOrderId = orderRepository.saveAndFlush(guest).getId();
+
+        // Pre-condition: the address is present in the audit history.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders_aud WHERE id = ? AND address_postcode = ?",
+                Long.class, guestOrderId, "NW1 6XE"))
+                .as("orders_aud must initially hold the delivery address")
+                .isGreaterThan(0);
+
+        // Erase the subject.
+        gdprService.eraseCustomerData(customerId);
+
+        // Live row: every address column is NULL.
+        Order erased = orderRepository.findById(guestOrderId).orElseThrow();
+        assertThat(erased.getAddressLine1()).isNull();
+        assertThat(erased.getAddressLine2()).isNull();
+        assertThat(erased.getAddressCity()).isNull();
+        assertThat(erased.getAddressPostcode()).isNull();
+
+        // orders_aud: NO surviving row retains any address fragment for this order.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders_aud WHERE id = ? AND ("
+                        + "address_line1 IS NOT NULL OR address_line2 IS NOT NULL "
+                        + "OR address_city IS NOT NULL OR address_postcode IS NOT NULL)",
+                Long.class, guestOrderId))
+                .as("orders_aud must retain no address PII after erasure")
+                .isZero();
+    }
+
     private Long auditRowsWithGuestEmail() {
         return jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM orders_aud WHERE tenant_id = ? AND customer_email = ?",
