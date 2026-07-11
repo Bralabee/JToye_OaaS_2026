@@ -65,6 +65,22 @@ public class PaymentEventOutbox {
     @Column(name = "attempts", nullable = false)
     private int attempts = 0;
 
+    /**
+     * Earliest instant the flusher may (re)try this row (V46 — Issue #93).
+     * Set to "now" on insert so fresh rows are immediately eligible; pushed
+     * out with exponential backoff on each failed publish attempt.
+     */
+    @Column(name = "next_attempt_at", nullable = false)
+    private OffsetDateTime nextAttemptAt = OffsetDateTime.now();
+
+    /**
+     * TRUE when the payload itself is unrecoverable (e.g. JSON corruption) —
+     * retrying can never succeed, so the resurrection pass must skip the row
+     * (V46 — Issue #93). FALSE FAILED rows are retry-exhausted but retryable.
+     */
+    @Column(name = "poison", nullable = false)
+    private boolean poison = false;
+
     @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
@@ -117,6 +133,12 @@ public class PaymentEventOutbox {
 
     public int getAttempts() { return attempts; }
     public void setAttempts(int attempts) { this.attempts = attempts; }
+
+    public OffsetDateTime getNextAttemptAt() { return nextAttemptAt; }
+    public void setNextAttemptAt(OffsetDateTime nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
+
+    public boolean isPoison() { return poison; }
+    public void setPoison(boolean poison) { this.poison = poison; }
 
     public String getLastError() { return lastError; }
     public void setLastError(String lastError) { this.lastError = lastError; }
