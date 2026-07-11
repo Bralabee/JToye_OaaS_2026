@@ -98,9 +98,15 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     }
   }, [orderNumber, email, order])
 
+  // WR-07: fetch again whenever the email becomes available — the initial
+  // value comes synchronously from localStorage, but a signed-in customer's
+  // email arrives asynchronously from the cookie-backed session. A mount-only
+  // fetch left that case on a dead skeleton (fetch ran with an empty email,
+  // then nothing refetched and the EmailPrompt branch was skipped).
+  // fetchStatus() no-ops (and clears loading) while the email is still empty.
   useEffect(() => {
     fetchStatus()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [email]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh every 15 seconds for active orders
   useEffect(() => {
