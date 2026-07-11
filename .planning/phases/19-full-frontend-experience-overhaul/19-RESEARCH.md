@@ -381,7 +381,9 @@ export default function Home() {
 | A4 | No edge-go/WhatsApp/Sync path constructs `OrderItem` (so only 2 Java paths need the name fix). | Pitfall 3 | Verified via grep (SyncController has no OrderItem/createOrder; edge-go only forwards requests). Low risk. |
 | A5 | Adding order columns needs no RLS policy change and won't trip `RlsContractTest`. | Pattern 4 | Verified: `RlsContractTest` walks table-level RLS, not columns; `orders` already ENABLE+FORCE. |
 
-## Open Questions
+## Open Questions (RESOLVED — planning decisions 2026-07-11)
+
+> RESOLVED at planning: OQ1 → option (a): committed dev-profile `DemoDataSeeder` (plan 19-02), NOT a Flyway migration; live dev DB aligned via the same seeder. OQ2 → full end-to-end wiring (plans 19-01 backend → 19-06 checkout → 19-07 detail render); display-only explicitly rejected. OQ3 → DEFERRED with reason: collection-only-shop forcing is outside the 15-item backlog; the toggle ships with Delivery default + Collection selectable for all shops; deferral documented in 19-09's backlog-closure notes.
 
 1. **Where does demo/seed data live, and how is "re-seed realistically" delivered?**
    - What we know: the only committed seed is `V13__seed_default_tenants.sql`. No committed SQL/Java/script seeds shops, products, orders, or customers. The 25 products / 10 shops / orders the audit saw are in the **shared dev Postgres volume**, created via API/UI during development.
