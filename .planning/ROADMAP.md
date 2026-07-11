@@ -62,7 +62,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 
 ### 🚧 v2.3 Phases (in progress)
 
-- [ ] **Phase 19: Full-Frontend Experience Overhaul** — Close the 15-item remediation backlog from the full-frontend UI audit (18-UI-REVIEW.md, whole-app 42/72): public landing page + information architecture (kill the `/` blind redirect, connect the 3 surfaces, de-orphan every route), responsive dashboard shell, real product names in kitchen/orders, checkout delivery address + fee transparency (V45 migration — V44 stays reserved for #96), per-shop menus, and comparator-grade polish (Deliveroo/Just Eat storefront bar; Square/Toast dashboard bar). Constraints: keep orange/emerald/slate food-delivery palette (editorial redesign explicitly rejected), mobile-first, zero regression of the 921 logical test invocations.
+- [x] **Phase 19: Full-Frontend Experience Overhaul** — **DONE 2026-07-11** (9/9 plans, 4 waves, on `feature/19-ui-overhaul`). Closed the 15-item remediation backlog from the full-frontend UI audit (18-UI-REVIEW.md, whole-app 42/72): public landing page + information architecture (killed the `/` blind redirect, connected the 3 surfaces, de-orphaned every route), responsive dashboard shell, real product names in kitchen/orders, checkout delivery address + fee transparency (V45 migration — V44 stays reserved for #96), per-shop menus, and comparator-grade polish (Deliveroo/Just Eat storefront bar; Square/Toast dashboard bar). Registered UIX-01..06. Palette kept orange/emerald/slate (editorial redesign explicitly rejected), mobile-first; test invocations grew 921 → 988 (no regression), schema V43 → V45, docs-freshness green. Backlog #14 (error boundary) documented LEAVE-AS-IS.
 
 ## Phase Details
 
@@ -272,7 +272,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 19-09-PLAN.md — Closure: UIX-01..06 registration + docs-freshness reconcile (schema 45) + full gate + browser UAT (UIX-06) [Wave 4]
+- [x] 19-09-PLAN.md — Closure: UIX-01..06 registration + docs-freshness reconcile (schema 45, 921 → 988) + full gate + browser UAT (UIX-06) [Wave 4]
 
 **UI hint**: yes — UI-SPEC approved (checker 6/6)
 
@@ -310,4 +310,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 8/9 | In Progress|  |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 9/9 | Complete | 2026-07-11 |
