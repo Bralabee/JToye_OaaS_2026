@@ -448,7 +448,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     return (
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
         <button
-          onClick={() => setPaymentState(null)}
+          onClick={() => {
+            // WR-03: the idempotency key identifies ONE order intent, not one
+            // page mount. Going back to edit details starts a new intent —
+            // rotate the key so an edited resubmission (e.g. switching
+            // DELIVERY to COLLECTION) creates a fresh order instead of being
+            // silently matched to the previous one by the server.
+            idempotencyKeyRef.current = crypto.randomUUID()
+            setPaymentState(null)
+          }}
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
