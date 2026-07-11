@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 18-vendor-onboarding-first-slice
 source: [18-VERIFICATION.md]
 started: 2026-07-11T05:10:00Z
-updated: 2026-07-11T05:10:00Z
+updated: 2026-07-11T08:30:00Z
 ---
 
 ## Current Test
 
-[items 1-4 PASSED via Playwright browser run 2026-07-11 against the rebuilt stack (phase build, V43 live); item 5 awaits the developer's product decision]
+[items 1-4 PASSED via Playwright browser run 2026-07-11 against the rebuilt stack (phase build, V43 live); item 5 DECIDED 2026-07-11 — hybrid auto-approve by model (ADR-0001). All 5 items closed.]
 
 ## Tests
 
@@ -30,7 +30,7 @@ result: PASS — CTA present and linked; sidebar "Go live" item present + active
 
 ### 5. auto-approve production decision (PRODUCT/OPS — needs the developer)
 expected: A documented decision: either ONBOARDING_AUTO_APPROVE=true for the target environment, or an admin-approve path ships before real vendors can reach PENDING_APPROVAL (today nothing moves an onboarding out of PENDING_APPROVAL except the auto-approve recompute).
-result: [pending — developer decision]
+result: PASS (decided 2026-07-11) — hybrid auto-approve by model (ADR-0001, #178 item 1): WHITE_LABEL auto-approves once all mandatory gates are green; MARKETPLACE always requires human approval. Shipped `onboarding.auto-approve-models` (default `[WHITE_LABEL]`) with `onboarding.auto-approve` retained as a global force-on override. The admin approve/reject queue that lets MARKETPLACE leave PENDING_APPROVAL remains tracked as #178 slice 2.
 
 ## Notes
 - Known pre-existing noise (not phase-18): NextAuth emits repeated "Failed to fetch" console errors during the signin redirect dance (login succeeds); worth a follow-up.
@@ -39,9 +39,9 @@ result: [pending — developer decision]
 ## Summary
 
 total: 5
-passed: 4
+passed: 5
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
