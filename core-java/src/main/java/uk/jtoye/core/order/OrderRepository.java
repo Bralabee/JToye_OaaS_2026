@@ -1,5 +1,7 @@
 package uk.jtoye.core.order;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -18,14 +20,21 @@ import java.util.UUID;
 public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     /**
-     * Find orders by status (tenant-scoped automatically).
+     * Find orders by status, unpaged (tenant-scoped automatically).
+     * Internal use only (ScheduledCleanupService full scan) — API paths must
+     * use the paginated overload (Issue #95).
      */
     List<Order> findByStatus(OrderStatus status);
 
     /**
-     * Find orders by shop ID (tenant-scoped automatically).
+     * Find orders by status, paginated (tenant-scoped automatically).
      */
-    List<Order> findByShopId(UUID shopId);
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
+
+    /**
+     * Find orders by shop ID, paginated (tenant-scoped automatically).
+     */
+    Page<Order> findByShopId(UUID shopId, Pageable pageable);
 
     /**
      * Find order by order number (tenant-scoped automatically).
@@ -33,9 +42,16 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByOrderNumber(String orderNumber);
 
     /**
-     * Find orders by customer ID (tenant-scoped automatically).
+     * Find orders by customer ID, unpaged (tenant-scoped automatically).
+     * Internal use only (GdprService erasure must sweep ALL orders) — API
+     * paths must use the paginated overload (Issue #95).
      */
     List<Order> findByCustomerId(UUID customerId);
+
+    /**
+     * Find orders by customer ID, paginated (tenant-scoped automatically).
+     */
+    Page<Order> findByCustomerId(UUID customerId, Pageable pageable);
 
     /**
      * Find order by order number and customer email.
@@ -44,10 +60,19 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByOrderNumberAndCustomerEmail(String orderNumber, String customerEmail);
 
     /**
-     * Find all orders by customer email, most recent first.
-     * Used for customer order history — RLS policy requires matching session variable.
+     * Find all orders by customer email, most recent first, unpaged.
+     * Internal use only (GdprService email sweep must cover ALL orders) — the
+     * public order-history API uses the paginated overload (Issue #95).
+     * RLS policy requires matching session variable.
      */
     List<Order> findByCustomerEmailOrderByCreatedAtDesc(String customerEmail);
+
+    /**
+     * Find orders by customer email, most recent first, paginated.
+     * Used for the public customer order-history endpoint — RLS policy
+     * requires matching {@code app.customer_email} session variable.
+     */
+    Page<Order> findByCustomerEmailOrderByCreatedAtDesc(String customerEmail, Pageable pageable);
 
     Optional<Order> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 

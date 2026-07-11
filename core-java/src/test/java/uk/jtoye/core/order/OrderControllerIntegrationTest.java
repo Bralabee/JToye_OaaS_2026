@@ -4,6 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -213,17 +217,82 @@ class OrderControllerIntegrationTest {
                 orderService.createOrder(request);
             }
 
-            // Get orders by status
-            List<OrderDto> draftOrders = orderService.getOrdersByStatus(OrderStatus.DRAFT);
+            // Get orders by status (paginated — Issue #95)
+            Page<OrderDto> draftOrders = orderService.getOrdersByStatus(
+                    OrderStatus.DRAFT, PageRequest.of(0, 20));
 
             // Verify
-            assertThat(draftOrders).hasSizeGreaterThanOrEqualTo(3);
-            assertThat(draftOrders).allMatch(o -> o.getStatus() == OrderStatus.DRAFT);
-            assertThat(draftOrders).allMatch(o -> o.getTenantId().equals(TENANT_A));
+            assertThat(draftOrders.getTotalElements()).isGreaterThanOrEqualTo(3);
+            assertThat(draftOrders.getContent()).allMatch(o -> o.getStatus() == OrderStatus.DRAFT);
+            assertThat(draftOrders.getContent()).allMatch(o -> o.getTenantId().equals(TENANT_A));
 
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Issue #95: the formerly-unbounded by-status/by-shop/by-customer list paths
+     * must slice correctly against real Postgres (with the RLS tenant GUC applied
+     * by TenantSetLocalAspect on every repository call).
+     */
+    @Test
+    void testOrderListPaginationSlicing() {
+        TenantContext.set(TENANT_A);
+        try {
+            UUID customerId = createCustomer("paging@example.com");
+            for (int i = 0; i < 3; i++) {
+                CreateOrderRequest request = new CreateOrderRequest();
+                request.setShopId(shopAId);
+                request.setCustomerId(customerId);
+                OrderItemRequest item = new OrderItemRequest();
+                item.setProductId(productAId);
+                item.setQuantity(1);
+                request.setItems(List.of(item));
+                orderService.createOrder(request);
+            }
+
+            Pageable firstPage = PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "createdAt"));
+            Pageable secondPage = PageRequest.of(1, 2, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+            // By status: 3 orders → page 0 has 2, page 1 has 1
+            Page<OrderDto> statusPage0 = orderService.getOrdersByStatus(OrderStatus.DRAFT, firstPage);
+            Page<OrderDto> statusPage1 = orderService.getOrdersByStatus(OrderStatus.DRAFT, secondPage);
+            assertThat(statusPage0.getContent()).hasSize(2);
+            assertThat(statusPage0.getTotalElements()).isEqualTo(3);
+            assertThat(statusPage0.getTotalPages()).isEqualTo(2);
+            assertThat(statusPage1.getContent()).hasSize(1);
+
+            // By shop
+            Page<OrderDto> shopPage0 = orderService.getOrdersByShop(shopAId, firstPage);
+            Page<OrderDto> shopPage1 = orderService.getOrdersByShop(shopAId, secondPage);
+            assertThat(shopPage0.getContent()).hasSize(2);
+            assertThat(shopPage0.getTotalElements()).isEqualTo(3);
+            assertThat(shopPage1.getContent()).hasSize(1);
+
+            // By customer
+            Page<OrderDto> customerPage0 = orderService.getOrdersByCustomer(customerId, firstPage);
+            Page<OrderDto> customerPage1 = orderService.getOrdersByCustomer(customerId, secondPage);
+            assertThat(customerPage0.getContent()).hasSize(2);
+            assertThat(customerPage0.getTotalElements()).isEqualTo(3);
+            assertThat(customerPage1.getContent()).hasSize(1);
+
+            // No page leaks another tenant's rows
+            assertThat(statusPage0.getContent()).allMatch(o -> o.getTenantId().equals(TENANT_A));
+            assertThat(shopPage0.getContent()).allMatch(o -> o.getTenantId().equals(TENANT_A));
+            assertThat(customerPage0.getContent()).allMatch(o -> o.getTenantId().equals(TENANT_A));
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private UUID createCustomer(String email) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO customers (id, tenant_id, name, email, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                id, TENANT_A, "Paging Customer", email);
+        return id;
     }
 
     @Test

@@ -10,9 +10,13 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 
-import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,7 +60,7 @@ class PublicStorefrontControllerIdorTest {
                 .andExpect(status().isBadRequest());
 
         verify(storefrontService, never()).trackOrder(anyString(), anyString());
-        verify(storefrontService, never()).getCustomerOrders(anyString());
+        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
@@ -67,7 +71,7 @@ class PublicStorefrontControllerIdorTest {
                 .andExpect(status().isBadRequest());
 
         verify(storefrontService, never()).trackOrder(anyString(), anyString());
-        verify(storefrontService, never()).getCustomerOrders(anyString());
+        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
@@ -82,7 +86,7 @@ class PublicStorefrontControllerIdorTest {
                 .andExpect(status().isNotFound());
 
         verify(storefrontService).trackOrder("BAD-NUMBER", "victim@example.com");
-        verify(storefrontService, never()).getCustomerOrders(anyString());
+        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
@@ -93,16 +97,16 @@ class PublicStorefrontControllerIdorTest {
         tracked.setOrderNumber("ORD-2026-0001");
         when(storefrontService.trackOrder("ORD-2026-0001", "alice@example.com"))
                 .thenReturn(tracked);
-        when(storefrontService.getCustomerOrders("alice@example.com"))
-                .thenReturn(List.of());
+        when(storefrontService.getCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
+                .thenReturn(Page.empty());
 
         mockMvc.perform(get("/public/orders")
                         .param("email", "alice@example.com")
                         .param("verify", "ORD-2026-0001"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                .andExpect(jsonPath("$.content").isArray());
 
         verify(storefrontService).trackOrder("ORD-2026-0001", "alice@example.com");
-        verify(storefrontService).getCustomerOrders("alice@example.com");
+        verify(storefrontService).getCustomerOrders(eq("alice@example.com"), any(Pageable.class));
     }
 }

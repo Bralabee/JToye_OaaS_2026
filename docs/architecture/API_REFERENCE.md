@@ -59,7 +59,7 @@ GET /shops
 
 **Query Parameters:**
 - `page` (optional): Page number (default: 0)
-- `size` (optional): Page size (default: 20)
+- `size` (optional): Page size (default: 20, max: 100 — oversized values are clamped server-side)
 
 **Response:**
 ```json
@@ -227,6 +227,12 @@ GET /orders/status/{status}
 - `READY`
 - `COMPLETED`
 - `CANCELLED`
+
+Returns a paginated `Page` response (`content`, `totalElements`, `totalPages`, …)
+sorted by `createdAt` descending by default. Standard `page`/`size`/`sort`
+parameters apply (size default 20, max 100 — clamped). The same applies to
+`GET /orders/shop/{shopId}`, `GET /orders/customer/{customerId}`, and the
+public customer order history `GET /public/orders`.
 
 ---
 

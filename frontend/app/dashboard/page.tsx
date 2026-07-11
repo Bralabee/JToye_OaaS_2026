@@ -87,7 +87,9 @@ export default function DashboardPage() {
           apiClient.get("/api/v1/orders?size=1"),
           apiClient.get("/api/v1/customers?size=1"),
           apiClient.get("/api/v1/orders?size=10&sort=createdAt,desc"),
-          apiClient.get("/api/v1/orders?size=200"),
+          // Server enforces a max page size of 100 (Issue #95) — the previous
+          // size=200 was silently over-asking. Chart the 100 most recent orders.
+          apiClient.get("/api/v1/orders?size=100&sort=createdAt,desc"),
           apiClient.get("/api/v1/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 

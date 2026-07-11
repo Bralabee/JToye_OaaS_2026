@@ -103,10 +103,11 @@ public class PublicStorefrontController {
 
     @GetMapping("/orders")
     @Operation(summary = "Customer order history",
-            description = "List all orders for a customer by email address. The 'verify' parameter (a recent order number for this customer) is mandatory — without it the request is rejected to prevent email-based enumeration.")
-    public ResponseEntity<List<PublicOrderStatus>> getCustomerOrders(
+            description = "Paginated orders for a customer by email address, most recent first. The 'verify' parameter (a recent order number for this customer) is mandatory — without it the request is rejected to prevent email-based enumeration.")
+    public ResponseEntity<Page<PublicOrderStatus>> getCustomerOrders(
             @RequestParam String email,
-            @RequestParam(name = "verify") String verifyOrderNumber) {
+            @RequestParam(name = "verify") String verifyOrderNumber,
+            @PageableDefault(size = 20) Pageable pageable) {
         // AUDIT-W0-02: 'verify' is mandatory. Spring's missing-required-param exception
         // already returns 400 for the absent case; we add an explicit guard for the
         // present-but-blank case so both surfaces look the same to the client.
@@ -118,7 +119,7 @@ public class PublicStorefrontController {
         // Throws ResourceNotFoundException → 404 if the (verify, email) pair does not
         // resolve to a real order — that is the proof-of-ownership gate.
         storefrontService.trackOrder(verifyOrderNumber, email);
-        return ResponseEntity.ok(storefrontService.getCustomerOrders(email));
+        return ResponseEntity.ok(storefrontService.getCustomerOrders(email, pageable));
     }
 
     @GetMapping("/orders/{orderNumber}")
