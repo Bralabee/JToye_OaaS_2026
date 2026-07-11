@@ -190,7 +190,7 @@ Plans:
 
 Plans:
 - [x] 18-01-PLAN.md — Persistence foundation: Flyway V43 (vendor_onboarding + _gate + _aud, FORCE RLS), enums, audited entities/repos, OnboardingProperties + config [Wave 1]
-- [ ] 18-02-PLAN.md — Submit slice: onboarding state machine (sole writer of Shop.published) + VendorOnboardingService + gate-chain registry/runner + create/submit/status API [Wave 2]
+- [x] 18-02-PLAN.md — Submit slice: onboarding state machine (sole writer of Shop.published) + VendorOnboardingService + gate-chain registry/runner + create/submit/status API [Wave 2]
 - [ ] 18-03-PLAN.md — FOOD_HYGIENE_RATING gate: FhrsClient (x-api-version:2 + circuit breaker) + FhrsGate (min-rating=2, MANUAL_REVIEW fallback) [Wave 3]
 - [ ] 18-04-PLAN.md — BUSINESS_VERIFIED gate: CompaniesHouseClient (HTTP Basic + circuit breaker) + CompaniesHouseGate (active->PASSED, sole trader->WAIVED) [Wave 3]
 - [ ] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
@@ -228,4 +228,4 @@ Suggested wave layout:
 | 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
-| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 1/6 | In Progress|  |
+| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 2/6 | In Progress|  |
