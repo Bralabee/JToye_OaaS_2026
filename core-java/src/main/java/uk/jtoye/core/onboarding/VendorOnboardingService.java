@@ -92,6 +92,25 @@ public class VendorOnboardingService {
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
 
+    /**
+     * Take the caller's onboarding LIVE (APPROVED → LIVE). Fires GO_LIVE through
+     * the single canonical {@link #transition} path; the GO_LIVE guard (18-02)
+     * requires every mandatory gate PASSED/WAIVED AND a PASSED
+     * {@code ALLERGEN_DATA_COMPLETE} row, so a guard veto surfaces as
+     * {@code InvalidStateTransitionException} → HTTP 400. The transition's side
+     * effect flips {@code Shop.published=true} via {@link ShopService#setPublished}
+     * — the sole authorised writer of {@code published=true} (threat T-18-05-T) —
+     * and stamps {@code went_live_at}.
+     */
+    public OnboardingDto goLive() {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        transition(onboarding, OnboardingEvent.GO_LIVE);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
     /** The caller-tenant's onboarding plus its per-gate breakdown. */
     @Transactional(readOnly = true)
     public OnboardingDto getMyOnboarding() {

@@ -84,6 +84,17 @@ class OnboardingSubmitIntegrationTest {
         jdbc.update("INSERT INTO shops (id, tenant_id, name, slug, address, published, delivery_fee_pennies) " +
                         "VALUES (?, ?, ?, ?, ?, false, 0)",
                 shopId, tenantId, "shop-" + shopId, "slug-" + shopId.toString().substring(0, 8), "Test Address");
+        // 18-05: a mandatory automatic ALLERGEN_DATA_COMPLETE gate now exists, so on
+        // submit the gate chain evaluates the shop's catalogue. Seed one fully-labelled
+        // product (V41 durability_type + shelf_life_days + ingredients) so the allergen
+        // gate PASSES here — without it the (empty-catalogue) gate would FAIL and drive
+        // the onboarding to ACTION_REQUIRED, breaking the auto-approve scenarios below.
+        jdbc.update("INSERT INTO products (id, tenant_id, created_at, sku, title, ingredients_text, "
+                        + "allergen_mask, price_pennies, display_order, available, featured, "
+                        + "shop_id, shelf_life_days, durability_type, version) "
+                        + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 3, 'USE_BY', 0)",
+                UUID.randomUUID(), tenantId, "SKU-" + shopId.toString().substring(0, 8), "Test Product",
+                "Wheat flour, **milk**, sugar", shopId);
     }
 
     private String createBody() throws Exception {
@@ -138,10 +149,14 @@ class OnboardingSubmitIntegrationTest {
                 .andExpect(jsonPath("$.status").value("VERIFYING"))
                 .andExpect(jsonPath("$.submittedAt").isNotEmpty());
 
-        // read back via GET /me
+        // read back via GET /me. The submit RESPONSE proved VERIFYING synchronously;
+        // by the time we re-read, the @Async gate recompute may already have advanced
+        // the onboarding (a mandatory automatic gate now exists — 18-05). The durable,
+        // timing-independent proof is that submitted_at was stamped + persisted and the
+        // onboarding has left DRAFT.
         JsonNode me = getMe();
-        assertThat(me.get("status").asText()).isEqualTo("VERIFYING");
         assertThat(me.get("submittedAt").isNull()).isFalse();
+        assertThat(me.get("status").asText()).isNotEqualTo("DRAFT");
     }
 
     @Test
