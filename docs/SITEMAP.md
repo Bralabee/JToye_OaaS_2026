@@ -11,7 +11,7 @@ public routes only). **Keep both in sync when adding pages.**
 
 | Route | Purpose |
 |---|---|
-| `/` | Root redirect: signed-in vendor → `/dashboard`, otherwise → `/auth/signin` |
+| `/` | Public landing page (persona routing: order food → `/shop` / run your business → `/for-operators`); wrapped in the shared public shell. Signed-in vendors reach `/dashboard` via the header, not an auto-forward |
 | `/for-operators` | Prospective-vendor pitch: takeaway & catering journeys, pilot terms, fit check |
 | `/business-model-guide` | Authoritative business-model decision guide (companion: `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`) |
 | `/shop` | Storefront discovery / shop directory |
