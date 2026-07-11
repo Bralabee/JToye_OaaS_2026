@@ -204,7 +204,8 @@ public class PublicStorefrontService {
     /**
      * Get available products for a published shop, grouped by category.
      * Sets TenantContext from the shop's tenant_id so RLS allows product queries.
-     * Filters to products assigned to this shop (or unassigned = tenant-wide).
+     * Filters strictly to products assigned to this shop (UIX-05 — no tenant-wide
+     * fallback; every product belongs to exactly one shop).
      */
     public Map<String, List<PublicProductDto>> getShopProducts(String slug) {
         log.debug("Fetching products for shop: {}", slug);
@@ -212,7 +213,8 @@ public class PublicStorefrontService {
         // SEC-01 gate + TenantContext set atomically (Phase 13).
         Shop shop = resolvePublicShopForSlug(slug);
         try {
-            // Filter: products assigned to this shop OR unassigned (shop_id IS NULL = tenant-wide)
+            // Filter: products assigned to THIS shop only (UIX-05 — the shop_id IS NULL
+            // "tenant-wide" bleed was removed so a second shop shows its own menu).
             List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
 
             // Group by category, preserving order; uncategorized items go under "Other"

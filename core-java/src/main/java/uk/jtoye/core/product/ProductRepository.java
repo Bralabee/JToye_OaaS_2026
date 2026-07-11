@@ -18,7 +18,12 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("SELECT p FROM Product p WHERE p.available = true ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
     List<Product> findAvailableOrderedByCategory();
 
-    @Query("SELECT p FROM Product p WHERE p.available = true AND (p.shopId = :shopId OR p.shopId IS NULL) ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
+    // UIX-05 (phase 19): strictly shop-scoped. The removed NULL-shop_id fallback
+    // rendered every unassigned product on EVERY shop's menu (24/25 live rows were
+    // unassigned) — a second shop showed a duplicated clone of the first. There is
+    // no "tenant-wide items" feature; every product belongs to exactly one shop.
+    // RLS already scopes `products` to the tenant; this narrows within-tenant by shop.
+    @Query("SELECT p FROM Product p WHERE p.available = true AND p.shopId = :shopId ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
     List<Product> findAvailableByShopOrderedByCategory(@Param("shopId") UUID shopId);
 
     List<Product> findByFeaturedTrueAndAvailableTrue();
