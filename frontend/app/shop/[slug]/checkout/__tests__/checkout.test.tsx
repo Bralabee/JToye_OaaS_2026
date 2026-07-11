@@ -248,6 +248,39 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
+  it("COD confirmation says 'Pay on delivery' for a DELIVERY order (WR-08)", async () => {
+    seedCart(2000)
+    mockedPost.mockResolvedValue({
+      data: {
+        orderNumber: "ORD-TEST-1",
+        status: "PENDING",
+        subtotalPennies: 2000,
+        deliveryFeePennies: 300,
+        vatRate: "STANDARD",
+        vatAmountPennies: 383,
+        totalAmountPennies: 2300,
+        shopName: "Jollof Express",
+        itemCount: 1,
+        clientSecret: null, // COD path
+        allergenWarnings: [],
+      },
+    })
+    renderCheckout()
+
+    await screen.findByText("Delivery address")
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: "Ade Johnson" } })
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: "ade@example.com" } })
+    fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900000" } })
+    fireEvent.change(screen.getByLabelText(/address line 1/i), { target: { value: "12 Coldharbour Lane" } })
+    fireEvent.change(screen.getByLabelText(/town/i), { target: { value: "London" } })
+    fireEvent.change(screen.getByLabelText(/postcode/i), { target: { value: "SW9 8LF" } })
+    fireEvent.click(screen.getByRole("button", { name: /place order/i }))
+
+    // A customer who chose Delivery must NOT be told to pay on collection.
+    expect(await screen.findByText(/Pay on delivery/)).toBeTruthy()
+    expect(screen.queryByText(/Pay on collection/)).toBeNull()
+  })
+
   it("blocks submit on an invalid postcode with the exact inline error", async () => {
     seedCart(1000)
     renderCheckout()

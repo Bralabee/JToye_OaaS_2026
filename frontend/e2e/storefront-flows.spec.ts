@@ -99,9 +99,10 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   await page.locator('button[type="submit"]:has-text("Place order")').click()
 
   // No Stripe keys in this env → the order takes the COD path and confirms
-  // INLINE ("Order confirmed! · Pay on collection"), rather than redirecting to
-  // /orders/ORD- (that redirect only follows a live Stripe payment). The order
-  // is genuinely created (its number is shown + a confirmation email is sent).
+  // INLINE ("Order confirmed! · Pay on delivery" — this is a DELIVERY order,
+  // WR-08), rather than redirecting to /orders/ORD- (that redirect only
+  // follows a live Stripe payment). The order is genuinely created (its
+  // number is shown + a confirmation email is sent).
   await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
   const confText = await page.getByText(/Order\s+ORD-/).innerText()
   const match = confText.match(/ORD-[A-Z0-9-]+/)
@@ -363,8 +364,9 @@ test.describe("Cart + Checkout", () => {
     await page.locator('button[type="submit"]:has-text("Place order")').click()
 
     // COD path (no Stripe keys in this env): the order confirms INLINE with the
-    // fee breakdown — "Order confirmed! · Pay on collection" — proving the order
-    // was created and the fee-before-pay total is shown, without a live card.
+    // fee breakdown — "Order confirmed! · Pay on delivery" (a DELIVERY order,
+    // WR-08) — proving the order was created and the fee-before-pay total is
+    // shown, without a live card.
     await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/Order\s+ORD-/)).toBeVisible()
     await expect(page.getByRole("heading", { name: "Order total" })).toBeVisible()

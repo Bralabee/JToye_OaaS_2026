@@ -243,9 +243,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     allergenWarnings: string[]
   } | null>(null)
 
-  // COD confirmation — shows full breakdown before redirect
+  // COD confirmation — shows full breakdown before redirect. Carries the
+  // submitted fulfilment type so the payment instruction reads "Pay on
+  // delivery" for DELIVERY orders (WR-08).
   const [codConfirmation, setCodConfirmation] = useState<{
     orderNumber: string
+    fulfilmentType: FulfilmentType
     subtotalPennies: number
     deliveryFeePennies: number
     vatRate: string
@@ -334,6 +337,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         clearCart()
         setCodConfirmation({
           orderNumber: confirmation.orderNumber,
+          fulfilmentType,
           subtotalPennies: confirmation.subtotalPennies,
           deliveryFeePennies: confirmation.deliveryFeePennies || 0,
           vatRate: confirmation.vatRate,
@@ -380,7 +384,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
           <h1 className="mt-4 text-xl font-bold text-slate-900">Order confirmed!</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Order {codConfirmation.orderNumber} &middot; Pay on collection
+            Order {codConfirmation.orderNumber} &middot; Pay on{" "}
+            {codConfirmation.fulfilmentType === "COLLECTION" ? "collection" : "delivery"}
           </p>
         </div>
 
