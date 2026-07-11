@@ -43,10 +43,12 @@ async function loginCustomer(page: Page): Promise<{ email: string }> {
   return { email }
 }
 
-// Helper: place an order (requires logged-in customer)
+// Helper: place an order (requires logged-in customer).
+// UIX-04: checkout now defaults to Delivery and requires a UK address; the fee
+// breakdown is shown BEFORE payment.
 async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.waitForTimeout(2000)
 
   const addBtn = page.locator('button:has-text("Add")').first()
@@ -55,15 +57,25 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   await page.waitForTimeout(500)
 
   await page.locator("text=View basket").click()
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("text=Your basket")).toBeVisible()
 
   await page.locator("text=Proceed to checkout").click()
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
 
   await page.fill("input#name", name)
   await page.fill("input#email", email)
   await page.fill("input#phone", "07700 000000")
+
+  // Default fulfilment is Delivery — a UK address is required to submit.
+  await page.fill("input#address1", "12 Coldharbour Lane")
+  await page.fill("input#city", "London")
+  await page.fill("input#postcode", "SW9 8LF")
+
+  // Definite fee breakdown is visible BEFORE payment.
+  await expect(page.getByText("Subtotal")).toBeVisible()
+  await expect(page.getByText("Total", { exact: true })).toBeVisible()
+
   await page.locator('button[type="submit"]:has-text("Place order")').click()
   await page.waitForTimeout(5000)
 
@@ -107,12 +119,44 @@ test.describe("Shop Discovery", () => {
 test.describe("Shop Menu & Product Cards", () => {
   test("menu loads with categories and products", async ({ page }) => {
     await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.locator("text=Jollof Rice")).toBeVisible({ timeout: 5000 })
     await expect(page.locator("text=Popular")).toBeVisible()
     await expect(page.locator("text=Halal").first()).toBeVisible()
     await expect(page.locator("text=£8.99").first()).toBeVisible()
+  })
+
+  test("per-shop menu shows only this shop's products with no duplicate line items (UIX-05)", async ({ page }) => {
+    await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
+    await page.waitForLoadState("domcontentloaded")
+    await page.waitForTimeout(2000)
+
+    // The shop's own menu renders
+    await expect(page.locator("text=Jollof Rice").first()).toBeVisible({ timeout: 5000 })
+
+    // Collect product-card titles from the CATEGORY sections only, excluding the
+    // featured "Popular" section (where featured items legitimately re-appear).
+    // 19-02 dropped the `shopId IS NULL` bleed, so a shop no longer shows the
+    // 24-item shared menu and no title duplicates across its own categories.
+    const categoryTitles = await page.evaluate(() => {
+      const titles: string[] = []
+      for (const section of Array.from(document.querySelectorAll("section"))) {
+        const heading = section.querySelector("h2")?.textContent?.trim() || ""
+        if (/popular/i.test(heading)) continue
+        section.querySelectorAll("article h4").forEach((h) => {
+          const t = h.textContent?.trim()
+          if (t) titles.push(t)
+        })
+      }
+      return titles
+    })
+
+    expect(categoryTitles.length).toBeGreaterThan(0)
+
+    // No duplicate line items — each product appears once in its own category.
+    const duplicates = categoryTitles.filter((t, i) => categoryTitles.indexOf(t) !== i)
+    expect(duplicates).toEqual([])
   })
 
   test("product images ACTUALLY RENDER on cards (not just exist in DOM)", async ({ page }) => {
@@ -236,9 +280,9 @@ test.describe("Shop Menu & Product Cards", () => {
 // ============================
 
 test.describe("Cart + Checkout", () => {
-  test("add items, view cart, modify quantity, checkout", async ({ page }) => {
+  test("add items, view cart, modify quantity, checkout with fulfilment + fee-before-pay", async ({ page }) => {
     await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await page.waitForTimeout(2000)
 
     const addButtons = page.locator('button:has-text("Add")')
@@ -254,16 +298,32 @@ test.describe("Cart + Checkout", () => {
     // before proceeding, so the dedicated cart route is exercised end-to-end
     // (not just the floating cart drawer).
     await page.goto(`${BASE}/shop/${SHOP_SLUG}/cart`)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("text=Your basket")).toBeVisible()
     await expect(page.locator("text=Proceed to checkout")).toBeVisible()
 
     await page.locator("text=Proceed to checkout").click()
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
+
+    // UIX-04: fulfilment defaults to Delivery and the UK address block is shown.
+    await expect(page.getByRole("button", { name: /delivery/i })).toBeVisible()
+    await expect(page.getByRole("button", { name: /collection/i })).toBeVisible()
+    await expect(page.locator("text=Delivery address")).toBeVisible()
 
     await page.fill("input#name", "Cart Flow Tester")
     await page.fill("input#email", "cartflow@test.com")
     await page.fill("input#phone", "07700 111111")
+    await page.fill("input#address1", "5 Atlantic Road")
+    await page.fill("input#city", "London")
+    await page.fill("input#postcode", "SW9 8HX")
+
+    // Fee breakdown (Subtotal + Delivery + Total) is visible BEFORE payment —
+    // the deferred "Delivery fee may apply" footnote is gone.
+    await expect(page.getByText("Subtotal")).toBeVisible()
+    await expect(page.getByText("Delivery", { exact: true })).toBeVisible()
+    await expect(page.getByText("Total", { exact: true })).toBeVisible()
+    await expect(page.locator("text=Final total confirmed")).toHaveCount(0)
+
     await page.locator('button[type="submit"]:has-text("Place order")').click()
     await page.waitForTimeout(5000)
 
