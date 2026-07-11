@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit proof of {@link CompaniesHouseClient} using an in-memory
- * {@link ExchangeFunction} stub — NO WireMock/MockWebServer (threat T-18-04-SC:
- * no new gradle dependency). The stub both (a) captures the outgoing
+ * {@link ExchangeFunction} stub — no external HTTP mock-server library and no
+ * new gradle dependency (threat T-18-04-SC). The stub both (a) captures the outgoing
  * {@link ClientRequest} so we can assert the HTTP Basic header decodes to
  * {@code <apiKey>:} (key-as-username, empty password — research §6) and
  * (b) returns canned Companies House bodies (active / dissolved / 404 / 5xx).
