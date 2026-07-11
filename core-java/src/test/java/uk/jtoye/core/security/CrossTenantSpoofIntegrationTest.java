@@ -192,9 +192,13 @@ class CrossTenantSpoofIntegrationTest {
         // mint an Order. Using a random UUID for productId — under a successful
         // cross-tenant flow this would eventually 404 at product lookup, but
         // the gate short-circuits to 403 first.
+        // UIX-04 (Phase 19): fulfilmentType is @NotBlank on GuestOrderRequest —
+        // without it bean validation 400s before the tenant gate can 403.
+        // COLLECTION keeps the body minimal (no address required).
         UUID dummyProductId = UUID.randomUUID();
         String minimalOrderJson = "{\"customerEmail\":\"t@example.com\"," +
                 "\"customerName\":\"T\",\"customerPhone\":\"+447000000000\"," +
+                "\"fulfilmentType\":\"COLLECTION\"," +
                 "\"items\":[{\"productId\":\"" + dummyProductId + "\",\"quantity\":1}]," +
                 "\"idempotencyKey\":\"test-key-1\"}";
 

@@ -228,6 +228,11 @@ class GuestCheckoutStockConvergenceIntegrationTest {
         request.setNotes("issue #85 characterization");
         request.setIdempotencyKey(idempotencyKey);
         request.setItems(List.of(item));
+        // UIX-04 (Phase 19): fulfilmentType is now required; an absent value
+        // defaults to DELIVERY which mandates a UK address. This test is
+        // fulfilment-agnostic (it pins STOCK behaviour), so use COLLECTION —
+        // no address needed, delivery fee forced to £0.
+        request.setFulfilmentType("COLLECTION");
         return request;
     }
 
