@@ -1,5 +1,38 @@
+import fs from "fs"
+import path from "path"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
+import ForOperatorsPage from "@/app/for-operators/page"
+
+describe("OperatorPitch design tokens (Surface C re-skin)", () => {
+  const src = fs.readFileSync(
+    path.join(process.cwd(), "components/marketing/operator-pitch.tsx"),
+    "utf8"
+  )
+
+  it("uses only design tokens — zero hardcoded hex", () => {
+    // The re-skin migrates the bespoke navy/orange/yellow palette onto tokens.
+    expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+  })
+
+  it("renders on-token classes within the locked orange/emerald/slate family", () => {
+    expect(src).toMatch(/bg-slate-900/)
+    expect(src).toMatch(/text-orange-500/)
+    expect(src).toMatch(/text-amber-300/)
+  })
+
+  it("obeys the public display cap — no font-black / text-7xl / serif", () => {
+    expect(src).not.toMatch(/font-black|text-7xl|text-8xl|font-serif/)
+  })
+
+  it("wraps the operator pitch in the shared PublicShell (connected surface)", () => {
+    render(<ForOperatorsPage />)
+    // The shared public header exposes a "For operators" nav link (header-only copy),
+    // proving PublicShell rendered around the pitch.
+    const headerLink = screen.getByRole("link", { name: /^for operators$/i })
+    expect(headerLink.getAttribute("href")).toBe("/for-operators")
+  })
+})
 
 describe("OperatorPitch", () => {
   beforeEach(() => {

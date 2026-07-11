@@ -272,6 +272,13 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       {/* Actions */}
       <div className="space-y-3">
         <Link
+          href={`/track?order=${orderNumber}&email=${encodeURIComponent(email)}`}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 py-2.5 text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors"
+        >
+          <Package className="h-4 w-4" />
+          Track this order
+        </Link>
+        <Link
           href={`/shop/${slug}`}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
         >

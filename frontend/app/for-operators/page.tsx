@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
+import { PublicShell } from "@/components/public/public-shell"
 
 export const metadata: Metadata = {
   title: "Operator pilot | J'Toye OaaS",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 }
 
 export default function ForOperatorsPage() {
-  return <OperatorPitch />
+  return (
+    <PublicShell>
+      <OperatorPitch />
+    </PublicShell>
+  )
 }

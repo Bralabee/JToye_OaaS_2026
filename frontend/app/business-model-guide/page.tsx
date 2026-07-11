@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { BusinessModelGuide } from "@/components/marketing/business-model-guide"
+import { PublicShell } from "@/components/public/public-shell"
 
 export const metadata: Metadata = {
   title: "Business model guide | J'Toye OaaS",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 }
 
 export default function BusinessModelGuidePage() {
-  return <BusinessModelGuide />
+  return (
+    <PublicShell>
+      <BusinessModelGuide />
+    </PublicShell>
+  )
 }
