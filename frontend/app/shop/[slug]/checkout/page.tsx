@@ -3,16 +3,52 @@
 import { use, useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store } from "lucide-react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import publicApiClient from "@/lib/public-api-client"
+import { PublicShop } from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
+}
+
+/** How an order is fulfilled — mirrors the server FulfilmentType enum strings. */
+export type FulfilmentType = "DELIVERY" | "COLLECTION"
+
+/**
+ * UK postcode format (UI-SPEC Surface E). Kept non-global so `.test()` carries
+ * no `lastIndex` state between calls.
+ */
+export const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/
+
+/** Validate a UK postcode, trimming + upper-casing first (blur normalises too). */
+export function isValidUkPostcode(value: string): boolean {
+  return UK_POSTCODE_REGEX.test(value.trim().toUpperCase())
+}
+
+/**
+ * Client-side delivery-fee PREVIEW. Mirrors the server waiver EXACTLY
+ * (PublicStorefrontService.calculateDeliveryFee): COLLECTION is always £0;
+ * DELIVERY uses the shop's fee, waived to £0 once the subtotal clears the
+ * free-delivery threshold. This is display-only — the server recomputes the
+ * authoritative total on order creation, so tampering here cannot underpay.
+ */
+export function previewDeliveryFeePennies(
+  subtotalPennies: number,
+  fulfilmentType: FulfilmentType,
+  deliveryFeePennies: number | null | undefined,
+  freeDeliveryThresholdPennies: number | null | undefined
+): number {
+  if (fulfilmentType === "COLLECTION") return 0
+  const base = deliveryFeePennies ?? 0
+  if (freeDeliveryThresholdPennies != null && subtotalPennies >= freeDeliveryThresholdPennies) {
+    return 0
+  }
+  return base
 }
 
 interface OrderConfirmation {
@@ -163,6 +199,38 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Fulfilment + conditional UK delivery address (UIX-04 / Surface E).
+  // Default = Delivery; Collection is one tap away and zeroes the delivery fee.
+  const [fulfilmentType, setFulfilmentType] = useState<FulfilmentType>("DELIVERY")
+  const [address1, setAddress1] = useState("")
+  const [address2, setAddress2] = useState("")
+  const [city, setCity] = useState("")
+  const [postcode, setPostcode] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{
+    address1?: string
+    city?: string
+    postcode?: string
+  }>({})
+
+  // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
+  // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
+  // failure degrades gracefully to a £0 preview (server stays authoritative).
+  const [shop, setShop] = useState<PublicShop | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    publicApiClient
+      .get<PublicShop>(`/public/shops/${slug}`)
+      .then((res) => {
+        if (!cancelled) setShop(res.data)
+      })
+      .catch(() => {
+        /* Preview falls back to £0 delivery; server recomputes the real fee. */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
+
   // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
     clientSecret: string
@@ -188,8 +256,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
   if (items.length === 0 && !paymentState && !codConfirmation) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <ShoppingBag className="mx-auto h-16 w-16 text-slate-200" />
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
+        <ShoppingBag className="h-16 w-16 text-slate-200" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Nothing to checkout</h2>
         <p className="mt-1 text-sm text-slate-500">Add items from the menu first.</p>
         <Link
@@ -206,15 +274,41 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    // Conditional UK-address validation (Surface E). Collection needs no address.
+    if (fulfilmentType === "DELIVERY") {
+      const errs: { address1?: string; city?: string; postcode?: string } = {}
+      if (!address1.trim()) errs.address1 = "Add a delivery address, or switch to Collection."
+      if (!city.trim()) errs.city = "Add a delivery address, or switch to Collection."
+      if (!isValidUkPostcode(postcode)) {
+        errs.postcode = "Enter a valid UK postcode (e.g. SW1A 1AA)"
+      }
+      if (Object.keys(errs).length > 0) {
+        setFieldErrors(errs)
+        return
+      }
+    }
+    setFieldErrors({})
     setSubmitting(true)
 
     try {
+      // Server contract (GuestOrderRequest, plan 19-01) is FLAT: fulfilmentType +
+      // addressLine1/2 + addressCity + addressPostcode (NOT a nested address obj).
       const payload = {
         customerName: customerName.trim(),
         customerEmail: customerEmail.trim(),
         customerPhone: customerPhone.trim(),
         notes: notes.trim() || undefined,
         idempotencyKey: idempotencyKeyRef.current,
+        fulfilmentType,
+        ...(fulfilmentType === "DELIVERY"
+          ? {
+              addressLine1: address1.trim(),
+              addressLine2: address2.trim() || undefined,
+              addressCity: city.trim(),
+              addressPostcode: postcode.trim().toUpperCase(),
+            }
+          : {}),
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -452,7 +546,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
-  // Step 1: Customer details form
+  // Step 1: Customer details form.
+  // Definite fee preview shown BEFORE payment — mirrors the server waiver so the
+  // customer sees exactly what they'll pay (Deliveroo/Just Eat comparator).
+  const subtotalPennies = totalPennies
+  const deliveryFeePennies = previewDeliveryFeePennies(
+    subtotalPennies,
+    fulfilmentType,
+    shop?.deliveryFeePennies,
+    shop?.freeDeliveryThresholdPennies
+  )
+  const deliveryIsFree = deliveryFeePennies === 0
+  const previewTotalPennies = subtotalPennies + deliveryFeePennies
+  // VAT-inclusive fraction already contained within the gross (UK retail idiom,
+  // unchanged): gross * 20 / 120, rounded down.
+  const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
+  const inputBase =
+    "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
+
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
       {/* Header */}
@@ -467,6 +578,101 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       <p className="text-sm text-slate-500 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
+        {/* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */}
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-white border border-slate-100 p-1.5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setFulfilmentType("DELIVERY")}
+            aria-pressed={fulfilmentType === "DELIVERY"}
+            className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+              fulfilmentType === "DELIVERY"
+                ? "bg-orange-500 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            <Bike className="h-4 w-4" />
+            Delivery
+          </button>
+          <button
+            type="button"
+            onClick={() => setFulfilmentType("COLLECTION")}
+            aria-pressed={fulfilmentType === "COLLECTION"}
+            className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+              fulfilmentType === "COLLECTION"
+                ? "bg-orange-500 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            <Store className="h-4 w-4" />
+            Collection
+          </button>
+        </div>
+
+        {/* Conditional UK delivery address — only for DELIVERY */}
+        {fulfilmentType === "DELIVERY" && (
+          <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm space-y-4">
+            <h2 className="text-sm font-semibold text-slate-900">Delivery address</h2>
+
+            <div className="space-y-1.5">
+              <label htmlFor="address1" className="block text-xs font-medium text-slate-600">Address line 1 *</label>
+              <input
+                id="address1"
+                type="text"
+                value={address1}
+                onChange={(e) => setAddress1(e.target.value)}
+                placeholder="e.g., 12 Coldharbour Lane"
+                className={`${inputBase} ${fieldErrors.address1 ? "border-red-300" : "border-slate-200"}`}
+              />
+              {fieldErrors.address1 && (
+                <p className="text-xs text-red-600">{fieldErrors.address1}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="address2" className="block text-xs font-medium text-slate-600">Address line 2 (optional)</label>
+              <input
+                id="address2"
+                type="text"
+                value={address2}
+                onChange={(e) => setAddress2(e.target.value)}
+                placeholder="Flat, building, etc."
+                className={`${inputBase} border-slate-200`}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="city" className="block text-xs font-medium text-slate-600">Town / city *</label>
+              <input
+                id="city"
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="e.g., London"
+                className={`${inputBase} ${fieldErrors.city ? "border-red-300" : "border-slate-200"}`}
+              />
+              {fieldErrors.city && (
+                <p className="text-xs text-red-600">{fieldErrors.city}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="postcode" className="block text-xs font-medium text-slate-600">Postcode *</label>
+              <input
+                id="postcode"
+                type="text"
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                onBlur={() => setPostcode((p) => p.trim().toUpperCase())}
+                placeholder="e.g., SW9 8LF"
+                className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-slate-200"}`}
+              />
+              {fieldErrors.postcode && (
+                <p className="text-xs text-red-600">{fieldErrors.postcode}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Customer details */}
         <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-slate-900">Your details</h2>
@@ -544,21 +750,30 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           <div className="mt-4 border-t border-slate-100 pt-3 space-y-1.5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Subtotal</span>
-              <span className="text-slate-900">{formatPrice(totalPennies)}</span>
+              <span className="text-slate-900">{formatPrice(subtotalPennies)}</span>
+            </div>
+            {/* Delivery — mirrors the server waiver exactly (COLLECTION or above
+                the free-delivery threshold => Free). */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Delivery</span>
+              {deliveryIsFree ? (
+                <span className="text-emerald-600 font-semibold">Free</span>
+              ) : (
+                <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
+              )}
             </div>
             <div className="flex items-center justify-between text-sm">
               {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
-                  contained within the subtotal, not an add-on. Show the extracted
-                  standard-rate fraction (gross*20/120, round down) to match the
-                  post-order confirmation screen's vatAmountPennies. */}
+                  contained within the gross total, not an add-on. Extracted at the
+                  standard rate (gross*20/120, round down) to match the post-order
+                  confirmation screen's vatAmountPennies. */}
               <span className="text-slate-600">VAT (incl. 20%)</span>
-              <span className="text-slate-900">{formatPrice(Math.floor((totalPennies * 20) / 120))}</span>
+              <span className="text-slate-900">{formatPrice(vatPreviewPennies)}</span>
             </div>
             <div className="flex items-center justify-between pt-1.5">
-              <span className="text-base font-bold text-slate-900">Estimated total</span>
-              <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
+              <span className="text-lg font-bold text-slate-900">Total</span>
+              <span className="text-lg font-bold text-slate-900">{formatPrice(previewTotalPennies)}</span>
             </div>
-            <p className="text-[10px] text-slate-400">Final total confirmed after order is placed. Delivery fee may apply.</p>
           </div>
         </div>
 
@@ -583,7 +798,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           ) : (
             <>
               <CreditCard className="h-4 w-4" />
-              Place order &middot; {formatPrice(totalPennies)}
+              Place order &middot; {formatPrice(previewTotalPennies)}
             </>
           )}
         </button>
