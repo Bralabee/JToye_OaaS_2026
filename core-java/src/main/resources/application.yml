@@ -187,6 +187,20 @@ stripe:
   api-key: ${STRIPE_API_KEY:}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
 
+# Phase 18 vendor onboarding — every value ${ENV:default}; secrets default empty
+# (house convention). FHRS is free/no-key but requires x-api-version:2; Companies
+# House is free with an API key (HTTP Basic, key as username).
+onboarding:
+  auto-approve: ${ONBOARDING_AUTO_APPROVE:false}
+  menu-minimum: ${ONBOARDING_MENU_MINIMUM:1}
+  fhrs:
+    base-url: ${FHRS_BASE_URL:https://api.ratings.food.gov.uk}
+    min-rating: ${FHRS_MIN_RATING:2}          # DECIDED: 2 (Deliveroo/Uber parity)
+    api-version: ${FHRS_API_VERSION:2}
+  companies-house:
+    base-url: ${COMPANIES_HOUSE_BASE_URL:https://api.company-information.service.gov.uk}
+    api-key: ${COMPANIES_HOUSE_API_KEY:}
+
 notification:
   email:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:true}
@@ -211,6 +225,20 @@ resilience4j:
   circuitbreaker:
     instances:
       stripe:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+      # Phase 18: gate-client breakers (18-03 FHRS, 18-04 Companies House) —
+      # defined here so the later gate slices need not touch application.yml.
+      fhrs:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+      companies-house:
         sliding-window-size: 10
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
