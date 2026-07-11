@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.review.ReviewService;
+import uk.jtoye.core.security.CustomerJwtVerifier;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
@@ -45,10 +46,13 @@ public class PublicStorefrontController {
 
     private final PublicStorefrontService storefrontService;
     private final ReviewService reviewService;
+    private final CustomerJwtVerifier customerJwtVerifier;
 
-    public PublicStorefrontController(PublicStorefrontService storefrontService, ReviewService reviewService) {
+    public PublicStorefrontController(PublicStorefrontService storefrontService, ReviewService reviewService,
+                                      CustomerJwtVerifier customerJwtVerifier) {
         this.storefrontService = storefrontService;
         this.reviewService = reviewService;
+        this.customerJwtVerifier = customerJwtVerifier;
     }
 
     @GetMapping("/shops")
@@ -119,6 +123,41 @@ public class PublicStorefrontController {
         // Throws ResourceNotFoundException → 404 if the (verify, email) pair does not
         // resolve to a real order — that is the proof-of-ownership gate.
         storefrontService.trackOrder(verifyOrderNumber, email);
+        return ResponseEntity.ok(storefrontService.getCustomerOrders(email, pageable));
+    }
+
+    /**
+     * Issue #179 defect 1: order history for a LOGGED-IN customer.
+     *
+     * <p>The {@code /public/orders?email=&verify=} endpoint above requires a
+     * recent order number as proof-of-ownership (AUDIT-W0-02) — a proof the
+     * "My Orders" page cannot supply, because a customer session holds only the
+     * email. This variant accepts a stronger proof instead: the customer's own
+     * Keycloak access token (jtoye-customers realm), presented on the
+     * {@code X-Customer-Token} header by the frontend's server-side proxy
+     * (frontend/app/api/customer-orders/route.ts — the token lives in an
+     * HttpOnly cookie and never touches browser JS).
+     *
+     * <p>Security: the email used for the lookup comes EXCLUSIVELY from the
+     * cryptographically verified token ({@link CustomerJwtVerifier}: signature,
+     * issuer, expiry, email_verified gate) — there is no email parameter on this
+     * surface, so the AUDIT-W0-02 enumeration protection is not weakened: an
+     * unauthenticated caller still cannot list orders by bare email anywhere.
+     * The custom header (not {@code Authorization}) keeps customer tokens out of
+     * the staff-realm resource-server filter, which would otherwise reject them
+     * with a confusing 401 before reaching this handler.
+     */
+    @GetMapping("/orders/mine")
+    @Operation(summary = "Customer order history (session-authenticated)",
+            description = "Paginated orders for the logged-in customer, most recent first. Requires a valid "
+                    + "jtoye-customers realm access token in the X-Customer-Token header; the customer email is "
+                    + "taken from the verified token, never from a parameter.")
+    public ResponseEntity<Page<PublicOrderStatus>> getMyOrders(
+            @RequestHeader(name = "X-Customer-Token", required = false) String customerToken,
+            @PageableDefault(size = 20) Pageable pageable) {
+        // Throws ResponseStatusException → 401 on any verification failure;
+        // the order query below is only ever reached with a proven email.
+        String email = customerJwtVerifier.verifiedEmail(customerToken);
         return ResponseEntity.ok(storefrontService.getCustomerOrders(email, pageable));
     }
 

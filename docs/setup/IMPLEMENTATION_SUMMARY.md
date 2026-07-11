@@ -218,7 +218,7 @@ Settings:
 **File:** `core-java/src/main/resources/application-prod.yml`
 
 Features:
-- ✅ Increased pool size (50 connections)
+- ✅ Pool sized against the HPA replica ceiling (10 connections per pod; issue #94 — 10 max replicas + 1 surge pod must fit Postgres max_connections=200)
 - ✅ Error messages hidden from clients
 - ✅ JSON-formatted logging
 - ✅ Hibernate statistics disabled

@@ -73,6 +73,15 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: password
+        # Issue #94 [P2-3]: Hikari pool sized against the HPA replica CEILING.
+        # (maxReplicas 10 + surge 1) × 10 + Keycloak 20 + pg-backup 1 +
+        # exporter 2 = 133 ≤ 0.8 × (max_connections 200 − 3 reserved).
+        # Must match the application-prod.yml default — CI enforces both via
+        # k8s/scripts/check-connection-math.sh. The shared Postgres in
+        # jtoye-infrastructure MUST run with max_connections=200 (see
+        # k8s/DEPLOYMENT.md "Database Connection Budget").
+        - name: DB_POOL_SIZE
+          value: "10"
         - name: KC_ISSUER_URI
           valueFrom:
             configMapKeyRef:
@@ -130,7 +139,13 @@ spec:
               key: stomp-passcode
         resources:
           requests:
-            memory: "512Mi"
+            # Issue #94 [P2-3]: memory request == limit (Guaranteed-memory QoS).
+            # The JVM commits ~75% of the 1Gi LIMIT as heap (MaxRAMPercentage=75
+            # in core-java/Dockerfile), so steady-state RSS sits at 700-800Mi
+            # regardless of load. A 512Mi request meant >100% "utilization"
+            # forever — which pinned the old memory-based HPA at maxReplicas
+            # and overcommitted nodes by 512Mi per pod.
+            memory: "1Gi"
             cpu: "500m"
           limits:
             memory: "1Gi"
@@ -195,8 +210,17 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: core-java
+  # Issue #94 [P2-3]: maxReplicas is the input to the DB connection budget —
+  # maxReplicas × DB_POOL_SIZE must fit Postgres max_connections. Do not raise
+  # it without re-running k8s/scripts/check-connection-math.sh.
   minReplicas: 3
   maxReplicas: 10
+  # Issue #94 [P2-3]: scale on CPU ONLY. The JVM commits ~75% of the memory
+  # limit as heap at startup and G1 rarely uncommits, so container memory is
+  # a constant, not a load signal. The old memory target (80% of a 512Mi
+  # request vs ~768Mi of committed heap) evaluated to >100% utilization at
+  # idle and pinned the HPA at maxReplicas permanently.
+  # check-connection-math.sh fails CI if a memory metric is reintroduced.
   metrics:
   - type: Resource
     resource:
@@ -204,12 +228,6 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300  # Wait 5min before scaling down
