@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.statemachine.StateMachine;
+import org.springframework.statemachine.StateMachineEventResult;
 import org.springframework.statemachine.config.StateMachineFactory;
 import org.springframework.statemachine.support.DefaultStateMachineContext;
 import org.springframework.stereotype.Service;
@@ -40,7 +41,7 @@ public class OrderStateMachineService {
      * @param currentStatus Current order status
      * @param event Event to trigger
      * @return New status after transition
-     * @throws InvalidStateTransitionException if transition is not valid
+     * @throws InvalidStateTransitionException if the transition is illegal or a guard vetoes it
      */
     public OrderStatus sendEvent(UUID orderId, OrderStatus currentStatus, OrderEvent event) {
         log.debug("Processing event {} for order {} in state {}", event, orderId, currentStatus);
@@ -70,7 +71,21 @@ public class OrderStateMachineService {
 
         var result = stateMachine.sendEvent(Mono.just(message)).blockLast();
 
-        if (result == null || result.getResultType() != org.springframework.statemachine.StateMachineEventResult.ResultType.ACCEPTED) {
+        OrderStatus newStatus = stateMachine.getState().getId();
+
+        // Issue #177 — two ways an event fails to transition:
+        //  (1) no matching transition for event+state  -> ResultType DENIED;
+        //  (2) a matching transition whose GUARD returned false -> Spring reports
+        //      ResultType ACCEPTED (the event was consumed) but the state does NOT
+        //      change. Because every order transition moves to a DIFFERENT state
+        //      (see OrderStateMachineConfig — no self-transitions), an unchanged
+        //      state after an "accepted" event means the guard vetoed it. Both
+        //      cases must surface as InvalidStateTransitionException. Ported from
+        //      the hardened VendorOnboardingStateMachineService (Phase 18-02).
+        boolean notAccepted = result == null
+                || result.getResultType() != StateMachineEventResult.ResultType.ACCEPTED;
+        boolean guardVetoed = newStatus == currentStatus;
+        if (notAccepted || guardVetoed) {
             String errorMsg = String.format(
                     "Invalid state transition for order %s: cannot apply event %s in state %s",
                     orderId, event, currentStatus
@@ -79,7 +94,6 @@ public class OrderStateMachineService {
             throw new InvalidStateTransitionException(errorMsg);
         }
 
-        OrderStatus newStatus = stateMachine.getState().getId();
         log.info("Order {} transitioned: {} -> {} (event: {})",
                 orderId, currentStatus, newStatus, event);
 
@@ -113,9 +127,16 @@ public class OrderStateMachineService {
             Message<OrderEvent> message = MessageBuilder.withPayload(event).build();
             var result = stateMachine.sendEvent(Mono.just(message)).blockLast();
 
+            OrderStatus newStatus = stateMachine.getState().getId();
+
             stateMachine.stopReactively().block();
 
-            return result != null && result.getResultType() == org.springframework.statemachine.StateMachineEventResult.ResultType.ACCEPTED;
+            // Issue #177 — same guard-veto detection as sendEvent: an ACCEPTED
+            // result with an unchanged state means a guard vetoed the transition,
+            // so it is NOT valid. Every order transition targets a different state.
+            return result != null
+                    && result.getResultType() == StateMachineEventResult.ResultType.ACCEPTED
+                    && newStatus != currentStatus;
         } catch (Exception e) {
             log.debug("Transition validation failed for {} + {}: {}", currentStatus, event, e.getMessage());
             return false;
