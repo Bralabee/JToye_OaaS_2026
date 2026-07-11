@@ -85,6 +85,8 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:testcontainers:1.21.3")
     testImplementation("org.testcontainers:postgresql:1.21.3")
+    // #92: real-broker fan-out proof for the per-instance SSE queues
+    testImplementation("org.testcontainers:rabbitmq:1.21.3")
     testImplementation("org.testcontainers:junit-jupiter:1.21.3")
     testImplementation("com.h2database:h2") // for lightweight unit tests
 }

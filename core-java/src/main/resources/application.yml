@@ -101,6 +101,12 @@ jtoye:
       # Testcontainers setups (where the two coincide) keep passing unchanged;
       # override via JWT_EXPECTED_ISSUER in split-host deployments.
       expected-issuer: ${JWT_EXPECTED_ISSUER:${spring.security.oauth2.resourceserver.jwt.issuer-uri}}
+  sse:
+    # #92: interval for the SSE keep-alive comment sent to every open
+    # /orders/stream emitter. Must stay comfortably below the smallest
+    # intermediary idle timeout on the path (nginx ingress default
+    # proxy-read-timeout is 60s), or idle streams get severed mid-flight.
+    heartbeat-interval-ms: ${SSE_HEARTBEAT_INTERVAL_MS:25000}
 
 stomp:
   broker:

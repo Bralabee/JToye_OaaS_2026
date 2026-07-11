@@ -19,6 +19,9 @@ public class RabbitMQConfig {
     public static final String ORDER_EVENTS_EXCHANGE = "order.events";
     public static final String ORDER_EVENTS_QUEUE = "order.state-changes";
     public static final String ORDER_EVENTS_ROUTING_KEY = "order.state.changed";
+    public static final String ORDER_EVENTS_ROUTING_PATTERN = "order.state.*";
+    /** Name prefix for the per-instance SSE fan-out queue (#92) — aids broker-console debugging. */
+    public static final String ORDER_EVENTS_FANOUT_QUEUE_PREFIX = "order.state-changes.sse.";
 
     public static final String DLX_EXCHANGE = "order.events.dlx";
     public static final String DLQ_QUEUE = "order.state-changes.dlq";
@@ -54,7 +57,35 @@ public class RabbitMQConfig {
     public Binding orderEventsBinding(Queue orderEventsQueue, TopicExchange orderEventsExchange) {
         return BindingBuilder.bind(orderEventsQueue)
                 .to(orderEventsExchange)
-                .with("order.state.*");
+                .with(ORDER_EVENTS_ROUTING_PATTERN);
+    }
+
+    // --- Per-instance SSE fan-out topology (#92 / P2-1) ---
+    //
+    // The durable ORDER_EVENTS_QUEUE above is a competing-consumer queue: at N
+    // replicas each order event is delivered to exactly ONE instance. That is
+    // the correct semantic for its side effects (customer email, business
+    // metrics, the KDS publish to the shared STOMP relay), but it silently
+    // starved SSE — emitters live per-JVM, so dashboards attached to the other
+    // N-1 replicas missed the event. This AnonymousQueue is exclusive,
+    // auto-delete and uniquely named per JVM; every replica declares its own
+    // and binds it to the same topic exchange, so EVERY replica receives EVERY
+    // order event and can serve its locally attached SSE clients.
+    //
+    // No DLX on purpose: fan-out events are fire-and-forget UI pushes. A
+    // client that missed one re-syncs on its next fetch/reconnect.
+
+    @Bean
+    public AnonymousQueue orderEventsFanoutQueue() {
+        return new AnonymousQueue(new Base64UrlNamingStrategy(ORDER_EVENTS_FANOUT_QUEUE_PREFIX));
+    }
+
+    @Bean
+    public Binding orderEventsFanoutBinding(AnonymousQueue orderEventsFanoutQueue,
+                                            TopicExchange orderEventsExchange) {
+        return BindingBuilder.bind(orderEventsFanoutQueue)
+                .to(orderEventsExchange)
+                .with(ORDER_EVENTS_ROUTING_PATTERN);
     }
 
     @Bean
