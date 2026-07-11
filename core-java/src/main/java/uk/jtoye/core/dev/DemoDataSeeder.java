@@ -18,7 +18,9 @@ import uk.jtoye.core.security.TenantContext;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Reproducible dev/demo data seeder (UIX-05, phase 19).
@@ -28,27 +30,47 @@ import java.util.UUID;
  * every shop under a tenant used to render the same menu — 24 of 25 seeded
  * products carried a NULL {@code shop_id} and the storefront query matched
  * {@code (shop_id = :shopId OR shop_id IS NULL)}, so unassigned products bled
- * into (and duplicated across) every shop. This seeder assigns every demo
- * product to exactly one shop and also aligns any pre-existing NULL-shop_id dev
- * rows, so the live dev volume matches the now strictly shop-scoped query.
+ * into (and duplicated across) every shop. 19-02 dropped the {@code IS NULL}
+ * bleed and scoped the query strictly to the shop; this seeder makes the live
+ * dev volume match that contract.
  *
- * <p><strong>Profile gating (correctness + safety):</strong> restricted to the
- * {@code dev} Spring profile and only wired as an {@link ApplicationRunner} at
- * dev startup. Testcontainers integration tests boot under {@code test} profile
- * so this bean is never instantiated (no fixture/golden-file perturbation), and
- * prod boots the prod profile so it never runs against production data. It is
- * deliberately NOT a Flyway migration for the same reason — a migration would
- * ship to every environment.
+ * <p><strong>Curated + pristine (UIX-05 / UI-SPEC Surface G #15):</strong> the
+ * three demo shops are the ONLY published storefronts and each shows exactly its
+ * own curated menu — realistic UK names, plausible prices, {@code featured}
+ * "Popular" items and Halal/dietary tags — with <em>no duplicate line items</em>
+ * and no placeholder junk ("Label Cake 057999", "Validation Shop"). To hold that
+ * invariant against a dev volume that accumulated orphaned rows from years of E2E
+ * runs, the seeder actively <em>repairs</em> on every startup:
+ * <ul>
+ *   <li>{@link #upsertShop}/{@link #upsertProduct} UPDATE existing rows (not just
+ *       create) so curated shops/products are re-homed to the right shop and
+ *       enriched (tags, logo, featured, dietary) even when they already exist;</li>
+ *   <li>{@link #quarantineNonCurated} moves every non-curated product (legacy
+ *       orphans, NULL-shop rows, mis-aligned junk) into a single UNPUBLISHED
+ *       "Unsorted legacy items" archive shop, so no duplicate/placeholder row
+ *       ever renders in a published storefront;</li>
+ *   <li>{@link #unpublishNonCurated} un-publishes every non-curated shop so the
+ *       directory shows exactly the three curated demo shops.</li>
+ * </ul>
+ * Nothing is deleted (order_items reference products via snapshot + id), so this
+ * is safe against the live dev volume.
+ *
+ * <p><strong>No product photography (#15):</strong> product cards deliberately
+ * carry no {@code image_url} — the storefront renders the approved SafeImage
+ * branded fallback tile. Shop <em>branding</em> (a logo) IS seeded so the
+ * "populated images resolve naturalWidth&gt;0" contract is exercised on real data.
+ *
+ * <p><strong>Profile gating:</strong> restricted to the {@code dev} Spring
+ * profile and only wired as an {@link ApplicationRunner} at dev startup.
+ * Testcontainers integration tests boot under {@code test} so this bean is never
+ * instantiated (no fixture/golden-file perturbation); prod never runs it. It is
+ * deliberately NOT a Flyway migration for the same reason.
  *
  * <p><strong>Multi-tenancy:</strong> all writes are scoped to the default demo
- * tenant via {@link TenantContext}; the {@code TenantSetLocalAspect} applies the
- * RLS GUC to every repository op inside the transaction (matching the
- * {@code ScheduledCleanupService} pattern — {@link TransactionTemplate} is used
- * rather than a {@code @Transactional} helper to avoid the self-invocation proxy
- * trap that would run the seed with a NULL tenant).
- *
- * <p><strong>Idempotency:</strong> shops upsert by slug, products by SKU,
- * customers by email — re-running never duplicates rows.
+ * tenant via {@link TenantContext}; {@code TenantSetLocalAspect} applies the RLS
+ * GUC to every repository op inside the transaction (matching the
+ * {@code ScheduledCleanupService} pattern — {@link TransactionTemplate} avoids the
+ * self-invocation proxy trap that would run the seed with a NULL tenant).
  */
 @Component
 @Profile("dev")
@@ -58,6 +80,9 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     /** Default demo tenant seeded by V13 — matches the dev Keycloak tenant claim. */
     private static final UUID DEMO_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    /** Slug of the hidden archive shop that absorbs every non-curated product. */
+    private static final String ARCHIVE_SLUG = "unsorted-legacy-items";
 
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
@@ -74,6 +99,10 @@ public class DemoDataSeeder implements ApplicationRunner {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
+    /** A single curated menu item, incl. "Popular" (featured) + dietary metadata. */
+    private record MenuItem(String sku, String title, String category, long pricePennies,
+                            String ingredients, boolean featured, String dietaryTags) {}
+
     @Override
     public void run(ApplicationArguments args) {
         // TenantContext is set BEFORE the transaction so TenantSetLocalAspect
@@ -84,9 +113,9 @@ public class DemoDataSeeder implements ApplicationRunner {
             if (result != null) {
                 log.info("DemoDataSeeder complete for tenant {}: {} shop(s) created, "
                                 + "{} product(s) created, {} customer(s) created, "
-                                + "{} pre-existing NULL-shop_id product(s) aligned.",
+                                + "{} non-curated product(s) quarantined, {} shop(s) unpublished.",
                         DEMO_TENANT, result.shopsCreated, result.productsCreated,
-                        result.customersCreated, result.productsAligned);
+                        result.customersCreated, result.productsQuarantined, result.shopsUnpublished);
             }
         } finally {
             TenantContext.clear();
@@ -100,23 +129,32 @@ public class DemoDataSeeder implements ApplicationRunner {
         shops.add(upsertShop(result, "Mama Ade's Kitchen", "mama-ades-kitchen",
                 "48 Rye Lane, Peckham, London SE15 5BS",
                 "Home-style West African cooking — jollof, egusi and pounded yam done properly.",
+                "Nigerian, West African, Halal", "/brand/logo-mama-ades.png",
                 350L, 2500L));
         shops.add(upsertShop(result, "Peckham Jollof Co.", "peckham-jollof-co",
                 "12 Bellenden Road, Peckham, London SE15 4QA",
                 "Smoky party jollof, suya and grilled tilapia to eat in or take away.",
+                "Nigerian, Grill, Halal", "/brand/logo-peckham-jollof.png",
                 299L, 3000L));
         shops.add(upsertShop(result, "Brixton Village Grill", "brixton-village-grill",
                 "Unit 74, Brixton Village Market, London SW9 8PS",
                 "Flame-grilled peri peri chicken, kebabs and loaded sides.",
+                "Grill, Peri Peri, Halal", "/brand/logo-brixton-grill.png",
                 399L, 2000L));
 
-        seedShopOneMenu(result, shops.get(0).getId());
-        seedShopTwoMenu(result, shops.get(1).getId());
-        seedShopThreeMenu(result, shops.get(2).getId());
+        // The hidden archive shop that absorbs every non-curated / orphan product.
+        Shop archive = upsertArchiveShop(result);
 
-        // Align any pre-existing dev rows created before shop-scoping (24/25 were
-        // NULL) so the live dev volume matches the strictly scoped storefront query.
-        alignNullShopProducts(result, shops);
+        seedMenu(result, shops.get(0).getId(), shopOneMenu());
+        seedMenu(result, shops.get(1).getId(), shopTwoMenu());
+        seedMenu(result, shops.get(2).getId(), shopThreeMenu());
+
+        // Repair the live dev volume so the curated storefronts stay pristine.
+        Set<String> curatedSkus = allCuratedSkus();
+        quarantineNonCurated(result, curatedSkus, archive.getId());
+
+        Set<String> curatedSlugs = Set.of("mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill");
+        unpublishNonCurated(result, curatedSlugs);
 
         upsertCustomer(result, "Aisha Bello", "aisha.bello@example.com", "07700 900123");
         upsertCustomer(result, "Tom Whitfield", "tom.whitfield@example.com", "07700 900456");
@@ -127,114 +165,176 @@ public class DemoDataSeeder implements ApplicationRunner {
         return result;
     }
 
-    private void seedShopOneMenu(SeedResult result, UUID shopId) {
-        upsertProduct(result, shopId, "MAK-JOL", "Jollof Rice", "Mains", 899L,
-                "long-grain rice, tomatoes, peppers, onions, chicken stock");
-        upsertProduct(result, shopId, "MAK-EGU", "Egusi Soup", "Mains", 1050L,
-                "melon seeds, spinach, palm oil, beef, dried fish, crayfish");
-        upsertProduct(result, shopId, "MAK-PYE", "Pounded Yam & Egusi", "Mains", 1100L,
-                "pounded yam, egusi soup, assorted meat");
-        upsertProduct(result, shopId, "MAK-PLA", "Fried Plantain", "Sides", 350L,
-                "ripe plantain, sunflower oil");
-        upsertProduct(result, shopId, "MAK-MOI", "Moin Moin", "Sides", 400L,
-                "steamed black-eyed bean pudding, peppers, onions");
-        upsertProduct(result, shopId, "MAK-CHA", "Chapman", "Drinks", 450L,
-                "Fanta, Sprite, blackcurrant, cucumber, bitters");
-        upsertProduct(result, shopId, "MAK-ZOB", "Zobo", "Drinks", 300L,
-                "hibiscus, ginger, pineapple");
+    private List<MenuItem> shopOneMenu() {
+        return List.of(
+                new MenuItem("MAK-JOL", "Jollof Rice", "Mains", 899L,
+                        "long-grain rice, tomatoes, peppers, onions, chicken stock", true, "Halal, Gluten-Free"),
+                new MenuItem("MAK-EGU", "Egusi Soup", "Mains", 1050L,
+                        "melon seeds, spinach, palm oil, beef, dried fish, crayfish", false, "Halal"),
+                new MenuItem("MAK-PYE", "Pounded Yam & Egusi", "Mains", 1100L,
+                        "pounded yam, egusi soup, assorted meat", false, "Halal"),
+                new MenuItem("MAK-PLA", "Fried Plantain", "Sides", 350L,
+                        "ripe plantain, sunflower oil", false, "Vegan, Gluten-Free"),
+                new MenuItem("MAK-MOI", "Moin Moin", "Sides", 400L,
+                        "steamed black-eyed bean pudding, peppers, onions", false, "Vegetarian, Gluten-Free"),
+                new MenuItem("MAK-CHA", "Chapman", "Drinks", 450L,
+                        "Fanta, Sprite, blackcurrant, cucumber, bitters", true, "Vegetarian"),
+                new MenuItem("MAK-ZOB", "Zobo", "Drinks", 300L,
+                        "hibiscus, ginger, pineapple", false, "Vegan"));
     }
 
-    private void seedShopTwoMenu(SeedResult result, UUID shopId) {
-        upsertProduct(result, shopId, "PJC-PJO", "Party Jollof Rice", "Mains", 950L,
-                "smoky long-grain rice, scotch bonnet, tomatoes, peppers");
-        upsertProduct(result, shopId, "PJC-SUY", "Suya Platter", "Mains", 1200L,
-                "grilled spiced beef skewers, yaji, red onion, tomato");
-        upsertProduct(result, shopId, "PJC-TIL", "Grilled Tilapia", "Mains", 1350L,
-                "whole tilapia, pepper marinade, served with dodo");
-        upsertProduct(result, shopId, "PJC-PUF", "Puff Puff", "Sides", 300L,
-                "sweet fried dough balls, sugar dusting");
-        upsertProduct(result, shopId, "PJC-DOD", "Dodo", "Sides", 350L,
-                "fried sweet plantain");
-        upsertProduct(result, shopId, "PJC-PAL", "Palm Wine", "Drinks", 600L,
-                "fresh tapped palm wine");
-        upsertProduct(result, shopId, "PJC-GIN", "Ginger Beer", "Drinks", 350L,
-                "fiery homemade ginger beer");
+    private List<MenuItem> shopTwoMenu() {
+        return List.of(
+                new MenuItem("PJC-PJO", "Party Jollof Rice", "Mains", 950L,
+                        "smoky long-grain rice, scotch bonnet, tomatoes, peppers", true, "Halal"),
+                new MenuItem("PJC-SUY", "Suya Platter", "Mains", 1200L,
+                        "grilled spiced beef skewers, yaji, red onion, tomato", true, "Halal, Spicy"),
+                new MenuItem("PJC-TIL", "Grilled Tilapia", "Mains", 1350L,
+                        "whole tilapia, pepper marinade, served with dodo", false, "Halal, Pescatarian"),
+                new MenuItem("PJC-PUF", "Puff Puff", "Sides", 300L,
+                        "sweet fried dough balls, sugar dusting", false, "Vegetarian"),
+                new MenuItem("PJC-DOD", "Dodo", "Sides", 350L,
+                        "fried sweet plantain", false, "Vegan, Gluten-Free"),
+                new MenuItem("PJC-PAL", "Palm Wine", "Drinks", 600L,
+                        "fresh tapped palm wine", false, null),
+                new MenuItem("PJC-GIN", "Ginger Beer", "Drinks", 350L,
+                        "fiery homemade ginger beer", false, "Vegan"));
     }
 
-    private void seedShopThreeMenu(SeedResult result, UUID shopId) {
-        upsertProduct(result, shopId, "BVG-PER", "Peri Peri Chicken", "Mains", 900L,
-                "flame-grilled chicken, peri peri marinade");
-        upsertProduct(result, shopId, "BVG-LAM", "Lamb Kebab", "Mains", 1000L,
-                "marinated lamb skewers, flatbread, salad");
-        upsertProduct(result, shopId, "BVG-BEE", "Beef Suya Wrap", "Mains", 850L,
-                "spiced beef, red onion, wrap, yaji");
-        upsertProduct(result, shopId, "BVG-SWF", "Sweet Potato Fries", "Sides", 400L,
-                "sweet potato, sea salt, sunflower oil");
-        upsertProduct(result, shopId, "BVG-COL", "Coleslaw", "Sides", 250L,
-                "cabbage, carrot, mayonnaise");
-        upsertProduct(result, shopId, "BVG-MAN", "Mango Lassi", "Drinks", 400L,
-                "mango, yoghurt, cardamom");
-        upsertProduct(result, shopId, "BVG-SOB", "Sobo Punch", "Drinks", 350L,
-                "hibiscus punch, pineapple, orange");
+    private List<MenuItem> shopThreeMenu() {
+        return List.of(
+                new MenuItem("BVG-PER", "Peri Peri Chicken", "Mains", 900L,
+                        "flame-grilled chicken, peri peri marinade", true, "Halal, Spicy"),
+                new MenuItem("BVG-LAM", "Lamb Kebab", "Mains", 1000L,
+                        "marinated lamb skewers, flatbread, salad", false, "Halal"),
+                new MenuItem("BVG-BEE", "Beef Suya Wrap", "Mains", 850L,
+                        "spiced beef, red onion, wrap, yaji", true, "Halal, Spicy"),
+                new MenuItem("BVG-SWF", "Sweet Potato Fries", "Sides", 400L,
+                        "sweet potato, sea salt, sunflower oil", false, "Vegan, Gluten-Free"),
+                new MenuItem("BVG-COL", "Coleslaw", "Sides", 250L,
+                        "cabbage, carrot, mayonnaise", false, "Vegetarian, Gluten-Free"),
+                new MenuItem("BVG-MAN", "Mango Lassi", "Drinks", 400L,
+                        "mango, yoghurt, cardamom", false, "Vegetarian"),
+                new MenuItem("BVG-SOB", "Sobo Punch", "Drinks", 350L,
+                        "hibiscus punch, pineapple, orange", false, "Vegan"));
     }
 
-    /** Upsert a shop by slug (idempotent). Returns the persisted (or existing) shop. */
-    private Shop upsertShop(SeedResult result, String name, String slug, String address,
-                            String description, long deliveryFeePennies, long freeDeliveryThresholdPennies) {
-        return shopRepository.findBySlug(slug).orElseGet(() -> {
-            Shop shop = new Shop();
-            shop.setTenantId(DEMO_TENANT);
-            shop.setName(name);
-            shop.setSlug(slug);
-            shop.setAddress(address);
-            shop.setDescription(description);
-            shop.setDeliveryFeePennies(deliveryFeePennies);
-            shop.setFreeDeliveryThresholdPennies(freeDeliveryThresholdPennies);
-            shop.setMinimumOrderPennies(1000L);
-            shop.setPublished(true);
-            Shop saved = shopRepository.save(shop);
-            result.shopsCreated++;
-            return saved;
-        });
+    private Set<String> allCuratedSkus() {
+        List<MenuItem> all = new ArrayList<>();
+        all.addAll(shopOneMenu());
+        all.addAll(shopTwoMenu());
+        all.addAll(shopThreeMenu());
+        return all.stream().map(MenuItem::sku).collect(Collectors.toSet());
     }
 
-    /** Upsert a product by SKU (idempotent). Every demo product gets a non-null shop_id. */
-    private void upsertProduct(SeedResult result, UUID shopId, String sku, String title,
-                               String category, long pricePennies, String ingredients) {
-        if (productRepository.findBySku(sku).isPresent()) {
-            return;
+    private void seedMenu(SeedResult result, UUID shopId, List<MenuItem> items) {
+        for (MenuItem item : items) {
+            upsertProduct(result, shopId, item);
         }
-        Product product = new Product();
-        product.setTenantId(DEMO_TENANT);
-        product.setSku(sku);
-        product.setTitle(title);
-        product.setCategory(category);
-        product.setPricePennies(pricePennies);
-        product.setIngredientsText(ingredients);
-        product.setDescription(title + " — " + ingredients);
-        product.setAllergenMask(0);
-        product.setAvailable(true);
-        product.setShopId(shopId);
-        productRepository.save(product);
-        result.productsCreated++;
     }
 
     /**
-     * Assign a non-null shop_id to any product that still has one NULL (the
-     * pre-scoping dev rows). Distributed deterministically round-robin across the
-     * demo shops so no single shop absorbs every orphan. A no-op on re-run once
-     * every product is assigned.
+     * Upsert a curated shop by slug: create if absent, otherwise UPDATE its
+     * fields so tags/logo/description/fees enrichment lands on the pre-existing
+     * dev row too. Always published.
      */
-    private void alignNullShopProducts(SeedResult result, List<Shop> shops) {
-        List<Product> orphans = productRepository.findAll().stream()
-                .filter(p -> p.getShopId() == null)
-                .toList();
-        int i = 0;
-        for (Product orphan : orphans) {
-            orphan.setShopId(shops.get(i % shops.size()).getId());
-            productRepository.save(orphan);
-            result.productsAligned++;
-            i++;
+    private Shop upsertShop(SeedResult result, String name, String slug, String address,
+                            String description, String tags, String logoUrl,
+                            long deliveryFeePennies, long freeDeliveryThresholdPennies) {
+        Shop shop = shopRepository.findBySlug(slug).orElseGet(() -> {
+            Shop s = new Shop();
+            s.setTenantId(DEMO_TENANT);
+            s.setSlug(slug);
+            result.shopsCreated++;
+            return s;
+        });
+        shop.setName(name);
+        shop.setAddress(address);
+        shop.setDescription(description);
+        shop.setTags(tags);
+        shop.setLogoUrl(logoUrl);
+        shop.setDeliveryFeePennies(deliveryFeePennies);
+        shop.setFreeDeliveryThresholdPennies(freeDeliveryThresholdPennies);
+        shop.setMinimumOrderPennies(1000L);
+        shop.setPublished(true);
+        return shopRepository.save(shop);
+    }
+
+    /** The hidden holding shop for orphaned/legacy products. Never published. */
+    private Shop upsertArchiveShop(SeedResult result) {
+        Shop archive = shopRepository.findBySlug(ARCHIVE_SLUG).orElseGet(() -> {
+            Shop s = new Shop();
+            s.setTenantId(DEMO_TENANT);
+            s.setSlug(ARCHIVE_SLUG);
+            s.setName("Unsorted legacy items");
+            s.setAddress("—");
+            s.setDescription("Internal archive of legacy/orphaned demo products. Not a storefront.");
+            s.setMinimumOrderPennies(0L);
+            s.setDeliveryFeePennies(0L);
+            result.shopsCreated++;
+            return s;
+        });
+        archive.setPublished(false);
+        return shopRepository.save(archive);
+    }
+
+    /**
+     * Upsert a curated product by SKU (idempotent) and enrich it: re-home to the
+     * correct shop and apply featured/dietary metadata even if the row already
+     * exists (so a mis-aligned dev row is corrected, not skipped).
+     */
+    private void upsertProduct(SeedResult result, UUID shopId, MenuItem item) {
+        Product product = productRepository.findBySku(item.sku()).orElseGet(() -> {
+            Product p = new Product();
+            p.setTenantId(DEMO_TENANT);
+            p.setSku(item.sku());
+            p.setAllergenMask(0);
+            result.productsCreated++;
+            return p;
+        });
+        product.setTitle(item.title());
+        product.setCategory(item.category());
+        product.setPricePennies(item.pricePennies());
+        product.setIngredientsText(item.ingredients());
+        product.setDescription(item.title() + " — " + item.ingredients());
+        product.setAvailable(true);
+        product.setShopId(shopId);
+        product.setFeatured(item.featured());
+        product.setDietaryTags(item.dietaryTags());
+        // No image_url: product cards use the SafeImage branded fallback (#15).
+        productRepository.save(product);
+    }
+
+    /**
+     * Move every product whose SKU is not in the curated set — legacy orphans,
+     * NULL-shop rows, and anything mis-assigned into a curated shop — into the
+     * hidden archive shop. This is what guarantees "no duplicate line items" and
+     * "no placeholder names" on the published storefronts (UIX-05). Idempotent:
+     * once quarantined, a product's shop_id already equals the archive id.
+     */
+    private void quarantineNonCurated(SeedResult result, Set<String> curatedSkus, UUID archiveId) {
+        for (Product p : productRepository.findAll()) {
+            String sku = p.getSku();
+            boolean curated = sku != null && curatedSkus.contains(sku);
+            if (!curated && !archiveId.equals(p.getShopId())) {
+                p.setShopId(archiveId);
+                p.setFeatured(false);
+                productRepository.save(p);
+                result.productsQuarantined++;
+            }
+        }
+    }
+
+    /** Un-publish every non-curated (and non-archive) shop so the directory is clean. */
+    private void unpublishNonCurated(SeedResult result, Set<String> curatedSlugs) {
+        for (Shop s : shopRepository.findAll()) {
+            String slug = s.getSlug();
+            boolean keepPublished = slug != null && curatedSlugs.contains(slug);
+            if (!keepPublished && Boolean.TRUE.equals(s.getPublished())) {
+                s.setPublished(false);
+                shopRepository.save(s);
+                result.shopsUnpublished++;
+            }
         }
     }
 
@@ -255,6 +355,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         int shopsCreated;
         int productsCreated;
         int customersCreated;
-        int productsAligned;
+        int productsQuarantined;
+        int shopsUnpublished;
     }
 }
