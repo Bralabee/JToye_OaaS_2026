@@ -118,8 +118,8 @@ Exceptions below, documented and reserved, exactly like the 56px tab-bar and 44p
 - Fixed mobile bottom tab bar height = **56px** (`h-14`) + `pb-[env(safe-area-inset-bottom)]`. Main scroll
   area gets `pb-20` on mobile so content clears the bar. iOS safe-area inset is additive, not a scale violation.
 - Touch targets: every mobile tap target ≥ **44px** (`min-h-11 min-w-11` or `py-3` on full-width buttons).
-- Form controls keep shadcn defaults (`h-10`, `px-3 py-2`); storefront inputs use `px-3 py-2.5`. Control sizing,
-  not layout spacing.
+- Form controls keep shadcn defaults (`h-10`, `px-3 py-2`); storefront inputs use the same `px-3 py-2` (both
+  scale values — no exception needed).
 - **KILL `text-[10px]` (backlog #11):** it appears 36× across 9 files and is below the smallest token. Replace
   every occurrence with `text-xs` (12px). Do **not** add a sub-12px token — accessibility floor is 12px.
 
@@ -150,8 +150,9 @@ and public scales are collapsed onto it. `next/font` Inter only.
 **Weight discipline — exactly TWO systematic weights: regular 400 + semibold 600.**
 - **500 (`font-medium`) is folded into 600 everywhere** — form labels, badges, and the checkout "Free" fee text
   all use `font-semibold`. There is no systematic medium weight.
-- New **dashboard** code uses 400/600 only. Do NOT propagate `font-bold` (700) into dashboard code (legacy
-  dashboard `font-bold` on titles is tolerated where it exists; new work matches the onboarding slice's 600).
+- New **dashboard** code uses 400/600 only. Do NOT propagate `font-bold` (700) into dashboard code. (Tolerance
+  for `font-bold` on existing dashboard titles applies to UNTOUCHED legacy code only — any file Phase 19 edits
+  converges to 600; the "never in the dashboard" rule below governs all new work.)
 
 **Weight exception (documented — do not flag).** `font-bold` (700) is permitted as **one exception with a named,
 closed scope**, on the two customer-facing brand surfaces ONLY (public landing + storefront/checkout). It mirrors
@@ -380,7 +381,7 @@ selected segment `bg-orange-500 text-white`, the other `bg-slate-100 text-slate-
 (collection is one tap away). State: `fulfilmentType: "DELIVERY" | "COLLECTION"`.
 
 **Conditional UK address block (renders only when `DELIVERY`):** appears above "Your details", same card idiom,
-same input styling (`rounded-lg border-slate-200 px-3 py-2.5 focus:ring-orange-100 focus:border-orange-300`):
+same input styling (`rounded-lg border-slate-200 px-3 py-2 focus:ring-orange-100 focus:border-orange-300`):
 
 | Field | id | Required | Validation |
 |-------|-----|----------|-----------|
