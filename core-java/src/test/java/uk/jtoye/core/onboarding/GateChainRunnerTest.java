@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.security.TenantContext;
 
 import java.util.List;
@@ -11,8 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -142,6 +145,32 @@ class GateChainRunnerTest {
 
         verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATES_PASSED);
         verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.APPROVE);
+    }
+
+    @Test
+    @DisplayName("runAndRecompute swallows a vetoed auto-APPROVE and keeps GATES_PASSED (WR-01)")
+    void recomputeSwallowsVetoedAutoApprove() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        onboardingProperties.setAutoApprove(true);
+        when(onboardingRepository.findById(onboardingId))
+                .thenReturn(Optional.of(onboardingIn(OnboardingState.VERIFYING, onboardingId, tenantId)));
+        when(gateRepository.findByOnboardingId(onboardingId))
+                .thenReturn(List.of(gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true)));
+        // The APPROVE guard vetoes -> InvalidStateTransitionException. WR-01: it must
+        // NOT abort the run (which would roll back the committed gate evaluations and
+        // the already-fired GATES_PASSED, re-stranding the onboarding in VERIFYING).
+        doThrow(new InvalidStateTransitionException("vetoed"))
+                .when(vendorOnboardingService).transition(onboardingId, OnboardingEvent.APPROVE);
+
+        GateChainRunner runner = runner(List.of());
+        assertThatCode(() -> runner.runAndRecompute(onboardingId, tenantId))
+                .doesNotThrowAnyException();
+
+        // GATES_PASSED still fired (progress preserved); the veto was caught, not propagated.
+        verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATES_PASSED);
+        verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.APPROVE);
+        assertThat(TenantContext.get()).isEmpty(); // finally still cleared the tenant
     }
 
     @Test

@@ -127,6 +127,35 @@ describe("Onboarding Page", () => {
     })
   })
 
+  it("re-runs checks from ACTION_REQUIRED via POST /resubmit (not /submit)", async () => {
+    // CR-03: the "Re-run checks" CTA must hit the dedicated /resubmit endpoint
+    // (RESUBMIT: ACTION_REQUIRED -> VERIFYING), NOT /submit (which the state machine
+    // only accepts from DRAFT, so it always 400'd — the old dead-end wiring).
+    routeGet(() =>
+      Promise.resolve({ data: onboarding("ACTION_REQUIRED", { gates: gates("FAILED") }) })
+    )
+    mockedApiClient.post.mockResolvedValue({ data: onboarding("VERIFYING") })
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /re-run checks/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /re-run checks/i }))
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        "/api/v1/onboarding/resubmit",
+        expect.anything()
+      )
+    })
+    expect(mockedApiClient.post).not.toHaveBeenCalledWith(
+      "/api/v1/onboarding/submit",
+      expect.anything()
+    )
+  })
+
   it("polls GET /me every 4s while VERIFYING and stops once it leaves", async () => {
     jest.useFakeTimers()
     const me = jest

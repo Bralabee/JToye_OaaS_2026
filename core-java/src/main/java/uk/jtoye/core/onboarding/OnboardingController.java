@@ -79,6 +79,23 @@ public class OnboardingController {
     }
 
     /**
+     * Resubmit the caller's onboarding after a gate failure (ACTION_REQUIRED → VERIFYING).
+     * POST /onboarding/resubmit
+     */
+    @PostMapping("/resubmit")
+    @Operation(summary = "Resubmit onboarding",
+            description = "Resets the flagged (FAILED/MANUAL_REVIEW) gates and re-runs the gate chain "
+                    + "(ACTION_REQUIRED -> VERIFYING)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Onboarding resubmitted (VERIFYING)"),
+            @ApiResponse(responseCode = "400", description = "Illegal transition (not in ACTION_REQUIRED)"),
+            @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
+    })
+    public ResponseEntity<OnboardingDto> resubmit() {
+        return ResponseEntity.ok(vendorOnboardingService.resubmit());
+    }
+
+    /**
      * Take the caller's onboarding live (APPROVED → LIVE), publishing the shop.
      * POST /onboarding/go-live
      */

@@ -235,3 +235,26 @@ and normalise (`trim()`, uppercase) in `createOnboarding` before persisting.
 _Reviewed: 2026-07-11T03:57:29Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+## Fix Round 1
+
+**Fixed at:** 2026-07-11 (gsd-code-fixer)
+**Scope:** all 3 Critical + all 3 Warning findings. Info findings (IN-01..IN-10) are OUT of scope → deferred as follow-ups.
+**Gates:** `./gradlew :core-java:test :core-java:integrationTest` green; frontend `npm run build` (tsc) + full Jest suite (130 blocks) green; `scripts/docs-freshness.sh` green (907 → 918 logical invocations). Each fix committed atomically; every fix carries a proving test.
+
+| ID | Status | Commit | What changed | Proving test(s) |
+|----|--------|--------|--------------|-----------------|
+| CR-01 | FIXED | `2abfe38` | `submit()` now defers the `@Async runAndRecompute` dispatch to an `afterCommit` transaction synchronization, so the worker always sees the committed VERIFYING status + PENDING gate rows (no more permanent-VERIFYING race). | `VendorOnboardingEndToEndIntegrationTest` adjusted to rely SOLELY on the submit-kicked run (no direct `runAndRecompute` call) — proves the ordering end-to-end. |
+| CR-02 | FIXED | `a12b617` | `createOnboarding` validates shop ownership via `shopRepository.findByIdAndTenantId` (404 on missing/foreign shop, no more FK→409 oracle); `FhrsGate` reads the shop via the tenant-scoped finder (defence-in-depth) so a foreign published shop can never feed hygiene evidence. | `OnboardingCreateCrossTenantIntegrationTest` (foreign published shop → 404, not bound; nonexistent → 404; own shop → 201) + updated `FhrsGateTest`. |
+| CR-03 | FIXED | `c20fbf0` | New `POST /onboarding/resubmit` fires `RESUBMIT` (ACTION_REQUIRED→VERIFYING) and resets FAILED/MANUAL_REVIEW gate rows to PENDING (PASSED/WAIVED stay trusted) before re-kicking the chain; UI "Re-run checks" button now calls `/resubmit` (was `/submit`, which always 400'd). State-machine throw-on-veto contract preserved. | `OnboardingResubmitIntegrationTest` (happy re-run advances to PENDING_APPROVAL; illegal resubmit from DRAFT → 400) + frontend `page.test.tsx` (Re-run hits `/resubmit`, not `/submit`). |
+| WR-01 | FIXED | `e1e41a3` | `runAndRecompute` wraps the auto-APPROVE step in a targeted `catch (InvalidStateTransitionException)` so a veto no longer rolls back the committed gate evaluations + GATES_PASSED (parks at PENDING_APPROVAL, evidence survives); added a top-level ERROR log so a failed async run is observable. | `GateChainRunnerTest.recomputeSwallowsVetoedAutoApprove` (veto is caught, GATES_PASSED still fired, no exception propagates). |
+| WR-02 | FIXED | `4a15b24` | `companyNumber` now carries `@Size(max=32)` + a lenient `@Pattern` (2–10 alphanumerics, whitespace-tolerant) → 400 (not the misleading 409 "Duplicate Entry") for over-length/garbage; the service trims + uppercases and stores blank as null, so the persisted value matches the gate lookup. | `OnboardingCompanyNumberValidationIntegrationTest` (over-length → 400; `"  sc123456  "` → stored `SC123456`; blank → null). |
+| WR-03 | FIXED | `c118823` | `transition()` re-evaluates the `ALLERGEN_DATA_COMPLETE` gate (a cheap same-DB read) for GO_LIVE/REINSTATE BEFORE `sendEvent`, so the guard reads fresh data and the go-live TOCTOU is closed. FHRS/CH rows are intentionally left as recorded (external calls) — documented in the code. | `OnboardingGoLiveIntegrationTest`: new TOCTOU test (stale PASSED allergen row + now-incomplete product → 400, shop unpublished) + the positive test now seeds a compliant product. |
+
+**Deferred (Info, follow-ups):** IN-01 (unused `Rocket` import), IN-02 (dynamic `hover:${...}` Tailwind classes), IN-03 (CHANGELOG 873 vs metrics), IN-04 (`updated_at` on gate rows), IN-05 (raw exception text in vendor-visible `reason`), IN-06 (dashboard banner copy for terminal states), IN-07 (import after code), IN-08 (`IllegalStateException`→400 vs documented 500), IN-09 (`mandatory()` ignores model), IN-10 (state machine not stopped on exception path).
+
+_Fixed: 2026-07-11_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 1_

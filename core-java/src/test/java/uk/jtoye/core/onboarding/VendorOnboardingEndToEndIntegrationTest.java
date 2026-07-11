@@ -92,7 +92,6 @@ class VendorOnboardingEndToEndIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private GateChainRunner gateChainRunner;
 
     @MockBean private FhrsClient fhrsClient;
     @MockBean private CompaniesHouseClient companiesHouseClient;
@@ -132,12 +131,12 @@ class VendorOnboardingEndToEndIntegrationTest {
         when(onboardingProperties.isAutoApprove()).thenReturn(true);
 
         UUID onboardingId = createAndSubmit();
-        // Drive the recompute deterministically (also kicked async by submit()); it
-        // evaluates the three PENDING gate rows green, fires GATES_PASSED and — because
-        // auto-approve is ON — APPROVE. NO admin/service APPROVE call is made anywhere
-        // in this test: the auto-approve recompute is the ONLY thing that advances past
-        // PENDING_APPROVAL.
-        gateChainRunner.runAndRecompute(onboardingId, tenantId);
+        // CR-01: the ONLY trigger is submit()'s afterCommit kick — there is NO direct
+        // runAndRecompute call here. This proves the async gate chain is dispatched
+        // after the submit transaction commits (so the worker sees the committed
+        // VERIFYING status + PENDING gate rows), evaluates the three gates green, fires
+        // GATES_PASSED and — because auto-approve is ON — APPROVE. No admin/service
+        // APPROVE call is made anywhere in this test.
 
         JsonNode approved = awaitStatus(OnboardingState.APPROVED);
         // approvedAt stamped -> the onboarding auto-reached APPROVED with no manual review.
@@ -165,8 +164,7 @@ class VendorOnboardingEndToEndIntegrationTest {
         when(onboardingProperties.isAutoApprove()).thenReturn(false);
 
         UUID onboardingId = createAndSubmit();
-        gateChainRunner.runAndRecompute(onboardingId, tenantId);
-
+        // CR-01: rely solely on submit()'s afterCommit kick (no direct runAndRecompute).
         JsonNode pending = awaitStatus(OnboardingState.PENDING_APPROVAL);
         // No APPROVE fired -> approvedAt stays null.
         assertThat(pending.get("approvedAt").isNull()).isTrue();

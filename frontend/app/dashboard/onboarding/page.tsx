@@ -227,8 +227,28 @@ export default function OnboardingPage() {
       const res = await apiClient.post("/api/v1/onboarding/submit", {})
       setOnboarding(res.data)
     } catch (err: unknown) {
-      // A rejected resubmit (ACTION_REQUIRED) falls back to in-page guidance
-      // rather than crashing.
+      toast({
+        variant: "destructive",
+        title: "Couldn't submit for verification",
+        description: err instanceof Error ? err.message : "Please try again.",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // CR-03: ACTION_REQUIRED recovery. Fixing the flagged data then re-running the
+  // checks calls the dedicated POST /onboarding/resubmit (RESUBMIT: ACTION_REQUIRED
+  // -> VERIFYING), which resets the FAILED/MANUAL_REVIEW gates to PENDING and
+  // re-kicks the gate chain. (The old "Re-run checks" wiring hit /submit, which the
+  // state machine only accepts from DRAFT, so it always 400'd.) The success response
+  // lands the page in VERIFYING and polling resumes automatically.
+  const handleResubmit = async () => {
+    try {
+      setSubmitting(true)
+      const res = await apiClient.post("/api/v1/onboarding/resubmit", {})
+      setOnboarding(res.data)
+    } catch (err: unknown) {
       toast({
         variant: "destructive",
         title: "Couldn't re-run your checks",
@@ -481,7 +501,7 @@ export default function OnboardingPage() {
           </Button>
         )}
         {onboarding.status === "ACTION_REQUIRED" && (
-          <Button onClick={handleSubmit} disabled={submitting}>
+          <Button onClick={handleResubmit} disabled={submitting}>
             {submitting ? "Re-running…" : "Re-run checks"}
           </Button>
         )}

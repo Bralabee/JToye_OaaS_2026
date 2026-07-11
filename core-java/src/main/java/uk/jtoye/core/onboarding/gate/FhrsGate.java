@@ -76,8 +76,13 @@ public class FhrsGate implements OnboardingGate {
         if (shopId == null) {
             return GateResult.manualReview("No shop linked to onboarding; cannot look up hygiene rating");
         }
-        // RLS-scoped read (async worker re-establishes TenantContext -> app.current_tenant_id GUC).
-        Shop shop = shopRepository.findById(shopId).orElse(null);
+        // CR-02 (defence-in-depth): resolve the shop with an EXPLICIT tenant filter,
+        // not the RLS-only findById. The shops_public_read policy (V16) OR-permits
+        // published=true rows cross-tenant, so a plain findById could otherwise read a
+        // foreign published shop and store hygiene evidence against someone else's FSA
+        // establishment. findByIdAndTenantId scopes the read to the onboarding's own
+        // tenant (async worker re-establishes TenantContext -> app.current_tenant_id GUC).
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, onboarding.getTenantId()).orElse(null);
         if (shop == null) {
             return GateResult.manualReview("Shop " + shopId + " not found for hygiene lookup");
         }

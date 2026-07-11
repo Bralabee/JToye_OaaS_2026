@@ -104,6 +104,9 @@ class OnboardingGoLiveIntegrationTest {
         UUID onboardingId = seedApprovedOnboarding();
         seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true);
         seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true);
+        // WR-03: go-live re-evaluates the allergen gate against current products, so the
+        // catalogue must be fully labelled for the PASSED row to survive the fresh check.
+        seedCompliantProduct();
 
         mockMvc.perform(post("/api/v1/onboarding/go-live")
                         .header("X-Tenant-Id", tenantId.toString()))
@@ -112,6 +115,25 @@ class OnboardingGoLiveIntegrationTest {
 
         assertThat(publishedFlagOf(shopId)).isEqualTo(Boolean.TRUE);
         assertThat(statusOf(onboardingId)).isEqualTo(OnboardingState.LIVE.name());
+    }
+
+    @Test
+    @WithMockUser
+    void goLiveReEvaluatesAllergenGate_blockedWhenProductNowIncompleteDespiteStalePassedRow() throws Exception {
+        // WR-03 TOCTOU: the stored allergen row is stale PASSED, but a product added
+        // after the gate ran is missing its PPDS data. Go-live must re-evaluate the
+        // allergen gate against CURRENT products and block (400) — never trust the row.
+        UUID onboardingId = seedApprovedOnboarding();
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true);
+        seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true);
+        seedIncompleteProduct();
+
+        mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .header("X-Tenant-Id", tenantId.toString()))
+                .andExpect(status().isBadRequest());
+
+        assertThat(publishedFlagOf(shopId)).isNotEqualTo(Boolean.TRUE);
+        assertThat(statusOf(onboardingId)).isEqualTo(OnboardingState.APPROVED.name());
     }
 
     @Test
@@ -153,6 +175,26 @@ class OnboardingGoLiveIntegrationTest {
         gate.setStatus(gateStatus);
         gate.setMandatory(mandatory);
         gateRepository.saveAndFlush(gate);
+    }
+
+    /** A fully-labelled product (durability + shelf life + ingredients) — allergen-complete. */
+    private void seedCompliantProduct() {
+        jdbc.update("INSERT INTO products (id, tenant_id, created_at, sku, title, ingredients_text, "
+                        + "allergen_mask, price_pennies, display_order, available, featured, "
+                        + "shop_id, shelf_life_days, durability_type, version) "
+                        + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 3, 'USE_BY', 0)",
+                UUID.randomUUID(), tenantId, "SKU-" + shopId.toString().substring(0, 8), "Test Product",
+                "Wheat flour, **milk**, sugar", shopId);
+    }
+
+    /** A product missing shelf life + durability type — NOT allergen-complete. */
+    private void seedIncompleteProduct() {
+        jdbc.update("INSERT INTO products (id, tenant_id, created_at, sku, title, ingredients_text, "
+                        + "allergen_mask, price_pennies, display_order, available, featured, "
+                        + "shop_id, version) "
+                        + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 0)",
+                UUID.randomUUID(), tenantId, "SKU-BAD-" + shopId.toString().substring(0, 8), "Unlabelled Product",
+                "Wheat flour, milk, sugar", shopId);
     }
 
     private Boolean publishedFlagOf(UUID id) {

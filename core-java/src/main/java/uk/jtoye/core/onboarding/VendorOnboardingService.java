@@ -4,10 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
+import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
 
 import java.time.OffsetDateTime;
@@ -38,18 +42,24 @@ public class VendorOnboardingService {
     private final VendorOnboardingGateRepository gateRepository;
     private final VendorOnboardingStateMachineService stateMachineService;
     private final ShopService shopService;
+    private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
+    private final AllergenCompletenessGate allergenCompletenessGate;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
                                    VendorOnboardingStateMachineService stateMachineService,
                                    ShopService shopService,
-                                   GateChainRunner gateChainRunner) {
+                                   ShopRepository shopRepository,
+                                   GateChainRunner gateChainRunner,
+                                   AllergenCompletenessGate allergenCompletenessGate) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
         this.shopService = shopService;
+        this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
+        this.allergenCompletenessGate = allergenCompletenessGate;
     }
 
     /**
@@ -60,13 +70,29 @@ public class VendorOnboardingService {
      */
     public OnboardingDto createOnboarding(OnboardingModel model, UUID shopId, String companyNumber) {
         UUID tenantId = CurrentTenant.require();
+
+        // CR-02: the caller must own the shop. The V43 FK shop_id -> shops(id) is
+        // checked by Postgres referential-integrity, which BYPASSES RLS, so an INSERT
+        // referencing another tenant's (publicly-discoverable) shop would otherwise
+        // succeed — binding the onboarding cross-tenant and letting the FHRS gate
+        // record hygiene evidence against a foreign FSA establishment. A tenant-scoped
+        // lookup (the same finder ShopService.getShopById uses) rejects a missing OR
+        // foreign shop with a clean 404, instead of a later FK
+        // DataIntegrityViolationException that GlobalExceptionHandler misreports as a
+        // 409 "Duplicate Entry" (also a shop-UUID existence oracle).
+        shopRepository.findByIdAndTenantId(shopId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
         log.info("Creating DRAFT onboarding for tenant {} (shop {})", tenantId, shopId);
 
         VendorOnboarding onboarding = new VendorOnboarding();
         onboarding.setTenantId(tenantId);
         onboarding.setShopId(shopId);
         onboarding.setModel(model);
-        onboarding.setCompanyNumber(companyNumber);
+        // WR-02: normalise the company number so the stored aggregate matches what the
+        // CompaniesHouseGate looks up (it trims + the register is case-insensitive), and
+        // a blank/whitespace value persists as null (sole trader -> gate WAIVED).
+        onboarding.setCompanyNumber(normaliseCompanyNumber(companyNumber));
         onboarding.setStatus(OnboardingState.DRAFT);
 
         // Flush now so UNIQUE(tenant_id) surfaces as a 409 inside this request
@@ -77,8 +103,8 @@ public class VendorOnboardingService {
 
     /**
      * Submit the caller's onboarding: DRAFT → VERIFYING (stamps {@code submitted_at}),
-     * then materialise the gate rows and kick the async gate chain. With zero gate
-     * beans this slice the async run short-circuits (no mandatory gate rows).
+     * then materialise the gate rows and kick the async gate chain <em>after this
+     * transaction commits</em> (CR-01 — see {@link #kickGateChainAfterCommit}).
      */
     public OnboardingDto submit() {
         UUID tenantId = CurrentTenant.require();
@@ -87,9 +113,41 @@ public class VendorOnboardingService {
         transition(onboarding, OnboardingEvent.SUBMIT);
 
         gateChainRunner.materialise(onboarding);
-        gateChainRunner.runAndRecompute(onboarding.getId(), tenantId);
+        kickGateChainAfterCommit(onboarding.getId(), tenantId);
 
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
+    /**
+     * Resubmit the caller's onboarding after ACTION_REQUIRED (CR-03): ACTION_REQUIRED
+     * → VERIFYING, then reset every FAILED / MANUAL_REVIEW gate row to PENDING (PASSED
+     * / WAIVED rows stay trusted and are never re-run), and re-kick the async gate
+     * chain after commit. The runner only (re)evaluates PENDING rows, so resetting the
+     * flagged rows is what makes a re-run actually re-check them. The state machine
+     * rejects RESUBMIT from any state other than ACTION_REQUIRED →
+     * {@code InvalidStateTransitionException} → HTTP 400.
+     */
+    public OnboardingDto resubmit() {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        transition(onboarding, OnboardingEvent.RESUBMIT);
+
+        UUID onboardingId = onboarding.getId();
+        for (VendorOnboardingGate gate : gateRepository.findByOnboardingId(onboardingId)) {
+            if (gate.getStatus() == GateStatus.FAILED || gate.getStatus() == GateStatus.MANUAL_REVIEW) {
+                gate.setStatus(GateStatus.PENDING);
+                gate.setEvidence(null);
+                gate.setExternalRef(null);
+                gate.setReason(null);
+                gate.setCheckedAt(null);
+                gateRepository.save(gate);
+            }
+        }
+
+        kickGateChainAfterCommit(onboardingId, tenantId);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
     }
 
     /**
@@ -136,6 +194,18 @@ public class VendorOnboardingService {
      * side effect, then save — mirroring {@code OrderService.transitionOrder}.
      */
     private void transition(VendorOnboarding onboarding, OnboardingEvent event) {
+        // WR-03: the ALLERGEN_DATA_COMPLETE gate row is evaluated once during the async
+        // run after submit, but GO_LIVE/REINSTATE can fire hours/days later (auto-approve
+        // is off, so onboardings park at PENDING_APPROVAL awaiting a human). A vendor can
+        // add or blank a product's allergen data in that window, so the stored PASSED row
+        // is a TOCTOU on the "before publish" Natasha's Law check. Re-evaluate the allergen
+        // gate here — a cheap same-DB read, no external API — BEFORE sendEvent, so the
+        // go-live guard reads FRESH data. FHRS/CH rows are deliberately NOT re-run (external
+        // calls; their evidence is trusted as recorded).
+        if (event == OnboardingEvent.GO_LIVE || event == OnboardingEvent.REINSTATE) {
+            refreshAllergenGate(onboarding);
+        }
+
         OnboardingState oldState = onboarding.getStatus();
         OnboardingState newState = stateMachineService.sendEvent(onboarding.getId(), oldState, event);
 
@@ -170,6 +240,60 @@ public class VendorOnboardingService {
 
         onboardingRepository.save(onboarding);
         log.info("Onboarding {} transitioned {} -> {} via {}", onboarding.getId(), oldState, newState, event);
+    }
+
+    /**
+     * CR-01: dispatch the async gate chain only AFTER the current transaction
+     * commits. {@link GateChainRunner#runAndRecompute} is {@code @Async @Transactional}
+     * — it opens its own connection on a worker thread. Firing it while the submit
+     * (or resubmit) transaction is still open races the worker against the commit:
+     * under READ COMMITTED the worker cannot see the uncommitted VERIFYING status or
+     * the freshly-materialised PENDING gate rows, so it early-returns and the
+     * onboarding is left stuck in VERIFYING with every gate PENDING forever.
+     * Registering an {@code afterCommit} synchronization guarantees the worker sees
+     * committed state. If no synchronization is active (e.g. a direct call outside a
+     * transaction) fall back to an immediate kick so the chain still runs.
+     */
+    private void kickGateChainAfterCommit(UUID onboardingId, UUID tenantId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    gateChainRunner.runAndRecompute(onboardingId, tenantId);
+                }
+            });
+        } else {
+            gateChainRunner.runAndRecompute(onboardingId, tenantId);
+        }
+    }
+
+    /**
+     * WR-03: re-evaluate the ALLERGEN_DATA_COMPLETE gate row against current product
+     * data so the GO_LIVE/REINSTATE guard cannot trust a stale PASSED row. If the guard
+     * then vetoes, this row update rolls back with the transaction — the security outcome
+     * (publish blocked) is what matters. No-op if the row is absent (the guard then vetoes
+     * on the missing allergen gate anyway).
+     */
+    private void refreshAllergenGate(VendorOnboarding onboarding) {
+        gateRepository.findByOnboardingIdAndGateType(onboarding.getId(), GateType.ALLERGEN_DATA_COMPLETE)
+                .ifPresent(row -> {
+                    GateResult result = allergenCompletenessGate.evaluate(onboarding);
+                    row.setStatus(result.status());
+                    row.setEvidence(result.evidence());
+                    row.setExternalRef(result.externalRef());
+                    row.setReason(result.reason());
+                    row.setCheckedAt(OffsetDateTime.now());
+                    gateRepository.save(row);
+                });
+    }
+
+    /** WR-02: trim + uppercase a company number; a blank/whitespace value becomes null. */
+    private static String normaliseCompanyNumber(String companyNumber) {
+        if (companyNumber == null) {
+            return null;
+        }
+        String normalised = companyNumber.trim().toUpperCase();
+        return normalised.isEmpty() ? null : normalised;
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {
