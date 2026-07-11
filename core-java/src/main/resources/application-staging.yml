@@ -5,7 +5,10 @@
 spring:
   datasource:
     hikari:
-      maximum-pool-size: ${DB_POOL_SIZE:30}  # Mid-range pool size
+      # Issue #94 [P2-3]: the base HPA (3→10 replicas) applies to the staging
+      # overlay too, so staging must obey the same replica-ceiling math as prod
+      # (see application-prod.yml). 30 × 10 replicas would blow max_connections.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
       minimum-idle: ${DB_POOL_MIN_IDLE:5}
       connection-timeout: 30000
       idle-timeout: 600000
