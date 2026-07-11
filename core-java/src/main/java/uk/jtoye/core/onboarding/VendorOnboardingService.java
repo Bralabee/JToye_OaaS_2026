@@ -85,7 +85,10 @@ public class VendorOnboardingService {
         onboarding.setTenantId(tenantId);
         onboarding.setShopId(shopId);
         onboarding.setModel(model);
-        onboarding.setCompanyNumber(companyNumber);
+        // WR-02: normalise the company number so the stored aggregate matches what the
+        // CompaniesHouseGate looks up (it trims + the register is case-insensitive), and
+        // a blank/whitespace value persists as null (sole trader -> gate WAIVED).
+        onboarding.setCompanyNumber(normaliseCompanyNumber(companyNumber));
         onboarding.setStatus(OnboardingState.DRAFT);
 
         // Flush now so UNIQUE(tenant_id) surfaces as a 409 inside this request
@@ -246,6 +249,15 @@ public class VendorOnboardingService {
         } else {
             gateChainRunner.runAndRecompute(onboardingId, tenantId);
         }
+    }
+
+    /** WR-02: trim + uppercase a company number; a blank/whitespace value becomes null. */
+    private static String normaliseCompanyNumber(String companyNumber) {
+        if (companyNumber == null) {
+            return null;
+        }
+        String normalised = companyNumber.trim().toUpperCase();
+        return normalised.isEmpty() ? null : normalised;
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {
