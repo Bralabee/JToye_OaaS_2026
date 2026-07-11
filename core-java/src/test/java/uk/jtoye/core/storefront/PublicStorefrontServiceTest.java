@@ -401,6 +401,28 @@ class PublicStorefrontServiceTest {
     }
 
     @Test
+    @DisplayName("createGuestOrder rejects an order below the shop's minimum order value (WR-01)")
+    void createGuestOrder_rejectsBelowMinimumOrder() {
+        publishedShop.setMinimumOrderPennies(1000L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Zobo", 300L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Min Checker");
+        request.setCustomerEmail("min@example.com");
+        request.setCustomerPhone("07700900003");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("minimum order value of £10.00"));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
     @DisplayName("createGuestOrder rejects a product from another shop of the same tenant (CR-01 / UIX-05) without leaking its existence")
     void createGuestOrder_rejectsProductFromAnotherShop() {
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))

@@ -558,6 +558,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   )
   const deliveryIsFree = deliveryFeePennies === 0
   const previewTotalPennies = subtotalPennies + deliveryFeePennies
+  // WR-01: mirror the server-side minimum-order gate (item subtotal, delivery
+  // fee excluded). The server enforces it authoritatively in createGuestOrder;
+  // this just stops the user submitting an order that would be rejected.
+  const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
+  const belowMinimum = minimumOrderPennies > 0 && subtotalPennies < minimumOrderPennies
   // VAT-inclusive fraction already contained within the gross (UK retail idiom,
   // unchanged): gross * 20 / 120, rounded down.
   const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
@@ -784,10 +789,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
+        {/* Below-minimum hint (WR-01) */}
+        {belowMinimum && (
+          <p className="text-center text-xs font-medium text-slate-500">
+            Minimum order {formatPrice(minimumOrderPennies)} — add{" "}
+            {formatPrice(minimumOrderPennies - subtotalPennies)} more to place this order.
+          </p>
+        )}
+
         {/* Submit */}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || belowMinimum}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (

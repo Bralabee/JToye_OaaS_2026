@@ -464,6 +464,18 @@ public class PublicStorefrontService {
             long itemSubtotal = order.getItems().stream()
                     .mapToLong(item -> item.getTotalPricePennies())
                     .sum();
+
+            // WR-01: enforce the shop's advertised minimum order value on the
+            // item subtotal (delivery fee excluded), server-side. The storefront
+            // renders "Min order £X" and the checkout disables submit below it,
+            // but those are advisory — this is the authoritative gate.
+            if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
+                    && itemSubtotal < shop.getMinimumOrderPennies()) {
+                throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
+                        "Order is below this shop's minimum order value of £%.2f.",
+                        shop.getMinimumOrderPennies() / 100.0));
+            }
+
             long deliveryFee;
             if (fulfilmentType == FulfilmentType.COLLECTION) {
                 deliveryFee = 0L;

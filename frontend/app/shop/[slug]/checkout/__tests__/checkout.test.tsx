@@ -230,6 +230,24 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     expect(screen.queryByText("£3.00")).toBeNull()
   })
 
+  it("disables Place order below the shop's minimum order value with a hint (WR-01)", async () => {
+    // Shop advertises a £15.00 minimum; the cart holds £10.00.
+    mockedGet.mockResolvedValue({ data: { ...SHOP, minimumOrderPennies: 1500 } })
+    seedCart(1000)
+    renderCheckout()
+
+    // Hint appears once the shop fetch resolves, and submit is disabled —
+    // mirrors the authoritative server-side gate in createGuestOrder.
+    expect(
+      await screen.findByText(/Minimum order £15\.00 — add £5\.00 more/)
+    ).toBeTruthy()
+    const submit = screen.getByRole("button", { name: /place order/i }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+
+    fireEvent.click(submit)
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
   it("blocks submit on an invalid postcode with the exact inline error", async () => {
     seedCart(1000)
     renderCheckout()
