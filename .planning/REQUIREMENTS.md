@@ -59,6 +59,16 @@ Ship the last piece of the vendor order-management loop.
 - [x] **VOPS-02**: `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe refund API. Request body: `{ amount_pennies?: number, reason: "requested_by_customer" | "duplicate" | "fraudulent" | "other", note?: string }`. Behavior: partial refund if `amount_pennies` < order total, full refund if absent; uses `RefundService.createRefund` → `Stripe.Refund.create(paymentIntentId, amount)`; persists a `Refund` entity (new Flyway V34 migration — `order_id` FK, `amount_pennies`, `reason`, `stripe_refund_id`, `status`, `created_at`); publishes `order.refunded` event to RabbitMQ. Stripe webhook handler updates the `Refund.status` on `charge.refunded` / `refund.updated` events. Tests cover: full refund success path, partial refund success path, invalid amount (> order total) rejected with 400, Stripe API error propagates as 502, webhook update cycle integration test.
 - [x] **VOPS-03**: Refund state transition added to `OrderStateMachine`. Event `REFUND_REQUESTED` transitions `CONFIRMED`, `PREPARING`, `READY`, `COMPLETED` → `REFUNDED`. Event is idempotent (second invocation on a `REFUNDED` order is a no-op, not an `InvalidStateTransitionException`). Transition is audited by Hibernate Envers (existing setup) and logs a structured SLF4J INFO entry. Tests cover: state machine unit tests per transition source; idempotency test; integration test that a refund via VOPS-02 triggers the state transition automatically.
 
+### Vendor onboarding (VOB) — added 2026-07-10
+
+The vendor-onboarding first slice (Phase 18): a tenant can self-onboard through automatic compliance gates and, when all gates pass, go live **without manual review**. Requirements derived from the ROADMAP Phase 18 success criteria; all delivered this phase.
+
+- [x] **VOB-01**: Tenant-scoped `vendor_onboarding` aggregate + state machine under RLS (Flyway V43, ENABLE+FORCE + Envers `_aud` mirrors), the **sole writer of `Shop.published`**, with `onboarding.auto-approve` auto-advancing `PENDING_APPROVAL → APPROVED` so a fully-passing onboarding can reach live without manual review (the APPROVE guard still enforces all mandatory gates). Tests: state-machine unit + RLS Testcontainers + submit/go-live integration + cross-gate e2e. **DONE 2026-07-11 — Phase 18 (Plans 18-01, 18-02, 18-05).**
+- [x] **VOB-02**: Automatic `BUSINESS_VERIFIED` (Companies House, HTTP-Basic key-as-username) + `FOOD_HYGIENE_RATING` (FSA FHRS, `min-rating`=2, mandatory `x-api-version: 2` header) gates evaluated on submit, recording pass/fail + provider evidence, degrading to `MANUAL_REVIEW` on no/ambiguous match or an API outage (never a silent pass or hard-fail). Each is circuit-broken (`@CircuitBreaker`) with an explicit timeout. **DONE 2026-07-11 — Phase 18 (Plans 18-03, 18-04).**
+- [x] **VOB-03**: `ALLERGEN_DATA_COMPLETE` gate blocks `GO_LIVE` until every product carries the required V41 allergen data (durability type + shelf life + ingredients), aligned to `ProductLabelService.validatePpdsData` (Natasha's Law). **DONE 2026-07-11 — Phase 18 (Plan 18-05).**
+- [x] **VOB-04**: FHRS min-rating threshold + both provider API base URLs injected via `onboarding.*` config (`${ENV:default}`), never literals; the Companies House key is redacted in `toString` and never logged. **DONE 2026-07-11 — Phase 18 (Plan 18-01).**
+- [x] **VOB-05**: Test coverage (state-machine, RLS Testcontainers, gate evaluators, `onboarding.auto-approve` toggle both ways, cross-gate fully-automatic e2e) + `docs/metrics.json` reconciliation keeping the `docs-freshness` CI gate green (schema 43, 15 controllers). **DONE 2026-07-11 — Phase 18 (Plans 18-01..18-06).**
+
 ## Future Requirements
 
 Deferred to v2.3+. These roll over from HANDOFF.md P2 + Work Orders that v2.2 didn't scope.
@@ -134,13 +144,19 @@ Which phases cover which requirements. Filled by roadmap creation 2026-04-18.
 | VOPS-01 | Phase 17 | Complete |
 | VOPS-02 | Phase 17 | Complete |
 | VOPS-03 | Phase 17 | Complete |
+| VOB-01 | Phase 18 (Plans 18-01, 18-02, 18-05) | Complete (2026-07-11) |
+| VOB-02 | Phase 18 (Plans 18-03, 18-04) | Complete (2026-07-11) |
+| VOB-03 | Phase 18 (Plan 18-05) | Complete (2026-07-11) |
+| VOB-04 | Phase 18 (Plan 18-01) | Complete (2026-07-11) |
+| VOB-05 | Phase 18 (Plans 18-01..18-06) | Complete (2026-07-11) |
 
 **Coverage:**
-- v1 requirements: 11 + 5 (AUDIT-W0) = 16 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3)
-- Mapped to phases: 16 (phases 12–17 incl. inserted 16.1)
+- v1 requirements: 11 + 5 (AUDIT-W0) + 5 (VOB) = 21 total (SEC ×3 + CQ ×2 + INF ×2 + DOC ×1 + AUDIT-W0 ×5 + VOPS ×3 + VOB ×5)
+- Mapped to phases: 21 (phases 12–18 incl. inserted 16.1)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-18*
 *Last updated: 2026-04-18 — initial scope for milestone v2.2*
 *Last updated: 2026-04-27 — registered AUDIT-W0-01..05 retrospectively from the 2026-04-27 council audit (Phase 16.1 closure).*
+*Last updated: 2026-07-11 — registered VOB-01..05 (vendor onboarding first slice, Phase 18 closure).*

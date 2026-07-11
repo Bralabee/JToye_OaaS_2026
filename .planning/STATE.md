@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: milestone_complete
-stopped_at: v2.2 SHIPPED (all 7 phases; Phase 17 merged via PR #57 on 2026-07-06). Post-milestone hardening since — see Post-Milestone Activity below. No v2.3 milestone started yet.
-last_updated: "2026-07-07T23:59:00.000Z"
-last_activity: 2026-07-07 -- QA-council remediation (PR #70), edge-go pipeline fix (PR #72), observability restore (PR #73), RLS integration-suite CI enablement (#71)
+status: executing
+stopped_at: Phase 18 UI-SPEC approved; planning 18-07 UI slice
+last_updated: "2026-07-11T03:21:17.709Z"
+last_activity: 2026-07-11 -- Phase 18 execution started
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 8
+  completed_phases: 6
+  total_plans: 21
+  completed_plans: 23
+  percent: 75
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 17 — vendor-order-detail-stripe-refund-flow
+**Current focus:** Phase 18 — vendor-onboarding-first-slice
 
 ## Current Position
 
-Phase: 17 (final) — complete
-Plan: —
-Status: Milestone complete; post-milestone hardening in progress
-Last activity: 2026-07-10 - Completed quick task 260710-u1q: Issue #90 P1-8 k8s backup hardening (image + BYPASSRLS role + restore drill, proven locally; prod-cluster ACs pending); prior: 260710-s6d #89 CSP (MERGED #166), 260710-qeq #91 supply-chain (MERGED #140). ALL P1 remediation (#83-#91) now done bar #90's cluster-exec ACs — IP-keyed limiter for tenant-less /public/** (closes the tenant-empty return-true bypass), ClientIpResolver (XFF-first, getRemoteAddr fallback, spoofing caveat documented), distinct rl:public:{ip} Redis namespace (no tenant-bucket collision), 429 + Retry-After, limits env-injected via rate-limiting.public.*, INSIDE #86 fail-open try/catch (Redis blip → allowed not 500); +ClientIpResolverTest +PublicRateLimitIntegrationTest (flood→429, tenant unaffected, fail-open on redis.stop()); full gate green (463 unit + 101 integration, docs 767). ALL P1 (#83-#88) DONE. RUNTIME FOLLOW-UP (from #87): Keycloak realm needs DB drop + re-import to emit aud=core-api; live tokens fail-closed until then.
+Phase: 18 (vendor-onboarding-first-slice) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 18
+Last activity: 2026-07-11 -- Phase 18 execution started
 
 Progress: [██████████] 100%
 
@@ -173,6 +173,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-04-28T00:18:25Z
-Stopped at: Phase 16.1 (pre-prod hardening) DRAFTING COMPLETE — all 6 plans shipped on branch feature/phase-16.1-pre-prod-hardening. AUDIT-W0-01..05 registered in REQUIREMENTS.md, CHANGELOG.md updated under [Unreleased], ROADMAP marked 6/6, Current Position advances to Phase 17. Ready for PR.
-Resume file: None
+Last session: 2026-07-11T03:21:17.699Z
+Stopped at: Phase 18 UI-SPEC approved; planning 18-07 UI slice
+Resume file: .planning/phases/18-vendor-onboarding-first-slice/18-UI-SPEC.md

@@ -306,6 +306,61 @@ export interface CreateAnnouncementRequest {
   shopId: string
 }
 
+// Vendor Onboarding Types (Phase 18) — mirror the merged Java DTOs
+// (uk.jtoye.core.onboarding.dto). OffsetDateTime -> ISO string; nullable -> `| null`.
+export type OnboardingModel = "MARKETPLACE" | "WHITE_LABEL"
+
+export type OnboardingState =
+  | "DRAFT"
+  | "VERIFYING"
+  | "ACTION_REQUIRED"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "LIVE"
+  | "SUSPENDED"
+  | "REJECTED"
+  | "WITHDRAWN"
+
+export type GateType =
+  | "BUSINESS_VERIFIED"
+  | "FOOD_HYGIENE_RATING"
+  | "ALLERGEN_DATA_COMPLETE"
+
+export type GateStatus =
+  | "PENDING"
+  | "PASSED"
+  | "FAILED"
+  | "MANUAL_REVIEW"
+  | "WAIVED"
+
+// GateDto deliberately withholds raw evidence/externalRef — only the fields
+// below are exposed to the vendor; the UI must never attempt to read others.
+export interface GateDto {
+  gateType: GateType
+  status: GateStatus
+  mandatory: boolean
+  reason: string | null
+  checkedAt: string | null
+}
+
+export interface OnboardingDto {
+  id: string
+  status: OnboardingState
+  model: OnboardingModel
+  shopId: string
+  companyNumber: string | null
+  submittedAt: string | null
+  approvedAt: string | null
+  wentLiveAt: string | null
+  gates: GateDto[]
+}
+
+export interface CreateOnboardingRequest {
+  model: OnboardingModel
+  shopId: string
+  companyNumber?: string
+}
+
 // WebSocket Event Types
 export interface OrderStateChangeEvent {
   orderId: string

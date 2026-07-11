@@ -46,7 +46,8 @@ public class WebConfig implements WebMvcConfigurer {
             "uk.jtoye.core.customer",
             "uk.jtoye.core.finance",
             "uk.jtoye.core.gdpr",
-            "uk.jtoye.core.sync"
+            "uk.jtoye.core.sync",
+            "uk.jtoye.core.onboarding"
     };
 
     @Autowired
