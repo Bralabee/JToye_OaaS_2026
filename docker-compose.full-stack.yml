@@ -14,6 +14,15 @@ services:
     image: postgres:15-alpine
     container_name: jtoye-postgres
     restart: unless-stopped
+    # Issue #94 [P2-3]: max_connections is EXPLICIT (PG15 default is 100).
+    # This instance is shared by core-java (Hikari, ≤2 replicas × 20),
+    # Keycloak (Agroal, capped at 20 below — its default is 100!), the
+    # postgres-exporter (monitoring stack), healthcheck psql sessions, and
+    # 3 superuser-reserved slots. 200 is the platform-wide budget constant —
+    # the SAME value the jtoye-infrastructure Postgres must run with in k8s
+    # (k8s/DEPLOYMENT.md "Database Connection Budget"). CI asserts the math
+    # via k8s/scripts/check-connection-math.sh.
+    command: postgres -c max_connections=200
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -77,6 +86,10 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${KC_DB_USERNAME}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD must be set}
+      # Issue #94 [P2-3]: Keycloak's Agroal pool defaults to 100 — it could
+      # single-handedly exhaust the shared Postgres. 20 is the budget line
+      # item assumed by the platform connection math (check-connection-math.sh).
+      KC_DB_POOL_MAX_SIZE: "20"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HOSTNAME: localhost

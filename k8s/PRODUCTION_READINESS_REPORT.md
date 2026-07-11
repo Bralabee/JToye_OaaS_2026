@@ -63,7 +63,7 @@ The Kubernetes manifests for the JToye OaaS platform have been comprehensively r
   - Prevents premature restarts during slow startup
 - ✓ **Redis credentials integration** (REDIS_PASSWORD environment variable)
 - ✓ **RabbitMQ credentials integration** (RABBITMQ_USERNAME, RABBITMQ_PASSWORD)
-- ✓ **HPA already configured** (3-10 replicas, CPU: 70%, Memory: 80%)
+- ✓ **HPA already configured** (3-10 replicas, CPU: 70% — memory metric removed in issue #94: JVM heap sits at ~75% of the limit regardless of load, so a memory target pinned the HPA at maxReplicas)
 - ✓ **PDB already configured** (minAvailable: 2 pods during disruptions)
 
 #### Production Readiness Score: 98/100
@@ -246,11 +246,11 @@ Enable environment-specific configurations without duplicating manifests.
 ### Resource Allocation ✓
 | Component | CPU Request | CPU Limit | Mem Request | Mem Limit |
 |-----------|-------------|-----------|-------------|-----------|
-| core-java | 500m | 1000m | 512Mi | 1Gi |
+| core-java | 500m | 1000m | 1Gi | 1Gi |
 | edge-go | 100m | 500m | 64Mi | 256Mi |
 | frontend | 200m | 500m | 256Mi | 512Mi |
 
-**Total Minimum:** 2.4 CPU cores, 2.5GB RAM (at min replicas)
+**Total Minimum:** 2.4 CPU cores, 4.1GB RAM (at min replicas; core-java memory request == limit for Guaranteed QoS, issue #94)
 **Total Maximum:** 17.5 CPU cores, 17.5GB RAM (at max replicas with HPA)
 
 ### Health Checks ✓

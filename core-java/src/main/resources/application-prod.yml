@@ -5,8 +5,14 @@
 spring:
   datasource:
     hikari:
-      maximum-pool-size: ${DB_POOL_SIZE:50}  # Higher for production load
-      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      # Issue #94 [P2-3]: sized against the HPA replica CEILING, not a single pod.
+      # Budget: (maxReplicas 10 + rolling-update surge 1) × 10 = 110, plus
+      # Keycloak (≤20) + pg-backup (1) + postgres-exporter (2) = 133, against
+      # Postgres max_connections=200 (superuser reserves 3) → ~32% headroom.
+      # Per-pod 10 also matches HikariCP guidance (cores×2; pod CPU limit is 1).
+      # Enforced by k8s/scripts/check-connection-math.sh (CI k8s-validate job).
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
