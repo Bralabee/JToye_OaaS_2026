@@ -357,8 +357,10 @@ public class OrderService {
         log.info("Order {} transitioned: {} -> {} via event {}",
                 order.getOrderNumber(), oldStatus, newStatus, event);
 
-        // Publish state change event AFTER successful save (non-blocking —
-        // RabbitMQ failure doesn't break the transition).
+        // Record the state change in the transactional outbox (#93). The row
+        // joins this transaction: if anything below rolls the transition back,
+        // the event rolls back with it — nothing is announced for a change
+        // that never committed. The flusher publishes it post-commit.
         eventPublisher.publishStateChange(
                 order.getId(), order.getTenantId(), order.getOrderNumber(),
                 oldStatus, newStatus);

@@ -14,31 +14,45 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import uk.jtoye.core.config.RabbitMQConfig;
+import uk.jtoye.core.order.OrderStateChangeEvent;
+import uk.jtoye.core.order.OrderStatus;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link PaymentEventOutboxFlusher}.
+ * Unit tests for {@link PaymentEventOutboxFlusher} (Issue #93 hardened).
  *
  * <p>Verifies happy path (publish + mark SENT), transient failure path
- * (attempts incremented, last_error recorded, row stays PENDING), and the
- * terminal failure path (row flips to FAILED after MAX_ATTEMPTS).
+ * (attempts incremented, exponential backoff scheduled, row stays PENDING),
+ * the ops-signal failure path (row flips to FAILED after MAX_ATTEMPTS but is
+ * NOT poisoned), the poison path (payload corruption is never retryable),
+ * per-family payload dispatch (payment / refund / order-state), the
+ * resurrection pass, and the pure backoff maths.
+ *
+ * <p>Concurrency (FOR UPDATE SKIP LOCKED) and backoff *gating* live in SQL,
+ * so they are covered by PaymentEventOutboxReliabilityIntegrationTest.
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentEventOutboxFlusherTest {
+
+    private static final long BASE_MS = 5_000L;
+    private static final long CAP_MS = 300_000L;
 
     @Mock private PaymentEventOutboxRepository repository;
     @Mock private RabbitTemplate rabbitTemplate;
@@ -56,12 +70,15 @@ class PaymentEventOutboxFlusherTest {
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         when(meterRegistryProvider.getIfAvailable()).thenReturn(null);
 
-        // Mock tenant lookup — return a single test tenant so flushPending iterates once
+        // Mock tenant lookup — return a single test tenant so flushPending
+        // iterates once. lenient(): the pure backoff-math tests never touch
+        // the tenant query and would otherwise trip strict-stub checking.
         UUID testTenantId = UUID.fromString("11111111-1111-1111-1111-111111111111");
-        when(entityManager.createNativeQuery("SELECT id FROM tenants")).thenReturn(tenantQuery);
-        when(tenantQuery.getResultList()).thenReturn(java.util.List.of(testTenantId));
+        lenient().when(entityManager.createNativeQuery("SELECT id FROM tenants")).thenReturn(tenantQuery);
+        lenient().when(tenantQuery.getResultList()).thenReturn(java.util.List.of(testTenantId));
 
-        flusher = new PaymentEventOutboxFlusher(repository, rabbitTemplate, objectMapper, entityManager, meterRegistryProvider);
+        flusher = new PaymentEventOutboxFlusher(repository, rabbitTemplate, objectMapper,
+                entityManager, meterRegistryProvider, BASE_MS, CAP_MS);
     }
 
     private PaymentEventOutbox pendingRow() throws Exception {
@@ -79,10 +96,10 @@ class PaymentEventOutboxFlusherTest {
     }
 
     @Test
-    @DisplayName("flushPending publishes PENDING rows and marks them SENT")
+    @DisplayName("flushPending publishes claimed rows and marks them SENT")
     void flushPending_happyPath() throws Exception {
         PaymentEventOutbox row = pendingRow();
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
 
         flusher.flushPending();
@@ -102,10 +119,11 @@ class PaymentEventOutboxFlusherTest {
     }
 
     @Test
-    @DisplayName("flushPending records transient broker failure and keeps row PENDING")
-    void flushPending_transientFailure_keepsPending() throws Exception {
+    @DisplayName("transient broker failure keeps row PENDING and schedules exponential backoff")
+    void flushPending_transientFailure_keepsPendingWithBackoff() throws Exception {
         PaymentEventOutbox row = pendingRow();
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        OffsetDateTime before = OffsetDateTime.now();
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
         doThrow(new AmqpException("broker down")).when(rabbitTemplate)
                 .convertAndSend(anyString(), anyString(), any(Object.class));
@@ -116,18 +134,24 @@ class PaymentEventOutboxFlusherTest {
         verify(repository).save(captor.capture());
         PaymentEventOutbox saved = captor.getValue();
         assertEquals(PaymentEventOutbox.Status.PENDING, saved.getStatus(),
-                "Row must stay PENDING under MAX_ATTEMPTS so next tick retries");
+                "Row must stay PENDING under MAX_ATTEMPTS so a later tick retries");
         assertEquals(1, saved.getAttempts());
         assertEquals("broker down", saved.getLastError());
         assertNull(saved.getSentAt());
+        assertFalse(saved.isPoison());
+        // attempt 1 → base * 2^0 = 5s backoff from "now"
+        assertTrue(saved.getNextAttemptAt().isAfter(before.plusSeconds(4)),
+                "next_attempt_at must be pushed ~base ms into the future, was " + saved.getNextAttemptAt());
+        assertTrue(saved.getNextAttemptAt().isBefore(before.plusSeconds(30)),
+                "attempt 1 backoff must be near the base, not the cap");
     }
 
     @Test
-    @DisplayName("flushPending flips row to FAILED after MAX_ATTEMPTS attempts")
-    void flushPending_exhaustsRetries_marksFailed() throws Exception {
+    @DisplayName("row flips to FAILED after MAX_ATTEMPTS but stays resurrectable (poison=false)")
+    void flushPending_exhaustsRetries_marksFailedNotPoisoned() throws Exception {
         PaymentEventOutbox row = pendingRow();
-        row.setAttempts(PaymentEventOutboxFlusher.MAX_ATTEMPTS - 1); // one away from dead-letter
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        row.setAttempts(PaymentEventOutboxFlusher.MAX_ATTEMPTS - 1); // one away from the ops signal
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
         doThrow(new AmqpException("still down")).when(rabbitTemplate)
                 .convertAndSend(anyString(), anyString(), any(Object.class));
@@ -140,18 +164,49 @@ class PaymentEventOutboxFlusherTest {
         assertEquals(PaymentEventOutbox.Status.FAILED, saved.getStatus());
         assertEquals(PaymentEventOutboxFlusher.MAX_ATTEMPTS, saved.getAttempts());
         assertEquals("still down", saved.getLastError());
+        assertFalse(saved.isPoison(),
+                "Retry exhaustion is transient — resurrection must be able to re-lease this row");
     }
 
     @Test
-    @DisplayName("flushPending skips work silently when no PENDING rows")
+    @DisplayName("corrupt payload flips row to FAILED and poisons it — never resurrected")
+    void flushPending_corruptPayload_poisonsRow() {
+        PaymentEventOutbox row = new PaymentEventOutbox(
+                UUID.randomUUID(), "SUCCEEDED", "payment.succeeded", "{not json");
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
+        ArgumentCaptor<PaymentEventOutbox> captor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(captor.capture());
+        PaymentEventOutbox saved = captor.getValue();
+        assertEquals(PaymentEventOutbox.Status.FAILED, saved.getStatus());
+        assertTrue(saved.isPoison(), "Payload corruption is unrecoverable — must be poisoned");
+        assertTrue(saved.getLastError().startsWith("payload deserialization failed"));
+    }
+
+    @Test
+    @DisplayName("flushPending skips work silently when nothing is claimable")
     void flushPending_noWork_noRabbitCall() {
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of());
 
         flusher.flushPending();
 
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
         verify(repository, never()).save(any(PaymentEventOutbox.class));
+    }
+
+    @Test
+    @DisplayName("resurrectFailed re-leases non-poison FAILED rows per tenant")
+    void resurrectFailed_delegatesToRepositoryPerTenant() {
+        when(repository.resurrectFailed()).thenReturn(3);
+
+        flusher.resurrectFailed();
+
+        verify(repository).resurrectFailed();
     }
 
     // ---------- V36 per-row exchange routing tests (Plan 17-02 Task 1) ----------
@@ -187,11 +242,25 @@ class PaymentEventOutboxFlusherTest {
         );
     }
 
+    private PaymentEventOutbox orderStateRow() throws Exception {
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "ORD-ST",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now()
+        );
+        return new PaymentEventOutbox(
+                event.tenantId(),
+                "ORDER_STATE_CHANGED",
+                "order.state.confirmed",
+                objectMapper.writeValueAsString(event),
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE
+        );
+    }
+
     @Test
     @DisplayName("publishRow with exchange=payment.events routes to payment exchange")
     void publishRow_paymentExchangeRow_routesToPaymentExchange() throws Exception {
         PaymentEventOutbox row = paymentRow();
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
 
         flusher.flushPending();
@@ -211,7 +280,7 @@ class PaymentEventOutboxFlusherTest {
     @DisplayName("publishRow with exchange=order.events routes to order exchange and deserializes RefundEvent")
     void publishRow_orderExchangeRow_routesToOrderExchange() throws Exception {
         PaymentEventOutbox row = refundRow();
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
 
         flusher.flushPending();
@@ -224,6 +293,33 @@ class PaymentEventOutboxFlusherTest {
         assertEquals("order.refunded", routingCaptor.getValue());
         // Payload was deserialized as RefundEvent because exchange == order.events.
         org.junit.jupiter.api.Assertions.assertInstanceOf(RefundEvent.class, payloadCaptor.getValue());
+
+        ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(savedCaptor.capture());
+        assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("publishRow with routing key order.state.* deserializes OrderStateChangeEvent (#93)")
+    void publishRow_orderStateRow_deserializesOrderStateChangeEvent() throws Exception {
+        PaymentEventOutbox row = orderStateRow();
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        ArgumentCaptor<String> exchangeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> routingCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), routingCaptor.capture(), payloadCaptor.capture());
+        assertEquals(RabbitMQConfig.ORDER_EVENTS_EXCHANGE, exchangeCaptor.getValue());
+        assertEquals("order.state.confirmed", routingCaptor.getValue());
+        // The wire object must be the same type the direct publish used, so
+        // OrderStateChangeListener's @RabbitListener signature keeps working.
+        OrderStateChangeEvent sent = org.junit.jupiter.api.Assertions
+                .assertInstanceOf(OrderStateChangeEvent.class, payloadCaptor.getValue());
+        assertEquals(OrderStatus.CONFIRMED, sent.newStatus());
+        assertEquals(OrderStatus.PENDING, sent.previousStatus());
 
         ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
         verify(repository).save(savedCaptor.capture());
@@ -246,7 +342,7 @@ class PaymentEventOutboxFlusherTest {
         );
         row.setExchange(null);
 
-        when(repository.findTop100ByStatusOrderByCreatedAtAsc(PaymentEventOutbox.Status.PENDING))
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
                 .thenReturn(List.of(row));
 
         flusher.flushPending();
@@ -259,5 +355,40 @@ class PaymentEventOutboxFlusherTest {
         ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
         verify(repository).save(savedCaptor.capture());
         assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
+
+    // ---------- Backoff maths (#93) ----------
+
+    @Test
+    @DisplayName("computeBackoffMillis doubles per attempt: base * 2^(attempts-1)")
+    void backoff_doublesPerAttempt() {
+        assertEquals(5_000L, PaymentEventOutboxFlusher.computeBackoffMillis(1, BASE_MS, CAP_MS));
+        assertEquals(10_000L, PaymentEventOutboxFlusher.computeBackoffMillis(2, BASE_MS, CAP_MS));
+        assertEquals(20_000L, PaymentEventOutboxFlusher.computeBackoffMillis(3, BASE_MS, CAP_MS));
+        assertEquals(40_000L, PaymentEventOutboxFlusher.computeBackoffMillis(4, BASE_MS, CAP_MS));
+        assertEquals(80_000L, PaymentEventOutboxFlusher.computeBackoffMillis(5, BASE_MS, CAP_MS));
+        assertEquals(160_000L, PaymentEventOutboxFlusher.computeBackoffMillis(6, BASE_MS, CAP_MS));
+    }
+
+    @Test
+    @DisplayName("computeBackoffMillis clamps at the cap")
+    void backoff_clampsAtCap() {
+        // attempt 7 → 320s raw, clamped to 300s cap
+        assertEquals(CAP_MS, PaymentEventOutboxFlusher.computeBackoffMillis(7, BASE_MS, CAP_MS));
+        assertEquals(CAP_MS, PaymentEventOutboxFlusher.computeBackoffMillis(50, BASE_MS, CAP_MS));
+    }
+
+    @Test
+    @DisplayName("computeBackoffMillis survives shift overflow at huge attempt counts")
+    void backoff_survivesOverflow() {
+        assertEquals(CAP_MS, PaymentEventOutboxFlusher.computeBackoffMillis(63, BASE_MS, CAP_MS));
+        assertEquals(CAP_MS, PaymentEventOutboxFlusher.computeBackoffMillis(Integer.MAX_VALUE, BASE_MS, CAP_MS));
+    }
+
+    @Test
+    @DisplayName("computeBackoffMillis guards attempts < 1")
+    void backoff_guardsNonPositiveAttempts() {
+        assertEquals(BASE_MS, PaymentEventOutboxFlusher.computeBackoffMillis(0, BASE_MS, CAP_MS));
+        assertEquals(BASE_MS, PaymentEventOutboxFlusher.computeBackoffMillis(-5, BASE_MS, CAP_MS));
     }
 }
