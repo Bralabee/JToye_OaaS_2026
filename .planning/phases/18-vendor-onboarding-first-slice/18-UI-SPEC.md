@@ -1,10 +1,12 @@
 ---
 phase: 18
 slug: vendor-onboarding-first-slice
-status: draft
+status: approved
 shadcn_initialized: true
 preset: none
 created: 2026-07-11
+reviewed_at: 2026-07-11
+checker_verdict: APPROVED (6/6 dimensions, revision 1)
 ---
 
 # Phase 18 — UI Design Contract
