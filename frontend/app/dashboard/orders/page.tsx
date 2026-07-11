@@ -6,10 +6,9 @@ import { motion } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { fetchEventSource } from "@microsoft/fetch-event-source"
-import { getSession } from "next-auth/react"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import { useOrderEvents } from "@/hooks/use-order-events"
 import {
   Card,
   CardContent,
@@ -268,34 +267,10 @@ function OrdersPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
-  // Real-time updates via SSE. EventSource cannot attach the
-  // Authorization header so we use fetchEventSource which runs on fetch()
-  // and supports auth headers identically to the rest of the API client.
-  useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
-    const abortCtrl = new AbortController()
-    ;(async () => {
-      const session = await getSession()
-      if (!session?.accessToken) return
-      try {
-        await fetchEventSource(`${apiUrl}/api/v1/orders/stream`, {
-          signal: abortCtrl.signal,
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-          openWhenHidden: true,
-          onmessage: (ev) => {
-            if (ev.event === "order-state-change") fetchData()
-          },
-          onerror: (err) => {
-            throw err
-          },
-        })
-      } catch {
-        // Connection closed or failed — give up silently on this page.
-      }
-    })()
-    return () => abortCtrl.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Real-time updates via SSE (#92): the shared hook owns the auth header,
+  // keep-alive-friendly connection, capped exponential-backoff reconnect, and
+  // reconnect-after-server-recycle — this page no longer gives up on error.
+  useOrderEvents(() => fetchData())
 
   const fetchData = async () => {
     try {

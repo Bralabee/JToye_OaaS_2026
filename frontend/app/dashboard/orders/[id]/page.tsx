@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
-import { fetchEventSource } from "@microsoft/fetch-event-source"
-import { getSession } from "next-auth/react"
 import apiClient from "@/lib/api-client"
+import { useOrderEvents } from "@/hooks/use-order-events"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { OrderDetailPanel } from "@/components/dashboard/orders/OrderDetailPanel"
@@ -59,45 +58,12 @@ export default function OrderDetailPage() {
     fetchDetail()
   }, [fetchDetail])
 
-  // SSE refresh: existing /api/v1/orders/stream broadcasts state changes.
-  // When this order's id appears in an event we re-fetch detail. Mirrors the
-  // pattern from frontend/app/dashboard/orders/page.tsx:250-274 — note we
-  // use fetchEventSource (not the native EventSource) so the Authorization
-  // header from the NextAuth session is forwarded.
-  useEffect(() => {
-    if (!orderId) return
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
-    const abortCtrl = new AbortController()
-    ;(async () => {
-      const session = await getSession()
-      if (!session?.accessToken) return
-      try {
-        await fetchEventSource(`${apiUrl}/api/v1/orders/stream`, {
-          signal: abortCtrl.signal,
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-          openWhenHidden: true,
-          onmessage: (ev) => {
-            if (ev.event !== "order-state-change") return
-            try {
-              const data = JSON.parse(ev.data) as { orderId?: string }
-              if (data.orderId === orderId) fetchDetail()
-            } catch {
-              // Malformed event — ignore.
-            }
-          },
-          onerror: (err) => {
-            // Throwing exits the SSE retry loop. Detail page is short-lived
-            // so we let the user re-mount instead of reconnecting silently.
-            throw err
-          },
-        })
-      } catch {
-        // Connection closed or failed — fail silently. The user's actions
-        // (refund submit) will still trigger an explicit fetchDetail() call.
-      }
-    })()
-    return () => abortCtrl.abort()
-  }, [orderId, fetchDetail])
+  // SSE refresh (#92): the shared hook subscribes to /api/v1/orders/stream
+  // with auto-reconnect (capped exponential backoff + fresh token per
+  // attempt); we re-fetch detail whenever this order's id appears in an event.
+  useOrderEvents((event) => {
+    if (event.orderId === orderId) fetchDetail()
+  })
 
   if (loading) {
     return (
