@@ -294,8 +294,11 @@ data:
   SWAGGER_ENABLED: "false"
 
   # Performance
-  DB_POOL_SIZE: "50"
-  DB_POOL_MIN_IDLE: "10"
+  # Issue #94: sized against the HPA replica ceiling (10 max + 1 surge) so
+  # 11 x 10 + Keycloak + backup + exporter fits max_connections=200 with
+  # >=20% headroom. Enforced by k8s/scripts/check-connection-math.sh.
+  DB_POOL_SIZE: "10"
+  DB_POOL_MIN_IDLE: "5"
 ```
 
 ---

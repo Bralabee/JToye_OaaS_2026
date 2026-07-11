@@ -105,6 +105,10 @@ public class RefundEventPublisher {
                     RabbitMQConfig.ORDER_EVENTS_EXCHANGE
             );
             failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
+            // Poisoned (#93): the placeholder payload is not a RefundEvent, so
+            // the resurrection pass must never re-lease it into a
+            // deserialize-fail loop.
+            failedRow.setPoison(true);
             failedRow.setLastError("RefundEvent serialization failed: " + e.getMessage());
             outboxRepository.save(failedRow);
             return;

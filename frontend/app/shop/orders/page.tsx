@@ -6,7 +6,6 @@ import {
   Package, Clock, CheckCircle2, ChefHat, CircleDot,
   XCircle, ArrowRight, Loader2, Store
 } from "lucide-react"
-import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
 
@@ -160,12 +159,12 @@ function CustomerOrdersContent() {
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState<string | null>(null)
 
+  // The email is display/track-handoff only — it plays NO part in fetching.
   useEffect(() => {
     let cancelled = false
     getCustomerSession().then((session) => {
       if (cancelled) return
       if (session) setEmail(session.profile.email)
-      else setLoading(false)
     })
     return () => {
       cancelled = true
@@ -173,33 +172,40 @@ function CustomerOrdersContent() {
   }, [])
 
   const fetchOrders = useCallback(async () => {
-    if (!email) {
-      setLoading(false)
-      return
-    }
     try {
-      // NOTE: /public/orders?email= has a soft enumeration risk — tracked as a
-      // milestone-4+ follow-up. See
-      // .planning/phases/10-storefront-marketing-render-missing-customer-routes/10-RESEARCH.md §Pitfall 5
-      // Issue #95: the endpoint is paginated now (Spring Page response) and the
+      // Issue #179 defect 1: GET /public/orders demands the AUDIT-W0-02
+      // `verify` proof (a recent order number), which a customer session does
+      // not hold — calling it with only ?email= 400s and rendered this page
+      // permanently empty. Orders are now fetched through the session-
+      // authenticated proxy (/api/customer-orders → core /public/orders/mine):
+      // the HttpOnly access-token cookie is the proof, forwarded server-side,
+      // and the server derives the email from the verified token. No email or
+      // verify parameter exists on this surface.
+      // Issue #95: the endpoint is paginated (Spring Page response) and the
       // server caps page size at 100. Request the max so the client-side
       // filter/pagination below keeps working over the 100 most recent orders.
-      const res = await publicApiClient.get<{ content: OrderSummary[] }>(
-        "/public/orders",
-        { params: { email, size: 100 } }
-      )
-      setOrders(res.data.content ?? [])
+      const res = await fetch("/api/customer-orders?size=100", {
+        credentials: "include",
+        cache: "no-store",
+      })
+      if (!res.ok) {
+        setOrders([])
+        return
+      }
+      const data = (await res.json()) as { content?: OrderSummary[] }
+      setOrders(data.content ?? [])
     } catch {
       setOrders([])
     } finally {
       setLoading(false)
     }
-  }, [email])
+  }, [])
 
+  // RequireCustomerAuth only mounts this component for a live session, so the
+  // cookie-backed fetch can run immediately on mount.
   useEffect(() => {
-    if (email) fetchOrders()
-    else setLoading(false)
-  }, [email, fetchOrders])
+    fetchOrders()
+  }, [fetchOrders])
 
   // Auto-refresh for active orders
   useEffect(() => {

@@ -296,8 +296,10 @@ kubectl scale deployment/frontend --replicas=5 -n jtoye-production
 ```
 
 ### Horizontal Pod Autoscaler (HPA)
-HPA is already configured and will automatically scale based on CPU/memory usage:
-- **core-java**: 3-10 replicas (CPU: 70%, Memory: 80%)
+HPA is already configured and will automatically scale on load:
+- **core-java**: 3-10 replicas (CPU: 70% — CPU only; a memory target pins a
+  JVM workload at maxReplicas because the JVM commits ~75% of its memory limit
+  as heap regardless of load, see issue #94)
 - **edge-go**: 5-20 replicas (CPU: 60%, Memory: 70%)
 - **frontend**: 3-10 replicas (CPU: 70%)
 
@@ -305,6 +307,34 @@ View HPA status:
 ```bash
 kubectl get hpa -n jtoye-production -w
 ```
+
+### Database Connection Budget (issue #94)
+
+Postgres for this platform (managed in the `jtoye-infrastructure` namespace,
+NOT by this kustomization) **MUST run with `max_connections=200`** — the same
+explicit value the local compose stack sets (`docker-compose.full-stack.yml`).
+Do not leave it at the PG15 default (100): the budget below assumes 200.
+
+Connection math at the HPA replica ceiling (per environment/namespace — each
+points at its own Postgres via the `postgres-credentials` secret):
+
+| Consumer                                   | Connections |
+|--------------------------------------------|-------------|
+| core-java: (maxReplicas 10 + surge 1) × pool 10 | 110    |
+| Keycloak (Agroal pool, capped)             | 20          |
+| pg-backup CronJob (pg_dump)                | 1           |
+| postgres-exporter                          | 2           |
+| **Total application demand**               | **133**     |
+| superuser_reserved_connections             | 3           |
+| **max_connections required**               | **200** (133 ≤ 157 = 80% of 197 usable → ~32% headroom) |
+
+Every number in that table is parsed from the real files and re-asserted on
+every CI run by `k8s/scripts/check-connection-math.sh` (job `k8s-validate`).
+If you change `maxReplicas`, `DB_POOL_SIZE`, the Hikari profile defaults, or
+`max_connections`, the gate fails until the math balances again with >=20%
+headroom. If load tests (#115) ever show 10 connections per pod saturating,
+prefer introducing PgBouncer (transaction mode) in front of Postgres over
+inflating pool sizes.
 
 ## Monitoring and Observability
 
