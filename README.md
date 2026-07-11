@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-918%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-921%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -228,7 +228,7 @@ CREATE POLICY tenant_isolation ON shops
 - Edge (Go): 75 `Test*` functions across 8 files ✅
 - Frontend (Jest): 130 `it/test` blocks across 22 files ✅
 - Frontend E2E (Playwright): 23 `test()` blocks across 5 specs ✅
-- **Total: 918 logical test invocations** ✅
+- **Total: 921 logical test invocations** ✅
 
 > Documentation counts are guarded by the `docs-freshness` CI gate
 > (`.github/workflows/docs-freshness.yml`), which fails the build if these

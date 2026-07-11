@@ -1,5 +1,6 @@
 package uk.jtoye.core.onboarding;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +29,19 @@ class OnboardingPropertiesTest {
         assertThat(props.getFhrs().getApiVersion()).isEqualTo("2");
         // Secret defaults empty (never null) — house convention mirrors StripeProperties.
         assertThat(props.getCompaniesHouse().getApiKey()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("autoApproveModels defaults to [WHITE_LABEL] and the helper is model-scoped (#178)")
+    void autoApproveModelsDefaultsToWhiteLabelOnly() {
+        OnboardingProperties props = new OnboardingProperties();
+
+        // Default per-model policy: WHITE_LABEL auto-approves, MARKETPLACE stays manual.
+        assertThat(props.getAutoApproveModels()).containsExactly(OnboardingModel.WHITE_LABEL);
+        assertThat(props.autoApprovesModel(OnboardingModel.WHITE_LABEL)).isTrue();
+        assertThat(props.autoApprovesModel(OnboardingModel.MARKETPLACE)).isFalse();
+        // Null-safe: a model-less onboarding never auto-approves via the per-model path.
+        assertThat(props.autoApprovesModel(null)).isFalse();
     }
 
     @Test
