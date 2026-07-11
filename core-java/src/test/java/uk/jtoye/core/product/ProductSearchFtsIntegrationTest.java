@@ -22,9 +22,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,6 +97,15 @@ class ProductSearchFtsIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private ShopRepository shopRepository;
+
+    // Per-tenant demo shop cache (phase 19 UIX-05 tripwire): every seeded product
+    // now carries a non-null shop_id so this suite no longer relies on the removed
+    // NULL-shop_id bleed. shop_id is not part of the FTS query, so the pinned
+    // query-plan tests are unaffected. Reset per test method (JUnit new instance).
+    private final Map<UUID, UUID> tenantShopIds = new HashMap<>();
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -455,6 +468,7 @@ class ProductSearchFtsIntegrationTest {
 
     private Product createProduct(UUID tenantId, String sku, String title,
                                   String description, String category, String dietaryTags) {
+        UUID shopId = shopIdFor(tenantId);
         TenantContext.set(tenantId);
         Product product = new Product();
         product.setTenantId(tenantId);
@@ -468,6 +482,8 @@ class ProductSearchFtsIntegrationTest {
         product.setDietaryTags(dietaryTags);
         product.setAllergenMask(0);
         product.setPricePennies(1000L);
+        // Phase 19 UIX-05: every product belongs to exactly one shop.
+        product.setShopId(shopId);
         // saveAndFlush: Hibernate batching would otherwise defer this INSERT to a
         // later flush under a DIFFERENT tenant GUC -> RLS WITH CHECK violation.
         Product saved = productRepository.saveAndFlush(product);
@@ -476,5 +492,29 @@ class ProductSearchFtsIntegrationTest {
         // persistence context.
         entityManager.clear();
         return saved;
+    }
+
+    /**
+     * Lazily creates one published shop per tenant and caches its id. The FTS
+     * search path does not filter by shop_id, so assigning products a shop leaves
+     * every search assertion and the pinned GIN-index query plans unchanged; it
+     * only removes this suite's incidental reliance on NULL shop_id rows.
+     */
+    private UUID shopIdFor(UUID tenantId) {
+        UUID cached = tenantShopIds.get(tenantId);
+        if (cached != null) {
+            return cached;
+        }
+        TenantContext.set(tenantId);
+        Shop shop = new Shop();
+        shop.setTenantId(tenantId);
+        shop.setName("FTS Catalog Shop");
+        shop.setSlug("fts-catalog-shop-" + tenantId);
+        shop.setPublished(true);
+        UUID shopId = shopRepository.saveAndFlush(shop).getId();
+        TenantContext.clear();
+        entityManager.clear();
+        tenantShopIds.put(tenantId, shopId);
+        return shopId;
     }
 }
