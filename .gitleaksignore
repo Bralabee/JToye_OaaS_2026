@@ -1,0 +1,12 @@
+# Fingerprint allowlist for findings pinned to HISTORICAL commits that cannot be
+# amended without rewriting shared branch history. Current-tree occurrences carry
+# inline `gitleaks:allow` comments instead — prefer those for anything new.
+
+# Fake test-fixture Companies House key (Phase 18, plan 18-04). The live line now
+# carries an inline gitleaks:allow; this fingerprint covers the original commit.
+236ab6fdce5a81a1008e67431b1a245e6d29e054:core-java/src/test/java/uk/jtoye/core/onboarding/client/CompaniesHouseClientTest.java:generic-api-key:34
+
+# REPLACE_WITH placeholder in the pre-#100 secrets template (issue #90 commit).
+# The file was renamed to secrets-template.yaml.example with allow comments on
+# main (PR #169); this covers the historical commit on the phase-18 branch.
+ac12fa5e9d0804da3ecec30560d9ba782dee9150:k8s/base/secrets-template.yaml:generic-api-key:51

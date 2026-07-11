@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class CompaniesHouseClientTest {
 
-    private static final String CH_KEY = "SECRET_CH_KEY_abc123";
+    private static final String CH_KEY = "SECRET_CH_KEY_abc123"; // gitleaks:allow — fake fixture key, never a real credential
 
     /** Build a client whose WebClient exchanges through {@code stub}, capturing the request. */
     private CompaniesHouseClient clientReturning(String apiKey,
