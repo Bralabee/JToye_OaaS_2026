@@ -23,8 +23,8 @@ import java.net.URI;
  * Vendor-facing onboarding endpoints. Thin controller — every method delegates
  * to {@link VendorOnboardingService}, which resolves the tenant server-side
  * ({@code CurrentTenant.require()}). No endpoint reads a tenant from the request,
- * and go-live / admin-queue endpoints are intentionally NOT here (go-live lands
- * in 18-05; the admin queue is deferred).
+ * and the admin-queue endpoints are intentionally NOT here (deferred). Go-live is
+ * the vendor's guarded publish action (18-05).
  */
 @RestController
 @RequestMapping("/onboarding")
@@ -76,6 +76,23 @@ public class OnboardingController {
     })
     public ResponseEntity<OnboardingDto> submit() {
         return ResponseEntity.ok(vendorOnboardingService.submit());
+    }
+
+    /**
+     * Take the caller's onboarding live (APPROVED → LIVE), publishing the shop.
+     * POST /onboarding/go-live
+     */
+    @PostMapping("/go-live")
+    @Operation(summary = "Go live",
+            description = "Fires GO_LIVE for the caller's onboarding, publishing the shop. Rejected (400) "
+                    + "unless every mandatory gate and the allergen-completeness gate are PASSED/WAIVED.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Onboarding live; shop published"),
+            @ApiResponse(responseCode = "400", description = "Gates not satisfied or illegal transition (not in APPROVED)"),
+            @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
+    })
+    public ResponseEntity<OnboardingDto> goLive() {
+        return ResponseEntity.ok(vendorOnboardingService.goLive());
     }
 
     /**

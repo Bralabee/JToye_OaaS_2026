@@ -56,10 +56,14 @@ public class ShopService {
             shop.setSlug(generateSlug(request.getName()));
         }
 
-        // Defaults
-        if (shop.getPublished() == null) {
-            shop.setPublished(false);
-        }
+        // Sole-writer invariant (threat T-18-05-T): a brand-new shop is NEVER born
+        // published. ShopMapper.toEntity copies CreateShopRequest.published onto the
+        // entity, so a request body {"published": true} would otherwise create an
+        // already-live shop that bypassed the onboarding GO_LIVE gate. Force false
+        // unconditionally here — the ONLY path that may set published=true is
+        // ShopService.setPublished, reached from the guarded GO_LIVE side effect in
+        // VendorOnboardingService.
+        shop.setPublished(false);
         if (shop.getMinimumOrderPennies() == null) {
             shop.setMinimumOrderPennies(0L);
         }
@@ -122,7 +126,17 @@ public class ShopService {
         Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
+        // Sole-writer invariant (threat T-18-05-T): updateShop must NOT let a request
+        // change `published`. ShopMapper.updateEntity (IGNORE-null strategy) copies a
+        // non-null CreateShopRequest.published onto the entity, so a PUT
+        // {"published": true} could flip a shop live outside the guarded GO_LIVE
+        // transition. Snapshot the current value and restore it after the field copy,
+        // so `published` stays owned solely by ShopService.setPublished (reached only
+        // from the onboarding GO_LIVE/SUSPEND/REINSTATE side effect).
+        Boolean publishedBeforeUpdate = shop.getPublished();
+
         shopMapper.updateEntity(request, shop);
+        shop.setPublished(publishedBeforeUpdate);
 
         // Regenerate slug if name changed and no explicit slug provided
         if (request.getSlug() == null || request.getSlug().isBlank()) {
