@@ -10,6 +10,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.onboarding.OnboardingState;
+import uk.jtoye.core.onboarding.VendorOnboardingRepository;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
@@ -50,7 +52,10 @@ import java.util.stream.Collectors;
  *       "Unsorted legacy items" archive shop, so no duplicate/placeholder row
  *       ever renders in a published storefront;</li>
  *   <li>{@link #unpublishNonCurated} un-publishes every non-curated shop so the
- *       directory shows exactly the three curated demo shops.</li>
+ *       directory shows exactly the three curated demo shops — EXCEPT a shop the
+ *       Phase-18 onboarding state machine currently holds LIVE (WR-10): the
+ *       machine is the sole authorised writer of {@code Shop.published} and the
+ *       sweep must never undo a real onboarding go-live on restart.</li>
  * </ul>
  * Nothing is deleted (order_items reference products via snapshot + id), so this
  * is safe against the live dev volume.
@@ -87,15 +92,18 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
+    private final VendorOnboardingRepository onboardingRepository;
     private final TransactionTemplate transactionTemplate;
 
     public DemoDataSeeder(ShopRepository shopRepository,
                           ProductRepository productRepository,
                           CustomerRepository customerRepository,
+                          VendorOnboardingRepository onboardingRepository,
                           PlatformTransactionManager transactionManager) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.customerRepository = customerRepository;
+        this.onboardingRepository = onboardingRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -256,6 +264,13 @@ public class DemoDataSeeder implements ApplicationRunner {
         shop.setDeliveryFeePennies(deliveryFeePennies);
         shop.setFreeDeliveryThresholdPennies(freeDeliveryThresholdPennies);
         shop.setMinimumOrderPennies(1000L);
+        // DELIBERATE dev-only exception to the Phase-18 sole-writer rule (WR-10):
+        // the onboarding state machine owns Shop.published, but the onboarding
+        // aggregate is one-per-tenant (UNIQUE(tenant_id)) so it cannot take all
+        // three curated demo shops live. These are bootstrap FIXTURES that must
+        // render as published storefronts on a fresh dev volume; no gate has
+        // validated them and none is claimed. @Profile("dev") keeps this bean —
+        // and therefore this bypass — out of every non-dev environment.
         shop.setPublished(true);
         return shopRepository.save(shop);
     }
@@ -331,11 +346,27 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
     }
 
-    /** Un-publish every non-curated (and non-archive) shop so the directory is clean. */
+    /**
+     * Un-publish every non-curated (and non-archive) shop so the directory is
+     * clean — EXCEPT shops taken LIVE through the real Phase-18 onboarding
+     * state machine (WR-10). The machine is the sole authorised writer of
+     * {@code Shop.published}; sweeping a LIVE-onboarded shop back to
+     * unpublished on every dev restart would silently undo a developer's
+     * onboarding E2E work and directly fight that invariant. (The curated-shop
+     * force-publish above remains a documented dev-only bootstrap exception.)
+     */
     private void unpublishNonCurated(SeedResult result, Set<String> curatedSlugs) {
+        // One onboarding per tenant (UNIQUE(tenant_id)), so a single lookup
+        // yields the only shop the state machine may currently hold LIVE.
+        Set<UUID> liveOnboardedShopIds = onboardingRepository.findByTenantId(DEMO_TENANT)
+                .filter(o -> o.getStatus() == OnboardingState.LIVE && o.getShopId() != null)
+                .map(o -> Set.of(o.getShopId()))
+                .orElse(Set.of());
+
         for (Shop s : shopRepository.findAll()) {
             String slug = s.getSlug();
-            boolean keepPublished = slug != null && curatedSlugs.contains(slug);
+            boolean keepPublished = (slug != null && curatedSlugs.contains(slug))
+                    || liveOnboardedShopIds.contains(s.getId());
             if (!keepPublished && Boolean.TRUE.equals(s.getPublished())) {
                 s.setPublished(false);
                 shopRepository.save(s);
