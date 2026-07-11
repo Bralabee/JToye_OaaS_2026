@@ -59,13 +59,24 @@ public class OrderController {
     }
 
     /**
-     * Get all orders with pagination.
-     * GET /orders
+     * Get all orders with pagination, optionally filtered to a single shop.
+     * GET /orders[?shopId=...]
+     *
+     * <p>Issue #179 defect 2: the kitchen display has always sent
+     * {@code ?shopId=...} but this endpoint silently ignored it, so every
+     * shop's orders appeared on every kitchen screen. The filter now delegates
+     * to the shop-scoped query. Tenant isolation is unchanged: RLS scopes the
+     * query to the authenticated tenant, so a foreign tenant's shopId simply
+     * yields an empty page (no existence disclosure).
      */
     @GetMapping
-    @Operation(summary = "List all orders", description = "Returns paginated list of orders for the authenticated tenant")
-    public ResponseEntity<Page<OrderDto>> getAllOrders(Pageable pageable) {
-        Page<OrderDto> orders = orderService.getAllOrders(pageable);
+    @Operation(summary = "List all orders", description = "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant.")
+    public ResponseEntity<Page<OrderDto>> getAllOrders(
+            @RequestParam(required = false) UUID shopId,
+            Pageable pageable) {
+        Page<OrderDto> orders = shopId != null
+                ? orderService.getOrdersByShop(shopId, pageable)
+                : orderService.getAllOrders(pageable);
         return ResponseEntity.ok(orders);
     }
 

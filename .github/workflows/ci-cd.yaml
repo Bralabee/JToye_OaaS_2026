@@ -143,12 +143,15 @@ jobs:
           name: integration-test-results
           path: core-java/build-local/reports/tests/integrationTest/
 
-  # Job 1c: K8s manifest validation (#100 / P2-9).
+  # Job 1c: K8s manifest validation (#100 / P2-9, #94 / P2-3).
   # Client-side only — builds k8s/base + every overlay with `kubectl kustomize`
   # and fails if any output contains a top-level `kind: Secret` (committed
   # plaintext/placeholder Secret material) or a REPLACE_WITH_* placeholder in
   # anything other than the known deployment.timestamp annotation.
   # SealedSecret manifests (ciphertext) are allowed.
+  # Also asserts the DB connection budget: HPA maxReplicas × Hikari pool
+  # (+ Keycloak + backup + exporter) must fit Postgres max_connections with
+  # >=20% headroom, and the core-java HPA must not scale on memory (#94).
   k8s-validate:
     name: K8s Kustomize Secret Guard
     runs-on: ubuntu-latest
@@ -165,6 +168,11 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-no-plaintext-secrets.sh
           ./k8s/scripts/check-no-plaintext-secrets.sh
+
+      - name: Assert connection-pool math fits Postgres max_connections (#94)
+        run: |
+          chmod +x ./k8s/scripts/check-connection-math.sh
+          ./k8s/scripts/check-connection-math.sh
 
   # Job 2: Security scanning
   security-scan:
