@@ -129,4 +129,20 @@ class CompaniesHouseClientTest {
         assertThatThrownBy(() -> client.lookup("12345678"))
                 .isInstanceOf(WebClientResponseException.class);
     }
+
+    @Test
+    @DisplayName("an unconfigured API key fails CLOSED — throws without any network call")
+    void unconfiguredKeyFailsClosed() {
+        AtomicReference<ClientRequest> captured = new AtomicReference<>();
+        CompaniesHouseClient client = clientReturning(
+                "",
+                jsonResponse(HttpStatus.OK, "{\"company_number\":\"12345678\",\"company_status\":\"active\"}"),
+                captured);
+
+        assertThatThrownBy(() -> client.lookup("12345678"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(captured.get())
+                .as("no request should ever be exchanged when the API key is unconfigured")
+                .isNull();
+    }
 }

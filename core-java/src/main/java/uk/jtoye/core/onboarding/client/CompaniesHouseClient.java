@@ -38,6 +38,8 @@ public class CompaniesHouseClient {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private final WebClient webClient;
+    /** Whether an API key is present — no key means we cannot authenticate at all. */
+    private final boolean configured;
 
     /**
      * Production constructor. Builds the WebClient from config; the API key
@@ -57,10 +59,12 @@ public class CompaniesHouseClient {
      */
     CompaniesHouseClient(WebClient.Builder builder, OnboardingProperties properties) {
         OnboardingProperties.CompaniesHouse ch = properties.getCompaniesHouse();
+        String apiKey = ch.getApiKey() == null ? "" : ch.getApiKey();
+        this.configured = !apiKey.isBlank();
         this.webClient = builder
                 .baseUrl(ch.getBaseUrl())
                 // HTTP Basic, API key as username, empty password (research §6).
-                .defaultHeaders(headers -> headers.setBasicAuth(ch.getApiKey(), ""))
+                .defaultHeaders(headers -> headers.setBasicAuth(apiKey, ""))
                 .build();
     }
 
@@ -73,6 +77,14 @@ public class CompaniesHouseClient {
      */
     @CircuitBreaker(name = "companies-house")
     public Optional<CompanyProfile> lookup(String companyNumber) {
+        if (!configured) {
+            // Fail CLOSED: with no API key we cannot verify anything. Throw so the
+            // gate maps this to MANUAL_REVIEW (a human check) rather than making a
+            // doomed authenticated-as-nobody call that leaks to the provider, or
+            // silently WAIVING a MANDATORY compliance gate (which would let an
+            // unverified vendor auto-approve if the key were simply forgotten).
+            throw new IllegalStateException("Companies House API key not configured");
+        }
         Optional<CompanyProfile> result = webClient.get()
                 .uri("/company/{number}", companyNumber)
                 .exchangeToMono(response -> {
