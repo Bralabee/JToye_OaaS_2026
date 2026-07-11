@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: executing
-stopped_at: Phase 19 closure (19-09) — UIX-01..06 registered + docs-freshness reconciled (schema 45, 921→988); full gate + human browser UAT the remaining closure steps
+stopped_at: Phase 19 closure (19-09) — full gate GREEN on rebuilt stack (backend test+integrationTest, jest 177 + build, 4 UIX grep gates, docs-freshness 988/V45, live Playwright 62 pass/2 skip/2 pre-existing customer-auth residual); ONLY the human browser UAT (Task 3, blocking) remains
 last_updated: "2026-07-11T11:42:24Z"
 last_activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
 progress:
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 Phase: 19 (full-frontend-experience-overhaul) — CLOSURE (Plan 19-09)
 Plan: 9 of 9
-Status: All 9 plans shipped. Closure plan 19-09: UIX-01..06 registered in REQUIREMENTS.md; docs/metrics.json reconciled (schema 43→45, 921→988 logical invocations, docs-freshness green); ROADMAP/CHANGELOG updated. Remaining closure steps within 19-09: full gate against a rebuilt Docker stack (Task 2) + human browser UAT of the 6 ROADMAP success criteria (Task 3, blocking human-verify gate).
+Status: All 9 plans shipped. Closure plan 19-09: UIX-01..06 registered; docs/metrics.json reconciled (schema V45, 988 invocations, docs-freshness green); ROADMAP/CHANGELOG updated (Task 1). **Task 2 (full gate) DONE — GREEN on a freshly-rebuilt Docker stack:** backend `test`+`integrationTest`, frontend jest (177) + `next build`, all 4 UIX grep gates, docs-freshness (988/V45), and live Playwright mobile+desktop = 62 pass / 2 skip (conditional) / 2 residual (pre-existing Phase-18 customer B2C self-registration, NOT a UIX criterion — see deferred-items.md). Live triage fixed 48 failures to root cause; `DemoDataSeeder` rewritten so the storefront is comparator-grade (3 curated shops, no duplicate line items, no placeholder junk, branded logos). **Remaining: Task 3 — human browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate; NOT self-approved).**
 Last activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
 
 Progress: [██████████] 100%
@@ -175,6 +175,6 @@ All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work i
 
 ## Session Continuity
 
-Last session: 2026-07-11T09:06:48.979Z
-Stopped at: Phase 19 UI-SPEC approved (checker 6/6 after 2 revisions)
-Resume file: .planning/phases/19-full-frontend-experience-overhaul/19-UI-SPEC.md
+Last session: 2026-07-11 — Phase 19 closure (19-09) Task 2 full gate green; awaiting human UAT
+Stopped at: 19-09 Task 3 — human whole-app browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate)
+Resume file: .planning/phases/19-full-frontend-experience-overhaul/19-09-SUMMARY.md
