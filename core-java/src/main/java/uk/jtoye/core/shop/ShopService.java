@@ -199,6 +199,28 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
+    /**
+     * Set a shop's {@code published} flag. This is the SINGLE mutation point for
+     * {@code published} and is reached ONLY from the vendor-onboarding state
+     * machine's side effects (GO_LIVE → true, SUSPEND → false, REINSTATE → true)
+     * in {@code VendorOnboardingService}. The onboarding state machine is the
+     * <strong>sole authorised writer of {@code published=true}</strong>: no
+     * controller or DTO path may flip a storefront live outside the guarded
+     * GO_LIVE transition (threat T-18-02-T).
+     *
+     * <p>N4: {@code Shop.published} is a nullable {@code Boolean}; the primitive
+     * {@code boolean} parameter autoboxes cleanly on {@code setPublished(published)},
+     * so the entity field stays {@code Boolean} (no primitive migration).
+     */
+    public void setPublished(UUID shopId, boolean published) {
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        shop.setPublished(published);
+        shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        log.info("Shop {} published flag set to {}", shopId, published);
+    }
+
     public void deleteShop(UUID shopId) {
         log.debug("Deleting shop {}", shopId);
 

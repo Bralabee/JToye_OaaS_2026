@@ -94,6 +94,8 @@ public class GlobalExceptionHandler {
                 message = "Product SKU already exists for this tenant";
             } else if (ex.getMessage().contains("idx_shops_tenant_name")) {
                 message = "Shop name already exists for this tenant";
+            } else if (ex.getMessage().contains("uq_onboarding_tenant")) {
+                message = "An onboarding already exists for this tenant";
             }
         }
 
