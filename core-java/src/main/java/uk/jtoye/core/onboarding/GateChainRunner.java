@@ -122,6 +122,16 @@ public class GateChainRunner {
                 if (row == null) {
                     continue;
                 }
+                // Only (re)evaluate a gate row still PENDING. A row already in a
+                // terminal state (PASSED / FAILED / WAIVED) — or one set out-of-band
+                // by a future webhook gate — must NEVER be clobbered by a re-run:
+                // doing so re-opens the "publish without a real gate pass" bypass
+                // (threat T-18-06-T) and fires a redundant external API call on a
+                // repeated recompute. A future RESUBMIT flow re-materialises / resets
+                // rows to PENDING when it wants a fresh evaluation.
+                if (row.getStatus() != GateStatus.PENDING) {
+                    continue;
+                }
                 GateResult result = gate.evaluate(onboarding);
                 row.setStatus(result.status());
                 row.setEvidence(result.evidence());

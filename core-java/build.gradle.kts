@@ -119,5 +119,14 @@ tasks.register<Test>("integrationTest") {
     }
     environment("DOCKER_API_VERSION", "1.45")
     systemProperty("api.version", "1.45")
+    // Recycle the forked test JVM every few classes. Each Testcontainers class boots
+    // a distinct Spring Boot context (many pin unique @MockBean/@SpyBean configs) whose
+    // RabbitMQ listener + reactive HttpClient selector threads are not all reclaimed
+    // between classes; run in ONE fork the whole 24-class suite accumulates enough live
+    // threads to hit a native-thread OutOfMemoryError. Recycling bounds live threads to
+    // a handful of classes' worth without changing any test's behaviour (containers are
+    // per-class static; tests use fresh random tenants, so there is no cross-class JVM
+    // state to preserve).
+    setForkEvery(4)
     shouldRunAfter(tasks.test)
 }
