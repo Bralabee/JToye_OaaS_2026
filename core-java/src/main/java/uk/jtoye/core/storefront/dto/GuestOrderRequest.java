@@ -30,6 +30,31 @@ public class GuestOrderRequest {
 
     private Integer customerAllergenMask;
 
+    /**
+     * How the order is fulfilled — the enum-string form of
+     * {@link uk.jtoye.core.order.FulfilmentType} (DELIVERY | COLLECTION).
+     * Required at the API boundary; the service parses + validates it and
+     * enforces the conditional address requirement for DELIVERY.
+     */
+    @NotBlank(message = "Fulfilment type is required")
+    @Size(max = 20)
+    private String fulfilmentType;
+
+    // UK delivery address — nullable at the DTO level (a COLLECTION order has
+    // none). The service enforces line1/city/postcode as required for DELIVERY.
+    // @Size caps match the V45 column widths (255/255/120/12).
+    @Size(max = 255)
+    private String addressLine1;
+
+    @Size(max = 255)
+    private String addressLine2;
+
+    @Size(max = 120)
+    private String addressCity;
+
+    @Size(max = 12)
+    private String addressPostcode;
+
     @NotEmpty(message = "At least one item is required")
     @Valid
     private List<GuestOrderItemRequest> items;
@@ -46,6 +71,16 @@ public class GuestOrderRequest {
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
     public Integer getCustomerAllergenMask() { return customerAllergenMask; }
     public void setCustomerAllergenMask(Integer customerAllergenMask) { this.customerAllergenMask = customerAllergenMask; }
+    public String getFulfilmentType() { return fulfilmentType; }
+    public void setFulfilmentType(String fulfilmentType) { this.fulfilmentType = fulfilmentType; }
+    public String getAddressLine1() { return addressLine1; }
+    public void setAddressLine1(String addressLine1) { this.addressLine1 = addressLine1; }
+    public String getAddressLine2() { return addressLine2; }
+    public void setAddressLine2(String addressLine2) { this.addressLine2 = addressLine2; }
+    public String getAddressCity() { return addressCity; }
+    public void setAddressCity(String addressCity) { this.addressCity = addressCity; }
+    public String getAddressPostcode() { return addressPostcode; }
+    public void setAddressPostcode(String addressPostcode) { this.addressPostcode = addressPostcode; }
     public List<GuestOrderItemRequest> getItems() { return items; }
     public void setItems(List<GuestOrderItemRequest> items) { this.items = items; }
 }

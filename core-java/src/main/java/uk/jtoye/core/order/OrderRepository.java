@@ -91,7 +91,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "UPDATE orders_aud SET customer_name = :redacted, customer_email = NULL, "
-            + "customer_phone = NULL, notes = NULL "
+            + "customer_phone = NULL, notes = NULL, "
+            + "address_line1 = NULL, address_line2 = NULL, address_city = NULL, address_postcode = NULL "
             + "WHERE tenant_id = :tenantId AND (customer_id = :customerId OR customer_email = :email)",
             nativeQuery = true)
     int scrubOrdersAudit(@Param("tenantId") UUID tenantId,

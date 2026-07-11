@@ -78,6 +78,31 @@ public class Order {
     @Column(name = "delivery_fee_pennies", nullable = false)
     private Long deliveryFeePennies = 0L;
 
+    /**
+     * How this order is fulfilled (V45). DELIVERY (default) applies a delivery
+     * fee and requires an address; COLLECTION forces the delivery fee to £0.
+     * VARCHAR+CHECK enum in the DB, mirrored nullable into orders_aud.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfilment_type", nullable = false, length = 20)
+    private FulfilmentType fulfilmentType = FulfilmentType.DELIVERY;
+
+    /**
+     * UK delivery address (V45). Nullable — a COLLECTION order has no address.
+     * Address is PII: GDPR erasure scrubs these from both orders and orders_aud.
+     */
+    @Column(name = "address_line1", length = 255)
+    private String addressLine1;
+
+    @Column(name = "address_line2", length = 255)
+    private String addressLine2;
+
+    @Column(name = "address_city", length = 120)
+    private String addressCity;
+
+    @Column(name = "address_postcode", length = 12)
+    private String addressPostcode;
+
     @Column(name = "total_amount_pennies", nullable = false)
     private Long totalAmountPennies = 0L;
 
@@ -323,6 +348,46 @@ public class Order {
 
     public void setDeliveryFeePennies(Long deliveryFeePennies) {
         this.deliveryFeePennies = deliveryFeePennies;
+    }
+
+    public FulfilmentType getFulfilmentType() {
+        return fulfilmentType;
+    }
+
+    public void setFulfilmentType(FulfilmentType fulfilmentType) {
+        this.fulfilmentType = fulfilmentType;
+    }
+
+    public String getAddressLine1() {
+        return addressLine1;
+    }
+
+    public void setAddressLine1(String addressLine1) {
+        this.addressLine1 = addressLine1;
+    }
+
+    public String getAddressLine2() {
+        return addressLine2;
+    }
+
+    public void setAddressLine2(String addressLine2) {
+        this.addressLine2 = addressLine2;
+    }
+
+    public String getAddressCity() {
+        return addressCity;
+    }
+
+    public void setAddressCity(String addressCity) {
+        this.addressCity = addressCity;
+    }
+
+    public String getAddressPostcode() {
+        return addressPostcode;
+    }
+
+    public void setAddressPostcode(String addressPostcode) {
+        this.addressPostcode = addressPostcode;
     }
 
     public String getIdempotencyKey() {

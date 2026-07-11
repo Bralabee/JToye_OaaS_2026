@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
@@ -366,6 +367,25 @@ public class PublicStorefrontService {
             }
             order.setUpdatedAt(OffsetDateTime.now());
 
+            // Resolve fulfilment type server-side (UIX-04). The client sends the
+            // enum string; an unknown value is a 400, not a silent DELIVERY.
+            FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
+            order.setFulfilmentType(fulfilmentType);
+            if (fulfilmentType == FulfilmentType.DELIVERY) {
+                // Conditional-required: a delivery order MUST carry a UK address.
+                if (isBlank(request.getAddressLine1())
+                        || isBlank(request.getAddressCity())
+                        || isBlank(request.getAddressPostcode())) {
+                    throw new IllegalArgumentException(
+                            "Delivery address (line 1, city and postcode) is required for delivery orders.");
+                }
+                order.setAddressLine1(request.getAddressLine1());
+                order.setAddressLine2(request.getAddressLine2());
+                order.setAddressCity(request.getAddressCity());
+                order.setAddressPostcode(request.getAddressPostcode());
+            }
+            // COLLECTION: no address persisted; the delivery fee is forced to £0 below.
+
             // Add items with server-side price lookup + allergen cross-check
             List<String> allergenWarnings = new ArrayList<>();
             Integer customerAllergenMask = request.getCustomerAllergenMask();
@@ -407,6 +427,10 @@ public class PublicStorefrontService {
                         product.getPricePennies() // Server-side price — never trust client
                 );
                 item.setTenantId(tenantId);
+                // UIX-03 root-cause fix: snapshot the REAL product title (server-side,
+                // authoritative) so OrderItem.productName never persists its
+                // "Unknown Product" default onto the kitchen display / order detail.
+                item.setProductName(product.getTitle());
                 order.addItem(item);
                 lineRates.add(new VatCalculator.LineRate(
                         item.getTotalPricePennies(), product.getVatRate()));
@@ -417,14 +441,23 @@ public class PublicStorefrontService {
             // this predominant liability via calculateTotal().
             order.setVatRate(VatCalculator.predominantRate(lineRates));
 
-            // Calculate delivery fee — waived if subtotal exceeds free delivery threshold
+            // Calculate delivery fee — server-authoritative (client value is
+            // preview-only and NEVER read). COLLECTION always costs £0; DELIVERY
+            // uses the shop's fee, waived when the subtotal clears the free-delivery
+            // threshold. Tampering with fulfilmentType to underpay is neutralised
+            // because the total is recomputed here, not taken from the request.
             long itemSubtotal = order.getItems().stream()
                     .mapToLong(item -> item.getTotalPricePennies())
                     .sum();
-            long deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
-            if (shop.getFreeDeliveryThresholdPennies() != null
-                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+            long deliveryFee;
+            if (fulfilmentType == FulfilmentType.COLLECTION) {
                 deliveryFee = 0L;
+            } else {
+                deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
+                if (shop.getFreeDeliveryThresholdPennies() != null
+                        && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+                    deliveryFee = 0L;
+                }
             }
             order.setDeliveryFeePennies(deliveryFee);
 
@@ -540,6 +573,28 @@ public class PublicStorefrontService {
 
         TenantContext.set(shop.getTenantId());
         return shop;
+    }
+
+    /**
+     * Parse the client-supplied fulfilment string into a {@link FulfilmentType},
+     * server-authoritatively. An absent value defaults to DELIVERY (the safe,
+     * fee-bearing choice); an unknown value is rejected with a 400 rather than
+     * silently coerced.
+     */
+    private static FulfilmentType parseFulfilmentType(String raw) {
+        if (isBlank(raw)) {
+            return FulfilmentType.DELIVERY;
+        }
+        try {
+            return FulfilmentType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid fulfilment type: " + raw
+                    + " (expected DELIVERY or COLLECTION)");
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private String generateOrderNumber(UUID tenantId) {
