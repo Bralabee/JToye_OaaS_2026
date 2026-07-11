@@ -65,7 +65,7 @@ export function OperatorPitch() {
       <section id="main-pitch" className="overflow-hidden border-b-4 border-slate-900 bg-slate-900 text-slate-50">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 sm:py-20 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
           <div>
-            <p className="mb-5 inline-flex rounded-full border border-slate-600 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-100">One London cluster · owner-led food businesses</p>
+            <p className="mb-5 inline-flex rounded-full border border-slate-600 px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.14em] text-emerald-100">One London cluster · owner-led food businesses</p>
             <h1 className="max-w-4xl text-5xl font-bold leading-[0.93] tracking-[-0.055em] sm:text-6xl lg:text-6xl">Keep the order. <span className="text-amber-300">Keep the customer.</span> Keep the kitchen moving.</h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">An assisted pilot for established Nigerian and West African takeaway and catering operators with recurring order volume — built around your direct customer relationship, not a marketplace.</p>
             <div className="mt-9 flex flex-wrap gap-3">
@@ -75,7 +75,7 @@ export function OperatorPitch() {
             </div>
           </div>
           <div className="border-2 border-emerald-200 bg-slate-800 p-5 shadow-[10px_10px_0_theme(colors.orange.500)] sm:p-7">
-            <div className="flex items-center justify-between border-b border-slate-600 pb-4 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-100"><span>Service rail</span><span>Online orders</span></div>
+            <div className="flex items-center justify-between border-b border-slate-600 pb-4 font-mono text-xs font-bold uppercase tracking-[0.15em] text-emerald-100"><span>Service rail</span><span>Online orders</span></div>
             <div className="space-y-4 pt-5">
               <RailItem icon={<Store size={18} />} title="Your direct storefront" detail="A customer path you control." />
               <RailItem icon={<Package size={18} />} title="Your browser kitchen display" detail="For online orders while connected." />
@@ -121,7 +121,7 @@ export function OperatorPitch() {
           {fitCheckOpen && <div className="mt-8 grid gap-8 border-t-2 border-emerald-200 pt-7 lg:grid-cols-[1fr_0.9fr]"><div className="grid gap-5 sm:grid-cols-2"><FitSelect label="Your main service" value={businessShape} options={["Takeaway", "Catering", "Both"]} onChange={(value) => setBusinessShape(value as BusinessShape)} /><FitSelect label="Your operating area" value={location} options={["Yes, in one London cluster", "Not in one London cluster yet"]} onChange={setLocation} /><FitSelect label="Your order pattern" value={orders} options={["Yes, recurring orders", "Still building recurring orders"]} onChange={setOrders} /><FitSelect label="What you want to steady first" value={priority} options={["Keep daily takeaway orders moving", "Make catering handover clearer", "Understand both paths"]} onChange={setPriority} /></div><div className="border-2 border-slate-900 bg-white p-5"><label htmlFor="fit-summary" className="font-mono text-xs font-bold uppercase tracking-[0.13em] text-slate-500">Your copyable fit summary</label><textarea id="fit-summary" readOnly value={summary} rows={7} className="mt-3 w-full resize-none border border-slate-300 bg-slate-50 p-3 text-sm leading-6 text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500" /><button type="button" onClick={copySummary} className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-sm font-bold text-slate-900 hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"><Copy size={16} aria-hidden="true" /> Copy fit summary</button>{copyFeedback && <p role="status" className="mt-3 text-sm font-semibold text-slate-700">{copyFeedback}</p>}<a href="/jtoye-operator-pilot-pack.pdf" download className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-slate-900 underline decoration-orange-500 decoration-2 underline-offset-4"><Download size={16} aria-hidden="true" /> Download the pack to share this conversation</a></div></div>}
           <div className="mt-8 border-t-2 border-emerald-200 pt-6"><p className="text-lg font-bold">If this sounds like your service, return this pack to the person who shared it and ask for a pilot-fit conversation.</p><p className="mt-2 text-sm leading-6 text-slate-600">Bring your current order channels, a typical busy-service example, and the one handover problem you most want to remove. No acceptance or payment is implied by the conversation.</p></div>
         </section>
-        <footer className="mt-8 flex flex-wrap justify-between gap-3 border-t border-slate-300 pt-5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"><span>J&apos;Toye operator pilot pack</span><span>Edition 10 July 2026 · UK pilot hypothesis</span></footer>
+        <footer className="mt-8 flex flex-wrap justify-between gap-3 border-t border-slate-300 pt-5 font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500"><span>J&apos;Toye operator pilot pack</span><span>Edition 10 July 2026 · UK pilot hypothesis</span></footer>
       </div>
     </div>
   )
@@ -144,7 +144,7 @@ function CheckItem({ children }: { children: ReactNode }) {
 }
 
 function Terms({ title, detail }: { title: string; detail: string }) {
-  return <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-100">{title}</p><p className="mt-2 text-lg font-bold leading-6">{detail}</p></div>
+  return <div><p className="font-mono text-xs font-bold uppercase tracking-[0.15em] text-emerald-100">{title}</p><p className="mt-2 text-lg font-bold leading-6">{detail}</p></div>
 }
 
 function Boundary({ title, items, accent = false }: { title: string; items: string[]; accent?: boolean }) {

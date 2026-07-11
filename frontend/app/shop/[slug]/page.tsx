@@ -47,12 +47,12 @@ const DAY_LABELS: Record<string, string> = {
 
 function DietaryBadge({ tag }: { tag: string }) {
   const t = tag.toLowerCase().trim()
-  if (t.includes("vegan")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200"><Leaf className="h-2.5 w-2.5" />Vegan</span>
-  if (t.includes("vegetarian")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 ring-1 ring-green-200"><Leaf className="h-2.5 w-2.5" />Vegetarian</span>
-  if (t.includes("spicy")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-red-200"><Flame className="h-2.5 w-2.5" />Spicy</span>
-  if (t.includes("gluten")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">GF</span>
-  if (t.includes("halal")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 ring-1 ring-teal-200">Halal</span>
-  return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
+  if (t.includes("vegan")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"><Leaf className="h-2.5 w-2.5" />Vegan</span>
+  if (t.includes("vegetarian")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-green-50 px-1.5 py-0.5 text-xs font-semibold text-green-700 ring-1 ring-green-200"><Leaf className="h-2.5 w-2.5" />Vegetarian</span>
+  if (t.includes("spicy")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-red-200"><Flame className="h-2.5 w-2.5" />Spicy</span>
+  if (t.includes("gluten")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">GF</span>
+  if (t.includes("halal")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-semibold text-teal-700 ring-1 ring-teal-200">Halal</span>
+  return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
 }
 
 function ProductCard({ product, promo }: { product: PublicProduct; promo?: PublicPromotion }) {
@@ -95,7 +95,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                 {product.featured && <Star className="inline h-3 w-3 text-amber-500 fill-amber-500 mr-1 -mt-0.5" />}
                 {product.title}
                 {outOfStock && (
-                  <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0 align-middle">Out of Stock</Badge>
+                  <Badge variant="destructive" className="ml-1.5 text-xs px-1.5 py-0 align-middle">Out of Stock</Badge>
                 )}
               </h4>
               {product.description && (
@@ -121,13 +121,13 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                   {formatPrice(product.pricePennies)}
                 </span>
                 {product.preparationTimeMinutes && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
+                  <span className="inline-flex items-center gap-0.5 text-xs text-slate-400">
                     <Timer className="h-2.5 w-2.5" />
                     {product.preparationTimeMinutes}min
                   </span>
                 )}
                 {allergenList.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600">
+                  <span className="inline-flex items-center gap-0.5 text-xs text-amber-600">
                     <AlertTriangle className="h-2.5 w-2.5" />
                     {allergenList.length}
                   </span>
@@ -177,14 +177,14 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               loading="lazy"
             />
             {hasMultipleImages && (
-              <span className="absolute top-1.5 right-1.5 bg-black/50 backdrop-blur-sm text-white text-[10px] font-medium rounded-md px-1.5 py-0.5">
+              <span className="absolute top-1.5 right-1.5 bg-black/50 backdrop-blur-sm text-white text-xs font-medium rounded-md px-1.5 py-0.5">
                 +{images.length - 1}
               </span>
             )}
             {promo && (
               <Badge
                 variant="destructive"
-                className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0 shadow-md"
+                className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0 shadow-md"
               >
                 {promo.discountType === "PERCENTAGE"
                   ? `${promo.discountPercent}% off`
@@ -624,7 +624,7 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
           <div className="flex items-center gap-3">
             <div className="relative">
               <ShoppingBag className="h-5 w-5" />
-              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-orange-600">
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-600">
                 {itemCount}
               </span>
             </div>
@@ -633,7 +633,7 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
           <div className="text-right">
             <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
             {belowMinimum && (
-              <p className="text-[10px] text-slate-300">
+              <p className="text-xs text-slate-300">
                 Min {formatPrice(minimumOrderPennies)}
               </p>
             )}

@@ -227,7 +227,7 @@ function TrackOrderContent() {
                       >
                         <step.icon className="h-3.5 w-3.5" />
                       </div>
-                      <p className={`mt-1 text-[9px] font-medium ${isComplete ? "text-slate-700" : "text-slate-400"}`}>
+                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-700" : "text-slate-400"}`}>
                         {step.label}
                       </p>
                     </div>
@@ -241,7 +241,7 @@ function TrackOrderContent() {
                   style={{ width: `${Math.max(5, (currentStep / (STEPS.length - 1)) * 100)}%` }}
                 />
               </div>
-              <p className="mt-2 text-center text-[10px] text-slate-400">
+              <p className="mt-2 text-center text-xs text-slate-400">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   Auto-refreshing

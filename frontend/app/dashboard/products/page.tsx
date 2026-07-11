@@ -66,13 +66,13 @@ function AiSuggestionRow({ label, value, onAccept }: { label: string; value: str
   return (
     <div className="flex items-start gap-2 bg-white rounded-md px-2 py-1.5 border border-violet-100">
       <div className="flex-1 min-w-0">
-        <span className="text-[10px] font-medium text-violet-500 uppercase">{label}</span>
+        <span className="text-xs font-medium text-violet-500 uppercase">{label}</span>
         <p className="text-xs text-slate-700 line-clamp-2">{value}</p>
       </div>
       <button
         type="button"
         onClick={onAccept}
-        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 text-[10px] font-medium transition-colors"
+        className="flex-shrink-0 mt-1 inline-flex items-center gap-1 rounded bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 text-xs font-medium transition-colors"
       >
         <Check className="h-2.5 w-2.5" />
         Apply

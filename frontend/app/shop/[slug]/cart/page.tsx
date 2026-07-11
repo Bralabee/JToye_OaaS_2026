@@ -76,7 +76,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-slate-900 truncate">{item.title}</h3>
               {item.category && (
-                <p className="text-[10px] text-slate-400">{item.category}</p>
+                <p className="text-xs text-slate-400">{item.category}</p>
               )}
               <p className="text-sm font-bold text-slate-900 mt-0.5">
                 {formatPrice(item.pricePennies * item.quantity)}

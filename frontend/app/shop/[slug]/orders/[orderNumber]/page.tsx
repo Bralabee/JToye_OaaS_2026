@@ -162,7 +162,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
       {/* Order number */}
       <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm text-center mb-6">
-        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Order number</p>
+        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Order number</p>
         <div className="mt-1 flex items-center justify-center gap-2">
           <p className="text-sm font-bold font-mono text-slate-900">{orderNumber}</p>
           <button
@@ -171,7 +171,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           >
             <Copy className="h-3 w-3" />
           </button>
-          {copied && <span className="text-[10px] text-emerald-600">Copied!</span>}
+          {copied && <span className="text-xs text-emerald-600">Copied!</span>}
         </div>
         {order && (
           <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-500">
@@ -261,7 +261,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
       {/* Auto-refresh indicator */}
       {order && !isCancelled && currentStep < 4 && (
-        <p className="text-center text-[10px] text-slate-400 mb-6">
+        <p className="text-center text-xs text-slate-400 mb-6">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Live updates every 15 seconds
@@ -310,7 +310,7 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
         </p>
       </div>
       <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
-        <p className="text-[10px] font-mono text-slate-400 mb-3">{orderNumber}</p>
+        <p className="text-xs font-mono text-slate-400 mb-3">{orderNumber}</p>
         <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
           <input
             type="email"
