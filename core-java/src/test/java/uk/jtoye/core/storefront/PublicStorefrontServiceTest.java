@@ -400,6 +400,70 @@ class PublicStorefrontServiceTest {
                 "DELIVERY fee must come from the shop, computed server-side");
     }
 
+    /** A persisted order as the idempotency lookup would return it (WR-02). */
+    private Order existingOrder(OrderStatus status, String paymentReference) {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-EXISTING-0001");
+        order.setStatus(status);
+        order.setSubtotalPennies(1798L);
+        order.setDeliveryFeePennies(0L);
+        order.setVatRate(VatRate.STANDARD);
+        order.setVatAmountPennies(300L);
+        order.setTotalAmountPennies(1798L);
+        order.setItemCount(2);
+        order.setPaymentReference(paymentReference);
+        return order;
+    }
+
+    private GuestOrderRequest idempotentRetryRequest() {
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Retry Customer");
+        request.setCustomerEmail("retry@example.com");
+        request.setCustomerPhone("07700900004");
+        request.setFulfilmentType("COLLECTION");
+        request.setIdempotencyKey("retry-key-123");
+        request.setItems(List.of());
+        return request;
+    }
+
+    @Test
+    @DisplayName("createGuestOrder idempotent retry of a payable DRAFT order re-fetches the REAL client secret, never the PaymentIntent id (WR-02)")
+    void createGuestOrder_idempotentRetryDraft_refetchesRealClientSecret() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(existingOrder(OrderStatus.DRAFT, "pi_123")));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.retrieveClientSecret("pi_123")).thenReturn("pi_123_secret_real");
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals("pi_123_secret_real", confirmation.getClientSecret(),
+                "retry must resume payment with the real client secret");
+        assertNotEquals("pi_123", confirmation.getClientSecret(),
+                "the raw PaymentIntent id must never occupy the clientSecret slot");
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder idempotent retry of an already-paid order returns a null clientSecret (WR-02)")
+    void createGuestOrder_idempotentRetryPaid_returnsNullClientSecret() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(existingOrder(OrderStatus.PENDING, "pi_456")));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertNull(confirmation.getClientSecret(),
+                "a non-DRAFT duplicate must not disclose any payment reference");
+        assertEquals("PENDING", confirmation.getStatus());
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
     @Test
     @DisplayName("createGuestOrder rejects an order below the shop's minimum order value (WR-01)")
     void createGuestOrder_rejectsBelowMinimumOrder() {

@@ -338,6 +338,25 @@ public class PublicStorefrontService {
                     Order existingOrder = existing.get();
                     log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
                             idempotencyKey, existingOrder.getOrderNumber());
+                    // WR-02: the paymentReference is the Stripe PaymentIntent ID
+                    // (pi_...), NOT a client secret — returning it in the
+                    // clientSecret slot mounted Stripe Elements with an unusable
+                    // value AND disclosed the raw PI id to the guest. For a
+                    // still-payable DRAFT order, re-fetch the REAL client secret
+                    // from Stripe so the retry resumes payment; otherwise return
+                    // null and the client renders the placed-order confirmation.
+                    String existingClientSecret = null;
+                    if (existingOrder.getStatus() == OrderStatus.DRAFT
+                            && existingOrder.getPaymentReference() != null
+                            && paymentService.isConfigured()) {
+                        try {
+                            existingClientSecret = paymentService.retrieveClientSecret(
+                                    existingOrder.getPaymentReference());
+                        } catch (com.stripe.exception.StripeException e) {
+                            log.warn("Could not re-fetch client secret for idempotent retry of order {}",
+                                    existingOrder.getOrderNumber(), e);
+                        }
+                    }
                     return new GuestOrderConfirmation(
                             existingOrder.getOrderNumber(),
                             existingOrder.getStatus().name(),
@@ -348,7 +367,7 @@ public class PublicStorefrontService {
                             existingOrder.getTotalAmountPennies(),
                             shop.getName(),
                             existingOrder.getItemCount(),
-                            existingOrder.getPaymentReference(),
+                            existingClientSecret,
                             List.of()
                     );
                 }

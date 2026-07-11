@@ -112,6 +112,17 @@ public class PaymentService {
     }
 
     /**
+     * Retrieve the client secret of an EXISTING PaymentIntent by its id (WR-02).
+     * Used by the guest-order idempotency short-circuit so a retried checkout
+     * can resume payment with a real {@code pi_..._secret_...} value — the
+     * PaymentIntent id itself must never be handed to Stripe Elements.
+     */
+    @CircuitBreaker(name = "stripe")
+    public String retrieveClientSecret(String paymentIntentId) throws StripeException {
+        return PaymentIntent.retrieve(paymentIntentId).getClientSecret();
+    }
+
+    /**
      * Process a Stripe webhook event.
      * Verifies the signature and dispatches to appropriate handler.
      */
