@@ -1,0 +1,62 @@
+---
+# Dedicated Ingress for the SSE order-event stream (#92 / P2-1).
+#
+# nginx-ingress annotations apply per Ingress resource, and the main
+# jtoye-ingress keeps a 60s proxy-read-timeout that is right for normal API
+# calls but fatal for long-lived text/event-stream responses. Splitting the
+# stream path into its own Ingress gives it its own nginx location block with
+# streaming-appropriate settings while leaving every other route untouched.
+# nginx merges rules for the same host across Ingresses; the exact path below
+# wins over jtoye-ingress's `/` prefix.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jtoye-sse-ingress
+  annotations:
+    # TLS Configuration (mirrors jtoye-ingress)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # CORS must mirror jtoye-ingress: the dashboard at app.jtoye.co.uk opens
+    # the stream cross-origin with an Authorization header.
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.jtoye.co.uk"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+
+    # SSE-specific proxy behaviour:
+    # - read/send timeouts raised to 1h. The server recycles each emitter after
+    #   5 minutes and sends a keep-alive comment every 25s, so these are a
+    #   generous ceiling, not the liveness mechanism.
+    # - buffering off so each event flushes to the browser immediately instead
+    #   of sitting in nginx's response buffer until it fills.
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+
+    # NOTE: no limit-rps/limit-connections here on purpose — SSE holds one
+    # connection per dashboard for hours; the main ingress's per-IP connection
+    # cap would starve multi-user offices behind one NAT. Abuse control for
+    # this path is the JWT requirement plus the per-tenant API rate limiter.
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.jtoye.co.uk
+    secretName: jtoye-tls
+  rules:
+  - host: api.jtoye.co.uk
+    http:
+      paths:
+      - path: /api/v1/orders/stream
+        pathType: Exact
+        backend:
+          service:
+            name: core-java
+            port:
+              number: 9090

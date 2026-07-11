@@ -21,6 +21,9 @@ resources:
   - edge-go-deployment.yaml
   - frontend-deployment.yaml
   - ingress.yaml
+  # SSE stream path gets its own Ingress (#92): long-lived event streams need
+  # streaming timeouts + buffering off, which are per-Ingress nginx annotations.
+  - sse-ingress.yaml
   - pg-backup-cronjob.yaml
   # NetworkPolicies (Phase 15 / INF-01) — default-deny baseline + tier allow-lists.
   # See k8s/base/networkpolicies/README.md for the flow matrix and rollback steps.
