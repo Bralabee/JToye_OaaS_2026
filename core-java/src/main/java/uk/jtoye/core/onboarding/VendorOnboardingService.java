@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.GateDto;
@@ -77,8 +79,8 @@ public class VendorOnboardingService {
 
     /**
      * Submit the caller's onboarding: DRAFT → VERIFYING (stamps {@code submitted_at}),
-     * then materialise the gate rows and kick the async gate chain. With zero gate
-     * beans this slice the async run short-circuits (no mandatory gate rows).
+     * then materialise the gate rows and kick the async gate chain <em>after this
+     * transaction commits</em> (CR-01 — see {@link #kickGateChainAfterCommit}).
      */
     public OnboardingDto submit() {
         UUID tenantId = CurrentTenant.require();
@@ -87,7 +89,7 @@ public class VendorOnboardingService {
         transition(onboarding, OnboardingEvent.SUBMIT);
 
         gateChainRunner.materialise(onboarding);
-        gateChainRunner.runAndRecompute(onboarding.getId(), tenantId);
+        kickGateChainAfterCommit(onboarding.getId(), tenantId);
 
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
@@ -170,6 +172,31 @@ public class VendorOnboardingService {
 
         onboardingRepository.save(onboarding);
         log.info("Onboarding {} transitioned {} -> {} via {}", onboarding.getId(), oldState, newState, event);
+    }
+
+    /**
+     * CR-01: dispatch the async gate chain only AFTER the current transaction
+     * commits. {@link GateChainRunner#runAndRecompute} is {@code @Async @Transactional}
+     * — it opens its own connection on a worker thread. Firing it while the submit
+     * (or resubmit) transaction is still open races the worker against the commit:
+     * under READ COMMITTED the worker cannot see the uncommitted VERIFYING status or
+     * the freshly-materialised PENDING gate rows, so it early-returns and the
+     * onboarding is left stuck in VERIFYING with every gate PENDING forever.
+     * Registering an {@code afterCommit} synchronization guarantees the worker sees
+     * committed state. If no synchronization is active (e.g. a direct call outside a
+     * transaction) fall back to an immediate kick so the chain still runs.
+     */
+    private void kickGateChainAfterCommit(UUID onboardingId, UUID tenantId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    gateChainRunner.runAndRecompute(onboardingId, tenantId);
+                }
+            });
+        } else {
+            gateChainRunner.runAndRecompute(onboardingId, tenantId);
+        }
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {
