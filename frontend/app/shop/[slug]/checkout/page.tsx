@@ -166,7 +166,7 @@ function PaymentForm({
         )}
       </button>
 
-      <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
+      <div className="flex items-center justify-center gap-1 text-xs text-slate-400">
         <Lock className="h-3 w-3" />
         Secured by Stripe. Your card details never touch our servers.
       </div>
@@ -466,7 +466,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {items.map((item) => (
               <div key={item.productId} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="flex-shrink-0 h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                  <span className="flex-shrink-0 h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
                     {item.quantity}
                   </span>
                   <span className="text-slate-700 truncate">{item.title}</span>
@@ -736,7 +736,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {items.map((item) => (
               <div key={item.productId} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="flex-shrink-0 h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                  <span className="flex-shrink-0 h-5 w-5 rounded bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
                     {item.quantity}
                   </span>
                   <span className="text-slate-700 truncate">{item.title}</span>

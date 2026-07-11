@@ -54,7 +54,7 @@ const STATUS_CONFIG: Record<OrderStatus, StatusUiConfig> = {
   DRAFT:     { label: "Draft",     bgColor: "bg-slate-500",   icon: Clock },
   PENDING:   { label: "Pending",   bgColor: "bg-yellow-500",  icon: Clock },
   CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500",    icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", bgColor: "bg-purple-500",  icon: ChefHat },
+  PREPARING: { label: "Preparing", bgColor: "bg-amber-500",  icon: ChefHat },
   READY:     { label: "Ready",     bgColor: "bg-green-500",   icon: PackageIcon },
   COMPLETED: { label: "Completed", bgColor: "bg-emerald-600", icon: FileCheck },
   CANCELLED: { label: "Cancelled", bgColor: "bg-red-500",     icon: XCircle },

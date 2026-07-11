@@ -95,8 +95,8 @@ const statusConfig: Record<
   },
   PREPARING: {
     label: "Preparing",
-    color: "text-purple-700",
-    bgColor: "bg-purple-500",
+    color: "text-amber-700",
+    bgColor: "bg-amber-500",
     icon: ChefHat,
   },
   READY: {
@@ -180,7 +180,7 @@ const getAvailableTransitions = (
         endpoint: "start-preparation",
         nextStatus: "PREPARING",
         icon: ChefHat,
-        color: "bg-purple-600 hover:bg-purple-700",
+        color: "bg-amber-600 hover:bg-amber-700",
       },
       {
         action: "Cancel",
@@ -482,7 +482,7 @@ function OrdersPageInner() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50">
+        <Card className="overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100">
           <CardHeader>
             <CardTitle className="text-lg">Order Status Flow</CardTitle>
             <CardDescription>

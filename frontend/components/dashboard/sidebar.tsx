@@ -67,7 +67,7 @@ export function Sidebar() {
       {session?.user && (
         <div className="border-b border-slate-800 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center font-semibold">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center font-semibold">
               {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
             </div>
             <div className="flex-1 min-w-0">

@@ -119,7 +119,7 @@ export function MobileTabBar({ className }: { className?: string }) {
 
           {session?.user && (
             <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-500 font-semibold text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 font-semibold text-white">
                 {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
               </div>
               <div className="min-w-0 flex-1">

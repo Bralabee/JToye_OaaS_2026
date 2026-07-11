@@ -109,7 +109,7 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${cfg.color}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${cfg.color}`}>
                 <Icon className="h-3 w-3" />
                 {cfg.label}
                 {isActive && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
@@ -119,7 +119,7 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
             <p className="text-xs text-slate-500 mt-0.5">
               {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
             </p>
-            <p className="text-[10px] text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
+            <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
           </div>
           <div className="flex items-center gap-1 text-slate-400 group-hover:text-orange-500 transition-colors mt-1">
             <span className="text-xs font-medium">{isActive ? "Track" : "View"}</span>
@@ -128,7 +128,7 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
         </div>
 
         {/* Mini order number */}
-        <p className="mt-2 text-[9px] font-mono text-slate-300 truncate">{order.orderNumber}</p>
+        <p className="mt-2 text-xs font-mono text-slate-300 truncate">{order.orderNumber}</p>
       </div>
     </Link>
   )
@@ -236,7 +236,7 @@ function CustomerOrdersContent() {
       {orders.length > 0 && (
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</span>
             <select
               data-testid="orders-status-filter"
               value={statusFilter}
@@ -251,7 +251,7 @@ function CustomerOrdersContent() {
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">From date</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">From date</span>
             <input
               type="date"
               data-testid="orders-date-from"
@@ -345,7 +345,7 @@ function CustomerOrdersContent() {
 
       {/* Auto-refresh indicator */}
       {hasAnyActiveOnScreen && (
-        <p className="mt-6 text-center text-[10px] text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-400">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Live updates every 15 seconds

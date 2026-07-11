@@ -5,8 +5,16 @@ import { NextRequest, NextResponse } from "next/server"
  *
  * Returns the customer session state based on HttpOnly cookies. Never returns
  * the tokens themselves — only profile claims decoded from the ID token and
- * the access-token expiry. Returns 401 when there is no session or tokens have
- * expired.
+ * the access-token expiry.
+ *
+ * The no-session / expired case returns HTTP 200 with `{ authenticated: false }`
+ * (NOT 401). This is the expected steady state for every anonymous visitor, and
+ * a public component (storefront nav) probes this endpoint on mount for each
+ * public page load — a 401 there makes the browser log a failed request to the
+ * console on every anonymous page view (backlog #13). A 200 body carries no
+ * session data, so consumers read the `authenticated` flag, not the status. The
+ * authoritative auth gates remain server-side (dashboard auth() + core-java RLS);
+ * this probe is a client-side convenience read only.
  */
 
 const ACCESS_COOKIE = "jtoye-customer-access"
@@ -40,17 +48,17 @@ export async function GET(_req: NextRequest) {
   const id = _req.cookies.get(ID_COOKIE)?.value
 
   if (!access || !id) {
-    return NextResponse.json({ authenticated: false }, { status: 401 })
+    return NextResponse.json({ authenticated: false })
   }
 
   const claims = decodeJwtPayload(id)
   if (!claims) {
-    return NextResponse.json({ authenticated: false }, { status: 401 })
+    return NextResponse.json({ authenticated: false })
   }
 
   const nowSec = Math.floor(Date.now() / 1000)
   if (claims.exp && claims.exp < nowSec) {
-    return NextResponse.json({ authenticated: false }, { status: 401 })
+    return NextResponse.json({ authenticated: false })
   }
 
   return NextResponse.json({

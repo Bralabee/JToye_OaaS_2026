@@ -312,6 +312,13 @@ export async function handleCallback(
  * Fetch the current customer session from the server (cookie-backed).
  * Returns null when the customer is not logged in or the session expired.
  *
+ * The probe (/api/customer-auth/session) returns HTTP 200 with
+ * `{ authenticated: false }` for the no-session/expired case — NOT 401 — so the
+ * browser does not log a failed request on every anonymous public page view
+ * (#13). We therefore key the "logged out" decision off the body's
+ * `authenticated` flag, not the HTTP status. The `!res.ok` branch stays as a
+ * defensive fallback for genuine server/network errors (5xx) only.
+ *
  * NOTE: This is async. Components that need the profile should `await` it
  * in a `useEffect`. For "should I render the nav as logged in" synchronous
  * checks, use `isLoggedIn()`.
@@ -323,6 +330,8 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
       cache: "no-store",
     })
     if (!res.ok) {
+      // Defensive fallback: an unexpected 5xx/network error, not the normal
+      // logged-out path (which now arrives as 200 { authenticated: false }).
       clearMarker()
       return null
     }

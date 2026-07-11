@@ -131,7 +131,7 @@ export function BusinessModelGuide() {
               The operating-system model for established owner-led Nigerian and West African food businesses in one UK cluster.
             </p>
           </div>
-          <div className="mt-10 grid grid-cols-3 border-t border-slate-700 text-center font-mono text-[10px] uppercase tracking-[0.12em] sm:text-xs">
+          <div className="mt-10 grid grid-cols-3 border-t border-slate-700 text-center font-mono text-xs uppercase tracking-[0.12em] sm:text-xs">
             <div className="border-r border-slate-700 px-2 py-4">Daily takeaway</div>
             <div className="border-r border-slate-700 px-2 py-4">Event catering</div>
             <div className="px-2 py-4">Assisted SaaS</div>
@@ -141,7 +141,7 @@ export function BusinessModelGuide() {
 
       <nav aria-label="Guide topics" className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/95 backdrop-blur print:static">
         <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
-          <span className="mr-2 shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">Read</span>
+          <span className="mr-2 shrink-0 font-mono text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Read</span>
           {navItems.map(([id, label]) => (
             <a key={id} href={`#${id}`} className="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500">
               {label}
@@ -189,7 +189,7 @@ export function BusinessModelGuide() {
               <div className="mt-3 flex justify-between font-mono text-xs text-slate-500"><span>£0</span><span>£50k</span></div>
             </div>
             <div className="overflow-hidden border-[3px] border-slate-900 bg-slate-50 shadow-[8px_8px_0_theme(colors.slate.200)]">
-              <div className="flex items-center justify-between border-b border-slate-900 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em]"><span>Monthly contribution ticket</span><Clipboard size={15} /></div>
+              <div className="flex items-center justify-between border-b border-slate-900 px-5 py-3 font-mono text-xs font-bold uppercase tracking-[0.14em]"><span>Monthly contribution ticket</span><Clipboard size={15} /></div>
               <dl className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-4 sm:divide-y-0">
                 <Metric label="Revenue" value={money(economics.revenue)} />
                 <Metric label="COGS" value={money(economics.costs)} />
@@ -223,7 +223,7 @@ export function BusinessModelGuide() {
 
         <section aria-labelledby="comparison-heading" className="mt-16">
           <h2 id="comparison-heading" className="sr-only">Alternative model comparison</h2>
-          <div className="overflow-x-auto border-y border-slate-900"><table className="w-full min-w-[640px] text-left text-sm"><caption className="caption-top mb-4 text-left font-mono text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Alternative model comparison</caption><thead className="border-b border-slate-900 font-mono text-[10px] uppercase tracking-[0.12em]"><tr><th className="p-3">Model</th><th className="p-3">Decision</th><th className="p-3">Why</th></tr></thead><tbody>{alternatives.map(([model, decision, reason]) => <tr key={model} className="border-b border-slate-200 last:border-b-0"><td className="p-3 font-bold">{model}</td><td className="p-3"><span className={decision === "Recommended" ? "font-bold text-emerald-700" : "font-bold text-orange-600"}>{decision}</span></td><td className="p-3 leading-6 text-slate-500">{reason}</td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto border-y border-slate-900"><table className="w-full min-w-[640px] text-left text-sm"><caption className="caption-top mb-4 text-left font-mono text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Alternative model comparison</caption><thead className="border-b border-slate-900 font-mono text-xs uppercase tracking-[0.12em]"><tr><th className="p-3">Model</th><th className="p-3">Decision</th><th className="p-3">Why</th></tr></thead><tbody>{alternatives.map(([model, decision, reason]) => <tr key={model} className="border-b border-slate-200 last:border-b-0"><td className="p-3 font-bold">{model}</td><td className="p-3"><span className={decision === "Recommended" ? "font-bold text-emerald-700" : "font-bold text-orange-600"}>{decision}</span></td><td className="p-3 leading-6 text-slate-500">{reason}</td></tr>)}</tbody></table></div>
         </section>
 
         <section id="gates" aria-labelledby="gates-heading" className="mt-20 scroll-mt-20 border-t border-slate-200 pt-12">
@@ -265,7 +265,7 @@ function CohortCard({ title, signal, problems, capabilities }: { title: string; 
 }
 
 function Metric({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
-  return <div className="p-4"><dt className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt><dd className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${emphasis ? "text-orange-600" : ""}`}>{value}</dd></div>
+  return <div className="p-4"><dt className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt><dd className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${emphasis ? "text-orange-600" : ""}`}>{value}</dd></div>
 }
 
 function BoundaryList({ title, icon, items }: { title: string; icon: React.ReactNode; items: string[] }) {
