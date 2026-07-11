@@ -43,7 +43,7 @@ created: 2026-07-11
 
 **Shared idioms this slice MUST mirror (verbatim from existing pages):**
 - Page container: `<div className="space-y-6">` (or `space-y-8` for the home banner page).
-- Page header: `<h1 className="text-4xl font-bold text-slate-900">…</h1>` + `<p className="mt-2 text-slate-600">…</p>`.
+- Page header: `<h1 className="text-4xl font-semibold text-slate-900">…</h1>` + `<p className="mt-2 text-sm text-slate-600">…</p>`.
 - Cards: `Card / CardHeader / CardTitle / CardDescription / CardContent`.
 - Loading spinner: `<div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600" />` inside `flex h-full items-center justify-center`.
 - Empty state: centered column, lucide icon `h-12 w-12 text-slate-300`, `h3 text-lg font-semibold text-slate-900`, `p text-sm text-slate-500`, then an `outline` button.
@@ -68,24 +68,24 @@ Declared values (Tailwind 4px base — all multiples of 4):
 | 3xl | 64px | `py-16` | Reserved for full-page empty/hero blocks |
 
 **Exceptions (documented, from existing form idioms — do not flag):**
-- Form field groups use `space-y-1.5` (6px) between label + input, matching `marketing/page.tsx`.
+- Form field groups use `space-y-2` (8px) between label + input — on the 4px scale; do not copy `marketing/page.tsx`'s off-scale `space-y-1.5`.
 - Text inputs / selects use shadcn default `h-10` with `px-3 py-2` internal padding; nav items use `px-3 py-2.5` (10px). These are established control-sizing tokens, not layout spacing.
 
 ---
 
 ## Typography
 
-Roles map to Tailwind's existing type scale (the app's de-facto system). Two primary weights govern the slice; heading bold is an existing page-title convention.
+Roles map to Tailwind's existing type scale (the app's de-facto system). Exactly **4 sizes** (12/14/18/36) and **2 weights** (regular 400 + semibold 600) govern every surface this slice builds.
 
 | Role | Size | Tailwind | Weight | Line Height |
 |------|------|----------|--------|-------------|
-| Display (page title) | 36px | `text-4xl` | bold 700 | ~1.1 (`leading-tight`) |
+| Display (page title) | 36px | `text-4xl` | semibold 600 | ~1.1 (`leading-tight`) |
 | Heading (card / section title) | 18px | `text-lg` | semibold 600 | ~1.4 (`leading-snug`) |
-| Body | 14px | `text-sm` | regular 400 | 1.5 (`leading-normal`) |
-| Label / meta | 12px | `text-xs` | medium 500 | 1.5 |
+| Body / page subtitle | 14px | `text-sm` | regular 400 | 1.5 (`leading-normal`) |
+| Label / meta | 12px | `text-xs` | regular 400 | 1.5 |
 
-- Page subtitle uses body-base 16px (`text-base`, `text-slate-600`) regular 400.
-- **Weight contract:** primary pairing is **regular 400 + semibold 600**. Documented exceptions matching the existing codebase: page-level `<h1>` uses **bold 700** (established title idiom on every dashboard page); nav/labels use **medium 500**. No other weights.
+- Page subtitle renders at Body tier: `text-sm text-slate-600` regular 400 (no 16px tier exists in this contract).
+- **Weight contract:** exactly two weights — **regular 400** (body, subtitles, nav, form labels — override the shadcn `Label` default `font-medium` with `font-normal`) and **semibold 600** (all headings including the page `<h1>`). Deliberate divergence from legacy pages' `font-bold` h1: at 36px the 600/700 difference is imperceptible and the 2-weight cap wins; do NOT propagate 700 into new code.
 - Numeric/id values render `font-mono text-xs` (order-id idiom) where a raw identifier is shown (e.g. Companies House number echo).
 
 ---
@@ -162,6 +162,8 @@ The dashboard's dominant chrome is slate; the interactive accent token (`--prima
 ---
 
 ## Interaction Contract
+
+**Primary focal point (status view):** the overall-state badge + the single state-driven primary CTA ("Submit for verification" / "Go live") — these are the only elements using the blue-600 accent on the page; everything else is slate chrome.
 
 **Surface 2 (`/dashboard/onboarding`) is a single stateful page driven by `GET /api/v1/onboarding/me`:**
 
