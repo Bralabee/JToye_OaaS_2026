@@ -10,6 +10,7 @@ import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
 
 import java.time.OffsetDateTime;
@@ -40,17 +41,20 @@ public class VendorOnboardingService {
     private final VendorOnboardingGateRepository gateRepository;
     private final VendorOnboardingStateMachineService stateMachineService;
     private final ShopService shopService;
+    private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
                                    VendorOnboardingStateMachineService stateMachineService,
                                    ShopService shopService,
+                                   ShopRepository shopRepository,
                                    GateChainRunner gateChainRunner) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
         this.shopService = shopService;
+        this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
     }
 
@@ -62,6 +66,19 @@ public class VendorOnboardingService {
      */
     public OnboardingDto createOnboarding(OnboardingModel model, UUID shopId, String companyNumber) {
         UUID tenantId = CurrentTenant.require();
+
+        // CR-02: the caller must own the shop. The V43 FK shop_id -> shops(id) is
+        // checked by Postgres referential-integrity, which BYPASSES RLS, so an INSERT
+        // referencing another tenant's (publicly-discoverable) shop would otherwise
+        // succeed — binding the onboarding cross-tenant and letting the FHRS gate
+        // record hygiene evidence against a foreign FSA establishment. A tenant-scoped
+        // lookup (the same finder ShopService.getShopById uses) rejects a missing OR
+        // foreign shop with a clean 404, instead of a later FK
+        // DataIntegrityViolationException that GlobalExceptionHandler misreports as a
+        // 409 "Duplicate Entry" (also a shop-UUID existence oracle).
+        shopRepository.findByIdAndTenantId(shopId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
         log.info("Creating DRAFT onboarding for tenant {} (shop {})", tenantId, shopId);
 
         VendorOnboarding onboarding = new VendorOnboarding();

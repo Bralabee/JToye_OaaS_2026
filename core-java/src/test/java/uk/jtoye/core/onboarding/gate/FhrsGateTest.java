@@ -36,6 +36,7 @@ class FhrsGateTest {
     private final OnboardingProperties properties = new OnboardingProperties();
 
     private final UUID shopId = UUID.randomUUID();
+    private final UUID tenantId = UUID.randomUUID();
 
     private FhrsGate gate() {
         return new FhrsGate(fhrsClient, properties, shopRepository);
@@ -43,15 +44,18 @@ class FhrsGateTest {
 
     private VendorOnboarding onboardingWithShop() {
         VendorOnboarding onboarding = new VendorOnboarding();
+        onboarding.setTenantId(tenantId);
         onboarding.setShopId(shopId);
         return onboarding;
     }
 
+    // CR-02: the gate now resolves the shop with an explicit tenant filter, so stub
+    // the tenant-scoped finder (not the RLS-only findById).
     private void seedShop() {
         Shop shop = new Shop();
         shop.setName("Mama Put Kitchen");
         shop.setAddress("12 High Street, London");
-        when(shopRepository.findById(shopId)).thenReturn(Optional.of(shop));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
     }
 
     private FhrsEstablishment est(String id, String rating, String scheme) {
