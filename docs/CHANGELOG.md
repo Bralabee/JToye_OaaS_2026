@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Onboarding approval stance + Stripe money-flow decisions (PR #180) — 2026-07-11
+
+- **feat(onboarding): model-aware auto-approve (#178 item 1).** New `onboarding.auto-approve-models` (default `[WHITE_LABEL]`, env `ONBOARDING_AUTO_APPROVE_MODELS`); `GateChainRunner` fires APPROVE on the global force-on flag OR the per-model policy, so WHITE_LABEL auto-approves on green gates while MARKETPLACE parks at `PENDING_APPROVAL` for a human (admin queue = #178 slice 2). Tests 918 → 921; no schema change.
+- **docs: ADR-0001** (`docs/architecture/decisions/`) records both product decisions: the hybrid approval stance above, and **Stripe Connect keyed to onboarding model** for #102 (destination charges for MARKETPLACE first, direct charges + application fee for WHITE_LABEL; implementation deferred to a future phase). State-model §9 item 1 → DECIDED; Phase 18 UAT item 5 → PASS (5/5).
+
 ### Vendor onboarding — first slice (Phase 18) — 2026-07-11
 
 The first slice of vendor self-onboarding: a tenant submits, three automatic compliance gates evaluate, and — when all pass — the onboarding auto-approves and the vendor can go live **without manual review**. Test baseline 802 → 918 logical invocations (873 at backend closure, +45 from the UI slice and the review-fix round); schema V42 → V43.
