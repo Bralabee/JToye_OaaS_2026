@@ -51,6 +51,11 @@ function isOpenNow(hours: Record<string, string> | null): boolean {
   const nowMinutes = (parseInt(part("hour"), 10) % 24) * 60 + parseInt(part("minute"), 10)
   const openMinutes = parseInt(match[1]) * 60 + parseInt(match[2])
   const closeMinutes = parseInt(match[3]) * 60 + parseInt(match[4])
+  // WR-06: an overnight window ("18:00 - 02:00", close < open) wraps past
+  // midnight — mirrors PublicStorefrontService.validateShopIsOpen.
+  if (closeMinutes < openMinutes) {
+    return nowMinutes >= openMinutes || nowMinutes < closeMinutes
+  }
   return nowMinutes >= openMinutes && nowMinutes < closeMinutes
 }
 

@@ -279,6 +279,63 @@ class PublicStorefrontServiceTest {
         assertTrue(ex.getMessage().contains("closed"));
     }
 
+    private static final java.time.ZoneId UK_ZONE = java.time.ZoneId.of("Europe/London");
+    private static final java.time.format.DateTimeFormatter HHMM =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+
+    /** The opening-hours key for "today" in the UK zone the service evaluates. */
+    private static String todayKeyUk() {
+        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+        return dayKeys[LocalDate.now(UK_ZONE).getDayOfWeek().getValue() % 7];
+    }
+
+    @Test
+    @DisplayName("createGuestOrder accepts an order inside a service window whose close time precedes its open time (WR-06 overnight)")
+    void createGuestOrder_acceptsInsideOvernightWindow() throws Exception {
+        // Window opens 1h ago and "closes" 2h ago: whenever close < open this is
+        // an overnight window that CONTAINS now; when the subtraction wraps
+        // midnight it degenerates to a plain window that also contains now. The
+        // pre-fix predicate rejected the overnight shape at every time of day.
+        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
+        String window = nowUk.minusHours(1).format(HHMM) + " - " + nowUk.minusHours(2).format(HHMM);
+        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+        publishedShop.setDeliveryFeePennies(0L);
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Midnight Suya", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertDoesNotThrow(() -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(product)),
+                "an order inside the overnight trading window must be accepted");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder still rejects an order outside the window when close precedes open (WR-06 overnight)")
+    void createGuestOrder_rejectsOutsideOvernightWindow() {
+        // Window opens in 1h and closed 1h ago: now sits OUTSIDE it under both
+        // the overnight and the plain (midnight-wrapped) interpretation.
+        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
+        String window = nowUk.plusHours(1).format(HHMM) + " - " + nowUk.minusHours(1).format(HHMM);
+        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Night Owl");
+        request.setCustomerEmail("owl@example.com");
+        request.setCustomerPhone("07700900005");
+        request.setItems(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertTrue(ex.getMessage().contains("closed"));
+    }
+
     // ========================================================================
     // Phase 19 UIX-03 / UIX-04 — guest order name snapshot + fulfilment/address
     // ========================================================================

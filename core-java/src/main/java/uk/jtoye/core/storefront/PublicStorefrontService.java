@@ -720,7 +720,15 @@ public class PublicStorefrontService {
         LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
         LocalTime now = LocalTime.now(UK_ZONE);
 
-        if (now.isBefore(open) || !now.isBefore(close)) {
+        // WR-06: an overnight window ("18:00 - 02:00", close < open — normal
+        // for a takeaway) wraps past midnight. The old predicate
+        // (now.isBefore(open) || !now.isBefore(close)) rejected EVERY time of
+        // day for such windows, refusing orders during real trading hours.
+        boolean overnight = close.isBefore(open);
+        boolean openNow = overnight
+                ? !now.isBefore(open) || now.isBefore(close)
+                : !now.isBefore(open) && now.isBefore(close);
+        if (!openNow) {
             throw new IllegalArgumentException(
                     shop.getName() + " is currently closed. Opening hours today: " + todayHours + ". Please try again later.");
         }
