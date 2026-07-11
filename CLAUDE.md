@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 802 logical invocations passing (595 Java `@Test` methods across 96 files + 109 Jest `it/test` blocks across 19 files + 75 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
+- **Testing**: All new code requires tests — project standard is 873 logical invocations passing (666 Java `@Test` methods across 109 files + 109 Jest `it/test` blocks across 19 files + 75 top-level Go `Test*` funcs across 8 files + 23 Playwright `test()` blocks across 5 specs). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V42 (GDPR erasure completeness [Issue #84]: erasure_records table — tenant-scoped, FORCE RLS, PII-free SHA-256 email hash — plus tenant-scoped UPDATE policies on orders_aud/customers_aud enabling the deliberate Article-17 PII scrub of append-only audit history; V41 PPDS/Natasha's Law label compliance [Issue #82]: products.allergen_spans/shelf_life_days/durability_type + products_aud mirrors, all nullable; V40 VAT ledger correctness [Issue #81]: products.vat_rate + financial_transactions.order_id + _aud mirrors + partial unique index uq_fin_tx_tenant_order + historical duplicate collapse)
+- Current schema version: V43 (vendor onboarding first slice [Phase 18]: vendor_onboarding + vendor_onboarding_gate + both Envers _aud mirrors, all ENABLE+FORCE RLS tenant-scoped; the onboarding state machine is the sole writer of Shop.published, gated by automatic BUSINESS_VERIFIED/FOOD_HYGIENE_RATING/ALLERGEN_DATA_COMPLETE checks; V42 GDPR erasure completeness [Issue #84]: erasure_records table — tenant-scoped, FORCE RLS, PII-free SHA-256 email hash — plus tenant-scoped UPDATE policies on orders_aud/customers_aud enabling the deliberate Article-17 PII scrub of append-only audit history; V41 PPDS/Natasha's Law label compliance [Issue #82]: products.allergen_spans/shelf_life_days/durability_type + products_aud mirrors, all nullable; V40 VAT ledger correctness [Issue #81]: products.vat_rate + financial_transactions.order_id + _aud mirrors + partial unique index uq_fin_tx_tenant_order + historical duplicate collapse)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`

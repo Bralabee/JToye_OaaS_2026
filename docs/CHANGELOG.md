@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Vendor onboarding — first slice (Phase 18) — 2026-07-11
+
+The first slice of vendor self-onboarding: a tenant submits, three automatic compliance gates evaluate, and — when all pass — the onboarding auto-approves and the vendor can go live **without manual review**. Test baseline 802 → 873 logical invocations; schema V42 → V43.
+
+#### Added
+- **Vendor onboarding aggregate + state machine (VOB-01).** `V43__vendor_onboarding.sql` adds `vendor_onboarding` + `vendor_onboarding_gate` (plus both Envers `_aud` mirrors), all ENABLE+FORCE RLS and tenant-scoped. A 9-state / 10-event Spring StateMachine drives the lifecycle and is the **sole writer of `Shop.published`** (create/update can no longer publish from request input). Vendor surface: `POST /api/v1/onboarding`, `/submit`, `/go-live`, and `GET /me`.
+- **Three free-API / computed compliance gates (VOB-02, VOB-03).** `BUSINESS_VERIFIED` (Companies House `GET /company/{number}`, HTTP-Basic key-as-username), `FOOD_HYGIENE_RATING` (FSA FHRS Open Data, mandatory `x-api-version: 2`, config `min-rating`=2), and `ALLERGEN_DATA_COMPLETE` (computed from the V41 product fields, aligned to `ProductLabelService.validatePpdsData`). Each auto-registers into a data-driven gate chain by being a `@Component`; the external clients are circuit-broken with explicit timeouts and degrade to `MANUAL_REVIEW` on ambiguity/outage — never a silent pass or a hard-fail.
+- **Config-driven auto-approve (VOB-04).** `onboarding.auto-approve` (default false) auto-advances a fully-passing onboarding `PENDING_APPROVAL → APPROVED` (the APPROVE guard still re-checks every mandatory gate); the FHRS threshold + both provider base URLs are injected via `onboarding.*` (`${ENV:default}`), never literals, and the Companies House key is redacted in `toString`.
+- **Tests + docs (VOB-05).** State-machine unit, RLS Testcontainers, per-gate evaluators, the auto-approve toggle both ways, and a cross-gate fully-automatic end-to-end proof (submit → all three gates green → auto-APPROVED with no manual review → go-live → `Shop.published=true`). `docs/metrics.json` reconciled (schema 43, 15 controllers); `integrationTest` fork now recycled (`setForkEvery`) so the growing Testcontainers suite no longer hits a native-thread OOM.
+
+#### Human fallback
+- Ambiguous, missing, or errored gate results route to `MANUAL_REVIEW` rather than blocking or auto-passing. There is no admin-approve endpoint in this slice, so with `auto-approve=false` a fully-green onboarding deliberately halts at `PENDING_APPROVAL` (go-live is then rejected).
+
 ### P1 remediation sprint (backlog #83–#88) — 2026-07-09
 
 Six P1 items from the 2026-07-08 enterprise-readiness audit (`docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md`), each planned → executed → verified against the full test gate → merged via PR after CI passed. Test baseline 726 → 767 logical invocations; schema V41 → V42.
