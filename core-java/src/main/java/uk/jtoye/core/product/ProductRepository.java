@@ -25,16 +25,33 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     List<Product> findByShopId(UUID shopId);
 
-    @Query("SELECT p FROM Product p WHERE LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :q, '%'))")
-    List<Product> search(@Param("q") String query);
-
-    @Query(value = "SELECT * FROM products WHERE search_vector @@ plainto_tsquery('english', :q) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC",
-           countQuery = "SELECT COUNT(*) FROM products WHERE search_vector @@ plainto_tsquery('english', :q)",
+    // Live product search (Issue #96): GIN/tsvector full-text over the V25
+    // search_vector (title A, category B, description/ingredients C, dietary D)
+    // using a caller-built prefix tsquery ("chick:*" finds "Chicken"), plus an
+    // anchored SKU-prefix branch — SKU is not in the vector and adding it needs
+    // a migration, so the old title-or-SKU UX is preserved via the second UNION
+    // arm. The branches are UNIONed by id (not OR-ed in one predicate) so the
+    // text branch stays servable by idx_products_search on its own; an OR would
+    // force a full scan even once the index is reachable. NOTE: today the RLS
+    // security barrier blocks that index for the app role because ts_match_vq
+    // (the @@ function) is not LEAKPROOF — Postgres only allows leakproof
+    // operators as index quals beneath row security, so the FTS branch planner-
+    // degrades to a tenant-filtered seq scan. A future one-line migration
+    // (ALTER FUNCTION pg_catalog.ts_match_vq(tsvector, tsquery) LEAKPROOF,
+    // verified on postgres:15) flips this exact SQL to a Bitmap Index Scan with
+    // zero code change; ProductSearchFtsIntegrationTest pins both plans. RLS
+    // scopes every products reference to the current tenant. ts_rank orders FTS
+    // matches by relevance; SKU-only matches rank 0 and sort after, tie-broken
+    // by title.
+    @Query(value = "SELECT p.* FROM products p WHERE p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
+            + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
            nativeQuery = true)
-    Page<Product> fullTextSearch(@Param("q") String query, Pageable pageable);
-
-    @Query(value = "SELECT * FROM products WHERE search_vector @@ plainto_tsquery('english', :q) AND available = true AND (shop_id = :shopId OR shop_id IS NULL) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC",
-           countQuery = "SELECT COUNT(*) FROM products WHERE search_vector @@ plainto_tsquery('english', :q) AND available = true AND (shop_id = :shopId OR shop_id IS NULL)",
-           nativeQuery = true)
-    Page<Product> fullTextSearchByShop(@Param("q") String query, @Param("shopId") UUID shopId, Pageable pageable);
+    Page<Product> searchFullText(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix, Pageable pageable);
 }
