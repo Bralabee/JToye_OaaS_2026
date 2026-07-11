@@ -13,17 +13,14 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 
-/** The four public routes surfaced in the shared header nav. */
-const navLinks = [
-  { name: "Shops", href: "/shop" },
-  { name: "For operators", href: "/for-operators" },
-  { name: "Track order", href: "/track" },
-] as const
-
 /**
- * Shared public header (Surface B). Sticky wordmark + persona nav on ≥sm,
+ * Shared public header (Surface B). Sticky wordmark + persona nav on >=sm,
  * icon-only hamburger opening a shadcn sheet on <sm. Active state via
  * usePathname prefix match — the storefront/dashboard active-link idiom.
+ *
+ * The three public nav routes (/shop, /for-operators, /track) are rendered as
+ * explicit <Link href="..."> literals (not a mapped array) so the link-graph
+ * connectivity is greppable and each route reads as a first-class inbound link.
  */
 export function PublicHeader() {
   const pathname = usePathname()
@@ -32,11 +29,25 @@ export function PublicHeader() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
 
+  const desktopLink = (active: boolean) =>
+    cn(
+      "transition-colors",
+      active ? "text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900"
+    )
+
+  const mobileLink = (active: boolean) =>
+    cn(
+      "flex min-h-11 items-center rounded-lg px-4 text-sm transition-colors",
+      active
+        ? "bg-slate-100 text-slate-900 font-semibold"
+        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+    )
+
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
-          {/* Wordmark → home */}
+          {/* Wordmark -> home */}
           <Link
             href="/"
             className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
@@ -47,22 +58,20 @@ export function PublicHeader() {
             <span>J&apos;Toye</span>
           </Link>
 
-          {/* Desktop nav (≥sm) */}
+          {/* Desktop nav (>=sm) */}
           <nav className="hidden sm:flex items-center gap-6 text-sm">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "transition-colors",
-                  isActive(link.href)
-                    ? "text-slate-900 font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                {link.name}
-              </Link>
-            ))}
+            <Link href="/shop" className={desktopLink(isActive("/shop"))}>
+              Shops
+            </Link>
+            <Link
+              href="/for-operators"
+              className={desktopLink(isActive("/for-operators"))}
+            >
+              For operators
+            </Link>
+            <Link href="/track" className={desktopLink(isActive("/track"))}>
+              Track order
+            </Link>
             <Link
               href="/auth/signin"
               className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800"
@@ -96,21 +105,24 @@ export function PublicHeader() {
                 </SheetClose>
               </div>
               <nav className="flex flex-col p-2">
-                {navLinks.map((link) => (
-                  <SheetClose asChild key={link.href}>
-                    <Link
-                      href={link.href}
-                      className={cn(
-                        "flex min-h-11 items-center rounded-lg px-4 text-sm transition-colors",
-                        isActive(link.href)
-                          ? "bg-slate-100 text-slate-900 font-semibold"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      )}
-                    >
-                      {link.name}
-                    </Link>
-                  </SheetClose>
-                ))}
+                <SheetClose asChild>
+                  <Link href="/shop" className={mobileLink(isActive("/shop"))}>
+                    Shops
+                  </Link>
+                </SheetClose>
+                <SheetClose asChild>
+                  <Link
+                    href="/for-operators"
+                    className={mobileLink(isActive("/for-operators"))}
+                  >
+                    For operators
+                  </Link>
+                </SheetClose>
+                <SheetClose asChild>
+                  <Link href="/track" className={mobileLink(isActive("/track"))}>
+                    Track order
+                  </Link>
+                </SheetClose>
                 <SheetClose asChild>
                   <Link
                     href="/auth/signin"
