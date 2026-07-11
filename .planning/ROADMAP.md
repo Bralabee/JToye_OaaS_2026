@@ -261,10 +261,10 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 19-04-PLAN.md — Dashboard responsive shell: exported navigation + mobile bottom tab bar (4 + More sheet) + Playwright mobile spec (UIX-02) [Wave 2]
-- [ ] 19-05-PLAN.md — Marketing token re-skin (operator-pitch + business-model-guide) + /track guest lookup (no auth wall) + PublicShell (UIX-01) [Wave 2]
-- [ ] 19-06-PLAN.md — Checkout fulfilment toggle + UK address + fee-before-payment + empty-state centring + menu empty state (UIX-04) [Wave 2]
-- [ ] 19-07-PLAN.md — Kitchen + order-detail: badge-clip fix + elapsed cap + real product-name render + e2e (UIX-06) [Wave 2]
+- [x] 19-04-PLAN.md — Dashboard responsive shell: exported navigation + mobile bottom tab bar (4 + More sheet) + Playwright mobile spec (UIX-02) [Wave 2]
+- [x] 19-05-PLAN.md — Marketing token re-skin (operator-pitch + business-model-guide) + /track guest lookup (no auth wall) + PublicShell (UIX-01) [Wave 2]
+- [x] 19-06-PLAN.md — Checkout fulfilment toggle + UK address + fee-before-payment + empty-state centring + menu empty state (UIX-04) [Wave 2]
+- [x] 19-07-PLAN.md — Kitchen + order-detail: badge-clip fix + elapsed cap + real product-name render + e2e (UIX-06) [Wave 2]
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -310,4 +310,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 3/9 | In Progress|  |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 7/9 | In Progress|  |
