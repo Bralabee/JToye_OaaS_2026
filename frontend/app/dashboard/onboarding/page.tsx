@@ -31,7 +31,6 @@ import {
   Circle,
   Loader2,
   MinusCircle,
-  Rocket,
   Store,
   UtensilsCrossed,
   Wheat,
@@ -422,7 +421,7 @@ export default function OnboardingPage() {
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">
           <h1 className="text-4xl font-semibold text-slate-900">Go live</h1>
-          <Badge className={`${stateMeta.badge} hover:${stateMeta.badge}`}>{stateMeta.label}</Badge>
+          <Badge className={`${stateMeta.badge} pointer-events-none`}>{stateMeta.label}</Badge>
         </div>
         <p className="mt-2 text-sm text-slate-600">
           {STATE_SUBTITLE[onboarding.status] ?? ""}
@@ -555,7 +554,7 @@ function GateRow({ gate }: { gate: GateDto }) {
         {gate.reason && <p className="mt-1 text-sm text-slate-600">{gate.reason}</p>}
         <p className="mt-1 text-xs text-slate-400">{checkedAtLabel(gate.checkedAt)}</p>
       </div>
-      <Badge className={`${statusMeta.badge} hover:${statusMeta.badge} shrink-0`}>
+      <Badge className={`${statusMeta.badge} pointer-events-none shrink-0`}>
         <StatusIcon className={`mr-1 h-3 w-3 ${gate.status === "PENDING" ? "animate-spin" : ""}`} />
         {statusMeta.label}
       </Badge>

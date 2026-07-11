@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Vendor onboarding — first slice (Phase 18) — 2026-07-11
 
-The first slice of vendor self-onboarding: a tenant submits, three automatic compliance gates evaluate, and — when all pass — the onboarding auto-approves and the vendor can go live **without manual review**. Test baseline 802 → 873 logical invocations; schema V42 → V43.
+The first slice of vendor self-onboarding: a tenant submits, three automatic compliance gates evaluate, and — when all pass — the onboarding auto-approves and the vendor can go live **without manual review**. Test baseline 802 → 918 logical invocations (873 at backend closure, +45 from the UI slice and the review-fix round); schema V42 → V43.
 
 #### Added
 - **Vendor onboarding aggregate + state machine (VOB-01).** `V43__vendor_onboarding.sql` adds `vendor_onboarding` + `vendor_onboarding_gate` (plus both Envers `_aud` mirrors), all ENABLE+FORCE RLS and tenant-scoped. A 9-state / 10-event Spring StateMachine drives the lifecycle and is the **sole writer of `Shop.published`** (create/update can no longer publish from request input). Vendor surface: `POST /api/v1/onboarding`, `/submit`, `/go-live`, and `GET /me`.

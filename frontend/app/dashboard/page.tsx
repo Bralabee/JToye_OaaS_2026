@@ -36,7 +36,15 @@ function onboardingBannerContent(
       cta: "View status",
     }
   }
-  // NONE / DRAFT / ACTION_REQUIRED / SUSPENDED / REJECTED / WITHDRAWN
+  // Terminal states: nothing to "start" — accurate copy, neutral treatment (IN-06).
+  if (state === "SUSPENDED" || state === "REJECTED" || state === "WITHDRAWN") {
+    return {
+      className: "bg-slate-50 border border-slate-200 text-slate-700",
+      message: "Your storefront is not live.",
+      cta: "View details",
+    }
+  }
+  // NONE / DRAFT / ACTION_REQUIRED
   return {
     className: "bg-amber-50 border border-amber-200 text-amber-800",
     message: "Finish setting up your shop to go live.",
