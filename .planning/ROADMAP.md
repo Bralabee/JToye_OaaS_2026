@@ -255,9 +255,9 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 19-01-PLAN.md — Backend order-creation completeness: V45 fulfilment/address (+orders_aud mirror) + productName snapshot fix + backfill + GDPR address scrub + audited-write proof (UIX-03, UIX-04) [Wave 1]
-- [ ] 19-02-PLAN.md — Per-shop menus: dev-profile DemoDataSeeder (realistic UK data, shop_id assigned) + ProductRepository scoping (drop IS NULL bleed) + Testcontainers isolation (UIX-05) [Wave 1]
-- [ ] 19-03-PLAN.md — Public shell + persona landing page + sheet primitive + IA cross-links + static link-graph orphan guard (UIX-01) [Wave 1]
+- [x] 19-01-PLAN.md — Backend order-creation completeness: V45 fulfilment/address (+orders_aud mirror) + productName snapshot fix + backfill + GDPR address scrub + audited-write proof (UIX-03, UIX-04) [Wave 1]
+- [x] 19-02-PLAN.md — Per-shop menus: dev-profile DemoDataSeeder (realistic UK data, shop_id assigned) + ProductRepository scoping (drop IS NULL bleed) + Testcontainers isolation (UIX-05) [Wave 1]
+- [x] 19-03-PLAN.md — Public shell + persona landing page + sheet primitive + IA cross-links + static link-graph orphan guard (UIX-01) [Wave 1]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -310,4 +310,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 0/9 | Planned (9 plans, 4 waves) | - |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 3/9 | In Progress|  |
