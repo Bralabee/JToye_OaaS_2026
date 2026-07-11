@@ -10,6 +10,7 @@ import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
+import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
 
@@ -43,19 +44,22 @@ public class VendorOnboardingService {
     private final ShopService shopService;
     private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
+    private final AllergenCompletenessGate allergenCompletenessGate;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
                                    VendorOnboardingStateMachineService stateMachineService,
                                    ShopService shopService,
                                    ShopRepository shopRepository,
-                                   GateChainRunner gateChainRunner) {
+                                   GateChainRunner gateChainRunner,
+                                   AllergenCompletenessGate allergenCompletenessGate) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
         this.shopService = shopService;
         this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
+        this.allergenCompletenessGate = allergenCompletenessGate;
     }
 
     /**
@@ -190,6 +194,18 @@ public class VendorOnboardingService {
      * side effect, then save — mirroring {@code OrderService.transitionOrder}.
      */
     private void transition(VendorOnboarding onboarding, OnboardingEvent event) {
+        // WR-03: the ALLERGEN_DATA_COMPLETE gate row is evaluated once during the async
+        // run after submit, but GO_LIVE/REINSTATE can fire hours/days later (auto-approve
+        // is off, so onboardings park at PENDING_APPROVAL awaiting a human). A vendor can
+        // add or blank a product's allergen data in that window, so the stored PASSED row
+        // is a TOCTOU on the "before publish" Natasha's Law check. Re-evaluate the allergen
+        // gate here — a cheap same-DB read, no external API — BEFORE sendEvent, so the
+        // go-live guard reads FRESH data. FHRS/CH rows are deliberately NOT re-run (external
+        // calls; their evidence is trusted as recorded).
+        if (event == OnboardingEvent.GO_LIVE || event == OnboardingEvent.REINSTATE) {
+            refreshAllergenGate(onboarding);
+        }
+
         OnboardingState oldState = onboarding.getStatus();
         OnboardingState newState = stateMachineService.sendEvent(onboarding.getId(), oldState, event);
 
@@ -249,6 +265,26 @@ public class VendorOnboardingService {
         } else {
             gateChainRunner.runAndRecompute(onboardingId, tenantId);
         }
+    }
+
+    /**
+     * WR-03: re-evaluate the ALLERGEN_DATA_COMPLETE gate row against current product
+     * data so the GO_LIVE/REINSTATE guard cannot trust a stale PASSED row. If the guard
+     * then vetoes, this row update rolls back with the transaction — the security outcome
+     * (publish blocked) is what matters. No-op if the row is absent (the guard then vetoes
+     * on the missing allergen gate anyway).
+     */
+    private void refreshAllergenGate(VendorOnboarding onboarding) {
+        gateRepository.findByOnboardingIdAndGateType(onboarding.getId(), GateType.ALLERGEN_DATA_COMPLETE)
+                .ifPresent(row -> {
+                    GateResult result = allergenCompletenessGate.evaluate(onboarding);
+                    row.setStatus(result.status());
+                    row.setEvidence(result.evidence());
+                    row.setExternalRef(result.externalRef());
+                    row.setReason(result.reason());
+                    row.setCheckedAt(OffsetDateTime.now());
+                    gateRepository.save(row);
+                });
     }
 
     /** WR-02: trim + uppercase a company number; a blank/whitespace value becomes null. */
