@@ -4,6 +4,7 @@ import { use } from "react"
 import Link from "next/link"
 import { ArrowLeft, Minus, Plus, Trash2, ShoppingBag, Store } from "lucide-react"
 import { useCart } from "@/components/storefront/cart-provider"
+import { SafeImage } from "@/components/ui/safe-image"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -15,8 +16,8 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <ShoppingBag className="mx-auto h-16 w-16 text-slate-200" />
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
+        <ShoppingBag className="h-16 w-16 text-slate-200" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Your basket is empty</h2>
         <p className="mt-1 text-sm text-slate-500">Add items from the menu to get started.</p>
         <Link
@@ -60,16 +61,16 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             key={item.productId}
             className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 p-3 shadow-sm"
           >
-            {/* Image or placeholder */}
-            {item.imageUrl ? (
-              <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden">
-                <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover" />
-              </div>
-            ) : (
-              <div className="h-16 w-16 flex-shrink-0 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Store className="h-6 w-6 text-slate-300" />
-              </div>
-            )}
+            {/* Image with branded fallback — no broken <img> ever renders */}
+            <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden">
+              <SafeImage
+                src={item.imageUrl}
+                alt={item.title}
+                className="h-full w-full object-cover"
+                fallbackClassName="h-full w-full bg-slate-100"
+                fallbackIcon={<Store className="h-6 w-6 text-slate-300" />}
+              />
+            </div>
 
             {/* Details */}
             <div className="flex-1 min-w-0">
