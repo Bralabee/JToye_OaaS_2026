@@ -319,6 +319,12 @@ public class DemoDataSeeder implements ApplicationRunner {
             if (!curated && !archiveId.equals(p.getShopId())) {
                 p.setShopId(archiveId);
                 p.setFeatured(false);
+                // Defence-in-depth (CR-01): archived products must not be
+                // orderable by id through any storefront. The service-layer
+                // product↔shop match in PublicStorefrontService.createGuestOrder
+                // is the primary control; this makes the quarantined rows inert
+                // even if that check ever regresses.
+                p.setAvailable(false);
                 productRepository.save(p);
                 result.productsQuarantined++;
             }

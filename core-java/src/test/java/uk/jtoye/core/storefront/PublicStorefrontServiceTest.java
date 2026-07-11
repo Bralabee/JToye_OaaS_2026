@@ -283,7 +283,11 @@ class PublicStorefrontServiceTest {
     // Phase 19 UIX-03 / UIX-04 — guest order name snapshot + fulfilment/address
     // ========================================================================
 
-    /** An available, unlimited-stock product with a STANDARD VAT rate. */
+    /**
+     * An available, unlimited-stock product with a STANDARD VAT rate, homed in
+     * the ordered shop (CR-01: createGuestOrder rejects products whose shopId
+     * does not match the storefront's shop).
+     */
     private Product availableProduct(String title, long pricePennies) {
         Product product = new Product();
         setField(product, "id", UUID.randomUUID());
@@ -292,6 +296,7 @@ class PublicStorefrontServiceTest {
         product.setAvailable(true);
         product.setVatRate(VatRate.STANDARD);
         product.setAllergenMask(0);
+        product.setShopId(publishedShop.getId());
         return product;
     }
 
@@ -393,6 +398,32 @@ class PublicStorefrontServiceTest {
         verify(orderRepository).save(captor.capture());
         assertEquals(500L, captor.getValue().getDeliveryFeePennies(),
                 "DELIVERY fee must come from the shop, computed server-side");
+    }
+
+    @Test
+    @DisplayName("createGuestOrder rejects a product from another shop of the same tenant (CR-01 / UIX-05) without leaking its existence")
+    void createGuestOrder_rejectsProductFromAnotherShop() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        // Same tenant, DIFFERENT shop (e.g. the unpublished archive shop) —
+        // RLS alone would let this row through, the service check must not.
+        Product foreignProduct = availableProduct("Label Cake 057999", 250L);
+        foreignProduct.setShopId(UUID.randomUUID());
+        when(productRepository.findById(foreignProduct.getId()))
+                .thenReturn(Optional.of(foreignProduct));
+
+        var ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(foreignProduct)));
+
+        // Response must be indistinguishable from a nonexistent product: no
+        // title, no shop detail — only the id the caller already supplied.
+        assertFalse(ex.getMessage().contains("Label Cake"),
+                "rejection must not leak the foreign product's title");
+        assertTrue(ex.getMessage().contains(foreignProduct.getId().toString()));
+
+        // No order row may be minted for the rejected request.
+        verify(orderRepository, never()).save(any(Order.class));
     }
 
     @Test

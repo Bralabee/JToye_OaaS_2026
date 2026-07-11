@@ -402,6 +402,19 @@ public class PublicStorefrontService {
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Product not found: " + itemReq.getProductId()));
 
+                // UIX-05 invariant (CR-01): an order for shop X may only contain
+                // shop X's products. RLS scopes findById to the TENANT, not the
+                // shop, so without this check an unauthenticated client could
+                // order any product of the tenant — including items quarantined
+                // into the unpublished archive shop — through this storefront.
+                // Deliberately the SAME exception type + message shape as the
+                // absent-row case above so the response does not disclose that a
+                // product exists in another shop (no title, no shop id).
+                if (!shop.getId().equals(product.getShopId())) {
+                    throw new ResourceNotFoundException(
+                            "Product not found: " + itemReq.getProductId());
+                }
+
                 if (!Boolean.TRUE.equals(product.getAvailable())) {
                     throw new IllegalArgumentException("Product is not available: " + product.getTitle());
                 }
