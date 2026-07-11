@@ -36,7 +36,8 @@ created: 2026-07-11
 3. **Mobile-first.** The single most-violated constraint today. Every surface is designed at 390px first,
    then 768px, then 1280px.
 4. **Do NOT regress `/dashboard/onboarding`.** It matches `18-UI-SPEC.md` almost line-for-line and is the
-   reference pattern — replicate its idioms, do not touch its output.
+   reference pattern — replicate its idioms, do not touch its output. **Its single type scale is the scale
+   this contract adopts app-wide (see Typography).**
 5. **Zero orphan routes.** Every route reaches ≥1 inbound navigational link, enforced by a link-graph test.
 6. **Design system stays** shadcn/ui + Radix + Tailwind + CSS-variable tokens. The fix for marketing is to
    stop bypassing the token layer with hardcoded hex — not to add a new system.
@@ -93,7 +94,9 @@ No other new components. **No third-party registries** → registry vetting gate
 
 ## Spacing Scale
 
-Tailwind 4px base — all multiples of 4. Identical to `18-UI-SPEC.md`, extended with two public-hero rhythm tokens.
+Tailwind 4px base — all multiples of 4. Identical to `18-UI-SPEC.md`. **The core scale is exactly
+{4, 8, 16, 24, 32, 48, 64}.** The public-hero rhythm (80/96px) is NOT a core-scale row — it lives under
+Exceptions below, documented and reserved, exactly like the 56px tab-bar and 44px touch-target entries.
 
 | Token | Value | Tailwind | Usage |
 |-------|-------|----------|-------|
@@ -104,10 +107,14 @@ Tailwind 4px base — all multiples of 4. Identical to `18-UI-SPEC.md`, extended
 | xl | 32px | `p-8` / `space-y-8` | `DashboardShell` container padding, major stacks |
 | 2xl | 48px | `py-12` | Empty-state vertical padding, minor public section breaks |
 | 3xl | 64px | `py-16` | Full-page empty blocks, storefront hero padding |
-| **4xl** | **80px** | `py-20` | **Public marketing section breaks (`/`, `/for-operators`)** |
-| **5xl** | **96px** | `py-24` | **Public landing hero vertical padding (≥md)** |
 
 **Exceptions (documented — do not flag):**
+- **Public-hero rhythm — 80px (`py-20`) + 96px (`py-24`):** the Deliveroo / Just-Eat-scale vertical rhythm for
+  full-bleed **public marketing** sections only — `/`, `/for-operators`, `/business-model-guide` section breaks
+  (`py-20`), and the landing hero vertical padding at ≥md (`py-24`). These deliberately sit ABOVE the 64px core
+  cap: a full-bleed landing hero cannot breathe within 64px, and the comparator storefronts use this rhythm.
+  **Reserved to public marketing surfaces — never used in the dashboard, storefront cards, or any
+  component-internal spacing.** The core scale stays {4, 8, 16, 24, 32, 48, 64}.
 - Fixed mobile bottom tab bar height = **56px** (`h-14`) + `pb-[env(safe-area-inset-bottom)]`. Main scroll
   area gets `pb-20` on mobile so content clears the bar. iOS safe-area inset is additive, not a scale violation.
 - Touch targets: every mobile tap target ≥ **44px** (`min-h-11 min-w-11` or `py-3` on full-width buttons).
@@ -120,32 +127,57 @@ Tailwind 4px base — all multiples of 4. Identical to `18-UI-SPEC.md`, extended
 
 ## Typography
 
-Two contexts share one weight discipline. Roles map to Tailwind's existing scale. `next/font` Inter only.
+**One shared scale, one weight discipline — applied to BOTH the dashboard and the public/storefront surfaces.**
+This is the **onboarding-slice single scale** (`18-UI-SPEC.md`) adopted app-wide; the previously-forked dashboard
+and public scales are collapsed onto it. `next/font` Inter only.
+
+**Core roles — exactly FOUR declared sizes: 36 / 18 / 14 / 12.**
 
 | Role | Size | Tailwind | Weight | Line height |
 |------|------|----------|--------|-------------|
-| **Display — page/section title** | 36px | `text-4xl` | semibold 600 | ~1.1 (`leading-tight`) |
-| **Heading — section (public) / card (app)** | 24px public · 18px app | `text-2xl` / `text-lg` | semibold 600 | 1.2 / 1.4 |
-| **Body** | 16px public/storefront · 14px dashboard | `text-base` / `text-sm` | regular 400 | 1.5 (`leading-normal`) |
-| **Label / meta** | 12px | `text-xs` | regular 400 (medium 500 on form labels/badges) | 1.4 |
+| **Display — page / section title** (dashboard h1 + public section headers) | 36px | `text-4xl` | semibold 600 | ~1.1 (`leading-tight`) |
+| **Heading — section (public) / card (app)** | 18px | `text-lg` | semibold 600 | 1.4 |
+| **Body — all reading text** (paragraphs, subheads, list/table cells; both contexts) | 14px | `text-sm` | regular 400 | 1.5 (`leading-normal`) |
+| **Label / meta** (form labels, badges, captions, order-ids) | 12px | `text-xs` | regular 400 | 1.4 |
 
-**Weight contract — exactly two systematic weights: regular 400 + semibold 600.**
+- Public section headings that previously ran at 24px (`text-2xl`) collapse onto **Heading (18px `text-lg`)** or,
+  for a true section title, onto **Display (36px `text-4xl`)** — there is no separate 24px core size.
+- Public/storefront body that previously ran at 16px (`text-base`) collapses onto **Body (14px `text-sm`)** so a
+  single body value serves every surface. This matches the onboarding reference and its `text-sm text-slate-600`
+  idiom, and satisfies constraint #4 (the onboarding slice is not regressed — its 14px body IS the shared value).
+  `text-sm` reading text is therefore correct everywhere and never a violation; `text-base` (16px) is retired.
+
+**Weight discipline — exactly TWO systematic weights: regular 400 + semibold 600.**
+- **500 (`font-medium`) is folded into 600 everywhere** — form labels, badges, and the checkout "Free" fee text
+  all use `font-semibold`. There is no systematic medium weight.
 - New **dashboard** code uses 400/600 only. Do NOT propagate `font-bold` (700) into dashboard code (legacy
   dashboard `font-bold` on titles is tolerated where it exists; new work matches the onboarding slice's 600).
-- **One documented 700 exception, scoped to the two customer-facing brand surfaces only** (public landing +
-  storefront): `font-bold` is permitted on (a) the public hero H1, (b) storefront/checkout price emphasis and
-  primary CTA labels. This is the *established* storefront idiom (Color pillar scored 4/4 with it) — keep it,
-  do not restyle it.
 
-**Documented display exception — public marketing hero H1 (backlog #7 boundary):**
+**Weight exception (documented — do not flag).** `font-bold` (700) is permitted as **one exception with a named,
+closed scope**, on the two customer-facing brand surfaces ONLY (public landing + storefront/checkout). It mirrors
+the Spacing exceptions block; it never appears in the dashboard, nor in any body / card / meta text. The exception
+is limited to exactly these four uses and nothing else:
+
+1. **Public hero H1** — `/`, `/for-operators`, `/business-model-guide` (see the Display exception table below).
+2. **Storefront + checkout price emphasis** — e.g. the product price `text-orange-600 font-bold`, and the checkout order **Total**.
+3. **Primary CTA labels** on those two customer-facing brand surfaces.
+4. **The wordmark `J` badge** (the brand-mark tile) in the public + storefront header.
+
+This is the *established* storefront idiom (Color pillar scored 4/4 with it) — keep it, do not restyle it, and do
+not extend it to any other element or surface.
+
+**Documented display exception — public marketing hero H1 (ONE responsive role, not two core sizes):**
 
 | Role | Size | Tailwind | Weight | Line height | Reserved for |
 |------|------|----------|--------|-------------|--------------|
-| Public Hero Display | 48px → 60px | `text-5xl md:text-6xl` | bold 700 | 1.05 (`leading-[1.05] tracking-tight`) | `/` hero H1 and the `/for-operators` / `/business-model-guide` hero H1 **only** |
+| Public Hero Display | 48px → 60px (**one responsive token**) | `text-5xl md:text-6xl` | bold 700 (weight-exception #1) | 1.05 (`leading-[1.05] tracking-tight`) | `/` hero H1 and the `/for-operators` / `/business-model-guide` hero H1 **only** |
 
-The audit flagged `text-6xl`/`text-7xl`/`font-black` as a scale unique to 2 of 23 routes. This contract
-**caps the public display at `text-6xl` (60px) and weight 700 — `text-7xl` and `font-black` are banned.** The
-hero headline is the *only* place this tier appears; it never leaks into body, cards, or the dashboard.
+The responsive `text-5xl`→`text-6xl` step is **one role expressed at two breakpoints, not two extra core sizes** —
+counted like a Spacing exception, outside the four core roles. At the 390px floor the hero borrows the core
+**Display** size (`text-4xl`, 36px) to avoid overflow, stepping into this exception at `sm`+. The audit flagged
+`text-6xl`/`text-7xl`/`font-black` as a scale unique to 2 of 23 routes; this contract **caps the public display at
+`text-6xl` (60px) and weight 700 — `text-7xl` and `font-black` are banned.** The hero headline is the *only* place
+this tier appears; it never leaks into body, cards, or the dashboard.
 
 **Numeric/id values:** `font-mono text-xs` (order-id idiom) wherever a raw identifier is shown.
 
@@ -188,14 +220,18 @@ seventh hue.
 inherited verbatim from `18-UI-SPEC.md`:** emerald = success/live/PASSED · blue = ready/informational ·
 amber = in-progress/waiting · orange = needs-attention · red = failure/terminal-bad · slate = neutral/N-A.
 
-**Backlog #10 — remove the undocumented purple (13 occurrences).** Purple is not in either identity. Fix:
-- Order status **`PREPARING` → amber** everywhere it renders (`kitchen/page.tsx`, `dashboard/orders/page.tsx`,
-  `dashboard/page.tsx` chart `chartColor: "#f59e0b"`, `OrderDetailPanel.tsx`). `CONFIRMED` stays blue, `READY`
-  stays green/emerald — amber keeps `PREPARING` visually distinct.
-- Finance VAT accent (`finance/page.tsx`) purple → **amber**.
-- Products stat accent (`dashboard/page.tsx`) purple → **blue** (`text-blue-600 bg-blue-100`).
-- Sidebar avatar gradient `from-blue-400 to-purple-500` → `from-blue-400 to-blue-600`.
-- Net result: `grep -rn "purple-" app components` returns **0**.
+**Backlog #10 — remove the undocumented purple.** Purple is not in either identity. The fix list below is
+**exhaustive** — it enumerates every one of the **17** hits from `grep -rno "purple-[0-9]*" app components`
+(17 matches across 8 files). Fix:
+- Order status **`PREPARING` → amber** everywhere it renders — `kitchen/page.tsx:46,59`, `dashboard/orders/page.tsx:98,99,183`,
+  `dashboard/page.tsx:90` (chart `chartColor: "#f59e0b"`), `OrderDetailPanel.tsx:57`. `CONFIRMED` stays blue,
+  `READY` stays green/emerald — amber keeps `PREPARING` visually distinct.
+- Finance VAT accent (`finance/page.tsx:168,171`) purple → **amber**.
+- Products stat accent (`dashboard/page.tsx:214`, `purple-100`/`purple-600`) → **blue** (`text-blue-600 bg-blue-100`).
+- **`dashboard/orders/page.tsx:485`** gradient `from-blue-50 to-purple-50` → drop the purple stop → `from-blue-50 to-blue-100` (or a slate wash).
+- **`dashboard/products/page.tsx:411-412`** `bg-purple-100`/`text-purple-600` → **blue** (`bg-blue-100`/`text-blue-600`), matching the other stat-accent conversions.
+- Sidebar avatar gradient (`sidebar.tsx:70`) `from-blue-400 to-purple-500` → `from-blue-400 to-blue-600`.
+- Net result (success criterion): `grep -rn "purple-" app components` returns **0**, and `grep -rno "purple-[0-9]*" app components` returns **0** matches (down from 17).
 
 ### `/for-operators` + `/business-model-guide` re-skin (backlog #7 — Surface C)
 
@@ -230,7 +266,7 @@ an auto-redirect). Wrapped in the Shared Public Shell (Surface B).
 1. **Header** — Shared Public Shell header (Surface B).
 2. **Split-persona hero** (the locked decision). Above the fold:
    - **Brand statement** H1 (Public Hero Display, 48→60px, 700): e.g. *"Order from local kitchens. Or run yours."*
-   - **Subhead** (Body 16px, slate-600, `max-w-xl`): one sentence naming both audiences.
+   - **Subhead** (`text-lg` 18px, regular 400, slate-600, `max-w-xl`): one sentence naming both audiences.
    - **Two equal "doors"** — side-by-side cards, equal height/weight:
      | Door | Copy | Icon | Treatment | Route |
      |------|------|------|-----------|-------|
@@ -240,7 +276,7 @@ an auto-redirect). Wrapped in the Shared Public Shell (Surface B).
      is the storefront brand gradient already in use on shop cards — `bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500` — as a soft, partially-masked wash on an off-white base (do NOT put body text directly on it at low contrast). Doors may carry optional food imagery via `SafeImage` with the gradient as fallback; **if imagery is used it is Playwright-verified `naturalWidth > 0`.** No serif, no editorial.
 3. **"How it works" band** (customer trust, 3 steps, `py-20`): Browse (`Search`) → Order & pay (`ShoppingBag`) →
    Track live (`MapPin`). Each step: icon in an orange-tinted circle (`bg-orange-100 text-orange-600`), Heading
-   (18px/600), Body (14–16px/slate-600).
+   (18px/600), Body (14px `text-sm`/slate-600).
 4. **Trust strip** (social proof within the family): 3 markers — "UK food-hygiene verified", "Allergen info on
    every item", "No app to download". Slate chips with emerald check icons. (Uses real product truths, not
    fabricated testimonials.)
@@ -265,7 +301,12 @@ its cart-aware `StorefrontNav` header — see note). This is the connective tiss
   "J'Toye" (`text-lg font-semibold text-slate-900`) → links `/`.
 - Right (≥sm): nav links — **Shops** (`/shop`), **For operators** (`/for-operators`), **Track order** (`/track`),
   and a **Sign in** button (`/auth/signin`, slate-900 pill — the existing storefront sign-in idiom).
-- Right (<sm): wordmark + hamburger (`Menu` icon) → shadcn `sheet` with the same four links stacked, ≥44px targets.
+- Right (<sm): wordmark + an **icon-only** hamburger button (`Menu` icon) → shadcn `sheet` with the same four
+  links stacked, ≥44px targets. **Accessibility contract (icon-only control):** the trigger is a real `<button>`
+  carrying `aria-label="Open menu"` and a visible `focus-visible:ring-2 focus-visible:ring-orange-300` fallback
+  ring; the `sheet`'s close control carries `aria-label="Close menu"` and its own visible focus ring. **No
+  icon-only tap target ships without an accessible name and a visible focus indicator** (applies equally to any
+  icon-only control on the public surfaces).
 - **Active state:** the link matching the current route renders `text-slate-900 font-semibold` (others
   `text-slate-600 hover:text-slate-900`); detect via `usePathname` prefix match.
 
@@ -355,9 +396,10 @@ becomes a **definite** breakdown — **remove** the line *"Final total confirmed
 may apply."* Show, in order:
 - Subtotal — `formatPrice(subtotal)`
 - Delivery — `formatPrice(shop.deliveryFeePennies)` when `DELIVERY` & below free threshold; **"Free"** in
-  `text-emerald-600 font-medium` when `COLLECTION` or above `freeDeliveryThresholdPennies`
+  `text-emerald-600 font-semibold` when `COLLECTION` or above `freeDeliveryThresholdPennies`
 - VAT (incl. 20%) — `formatPrice(Math.floor(total * 20 / 120))` (existing VAT-inclusive idiom, unchanged)
-- **Total** — bold, `text-base font-bold text-slate-900`
+- **Total** — `text-lg font-bold text-slate-900` (checkout price emphasis — inside the documented 700 weight
+  exception; `text-lg` = 18px keeps it on the core scale)
 This mirrors the fee breakdown that already exists on the *post-order* confirmation + payment screens — the fix is
 to surface it *before* the customer commits, matching Deliveroo/Just Eat.
 
@@ -388,7 +430,7 @@ to surface it *before* the customer commits, matching Deliveroo/Just Eat.
 
 **Kitchen card badge clipping (#8):** the card header (`kitchen/page.tsx` ~L422) currently
 `flex items-start justify-between` with an order number at `text-2xl font-bold` that wraps and collides with the
-status badge. Fix: order number `min-w-0 truncate text-xl font-semibold`, badge `flex-shrink-0`, header
+status badge. Fix: order number `min-w-0 truncate text-lg font-semibold`, badge `flex-shrink-0`, header
 `gap-2`. Long `ORD-…` numbers truncate cleanly instead of wrapping under the badge.
 
 **KDS elapsed time (#12):** `elapsedText()` (`kitchen/page.tsx:75`) shows raw uncapped minutes ("2245m ago").
@@ -419,6 +461,13 @@ fallback (the orange→rose gradient for banners; `Store`/`UtensilsCrossed` icon
 broken `<img>` ever renders**. Playwright asserts populated images resolve `naturalWidth > 0`. Product cards
 follow: image-or-fallback → name (`font-semibold text-slate-900`) → price (`text-orange-600 font-bold`) →
 description (`line-clamp-2 text-sm text-slate-500`) → add control.
+
+**Seed / demo-data realism (#15 — a DATA task, IN scope; not a UI component):** the audit's "shallow" verdict is
+partly driven by placeholder data, so this is a first-class deliverable of the phase — a **seed-migration /
+fixtures change, not a component change.** Re-seed the demo shops, products, and customers with realistic UK names
+and plausible prices/descriptions (e.g. shops "Mama Ade's Kitchen", "Peckham Jollof Co."; customers "Aisha Bello",
+"Tom Whitfield"). `Test Shop 1`, lorem, and duplicated placeholder names MUST NOT appear in any Playwright-verified
+screenshot of the directory, storefront, or dashboard order/customer lists.
 
 **Empty-state vertical balance (#15):** cart + checkout empty states center within `min-h-[60vh]` instead of
 pinning to the top (kills the ~700px dead grey space the audit flagged).
