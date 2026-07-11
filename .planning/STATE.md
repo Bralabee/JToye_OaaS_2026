@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: Phase 18 UI-SPEC approved; planning 18-07 UI slice
-last_updated: "2026-07-11T03:21:17.709Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 18 was final phase)
+last_updated: 2026-07-11T05:36:03.937Z
 last_activity: 2026-07-11 -- Phase 18 execution started
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 21
-  completed_plans: 23
+  completed_plans: 24
   percent: 75
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 18 — vendor-onboarding-first-slice
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 18 (vendor-onboarding-first-slice) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 18
-Last activity: 2026-07-11 -- Phase 18 execution started
+Phase: 18
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-07-11
 
 Progress: [██████████] 100%
 
@@ -63,6 +63,7 @@ Progress: [██████████] 100%
 | 8 | 2 | - | - |
 | 11 | 3 | - | - |
 | 17 | 4 | - | - |
+| 18 | 7 | - | - |
 
 **Milestone v2.2 (executing):**
 
