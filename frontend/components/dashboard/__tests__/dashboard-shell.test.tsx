@@ -5,12 +5,14 @@
  * the shell renders the passed children and the sidebar chrome.
  */
 
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import { DashboardShell } from "../dashboard-shell"
 
-// The real Sidebar pulls in next-auth, next/navigation etc. We mock it so the
-// shell test stays focused.
+// The real Sidebar pulls in next-auth, next/navigation etc. We stub the Sidebar
+// COMPONENT but keep the real module's `navigation` export — MobileTabBar imports
+// that same array (single source of truth), so it must survive the mock.
 jest.mock("@/components/dashboard/sidebar", () => ({
+  ...jest.requireActual("@/components/dashboard/sidebar"),
   Sidebar: () => <aside data-testid="sidebar-stub">sidebar</aside>,
 }))
 
@@ -23,6 +25,36 @@ describe("DashboardShell", () => {
     )
     expect(screen.getByTestId("sidebar-stub")).toBeInTheDocument()
     expect(screen.getByTestId("content")).toHaveTextContent("hello")
+  })
+
+  it("renders the mobile bottom tab bar (md:hidden) alongside the desktop sidebar", () => {
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    // Desktop sidebar chrome present.
+    expect(screen.getByTestId("sidebar-stub")).toBeInTheDocument()
+    // Mobile bottom bar present and collapsed at md+.
+    const tabBar = screen.getByTestId("mobile-tab-bar")
+    expect(tabBar).toBeInTheDocument()
+    expect(tabBar).toHaveClass("md:hidden")
+    expect(tabBar).toHaveClass("fixed")
+  })
+
+  it("exposes the 4 primary tabs plus a More trigger in the bottom bar", () => {
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    const tabBar = screen.getByTestId("mobile-tab-bar")
+    for (const label of ["Dashboard", "Orders", "Products", "Kitchen"]) {
+      expect(within(tabBar).getByRole("link", { name: label })).toBeInTheDocument()
+    }
+    expect(
+      within(tabBar).getByRole("button", { name: /more navigation/i })
+    ).toBeInTheDocument()
   })
 })
 

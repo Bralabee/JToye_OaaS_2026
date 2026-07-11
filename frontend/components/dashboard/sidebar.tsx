@@ -21,7 +21,7 @@ import {
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 
-const navigation = [
+export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Shops", href: "/dashboard/shops", icon: Store },
   { name: "Products", href: "/dashboard/products", icon: Package },
@@ -53,7 +53,7 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col bg-slate-900 text-white">
+    <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2 border-b border-slate-800 px-6">
         <Store className="h-8 w-8 text-blue-400" />
