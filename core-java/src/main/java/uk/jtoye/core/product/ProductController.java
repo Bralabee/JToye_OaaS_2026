@@ -78,9 +78,17 @@ public class ProductController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search products", description = "Search products by title or SKU")
-    public List<ProductDto> search(@RequestParam String q) {
-        return productService.search(q);
+    @Operation(summary = "Search products",
+            description = "Full-text search (GIN/tsvector, per-word prefix matching, relevance-ranked) over "
+                    + "title, category, description, ingredients and dietary tags, plus SKU prefix lookup. "
+                    + "Returns a JSON array (wire contract frozen: edge WhatsApp flow and dashboard both "
+                    + "consume it) of at most one page; optional page/size params paginate, with size "
+                    + "capped by the global pageable maximum (100).")
+    public List<ProductDto> search(
+            @RequestParam String q,
+            @Parameter(description = "Pagination parameters", hidden = true)
+            @PageableDefault(size = 100) Pageable pageable) {
+        return productService.search(q, pageable).getContent();
     }
 
     // ---- Bulk Import ----

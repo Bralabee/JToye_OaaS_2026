@@ -35,6 +35,9 @@
 | **Docker networking issues?** | **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** ⚠️ |
 | **How do I run with Docker?** | guides/QUICK_START.md or guides/DOCKER_QUICK_START.md |
 | **What's the project overview?** | [README.md](../README.md) |
+| **What business model should J'Toye pursue?** | [analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md) |
+| **Where is the prospective-vendor pitch?** | [`/for-operators`](http://localhost:3200/for-operators) |
+| **What pages exist in the frontend?** | [SITEMAP.md](SITEMAP.md) |
 | **How do I deploy to production?** | guides/DEPLOYMENT_GUIDE.md |
 
 ---
@@ -69,20 +72,21 @@
 17. **[reports/SECURITY_AUDIT_REPORT.md](reports/SECURITY_AUDIT_REPORT.md)** - Security assessment
 18. **[architecture/API_REFERENCE.md](architecture/API_REFERENCE.md)** - API Reference
 19. **[architecture/SECURITY_ARCHITECTURE.md](architecture/SECURITY_ARCHITECTURE.md)** - Security Architecture
+20. **[analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md)** - Authoritative business model, evidence boundaries, and 90-day validation gates
 
 ### Analysis (Deep Dive)
-20. **[analysis/PROJECT_DEEP_DIVE.md](analysis/PROJECT_DEEP_DIVE.md)** - Complete architecture overview, domain model, security, infrastructure
-21. **[analysis/CORE_JAVA_CATALOG.md](analysis/CORE_JAVA_CATALOG.md)** - Every class, config, migration, and test in the Spring Boot backend
-22. **[analysis/EDGE_GO_CATALOG.md](analysis/EDGE_GO_CATALOG.md)** - Go gateway endpoints, circuit breaker, JWT, WhatsApp webhook
-23. **[analysis/FRONTEND_CATALOG.md](analysis/FRONTEND_CATALOG.md)** - Next.js pages, components, auth flow, types, and tests
-24. **[analysis/INFRASTRUCTURE_CATALOG.md](analysis/INFRASTRUCTURE_CATALOG.md)** - Docker, K8s, CI/CD, scripts, monitoring, backups
-25. **[analysis/GAPS_AND_IMPROVEMENTS.md](analysis/GAPS_AND_IMPROVEMENTS.md)** - Discrepancies, feature gaps, and improvement opportunities
-26. **[analysis/REMEDIATION-BACKLOG-2026-07-08.md](analysis/REMEDIATION-BACKLOG-2026-07-08.md)** - Prioritized P0-P3 remediation backlog from the 2026-07-08 four-agent enterprise-readiness audit
+21. **[analysis/PROJECT_DEEP_DIVE.md](analysis/PROJECT_DEEP_DIVE.md)** - Complete architecture overview, domain model, security, infrastructure
+22. **[analysis/CORE_JAVA_CATALOG.md](analysis/CORE_JAVA_CATALOG.md)** - Every class, config, migration, and test in the Spring Boot backend
+23. **[analysis/EDGE_GO_CATALOG.md](analysis/EDGE_GO_CATALOG.md)** - Go gateway endpoints, circuit breaker, JWT, WhatsApp webhook
+24. **[analysis/FRONTEND_CATALOG.md](analysis/FRONTEND_CATALOG.md)** - Next.js pages, components, auth flow, types, and tests
+25. **[analysis/INFRASTRUCTURE_CATALOG.md](analysis/INFRASTRUCTURE_CATALOG.md)** - Docker, K8s, CI/CD, scripts, monitoring, backups
+26. **[analysis/GAPS_AND_IMPROVEMENTS.md](analysis/GAPS_AND_IMPROVEMENTS.md)** - Discrepancies, feature gaps, and improvement opportunities
+27. **[analysis/REMEDIATION-BACKLOG-2026-07-08.md](analysis/REMEDIATION-BACKLOG-2026-07-08.md)** - Prioritized P0-P3 remediation backlog from the 2026-07-08 four-agent enterprise-readiness audit
 
 ### Troubleshooting
-26. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
-27. **[troubleshooting/IPTABLES_FIX_RESULTS.md](troubleshooting/IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
-28. **[troubleshooting/DOCKER_NETWORKING_FIX.md](troubleshooting/DOCKER_NETWORKING_FIX.md)** - Docker networking fix details
+28. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)
+29. **[troubleshooting/IPTABLES_FIX_RESULTS.md](troubleshooting/IPTABLES_FIX_RESULTS.md)** - ✅ Verification of iptables fix
+30. **[troubleshooting/DOCKER_NETWORKING_FIX.md](troubleshooting/DOCKER_NETWORKING_FIX.md)** - Docker networking fix details
 
 ---
 
