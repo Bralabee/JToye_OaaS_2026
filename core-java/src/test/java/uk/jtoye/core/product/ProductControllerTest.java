@@ -13,6 +13,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
@@ -47,6 +50,7 @@ class ProductControllerTest {
     @AfterEach
     void cleanup() {
         TenantContext.clear();
+        RequestContextHolder.resetRequestAttributes();
     }
 
     @Test
@@ -70,6 +74,13 @@ class ProductControllerTest {
     void createShouldReturnCreatedProduct() {
         // Given
         TenantContext.set(testTenantId);
+        // issue #97 [P2-6]: create() now builds Location via
+        // ServletUriComponentsBuilder.fromCurrentRequest(), which needs a bound
+        // request. Bind a mock one at the real (WebConfig-prefixed) path.
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest("POST", "/api/v1/products");
+        servletRequest.setRequestURI("/api/v1/products");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(servletRequest));
+
         CreateProductRequest request = new CreateProductRequest();
         request.setSku("NEW-SKU");
         request.setTitle("New Product");
@@ -86,6 +97,9 @@ class ProductControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getSku()).isEqualTo("TEST-SKU");
+        assertThat(response.getHeaders().getLocation())
+                .as("Location must carry the /api/v1 prefix of the real request path")
+                .hasPath("/api/v1/products/" + savedDto.getId());
         verify(productService, times(1)).createProduct(any(CreateProductRequest.class));
     }
 

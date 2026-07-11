@@ -365,37 +365,61 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("getOrdersByStatus - Returns orders with matching status")
+    @DisplayName("getOrdersByStatus - Returns paginated orders with matching status")
     void testGetOrdersByStatus_Success() {
         // Given
         OrderStatus status = OrderStatus.PENDING;
         testOrder.setStatus(status);
-        when(orderRepository.findByStatus(status)).thenReturn(List.of(testOrder));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(orderRepository.findByStatus(status, pageable))
+                .thenReturn(new PageImpl<>(List.of(testOrder), pageable, 1));
 
         // When
-        List<OrderDto> result = orderService.getOrdersByStatus(status);
+        Page<OrderDto> result = orderService.getOrdersByStatus(status, pageable);
 
         // Then
         assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals(status, result.get(0).getStatus());
-        verify(orderRepository).findByStatus(status);
+        assertEquals(1, result.getTotalElements());
+        assertEquals(status, result.getContent().get(0).getStatus());
+        verify(orderRepository).findByStatus(status, pageable);
     }
 
     @Test
-    @DisplayName("getOrdersByShop - Returns orders for specific shop")
+    @DisplayName("getOrdersByShop - Returns paginated orders for specific shop")
     void testGetOrdersByShop_Success() {
         // Given
-        when(orderRepository.findByShopId(shopId)).thenReturn(List.of(testOrder));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(orderRepository.findByShopId(shopId, pageable))
+                .thenReturn(new PageImpl<>(List.of(testOrder), pageable, 1));
 
         // When
-        List<OrderDto> result = orderService.getOrdersByShop(shopId);
+        Page<OrderDto> result = orderService.getOrdersByShop(shopId, pageable);
 
         // Then
         assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals(shopId, result.get(0).getShopId());
-        verify(orderRepository).findByShopId(shopId);
+        assertEquals(1, result.getTotalElements());
+        assertEquals(shopId, result.getContent().get(0).getShopId());
+        verify(orderRepository).findByShopId(shopId, pageable);
+    }
+
+    @Test
+    @DisplayName("getOrdersByCustomer - Returns paginated orders for specific customer")
+    void testGetOrdersByCustomer_Success() {
+        // Given
+        UUID customerId = UUID.randomUUID();
+        testOrder.setCustomerId(customerId);
+        Pageable pageable = PageRequest.of(0, 20);
+        when(orderRepository.findByCustomerId(customerId, pageable))
+                .thenReturn(new PageImpl<>(List.of(testOrder), pageable, 1));
+
+        // When
+        Page<OrderDto> result = orderService.getOrdersByCustomer(customerId, pageable);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(1, result.getTotalElements());
+        assertEquals(testOrder.getOrderNumber(), result.getContent().get(0).getOrderNumber());
+        verify(orderRepository).findByCustomerId(customerId, pageable);
     }
 
     @Test

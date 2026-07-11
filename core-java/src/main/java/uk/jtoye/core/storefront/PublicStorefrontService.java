@@ -228,9 +228,13 @@ public class PublicStorefrontService {
     }
 
     /**
-     * List all orders for a customer email. Sets session variable for RLS policy.
+     * List orders for a customer email, paginated (Issue #95 — the previous
+     * unbounded list allowed a single unauthenticated request to pull a
+     * customer's entire order history). Sets session variable for RLS policy;
+     * both the page SELECT and the COUNT run in this same transaction, so the
+     * transaction-local {@code app.customer_email} GUC covers both.
      */
-    public List<PublicOrderStatus> getCustomerOrders(String email) {
+    public Page<PublicOrderStatus> getCustomerOrders(String email, Pageable pageable) {
         log.debug("Fetching order history for {}", email);
 
         Session session = entityManager.unwrap(Session.class);
@@ -241,9 +245,9 @@ public class PublicStorefrontService {
             }
         });
 
-        List<Order> orders = orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email);
+        Page<Order> orders = orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email, pageable);
 
-        return orders.stream().map(order -> {
+        return orders.map(order -> {
             String shopName = shopRepository.findById(order.getShopId())
                     .map(Shop::getName)
                     .orElse("Unknown shop");
@@ -261,7 +265,7 @@ public class PublicStorefrontService {
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
             return status;
-        }).toList();
+        });
     }
 
     /**

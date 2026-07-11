@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.ai.ImageUploadResponse;
@@ -130,7 +131,12 @@ public class ProductController {
     public ResponseEntity<ProductDto> create(
             @Parameter(description = "Product creation request") @Valid @RequestBody CreateProductRequest req) {
         ProductDto dto = productService.createProduct(req);
-        return ResponseEntity.created(URI.create("/products/" + dto.getId())).body(dto);
+        // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(dto.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @PutMapping("/{id}")

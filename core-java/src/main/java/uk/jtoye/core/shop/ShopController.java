@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
@@ -96,7 +97,13 @@ public class ShopController {
     public ResponseEntity<ShopDto> create(
             @Parameter(description = "Shop creation request") @Valid @RequestBody CreateShopRequest req) {
         ShopDto shop = shopService.createShop(req);
-        return ResponseEntity.created(URI.create("/shops/" + shop.getId())).body(shop);
+        // issue #97 [P2-6]: build Location from the actual request path so it inherits
+        // the WebConfig /api/v1 prefix — a hand-built "/shops/{id}" would 404.
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(shop.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(shop);
     }
 
     /**

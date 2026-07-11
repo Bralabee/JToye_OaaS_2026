@@ -208,7 +208,7 @@ class PublicStorefrontServiceTest {
     }
 
     @Test
-    @DisplayName("getCustomerOrders returns orders for email")
+    @DisplayName("getCustomerOrders returns paginated orders for email")
     void getCustomerOrders() {
         Order order = new Order();
         setField(order, "id", UUID.randomUUID());
@@ -219,16 +219,17 @@ class PublicStorefrontServiceTest {
         order.setShopId(publishedShop.getId());
         order.setUpdatedAt(OffsetDateTime.now());
 
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("customer@test.com"))
-                .thenReturn(List.of(order));
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("customer@test.com", pageable))
+                .thenReturn(new PageImpl<>(List.of(order), pageable, 1));
         when(shopRepository.findById(publishedShop.getId()))
                 .thenReturn(Optional.of(publishedShop));
 
-        var result = service.getCustomerOrders("customer@test.com");
+        Page<PublicOrderStatus> result = service.getCustomerOrders("customer@test.com", pageable);
 
-        assertEquals(1, result.size());
-        assertEquals("ORD-HIST-001", result.get(0).getOrderNumber());
-        assertEquals("COMPLETED", result.get(0).getStatus());
+        assertEquals(1, result.getTotalElements());
+        assertEquals("ORD-HIST-001", result.getContent().get(0).getOrderNumber());
+        assertEquals("COMPLETED", result.getContent().get(0).getStatus());
     }
 
     @Test

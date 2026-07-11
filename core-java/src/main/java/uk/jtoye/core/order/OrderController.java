@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +17,6 @@ import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.UpdateOrderRequest;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -109,9 +110,11 @@ public class OrderController {
      * GET /orders/status/{status}
      */
     @GetMapping("/status/{status}")
-    @Operation(summary = "Get orders by status", description = "Returns orders with specified status for the authenticated tenant")
-    public ResponseEntity<List<OrderDto>> getOrdersByStatus(@PathVariable OrderStatus status) {
-        List<OrderDto> orders = orderService.getOrdersByStatus(status);
+    @Operation(summary = "Get orders by status", description = "Returns paginated orders with specified status for the authenticated tenant")
+    public ResponseEntity<Page<OrderDto>> getOrdersByStatus(
+            @PathVariable OrderStatus status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<OrderDto> orders = orderService.getOrdersByStatus(status, pageable);
         return ResponseEntity.ok(orders);
     }
 
@@ -120,9 +123,11 @@ public class OrderController {
      * GET /orders/shop/{shopId}
      */
     @GetMapping("/shop/{shopId}")
-    @Operation(summary = "Get orders by shop", description = "Returns orders for a specific shop of the authenticated tenant")
-    public ResponseEntity<List<OrderDto>> getOrdersByShop(@PathVariable UUID shopId) {
-        List<OrderDto> orders = orderService.getOrdersByShop(shopId);
+    @Operation(summary = "Get orders by shop", description = "Returns paginated orders for a specific shop of the authenticated tenant")
+    public ResponseEntity<Page<OrderDto>> getOrdersByShop(
+            @PathVariable UUID shopId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<OrderDto> orders = orderService.getOrdersByShop(shopId, pageable);
         return ResponseEntity.ok(orders);
     }
 
@@ -131,9 +136,11 @@ public class OrderController {
      * GET /orders/customer/{customerId}
      */
     @GetMapping("/customer/{customerId}")
-    @Operation(summary = "Get orders by customer", description = "Returns orders for a specific customer of the authenticated tenant")
-    public ResponseEntity<List<OrderDto>> getOrdersByCustomer(@PathVariable UUID customerId) {
-        List<OrderDto> orders = orderService.getOrdersByCustomer(customerId);
+    @Operation(summary = "Get orders by customer", description = "Returns paginated orders for a specific customer of the authenticated tenant")
+    public ResponseEntity<Page<OrderDto>> getOrdersByCustomer(
+            @PathVariable UUID customerId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<OrderDto> orders = orderService.getOrdersByCustomer(customerId, pageable);
         return ResponseEntity.ok(orders);
     }
 

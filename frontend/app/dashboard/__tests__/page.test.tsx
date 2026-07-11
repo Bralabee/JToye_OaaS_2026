@@ -153,7 +153,8 @@ describe('Dashboard Page', () => {
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/customers?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=10&sort=createdAt,desc')
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=200')
+      // Issue #95: server caps page size at 100 — the dashboard must not over-ask.
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=100&sort=createdAt,desc')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/financial-transactions/summary')
     })
   })

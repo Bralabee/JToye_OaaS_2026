@@ -19,9 +19,18 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 ---
 
 ## Step 1: Create Secrets (REQUIRED)
+
+> The kustomize manifests deliberately ship **no** Secret objects (#100).
+> Every secret below must exist BEFORE Step 2, or pods sit in
+> `CreateContainerConfigError`. For production prefer SealedSecrets —
+> see `docs/runbooks/sealed-secrets.md`; the commands below are the
+> bootstrap path. Reference key shapes:
+> `k8s/base/secrets-template.yaml.example`.
+
 ```bash
 # Generate secure passwords
 export POSTGRES_PASSWORD=$(openssl rand -base64 32)
+export POSTGRES_BACKUP_PASSWORD=$(openssl rand -base64 32)
 export REDIS_PASSWORD=$(openssl rand -base64 32)
 export RABBITMQ_PASSWORD=$(openssl rand -base64 32)
 export KEYCLOAK_PASSWORD=$(openssl rand -base64 32)
@@ -32,21 +41,37 @@ export CORE_API_SECRET=$(openssl rand -base64 32)
 # Create all secrets
 kubectl create namespace jtoye-production
 
+# backup-* keys: BYPASSRLS dump role for the pg-backup CronJob (#90).
+# Create the role itself via infra/backups/create-backup-role.sql.
 kubectl create secret generic postgres-credentials \
   --from-literal=host=postgresql-primary.jtoye-infrastructure.svc.cluster.local \
   --from-literal=port=5432 \
   --from-literal=database=jtoye \
   --from-literal=username=jtoye \
   --from-literal=password="$POSTGRES_PASSWORD" \
+  --from-literal=backup-username=jtoye_backup \
+  --from-literal=backup-password="$POSTGRES_BACKUP_PASSWORD" \
+  -n jtoye-production
+
+# S3 credentials for pg-backup uploads (#90) — use a bucket-limited IAM /
+# MinIO service account (PutObject/ListBucket/DeleteObject only).
+kubectl create secret generic s3-backup-credentials \
+  --from-literal=access-key='YOUR_S3_ACCESS_KEY' \
+  --from-literal=secret-key='YOUR_S3_SECRET_KEY' \
   -n jtoye-production
 
 kubectl create secret generic redis-credentials \
   --from-literal=password="$REDIS_PASSWORD" \
   -n jtoye-production
 
+# stomp-login/stomp-passcode: STOMP relay credentials consumed by core-java
+# (STOMP_CLIENT_LOGIN / STOMP_CLIENT_PASSCODE) — omit them and pods fail
+# with a missing-key error.
 kubectl create secret generic rabbitmq-credentials \
   --from-literal=username=jtoye \
   --from-literal=password="$RABBITMQ_PASSWORD" \
+  --from-literal=stomp-login=jtoye \
+  --from-literal=stomp-passcode="$RABBITMQ_PASSWORD" \
   -n jtoye-production
 
 kubectl create secret generic keycloak-credentials \
@@ -62,6 +87,7 @@ kubectl create secret generic nextauth-secret \
 
 # IMPORTANT: Save these passwords securely!
 echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> ~/jtoye-secrets-backup.txt
+echo "POSTGRES_BACKUP_PASSWORD=$POSTGRES_BACKUP_PASSWORD" >> ~/jtoye-secrets-backup.txt
 echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> ~/jtoye-secrets-backup.txt
 echo "RABBITMQ_PASSWORD=$RABBITMQ_PASSWORD" >> ~/jtoye-secrets-backup.txt
 echo "KEYCLOAK_PASSWORD=$KEYCLOAK_PASSWORD" >> ~/jtoye-secrets-backup.txt

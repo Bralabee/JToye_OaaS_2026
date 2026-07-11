@@ -15,21 +15,47 @@ import uk.jtoye.core.security.RateLimitInterceptor;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    /**
+     * Versioned API prefix invisibly prepended to every {@code @RestController}
+     * in {@link #API_V1_PACKAGES} (issue #97 [P2-6]). A controller annotated
+     * {@code @RequestMapping("/shops")} in one of those packages is actually
+     * served at {@code /api/v1/shops}.
+     *
+     * <p><b>Consequence — never hand-build response paths in those packages.</b>
+     * {@code URI.create("/shops/" + id)} produces a Location header that 404s
+     * because the real resource lives under the prefix. Build Location (and any
+     * self-referencing URI) with
+     * {@code ServletUriComponentsBuilder.fromCurrentRequest()}, which inherits
+     * the real, prefixed request path. This convention is enforced by
+     * {@code ApiPrefixConventionTest}; Location dereferencability is proven by
+     * {@code LocationHeaderContractTest}.
+     */
+    public static final String API_V1_PREFIX = "/api/v1";
+
+    /**
+     * Controller packages served under {@link #API_V1_PREFIX}. Packages NOT
+     * listed here (e.g. {@code uk.jtoye.core.storefront} and
+     * {@code uk.jtoye.core.payment}) keep their literal mappings — the public
+     * storefront and the Stripe webhook depend on their legacy paths (see
+     * {@code RefundController}'s javadoc for why payment is excluded).
+     */
+    public static final String[] API_V1_PACKAGES = {
+            "uk.jtoye.core.shop",
+            "uk.jtoye.core.product",
+            "uk.jtoye.core.order",
+            "uk.jtoye.core.customer",
+            "uk.jtoye.core.finance",
+            "uk.jtoye.core.gdpr",
+            "uk.jtoye.core.sync"
+    };
+
     @Autowired
     private RateLimitInterceptor rateLimitInterceptor;
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
-        configurer.addPathPrefix("/api/v1",
-            HandlerTypePredicate.forBasePackage(
-                "uk.jtoye.core.shop",
-                "uk.jtoye.core.product",
-                "uk.jtoye.core.order",
-                "uk.jtoye.core.customer",
-                "uk.jtoye.core.finance",
-                "uk.jtoye.core.gdpr",
-                "uk.jtoye.core.sync"
-            )
+        configurer.addPathPrefix(API_V1_PREFIX,
+            HandlerTypePredicate.forBasePackage(API_V1_PACKAGES)
         );
     }
 

@@ -1,17 +1,47 @@
 # Runbook: K8s Sealed Secrets (bitnami-labs/sealed-secrets)
 
 **Status:** Operational runbook for cluster admins.
-**Scope:** Converting `k8s/base/secrets-template.yaml` from plaintext-base64
-Secret manifests into `SealedSecret` manifests that can safely live in git.
+**Scope:** Producing `SealedSecret` manifests (safe to commit) for every
+secret the platform consumes, using
+`k8s/base/secrets-template.yaml.example` as the reference input shape.
 **Audience:** On-call + devops team.
 
 ## Why Sealed Secrets
 
-K8s `Secret` objects are base64 (not encrypted). Committing the current
-`k8s/base/secrets-template.yaml` — even with placeholder values — is
-dangerous because real secrets will eventually land there. SealedSecrets
-encrypt the payload with a cluster-held private key so the manifest on
-disk is ciphertext; only the in-cluster controller can decrypt it.
+K8s `Secret` objects are base64 (not encrypted). Committing plaintext
+Secret manifests — even with placeholder values — is dangerous because real
+secrets will eventually land there. SealedSecrets encrypt the payload with a
+cluster-held private key so the manifest on disk is ciphertext; only the
+in-cluster controller can decrypt it.
+
+> **State since issue #100 (P2-9):** the kustomize builds (`k8s/base`,
+> `k8s/staging`, `k8s/production`) emit **zero** `kind: Secret` objects.
+> The old live template was renamed to
+> `k8s/base/secrets-template.yaml.example` and removed from the base
+> `resources:` list. CI enforces this via
+> `k8s/scripts/check-no-plaintext-secrets.sh` (job `k8s-validate` in
+> `.github/workflows/ci-cd.yaml`) — any attempt to re-add a plaintext Secret
+> to a kustomize build fails the pipeline.
+
+## Required out-of-band secrets
+
+Because kustomize no longer creates any Secret, ALL of the following must
+exist in the target namespace **before** `kubectl apply -k k8s/<env>/`.
+Missing secrets leave pods in `CreateContainerConfigError` and break the
+pg-backup CronJob. Create them via SealedSecrets (this runbook) or, for
+bootstrap only, `kubectl create secret generic` (`k8s/QUICK_START.md` Step 1).
+
+| Secret name | Keys | Consumed by |
+|---|---|---|
+| `postgres-credentials` | `host`, `port`, `database`, `username`, `password`, `backup-username`, `backup-password` | `core-java-deployment.yaml`, `pg-backup-cronjob.yaml` (#90 backup role) |
+| `s3-backup-credentials` | `access-key`, `secret-key` | `pg-backup-cronjob.yaml` (#90) |
+| `keycloak-credentials` | `admin-username`, `admin-password`, `frontend-client-secret`, `core-api-client-secret` | `frontend-deployment.yaml` |
+| `nextauth-secret` | `secret` | `frontend-deployment.yaml` |
+| `redis-credentials` | `password` | `core-java-deployment.yaml` |
+| `rabbitmq-credentials` | `username`, `password`, `stomp-login`, `stomp-passcode` | `core-java-deployment.yaml` |
+
+The exact key shapes live in `k8s/base/secrets-template.yaml.example` — that
+file is reference-only and is never applied.
 
 ## Prerequisites
 
@@ -117,7 +147,10 @@ plaintext multi-document Secret file and emits SealedSecret manifests in
 a target directory.
 
 ```bash
-# INPUT: a plaintext file with the real values substituted in (DO NOT COMMIT)
+# INPUT: a plaintext file with the real values substituted in (DO NOT COMMIT).
+#        Start from the reference shape:
+#        cp k8s/base/secrets-template.yaml.example /tmp/all-plaintext-secrets.yaml
+#        then replace every REPLACE_WITH_* placeholder with the real value.
 # OUTPUT: one *.sealed.yaml per Secret in the target dir
 
 ./k8s/scripts/seal-secrets.sh \
@@ -137,16 +170,18 @@ Edit `k8s/production/kustomization.yaml`:
 ```yaml
 resources:
   - ../base
+  - namespace.yaml
   - sealed-secrets/postgres-credentials.sealed.yaml
+  - sealed-secrets/s3-backup-credentials.sealed.yaml
   - sealed-secrets/keycloak-credentials.sealed.yaml
   - sealed-secrets/nextauth-secret.sealed.yaml
   - sealed-secrets/redis-credentials.sealed.yaml
   - sealed-secrets/rabbitmq-credentials.sealed.yaml
 ```
 
-Remove `secrets-template.yaml` from the base `resources:` list (see §7 below)
-or add a kustomize patch to delete the Secret objects so only SealedSecrets
-remain.
+(The base `resources:` list no longer includes any Secret manifest — that
+was done by issue #100. `kind: SealedSecret` manifests pass the CI guard;
+`kind: Secret` manifests fail it.)
 
 ## 5. Apply + verify
 
@@ -168,19 +203,23 @@ NOT Kubernetes Secrets of any kind. This runbook does NOT affect the local
 dev workflow. The `.env` file is git-ignored and each developer maintains
 their own copy seeded from `.env.local.example`.
 
-## 7. `secrets-template.yaml` — what happens to it?
+## 7. `secrets-template.yaml` — what happened to it?
 
-Keep the file in `k8s/base/` for the cluster-bootstrap window between "new
-cluster provisioned" and "sealed-secrets-controller installed + conversion
-done". After rollout, remove its reference from the production + staging
-overlays so only SealedSecrets ship. The base kustomization still keeps it
-as a reference template (it's a template — the values are all
-`REPLACE_WITH_*` placeholders, so it's safe to leave on disk even committed).
+**Done (issue #100, 2026-07-11):** the file was renamed to
+`k8s/base/secrets-template.yaml.example` and removed from
+`k8s/base/kustomization.yaml`'s `resources:` list. It is now reference-only:
+the values are all `REPLACE_WITH_*` placeholders and kustomize never applies
+it. No overlay patch/exclusion is needed — the Secret objects simply are not
+part of any build.
 
-A deployment PR that lands SealedSecrets should also remove
-`secrets-template.yaml` from `k8s/production/kustomization.yaml`'s inherited
-resources via a `patches:` block, or via a scoped `components:` exclusion.
-The template file stays on disk as living documentation.
+Consequence for cluster bootstrap: on a brand-new cluster you must create
+the six secrets in the *Required out-of-band secrets* table above BEFORE the
+first `kubectl apply -k` — either seal them per §3 and commit the
+`*.sealed.yaml` files into the overlay, or (bootstrap only) run the
+`kubectl create secret generic` commands in `k8s/QUICK_START.md` Step 1.
+
+The regression gate `k8s/scripts/check-no-plaintext-secrets.sh` (CI job
+`k8s-validate`) fails any build that emits a `kind: Secret` again.
 
 ## 8. Key rotation
 
