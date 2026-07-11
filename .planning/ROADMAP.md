@@ -268,7 +268,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 19-08-PLAN.md — Cross-cutting sweep: purple→amber/blue + text-[10px]→text-xs + VERIFY-FIRST 401 quiet + discipline test (UIX-06) [Wave 3]
+- [x] 19-08-PLAN.md — Cross-cutting sweep: purple→amber/blue + text-[10px]→text-xs + VERIFY-FIRST 401 quiet + discipline test (UIX-06) [Wave 3]
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -310,4 +310,4 @@ Suggested wave layout:
 | 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 7/9 | In Progress|  |
+| 19. Full-Frontend Experience Overhaul | v2.3 | 8/9 | In Progress|  |
