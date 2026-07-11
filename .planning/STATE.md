@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: executing
-stopped_at: Phase 19 closure (19-09) — full gate GREEN on rebuilt stack (backend test+integrationTest, jest 177 + build, 4 UIX grep gates, docs-freshness 988/V45, live Playwright 62 pass/2 skip/2 pre-existing customer-auth residual); ONLY the human browser UAT (Task 3, blocking) remains
-last_updated: "2026-07-11T11:42:24Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 19 was final phase)
+last_updated: 2026-07-11T20:36:47.571Z
 last_activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 31
-  completed_plans: 31
-  percent: 100
+  completed_plans: 33
+  percent: 78
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 19 — full-frontend-experience-overhaul
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 19 (full-frontend-experience-overhaul) — CLOSURE (Plan 19-09)
-Plan: 9 of 9
-Status: All 9 plans shipped. Closure plan 19-09: UIX-01..06 registered; docs/metrics.json reconciled (schema V45, 988 invocations, docs-freshness green); ROADMAP/CHANGELOG updated (Task 1). **Task 2 (full gate) DONE — GREEN on a freshly-rebuilt Docker stack:** backend `test`+`integrationTest`, frontend jest (177) + `next build`, all 4 UIX grep gates, docs-freshness (988/V45), and live Playwright mobile+desktop = 62 pass / 2 skip (conditional) / 2 residual (pre-existing Phase-18 customer B2C self-registration, NOT a UIX criterion — see deferred-items.md). Live triage fixed 48 failures to root cause; `DemoDataSeeder` rewritten so the storefront is comparator-grade (3 curated shops, no duplicate line items, no placeholder junk, branded logos). **Remaining: Task 3 — human browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate; NOT self-approved).**
-Last activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
+Phase: 19
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-07-11
 
 Progress: [██████████] 100%
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | 11 | 3 | - | - |
 | 17 | 4 | - | - |
 | 18 | 7 | - | - |
+| 19 | 9 | - | - |
 
 **Milestone v2.2 (executing):**
 

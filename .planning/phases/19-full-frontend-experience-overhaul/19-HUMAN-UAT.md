@@ -1,15 +1,15 @@
 ---
-status: partial
+status: resolved
 phase: 19-full-frontend-experience-overhaul
 source: [19-09-PLAN.md checkpoint, orchestrator browser UAT 2026-07-11]
 started: 2026-07-11T21:00:00Z
-updated: 2026-07-11T21:20:00Z
+updated: 2026-07-11T22:30:00Z
 ---
 
 ## Current Test
 
-Orchestrator-performed browser UAT complete for all public surfaces (user authorized autonomous continuation).
-Remaining: user's own eyes on the two login-gated dashboard criteria (UIX-02, UIX-03) — automated evidence is green but the "comparator-grade" aesthetic verdict is the user's.
+USER APPROVED 2026-07-11 ("approve it for now, i'll come back to it if not satisfactory").
+During their own testing the user hit ONE new issue (not a UIX-01..06 criterion): image upload rejects >10MB files with "File too large. Maximum 10MB (will be compressed before upload)" — `frontend/components/ui/image-uploader.tsx:142` promises compression it never performs. Follow-up fix requested: client-side compression so customers never see this error.
 
 ## Tests
 
