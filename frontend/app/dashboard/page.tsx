@@ -20,6 +20,20 @@ import {
   X,
 } from "lucide-react"
 import type { Order, OrderStatus, FinancialSummary, OnboardingState } from "@/types/api"
+import { formatDistanceToNow } from "date-fns"
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts"
 
 // Incomplete-onboarding banner (Surface 4). "NONE" = no onboarding yet (404);
 // "HIDDEN" = still loading or a non-404 fetch error (banner simply hides).
@@ -58,20 +72,6 @@ function onboardingHttpStatus(err: unknown): number | undefined {
   }
   return undefined
 }
-import { formatDistanceToNow } from "date-fns"
-import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts"
 
 interface DashboardStats {
   shops: number
