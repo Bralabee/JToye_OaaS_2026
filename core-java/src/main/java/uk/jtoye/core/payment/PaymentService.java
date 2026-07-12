@@ -308,6 +308,14 @@ public class PaymentService {
     }
 
     private void handlePaymentIntentFailed(Event event) {
+        // issue #98 [P2-7]: emit the payment-failure counter at the natural
+        // detection point — a Stripe payment_intent.payment_failed webhook. This
+        // is the metric behind the PaymentFailureSpike alert. Null-safe;
+        // label-free to keep the series low-cardinality and PII-free.
+        if (paymentFailedCounter != null) {
+            paymentFailedCounter.increment();
+        }
+
         PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                 .getObject().orElseThrow(() -> new IllegalStateException("Failed to deserialize PaymentIntent"));
 

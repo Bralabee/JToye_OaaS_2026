@@ -60,6 +60,15 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                     // Override any header-based tenant with JWT tenant
                     TenantContext.set(jwtTenant.get());
                     log.debug("Set tenant context from JWT: {}", jwtTenant.get());
+                } else {
+                    // issue #98 [P2-7]: an authenticated principal reached this
+                    // filter carrying no resolvable tenant claim — the
+                    // isolation-failure signal behind the TenantIsolationFailure
+                    // alert. Emit the (null-safe) counter and warn.
+                    if (tenantMissingCounter != null) {
+                        tenantMissingCounter.increment();
+                    }
+                    log.warn("Authenticated JWT principal has no resolvable tenant claim — tenant context left unset");
                 }
             }
             // If no JWT tenant and TenantContext is still empty, header-based tenant (if any) remains

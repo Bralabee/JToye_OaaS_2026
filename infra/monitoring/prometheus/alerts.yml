@@ -137,7 +137,11 @@ groups:
           summary: "No orders created in last 30 minutes"
           description: "No successful order creation detected. This may indicate a business issue."
 
-      # High tenant isolation check failures (security concern)
+      # High tenant isolation check failures (security concern).
+      # Backed by the real Micrometer counter tenant.context.missing
+      # (-> tenant_context_missing_total), emitted by JwtTenantFilter when an
+      # authenticated JWT principal reaches the tenant filter with no resolvable
+      # tenant claim (issue #98 [P2-7] item 2).
       - alert: TenantIsolationFailure
         expr: rate(tenant_context_missing_total[5m]) > 0.1
         for: 2m
@@ -149,40 +153,61 @@ groups:
           summary: "Tenant context missing in requests"
           description: "{{ $value }} requests per second lack tenant context (potential security issue)"
 
+      # Payment failure spike. Backed by the real Micrometer counter
+      # jtoye.payment.failed (-> jtoye_payment_failed_total), emitted by
+      # PaymentService.handlePaymentIntentFailed on every Stripe
+      # payment_intent.payment_failed webhook (issue #98 [P2-7] item 2).
+      - alert: PaymentFailureSpike
+        expr: rate(jtoye_payment_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: payment
+          service: core-java
+        annotations:
+          summary: "Elevated Stripe payment-failure rate"
+          description: "{{ $value }} payment failures per second over the last 5m (threshold: 0.1/s) — investigate card declines, Stripe outages, or checkout regressions."
+
   - name: infrastructure_alerts
     interval: 30s
     rules:
-      # Disk space running low
-      - alert: DiskSpaceLow
-        expr: |
-          (
-            node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
-            / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
-          ) * 100 < 15
-        for: 10m
-        labels:
-          severity: warning
-          component: infrastructure
-          service: node
-        annotations:
-          summary: "Disk space low on {{ $labels.instance }}"
-          description: "Only {{ $value | humanize }}% disk space remaining on {{ $labels.mountpoint }} (threshold: 15%)"
-
-      # Disk space critical
-      - alert: DiskSpaceCritical
-        expr: |
-          (
-            node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
-            / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
-          ) * 100 < 5
-        for: 5m
-        labels:
-          severity: critical
-          component: infrastructure
-          service: node
-        annotations:
-          summary: "Disk space critical on {{ $labels.instance }}"
-          description: "Only {{ $value | humanize }}% disk space remaining — immediate action required"
+      # DISABLED — PENDING node-exporter deploy (issue #98 [P2-7] — cluster-blocked).
+      # The DiskSpaceLow / DiskSpaceCritical rules reference node_filesystem_*
+      # series that ONLY node-exporter emits, and node-exporter is not yet
+      # deployed (out of scope for the local-repo do-now slice). Leaving them
+      # LIVE would reference never-emitted metrics (a phantom-alert gap). They
+      # are kept here (commented) to document intended coverage — re-enable both
+      # the moment node-exporter is scraping.
+      #
+      # - alert: DiskSpaceLow
+      #   expr: |
+      #     (
+      #       node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+      #       / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+      #     ) * 100 < 15
+      #   for: 10m
+      #   labels:
+      #     severity: warning
+      #     component: infrastructure
+      #     service: node
+      #   annotations:
+      #     summary: "Disk space low on {{ $labels.instance }}"
+      #     description: "Only {{ $value | humanize }}% disk space remaining on {{ $labels.mountpoint }} (threshold: 15%)"
+      #
+      # - alert: DiskSpaceCritical
+      #   expr: |
+      #     (
+      #       node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+      #       / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+      #     ) * 100 < 5
+      #   for: 5m
+      #   labels:
+      #     severity: critical
+      #     component: infrastructure
+      #     service: node
+      #   annotations:
+      #     summary: "Disk space critical on {{ $labels.instance }}"
+      #     description: "Only {{ $value | humanize }}% disk space remaining — immediate action required"
 
       # Keycloak down
       - alert: KeycloakDown
