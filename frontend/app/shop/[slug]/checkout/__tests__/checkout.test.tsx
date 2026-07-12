@@ -302,3 +302,54 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     expect(mockedPost).not.toHaveBeenCalled()
   })
 })
+
+// ---------------------------------------------------------------------------
+// How you'll pay — QA-council FIX-6 (M3, run disc-20260712-010550): the
+// payment method must be disclosed BEFORE the customer commits a binding
+// order. Driven by the additive PublicShopDto.acceptsCardPayments field
+// (derived server-side from PaymentService.isConfigured()).
+// ---------------------------------------------------------------------------
+
+describe("How you'll pay disclosure (QA-council FIX-6)", () => {
+  it("shows the pay-on-delivery notice BEFORE submit when the shop takes no card payments", async () => {
+    seedCart(1000)
+    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: false } })
+    renderCheckout()
+
+    expect(await screen.findByText(/how you.ll pay/i)).toBeTruthy()
+    expect(screen.getByText(/pay on delivery/i)).toBeTruthy()
+    expect(screen.getByText(/no payment is taken online/i)).toBeTruthy()
+    // Disclosed pre-contract: nothing has been submitted yet.
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it("switches the notice to collection wording when fulfilment is COLLECTION", async () => {
+    seedCart(1000)
+    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: false } })
+    renderCheckout()
+
+    await screen.findByText(/how you.ll pay/i)
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+    expect(screen.getByText(/pay on collection/i)).toBeTruthy()
+    expect(screen.queryByText(/pay on delivery/i)).toBeNull()
+  })
+
+  it("shows the card notice when the shop accepts card payments", async () => {
+    seedCart(1000)
+    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: true } })
+    renderCheckout()
+
+    expect(await screen.findByText(/how you.ll pay/i)).toBeTruthy()
+    expect(screen.getByText(/pay securely by card/i)).toBeTruthy()
+    expect(screen.queryByText(/no payment is taken online/i)).toBeNull()
+  })
+
+  it("renders no payment section when the backend does not send the field (old-backend tolerance)", async () => {
+    seedCart(1000)
+    mockedGet.mockResolvedValue({ data: SHOP }) // no acceptsCardPayments key
+    renderCheckout()
+
+    await screen.findByText("Delivery address")
+    expect(screen.queryByText(/how you.ll pay/i)).toBeNull()
+  })
+})

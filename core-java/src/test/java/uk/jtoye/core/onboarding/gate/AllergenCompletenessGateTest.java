@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import uk.jtoye.core.onboarding.GateStatus;
 import uk.jtoye.core.onboarding.GateType;
 import uk.jtoye.core.onboarding.GateResult;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -36,7 +37,8 @@ class AllergenCompletenessGateTest {
     void gateMetadata_isAutomaticMandatoryAllergenType() {
         assertThat(gate.type()).isEqualTo(GateType.ALLERGEN_DATA_COMPLETE);
         assertThat(gate.isAutomatic()).isTrue();
-        assertThat(gate.mandatory()).isTrue();
+        assertThat(gate.mandatory(OnboardingModel.MARKETPLACE)).isTrue();
+        assertThat(gate.mandatory(OnboardingModel.WHITE_LABEL)).isTrue();
     }
 
     @Test

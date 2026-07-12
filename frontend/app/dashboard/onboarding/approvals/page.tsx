@@ -1,0 +1,393 @@
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import { motion } from "framer-motion"
+import apiClient from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Inbox,
+  Loader2,
+  MinusCircle,
+  ShieldCheck,
+  UtensilsCrossed,
+  Wheat,
+  XCircle,
+} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
+import type { AdminOnboardingDto, GateStatus, GateType, OnboardingModel } from "@/types/api"
+
+// --- Static mappings (same vocabulary as the vendor onboarding page) ----------
+
+const MODEL_META: Record<OnboardingModel, { label: string; badge: string }> = {
+  // MARKETPLACE always requires this human step (ADR-0001) — amber signals
+  // "platform carries the risk"; WHITE_LABEL normally auto-approves.
+  MARKETPLACE: { label: "Marketplace", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100" },
+  WHITE_LABEL: { label: "White label", badge: "bg-slate-100 text-slate-600 hover:bg-slate-100" },
+}
+
+const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
+  BUSINESS_VERIFIED: { label: "Business verification", icon: Building2 },
+  FOOD_HYGIENE_RATING: { label: "Food hygiene rating", icon: UtensilsCrossed },
+  ALLERGEN_DATA_COMPLETE: { label: "Allergen data", icon: Wheat },
+}
+
+const GATE_STATUS_META: Record<GateStatus, { label: string; badge: string; icon: LucideIcon }> = {
+  PENDING: { label: "Pending", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100", icon: Loader2 },
+  PASSED: { label: "Passed", badge: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100", icon: CheckCircle2 },
+  FAILED: { label: "Failed", badge: "bg-red-100 text-red-700 hover:bg-red-100", icon: XCircle },
+  MANUAL_REVIEW: { label: "Manual review", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100", icon: AlertTriangle },
+  WAIVED: { label: "Not required", badge: "bg-slate-100 text-slate-600 hover:bg-slate-100", icon: MinusCircle },
+}
+
+// Defensive fallbacks — an unknown gateType/status renders neutral slate, never crashes.
+const GATE_FALLBACK = { label: "Check", icon: MinusCircle as LucideIcon }
+const GATE_STATUS_FALLBACK = {
+  label: "Unknown",
+  badge: "bg-slate-100 text-slate-600 hover:bg-slate-100",
+  icon: MinusCircle as LucideIcon,
+}
+
+function httpStatus(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "response" in err) {
+    return (err as { response?: { status?: number } }).response?.status
+  }
+  return undefined
+}
+
+function gateSummary(app: AdminOnboardingDto): { green: number; total: number } {
+  const mandatory = app.gates.filter((g) => g.mandatory)
+  const green = mandatory.filter((g) => g.status === "PASSED" || g.status === "WAIVED").length
+  return { green, total: mandatory.length }
+}
+
+export default function OnboardingApprovalsPage() {
+  const { toast } = useToast()
+
+  const [applications, setApplications] = useState<AdminOnboardingDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
+
+  // Per-action state
+  const [actioning, setActioning] = useState(false)
+  const [approveTarget, setApproveTarget] = useState<AdminOnboardingDto | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<AdminOnboardingDto | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+
+  const loadQueue = useCallback(async () => {
+    try {
+      const res = await apiClient.get("/api/v1/onboarding/admin/pending")
+      setApplications(res.data ?? [])
+      setForbidden(false)
+    } catch (err: unknown) {
+      if (httpStatus(err) === 403) {
+        setForbidden(true)
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Couldn't load the approval queue",
+          description: "Check your connection and try again.",
+        })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => {
+    void loadQueue()
+  }, [loadQueue])
+
+  const removeFromQueue = (id: string) =>
+    setApplications((apps) => apps.filter((a) => a.id !== id))
+
+  const handleApprove = async () => {
+    if (!approveTarget) return
+    const target = approveTarget
+    try {
+      setActioning(true)
+      await apiClient.post(`/api/v1/onboarding/admin/${target.id}/approve`, {})
+      removeFromQueue(target.id)
+      toast({
+        title: "Application approved",
+        description: `${target.shopName ?? "The vendor"} can now go live.`,
+      })
+    } catch (err: unknown) {
+      // 400 = the APPROVE guard vetoed — a mandatory gate went red since submission.
+      if (httpStatus(err) === 400) {
+        toast({
+          variant: "destructive",
+          title: "Approval blocked",
+          description: "A mandatory check is no longer green. Refresh the queue and review the gates.",
+        })
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Couldn't approve the application",
+          description: err instanceof Error ? err.message : "Please try again.",
+        })
+      }
+    } finally {
+      setActioning(false)
+      setApproveTarget(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!rejectTarget || !rejectReason.trim()) return
+    const target = rejectTarget
+    try {
+      setActioning(true)
+      await apiClient.post(`/api/v1/onboarding/admin/${target.id}/reject`, {
+        reason: rejectReason.trim(),
+      })
+      removeFromQueue(target.id)
+      toast({
+        title: "Application rejected",
+        description: "The reason has been recorded on the application.",
+      })
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't reject the application",
+        description: err instanceof Error ? err.message : "Please try again.",
+      })
+    } finally {
+      setActioning(false)
+      setRejectTarget(null)
+      setRejectReason("")
+    }
+  }
+
+  // --- Render: loading / access denied ----------------------------------------
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600" />
+      </div>
+    )
+  }
+
+  if (forbidden) {
+    return (
+      <div className="space-y-6">
+        <Header />
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <ShieldCheck className="mb-4 h-12 w-12 text-slate-300" />
+            <h3 className="mb-2 text-lg font-semibold text-slate-900">Admin access required</h3>
+            <p className="text-sm text-slate-500">
+              Reviewing onboarding applications needs the admin role. Ask your administrator for access.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // --- Render: queue ------------------------------------------------------------
+
+  return (
+    <div className="space-y-6">
+      <Header />
+
+      {applications.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Inbox className="mb-4 h-12 w-12 text-slate-300" />
+            <h3 className="mb-2 text-lg font-semibold text-slate-900">No applications waiting</h3>
+            <p className="text-sm text-slate-500">
+              Applications appear here when their compliance checks pass and a human decision is needed.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {applications.map((app) => {
+            const summary = gateSummary(app)
+            const allGreen = summary.green === summary.total && summary.total > 0
+            return (
+              <motion.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <CardTitle className="text-lg">
+                          {app.shopName ?? "Unnamed shop"}
+                        </CardTitle>
+                        <Badge className={`${MODEL_META[app.model]?.badge ?? GATE_STATUS_FALLBACK.badge} pointer-events-none`}>
+                          {MODEL_META[app.model]?.label ?? app.model}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                          onClick={() => setRejectTarget(app)}
+                          disabled={actioning}
+                        >
+                          Reject
+                        </Button>
+                        <Button
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          onClick={() => setApproveTarget(app)}
+                          disabled={actioning}
+                        >
+                          Approve
+                        </Button>
+                      </div>
+                    </div>
+                    <CardDescription>
+                      {app.submittedAt
+                        ? `Submitted ${formatDistanceToNow(new Date(app.submittedAt), { addSuffix: true })}`
+                        : "Submission date unknown"}
+                      {app.companyNumber ? ` · Company no. ${app.companyNumber}` : " · Sole trader"}
+                      {" · "}
+                      <span className={allGreen ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+                        {summary.green}/{summary.total} required checks green
+                      </span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {app.gates.map((gate) => {
+                        const typeMeta = GATE_META[gate.gateType] ?? GATE_FALLBACK
+                        const statusMeta = GATE_STATUS_META[gate.status] ?? GATE_STATUS_FALLBACK
+                        const StatusIcon = statusMeta.icon
+                        return (
+                          <Badge
+                            key={gate.gateType}
+                            className={`${statusMeta.badge} pointer-events-none`}
+                            title={gate.reason ?? undefined}
+                          >
+                            <StatusIcon className="mr-1 h-3 w-3" />
+                            {typeMeta.label}: {statusMeta.label}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Approve confirmation dialog */}
+      <Dialog open={approveTarget !== null} onOpenChange={(open) => !open && setApproveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve this application?</DialogTitle>
+            <DialogDescription>
+              {approveTarget?.shopName ?? "This vendor"} will be able to publish their storefront.
+              The compliance gates are re-checked before approval is granted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveTarget(null)} disabled={actioning}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={handleApprove}
+              disabled={actioning}
+            >
+              {actioning ? "Approving…" : "Approve"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject dialog — the reason is REQUIRED (persisted + audited server-side) */}
+      <Dialog
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null)
+            setRejectReason("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject this application?</DialogTitle>
+            <DialogDescription>
+              Rejection is final for this application. A reason is required — it is recorded on the
+              application and kept in the audit history.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason" className="font-normal">
+              Reason
+            </Label>
+            <textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder="e.g. Hygiene evidence inconsistent with the registered premises"
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectTarget(null)
+                setRejectReason("")
+              }}
+              disabled={actioning}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReject}
+              disabled={actioning || !rejectReason.trim()}
+            >
+              {actioning ? "Rejecting…" : "Reject application"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function Header() {
+  return (
+    <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="flex items-center gap-3">
+        <h1 className="text-4xl font-semibold text-slate-900">Approvals</h1>
+      </div>
+      <p className="mt-2 text-sm text-slate-600">
+        Onboarding applications whose checks passed and now need a human decision. Marketplace
+        vendors always require approval before they can go live.
+      </p>
+    </motion.div>
+  )
+}

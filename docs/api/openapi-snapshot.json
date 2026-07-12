@@ -1,6 +1,63 @@
 {
   "components" : {
     "schemas" : {
+      "AdminOnboardingDto" : {
+        "properties" : {
+          "approvedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "companyNumber" : {
+            "type" : "string"
+          },
+          "gates" : {
+            "items" : {
+              "$ref" : "#/components/schemas/GateDto"
+            },
+            "type" : "array"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "model" : {
+            "enum" : [
+              "MARKETPLACE",
+              "WHITE_LABEL"
+            ],
+            "type" : "string"
+          },
+          "rejectionReason" : {
+            "type" : "string"
+          },
+          "shopId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "shopName" : {
+            "type" : "string"
+          },
+          "status" : {
+            "enum" : [
+              "DRAFT",
+              "VERIFYING",
+              "ACTION_REQUIRED",
+              "PENDING_APPROVAL",
+              "APPROVED",
+              "LIVE",
+              "SUSPENDED",
+              "REJECTED",
+              "WITHDRAWN"
+            ],
+            "type" : "string"
+          },
+          "submittedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "AllergenSpan" : {
         "properties" : {
           "end" : {
@@ -2776,6 +2833,9 @@
       },
       "PublicShopDto" : {
         "properties" : {
+          "acceptsCardPayments" : {
+            "type" : "boolean"
+          },
           "address" : {
             "type" : "string"
           },
@@ -3001,6 +3061,17 @@
           },
           "updatedAt" : {
             "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "RejectOnboardingRequest" : {
+        "description" : "Rejection reason",
+        "properties" : {
+          "reason" : {
+            "maxLength" : 500,
+            "minLength" : 0,
             "type" : "string"
           }
         },
@@ -4805,6 +4876,206 @@
         "summary" : "Create onboarding",
         "tags" : [
           "Onboarding"
+        ]
+      }
+    },
+    "/api/v1/onboarding/admin/pending" : {
+      "get" : {
+        "description" : "Onboardings in PENDING_APPROVAL for the caller's tenant, oldest submission first, each with its gate breakdown. Requires the admin realm role.",
+        "operationId" : "pending",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Pending applications (possibly empty)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Caller lacks the admin role"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List pending approvals",
+        "tags" : [
+          "Onboarding Admin"
+        ]
+      }
+    },
+    "/api/v1/onboarding/admin/{id}/approve" : {
+      "post" : {
+        "description" : "Fires APPROVE (PENDING_APPROVAL -> APPROVED) via the state machine. The APPROVE guard re-checks that every mandatory gate is PASSED/WAIVED and vetoes (400) otherwise.",
+        "operationId" : "approve",
+        "parameters" : [
+          {
+            "description" : "Onboarding id",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding approved"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Illegal transition or gate guard veto"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Caller lacks the admin role"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Approve onboarding",
+        "tags" : [
+          "Onboarding Admin"
+        ]
+      }
+    },
+    "/api/v1/onboarding/admin/{id}/reject" : {
+      "post" : {
+        "description" : "Persists the required human reason on the aggregate (Envers-audited) and fires REJECT (VERIFYING/ACTION_REQUIRED/PENDING_APPROVAL -> REJECTED, terminal).",
+        "operationId" : "reject",
+        "parameters" : [
+          {
+            "description" : "Onboarding id",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RejectOnboardingRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding rejected; reason recorded"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Missing/blank reason or illegal transition"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Caller lacks the admin role"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Reject onboarding",
+        "tags" : [
+          "Onboarding Admin"
         ]
       }
     },
@@ -8403,6 +8674,10 @@
     {
       "description" : "Vendor onboarding lifecycle endpoints",
       "name" : "Onboarding"
+    },
+    {
+      "description" : "Admin approve/reject queue for vendor onboarding",
+      "name" : "Onboarding Admin"
     },
     {
       "description" : "Order management endpoints",

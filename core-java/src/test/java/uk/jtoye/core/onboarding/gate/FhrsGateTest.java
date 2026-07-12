@@ -6,6 +6,7 @@ import uk.jtoye.core.onboarding.GateResult;
 import uk.jtoye.core.onboarding.GateStatus;
 import uk.jtoye.core.onboarding.GateType;
 import uk.jtoye.core.onboarding.OnboardingProperties;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.onboarding.client.FhrsClient;
 import uk.jtoye.core.onboarding.client.FhrsEstablishment;
@@ -68,7 +69,8 @@ class FhrsGateTest {
         FhrsGate g = gate();
         assertThat(g.type()).isEqualTo(GateType.FOOD_HYGIENE_RATING);
         assertThat(g.isAutomatic()).isTrue();
-        assertThat(g.mandatory()).isTrue();
+        assertThat(g.mandatory(OnboardingModel.MARKETPLACE)).isTrue();
+        assertThat(g.mandatory(OnboardingModel.WHITE_LABEL)).isTrue();
     }
 
     @Test

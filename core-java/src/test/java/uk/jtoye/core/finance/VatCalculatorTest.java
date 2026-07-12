@@ -114,8 +114,9 @@ class VatCalculatorTest {
         // No VAT added on top: total is exactly subtotal + delivery.
         assertEquals(1200L, order.getSubtotalPennies());
         assertEquals(1500L, order.getTotalAmountPennies());
-        // VAT is the fraction contained within subtotal + delivery:
-        // vatFromGross(1200,STD)=200 + vatFromGross(300,STD)=50 = 250
+        // VAT is the fraction contained within the combined gross total:
+        // vatFromGross(1500,STD)=250 (this fixture agrees under the old
+        // per-component rule too — the divergent case is covered below).
         assertEquals(250L, order.getVatAmountPennies());
     }
 
@@ -130,5 +131,64 @@ class VatCalculatorTest {
 
         assertEquals(1200L, zeroOrder.getTotalAmountPennies()); // 1000 + 200
         assertEquals(0L, zeroOrder.getVatAmountPennies());      // zero-rated: no VAT extracted
+    }
+
+    // ---- QA-council M1 (run disc-20260712-010550, FIX-3): ONE VAT rule ----
+    //
+    // Truncation is subadditive: vatFromGross(a) + vatFromGross(b) can be 1p
+    // BELOW vatFromGross(a+b). The order entity truncated per component while
+    // the ledger (FinancialTransaction.calculateVatAmount over the order's
+    // single gross total) and the checkout preview truncated the combined
+    // total — three surfaces, two rules, 1p apart. Canonical rule adjudicated
+    // as COMBINED-TOTAL (HMRC VAT Notice 700 §17.5-§17.6 permits invoice-total
+    // round-down; the V40-hardened ledger stores one gross per order and
+    // cannot compute per-component without a schema change).
+
+    @Test
+    @DisplayName("Order.calculateTotal — VAT truncates the COMBINED total, not per component (M1 Brixton basket)")
+    void orderVatUsesCombinedTotalRule() {
+        // The exact live repro: Beef Suya Wrap £8.50 + Peri Peri Chicken £9.00
+        // + £3.99 delivery. Per-component: 291 + 66 = 357p. Combined:
+        // vatFromGross(2149) = 358p — what the ledger and checkout show.
+        Order order = new Order();
+        order.addItem(new OrderItem(UUID.randomUUID(), 1, 850L));
+        order.addItem(new OrderItem(UUID.randomUUID(), 1, 900L)); // subtotal 1750
+        order.setDeliveryFeePennies(399L);
+        order.setVatRate(VatRate.STANDARD);
+
+        order.calculateTotal();
+
+        assertEquals(2149L, order.getTotalAmountPennies());
+        assertEquals(358L, order.getVatAmountPennies()); // pre-fix: 357
+    }
+
+    @Test
+    @DisplayName("Order ↔ ledger VAT parity holds across a representative (subtotal, fee, rate) grid")
+    void orderLedgerVatParityAcrossGrid() {
+        long[] subtotals = {1L, 249L, 999L, 1000L, 1750L, 2149L, 8999L, 100_000L};
+        long[] fees = {0L, 1L, 299L, 350L, 399L, 500L};
+        for (VatRate rate : VatRate.values()) {
+            for (long subtotal : subtotals) {
+                for (long fee : fees) {
+                    Order order = new Order();
+                    order.addItem(new OrderItem(UUID.randomUUID(), 1, subtotal));
+                    order.setDeliveryFeePennies(fee);
+                    order.setVatRate(rate);
+                    order.calculateTotal();
+
+                    String scenario = "subtotal=" + subtotal + " fee=" + fee + " rate=" + rate;
+                    // The single VatCalculator rule over the combined gross…
+                    assertEquals(VatCalculator.vatFromGross(order.getTotalAmountPennies(), rate),
+                            order.getVatAmountPennies(), scenario);
+                    // …and byte-for-byte parity with the ledger row that
+                    // OrderService/PaymentService build from the same gross.
+                    FinancialTransaction ledgerRow = new FinancialTransaction();
+                    ledgerRow.setAmountPennies(order.getTotalAmountPennies());
+                    ledgerRow.setVatRate(rate);
+                    assertEquals(ledgerRow.calculateVatAmount(), order.getVatAmountPennies(),
+                            "order/ledger parity: " + scenario);
+                }
+            }
+        }
     }
 }

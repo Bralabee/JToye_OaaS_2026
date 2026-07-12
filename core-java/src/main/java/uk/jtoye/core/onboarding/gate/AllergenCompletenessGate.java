@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.onboarding.GateResult;
 import uk.jtoye.core.onboarding.GateType;
 import uk.jtoye.core.onboarding.OnboardingGate;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -55,7 +56,9 @@ public class AllergenCompletenessGate implements OnboardingGate {
     }
 
     @Override
-    public boolean mandatory() {
+    public boolean mandatory(OnboardingModel model) {
+        // Mandatory for BOTH commercial models this slice (state model §3.1); the
+        // model parameter exists so slice-2 model-specific gates fit (IN-09).
         return true;
     }
 

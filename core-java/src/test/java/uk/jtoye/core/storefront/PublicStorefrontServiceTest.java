@@ -140,6 +140,35 @@ class PublicStorefrontServiceTest {
                 () -> service.getShopBySlug("nonexistent"));
     }
 
+    // QA-council FIX-6 (M3, run disc-20260712-010550): the public shop payload
+    // must disclose the payment mode so checkout can render "How you'll pay"
+    // BEFORE the customer commits a binding order. The field mirrors the exact
+    // gate createGuestOrder uses (paymentService.isConfigured()).
+
+    @Test
+    @DisplayName("getShopBySlug exposes acceptsCardPayments=false when Stripe is unconfigured (COD mode)")
+    void getShopBySlug_acceptsCardPaymentsFalse_whenStripeUnconfigured() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(paymentService.isConfigured()).thenReturn(false);
+
+        var result = service.getShopBySlug("test-shop-abc12345");
+
+        assertEquals(false, result.isAcceptsCardPayments());
+    }
+
+    @Test
+    @DisplayName("getShopBySlug exposes acceptsCardPayments=true when Stripe is configured")
+    void getShopBySlug_acceptsCardPaymentsTrue_whenStripeConfigured() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        when(paymentService.isConfigured()).thenReturn(true);
+
+        var result = service.getShopBySlug("test-shop-abc12345");
+
+        assertEquals(true, result.isAcceptsCardPayments());
+    }
+
     @Test
     @DisplayName("getShopProducts groups by category and filters available")
     void getShopProducts() {
