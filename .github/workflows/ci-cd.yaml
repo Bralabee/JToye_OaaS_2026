@@ -122,6 +122,12 @@ jobs:
   integration-tests:
     name: Integration Tests (Testcontainers RLS)
     runs-on: ubuntu-latest
+    # Explicit because the repo's default GITHUB_TOKEN is restricted (contents +
+    # packages read only): dorny/paths-filter lists the PR's changed files via
+    # the pulls API, which needs pull-requests: read.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
