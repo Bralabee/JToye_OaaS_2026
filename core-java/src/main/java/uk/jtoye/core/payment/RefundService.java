@@ -234,6 +234,27 @@ public class RefundService {
     }
 
     /**
+     * Single-refund lookup for {@code GET /api/v1/orders/{orderId}/refunds/{refundId}}
+     * — the resource the POST endpoint's Location header points at (issue #97).
+     *
+     * <p>Tenant scoping is enforced by the {@code refunds_tenant_policy} RLS
+     * policy (V36); the {@code orderId} filter additionally guarantees the
+     * URI hierarchy is honest — a refund fetched under the wrong order 404s
+     * rather than leaking through a flat by-id lookup.
+     *
+     * @throws ResourceNotFoundException when no refund with that id exists
+     *         under the given order (or the RLS policy hides it)
+     */
+    @Transactional(readOnly = true)
+    public RefundDto findRefund(UUID orderId, UUID refundId) {
+        Refund refund = refundRepository.findById(refundId)
+                .filter(r -> orderId.equals(r.getOrderId()))
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Refund not found: " + refundId + " for order " + orderId));
+        return refundMapper.toDto(refund);
+    }
+
+    /**
      * Webhook handler for refund.* Stripe events. Called from
      * {@link PaymentService#handleWebhookEvent} AFTER the Phase 16.1
      * processed_stripe_events dedup guard, inside the same @Transactional.
