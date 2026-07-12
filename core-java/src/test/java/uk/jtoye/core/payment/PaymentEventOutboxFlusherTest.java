@@ -59,6 +59,7 @@ class PaymentEventOutboxFlusherTest {
     @Mock private jakarta.persistence.EntityManager entityManager;
     @Mock private ObjectProvider<io.micrometer.core.instrument.MeterRegistry> meterRegistryProvider;
     @Mock private jakarta.persistence.Query tenantQuery;
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private ObjectMapper objectMapper;
     private PaymentEventOutboxFlusher flusher;
@@ -77,8 +78,12 @@ class PaymentEventOutboxFlusherTest {
         lenient().when(entityManager.createNativeQuery("SELECT id FROM tenants")).thenReturn(tenantQuery);
         lenient().when(tenantQuery.getResultList()).thenReturn(java.util.List.of(testTenantId));
 
+        // Mocked PlatformTransactionManager: TransactionTemplate.execute runs
+        // the callback with a null status and the mocked getTransaction/commit
+        // are no-ops — the unit tests exercise flusher logic, not tx wiring
+        // (that lives in the Testcontainers integration tests).
         flusher = new PaymentEventOutboxFlusher(repository, rabbitTemplate, objectMapper,
-                entityManager, meterRegistryProvider, BASE_MS, CAP_MS);
+                entityManager, transactionManager, meterRegistryProvider, BASE_MS, CAP_MS);
     }
 
     private PaymentEventOutbox pendingRow() throws Exception {
