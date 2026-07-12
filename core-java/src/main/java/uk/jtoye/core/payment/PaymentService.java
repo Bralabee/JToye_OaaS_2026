@@ -46,6 +46,7 @@ public class PaymentService {
     private final FinancialTransactionService financialTransactionService;
     private final JdbcTemplate jdbcTemplate;
     private final RefundService refundService;
+    private final StripeConnectService stripeConnectService;
 
     public PaymentService(StripeProperties stripeProperties,
                          OrderRepository orderRepository,
@@ -53,7 +54,8 @@ public class PaymentService {
                          PaymentEventPublisher paymentEventPublisher,
                          FinancialTransactionService financialTransactionService,
                          JdbcTemplate jdbcTemplate,
-                         RefundService refundService) {
+                         RefundService refundService,
+                         StripeConnectService stripeConnectService) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -61,6 +63,7 @@ public class PaymentService {
         this.financialTransactionService = financialTransactionService;
         this.jdbcTemplate = jdbcTemplate;
         this.refundService = refundService;
+        this.stripeConnectService = stripeConnectService;
     }
 
     @PostConstruct
@@ -86,12 +89,22 @@ public class PaymentService {
     /**
      * Create a Stripe PaymentIntent for a DRAFT order.
      * Returns the client secret for frontend confirmation.
+     *
+     * <p><b>Charge routing (issue #102, ADR-0001 Decision 2):</b> when the
+     * order's tenant is a MARKETPLACE vendor with an ENABLED connected
+     * account, the intent is created as a <em>destination charge</em> —
+     * {@code transfer_data[destination]} routes the funds to the vendor's
+     * account and {@code application_fee_amount} (from
+     * {@code stripe.platform-fee-bps}) is retained by the platform.
+     * WHITE_LABEL tenants and tenants without an enabled connected account
+     * keep today's pooled-account behaviour unchanged (their direct-charge
+     * flow is a future slice; see StripeConnectService).
      */
     @CircuitBreaker(name = "stripe")
     public String createPaymentIntent(Order order) throws StripeException {
-        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+        PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
                 .setAmount(order.getTotalAmountPennies())
-                .setCurrency("gbp")
+                .setCurrency(stripeProperties.getCurrency())
                 .setDescription("Order " + order.getOrderNumber())
                 .putMetadata("order_id", order.getId().toString())
                 .putMetadata("order_number", order.getOrderNumber())
@@ -100,13 +113,29 @@ public class PaymentService {
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
                                 .build()
-                )
-                .build();
+                );
 
-        PaymentIntent intent = PaymentIntent.create(params);
+        java.util.Optional<String> destination =
+                stripeConnectService.resolveDestinationAccount(order.getTenantId());
+        destination.ifPresent(accountId -> {
+            builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
+                    .setDestination(accountId)
+                    .build());
+            long fee = stripeConnectService.applicationFeePennies(order.getTotalAmountPennies());
+            if (fee > 0) {
+                builder.setApplicationFeeAmount(fee);
+            }
+        });
 
-        log.info("Created PaymentIntent {} for order {} (amount: {} pennies)",
-                intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies());
+        PaymentIntent intent = PaymentIntent.create(builder.build());
+
+        if (destination.isPresent()) {
+            log.info("Created destination-charge PaymentIntent {} for order {} (amount: {} pennies, destination: {})",
+                    intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies(), destination.get());
+        } else {
+            log.info("Created PaymentIntent {} for order {} (amount: {} pennies)",
+                    intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies());
+        }
 
         return intent.getClientSecret();
     }
@@ -178,6 +207,13 @@ public class PaymentService {
             case "charge.refunded" -> log.debug(
                     "Ignored Stripe event charge.refunded ({}); refund.* is canonical",
                     event.getId());
+            // issue #102 (ADR-0001 Decision 2) — Connect connected-account
+            // capability sync. Sits AFTER the same dedup guard, so re-delivered
+            // account.updated events short-circuit above. In a live topology the
+            // Connect webhook endpoint must be pointed at the SAME URL/secret as
+            // the platform endpoint (or this handler split per-secret — deferred
+            // to the keyed environment).
+            case "account.updated" -> stripeConnectService.handleAccountUpdated(event);
             default -> log.debug("Unhandled Stripe event type: {}", event.getType());
         }
     }

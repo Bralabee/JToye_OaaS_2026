@@ -216,6 +216,25 @@ ai:
 stripe:
   api-key: ${STRIPE_API_KEY:}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  # issue #102 — PaymentIntent currency, formerly a hardcoded "gbp" literal.
+  currency: ${STRIPE_CURRENCY:gbp}
+  # issue #102 (ADR-0001 Decision 2) — platform application fee on MARKETPLACE
+  # destination charges, in basis points (250 = 2.5%). 0 (default) = no fee set;
+  # the fee is a business decision injected per environment, never a code literal.
+  platform-fee-bps: ${STRIPE_PLATFORM_FEE_BPS:0}
+  connect:
+    # Country for new Express connected accounts (UK platform).
+    country: ${STRIPE_CONNECT_COUNTRY:GB}
+    # Where Stripe returns the vendor after Express onboarding / on link expiry.
+    return-url: ${STRIPE_CONNECT_RETURN_URL:http://localhost:3000/dashboard/payments/connect/return}
+    refresh-url: ${STRIPE_CONNECT_REFRESH_URL:http://localhost:3000/dashboard/payments/connect/refresh}
+
+# issue #102 — tenant lifecycle enforcement (TenantStatusInterceptor).
+# statusOf() lookups are served from an in-memory TTL cache; lifecycle
+# mutations evict the local entry immediately, other instances converge
+# within one TTL window.
+tenant-lifecycle:
+  status-cache-ttl-seconds: ${TENANT_STATUS_CACHE_TTL_SECONDS:30}
 
 # Phase 18 vendor onboarding — every value ${ENV:default}; secrets default empty
 # (house convention). FHRS is free/no-key but requires x-api-version:2; Companies
