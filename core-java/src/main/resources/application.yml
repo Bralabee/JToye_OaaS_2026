@@ -131,6 +131,26 @@ jtoye:
     # intermediary idle timeout on the path (nginx ingress default
     # proxy-read-timeout is 60s), or idle streams get severed mid-flight.
     heartbeat-interval-ms: ${SSE_HEARTBEAT_INTERVAL_MS:25000}
+  keycloak:
+    # Issue #102 remainder: disable a tenant's Keycloak users when the tenant is
+    # offboarded — the IDENTITY-LAYER complement to TenantStatusInterceptor's
+    # request rejection (a stolen/cached token still validates at the IdP until
+    # the user is disabled). FULLY INERT unless enabled=true AND base-url set:
+    # the service logs one WARN and no-ops; the admin re-trigger endpoint returns
+    # an RFC 7807 400 "not configured". Deprovisioning runs best-effort AFTER the
+    # offboard transaction commits, so a Keycloak outage never rolls back or
+    # fails the offboard.
+    admin:
+      enabled: ${KC_ADMIN_ENABLED:false}
+      # In-cluster Keycloak base URL reachable from core (e.g.
+      # http://keycloak:8080) — NOT the public localhost:8085 host.
+      base-url: ${KC_ADMIN_BASE_URL:}
+      # Comma-separated realms to sweep -> List<String>. Default is the vendor
+      # realm only: jtoye-customers has no tenant_id user attributes, so it is
+      # deliberately excluded.
+      realms: ${KC_DEPROVISION_REALMS:jtoye-dev}
+      username: ${KEYCLOAK_ADMIN:admin}
+      password: ${KEYCLOAK_ADMIN_PASSWORD:}
 
 stomp:
   broker:

@@ -27,7 +27,8 @@ public record TenantDto(
         OffsetDateTime suspendedAt,
         OffsetDateTime offboardedAt,
         String stripeAccountId,
-        StripeConnectStatus stripeConnectStatus) {
+        StripeConnectStatus stripeConnectStatus,
+        OffsetDateTime keycloakDeprovisionedAt) {
 
     /** Hand-mapped (single small DTO — MapStruct would be ceremony here). */
     public static TenantDto from(Tenant t) {
@@ -35,6 +36,7 @@ public record TenantDto(
                 t.getId(), t.getName(), t.getStatus(), t.getPlan(),
                 t.getContactName(), t.getContactEmail(), t.getContactPhone(),
                 t.getCreatedAt(), t.getSuspendedAt(), t.getOffboardedAt(),
-                t.getStripeAccountId(), t.getStripeConnectStatus());
+                t.getStripeAccountId(), t.getStripeConnectStatus(),
+                t.getKeycloakDeprovisionedAt());
     }
 }

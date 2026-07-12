@@ -1,0 +1,25 @@
+-- V49: Issue #102 remainder — Keycloak user deprovisioning on tenant offboard.
+--
+-- Records WHEN a tenant's Keycloak users were disabled (identity-layer
+-- deprovisioning), the complement to TenantStatusInterceptor's request
+-- rejection. Today an offboarded tenant is 403'd at the API layer, but a stolen
+-- or still-cached token continues to validate at the IdP; disabling the
+-- tenant's Keycloak users closes that gap so revoked tenants can no longer mint
+-- (or keep using) valid tokens.
+--
+-- keycloak_deprovisioned_at:
+--   NULL     — not yet deprovisioned (feature inert, Keycloak unreachable, or
+--              a partial sweep that did not complete — the marker is stamped
+--              ONLY when every configured realm's users were disabled cleanly).
+--   non-NULL — all of the tenant's Keycloak users have been disabled + logged
+--              out; re-triggering is a harmless no-op (idempotent).
+--
+-- RLS posture — DELIBERATELY NONE: `tenants` is the cross-tenant registry
+-- (V2 leaves it policy-less on purpose; access is role-gated at the admin API).
+-- No _aud mirror: Tenant is not @Audited (posture unchanged from V48).
+--
+-- Nullable, NO default (NULL is the meaningful "not yet done" state).
+-- Idempotent, forward-only — follows the V48 house style. V49 is the next free
+-- slot (V48 is latest on disk); spring.flyway.out-of-order=true is already set.
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS keycloak_deprovisioned_at TIMESTAMPTZ;
