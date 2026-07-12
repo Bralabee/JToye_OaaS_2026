@@ -45,6 +45,7 @@ export function Sidebar() {
   useEffect(() => {
     const saved = localStorage.getItem("theme")
     const isDark = saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
     setDark(isDark)
     document.documentElement.classList.toggle("dark", isDark)
   }, [])

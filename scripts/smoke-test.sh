@@ -66,18 +66,58 @@ else
     ((TESTS_FAILED++))
 fi
 
-# Test 4: Swagger UI (should be accessible)
-if test_endpoint "Swagger UI" "$API_URL/swagger-ui.html" "302"; then
+# Test 4: Kubernetes liveness probe (kubelet hits this unauthenticated — must be 200)
+if test_endpoint "Liveness Probe" "$API_URL/actuator/health/liveness"; then
     ((TESTS_PASSED++))
 else
     ((TESTS_FAILED++))
 fi
 
-# Test 5: API docs
-if test_endpoint "API Docs" "$API_URL/v3/api-docs"; then
+# Test 5: Kubernetes readiness probe (kubelet hits this unauthenticated — must be 200)
+if test_endpoint "Readiness Probe" "$API_URL/actuator/health/readiness"; then
     ((TESTS_PASSED++))
 else
     ((TESTS_FAILED++))
+fi
+
+# Swagger / API docs — environment-conditional.
+#   EXPECT_SWAGGER=true  (staging): Swagger is deliberately enabled, so assert it
+#                        is reachable (/swagger-ui.html -> 302, /v3/api-docs -> 200).
+#   EXPECT_SWAGGER unset/false (prod): Swagger is disabled (SWAGGER_ENABLED:false),
+#                        so assert BOTH are NOT publicly exposed — the status must
+#                        NOT be a 2xx/3xx (401 or 404 are both acceptable). This is
+#                        what stops a healthy prod release from failing smoke and
+#                        auto-rolling-back a good deploy.
+EXPECT_SWAGGER="${EXPECT_SWAGGER:-false}"
+if [ "$EXPECT_SWAGGER" = "true" ]; then
+    if test_endpoint "Swagger UI (expected reachable)" "$API_URL/swagger-ui.html" "302"; then
+        ((TESTS_PASSED++))
+    else
+        ((TESTS_FAILED++))
+    fi
+    if test_endpoint "API Docs (expected reachable)" "$API_URL/v3/api-docs"; then
+        ((TESTS_PASSED++))
+    else
+        ((TESTS_FAILED++))
+    fi
+else
+    for pair in "Swagger UI:/swagger-ui.html" "API Docs:/v3/api-docs"; do
+        sw_name="${pair%%:*}"
+        sw_path="${pair#*:}"
+        echo -n "Testing $sw_name (expected NOT publicly exposed)... "
+        sw_code=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+            --max-time $TIMEOUT \
+            "$API_URL$sw_path" 2>/dev/null || echo "000")
+        # Pass when NOT a success/redirect (2xx/3xx). 401 (secured) or 404
+        # (disabled/not-mapped) both prove Swagger is not publicly served.
+        if [ "$sw_code" -ge 200 ] 2>/dev/null && [ "$sw_code" -lt 400 ] 2>/dev/null; then
+            echo -e "${RED}✗ FAIL${NC} (publicly exposed: HTTP $sw_code)"
+            ((TESTS_FAILED++))
+        else
+            echo -e "${GREEN}✓ PASS${NC} (not exposed: HTTP $sw_code)"
+            ((TESTS_PASSED++))
+        fi
+    done
 fi
 
 # Test 6: Protected endpoint (should return 401)

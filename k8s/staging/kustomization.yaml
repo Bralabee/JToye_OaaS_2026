@@ -20,14 +20,19 @@ labels:
 commonAnnotations:
   deployment.timestamp: "REPLACE_WITH_DEPLOYMENT_TIMESTAMP"
 
-# Image tags for staging (typically using 'staging' or 'latest' tags)
+# Image tags for staging. Names match what CI actually pushes
+# (ghcr.io/bralabee/jtoye-<service>). newTag is the IMMUTABLE default 2.1.0 —
+# CI pins the exact full-sha tag at deploy time via `kustomize edit set image`
+# (see .github/workflows/ci-cd.yaml deploy-staging). The old mutable `staging`
+# tag was the audit finding: two deploys of different code could resolve to the
+# same floating tag.
 images:
-  - name: ghcr.io/jtoye/core-java
-    newTag: staging
-  - name: ghcr.io/jtoye/edge-go
-    newTag: staging
-  - name: ghcr.io/jtoye/frontend
-    newTag: staging
+  - name: ghcr.io/bralabee/jtoye-core-java
+    newTag: "2.1.0"
+  - name: ghcr.io/bralabee/jtoye-edge-go
+    newTag: "2.1.0"
+  - name: ghcr.io/bralabee/jtoye-frontend
+    newTag: "2.1.0"
 
 # ConfigMap patches for staging environment
 # `patches` with a bare `path` auto-detects strategic-merge, the
