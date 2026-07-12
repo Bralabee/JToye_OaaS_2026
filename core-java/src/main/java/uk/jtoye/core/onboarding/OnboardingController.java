@@ -22,9 +22,9 @@ import java.net.URI;
 /**
  * Vendor-facing onboarding endpoints. Thin controller — every method delegates
  * to {@link VendorOnboardingService}, which resolves the tenant server-side
- * ({@code CurrentTenant.require()}). No endpoint reads a tenant from the request,
- * and the admin-queue endpoints are intentionally NOT here (deferred). Go-live is
- * the vendor's guarded publish action (18-05).
+ * ({@code CurrentTenant.require()}). No endpoint reads a tenant from the request;
+ * the admin approve/reject queue lives on {@link OnboardingAdminController}
+ * (#178 slice 2). Go-live is the vendor's guarded publish action (18-05).
  */
 @RestController
 @RequestMapping("/onboarding")
