@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.envers.Audited;
 import org.hibernate.type.SqlTypes;
 
@@ -76,6 +77,14 @@ public class VendorOnboardingGate {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    /**
+     * IN-04: {@code @UpdateTimestamp} so every evaluation/reset write (the runner's
+     * status/evidence/checkedAt saves, the WR-03 allergen refresh, resubmit's
+     * PENDING reset) stamps {@code updated_at} automatically — previously it stayed
+     * NULL forever, misleading ops queries. No migration needed: the V43 column
+     * already exists.
+     */
+    @UpdateTimestamp
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 

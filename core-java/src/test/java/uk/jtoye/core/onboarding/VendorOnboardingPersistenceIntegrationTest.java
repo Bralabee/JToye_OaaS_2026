@@ -182,4 +182,41 @@ class VendorOnboardingPersistenceIntegrationTest {
         // Secret defaults empty (not null) when the env var is unset in the test profile.
         assertThat(onboardingProperties.getCompaniesHouse().getApiKey()).isNotNull();
     }
+
+    /**
+     * IN-04: a gate row write stamps {@code updated_at} via {@code @UpdateTimestamp}
+     * — before the fix it stayed NULL after every evaluation, misleading ops
+     * queries. Proven against the actual column (not just the entity field) so a
+     * mapping regression cannot fake a pass.
+     */
+    @Test
+    @Transactional
+    void gateUpdateStampsUpdatedAt() {
+        TenantContext.set(tenantId);
+
+        VendorOnboarding onboarding = new VendorOnboarding();
+        onboarding.setTenantId(tenantId);
+        onboarding.setShopId(shopId);
+        onboarding.setModel(OnboardingModel.WHITE_LABEL);
+        VendorOnboarding savedOnboarding = onboardingRepository.saveAndFlush(onboarding);
+
+        VendorOnboardingGate gate = new VendorOnboardingGate();
+        gate.setTenantId(tenantId);
+        gate.setOnboardingId(savedOnboarding.getId());
+        gate.setGateType(GateType.BUSINESS_VERIFIED);
+        VendorOnboardingGate savedGate = gateRepository.saveAndFlush(gate);
+
+        // The evaluation-shaped write path: status + checkedAt, then save.
+        savedGate.setStatus(GateStatus.PASSED);
+        savedGate.setCheckedAt(OffsetDateTime.now());
+        gateRepository.saveAndFlush(savedGate);
+
+        OffsetDateTime updatedAt = jdbc.queryForObject(
+                "SELECT updated_at FROM vendor_onboarding_gate WHERE id = ?",
+                OffsetDateTime.class, savedGate.getId());
+        assertThat(updatedAt).isNotNull();
+
+        entityManager.clear();
+        assertThat(gateRepository.findById(savedGate.getId()).orElseThrow().getUpdatedAt()).isNotNull();
+    }
 }
