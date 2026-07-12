@@ -163,20 +163,25 @@ public class Order {
      * <ul>
      *   <li>{@code subtotal = Σ line.totalPricePennies} (VAT-inclusive)</li>
      *   <li>{@code total = subtotal + deliveryFee} (no VAT added on top)</li>
-     *   <li>{@code vatAmount = vatFromGross(subtotal) + vatFromGross(deliveryFee)}
-     *       at the order's predominant {@code vatRate}</li>
+     *   <li>{@code vatAmount = vatFromGross(subtotal + deliveryFee)} — ONE
+     *       truncation over the COMBINED gross at the order's predominant
+     *       {@code vatRate} (QA-council M1 fix, run disc-20260712-010550)</li>
      * </ul>
-     * The single {@link VatCalculator} is the source of truth; the ledger row
-     * for this order re-derives the same VAT from the same rate, so order and
-     * ledger agree to the penny.
+     * The combined-total rule is canonical (HMRC VAT Notice 700 §17.5-§17.6
+     * permits invoice-total round-down): truncation is subadditive, so the
+     * previous per-component form ({@code vatFromGross(subtotal) +
+     * vatFromGross(deliveryFee)}) could land 1p BELOW the ledger row, which
+     * derives VAT from this order's single gross total
+     * ({@code FinancialTransaction.calculateVatAmount()}), and below the
+     * checkout preview. The single {@link VatCalculator} is the source of
+     * truth; order, ledger and preview now agree to the penny.
      */
     public void calculateTotal() {
         this.subtotalPennies = items.stream()
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
         this.totalAmountPennies = this.subtotalPennies + this.deliveryFeePennies;
-        this.vatAmountPennies = VatCalculator.vatFromGross(this.subtotalPennies, this.vatRate)
-                + VatCalculator.vatFromGross(this.deliveryFeePennies, this.vatRate);
+        this.vatAmountPennies = VatCalculator.vatFromGross(this.totalAmountPennies, this.vatRate);
         this.itemCount = items.size();
     }
 
