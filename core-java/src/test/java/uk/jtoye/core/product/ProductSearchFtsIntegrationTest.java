@@ -58,20 +58,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       web layer (frozen wire contract: bare JSON array);</li>
  *   <li>RLS tenant isolation on both the FTS and SKU branches;</li>
  *   <li>the GIN-index story (EXPLAIN plans) and the V25 trigger keeping
- *       search_vector fresh on UPDATE.</li>
+ *       search_vector fresh on UPDATE;</li>
+ *   <li>the V44 backfill making trigger-bypassed NULL-vector rows searchable
+ *       with vectors identical to trigger output (products AND shops).</li>
  * </ul>
  *
- * <p><strong>GIN index under RLS (#96 finding):</strong> Postgres refuses
- * non-LEAKPROOF operators as index quals beneath a row-security barrier, and
- * {@code ts_match_vq} (the {@code @@} function) ships {@code proleakproof=f}.
- * So for the RLS-bound app role the FTS branch currently planner-degrades to a
- * tenant-filtered seq scan, while the identical SQL is served by a Bitmap
- * Index Scan on {@code idx_products_search} the moment the barrier is absent
- * (superuser) or {@code ALTER FUNCTION pg_catalog.ts_match_vq(tsvector,
- * tsquery) LEAKPROOF} is applied (verified manually on postgres:15; needs a
- * future migration — V43 is reserved). Two tests below pin BOTH realities;
- * the tripwire test fails loudly when that migration lands so the assertion
- * gets flipped rather than silently drifting.
+ * <p><strong>GIN index under RLS (#96 finding, CLOSED by V44):</strong>
+ * Postgres refuses non-LEAKPROOF operators as index quals beneath a
+ * row-security barrier, and {@code ts_match_vq} (the {@code @@} function)
+ * ships {@code proleakproof=f}, so the FTS branch used to planner-degrade to a
+ * tenant-filtered seq scan for the RLS-bound app role. V44 applies
+ * {@code ALTER FUNCTION pg_catalog.ts_match_vq(tsvector, tsquery) LEAKPROOF},
+ * after which the identical SQL is served by a Bitmap Index Scan on
+ * {@code idx_products_search} / {@code idx_shops_search} even under FORCE RLS.
+ * The former tripwire test now REQUIRES the index in the RLS-bound plan (both
+ * FTS paths), pinning the fix the same way it pinned the defect.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -381,20 +382,20 @@ class ProductSearchFtsIntegrationTest {
     }
 
     /**
-     * TRIPWIRE — pins the current planner degradation under RLS (#96 report).
+     * FLIPPED TRIPWIRE — V44 landed, so the GIN index is now REQUIRED under
+     * RLS (#96 closure).
      *
-     * <p>Postgres only allows LEAKPROOF operators as index quals beneath a
-     * row-security barrier, and ts_match_vq (the {@code @@} function) is not
-     * leakproof, so for the RLS-bound app role the FTS branch falls back to a
-     * tenant-filtered seq scan today. {@code ALTER FUNCTION
-     * pg_catalog.ts_match_vq(tsvector, tsquery) LEAKPROOF} flips the identical
-     * SQL to a Bitmap Index Scan on idx_products_search (verified manually on
-     * postgres:15) but needs a migration, and V43 is reserved. When that
-     * migration lands, THIS TEST MUST FAIL — flip both assertions so the plan
-     * verification becomes contains("idx_products_search") under RLS.
+     * <p>Until V44, ts_match_vq (the {@code @@} function) was not LEAKPROOF and
+     * Postgres only allows leakproof operators as index quals beneath a
+     * row-security barrier, so this test pinned the seq-scan degradation. V44's
+     * {@code ALTER FUNCTION pg_catalog.ts_match_vq(tsvector, tsquery)
+     * LEAKPROOF} flips the identical SQL to a Bitmap Index Scan on
+     * idx_products_search for the RLS-bound app role — asserted here so any
+     * regression (e.g. the ALTER silently skipped, a Postgres upgrade resetting
+     * proleakproof) fails loudly.
      */
     @Test
-    void rlsLeakproofRestrictionCurrentlyForcesSeqScanTripwire() {
+    void v44LeakproofMakesGinIndexServeFtsUnderRls() {
         enforceRls();
         seedStandardCatalog(TENANT_A);
         TenantContext.set(TENANT_A);
@@ -402,17 +403,42 @@ class ProductSearchFtsIntegrationTest {
         Boolean leakproof = jdbcTemplate.queryForObject(
                 "SELECT proleakproof FROM pg_proc WHERE proname = 'ts_match_vq'", Boolean.class);
         assertThat(leakproof)
-                .as("ts_match_vq became LEAKPROOF — the GIN index now works under RLS; "
-                        + "flip this test's assertions to require idx_products_search")
-                .isFalse();
+                .as("V44 must mark ts_match_vq LEAKPROOF (superuser ran Flyway here); "
+                        + "if false, the GIN index is unreachable under RLS again")
+                .isTrue();
 
         jdbcTemplate.execute("SET LOCAL enable_seqscan = off");
         String plan = explainRepositorySql();
 
         assertThat(plan)
-                .as("Expected the documented RLS/leakproof seq-scan degradation; "
-                        + "if the index now appears, flip this tripwire:\n" + plan)
-                .doesNotContain("idx_products_search");
+                .as("With ts_match_vq LEAKPROOF (V44) the FTS branch must be served by "
+                        + "idx_products_search even under FORCE RLS:\n" + plan)
+                .contains("idx_products_search");
+    }
+
+    /**
+     * Same #96 defect affected the live shops FTS
+     * ({@code ShopRepository.fullTextSearchPublished}); V44 unlocks
+     * idx_shops_search under RLS too. EXPLAIN of the exact repository SQL
+     * shape, as the RLS-bound (NOSUPERUSER) role.
+     */
+    @Test
+    void v44LeakproofMakesGinIndexServeShopsFtsUnderRls() {
+        enforceRls();
+        shopIdFor(TENANT_A); // shops table populated via the trigger path
+        TenantContext.set(TENANT_A);
+
+        jdbcTemplate.execute("SET LOCAL enable_seqscan = off");
+        String plan = String.join("\n", jdbcTemplate.queryForList(
+                "EXPLAIN SELECT * FROM shops WHERE published = true "
+                        + "AND search_vector @@ plainto_tsquery('english', 'coffee') "
+                        + "ORDER BY ts_rank(search_vector, plainto_tsquery('english', 'coffee')) DESC",
+                String.class));
+
+        assertThat(plan)
+                .as("With ts_match_vq LEAKPROOF (V44) the shops FTS path must be served by "
+                        + "idx_shops_search even under FORCE RLS:\n" + plan)
+                .contains("idx_shops_search");
     }
 
     @Test
@@ -432,7 +458,129 @@ class ProductSearchFtsIntegrationTest {
         assertThat(search("chicken")).extracting(ProductDto::getId).doesNotContain(product.getId());
     }
 
+    // ---- V44 backfill regression (#96: NULL search_vector rows invisible) ----
+
+    /**
+     * The live dev DB had 24/25 products with NULL search_vector — rows loaded
+     * via trigger-bypassing paths (pg_restore --disable-triggers, ETL) never
+     * get a vector and are invisible to search. Re-runs the V44 backfill (the
+     * literal migration file, proving its idempotency) against such a row, as
+     * the RLS-bound NOSUPERUSER role — the exact reality it must fix in
+     * dev/prod where the migration role is jtoye_app. Also exercises V44's
+     * graceful-degrade path: the non-superuser ALTER FUNCTION attempt lands in
+     * the WARNING branch instead of failing.
+     */
+    @Test
+    void v44BackfillMakesTriggerBypassedProductSearchableWithTriggerIdenticalVector() {
+        enforceRls();
+        Product triggerTwin = createProduct(TENANT_A, "BAN-001", "Banoffee Pie",
+                "Sticky toffee banana dessert", "Dessert", "vegetarian");
+        TenantContext.set(TENANT_A);
+
+        // Trigger-bypassing load: identical content, search_vector left NULL.
+        // (TenantSetLocalAspect applies TENANT_A's GUC before each JdbcTemplate
+        // op, so the raw INSERT passes the RLS WITH CHECK.)
+        UUID bypassId = UUID.randomUUID();
+        jdbcTemplate.execute("ALTER TABLE products DISABLE TRIGGER trg_products_search_vector");
+        jdbcTemplate.update(
+                "INSERT INTO products (id, tenant_id, shop_id, sku, title, description, category, "
+                        + "ingredients_text, dietary_tags, allergen_mask, price_pennies) "
+                        + "VALUES (?, ?, ?, 'BAN-002', 'Banoffee Pie', 'Sticky toffee banana dessert', "
+                        + "'Dessert', 'Test ingredients', 'vegetarian', 0, 1000)",
+                bypassId, TENANT_A, shopIdFor(TENANT_A));
+        jdbcTemplate.execute("ALTER TABLE products ENABLE TRIGGER trg_products_search_vector");
+
+        // Pre-V44 reality: the row exists but no query can ever match it.
+        assertThat(vectorOf("products", bypassId)).isNull();
+        assertThat(search("banoffee")).extracting(ProductDto::getId)
+                .containsExactly(triggerTwin.getId());
+
+        runV44Migration();
+
+        assertThat(vectorOf("products", bypassId))
+                .as("backfilled vector must be byte-identical to the V25 trigger's output")
+                .isNotNull()
+                .isEqualTo(vectorOf("products", triggerTwin.getId()));
+        assertThat(search("banoffee")).extracting(ProductDto::getId)
+                .containsExactlyInAnyOrder(triggerTwin.getId(), bypassId);
+    }
+
+    /**
+     * Same defect and backfill for the shops FTS vector (V25 shops trigger).
+     * The trigger-bypassed twin lives in TENANT_B — identical vector-relevant
+     * content is impossible within one tenant (unique (tenant_id, name)) and
+     * this also proves the V44 tenant loop reaches every tenant. Both shops
+     * are published, so the public storefront search must return both.
+     */
+    @Test
+    void v44BackfillRestoresShopsSearchVectorIdenticalToTriggerOutput() {
+        enforceRls();
+        TenantContext.set(TENANT_A);
+
+        // Twin through the trigger path (raw INSERT still fires the trigger).
+        UUID twinId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO shops (id, tenant_id, name, slug, published, tags, description, address, delivery_fee_pennies) "
+                        + "VALUES (?, ?, 'Corner Coffee House', ?, true, 'coffee, brunch', "
+                        + "'Espresso bar and bakery', '1 High Street', 0)",
+                twinId, TENANT_A, "corner-coffee-twin-" + twinId);
+
+        // Trigger-bypassed load with identical vector-relevant content.
+        // TenantContext drives the GUC (TenantSetLocalAspect re-applies it
+        // before every JdbcTemplate op), so switch to TENANT_B for the insert.
+        UUID bypassId = UUID.randomUUID();
+        TenantContext.set(TENANT_B);
+        jdbcTemplate.execute("ALTER TABLE shops DISABLE TRIGGER trg_shops_search_vector");
+        jdbcTemplate.update(
+                "INSERT INTO shops (id, tenant_id, name, slug, published, tags, description, address, delivery_fee_pennies) "
+                        + "VALUES (?, ?, 'Corner Coffee House', ?, true, 'coffee, brunch', "
+                        + "'Espresso bar and bakery', '1 High Street', 0)",
+                bypassId, TENANT_B, "corner-coffee-bypass-" + bypassId);
+        jdbcTemplate.execute("ALTER TABLE shops ENABLE TRIGGER trg_shops_search_vector");
+        TenantContext.set(TENANT_A);
+
+        assertThat(vectorOf("shops", bypassId)).isNull();
+        assertThat(shopRepository.fullTextSearchPublished("coffee", PageRequest.of(0, 10)))
+                .extracting(Shop::getId).containsExactly(twinId);
+
+        runV44Migration();
+
+        assertThat(vectorOf("shops", bypassId))
+                .as("backfilled vector must be byte-identical to the V25 trigger's output")
+                .isNotNull()
+                .isEqualTo(vectorOf("shops", twinId));
+        assertThat(shopRepository.fullTextSearchPublished("coffee", PageRequest.of(0, 10)))
+                .extracting(Shop::getId).containsExactlyInAnyOrder(twinId, bypassId);
+    }
+
     // ---- Helpers ----
+
+    /** search_vector::text of one row (null when the vector is NULL). */
+    private String vectorOf(String table, UUID id) {
+        List<String> vectors = jdbcTemplate.queryForList(
+                "SELECT search_vector::text FROM " + table + " WHERE id = ?", String.class, id);
+        assertThat(vectors).hasSize(1);
+        return vectors.get(0);
+    }
+
+    /**
+     * Executes the literal V44 migration file against the current (already
+     * fully migrated) schema — every statement is idempotent, so this both
+     * exercises the backfill and proves safe re-execution. Run after
+     * {@link #enforceRls()} it also covers the non-superuser path: the
+     * LEAKPROOF ALTER falls into its insufficient_privilege WARNING branch.
+     */
+    private void runV44Migration() {
+        String sql;
+        try (var in = getClass().getResourceAsStream(
+                "/db/migration/V44__fts_leakproof_and_vector_backfill.sql")) {
+            assertThat(in).as("V44 migration must be on the classpath").isNotNull();
+            sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Could not read V44 migration", e);
+        }
+        jdbcTemplate.execute(sql);
+    }
 
     private List<ProductDto> search(String query) {
         return productService.search(query, PageRequest.of(0, 100)).getContent();
