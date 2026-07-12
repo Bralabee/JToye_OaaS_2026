@@ -37,17 +37,16 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     // a migration, so the old title-or-SKU UX is preserved via the second UNION
     // arm. The branches are UNIONed by id (not OR-ed in one predicate) so the
     // text branch stays servable by idx_products_search on its own; an OR would
-    // force a full scan even once the index is reachable. NOTE: today the RLS
-    // security barrier blocks that index for the app role because ts_match_vq
-    // (the @@ function) is not LEAKPROOF — Postgres only allows leakproof
-    // operators as index quals beneath row security, so the FTS branch planner-
-    // degrades to a tenant-filtered seq scan. A future one-line migration
-    // (ALTER FUNCTION pg_catalog.ts_match_vq(tsvector, tsquery) LEAKPROOF,
-    // verified on postgres:15) flips this exact SQL to a Bitmap Index Scan with
-    // zero code change; ProductSearchFtsIntegrationTest pins both plans. RLS
-    // scopes every products reference to the current tenant. ts_rank orders FTS
-    // matches by relevance; SKU-only matches rank 0 and sort after, tie-broken
-    // by title.
+    // force a full scan even though the index is reachable. NOTE: Postgres only
+    // allows LEAKPROOF operators as index quals beneath the RLS security
+    // barrier; V44 marks ts_match_vq (the @@ function) LEAKPROOF so this exact
+    // SQL is served by a Bitmap Index Scan on idx_products_search for the
+    // RLS-bound app role (on DBs where the migration role lacked superuser the
+    // ALTER is skipped with a WARNING and the branch planner-degrades to a
+    // still-correct tenant-filtered seq scan until the documented manual step
+    // runs). ProductSearchFtsIntegrationTest pins the plan. RLS scopes every
+    // products reference to the current tenant. ts_rank orders FTS matches by
+    // relevance; SKU-only matches rank 0 and sort after, tie-broken by title.
     @Query(value = "SELECT p.* FROM products p WHERE p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
