@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.onboarding.GateResult;
 import uk.jtoye.core.onboarding.GateStatus;
 import uk.jtoye.core.onboarding.GateType;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.onboarding.client.CompaniesHouseClient;
 import uk.jtoye.core.onboarding.client.CompanyProfile;
@@ -48,7 +49,8 @@ class CompaniesHouseGateTest {
     void gateIdentity() {
         assertThat(gate.type()).isEqualTo(GateType.BUSINESS_VERIFIED);
         assertThat(gate.isAutomatic()).isTrue();
-        assertThat(gate.mandatory()).isTrue();
+        assertThat(gate.mandatory(OnboardingModel.MARKETPLACE)).isTrue();
+        assertThat(gate.mandatory(OnboardingModel.WHITE_LABEL)).isTrue();
     }
 
     @Test

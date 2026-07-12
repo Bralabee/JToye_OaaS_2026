@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import uk.jtoye.core.onboarding.GateResult;
 import uk.jtoye.core.onboarding.GateType;
 import uk.jtoye.core.onboarding.OnboardingGate;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.onboarding.client.CompaniesHouseClient;
 import uk.jtoye.core.onboarding.client.CompanyProfile;
@@ -55,7 +56,9 @@ public class CompaniesHouseGate implements OnboardingGate {
     }
 
     @Override
-    public boolean mandatory() {
+    public boolean mandatory(OnboardingModel model) {
+        // Mandatory for BOTH commercial models this slice (state model §3.1); the
+        // model parameter exists so slice-2 model-specific gates fit (IN-09).
         return true;
     }
 
@@ -91,7 +94,11 @@ public class CompaniesHouseGate implements OnboardingGate {
             // 5xx / circuit-open / timeout — never hard-fail a vendor on an API wobble.
             log.warn("Companies House lookup failed for company {} — routing to MANUAL_REVIEW: {}",
                     number, e.getMessage());
-            return GateResult.manualReview("Companies House lookup failed: " + e.getMessage());
+            // IN-05: persist a FIXED, human-readable reason — the raw exception text
+            // (upstream URLs, HTTP statuses, circuit-breaker names) is vendor-visible
+            // via GateDto.reason and belongs in the WARN log above, not on the row.
+            return GateResult.manualReview(
+                    "Business register temporarily unavailable — a reviewer will check this manually");
         }
     }
 }

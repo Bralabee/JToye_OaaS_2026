@@ -75,7 +75,7 @@ class GateChainRunnerTest {
 
         OnboardingGate gate = mock(OnboardingGate.class);
         when(gate.type()).thenReturn(GateType.BUSINESS_VERIFIED);
-        when(gate.mandatory()).thenReturn(true);
+        when(gate.mandatory(any())).thenReturn(true);
         when(gateRepository.findByOnboardingIdAndGateType(any(), eq(GateType.BUSINESS_VERIFIED)))
                 .thenReturn(Optional.empty());
 
