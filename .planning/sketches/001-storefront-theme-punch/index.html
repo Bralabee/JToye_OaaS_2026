@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 001 — Storefront Theme Punch</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:var(--font-sans); background:var(--color-bg); color:var(--color-text); padding-top:52px; }
+  button { font-family:inherit; cursor:pointer; }
+  .variant { display:none; } .variant.active { display:block; }
+  #vp-frame { margin:0 auto; transition:max-width .25s ease; }
+
+  /* ── variant nav ── */
+  #variant-nav { position:fixed; top:0; left:0; right:0; z-index:9998; background:#fff; border-bottom:1px solid var(--color-border); padding:8px 16px; display:flex; gap:8px; align-items:center; }
+  .variant-tab { border:1px solid var(--color-border); background:#fff; padding:6px 14px; border-radius:var(--radius-full); font-size:13px; font-weight:600; color:var(--color-text-muted); transition:all .15s ease; }
+  .variant-tab:hover { border-color:var(--color-primary); color:var(--color-primary); }
+  .variant-tab.active { background:var(--color-slate-deep); border-color:var(--color-slate-deep); color:#fff; }
+
+  /* ── sketch toolbar ── */
+  #sketch-tools { position:fixed; bottom:12px; right:12px; z-index:9999; font-size:12px; background:rgba(0,0,0,.75); color:#fff; padding:8px 12px; border-radius:8px; opacity:.35; transition:opacity .2s; display:flex; gap:8px; align-items:center; }
+  #sketch-tools:hover { opacity:1; }
+  #sketch-tools button, #sketch-tools select { font-size:11px; padding:3px 8px; border-radius:5px; border:1px solid #555; background:#222; color:#fff; }
+
+  .toast { position:fixed; bottom:60px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--color-slate-deep); color:#fff; padding:10px 20px; border-radius:var(--radius-full); font-size:14px; font-weight:600; opacity:0; transition:all .25s ease; z-index:9999; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ════════════════ VARIANT A · MARKET HEAT ════════════════ */
+  .va { background:#fffaf5; min-height:100vh; }
+  .va .canopy { height:14px; background:repeating-linear-gradient(90deg, var(--color-primary-bright) 0 40px, #fff7ed 40px 80px); border-bottom:2px solid var(--color-slate-deep); }
+  .va nav { background:var(--color-slate-deep); color:#fff; display:flex; align-items:center; justify-content:space-between; padding:14px 28px; }
+  .va .wordmark { display:flex; align-items:center; gap:10px; font-weight:900; font-size:22px; letter-spacing:-.5px; }
+  .va .flame { width:30px; height:30px; }
+  .va nav .links { display:flex; gap:22px; font-size:14px; font-weight:600; color:#cbd5e1; }
+  .va nav .links span:hover { color:var(--color-accent); cursor:pointer; }
+  .va .basket { background:var(--color-primary-bright); color:#fff; border:none; padding:9px 18px; border-radius:var(--radius-full); font-weight:800; font-size:14px; transition:all .15s ease; }
+  .va .basket:hover { background:var(--color-primary-hover); transform:scale(1.04); }
+
+  .va .hero { padding:56px 28px 40px; max-width:1120px; margin:0 auto; }
+  .va .hero .kicker { display:inline-block; background:var(--color-slate-deep); color:#fff; font-size:12px; font-weight:800; letter-spacing:2.5px; text-transform:uppercase; padding:6px 14px; border-radius:4px; margin-bottom:18px; }
+  .va .hero h1 { font-size:clamp(2.4rem, 6vw, 4.2rem); font-weight:900; letter-spacing:-2.5px; line-height:.98; }
+  .va .hero h1 em { font-style:normal; color:var(--color-primary); }
+  .va .hero p { margin-top:16px; font-size:18px; color:#57534e; max-width:520px; font-weight:500; }
+
+  .va .section-title { max-width:1120px; margin:26px auto 0; padding:0 28px; display:flex; align-items:center; gap:14px; }
+  .va .section-title h2 { font-size:24px; font-weight:900; letter-spacing:-.8px; text-transform:uppercase; }
+  .va .section-title .rule { flex:1; height:4px; background:repeating-linear-gradient(90deg, var(--color-primary-bright) 0 18px, transparent 18px 28px); }
+
+  .va .cards { max-width:1120px; margin:18px auto; padding:0 28px; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:22px; }
+  .va .vcard { background:#fff; border:2px solid var(--color-slate-deep); border-radius:var(--radius-lg); overflow:hidden; box-shadow:6px 6px 0 var(--color-slate-deep); transition:all .15s ease; cursor:pointer; }
+  .va .vcard:hover { transform:translate(-3px,-3px); box-shadow:10px 10px 0 var(--color-primary-bright); }
+  .va .vbanner { height:120px; position:relative; display:flex; align-items:flex-end; padding:14px; }
+  .va .vbanner .mono { width:56px; height:56px; border-radius:14px; background:#fff; border:2px solid var(--color-slate-deep); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:20px; }
+  .va .vbanner .open-pill { position:absolute; top:12px; right:12px; background:var(--color-trust); color:#fff; font-size:11px; font-weight:800; padding:4px 12px; border-radius:var(--radius-full); text-transform:uppercase; letter-spacing:1px; }
+  .va .vbody { padding:16px; }
+  .va .vbody h3 { font-size:20px; font-weight:900; letter-spacing:-.5px; }
+  .va .vbody .desc { font-size:14px; color:#78716c; margin:6px 0 10px; }
+  .va .meta { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; }
+  .va .meta .stat { background:#f5f5f4; padding:4px 10px; border-radius:6px; }
+  .va .meta .stat.hyg { background:#d1fae5; color:#065f46; }
+  .va .meta .stat.star { background:#fef3c7; color:#92400e; }
+
+  .va .mcard { background:#fff; border:2px solid var(--color-slate-deep); border-radius:var(--radius-lg); overflow:hidden; transition:all .15s ease; }
+  .va .mcard:hover { box-shadow:6px 6px 0 var(--color-slate-deep); transform:translate(-2px,-2px); }
+  .va .mimg { height:110px; display:flex; align-items:center; justify-content:center; font-size:44px; border-bottom:2px solid var(--color-slate-deep); }
+  .va .mbody { padding:14px; }
+  .va .mbody h4 { font-weight:800; font-size:16px; letter-spacing:-.3px; }
+  .va .mbody .ing { font-size:12.5px; color:#78716c; margin:4px 0 8px; min-height:32px; }
+  .va .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .va .chip { font-size:11px; font-weight:800; padding:3px 9px; border-radius:var(--radius-full); text-transform:uppercase; letter-spacing:.4px; }
+  .va .chip.halal { background:#d1fae5; color:#065f46; }
+  .va .chip.spicy { background:#fee2e2; color:#b91c1c; }
+  .va .chip.vegan { background:#dcfce7; color:#166534; }
+  .va .chip.gf { background:#fef9c3; color:#854d0e; }
+  .va .mfoot { display:flex; align-items:center; justify-content:space-between; }
+  .va .price { font-size:20px; font-weight:900; letter-spacing:-.5px; }
+  .va .add { background:var(--color-primary-bright); border:2px solid var(--color-slate-deep); color:#fff; font-weight:900; padding:7px 16px; border-radius:var(--radius-full); font-size:13px; transition:all .12s ease; }
+  .va .add:hover { background:var(--color-primary-hover); transform:scale(1.06); }
+
+  /* ════════════════ VARIANT B · ENTERPRISE MARKETPLACE ════════════════ */
+  .vb { background:var(--color-bg); min-height:100vh; }
+  .vb nav { background:#fff; border-bottom:1px solid var(--color-border); display:flex; align-items:center; justify-content:space-between; padding:14px 32px; }
+  .vb .wordmark { font-weight:800; font-size:20px; letter-spacing:-.4px; display:flex; align-items:center; gap:8px; }
+  .vb .wordmark .dot { width:10px; height:10px; border-radius:50%; background:var(--color-primary); }
+  .vb nav .links { display:flex; gap:26px; font-size:14px; font-weight:500; color:var(--color-text-muted); }
+  .vb nav .links span:hover { color:var(--color-text); cursor:pointer; }
+  .vb .signin { background:var(--color-slate-deep); color:#fff; border:none; padding:9px 20px; border-radius:var(--radius-md); font-weight:600; font-size:14px; transition:all .15s ease; }
+  .vb .signin:hover { background:#1e293b; }
+
+  .vb .hero { background:#fff; border-bottom:1px solid var(--color-border); }
+  .vb .hero-inner { max-width:1120px; margin:0 auto; padding:48px 32px; display:grid; grid-template-columns:1.2fr .8fr; gap:32px; align-items:center; }
+  .vb .hero h1 { font-size:clamp(2rem,4.5vw,3.1rem); font-weight:800; letter-spacing:-1.5px; line-height:1.05; }
+  .vb .hero h1 span { color:var(--color-primary); }
+  .vb .hero p { margin-top:14px; color:var(--color-text-muted); font-size:16.5px; max-width:480px; }
+  .vb .trustbar { margin-top:22px; display:flex; gap:10px; flex-wrap:wrap; }
+  .vb .tbadge { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#065f46; background:#ecfdf5; border:1px solid #a7f3d0; padding:6px 12px; border-radius:var(--radius-md); }
+  .vb .heropanel { background:linear-gradient(135deg,#0f172a,#1e293b); border-radius:var(--radius-lg); padding:24px; color:#fff; box-shadow:var(--shadow-lg); }
+  .vb .heropanel h3 { font-size:15px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1.5px; }
+  .vb .kpis { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
+  .vb .kpi { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.09); border-radius:var(--radius-md); padding:14px; }
+  .vb .kpi b { display:block; font-size:24px; font-weight:800; letter-spacing:-.5px; }
+  .vb .kpi span { font-size:12.5px; color:#94a3b8; }
+
+  .vb .section { max-width:1120px; margin:0 auto; padding:34px 32px 8px; display:flex; justify-content:space-between; align-items:baseline; }
+  .vb .section h2 { font-size:22px; font-weight:800; letter-spacing:-.6px; }
+  .vb .section a { font-size:14px; font-weight:600; color:var(--color-primary); text-decoration:none; }
+  .vb .cards { max-width:1120px; margin:16px auto; padding:0 32px; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; }
+  .vb .vcard { background:#fff; border:1px solid var(--color-border); border-radius:var(--radius-lg); overflow:hidden; transition:all .18s ease; cursor:pointer; }
+  .vb .vcard:hover { box-shadow:var(--shadow-lg); transform:translateY(-3px); border-color:#cbd5e1; }
+  .vb .vbanner { height:110px; position:relative; }
+  .vb .vbanner .pattern { position:absolute; inset:0; }
+  .vb .vbanner .mono { position:absolute; left:16px; bottom:-22px; width:52px; height:52px; border-radius:12px; background:#fff; box-shadow:var(--shadow-md); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px; border:1px solid var(--color-border); }
+  .vb .vbody { padding:30px 16px 16px; }
+  .vb .titlerow { display:flex; align-items:center; gap:8px; }
+  .vb .titlerow h3 { font-size:17.5px; font-weight:700; letter-spacing:-.3px; }
+  .vb .verified { color:var(--color-trust); font-size:15px; }
+  .vb .desc { font-size:13.5px; color:var(--color-text-muted); margin:5px 0 12px; }
+  .vb .trustrow { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .vb .pill { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:4px 10px; border-radius:var(--radius-full); }
+  .vb .pill.fhrs { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  .vb .pill.star { background:#fffbeb; color:#92400e; border:1px solid #fde68a; }
+  .vb .pill.eta { background:#f1f5f9; color:#334155; border:1px solid var(--color-border); }
+  .vb .feerow { display:flex; justify-content:space-between; font-size:13px; color:var(--color-text-muted); border-top:1px solid var(--color-border); padding-top:12px; }
+  .vb .feerow b { color:var(--color-trust); font-weight:700; }
+
+  .vb .mrow { max-width:1120px; margin:14px auto 40px; padding:0 32px; display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+  .vb .mcard { background:#fff; border:1px solid var(--color-border); border-radius:var(--radius-lg); padding:16px; display:flex; flex-direction:column; gap:8px; transition:all .18s ease; }
+  .vb .mcard:hover { box-shadow:var(--shadow-md); border-color:#cbd5e1; }
+  .vb .mtop { display:flex; justify-content:space-between; gap:10px; }
+  .vb .mtop h4 { font-size:15.5px; font-weight:700; letter-spacing:-.2px; }
+  .vb .thumb { width:56px; height:56px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:24px; }
+  .vb .ing { font-size:12.5px; color:var(--color-text-muted); }
+  .vb .chips { display:flex; gap:5px; flex-wrap:wrap; }
+  .vb .chip { font-size:11px; font-weight:600; padding:2.5px 8px; border-radius:var(--radius-full); border:1px solid; }
+  .vb .chip.halal { color:#065f46; border-color:#a7f3d0; background:#ecfdf5; }
+  .vb .chip.spicy { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
+  .vb .chip.vegan { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
+  .vb .chip.gf { color:#854d0e; border-color:#fde68a; background:#fffbeb; }
+  .vb .chip.allergen { color:#9a3412; border-color:#fed7aa; background:#fff7ed; }
+  .vb .mfoot { display:flex; justify-content:space-between; align-items:center; margin-top:auto; padding-top:8px; }
+  .vb .price { font-weight:800; font-size:17px; letter-spacing:-.3px; }
+  .vb .add { background:var(--color-primary); color:#fff; border:none; font-weight:700; font-size:13px; padding:8px 16px; border-radius:var(--radius-md); transition:all .15s ease; }
+  .vb .add:hover { background:var(--color-primary-hover); }
+
+  /* ════════════════ VARIANT C · EMBER NIGHT MARKET ════════════════ */
+  .vc { background:var(--color-slate-night); min-height:100vh; color:#f1f5f9; }
+  .vc nav { display:flex; align-items:center; justify-content:space-between; padding:16px 32px; border-bottom:1px solid rgba(251,146,60,.15); background:rgba(2,6,23,.8); }
+  .vc .wordmark { font-weight:900; font-size:21px; letter-spacing:-.5px; display:flex; align-items:center; gap:10px; }
+  .vc .wordmark .flame { width:28px; height:28px; filter:drop-shadow(0 0 8px rgba(249,115,22,.8)); }
+  .vc nav .links { display:flex; gap:24px; font-size:14px; font-weight:600; color:#94a3b8; }
+  .vc nav .links span:hover { color:#fb923c; cursor:pointer; }
+  .vc .basket { background:linear-gradient(135deg,#f97316,#ea580c); color:#fff; border:none; padding:9px 20px; border-radius:var(--radius-full); font-weight:800; font-size:14px; box-shadow:var(--shadow-glow-ember); transition:all .15s ease; }
+  .vc .basket:hover { transform:scale(1.05); box-shadow:0 8px 40px rgba(249,115,22,.55); }
+
+  .vc .hero { max-width:1120px; margin:0 auto; padding:60px 32px 36px; position:relative; }
+  .vc .hero .glow { position:absolute; top:-40px; left:20%; width:420px; height:280px; background:radial-gradient(ellipse, rgba(249,115,22,.22), transparent 70%); pointer-events:none; }
+  .vc .hero .kicker { color:#fb923c; font-size:13px; font-weight:800; letter-spacing:3px; text-transform:uppercase; }
+  .vc .hero h1 { font-size:clamp(2.4rem,6vw,4rem); font-weight:900; letter-spacing:-2px; line-height:1; margin-top:12px; }
+  .vc .hero h1 .grad { background:linear-gradient(90deg,#fb923c,#f97316,#fbbf24); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .vc .hero p { margin-top:16px; color:#94a3b8; font-size:17px; max-width:500px; }
+  .vc .hero .live { display:inline-flex; align-items:center; gap:8px; margin-top:20px; background:rgba(16,185,129,.12); border:1px solid rgba(16,185,129,.35); color:#34d399; font-size:13px; font-weight:700; padding:7px 14px; border-radius:var(--radius-full); }
+  .vc .hero .live .dotp { width:8px; height:8px; border-radius:50%; background:#10b981; animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1; box-shadow:0 0 0 0 rgba(16,185,129,.5);} 50%{opacity:.6; box-shadow:0 0 0 6px rgba(16,185,129,0);} }
+
+  .vc .section { max-width:1120px; margin:10px auto 0; padding:0 32px; display:flex; align-items:baseline; justify-content:space-between; }
+  .vc .section h2 { font-size:22px; font-weight:900; letter-spacing:-.6px; }
+  .vc .section span { color:#fb923c; font-size:14px; font-weight:600; cursor:pointer; }
+  .vc .cards { max-width:1120px; margin:16px auto; padding:0 32px; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; }
+  .vc .vcard { background:#0f172a; border:1px solid #1e293b; border-radius:var(--radius-lg); overflow:hidden; transition:all .2s ease; cursor:pointer; }
+  .vc .vcard:hover { border-color:rgba(249,115,22,.5); box-shadow:0 12px 40px rgba(249,115,22,.15); transform:translateY(-4px); }
+  .vc .vbanner { height:118px; position:relative; display:flex; align-items:flex-end; padding:14px; }
+  .vc .vbanner .mono { width:52px; height:52px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:19px; color:#fff; border:1px solid rgba(255,255,255,.25); backdrop-filter:blur(4px); }
+  .vc .vbanner .open-pill { position:absolute; top:12px; right:12px; background:rgba(16,185,129,.15); border:1px solid rgba(16,185,129,.4); color:#34d399; font-size:11px; font-weight:800; padding:4px 12px; border-radius:var(--radius-full); backdrop-filter:blur(4px); }
+  .vc .vbody { padding:16px; }
+  .vc .vbody h3 { font-size:18.5px; font-weight:800; letter-spacing:-.4px; }
+  .vc .vbody .desc { font-size:13.5px; color:#94a3b8; margin:5px 0 12px; }
+  .vc .trustrow { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; }
+  .vc .pill { padding:4px 10px; border-radius:var(--radius-full); border:1px solid; }
+  .vc .pill.fhrs { color:#34d399; border-color:rgba(16,185,129,.4); background:rgba(16,185,129,.08); }
+  .vc .pill.star { color:#fbbf24; border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.08); }
+  .vc .pill.eta { color:#cbd5e1; border-color:#334155; background:rgba(51,65,85,.3); }
+
+  .vc .mrow { max-width:1120px; margin:14px auto 44px; padding:0 32px; display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+  .vc .mcard { background:#0f172a; border:1px solid #1e293b; border-radius:var(--radius-lg); overflow:hidden; transition:all .2s ease; }
+  .vc .mcard:hover { border-color:rgba(249,115,22,.45); box-shadow:0 8px 28px rgba(249,115,22,.12); }
+  .vc .mimg { height:104px; display:flex; align-items:center; justify-content:center; font-size:40px; }
+  .vc .mbody { padding:14px; }
+  .vc .mbody h4 { font-weight:800; font-size:15.5px; }
+  .vc .mbody .ing { font-size:12.5px; color:#94a3b8; margin:4px 0 8px; min-height:32px; }
+  .vc .chips { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:12px; }
+  .vc .chip { font-size:10.5px; font-weight:800; padding:3px 8px; border-radius:var(--radius-full); text-transform:uppercase; letter-spacing:.4px; border:1px solid; }
+  .vc .chip.halal { color:#34d399; border-color:rgba(16,185,129,.4); background:rgba(16,185,129,.08); }
+  .vc .chip.spicy { color:#f87171; border-color:rgba(248,113,113,.4); background:rgba(248,113,113,.08); }
+  .vc .chip.vegan { color:#4ade80; border-color:rgba(74,222,128,.4); background:rgba(74,222,128,.08); }
+  .vc .chip.gf { color:#facc15; border-color:rgba(250,204,21,.35); background:rgba(250,204,21,.08); }
+  .vc .mfoot { display:flex; justify-content:space-between; align-items:center; }
+  .vc .price { font-size:18px; font-weight:900; }
+  .vc .add { background:linear-gradient(135deg,#f97316,#ea580c); color:#fff; border:none; font-weight:800; padding:7px 16px; border-radius:var(--radius-full); font-size:13px; transition:all .15s ease; }
+  .vc .add:hover { transform:scale(1.07); box-shadow:0 4px 20px rgba(249,115,22,.4); }
+
+  /* ════════════════ VARIANT D · SYNTHESIS (B structure + A brand) ════════════════ */
+  .vd .canopy { height:8px; background:repeating-linear-gradient(90deg, var(--color-primary-bright) 0 32px, #fff7ed 32px 64px); }
+  .vd nav .wordmark { font-weight:900; letter-spacing:-.6px; font-size:21px; gap:8px; }
+  .vd nav .wordmark .flame { width:26px; height:26px; }
+  .vd .hero h1 { font-weight:900; letter-spacing:-2px; }
+  .vd .section h2 { display:flex; align-items:center; gap:12px; }
+  .vd .section h2::after { content:''; width:90px; height:3px; background:repeating-linear-gradient(90deg, var(--color-primary-bright) 0 12px, transparent 12px 20px); }
+  .vd .vbanner .canopy-top { position:absolute; top:0; left:0; right:0; height:6px; background:repeating-linear-gradient(90deg, rgba(15,23,42,.85) 0 22px, transparent 22px 44px); }
+
+  @media (max-width:760px) {
+    .vb .hero-inner { grid-template-columns:1fr; }
+    .va nav .links, .vb nav .links, .vc nav .links { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <strong style="font-size:13px;color:#64748b;margin-right:6px;">Sketch 001</strong>
+  <button class="variant-tab active" onclick="showVariant('a', event)">A: Market Heat</button>
+  <button class="variant-tab" onclick="showVariant('b', event)">B: Enterprise Marketplace</button>
+  <button class="variant-tab" onclick="showVariant('c', event)">C: Ember Night Market</button>
+  <button class="variant-tab" onclick="showVariant('d', event)">D: Synthesis (B+A) ★</button>
+</div>
+
+<div id="vp-frame">
+
+<!-- ═══════════════ VARIANT A ═══════════════ -->
+<div id="variant-a" class="variant active"><div class="va">
+  <nav>
+    <div class="wordmark">
+      <svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 4-3 5.5-3 9a3 3 0 0 0 6 0c0-1.5-.8-2.4-.8-2.4S17 10 17 13.5A5.5 5.5 0 0 1 6 13.5C6 7.5 12 6.5 12 2z" fill="#f97316"/><path d="M12 22a4.5 4.5 0 0 0 4.5-4.5c0-2.5-2-3.5-2-5-1.5 1-1 2.5-2.5 2.5S10.5 13.5 10 12c-1.5 2-2.5 3.5-2.5 5.5A4.5 4.5 0 0 0 12 22z" fill="#fbbf24"/></svg>
+      J'TOYE
+    </div>
+    <div class="links"><span>Kitchens</span><span>For operators</span><span>Track order</span></div>
+    <button class="basket" onclick="addToast('Basket opened')">Basket · <span class="count">0</span></button>
+  </nav>
+  <div class="canopy"></div>
+
+  <div class="hero">
+    <div class="kicker">London's independent kitchens</div>
+    <h1>Proper food.<br>From the <em>real ones.</em></h1>
+    <p>Flame-grilled, home-style, and market-fresh — order direct from independent kitchens near you.</p>
+  </div>
+
+  <div class="section-title"><h2>Open now</h2><div class="rule"></div></div>
+  <div class="cards">
+    <div class="vcard">
+      <div class="vbanner" style="background:repeating-linear-gradient(-45deg,#be123c 0 14px,#9f1239 14px 28px);">
+        <div class="mono" style="color:#be123c;">BV</div>
+        <div class="open-pill">Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Brixton Village Grill</h3>
+        <div class="desc">Flame-grilled peri peri chicken, kebabs and loaded sides.</div>
+        <div class="meta">
+          <span class="stat hyg">FHRS 5</span><span class="stat star">★ 4.8</span><span class="stat">25–35 min</span><span class="stat">Free over £20</span>
+        </div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner" style="background:repeating-linear-gradient(-45deg,#b45309 0 14px,#92400e 14px 28px);">
+        <div class="mono" style="color:#b45309;">MA</div>
+        <div class="open-pill">Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Mama Ade's Kitchen</h3>
+        <div class="desc">Home-style West African cooking — jollof, egusi and pounded yam done properly.</div>
+        <div class="meta">
+          <span class="stat hyg">FHRS 5</span><span class="stat star">★ 4.9</span><span class="stat">30–40 min</span><span class="stat">Free over £25</span>
+        </div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner" style="background:repeating-linear-gradient(-45deg,#047857 0 14px,#065f46 14px 28px);">
+        <div class="mono" style="color:#047857;">PJ</div>
+        <div class="open-pill">Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Peckham Jollof Co.</h3>
+        <div class="desc">Smoky party jollof, suya and grilled tilapia to eat in or take away.</div>
+        <div class="meta">
+          <span class="stat hyg">FHRS 4</span><span class="stat star">★ 4.6</span><span class="stat">20–30 min</span><span class="stat">Free over £30</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title"><h2>Popular at Brixton Village Grill</h2><div class="rule"></div></div>
+  <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-bottom:48px;">
+    <div class="mcard">
+      <div class="mimg" style="background:linear-gradient(135deg,#fecaca,#fca5a5);">🌯</div>
+      <div class="mbody">
+        <h4>Beef Suya Wrap</h4>
+        <div class="ing">Spiced beef, red onion, wheat wrap, yaji (peanuts)</div>
+        <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+        <div class="mfoot"><span class="price">£8.50</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:linear-gradient(135deg,#fed7aa,#fdba74);">🍗</div>
+      <div class="mbody">
+        <h4>Peri Peri Chicken</h4>
+        <div class="ing">Flame-grilled chicken, peri peri marinade</div>
+        <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+        <div class="mfoot"><span class="price">£9.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:linear-gradient(135deg,#fde68a,#fcd34d);">🍟</div>
+      <div class="mbody">
+        <h4>Sweet Potato Fries</h4>
+        <div class="ing">Sweet potato, sea salt, sunflower oil</div>
+        <div class="chips"><span class="chip vegan">Vegan</span><span class="chip gf">GF</span></div>
+        <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:linear-gradient(135deg,#fef3c7,#fde68a);">🥭</div>
+      <div class="mbody">
+        <h4>Mango Lassi</h4>
+        <div class="ing">Mango, yoghurt (milk), cardamom</div>
+        <div class="chips"><span class="chip vegan" style="background:#dcfce7;">Vegetarian</span></div>
+        <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══════════════ VARIANT B ═══════════════ -->
+<div id="variant-b" class="variant"><div class="vb">
+  <nav>
+    <div class="wordmark"><span class="dot"></span>J'Toye</div>
+    <div class="links"><span>Browse kitchens</span><span>For operators</span><span>Track order</span></div>
+    <button class="signin" onclick="addToast('Sign-in flow')">Sign in</button>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <h1>Independent food,<br><span>professionally delivered.</span></h1>
+        <p>Every kitchen on J'Toye is hygiene-verified, allergen-labelled to UK law, and tracked live from grill to door.</p>
+        <div class="trustbar">
+          <span class="tbadge">✓ FHRS hygiene-verified vendors</span>
+          <span class="tbadge">✓ Natasha's Law allergen labels</span>
+          <span class="tbadge">✓ Live order tracking</span>
+        </div>
+      </div>
+      <div class="heropanel">
+        <h3>Right now on J'Toye</h3>
+        <div class="kpis">
+          <div class="kpi"><b>3</b><span>kitchens open near SW9</span></div>
+          <div class="kpi"><b>25 min</b><span>median delivery</span></div>
+          <div class="kpi"><b>4.8 ★</b><span>average rating</span></div>
+          <div class="kpi"><b>100%</b><span>allergen-labelled menus</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Kitchens near you</h2><a href="#" onclick="addToast('See all kitchens'); return false;">See all →</a></div>
+  <div class="cards">
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(190,18,60,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#fff1f2;"></div>
+        <div class="mono" style="color:#be123c;">BV</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Brixton Village Grill</h3><span class="verified" title="Verified vendor">✓</span></div>
+        <div class="desc">Flame-grilled peri peri chicken, kebabs and loaded sides.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.8 (127)</span><span class="pill eta">25–35 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £3.99 · Min £10</span><b>Free over £20</b></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(180,83,9,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#fffbeb;"></div>
+        <div class="mono" style="color:#b45309;">MA</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Mama Ade's Kitchen</h3><span class="verified">✓</span></div>
+        <div class="desc">Home-style West African cooking — jollof, egusi, pounded yam.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.9 (203)</span><span class="pill eta">30–40 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £3.50 · Min £10</span><b>Free over £25</b></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(4,120,87,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#ecfdf5;"></div>
+        <div class="mono" style="color:#047857;">PJ</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Peckham Jollof Co.</h3><span class="verified">✓</span></div>
+        <div class="desc">Smoky party jollof, suya and grilled tilapia.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 4</span><span class="pill star">★ 4.6 (88)</span><span class="pill eta">20–30 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £2.99 · Min £10</span><b>Free over £30</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Popular dishes</h2><a href="#" onclick="addToast('Full menu'); return false;">Full menu →</a></div>
+  <div class="mrow">
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Beef Suya Wrap</h4><div class="ing">Spiced beef, red onion, yaji (peanuts)</div></div>
+        <div class="thumb" style="background:#fef2f2;">🌯</div>
+      </div>
+      <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span><span class="chip allergen">⚠ 2 allergens</span></div>
+      <div class="mfoot"><span class="price">£8.50</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Peri Peri Chicken</h4><div class="ing">Flame-grilled, peri peri marinade</div></div>
+        <div class="thumb" style="background:#fff7ed;">🍗</div>
+      </div>
+      <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+      <div class="mfoot"><span class="price">£9.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Sweet Potato Fries</h4><div class="ing">Sweet potato, sea salt, sunflower oil</div></div>
+        <div class="thumb" style="background:#fffbeb;">🍟</div>
+      </div>
+      <div class="chips"><span class="chip vegan">Vegan</span><span class="chip gf">Gluten-free</span></div>
+      <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Mango Lassi</h4><div class="ing">Mango, yoghurt (milk), cardamom</div></div>
+        <div class="thumb" style="background:#fefce8;">🥭</div>
+      </div>
+      <div class="chips"><span class="chip vegan">Vegetarian</span><span class="chip allergen">⚠ 1 allergen</span></div>
+      <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══════════════ VARIANT C ═══════════════ -->
+<div id="variant-c" class="variant"><div class="vc">
+  <nav>
+    <div class="wordmark">
+      <svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 4-3 5.5-3 9a3 3 0 0 0 6 0c0-1.5-.8-2.4-.8-2.4S17 10 17 13.5A5.5 5.5 0 0 1 6 13.5C6 7.5 12 6.5 12 2z" fill="#f97316"/><path d="M12 22a4.5 4.5 0 0 0 4.5-4.5c0-2.5-2-3.5-2-5-1.5 1-1 2.5-2.5 2.5S10.5 13.5 10 12c-1.5 2-2.5 3.5-2.5 5.5A4.5 4.5 0 0 0 12 22z" fill="#fbbf24"/></svg>
+      J'Toye
+    </div>
+    <div class="links"><span>Kitchens</span><span>For operators</span><span>Track order</span></div>
+    <button class="basket" onclick="addToast('Basket opened')">Basket · <span class="count">0</span></button>
+  </nav>
+
+  <div class="hero">
+    <div class="glow"></div>
+    <div class="kicker">The night market, delivered</div>
+    <h1>Hot off the grill.<br><span class="grad">Straight to your door.</span></h1>
+    <p>Independent kitchens, hygiene-verified and tracked live — from first sizzle to your doorstep.</p>
+    <div class="live"><span class="dotp"></span> 3 kitchens cooking near you right now</div>
+  </div>
+
+  <div class="section"><h2>Open now</h2><span onclick="addToast('See all kitchens')">See all →</span></div>
+  <div class="cards">
+    <div class="vcard">
+      <div class="vbanner" style="background:linear-gradient(140deg,#4c0519 0%,#9f1239 55%,#fb7185 130%);">
+        <div class="mono" style="background:rgba(159,18,57,.5);">BV</div>
+        <div class="open-pill">● Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Brixton Village Grill</h3>
+        <div class="desc">Flame-grilled peri peri chicken, kebabs and loaded sides.</div>
+        <div class="trustrow"><span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.8</span><span class="pill eta">25–35 min</span></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner" style="background:linear-gradient(140deg,#451a03 0%,#b45309 55%,#fbbf24 130%);">
+        <div class="mono" style="background:rgba(180,83,9,.5);">MA</div>
+        <div class="open-pill">● Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Mama Ade's Kitchen</h3>
+        <div class="desc">Home-style West African — jollof, egusi, pounded yam done properly.</div>
+        <div class="trustrow"><span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.9</span><span class="pill eta">30–40 min</span></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner" style="background:linear-gradient(140deg,#022c22 0%,#047857 55%,#34d399 130%);">
+        <div class="mono" style="background:rgba(4,120,87,.5);">PJ</div>
+        <div class="open-pill">● Open</div>
+      </div>
+      <div class="vbody">
+        <h3>Peckham Jollof Co.</h3>
+        <div class="desc">Smoky party jollof, suya and grilled tilapia.</div>
+        <div class="trustrow"><span class="pill fhrs">🛡 FHRS 4</span><span class="pill star">★ 4.6</span><span class="pill eta">20–30 min</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Popular tonight</h2><span onclick="addToast('Full menu')">Full menu →</span></div>
+  <div class="mrow">
+    <div class="mcard">
+      <div class="mimg" style="background:radial-gradient(ellipse at 30% 20%, rgba(248,113,113,.35), transparent 60%), #1c1917;">🌯</div>
+      <div class="mbody">
+        <h4>Beef Suya Wrap</h4>
+        <div class="ing">Spiced beef, red onion, yaji (peanuts)</div>
+        <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+        <div class="mfoot"><span class="price">£8.50</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:radial-gradient(ellipse at 30% 20%, rgba(251,146,60,.35), transparent 60%), #1c1917;">🍗</div>
+      <div class="mbody">
+        <h4>Peri Peri Chicken</h4>
+        <div class="ing">Flame-grilled, peri peri marinade</div>
+        <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+        <div class="mfoot"><span class="price">£9.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:radial-gradient(ellipse at 30% 20%, rgba(250,204,21,.3), transparent 60%), #1c1917;">🍟</div>
+      <div class="mbody">
+        <h4>Sweet Potato Fries</h4>
+        <div class="ing">Sweet potato, sea salt, sunflower oil</div>
+        <div class="chips"><span class="chip vegan">Vegan</span><span class="chip gf">GF</span></div>
+        <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+    <div class="mcard">
+      <div class="mimg" style="background:radial-gradient(ellipse at 30% 20%, rgba(52,211,153,.3), transparent 60%), #1c1917;">🥭</div>
+      <div class="mbody">
+        <h4>Mango Lassi</h4>
+        <div class="ing">Mango, yoghurt (milk), cardamom</div>
+        <div class="chips"><span class="chip vegan">Vegetarian</span></div>
+        <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">+ Add</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══════════════ VARIANT D · SYNTHESIS ═══════════════ -->
+<div id="variant-d" class="variant"><div class="vb vd">
+  <nav>
+    <div class="wordmark">
+      <svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 4-3 5.5-3 9a3 3 0 0 0 6 0c0-1.5-.8-2.4-.8-2.4S17 10 17 13.5A5.5 5.5 0 0 1 6 13.5C6 7.5 12 6.5 12 2z" fill="#f97316"/><path d="M12 22a4.5 4.5 0 0 0 4.5-4.5c0-2.5-2-3.5-2-5-1.5 1-1 2.5-2.5 2.5S10.5 13.5 10 12c-1.5 2-2.5 3.5-2.5 5.5A4.5 4.5 0 0 0 12 22z" fill="#fbbf24"/></svg>
+      J'Toye
+    </div>
+    <div class="links"><span>Browse kitchens</span><span>For operators</span><span>Track order</span></div>
+    <button class="signin" onclick="addToast('Sign-in flow')">Sign in</button>
+  </nav>
+  <div class="canopy"></div>
+
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <h1>Independent food,<br><span>professionally delivered.</span></h1>
+        <p>Every kitchen on J'Toye is hygiene-verified, allergen-labelled to UK law, and tracked live from grill to door.</p>
+        <div class="trustbar">
+          <span class="tbadge">✓ FHRS hygiene-verified vendors</span>
+          <span class="tbadge">✓ Natasha's Law allergen labels</span>
+          <span class="tbadge">✓ Live order tracking</span>
+        </div>
+      </div>
+      <div class="heropanel">
+        <h3>Right now on J'Toye</h3>
+        <div class="kpis">
+          <div class="kpi"><b>3</b><span>kitchens open near SW9</span></div>
+          <div class="kpi"><b>25 min</b><span>median delivery</span></div>
+          <div class="kpi"><b>4.8 ★</b><span>average rating</span></div>
+          <div class="kpi"><b>100%</b><span>allergen-labelled menus</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Kitchens near you</h2><a href="#" onclick="addToast('See all kitchens'); return false;">See all →</a></div>
+  <div class="cards">
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(190,18,60,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#fff1f2;"></div>
+        <div class="canopy-top"></div>
+        <div class="mono" style="color:#be123c;">BV</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Brixton Village Grill</h3><span class="verified" title="Verified vendor">✓</span></div>
+        <div class="desc">Flame-grilled peri peri chicken, kebabs and loaded sides.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.8 (127)</span><span class="pill eta">25–35 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £3.99 · Min £10</span><b>Free over £20</b></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(180,83,9,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#fffbeb;"></div>
+        <div class="canopy-top"></div>
+        <div class="mono" style="color:#b45309;">MA</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Mama Ade's Kitchen</h3><span class="verified">✓</span></div>
+        <div class="desc">Home-style West African cooking — jollof, egusi, pounded yam.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 5</span><span class="pill star">★ 4.9 (203)</span><span class="pill eta">30–40 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £3.50 · Min £10</span><b>Free over £25</b></div>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vbanner">
+        <div class="pattern" style="background:radial-gradient(circle at 2px 2px, rgba(4,120,87,.35) 1.5px, transparent 0); background-size:16px 16px; background-color:#ecfdf5;"></div>
+        <div class="canopy-top"></div>
+        <div class="mono" style="color:#047857;">PJ</div>
+      </div>
+      <div class="vbody">
+        <div class="titlerow"><h3>Peckham Jollof Co.</h3><span class="verified">✓</span></div>
+        <div class="desc">Smoky party jollof, suya and grilled tilapia.</div>
+        <div class="trustrow">
+          <span class="pill fhrs">🛡 FHRS 4</span><span class="pill star">★ 4.6 (88)</span><span class="pill eta">20–30 min</span>
+        </div>
+        <div class="feerow"><span>Delivery £2.99 · Min £10</span><b>Free over £30</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><h2>Popular dishes</h2><a href="#" onclick="addToast('Full menu'); return false;">Full menu →</a></div>
+  <div class="mrow">
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Beef Suya Wrap</h4><div class="ing">Spiced beef, red onion, yaji (peanuts)</div></div>
+        <div class="thumb" style="background:#fef2f2;">🌯</div>
+      </div>
+      <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span><span class="chip allergen">⚠ 2 allergens</span></div>
+      <div class="mfoot"><span class="price">£8.50</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Peri Peri Chicken</h4><div class="ing">Flame-grilled, peri peri marinade</div></div>
+        <div class="thumb" style="background:#fff7ed;">🍗</div>
+      </div>
+      <div class="chips"><span class="chip halal">Halal</span><span class="chip spicy">Spicy</span></div>
+      <div class="mfoot"><span class="price">£9.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Sweet Potato Fries</h4><div class="ing">Sweet potato, sea salt, sunflower oil</div></div>
+        <div class="thumb" style="background:#fffbeb;">🍟</div>
+      </div>
+      <div class="chips"><span class="chip vegan">Vegan</span><span class="chip gf">Gluten-free</span></div>
+      <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+    <div class="mcard">
+      <div class="mtop">
+        <div><h4>Mango Lassi</h4><div class="ing">Mango, yoghurt (milk), cardamom</div></div>
+        <div class="thumb" style="background:#fefce8;">🥭</div>
+      </div>
+      <div class="chips"><span class="chip vegan">Vegetarian</span><span class="chip allergen">⚠ 1 allergen</span></div>
+      <div class="mfoot"><span class="price">£4.00</span><button class="add" onclick="addItem(this)">Add</button></div>
+    </div>
+  </div>
+</div></div>
+
+</div><!-- /vp-frame -->
+
+<div id="sketch-tools">
+  <span>viewport</span>
+  <button onclick="setVp('375px')">📱 375</button>
+  <button onclick="setVp('768px')">📱 768</button>
+  <button onclick="setVp('none')">🖥 full</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function showVariant(id, ev) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  ev.target.classList.add('active');
+}
+function setVp(w) {
+  const f = document.getElementById('vp-frame');
+  f.style.maxWidth = w === 'none' ? '' : w;
+  f.style.boxShadow = w === 'none' ? '' : '0 0 0 1px #cbd5e1, 0 20px 60px rgba(0,0,0,.25)';
+}
+let basket = 0;
+function addItem(btn) {
+  basket++;
+  document.querySelectorAll('.count').forEach(c => c.textContent = basket);
+  const orig = btn.textContent;
+  btn.textContent = '✓ Added';
+  btn.style.background = '#059669';
+  setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 900);
+  addToast('Added to basket — ' + basket + ' item' + (basket > 1 ? 's' : ''));
+}
+let toastTimer;
+function addToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+</script>
+</body>
+</html>
