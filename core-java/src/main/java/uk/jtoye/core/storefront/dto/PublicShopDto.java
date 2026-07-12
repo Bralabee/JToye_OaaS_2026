@@ -20,6 +20,16 @@ public class PublicShopDto {
     private Long freeDeliveryThresholdPennies;
     private String tags;
 
+    /**
+     * Whether checkout will take an online card payment (QA-council FIX-6 /
+     * M3). Derived from {@code PaymentService.isConfigured()}: when Stripe is
+     * not configured every order is pay-on-delivery/collection (COD), and the
+     * customer must learn that BEFORE committing a binding order, not from
+     * the order-creation response. Additive field — existing consumers of the
+     * public shop payload ignore it.
+     */
+    private boolean acceptsCardPayments;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -52,4 +62,6 @@ public class PublicShopDto {
     public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    public boolean isAcceptsCardPayments() { return acceptsCardPayments; }
+    public void setAcceptsCardPayments(boolean acceptsCardPayments) { this.acceptsCardPayments = acceptsCardPayments; }
 }

@@ -2723,6 +2723,9 @@
       },
       "PublicShopDto" : {
         "properties" : {
+          "acceptsCardPayments" : {
+            "type" : "boolean"
+          },
           "address" : {
             "type" : "string"
           },
