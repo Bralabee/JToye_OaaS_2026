@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI: path-filter the integration-tests job on pull requests (#99 do-now) — 2026-07-12
+
+#### CI
+- **The "Integration Tests (Testcontainers RLS)" job is now path-filtered on `pull_request` events via SHA-pinned `dorny/paths-filter@de90cc6 # v3.0.2`.** Its ~24.5-min `./gradlew :core-java:integrationTest` run — the bulk of the ~28-min pipeline — is skipped when a PR's diff touches nothing that can affect the Java integration suite (docs-only / frontend-only / edge-go-only / k8s-only PRs), cutting PR wall-time without weakening coverage on PRs that touch Java. Design choices that matter for reviewers: (a) **in-job STEP gating, not a job-level `if:`** — the job still reports **SUCCESS** on a filtered PR (a skip-notice step logs *why*), so it stays a satisfiable required check if branch protection is ever added; (b) the filter is **scoped to `pull_request` only** — `push` and `release` runs bypass it and always execute the full suite, so `build-and-push` never sees a skipped dependency; (c) trigger paths are `core-java/**`, the root Gradle inputs (`build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, `gradle/**`, `gradlew`, `gradlew.bat`), and the workflow file itself; (d) the job declares explicit least-privilege `permissions` (`contents: read`, `pull-requests: read`) — required because the repo's default `GITHUB_TOKEN` is restricted (contents+packages only) and paths-filter lists a PR's changed files via the pulls API. No test-count / metrics change — no tests added or removed; `docs/metrics.json` untouched.
+
 ### Keycloak deprovisioning on offboard + backup-docs honesty — 2026-07-12 (afternoon)
 
 #### Added

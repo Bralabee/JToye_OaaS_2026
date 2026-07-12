@@ -122,11 +122,46 @@ jobs:
   integration-tests:
     name: Integration Tests (Testcontainers RLS)
     runs-on: ubuntu-latest
+    # Explicit because the repo's default GITHUB_TOKEN is restricted (contents +
+    # packages read only): dorny/paths-filter lists the PR's changed files via
+    # the pulls API, which needs pull-requests: read.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Path-filter the ~24.5-min Gradle integrationTest work: on pull_request runs
+      # whose diff cannot affect the Java integration suite (docs-only / frontend-only
+      # / edge-go-only / k8s-only PRs) the suite is skipped, but the job still reports
+      # SUCCESS (in-job STEP gating, never a job-level `if:`) so it stays a satisfiable
+      # required check. push/release bypass the filter (see the reusable gate below).
+      - name: Filter paths affecting the Java integration suite
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            integration:
+              - 'core-java/**'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradle.properties'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - '.github/workflows/ci-cd.yaml'
+
+      - name: Skip notice (integration suite not affected by this PR)
+        if: github.event_name == 'pull_request' && steps.filter.outputs.integration != 'true'
+        run: |
+          echo "Integration suite skipped: this pull_request's diff touches none of the trigger paths"
+          echo "  (core-java/**, build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat, .github/workflows/ci-cd.yaml)"
+          echo "so ./gradlew :core-java:integrationTest cannot be affected. This job reports SUCCESS on purpose"
+          echo "so it stays a satisfiable required check. push/release runs always execute the full suite."
+
       - name: Set up JDK 21
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -134,10 +169,11 @@ jobs:
           cache: 'gradle'
 
       - name: Run Testcontainers integration suite
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
 
       - name: Upload integration test results
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
