@@ -25,6 +25,7 @@ export function StorefrontNav() {
 
   useEffect(() => {
     // Check on mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
     checkSession()
 
     // Re-check when page gains focus (covers OAuth redirect return)

@@ -61,6 +61,7 @@ export function MobileTabBar({ className }: { className?: string }) {
   // Reflect whatever theme the sidebar established (it owns the on-mount class
   // toggle); we only need the current value to label the toggle button.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
     setDark(document.documentElement.classList.contains("dark"))
   }, [])
 
