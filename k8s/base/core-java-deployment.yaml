@@ -24,7 +24,12 @@ spec:
         version: v1
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        # issue #98 [P2-7] item 4: scrape the INTERNAL management port (9091),
+        # which is where prod serves /actuator/prometheus. The public app port
+        # (9090) serves no actuator/metrics. 9091 is NOT published via the
+        # Service/Ingress below — it is reachable only in-cluster (scrape +
+        # kubelet probes + deploy health-check).
+        prometheus.io/port: "9091"
         prometheus.io/path: "/actuator/prometheus"
     spec:
       # Pod anti-affinity: Don't schedule multiple pods on same node
@@ -47,6 +52,13 @@ spec:
         ports:
         - containerPort: 9090
           name: http
+          protocol: TCP
+        # issue #98 [P2-7] item 4: internal management port. Serves the actuator
+        # endpoints (health probes + /actuator/prometheus) in the prod profile.
+        # Deliberately NOT added to the Service/Ingress below, so metrics + probe
+        # surface stay off the public network.
+        - containerPort: 9091
+          name: management
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
@@ -178,10 +190,12 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        # issue #98 [P2-7] item 4: health lives on the internal management port
+        # (9091) in the prod profile, so all three probes target 9091.
         startupProbe:
           httpGet:
             path: /actuator/health/liveness
-            port: 9090
+            port: 9091
           initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 3
@@ -189,14 +203,14 @@ spec:
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
-            port: 9090
+            port: 9091
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
-            port: 9090
+            port: 9091
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3

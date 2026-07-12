@@ -5,6 +5,8 @@ import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.Webhook;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatRate;
@@ -45,6 +48,9 @@ class PaymentServiceTest {
     @Mock private StripeConnectService stripeConnectService;
 
     private PaymentService paymentService;
+    // issue #98 [P2-7]: real registry so the jtoye.payment.failed counter test
+    // can assert an increment; the other tests simply ignore it.
+    private SimpleMeterRegistry meterRegistry;
 
     private UUID orderId;
     private UUID tenantId;
@@ -52,9 +58,10 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        meterRegistry = new SimpleMeterRegistry();
         paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher,
                 paymentEventPublisher, financialTransactionService, jdbcTemplate, refundService,
-                stripeConnectService);
+                stripeConnectService, providerOf(meterRegistry));
         // AUDIT-W0-03: PaymentService now runs INSERT ... ON CONFLICT DO NOTHING
         // against processed_stripe_events. For unit tests we model the "first
         // delivery" path (1 row inserted) so the existing assertions about
@@ -86,6 +93,33 @@ class PaymentServiceTest {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    // issue #98 [P2-7]: null-safe ObjectProvider<MeterRegistry> wrapper, mirroring
+    // the RateLimitInterceptorFailOpenTest precedent, so PaymentService can build
+    // its jtoye.payment.failed counter against a real (assertable) registry.
+    private static ObjectProvider<MeterRegistry> providerOf(MeterRegistry registry) {
+        return new ObjectProvider<>() {
+            @Override
+            public MeterRegistry getIfAvailable() {
+                return registry;
+            }
+
+            @Override
+            public MeterRegistry getIfUnique() {
+                return registry;
+            }
+
+            @Override
+            public MeterRegistry getObject() {
+                return registry;
+            }
+
+            @Override
+            public MeterRegistry getObject(Object... args) {
+                return registry;
+            }
+        };
     }
 
     @Test
@@ -216,6 +250,43 @@ class PaymentServiceTest {
             verify(paymentEventPublisher).publishFailed(
                     eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
                     eq("pi_test_fail"), eq(1500L), eq("gbp"), any());
+        }
+    }
+
+    @Test
+    @DisplayName("handlePaymentIntentFailed increments the jtoye.payment.failed counter (issue #98 PaymentFailureSpike signal)")
+    void handlePaymentFailed_incrementsCounter() throws Exception {
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_counter_fail");
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString()
+        ));
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.payment_failed");
+        when(mockEvent.getId()).thenReturn("evt_counter_fail");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+            when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // Counter absent (or zero) before the failed-payment webhook flows through.
+            assertEquals(0.0, meterRegistry.get("jtoye.payment.failed").counter().count());
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            assertEquals(1.0, meterRegistry.get("jtoye.payment.failed").counter().count(),
+                    "a payment_intent.payment_failed webhook must increment jtoye.payment.failed by 1");
         }
     }
 

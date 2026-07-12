@@ -9,9 +9,12 @@ import com.stripe.model.PaymentMethod;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +51,13 @@ public class PaymentService {
     private final RefundService refundService;
     private final StripeConnectService stripeConnectService;
 
+    // issue #98 [P2-7]: real payment-failure counter behind the Prometheus
+    // PaymentFailureSpike alert (rate(jtoye_payment_failed_total[5m])).
+    // Incremented at the natural detection point (handlePaymentIntentFailed).
+    // Null-safe MeterRegistry, mirroring the RateLimitInterceptor precedent;
+    // label-free to keep the series low-cardinality and PII-free (T-t6b-03).
+    private final Counter paymentFailedCounter;
+
     public PaymentService(StripeProperties stripeProperties,
                          OrderRepository orderRepository,
                          OrderEventPublisher eventPublisher,
@@ -55,7 +65,8 @@ public class PaymentService {
                          FinancialTransactionService financialTransactionService,
                          JdbcTemplate jdbcTemplate,
                          RefundService refundService,
-                         StripeConnectService stripeConnectService) {
+                         StripeConnectService stripeConnectService,
+                         ObjectProvider<MeterRegistry> meterRegistryProvider) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -64,6 +75,12 @@ public class PaymentService {
         this.jdbcTemplate = jdbcTemplate;
         this.refundService = refundService;
         this.stripeConnectService = stripeConnectService;
+        MeterRegistry reg = meterRegistryProvider.getIfAvailable();
+        this.paymentFailedCounter = reg != null
+                ? Counter.builder("jtoye.payment.failed")
+                    .description("Stripe payment_intent.payment_failed webhook processed (issue #98 — PaymentFailureSpike signal)")
+                    .register(reg)
+                : null;
     }
 
     @PostConstruct
@@ -291,6 +308,14 @@ public class PaymentService {
     }
 
     private void handlePaymentIntentFailed(Event event) {
+        // issue #98 [P2-7]: emit the payment-failure counter at the natural
+        // detection point — a Stripe payment_intent.payment_failed webhook. This
+        // is the metric behind the PaymentFailureSpike alert. Null-safe;
+        // label-free to keep the series low-cardinality and PII-free.
+        if (paymentFailedCounter != null) {
+            paymentFailedCounter.increment();
+        }
+
         PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                 .getObject().orElseThrow(() -> new IllegalStateException("Failed to deserialize PaymentIntent"));
 

@@ -173,6 +173,11 @@ func main() {
 	// Setup Gin
 	r := gin.Default()
 
+	// Prometheus instrumentation. Registered before the rate limiter so EVERY
+	// request — including those rejected with 429 — is counted with its final
+	// status. See metrics.go for the low-cardinality route-template labelling.
+	r.Use(prometheusMiddleware())
+
 	// Process-wide DoS guard (configurable via env). This is a per-replica
 	// overload valve, not a per-tenant quota — see rateLimiter() and Core's
 	// Bucket4j for the authoritative per-tenant limit.
@@ -189,6 +194,10 @@ func main() {
 	// pod is pulled from the Service without being restarted.
 	r.GET("/health", h.Health)
 	r.GET("/ready", h.Ready)
+
+	// Prometheus scrape endpoint. Public (no JWT) so Prometheus can scrape it;
+	// exposes only aggregate, low-cardinality series (see metrics.go).
+	r.GET("/metrics", metricsHandler())
 
 	// Documentation routes (/openapi.json + /docs) are registered here. The
 	// registration is wired up in docs.go (added in task 16-03) via
