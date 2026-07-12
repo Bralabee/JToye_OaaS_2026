@@ -157,6 +157,9 @@ export interface Order {
   id: string
   tenantId: string
   shopId: string
+  // Customer-facing ORD-… reference (backend OrderDto.orderNumber). Optional:
+  // legacy rows created before order numbers existed carry none (FIX-5).
+  orderNumber?: string
   status: OrderStatus
   customerName?: string
   customerEmail?: string
