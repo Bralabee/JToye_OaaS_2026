@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P2 scale-out remediation + QA-council session (11 further PRs) — 2026-07-11/12
+
+One supervised-fleet session merged, alongside #178 below: **#182** connection-pool math vs the HPA ceiling + `check-connection-math.sh` CI guard (#94) · **#183** customer-token `GET /public/orders/mine` + kitchen `shopId` server filter (#179) · **#184** order state machine surfaces guard-vetoed transitions as errors (#177) · **#185** payment outbox `FOR UPDATE SKIP LOCKED` + backoff/resurrection/poison, order events through the outbox, **V46** (#93) · **#186** per-replica SSE fan-out queues + 25s heartbeat + dedicated SSE ingress + `useOrderEvents` reconnect hook (#92) · **#189** OpenAPI snapshot breaking-change CI gate + Refund single-resource GET (#97) · **#190** **V44** `ts_match_vq` LEAKPROOF + tenant-looped `search_vector` backfill, Flyway out-of-order (#96) · **#192** QA-council remediation, run `disc-20260712-010550`: per-tenant flusher transactions (fixes a Critical cross-tenant RLS/auto-flush redelivery storm), **V47** `processed_order_events` consumer idempotency (also revives the KDS STOMP broadcast), combined-gross VAT rounding (order == ledger == preview), KDS published-shop filter, vendor-table order numbers, checkout payment-method disclosure, allergen/durability seed data · **#193** **V48** tenant lifecycle (status/plan/contact + admin API + suspended-tenant 403 enforcement) + Stripe Connect destination charges for MARKETPLACE per ADR-0001 (`Refs #102`; Keycloak deprovisioning, WHITE_LABEL direct charges and billing remain open).
+
+Baseline moved **1009 → 1166 logical invocations**, schema **V45 → V48**. Issues closed: #92 #93 #94 #96 #97 #177 #178 #179.
+
 ### Onboarding slice 2: admin approval queue + deferred Phase-18 findings (#178) — 2026-07-12
 
 Ships the human half of ADR-0001 Decision 1: MARKETPLACE onboardings park at `PENDING_APPROVAL` for a person, and this slice is that person's tooling. No migration (schema stays V46); test baseline **1085 → 1104 logical invocations** (+11 Java `@Test` in `OnboardingAdminQueueIntegrationTest`, +1 persistence proof, +7 Jest) on `feature/178-admin-approval-queue`.
