@@ -132,3 +132,37 @@ tasks.register<Test>("integrationTest") {
     setForkEvery(4)
     shouldRunAfter(tasks.test)
 }
+
+// #97 AC3 — OpenAPI snapshot tooling. Both tasks run the single
+// OpenApiSnapshotTest class, which boots the full Spring context against a
+// throwaway Testcontainers Postgres and captures the normalized (byte-stable)
+// /v3/api-docs output. The `check`-mode assertion of the same test class runs
+// inside `integrationTest` above; these tasks switch its mode:
+//   generateOpenApiSpec   → writes build-local/openapi/openapi-current.json only
+//                           (CI's openapi-compat job diffs it with oasdiff)
+//   updateOpenApiSnapshot → rewrites docs/api/openapi-snapshot.json; run this
+//                           for INTENTIONAL API changes and commit the diff in
+//                           the same PR so reviewers see the contract change.
+fun Test.configureOpenApiSnapshotRun(mode: String) {
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform()
+    filter { includeTestsMatching("uk.jtoye.core.integration.OpenApiSnapshotTest") }
+    environment("DOCKER_API_VERSION", "1.45")
+    systemProperty("api.version", "1.45")
+    systemProperty("jtoye.openapi.mode", mode)
+    // The spec depends on the whole application source; never skip as up-to-date.
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<Test>("generateOpenApiSpec") {
+    description = "Writes the normalized OpenAPI spec to build-local/openapi/openapi-current.json (no snapshot assertion)."
+    group = "documentation"
+    configureOpenApiSnapshotRun("generate")
+}
+
+tasks.register<Test>("updateOpenApiSnapshot") {
+    description = "Regenerates docs/api/openapi-snapshot.json from current code. Commit the result in the same PR."
+    group = "documentation"
+    configureOpenApiSnapshotRun("update")
+}
