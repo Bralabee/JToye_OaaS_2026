@@ -1,6 +1,7 @@
 package uk.jtoye.core.tenant;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
@@ -33,12 +34,21 @@ public class Tenant {
     @Column(nullable = false, unique = true)
     private String name;
 
+    /**
+     * {@code @ColumnDefault} keeps Hibernate-generated DDL (several legacy
+     * Testcontainers classes run ddl-auto create-drop over the Flyway schema)
+     * carrying the SAME SQL defaults as V48, so raw
+     * {@code INSERT INTO tenants (id, name, created_at)} seeds stay valid in
+     * both schema-bootstrap modes.
+     */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
+    @ColumnDefault("'ACTIVE'")
     private TenantStatus status = TenantStatus.ACTIVE;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
+    @ColumnDefault("'STANDARD'")
     private TenantPlan plan = TenantPlan.STANDARD;
 
     @Column(name = "contact_name", length = 255)
@@ -65,6 +75,7 @@ public class Tenant {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "stripe_connect_status", nullable = false, length = 16)
+    @ColumnDefault("'NONE'")
     private StripeConnectStatus stripeConnectStatus = StripeConnectStatus.NONE;
 
     public UUID getId() { return id; }
