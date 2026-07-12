@@ -29,11 +29,14 @@ scrape_configs:
         labels:
           service: 'prometheus'
 
-  # Core Java API (Spring Boot Actuator)
+  # Core Java API (Spring Boot Actuator). issue #98 [P2-7] item 4: in prod the
+  # actuator endpoints are served ONLY on the internal management port (9091),
+  # not the public app port (9090). Scrape the management port so this target
+  # hits the port that actually serves /actuator/prometheus.
   - job_name: 'core-java'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['core-java:9090']
+      - targets: ['core-java:9091']
         labels:
           service: 'core-api'
           component: 'backend'

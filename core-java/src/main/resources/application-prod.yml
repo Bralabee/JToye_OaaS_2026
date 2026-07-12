@@ -94,24 +94,37 @@ logging:
     total-size-cap: 1GB
 
 management:
+  # issue #98 [P2-7] item 4: serve ALL actuator endpoints (incl. prometheus) on a
+  # SEPARATE internal management port, NOT the public app port (server.port 9090).
+  # A distinct management.server.port makes Spring Boot bind the actuator
+  # endpoints to this port only; the public app port then serves NO actuator /
+  # metrics surface at all, closing the known /actuator/prometheus cardinality /
+  # label-leak exposure. Env-overridable (never hardcoded); 9091 is
+  # cluster-internal and is deliberately NOT published via the k8s Service/Ingress
+  # (see k8s/base/core-java-deployment.yaml) — the scrape + kubelet probes +
+  # deploy health-check reach it in-cluster only.
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9091}
   endpoints:
     web:
       exposure:
-        # Production exposes ONLY health and info. Prometheus scrape must
-        # go via a cluster-internal sidecar or dedicated metrics port —
-        # the public /actuator/prometheus endpoint is a known cardinality
-        # leak surface and must not be reachable from the outside.
-        include: health,info
+        # health + info + prometheus, all served on the internal management port
+        # above (never on the public app port).
+        include: health,info,prometheus
       base-path: /actuator
   endpoint:
     health:
       show-details: when-authorized  # Only authorized users see details
       probes:
         enabled: true  # Enable Kubernetes probes
-  metrics:
-    export:
-      prometheus:
+  # issue #98 [P2-7]: correct Spring Boot 3.x property (see application.yml note).
+  # Without this the /actuator/prometheus endpoint on the management port would
+  # 404 despite being exposed, defeating item 4.
+  prometheus:
+    metrics:
+      export:
         enabled: true
+  metrics:
     tags:
       application: ${spring.application.name}
       environment: production

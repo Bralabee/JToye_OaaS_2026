@@ -516,6 +516,16 @@ jobs:
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
 
+      - name: Health check after core-java deployment
+        # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
+        # port (9091). The public smoke tests below flip to asserting actuator is
+        # NOT publicly exposed (EXPECT_PUBLIC_ACTUATOR=false default), so this
+        # in-cluster kubectl-exec check preserves POSITIVE actuator-health
+        # verification for staging (mirrors the deploy-production step).
+        run: |
+          sleep 30
+          kubectl exec -n jtoye-staging deployment/core-java -- curl -f http://localhost:9091/actuator/health || exit 1
+
       - name: Run smoke tests
         # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
         run: |
@@ -591,9 +601,13 @@ jobs:
         run: kubectl rollout status deployment/core-java -n jtoye-production --timeout=10m
 
       - name: Health check after core-java deployment
+        # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
+        # port (9091), not the public app port (9090). kubectl exec runs inside
+        # the container, so localhost:9091 is reachable even though 9091 is not
+        # published via the Service/Ingress.
         run: |
           sleep 30
-          kubectl exec -n jtoye-production deployment/core-java -- curl -f http://localhost:9090/actuator/health || exit 1
+          kubectl exec -n jtoye-production deployment/core-java -- curl -f http://localhost:9091/actuator/health || exit 1
 
       - name: Wait for edge-go + frontend rollout
         run: |

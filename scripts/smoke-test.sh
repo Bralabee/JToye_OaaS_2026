@@ -1,6 +1,20 @@
 #!/bin/bash
 # Smoke tests for J'Toye OaaS deployment
 # Validates that the application is functional after deployment
+#
+# Usage: ./scripts/smoke-test.sh [API_URL]
+#
+# Environment variables (both default to the hardened prod posture):
+#   EXPECT_SWAGGER          (default false) — when true, assert Swagger UI /
+#                           API docs ARE reachable (staging); when false, assert
+#                           they are NOT publicly exposed (prod).
+#   EXPECT_PUBLIC_ACTUATOR  (default false) — when true, assert the actuator
+#                           health/info paths return 200 on the public app port
+#                           (local/dev). When false, assert the actuator surface
+#                           is NOT publicly exposed — in prod it is served only on
+#                           the internal management port (9091), so the public URL
+#                           must return a non-2xx/3xx (issue #98 [P2-7] item 4).
+#                           A healthy prod release therefore never fails smoke.
 
 set -e
 
@@ -52,33 +66,47 @@ else
     ((TESTS_FAILED++))
 fi
 
-# Test 2: Actuator health
-if test_endpoint "Actuator Health" "$API_URL/actuator/health"; then
-    ((TESTS_PASSED++))
-else
-    ((TESTS_FAILED++))
-fi
-
-# Test 3: Actuator info
-if test_endpoint "Actuator Info" "$API_URL/actuator/info"; then
-    ((TESTS_PASSED++))
-else
-    ((TESTS_FAILED++))
-fi
-
-# Test 4: Kubernetes liveness probe (kubelet hits this unauthenticated — must be 200)
-if test_endpoint "Liveness Probe" "$API_URL/actuator/health/liveness"; then
-    ((TESTS_PASSED++))
-else
-    ((TESTS_FAILED++))
-fi
-
-# Test 5: Kubernetes readiness probe (kubelet hits this unauthenticated — must be 200)
-if test_endpoint "Readiness Probe" "$API_URL/actuator/health/readiness"; then
-    ((TESTS_PASSED++))
-else
-    ((TESTS_FAILED++))
-fi
+# Tests 2-5: Actuator health/info endpoints — environment-conditional
+# (issue #98 [P2-7] item 4).
+#   EXPECT_PUBLIC_ACTUATOR=true  (local/dev stacks where actuator stays on the app
+#                        port): assert the four actuator paths return 200, as before.
+#   EXPECT_PUBLIC_ACTUATOR unset/false (staging + production, both prod profile):
+#                        actuator is served ONLY on the internal management port
+#                        (9091), so the PUBLIC app URL must NOT expose it — assert the
+#                        status is NOT a 2xx/3xx (401 or 404 both acceptable). This
+#                        mirrors the EXPECT_SWAGGER=false negative assertions and is
+#                        what stops a healthy prod release from failing smoke once
+#                        actuator moves off the public port. Positive in-cluster
+#                        actuator health is verified separately by the ci-cd
+#                        kubectl-exec :9091 check.
+# Test count is preserved (4) in both modes so the summary math stays intact.
+EXPECT_PUBLIC_ACTUATOR="${EXPECT_PUBLIC_ACTUATOR:-false}"
+for pair in "Actuator Health:/actuator/health" "Actuator Info:/actuator/info" "Liveness Probe:/actuator/health/liveness" "Readiness Probe:/actuator/health/readiness"; do
+    ac_name="${pair%%:*}"
+    ac_path="${pair#*:}"
+    if [ "$EXPECT_PUBLIC_ACTUATOR" = "true" ]; then
+        if test_endpoint "$ac_name (expected reachable)" "$API_URL$ac_path"; then
+            ((TESTS_PASSED++))
+        else
+            ((TESTS_FAILED++))
+        fi
+    else
+        echo -n "Testing $ac_name (expected NOT publicly exposed)... "
+        ac_code=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+            --max-time $TIMEOUT \
+            "$API_URL$ac_path" 2>/dev/null || echo "000")
+        # Pass when NOT a success/redirect (2xx/3xx). 401 (secured) or 404
+        # (served only on the internal management port) both prove the actuator
+        # surface is not publicly exposed.
+        if [ "$ac_code" -ge 200 ] 2>/dev/null && [ "$ac_code" -lt 400 ] 2>/dev/null; then
+            echo -e "${RED}✗ FAIL${NC} (publicly exposed: HTTP $ac_code)"
+            ((TESTS_FAILED++))
+        else
+            echo -e "${GREEN}✓ PASS${NC} (not exposed: HTTP $ac_code)"
+            ((TESTS_PASSED++))
+        fi
+    fi
+done
 
 # Swagger / API docs — environment-conditional.
 #   EXPECT_SWAGGER=true  (staging): Swagger is deliberately enabled, so assert it

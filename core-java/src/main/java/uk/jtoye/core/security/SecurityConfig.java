@@ -137,14 +137,17 @@ public class SecurityConfig {
                     // alias of the legacy /public/** surface — both must stay public.
                     .requestMatchers("/public/**", "/api/v1/public/**").permitAll()
                     .requestMatchers("/ws/**").permitAll();
-                // Prometheus scrape endpoint: permitted in non-prod only, mirroring
-                // the HSTS runtime-profile pattern below. Exposure is additionally
-                // opt-in per profile (management.endpoints.web.exposure.include —
-                // see application.yml); prod keeps it unexposed AND unauthenticated
-                // scraping rejected, per the documented cardinality/label-leak concern.
-                if (!isProd) {
-                    auth.requestMatchers("/actuator/prometheus").permitAll();
-                }
+                // issue #98 [P2-7] item 4: /actuator/prometheus permitAll is now
+                // UNCONDITIONAL. In prod the actuator endpoints are served ONLY on
+                // the internal management port (management.server.port, default
+                // 9091 — not published via Service/Ingress), and the public app
+                // port (9090) serves no actuator at all, so there is nothing to
+                // expose publicly. Permitting the matcher unconditionally lets the
+                // cluster-internal Prometheus scrape + kubelet reach the metrics
+                // endpoint on the management port without weakening the app-port
+                // chain (anyRequest().authenticated() below is untouched). Proven
+                // by ManagementPortMetricsIntegrationTest (T-t6b-02/T-t6b-04).
+                auth.requestMatchers("/actuator/prometheus").permitAll();
                 auth.anyRequest().authenticated();
             })
             // issue #83 P1-1: replace the default authority converter with the
