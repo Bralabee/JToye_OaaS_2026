@@ -32,7 +32,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - T-12-02 (MIME sniff uplift)   -> X-Content-Type-Options: nosniff
  * - T-12-03 (referrer leak)       -> Referrer-Policy: strict-origin-when-cross-origin
  */
-@SpringBootTest
+// issue #99 do-now: enable the Kubernetes health groups so the probe-401
+// regression tests below can hit /actuator/health/liveness + /readiness. The
+// base test profile does NOT enable probes, so without this property both
+// endpoints 404 instead of exercising the SecurityConfig permitAll match.
+@SpringBootTest(properties = "management.endpoint.health.probes.enabled=true")
 @AutoConfigureMockMvc
 @Testcontainers
 @ActiveProfiles("test")
@@ -128,5 +132,27 @@ class SecurityHeadersIntegrationTest {
         var expected = java.nio.file.Files.readString(goldenPath).trim();
 
         org.assertj.core.api.Assertions.assertThat(actual).isEqualTo(expected);
+    }
+
+    @Test
+    void livenessProbeIsPubliclyAccessible() throws Exception {
+        // issue #99 do-now (probe-401 regression guard): kubelet's startup and
+        // liveness probes hit /actuator/health/liveness UNAUTHENTICATED
+        // (k8s/base/core-java-deployment.yaml:181-195). Before this fix
+        // SecurityConfig permitted only the EXACT "/actuator/health", so the
+        // subpath 401'd → the pod never went Ready and every rollout failed.
+        // Asserting 200 here pins the /actuator/health/** permitAll contract.
+        mockMvc.perform(get("/actuator/health/liveness"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void readinessProbeIsPubliclyAccessible() throws Exception {
+        // Companion guard: readinessProbe points at /actuator/health/readiness
+        // (k8s/base/core-java-deployment.yaml:196-202). Unauthenticated GET must
+        // be 200 — the deploy smoke test (scripts/smoke-test.sh Test 5) asserts
+        // the same path, so this locks both surfaces to the same contract.
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk());
     }
 }
