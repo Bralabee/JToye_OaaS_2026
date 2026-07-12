@@ -97,4 +97,21 @@ public class RefundController {
     public ResponseEntity<List<RefundDto>> listRefunds(@PathVariable UUID orderId) {
         return ResponseEntity.ok(refundService.findByOrderId(orderId));
     }
+
+    /**
+     * Single-refund GET — the resource the POST's Location header points at
+     * (issue #97: every 201 Location must dereference to a 200).
+     */
+    @GetMapping("/{orderId}/refunds/{refundId}")
+    @Operation(
+            summary = "Get a single refund for an order",
+            description = "Dereferences the Location header returned by POST /orders/{orderId}/refund. "
+                        + "404 when the refund does not exist under that order (or belongs to another tenant)."
+    )
+    public ResponseEntity<RefundDto> getRefund(
+            @PathVariable UUID orderId,
+            @PathVariable UUID refundId
+    ) {
+        return ResponseEntity.ok(refundService.findRefund(orderId, refundId));
+    }
 }
