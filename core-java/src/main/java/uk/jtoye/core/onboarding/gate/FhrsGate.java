@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import uk.jtoye.core.onboarding.GateResult;
 import uk.jtoye.core.onboarding.GateType;
 import uk.jtoye.core.onboarding.OnboardingGate;
+import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.OnboardingProperties;
 import uk.jtoye.core.onboarding.VendorOnboarding;
 import uk.jtoye.core.onboarding.client.FhrsClient;
@@ -66,7 +67,9 @@ public class FhrsGate implements OnboardingGate {
     }
 
     @Override
-    public boolean mandatory() {
+    public boolean mandatory(OnboardingModel model) {
+        // Mandatory for BOTH commercial models this slice (state model §3.1); the
+        // model parameter exists so slice-2 model-specific gates fit (IN-09).
         return true;
     }
 
@@ -93,7 +96,11 @@ public class FhrsGate implements OnboardingGate {
         } catch (RuntimeException e) {
             // 5xx / open circuit / timeout — degrade to a human decision, never a silent pass.
             log.warn("FHRS lookup failed for shop {} — degrading to MANUAL_REVIEW: {}", shopId, e.getMessage());
-            return GateResult.manualReview("FSA hygiene lookup unavailable: " + e.getMessage());
+            // IN-05: fixed, human-readable reason — raw exception text (upstream URL,
+            // status, breaker name) stays in the WARN log above, never on the
+            // vendor-visible gate row.
+            return GateResult.manualReview(
+                    "Food hygiene service temporarily unavailable — a reviewer will check this manually");
         }
 
         if (matches == null || matches.isEmpty()) {

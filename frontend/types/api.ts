@@ -376,6 +376,26 @@ export interface CreateOnboardingRequest {
   companyNumber?: string
 }
 
+// Admin approve/reject queue (#178 slice 2) — mirrors AdminOnboardingDto.
+// Adds the review-relevant fields (shopName, rejectionReason) on top of the
+// vendor-facing shape; still no raw gate evidence.
+export interface AdminOnboardingDto {
+  id: string
+  status: OnboardingState
+  model: OnboardingModel
+  shopId: string
+  shopName: string | null
+  companyNumber: string | null
+  submittedAt: string | null
+  approvedAt: string | null
+  rejectionReason: string | null
+  gates: GateDto[]
+}
+
+export interface RejectOnboardingRequest {
+  reason: string
+}
+
 // WebSocket Event Types
 export interface OrderStateChangeEvent {
   orderId: string

@@ -14,6 +14,7 @@ import {
   Megaphone,
   UtensilsCrossed,
   Rocket,
+  ShieldCheck,
   LogOut,
   Moon,
   Sun,
@@ -31,6 +32,9 @@ export const navigation = [
   { name: "Marketing", href: "/dashboard/marketing", icon: Megaphone },
   { name: "Kitchen", href: "/dashboard/kitchen", icon: UtensilsCrossed },
   { name: "Go live", href: "/dashboard/onboarding", icon: Rocket },
+  // Admin-only surface (like Finance): the page itself renders an
+  // access-required state on 403 for non-admin users.
+  { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck },
 ]
 
 export function Sidebar() {

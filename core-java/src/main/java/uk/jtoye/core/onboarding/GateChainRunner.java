@@ -84,7 +84,7 @@ public class GateChainRunner {
             row.setOnboardingId(onboarding.getId());
             row.setGateType(gate.type());
             row.setStatus(GateStatus.PENDING);
-            row.setMandatory(gate.mandatory());
+            row.setMandatory(gate.mandatory(onboarding.getModel()));
             gateRepository.save(row);
             log.debug("Materialised PENDING gate {} for onboarding {}", gate.type(), onboarding.getId());
         }

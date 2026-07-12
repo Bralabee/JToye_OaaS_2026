@@ -21,6 +21,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
+import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +60,24 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setTitle("Invalid Argument");
         problem.setType(URI.create("https://jtoye.uk/errors/invalid-argument"));
+        return problem;
+    }
+
+    /**
+     * IN-08: a missing tenant context is a SERVER security-configuration fault
+     * (the JWT/tenant filter chain failed to establish a tenant), so it maps to
+     * 500 per the documented convention — not the generic
+     * {@code IllegalStateException} 400 below, which blamed the client for a
+     * server misconfiguration. Detail stays generic; the specifics go to the
+     * ERROR log.
+     */
+    @ExceptionHandler(MissingTenantContextException.class)
+    public ProblemDetail handleMissingTenantContext(MissingTenantContextException ex) {
+        log.error("Tenant context missing on a tenant-scoped operation: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR, "Tenant context is not established");
+        problem.setTitle("Missing Tenant Context");
+        problem.setType(URI.create("https://jtoye.uk/errors/missing-tenant-context"));
         return problem;
     }
 

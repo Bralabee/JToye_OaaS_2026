@@ -258,3 +258,22 @@ _Depth: standard_
 _Fixed: 2026-07-11_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
+
+---
+
+## Fix Round 2 (#178 slice 2 — deferred Info findings)
+
+**Fixed at:** 2026-07-12 (branch `feature/178-admin-approval-queue`)
+**Scope:** the deferred Info findings that were still open. IN-01/IN-02/IN-06 were already closed by intervening work (verified against main @ ea2cfed: no `Rocket` import remains in `onboarding/page.tsx`, `STATE_META`/`GATE_STATUS_META` carry literal class strings + `pointer-events-none`, and `dashboard/page.tsx` has the terminal-state banner branch). IN-03 was overtaken by the docs-freshness baseline moving to 988 — the CHANGELOG has carried reconciled totals since Phase 19.
+
+| ID | Status | What changed | Proving test(s) |
+|----|--------|--------------|-----------------|
+| IN-04 | FIXED | `VendorOnboardingGate.updatedAt` now carries `@UpdateTimestamp` (existing V43 column — no migration), so every evaluation/reset write stamps it. | `VendorOnboardingPersistenceIntegrationTest.gateUpdateStampsUpdatedAt` (asserts the real column, not just the entity field). |
+| IN-05 | FIXED | `CompaniesHouseGate`/`FhrsGate` persist fixed human-readable reasons on client failure ("Business register / Food hygiene service temporarily unavailable — a reviewer will check this manually"); raw exception text stays in the WARN log. | Existing gate unit tests (reason assertions unaffected — they never pinned the raw text). |
+| IN-07 | FIXED | `dashboard/page.tsx` — `date-fns` + `recharts` imports moved above the two function declarations. | `npm run build` + full jest (behaviour-neutral). |
+| IN-08 | FIXED | New `MissingTenantContextException` (extends `IllegalStateException`) thrown by `CurrentTenant.require()`, mapped to **500** with a generic RFC-7807 body; generic `IllegalStateException` stays 400. | `OnboardingAdminQueueIntegrationTest.missingTenantOnAuthenticatedRequestIs500ServerFault`. |
+| IN-09 | FIXED | `OnboardingGate.mandatory(OnboardingModel)` — model is now part of the contract; all three slice-1 gates return `true` for both models; `GateChainRunner.materialise` passes the onboarding's model. | Updated gate identity tests (both models asserted) + `GateChainRunnerTest`. |
+| IN-10 | FIXED | `VendorOnboardingStateMachineService.sendEvent` stops the per-call machine in a `finally`, covering the veto/denied throw path. | Existing `VendorOnboardingStateMachineServiceTest` (illegal-transition + guard-veto paths exercise the finally). |
+
+_Fixed: 2026-07-12_
+_Iteration: 2_

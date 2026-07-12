@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Onboarding slice 2: admin approval queue + deferred Phase-18 findings (#178) — 2026-07-12
+
+Ships the human half of ADR-0001 Decision 1: MARKETPLACE onboardings park at `PENDING_APPROVAL` for a person, and this slice is that person's tooling. No migration (schema stays V46); test baseline **1085 → 1104 logical invocations** (+11 Java `@Test` in `OnboardingAdminQueueIntegrationTest`, +1 persistence proof, +7 Jest) on `feature/178-admin-approval-queue`.
+
+#### Added
+- **Admin approve/reject queue (backend).** New `hasRole('admin')`-gated `/api/v1/onboarding/admin` surface (`OnboardingAdminController`, the #83 RBAC pattern): `GET /pending` lists PENDING_APPROVAL applications (oldest submission first, gate breakdown + tenant-scoped shop name), `POST /{id}/approve` fires the state machine's APPROVE event through the canonical service transition (the guard re-checks every mandatory gate and vetoes with 400 — never a direct status write), and `POST /{id}/reject` persists a REQUIRED human reason on the aggregate (Envers-audited via `vendor_onboarding_aud`) before firing REJECT. **Scope note:** the queue is tenant-scoped — the platform has a single per-tenant `admin` realm role and FORCE RLS pins every read to the JWT tenant; a true cross-tenant platform queue needs a platform-operator identity + deliberate audited RLS bypass and remains follow-up work on #178.
+- **Approvals dashboard page (frontend).** `/dashboard/onboarding/approvals` (sidebar "Approvals", ShieldCheck): pending applications with model badge, mandatory-gate summary, submitted date and per-gate status chips; approve confirm dialog; reject dialog with a required reason; guard-veto 400 keeps the row visible with a destructive toast; 403 renders an admin-access-required state.
+
+#### Fixed (deferred Phase-18 review findings)
+- **IN-04** — gate rows stamp `updated_at` on every write via `@UpdateTimestamp` (existing V43 column, no migration).
+- **IN-05** — Companies House / FHRS client failures persist a fixed human-readable gate `reason`; raw exception text (upstream URLs, breaker names) stays in the WARN log only.
+- **IN-07** — `dashboard/page.tsx` imports moved above executable code.
+- **IN-08** — missing tenant context now maps to **500** via the dedicated `MissingTenantContextException` (was a misleading 400 blaming the client for a server-side filter-chain fault); generic `IllegalStateException` stays 400.
+- **IN-09** — `OnboardingGate.mandatory(OnboardingModel)`: gate mandatoriness is model-aware per the state model §3.1, ready for the slice-2 MARKETPLACE-only gates.
+- **IN-10** — the per-call onboarding state machine is stopped in a `finally`, covering the guard-veto/denied throw path.
+- (IN-01, IN-02, IN-06 verified already closed by intervening work; IN-03 overtaken by the docs-freshness baseline.)
+
+#### Stranded branch `feature/phase-18-customer-realm-split` — evaluated, nothing to fold
+All five commits verified already contained in (or superseded by) main: IN-03 OAuth state+nonce landed via PR #136 and was further hardened by Phase 19's WR-04 (nonce verified before session cookies); IN-04 refresh-token rotation, IN-05 frontend Dockerfile cleanup and IN-06 post-logout redirect allow-list reverse-apply cleanly against main; the docs commit targets a `.planning/` phase directory deliberately excluded from the code-only PR #136. Branch left in place.
+
 ### Full-frontend experience overhaul (Phase 19) — 2026-07-11
 
 The whole-app UI overhaul that closes the 15-item remediation backlog from the full-frontend audit (`18-UI-REVIEW.md`, whole-app 42/72). Every visitor now lands on a coherent, comparator-grade product on mobile first: a real front door routes the three personas, every route is reachable, checkout can take an address and shows the fee before payment, the kitchen display names what to cook, and each shop shows its own menu. Registered **UIX-01..06**. Palette stayed orange/emerald/slate (the editorial/serif redesign of PR #49 was explicitly rejected). Test baseline **921 → 988 logical invocations** (703 Java `@Test` + 182 Jest + 75 Go + 28 Playwright); schema **V43 → V45** (V44 stays reserved for #96). 9 plans across 4 waves on `feature/19-ui-overhaul`.

@@ -8,9 +8,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
 
@@ -177,6 +179,58 @@ public class VendorOnboardingService {
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
 
+    // --- Admin approve/reject queue (#178 slice 2) --------------------------------
+
+    /**
+     * Admin queue: every onboarding parked in PENDING_APPROVAL, oldest submission
+     * first, with its gate breakdown and shop name. Runs under RLS, so the list is
+     * scoped to the caller's tenant (see {@link OnboardingAdminController} for the
+     * platform-wide follow-up note).
+     */
+    @Transactional(readOnly = true)
+    public List<AdminOnboardingDto> listPendingApproval() {
+        CurrentTenant.require();
+        return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.PENDING_APPROVAL).stream()
+                .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
+                .toList();
+    }
+
+    /**
+     * Admin approval: fire APPROVE (PENDING_APPROVAL → APPROVED) through the single
+     * canonical {@link #transition} path — never a direct status write. The APPROVE
+     * guard still enforces that every mandatory gate is PASSED/WAIVED, so a human
+     * approval of a no-longer-green application is vetoed →
+     * {@code InvalidStateTransitionException} → HTTP 400.
+     */
+    public AdminOnboardingDto approve(UUID onboardingId) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboardingById(onboardingId);
+
+        log.info("Admin approving onboarding {} (tenant {})", onboardingId, tenantId);
+        transition(onboarding, OnboardingEvent.APPROVE);
+
+        return toAdminDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
+    }
+
+    /**
+     * Admin rejection: persist the REQUIRED human reason on the aggregate (audited
+     * via Envers — the {@code vendor_onboarding_aud} mirror records who-when-what),
+     * then fire REJECT through the canonical {@link #transition} path. The state
+     * machine only accepts REJECT from VERIFYING / ACTION_REQUIRED /
+     * PENDING_APPROVAL; anywhere else → {@code InvalidStateTransitionException} →
+     * HTTP 400, and the rollback discards the reason write with it.
+     */
+    public AdminOnboardingDto reject(UUID onboardingId, String reason) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboardingById(onboardingId);
+
+        onboarding.setRejectionReason(reason.trim());
+        log.info("Admin rejecting onboarding {} (tenant {})", onboardingId, tenantId);
+        transition(onboarding, OnboardingEvent.REJECT);
+
+        return toAdminDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
+    }
+
     /**
      * Advance an onboarding by id. Package-private: called by {@link GateChainRunner}
      * (same package) so the async recompute drives GATES_PASSED / GATE_FAILED /
@@ -299,6 +353,39 @@ public class VendorOnboardingService {
     private VendorOnboarding requireOnboarding(UUID tenantId) {
         return onboardingRepository.findByTenantId(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("No onboarding found for the current tenant"));
+    }
+
+    /**
+     * Admin-queue lookup by id. {@code findById} executes under RLS (V43 FORCE
+     * policy), so a foreign tenant's onboarding is indistinguishable from a
+     * nonexistent one — both 404, no cross-tenant existence oracle.
+     */
+    private VendorOnboarding requireOnboardingById(UUID onboardingId) {
+        return onboardingRepository.findById(onboardingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Onboarding not found: " + onboardingId));
+    }
+
+    private AdminOnboardingDto toAdminDto(VendorOnboarding onboarding, List<VendorOnboardingGate> gates) {
+        List<GateDto> gateDtos = gates.stream()
+                .map(g -> new GateDto(g.getGateType(), g.getStatus(), g.isMandatory(), g.getReason(), g.getCheckedAt()))
+                .toList();
+        // Tenant-scoped shop lookup (the CR-02 finder) — never the RLS-only findById,
+        // whose shops_public_read policy could read a foreign published shop.
+        String shopName = onboarding.getShopId() == null ? null
+                : shopRepository.findByIdAndTenantId(onboarding.getShopId(), onboarding.getTenantId())
+                        .map(Shop::getName)
+                        .orElse(null);
+        return new AdminOnboardingDto(
+                onboarding.getId(),
+                onboarding.getStatus(),
+                onboarding.getModel(),
+                onboarding.getShopId(),
+                shopName,
+                onboarding.getCompanyNumber(),
+                onboarding.getSubmittedAt(),
+                onboarding.getApprovedAt(),
+                onboarding.getRejectionReason(),
+                gateDtos);
     }
 
     private OnboardingDto toDto(VendorOnboarding onboarding, List<VendorOnboardingGate> gates) {
