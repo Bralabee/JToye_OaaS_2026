@@ -2,6 +2,7 @@ package uk.jtoye.core.onboarding;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,4 +15,12 @@ import java.util.UUID;
 public interface VendorOnboardingRepository extends JpaRepository<VendorOnboarding, UUID> {
 
     Optional<VendorOnboarding> findByTenantId(UUID tenantId);
+
+    /**
+     * Admin-queue finder (#178 slice 2): onboardings currently in {@code status},
+     * oldest submission first. Executes under RLS, so it returns only the
+     * caller-tenant's rows — see {@code OnboardingAdminController} for why the
+     * queue is tenant-scoped in this slice.
+     */
+    List<VendorOnboarding> findByStatusOrderBySubmittedAtAsc(OnboardingState status);
 }
