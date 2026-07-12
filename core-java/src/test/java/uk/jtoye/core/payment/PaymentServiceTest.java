@@ -42,6 +42,7 @@ class PaymentServiceTest {
     @Mock private FinancialTransactionService financialTransactionService;
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private RefundService refundService;
+    @Mock private StripeConnectService stripeConnectService;
 
     private PaymentService paymentService;
 
@@ -52,7 +53,8 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         paymentService = new PaymentService(stripeProperties, orderRepository, eventPublisher,
-                paymentEventPublisher, financialTransactionService, jdbcTemplate, refundService);
+                paymentEventPublisher, financialTransactionService, jdbcTemplate, refundService,
+                stripeConnectService);
         // AUDIT-W0-03: PaymentService now runs INSERT ... ON CONFLICT DO NOTHING
         // against processed_stripe_events. For unit tests we model the "first
         // delivery" path (1 row inserted) so the existing assertions about
@@ -262,6 +264,143 @@ class PaymentServiceTest {
             paymentService.handleWebhookEvent("{}", "sig_test");
 
             verify(orderRepository, never()).findById(any());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // issue #102 (ADR-0001 Decision 2) — destination-charge routing
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("createPaymentIntent routes a MARKETPLACE order as a destination charge with the platform fee")
+    void createPaymentIntent_marketplace_destinationCharge() throws Exception {
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveDestinationAccount(tenantId))
+                .thenReturn(Optional.of("acct_market_1"));
+        // 2.5% of 1500p = 37.5 → floored to 37 (fee math itself is proven in
+        // StripeConnectServiceTest; here we prove PaymentService APPLIES it).
+        when(stripeConnectService.applicationFeePennies(1500L)).thenReturn(37L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_dest_1");
+        when(mockIntent.getClientSecret()).thenReturn("pi_dest_1_secret_x");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+                    .thenReturn(mockIntent);
+
+            String clientSecret = paymentService.createPaymentIntent(testOrder);
+            assertEquals("pi_dest_1_secret_x", clientSecret);
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+            com.stripe.param.PaymentIntentCreateParams params = captor.getValue();
+
+            assertEquals(1500L, params.getAmount());
+            assertEquals("gbp", params.getCurrency());
+            assertNotNull(params.getTransferData(), "destination charge must carry transfer_data");
+            assertEquals("acct_market_1", params.getTransferData().getDestination());
+            assertEquals(37L, params.getApplicationFeeAmount());
+            assertEquals(tenantId.toString(), params.getMetadata().get("tenant_id"));
+        }
+    }
+
+    @Test
+    @DisplayName("createPaymentIntent omits application_fee_amount when the configured fee is zero")
+    void createPaymentIntent_marketplace_zeroFee_omitsApplicationFee() throws Exception {
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveDestinationAccount(tenantId))
+                .thenReturn(Optional.of("acct_market_1"));
+        when(stripeConnectService.applicationFeePennies(1500L)).thenReturn(0L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getClientSecret()).thenReturn("pi_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+                    .thenReturn(mockIntent);
+
+            paymentService.createPaymentIntent(testOrder);
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+
+            assertNotNull(captor.getValue().getTransferData());
+            assertNull(captor.getValue().getApplicationFeeAmount());
+        }
+    }
+
+    @Test
+    @DisplayName("createPaymentIntent keeps pooled behaviour for WHITE_LABEL / unlinked tenants (no routing)")
+    void createPaymentIntent_noDestination_pooledBehaviourUnchanged() throws Exception {
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        // WHITE_LABEL, unlinked, or not-ENABLED all resolve empty (proven in
+        // StripeConnectServiceTest) — PaymentService must then leave the params
+        // exactly as before #102: no transfer_data, no application fee.
+        when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.empty());
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getClientSecret()).thenReturn("pi_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+                    .thenReturn(mockIntent);
+
+            paymentService.createPaymentIntent(testOrder);
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+
+            assertNull(captor.getValue().getTransferData());
+            assertNull(captor.getValue().getApplicationFeeAmount());
+            assertEquals(1500L, captor.getValue().getAmount());
+            assertEquals("gbp", captor.getValue().getCurrency());
+            verify(stripeConnectService, never()).applicationFeePennies(anyLong());
+        }
+    }
+
+    @Test
+    @DisplayName("handleWebhook dispatches account.updated to StripeConnectService")
+    void handleWebhook_accountUpdated_dispatchesToConnectService() throws Exception {
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("account.updated");
+        when(mockEvent.getId()).thenReturn("evt_acct_upd");
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            verify(stripeConnectService).handleAccountUpdated(mockEvent);
+        }
+    }
+
+    @Test
+    @DisplayName("handleWebhook short-circuits a duplicate account.updated before the Connect handler (idempotency)")
+    void handleWebhook_duplicateAccountUpdated_shortCircuits() throws Exception {
+        Event mockEvent = mock(Event.class);
+        lenient().when(mockEvent.getType()).thenReturn("account.updated");
+        when(mockEvent.getId()).thenReturn("evt_acct_dup");
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+        // Duplicate delivery: the ON CONFLICT DO NOTHING insert affects 0 rows.
+        when(jdbcTemplate.update(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.<Object>any()))
+                .thenReturn(0);
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            verify(stripeConnectService, never()).handleAccountUpdated(any());
         }
     }
 }

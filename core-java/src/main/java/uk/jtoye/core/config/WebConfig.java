@@ -7,6 +7,7 @@ import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.method.HandlerTypePredicate;
 import uk.jtoye.core.security.RateLimitInterceptor;
+import uk.jtoye.core.security.TenantStatusInterceptor;
 
 /**
  * Web MVC configuration for registering interceptors.
@@ -53,6 +54,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Autowired
     private RateLimitInterceptor rateLimitInterceptor;
 
+    @Autowired
+    private TenantStatusInterceptor tenantStatusInterceptor;
+
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
         configurer.addPathPrefix(API_V1_PREFIX,
@@ -65,6 +69,20 @@ public class WebConfig implements WebMvcConfigurer {
         // Register rate limit interceptor for all paths
         // Excluded paths are handled within the interceptor itself
         registry.addInterceptor(rateLimitInterceptor)
+                .addPathPatterns("/**")
+                .excludePathPatterns(
+                    "/actuator/**",
+                    "/health",
+                    "/swagger-ui/**",
+                    "/swagger-ui.html",
+                    "/v3/api-docs/**"
+                );
+        // issue #102: tenant lifecycle enforcement — rejects SUSPENDED/OFFBOARDED
+        // tenants' traffic with 403. Registered AFTER the rate limiter so 429
+        // takes precedence and the (cached) status lookup sits behind throttling.
+        // Fine-grained exemptions (public storefront, the admin-tenants surface
+        // itself) live inside the interceptor.
+        registry.addInterceptor(tenantStatusInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns(
                     "/actuator/**",
