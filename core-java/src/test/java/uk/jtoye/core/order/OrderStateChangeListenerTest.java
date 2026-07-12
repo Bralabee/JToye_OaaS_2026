@@ -52,6 +52,9 @@ class OrderStateChangeListenerTest {
     @Mock
     private SimpMessagingTemplate simpMessagingTemplate;
 
+    @Mock
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
@@ -59,9 +62,13 @@ class OrderStateChangeListenerTest {
         java.sql.PreparedStatement mockStmt = mock(java.sql.PreparedStatement.class);
         lenient().when(mockConn.prepareStatement(any(String.class))).thenReturn(mockStmt);
         lenient().doAnswer(inv -> { inv.<org.hibernate.jdbc.Work>getArgument(0).execute(mockConn); return null; }).when(hibernateSession).doWork(any());
+        // FIX-2 dedup INSERT: default to "1 row inserted" (fresh delivery) so
+        // the pre-existing side-effect tests exercise the full pipeline; the
+        // duplicate-delivery test overrides this to 0.
+        lenient().when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(1);
         // #92: SSE broadcasting moved to OrderSseFanoutListener (per-instance
         // fan-out queue); this competing-consumer listener no longer touches SSE.
-        listener = new OrderStateChangeListener(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate);
+        listener = new OrderStateChangeListener(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate, jdbcTemplate);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -210,5 +217,26 @@ class OrderStateChangeListenerTest {
 
         // Email pipeline should still execute despite WebSocket failure
         verify(emailService).sendOrderConfirmed(event, "fail@example.com");
+    }
+
+    @Test
+    @DisplayName("FIX-2: duplicate delivery (dedup INSERT returns 0) skips ALL side effects")
+    void handleOrderStateChange_duplicateDeliverySkipsAllSideEffects() {
+        UUID orderId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(
+                orderId, UUID.randomUUID(), "ORD-DUP-001",
+                OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now()
+        );
+
+        // ON CONFLICT DO NOTHING hit — this (tenant, order, status) was
+        // already processed by an earlier delivery.
+        when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(0);
+
+        listener.handleOrderStateChange(event);
+
+        verifyNoInteractions(emailService);
+        verifyNoInteractions(metrics);
+        verifyNoInteractions(simpMessagingTemplate);
+        verifyNoInteractions(orderRepository);
     }
 }
