@@ -635,9 +635,20 @@ jobs:
 
 ### 3.2 Database Scalability
 
+> **⚠️ CURRENT STATE (2026-07-12) — none of the diagram below is deployed.**
+> Production-shaped reality is a **single PostgreSQL 15 instance** (compose/k8s),
+> no replicas, no Patroni, no PgBouncer, **no WAL archiving and therefore no
+> PITR**. Backups are a daily 2 AM logical `pg_dump` via the hardened k8s
+> CronJob from #90 (custom-format, integrity-verified via `pg_restore --list`,
+> size-floor check, S3 prune; restore drill proven locally 2026-07-10 — RPO
+> ≤ 24h, RTO ≈ minutes). WAL-based PITR and DB HA are tracked in **#101**;
+> the managed-vs-manifest decision is **ADR-0002 (Proposed)**.
+
+The diagram below is the **TARGET** architecture, kept for planning purposes:
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    PostgreSQL HA Setup                       │
+│              PostgreSQL HA Setup — TARGET (#101)             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌──────────────┐         ┌──────────────┐                │
@@ -658,7 +669,7 @@ jobs:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Decisions:**
+**Key Decisions (TARGET — not yet implemented, see #101 / ADR-0002):**
 - **Synchronous replication** to 1 replica (zero data loss)
 - **Asynchronous replication** to 2nd replica (performance)
 - **PgBouncer** in transaction mode (connection pooling)
@@ -1220,6 +1231,23 @@ Layer 1: Physical Security
 ## 7. Disaster Recovery & Business Continuity
 
 ### 7.1 Backup Strategy
+
+**CURRENT (2026-07-12) — what actually runs:**
+
+```yaml
+# Implemented backup posture
+PostgreSQL:
+  Full Backup: Daily at 2 AM UTC — logical pg_dump (custom format) via the
+    hardened k8s CronJob (issue #90: BYPASSRLS backup role, integrity check
+    with pg_restore --list, size-floor guard, S3 prune)
+  Incremental: NONE
+  WAL Archive: NONE — no archive_command, no WAL-G, no pgBackRest
+  Test Restore: Drill proven locally 2026-07-10 (RTO ≈ minutes); NOT automated
+  PITR: NO — worst-case data loss (RPO) is up to 24 hours
+  Gap tracking: '#101 (PITR + DB HA), ADR-0002 (managed vs manifest)'
+```
+
+**TARGET (aspirational — requires #101):**
 
 ```yaml
 # Backup Schedule
