@@ -1,0 +1,45 @@
+/* J'Toye sketch theme — grounded in the shipped food-delivery palette:
+   flame orange (primary), emerald (trust/success), slate (chrome/text).
+   Constraint from PR #49/#52: NO serif display type. */
+:root {
+  /* Colors — matched to the live Tailwind palette in use */
+  --color-bg: #f8fafc;            /* slate-50 */
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;        /* slate-200 */
+  --color-text: #0f172a;          /* slate-900 */
+  --color-text-muted: #64748b;    /* slate-500 */
+  --color-primary: #ea580c;       /* orange-600 */
+  --color-primary-bright: #f97316;/* orange-500 */
+  --color-primary-hover: #c2410c; /* orange-700 */
+  --color-accent: #fb923c;        /* orange-400 */
+  --color-trust: #059669;         /* emerald-600 */
+  --color-trust-bright: #10b981;  /* emerald-500 */
+  --color-danger: #ef4444;
+  --color-slate-deep: #0f172a;
+  --color-slate-night: #020617;   /* slate-950 */
+
+  /* Typography — sans only, weight does the talking */
+  --font-sans: 'Inter', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --font-display-weight: 800;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.5rem;
+
+  /* Spacing */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+
+  /* Shapes */
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15,23,42,.06);
+  --shadow-md: 0 4px 12px rgba(15,23,42,.08);
+  --shadow-lg: 0 12px 32px rgba(15,23,42,.14);
+  --shadow-glow-ember: 0 8px 32px rgba(249,115,22,.35);
+}
