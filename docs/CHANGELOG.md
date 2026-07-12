@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Observability honesty — do-now slice (#98 [P2-7]) — 2026-07-12
+
+Turns "demo-grade" observability wiring into honest, provable coverage: no phantom alerts, no dead scrape targets, no publicly-exposed prod metrics, no deploy pipeline that fails against a healthy release. Five local-repo-provable gaps closed.
+
+#### Fixed
+- **(1) Prod JSON console log emitted every message twice (malformed JSON).** `logging.pattern.console` in `application-prod.yml` concatenated two `%replace(%msg){…}` conversions, so each line rendered the message field's content twice. The two conversions are now **nested** — `%replace(%replace(%msg){…quotes…}){…newlines…}` — so a single `%msg` is escaped once and each log line is one valid JSON object.
+- **(2b) Prod `/actuator/prometheus` was silently unregistered (404).** The metrics-export toggle used the **deprecated Spring Boot 2.x** property name `management.metrics.export.prometheus.enabled`, which is a NO-OP in Boot 3.5 — the `PrometheusMeterRegistry` was never created and the scrape endpoint 404'd wherever it was exposed. Corrected to the Boot 3.x `management.prometheus.metrics.export.enabled` in `application.yml` (root cause, all profiles) + `application-prod.yml`. Proven by `ManagementPortMetricsIntegrationTest`.
+
+#### Added
+- **(3) The edge-go Gin gateway now exposes a Prometheus `/metrics` endpoint.** It previously carried scrape annotations but instrumented nothing, so its scrape target sat permanently DOWN. New `prometheusMiddleware` + `promhttp` handler (`github.com/prometheus/client_golang`) emit `http_requests_total` + `http_request_duration_seconds` labelled by method / **matched-route template** / status — the `route` label uses `c.FullPath()` (never the raw ID-bearing path) to bound cardinality and prevent tenant-path leakage. The `edge-go` scrape job in `prometheus.yml` is re-enabled.
+- **(2a) Two real Micrometer counters behind the alert rules.** `tenant.context.missing` (→ `tenant_context_missing_total`) is emitted by `JwtTenantFilter` when an authenticated JWT principal carries no resolvable tenant claim — the signal the `TenantIsolationFailure` alert references. `jtoye.payment.failed` (→ `jtoye_payment_failed_total`) is emitted by `PaymentService.handlePaymentIntentFailed` and backs a new **`PaymentFailureSpike`** alert. Both counters are label-free (PII-free, low-cardinality).
+
+#### Changed
+- **(4) Prod Prometheus scrape moved to a separate internal management port.** `management.server.port` (default **9091**, env-overridable) serves all actuator endpoints — including `/actuator/prometheus` — while the public app port (9090) exposes **no** actuator/metrics surface. `SecurityConfig` makes `/actuator/prometheus` `permitAll` unconditional (safe: in prod it only lives on the internal port; `anyRequest().authenticated()` is untouched). k8s probes + scrape annotation + `containerPort` align to 9091 (Service stays 9090-only, so 9091 is never published). The deploy pipeline is aligned so a healthy release still passes: `ci-cd.yaml` prod health-check curls `:9091` and staging gains the mirrored in-cluster check; `scripts/smoke-test.sh` gains an `EXPECT_PUBLIC_ACTUATOR` gate (default `false` = prod posture — asserts actuator is NOT publicly exposed), mirroring the `EXPECT_SWAGGER` precedent, so a prod release is never auto-rolled-back by smoke.
+- **(2c) `alerts.yml` reconciled — every LIVE alert now references an emitted metric.** `TenantIsolationFailure` + the new `PaymentFailureSpike` resolve to the real counters above; the node-exporter `DiskSpaceLow` / `DiskSpaceCritical` rules (cluster-blocked, out of scope) are **disabled with a `PENDING node-exporter` note** so no live rule references a never-emitted series.
+
+#### Verified (no change)
+- **(5) Alertmanager SMTP receiver is env-injectable** (smarthost/from/to/require-tls with Mailhog dev defaults) — already implemented in the phase-9 Alertmanager work (`docker-compose.monitoring.yml` + `entrypoint.sh`); confirmed present, no regression introduced.
+
+#### Metrics
+- `docs/metrics.json` resynced via `scripts/docs-freshness.sh --write`: Java `@Test` **851 → 856** across **136 → 138** files (+`JwtTenantFilterMetricsTest`, +`ManagementPortMetricsIntegrationTest`, +1 `PaymentServiceTest`), Go `Test*` **75 → 77** across **8 → 9** files (+`edge-go/cmd/edge/metrics_test.go`); total logical invocations **1185 → 1192**. `docs-freshness` gate green.
+
+#### Out of scope (issue #98 stays open — cluster-blocked)
+- Loki/log aggregation deploy, trace collector + cross-service trace propagation, node-exporter/DiskSpace alert wiring, and live prod-shaped scrape proof.
+
 ### CI/CD deploy honesty — remainder (#99 do-now) — 2026-07-12
 
 Makes the deploy half of the pipeline actually work instead of silently lying. Six latent lies/bugs — five verified live this session, one user-approved scope addition — are closed (A–E below).
