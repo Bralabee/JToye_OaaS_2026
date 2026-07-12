@@ -41,8 +41,14 @@ class StripePropertiesRedactionTest {
     @DisplayName("toString shows <unset> for blank fields")
     void toString_showsUnsetForBlankFields() {
         StripeProperties props = new StripeProperties();
-        // default apiKey and webhookSecret are empty strings
-        assertEquals("StripeProperties(apiKey=<unset>, webhookSecret=<unset>)", props.toString());
+        // default apiKey and webhookSecret are empty strings; issue #102 added
+        // non-secret Connect fields to the rendering, so assert on the two
+        // secret slots rather than the exact full string.
+        String rendered = props.toString();
+        assertTrue(rendered.contains("apiKey=<unset>"),
+                "blank apiKey should render <unset>; got: " + rendered);
+        assertTrue(rendered.contains("webhookSecret=<unset>"),
+                "blank webhookSecret should render <unset>; got: " + rendered);
     }
 
     @Test
