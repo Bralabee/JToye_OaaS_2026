@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -256,6 +257,60 @@ class TenantLifecycleAdminIntegrationTest {
         // destination-charge/Express behaviour is proven in StripeConnectServiceTest
         // with MockedStatic; live Connect verification is deferred to a keyed env.
         mockMvc.perform(post("/api/v1/admin/tenants/{id}/stripe/connect", tenantId).with(adminJwt(ADMIN_TENANT)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(containsString("not configured")));
+    }
+
+    // ------------------------------------------------------------------
+    // Issue #102 remainder: Keycloak deprovisioning on offboard.
+    // The feature is DISABLED here (default), so the REAL
+    // KeycloakDeprovisionService exercises the inert path end-to-end.
+    // ------------------------------------------------------------------
+
+    @Test
+    void featureDisabled_offboard_staysClean_markerNull() throws Exception {
+        UUID tenantId = createTenantViaApi("Offboard Clean Vendor " + UUID.randomUUID());
+
+        // Offboard succeeds; the after-commit hook runs the real (inert) service.
+        mockMvc.perform(post("/api/v1/admin/tenants/{id}/offboard", tenantId).with(adminJwt(ADMIN_TENANT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OFFBOARDED"));
+
+        // Feature off -> no Keycloak calls, marker stays NULL.
+        assertNull(jdbcTemplate.queryForObject(
+                "SELECT keycloak_deprovisioned_at FROM tenants WHERE id = ?",
+                java.sql.Timestamp.class, tenantId));
+    }
+
+    @Test
+    void retrigger_requiresAdmin_userForbidden() throws Exception {
+        // The class-level @PreAuthorize gate fires before the method body, so a
+        // low-privilege token is 403'd regardless of tenant state.
+        mockMvc.perform(post("/api/v1/admin/tenants/{id}/keycloak/deprovision", ADMIN_TENANT)
+                        .with(userJwt(ADMIN_TENANT)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void retrigger_activeTenant_is400_notOffboarded() throws Exception {
+        UUID tenantId = createTenantViaApi("Retrigger Active Vendor " + UUID.randomUUID());
+        // Tenant is ACTIVE -> not a valid deprovision target (checked before the
+        // config gate), so a distinct 400 even with the feature off.
+        mockMvc.perform(post("/api/v1/admin/tenants/{id}/keycloak/deprovision", tenantId)
+                        .with(adminJwt(ADMIN_TENANT)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(containsString("OFFBOARDED")));
+    }
+
+    @Test
+    void retrigger_offboardedButFeatureDisabled_notConfigured400() throws Exception {
+        UUID tenantId = createTenantViaApi("Retrigger Disabled Vendor " + UUID.randomUUID());
+        mockMvc.perform(post("/api/v1/admin/tenants/{id}/offboard", tenantId).with(adminJwt(ADMIN_TENANT)))
+                .andExpect(status().isOk());
+
+        // OFFBOARDED passes the state gate; the feature-off config gate then 400s.
+        mockMvc.perform(post("/api/v1/admin/tenants/{id}/keycloak/deprovision", tenantId)
+                        .with(adminJwt(ADMIN_TENANT)))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(containsString("not configured")));
     }

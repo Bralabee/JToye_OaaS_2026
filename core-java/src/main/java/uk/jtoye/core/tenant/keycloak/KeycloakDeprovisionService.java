@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
@@ -66,8 +67,16 @@ public class KeycloakDeprovisionService {
      * Disable + log out every Keycloak user of the tenant across all configured
      * realms, stamping the marker only on full success. Non-throwing (best-effort)
      * — see class javadoc.
+     *
+     * <p><b>{@code REQUIRES_NEW} is load-bearing:</b> this is invoked from the
+     * offboard {@code afterCommit} hook, where the offboard transaction has
+     * already committed but its synchronization is still active. A plain
+     * {@code REQUIRED} call would PARTICIPATE in that dead transaction and the
+     * marker {@code save()} would never be committed. A fresh, independent
+     * transaction both persists the marker correctly AND keeps deprovisioning
+     * off the offboard tx (a failure here can't roll back the offboard).
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public KeycloakDeprovisionResult deprovision(UUID tenantId) {
         if (!properties.configured()) {
             if (warnedOnce.compareAndSet(false, true)) {

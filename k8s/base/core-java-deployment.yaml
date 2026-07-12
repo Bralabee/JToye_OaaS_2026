@@ -87,6 +87,34 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.issuer.uri
+        # Issue #102 remainder: Keycloak user deprovisioning on offboard. OFF by
+        # default (keycloak.admin.enabled=false). Non-secret config from the
+        # ConfigMap; admin credentials from the keycloak-credentials Secret.
+        - name: KC_ADMIN_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.enabled
+        - name: KC_ADMIN_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.base-url
+        - name: KC_DEPROVISION_REALMS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.realms
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-username
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-password
         - name: REDIS_HOST
           valueFrom:
             configMapKeyRef:

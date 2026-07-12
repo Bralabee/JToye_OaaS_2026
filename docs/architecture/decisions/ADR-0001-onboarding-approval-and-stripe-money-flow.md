@@ -127,3 +127,24 @@ The destination-charge (MARKETPLACE) flow is now implemented:
   empty Stripe keys, so **live Connect verification is deferred to a keyed environment**.
 - Still open after this slice: WHITE_LABEL direct charges, `PAYMENTS_CONNECTED`/`IDENTITY_KYC`
   onboarding gates wiring, per-Connect-endpoint webhook secret, billing/metering.
+
+### Implementation note (2026-07-12, issue #102 tenant-lifecycle remainder)
+
+Keycloak **user deprovisioning on offboard** is now implemented, closing the
+tenant-lifecycle follow-up called out in the V48 offboard path:
+
+- **V49** adds `tenants.keycloak_deprovisioned_at` (nullable), stamped only when ALL of an
+  offboarded tenant's Keycloak users are disabled + logged out across the configured realms.
+- A new `KeycloakAdminClient` (RestClient seam: master-realm token, paginated `tenant_id`
+  search, disable-via-full-rep PUT, session logout) + `KeycloakDeprovisionService` orchestrate
+  the sweep. Core was a pure OAuth2 resource server before this — it is the first Java-side
+  Keycloak admin caller (the customer realm is excluded: it has no `tenant_id` attributes).
+- The sweep runs **best-effort AFTER the offboard tx commits** (`TransactionSynchronization.
+  afterCommit` → a `REQUIRES_NEW` service tx), so a Keycloak outage can never roll back or
+  fail the offboard: the tenant still reaches OFFBOARDED, the marker stays NULL, an ERROR is
+  logged. This is the identity-layer complement to `TenantStatusInterceptor`'s API-layer 403.
+- An admin **re-trigger endpoint** `POST /api/v1/admin/tenants/{id}/keycloak/deprovision`
+  (OFFBOARDED-only, admin-gated, idempotent) recovers a tenant whose after-commit sweep failed.
+- **Fully inert by default** (`jtoye.keycloak.admin.enabled=false` + empty base-url): the
+  service no-ops with one WARN, the endpoint returns an RFC 7807 400 "not configured". Live
+  E2E enablement is deferred to a wired environment (in-cluster admin host, not localhost:8085).

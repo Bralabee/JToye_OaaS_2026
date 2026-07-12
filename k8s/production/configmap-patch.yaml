@@ -11,3 +11,6 @@ data:
   keycloak.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
   api.url: "https://api.jtoye.co.uk"
   frontend.url: "https://app.jtoye.co.uk"
+
+  # Keycloak deprovisioning realm (issue #102 remainder) — production realm.
+  keycloak.admin.realms: "jtoye-prod"

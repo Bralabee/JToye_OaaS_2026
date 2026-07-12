@@ -185,6 +185,16 @@ services:
       # JWKS via the internal host, 'iss' validated against the public issuer.
       CUSTOMER_KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-customers
       CUSTOMER_JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-customers
+      # Keycloak user deprovisioning on offboard (issue #102 remainder). OFF by
+      # default; when enabled the core service disables an offboarded tenant's
+      # Keycloak users. base-url is the INTERNAL host (like KC_ISSUER_URI above),
+      # NOT the public localhost:8085. Admin creds reach core here (they were
+      # previously only on the keycloak container).
+      KC_ADMIN_ENABLED: ${KC_ADMIN_ENABLED:-false}
+      KC_ADMIN_BASE_URL: ${KC_ADMIN_BASE_URL:-http://keycloak:8080}
+      KC_DEPROVISION_REALMS: ${KC_DEPROVISION_REALMS:-jtoye-dev}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile
       # exposes only health,info — see application.yml management comment).
       # SecurityConfig permits /actuator/prometheus in non-prod profiles only.
