@@ -13,6 +13,18 @@ logging:
   level:
     uk.jtoye: ${LOG_LEVEL:INFO}
 
+# Issue #99 do-now (probe parity): enable the Kubernetes liveness/readiness
+# health groups in dev too. The base application.yml does NOT set
+# endpoint.health.probes.enabled, so without this block /actuator/health/liveness
+# and /actuator/health/readiness 404 on the dev stack and scripts/smoke-test.sh
+# Tests 4/5 would fail against it. Staging/prod already enable probes. Config
+# only — takes effect on the next container rebuild, zero runtime risk now.
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
 # Issue #179 defect 1: the dev customers realm ships with email verification
 # OFF (CUSTOMER_VERIFY_EMAIL=false in .env.example / compose), so dev tokens
 # carry email_verified=false. Relax the CustomerJwtVerifier gate here ONLY —

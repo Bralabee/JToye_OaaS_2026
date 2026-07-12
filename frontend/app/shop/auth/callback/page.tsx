@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { handleCallback, getAuthReturnUrl } from "@/lib/customer-auth"
 import { Suspense } from "react"
@@ -14,6 +15,7 @@ function CallbackContent() {
   useEffect(() => {
     const code = searchParams.get("code")
     if (!code) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
       setError("No authorization code received.")
       return
     }
@@ -33,9 +35,9 @@ function CallbackContent() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-sm text-red-600">{error}</p>
-          <a href="/shop" className="mt-4 inline-block text-sm text-orange-600 hover:text-orange-700">
+          <Link href="/shop" className="mt-4 inline-block text-sm text-orange-600 hover:text-orange-700">
             Back to shop
-          </a>
+          </Link>
         </div>
       </div>
     )

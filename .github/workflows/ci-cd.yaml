@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, 'phase-*']
+    branches: [main, 'phase-*']
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   release:
     types: [created]
 
@@ -315,6 +315,53 @@ jobs:
           command: test
           args: --all-projects --severity-threshold=high
 
+  # Job 2b: Lint gate (#99 do-now). Resurrects linting that was silently dead —
+  # `npm run lint` used to be `next lint` (removed in Next 16) and the installed
+  # ESLint v9 is flat-config-only, so nothing ran. Frontend now runs `eslint .`
+  # against the flat config; edge-go runs gofmt + go vet. Both baselines are
+  # clean, so this job goes green on the PR that introduces it.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Lint frontend (eslint .)
+        run: npm run lint
+        working-directory: frontend
+
+      - name: Set up Go 1.25
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: edge-go/go.sum
+
+      - name: Check edge-go formatting (gofmt)
+        working-directory: edge-go
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet edge-go (go vet ./...)
+        working-directory: edge-go
+        run: go vet ./...
+
   # Job 3: Build and push Docker images
   build-and-push:
     name: Build and Push Images
@@ -353,6 +400,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
+            # Immutable full-sha tag: the two deploy jobs pin the running image
+            # to ghcr.io/.../jtoye-<svc>:${{ github.sha }} via `kustomize edit set
+            # image`. Without this tag the reference never resolves → guaranteed
+            # ImagePullBackOff on every deploy (the latent bug this PR closes).
+            type=raw,value=${{ github.sha }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -402,7 +454,11 @@ jobs:
     name: Deploy to Staging
     needs: [build-and-push]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
+    # Gated OFF by default, mirroring the deploy-production DEPLOY_ENABLED gate
+    # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
+    # is set to 'true' (the old branch-name gate could never fire — that branch
+    # does not exist on the remote).
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
     environment:
       name: staging
       url: https://staging.jtoye.co.uk
@@ -415,19 +471,44 @@ jobs:
         with:
           version: 'v1.28.0'
 
+      - name: Install kustomize (pinned, checksum-verified)
+        # Same checksum-verified-pinned-binary shape as the oasdiff install in the
+        # openapi-compat job. Version + linux_amd64 sha256 taken from the official
+        # kustomize/v5.6.0 release checksums.txt and proven locally before pinning.
+        run: |
+          KUSTOMIZE_VERSION="5.6.0"
+          KUSTOMIZE_SHA256="54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f"
+          curl -sSfL -o kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "${KUSTOMIZE_SHA256}  kustomize.tar.gz" | sha256sum -c -
+          tar -xzf kustomize.tar.gz kustomize
+          sudo mv kustomize /usr/local/bin/kustomize
+          kustomize version
+
       - name: Configure kubeconfig
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
 
-      - name: Update image tags in K8s manifests
+      - name: Pin full-sha images + deploy staging overlay
         run: |
-          cd k8s/base
-          for service in core-java edge-go frontend; do
-            kubectl set image deployment/${service} \
-              ${service}=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${service}:${{ github.sha }} \
-              -n jtoye-staging --dry-run=client -o yaml | kubectl apply -f -
+          (cd k8s/staging && kustomize edit set image \
+            ghcr.io/bralabee/jtoye-core-java=ghcr.io/bralabee/jtoye-core-java:${{ github.sha }} \
+            ghcr.io/bralabee/jtoye-edge-go=ghcr.io/bralabee/jtoye-edge-go:${{ github.sha }} \
+            ghcr.io/bralabee/jtoye-frontend=ghcr.io/bralabee/jtoye-frontend:${{ github.sha }})
+          # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
+          # all three jtoye images BEFORE apply. A silent images[].name key
+          # mismatch would fall back to the static 2.1.0 default and deploy the
+          # wrong (or non-existent) image — fail loudly here instead.
+          RENDERED="$(kustomize build k8s/staging)"
+          for svc in core-java edge-go frontend; do
+            if ! echo "$RENDERED" | grep -q "ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"; then
+              echo "FATAL: rendered staging overlay does not pin ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"
+              echo "Rendered jtoye image refs were:"
+              echo "$RENDERED" | grep -E "image: ghcr.io/bralabee/jtoye-" || true
+              exit 1
+            fi
           done
+          kubectl apply -k k8s/staging
 
       - name: Wait for rollout
         run: |
@@ -436,9 +517,10 @@ jobs:
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
 
       - name: Run smoke tests
+        # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
         run: |
           chmod +x ./scripts/smoke-test.sh
-          ./scripts/smoke-test.sh https://staging-api.jtoye.co.uk
+          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://staging-api.jtoye.co.uk
 
       - name: Rollback on failure
         if: failure()
@@ -466,35 +548,56 @@ jobs:
         with:
           version: 'v1.28.0'
 
+      - name: Install kustomize (pinned, checksum-verified)
+        # Same checksum-verified-pinned-binary shape as the oasdiff install in the
+        # openapi-compat job. Version + linux_amd64 sha256 taken from the official
+        # kustomize/v5.6.0 release checksums.txt and proven locally before pinning.
+        run: |
+          KUSTOMIZE_VERSION="5.6.0"
+          KUSTOMIZE_SHA256="54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f"
+          curl -sSfL -o kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "${KUSTOMIZE_SHA256}  kustomize.tar.gz" | sha256sum -c -
+          tar -xzf kustomize.tar.gz kustomize
+          sudo mv kustomize /usr/local/bin/kustomize
+          kustomize version
+
       - name: Configure kubeconfig
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
 
-      - name: Update image tags (core-java)
+      - name: Pin full-sha images + deploy production overlay
         run: |
-          kubectl set image deployment/core-java \
-            core-java=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-core-java:${{ github.sha }} \
-            -n jtoye-production
-          kubectl rollout status deployment/core-java -n jtoye-production --timeout=10m
+          (cd k8s/production && kustomize edit set image \
+            ghcr.io/bralabee/jtoye-core-java=ghcr.io/bralabee/jtoye-core-java:${{ github.sha }} \
+            ghcr.io/bralabee/jtoye-edge-go=ghcr.io/bralabee/jtoye-edge-go:${{ github.sha }} \
+            ghcr.io/bralabee/jtoye-frontend=ghcr.io/bralabee/jtoye-frontend:${{ github.sha }})
+          # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
+          # all three jtoye images BEFORE apply. A silent images[].name key
+          # mismatch would fall back to the static 2.1.0 default and deploy the
+          # wrong (or non-existent) image — fail loudly here instead.
+          RENDERED="$(kustomize build k8s/production)"
+          for svc in core-java edge-go frontend; do
+            if ! echo "$RENDERED" | grep -q "ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"; then
+              echo "FATAL: rendered production overlay does not pin ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"
+              echo "Rendered jtoye image refs were:"
+              echo "$RENDERED" | grep -E "image: ghcr.io/bralabee/jtoye-" || true
+              exit 1
+            fi
+          done
+          kubectl apply -k k8s/production
+
+      - name: Wait for core-java rollout
+        run: kubectl rollout status deployment/core-java -n jtoye-production --timeout=10m
 
       - name: Health check after core-java deployment
         run: |
           sleep 30
           kubectl exec -n jtoye-production deployment/core-java -- curl -f http://localhost:9090/actuator/health || exit 1
 
-      - name: Update image tags (edge-go)
+      - name: Wait for edge-go + frontend rollout
         run: |
-          kubectl set image deployment/edge-go \
-            edge-go=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-edge-go:${{ github.sha }} \
-            -n jtoye-production
           kubectl rollout status deployment/edge-go -n jtoye-production --timeout=5m
-
-      - name: Update image tags (frontend)
-        run: |
-          kubectl set image deployment/frontend \
-            frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }} \
-            -n jtoye-production
           kubectl rollout status deployment/frontend -n jtoye-production --timeout=5m
 
       - name: Run comprehensive smoke tests

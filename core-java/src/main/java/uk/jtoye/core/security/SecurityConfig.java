@@ -123,7 +123,15 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults()) // Enable CORS with default configuration
             .authorizeHttpRequests(auth -> {
-                auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/info").permitAll()
+                // issue #99 do-now (probe-401 fix): "/actuator/health/**" MUST be a
+                // subpath match, not just the exact "/actuator/health". kubelet hits
+                // /actuator/health/liveness and /actuator/health/readiness with an
+                // UNAUTHENTICATED probe (k8s/base/core-java-deployment.yaml:181-198),
+                // and the deploy smoke tests assert the same paths. Without subpath
+                // matching every probe 401s → no pod ever goes Ready → every rollout
+                // fails. Health-group endpoints expose only aggregate status
+                // (show-details=when-authorized), so anonymous access leaks nothing.
+                auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // issue #97 [P2-6]: /api/v1/public/** is the canonical versioned
                     // alias of the legacy /public/** surface — both must stay public.
