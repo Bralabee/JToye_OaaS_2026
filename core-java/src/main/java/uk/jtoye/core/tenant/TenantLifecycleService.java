@@ -6,10 +6,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.tenant.dto.CreateTenantRequest;
 import uk.jtoye.core.tenant.dto.TenantDto;
+import uk.jtoye.core.tenant.keycloak.KeycloakDeprovisionService;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -43,6 +46,7 @@ public class TenantLifecycleService {
     private static final Logger log = LoggerFactory.getLogger(TenantLifecycleService.class);
 
     private final TenantRepository tenantRepository;
+    private final KeycloakDeprovisionService keycloakDeprovisionService;
 
     /** TTL for the request-time status cache, seconds. */
     @Value("${tenant-lifecycle.status-cache-ttl-seconds:30}")
@@ -59,8 +63,10 @@ public class TenantLifecycleService {
         boolean expired() { return System.currentTimeMillis() > expiresAtMillis; }
     }
 
-    public TenantLifecycleService(TenantRepository tenantRepository) {
+    public TenantLifecycleService(TenantRepository tenantRepository,
+                                  KeycloakDeprovisionService keycloakDeprovisionService) {
         this.tenantRepository = tenantRepository;
+        this.keycloakDeprovisionService = keycloakDeprovisionService;
     }
 
     // ------------------------------------------------------------------
@@ -121,11 +127,17 @@ public class TenantLifecycleService {
     }
 
     /**
-     * Terminal offboarding. Keycloak user deprovisioning is a documented
-     * follow-up: the repo has no Keycloak admin-client integration today (only
-     * resource-server JWT validation), so disabling the tenant's Keycloak
-     * users on offboard is NOT half-built here — traffic rejection via
-     * {@link #isRequestBlocked(UUID)} is the enforcement until that lands.
+     * Terminal offboarding. Keycloak user deprovisioning (issue #102 remainder)
+     * now runs best-effort AFTER this transaction commits: an
+     * {@link TransactionSynchronization#afterCommit()} hook invokes
+     * {@link KeycloakDeprovisionService#deprovision(UUID)}, which disables + logs
+     * out the tenant's Keycloak users so a stolen/cached token can no longer
+     * mint or keep a session at the IdP. Running after-commit and outside this tx
+     * means a Keycloak outage can NEVER roll back or fail the offboard — the
+     * tenant still reaches OFFBOARDED, the marker just stays NULL and an ERROR is
+     * logged. Synchronous enforcement via {@link #isRequestBlocked(UUID)} remains
+     * the hard guarantee; deprovisioning is the identity-layer complement. The
+     * feature is fully inert unless configured (default off).
      */
     @Transactional
     public TenantDto offboard(UUID tenantId) {
@@ -137,6 +149,23 @@ public class TenantLifecycleService {
         Tenant saved = tenantRepository.save(tenant);
         evictStatus(tenantId);
         log.warn("event=tenant_offboarded tenant={}", tenantId);
+
+        // Best-effort identity-layer deprovisioning, AFTER this tx commits and
+        // outside it, so a Keycloak failure cannot roll back the offboard. The
+        // service is already non-throwing; the try/catch is belt-and-braces.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        keycloakDeprovisionService.deprovision(tenantId);
+                    } catch (Throwable t) {
+                        log.error("event=tenant_keycloak_deprovision_hook_error tenant={}: {}",
+                                tenantId, t.getMessage());
+                    }
+                }
+            });
+        }
         return TenantDto.from(saved);
     }
 

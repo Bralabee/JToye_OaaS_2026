@@ -66,6 +66,16 @@ public class Tenant {
     @Column(name = "offboarded_at")
     private OffsetDateTime offboardedAt;
 
+    /**
+     * Stamped (issue #102 remainder) only when ALL of this tenant's Keycloak
+     * users have been disabled + logged out on offboard — the identity-layer
+     * complement to {@code TenantStatusInterceptor}'s request rejection. Nullable:
+     * NULL = not yet deprovisioned (feature inert, Keycloak unreachable, or a
+     * partial sweep). No {@code @ColumnDefault} — NULL is the meaningful state.
+     */
+    @Column(name = "keycloak_deprovisioned_at")
+    private OffsetDateTime keycloakDeprovisionedAt;
+
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
@@ -104,6 +114,11 @@ public class Tenant {
 
     public OffsetDateTime getOffboardedAt() { return offboardedAt; }
     public void setOffboardedAt(OffsetDateTime offboardedAt) { this.offboardedAt = offboardedAt; }
+
+    public OffsetDateTime getKeycloakDeprovisionedAt() { return keycloakDeprovisionedAt; }
+    public void setKeycloakDeprovisionedAt(OffsetDateTime keycloakDeprovisionedAt) {
+        this.keycloakDeprovisionedAt = keycloakDeprovisionedAt;
+    }
 
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }

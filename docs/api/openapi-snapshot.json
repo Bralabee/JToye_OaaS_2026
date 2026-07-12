@@ -1691,6 +1691,26 @@
         },
         "type" : "object"
       },
+      "KeycloakDeprovisionResult" : {
+        "properties" : {
+          "complete" : {
+            "type" : "boolean"
+          },
+          "deprovisionedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "tenantId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "usersDisabled" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "OnboardingDto" : {
         "properties" : {
           "approvedAt" : {
@@ -3516,6 +3536,10 @@
             "format" : "uuid",
             "type" : "string"
           },
+          "keycloakDeprovisionedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
           "name" : {
             "type" : "string"
           },
@@ -3800,9 +3824,77 @@
         ]
       }
     },
+    "/api/v1/admin/tenants/{tenantId}/keycloak/deprovision" : {
+      "post" : {
+        "description" : "Disables + logs out the OFFBOARDED tenant's Keycloak users across configured realms and stamps keycloak_deprovisioned_at on full success. Idempotent. Requires the tenant to be OFFBOARDED and the feature to be configured.",
+        "operationId" : "deprovisionKeycloak",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                }
+              }
+            },
+            "description" : "Deprovisioning run result (count + marker)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                }
+              }
+            },
+            "description" : "Tenant not OFFBOARDED, or Keycloak admin not configured"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                }
+              }
+            },
+            "description" : "Caller is not a platform admin"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Re-trigger Keycloak user deprovisioning",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
     "/api/v1/admin/tenants/{tenantId}/offboard" : {
       "post" : {
-        "description" : "ACTIVE|SUSPENDED -> OFFBOARDED (terminal). API traffic permanently rejected. Keycloak user deprovisioning is a documented follow-up (no admin-client integration exists yet).",
+        "description" : "ACTIVE|SUSPENDED -> OFFBOARDED (terminal). API traffic permanently rejected. Keycloak user deprovisioning runs best-effort after the transaction commits (inert unless configured); a Keycloak outage never rolls back the offboard.",
         "operationId" : "offboard",
         "parameters" : [
           {

@@ -11,3 +11,6 @@ data:
   keycloak.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
   api.url: "https://api-staging.jtoye.co.uk"
   frontend.url: "https://app-staging.jtoye.co.uk"
+
+  # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
+  keycloak.admin.realms: "jtoye-staging"

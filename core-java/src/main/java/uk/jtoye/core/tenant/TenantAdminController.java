@@ -16,10 +16,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.payment.StripeConnectService;
 import uk.jtoye.core.payment.dto.ConnectAccountDto;
 import uk.jtoye.core.tenant.dto.CreateTenantRequest;
 import uk.jtoye.core.tenant.dto.TenantDto;
+import uk.jtoye.core.tenant.keycloak.KeycloakDeprovisionResult;
+import uk.jtoye.core.tenant.keycloak.KeycloakDeprovisionService;
 
 import java.net.URI;
 import java.util.List;
@@ -52,11 +55,14 @@ public class TenantAdminController {
 
     private final TenantLifecycleService lifecycleService;
     private final StripeConnectService stripeConnectService;
+    private final KeycloakDeprovisionService keycloakDeprovisionService;
 
     public TenantAdminController(TenantLifecycleService lifecycleService,
-                                 StripeConnectService stripeConnectService) {
+                                 StripeConnectService stripeConnectService,
+                                 KeycloakDeprovisionService keycloakDeprovisionService) {
         this.lifecycleService = lifecycleService;
         this.stripeConnectService = stripeConnectService;
+        this.keycloakDeprovisionService = keycloakDeprovisionService;
     }
 
     @PostMapping
@@ -117,7 +123,8 @@ public class TenantAdminController {
     @PostMapping("/{tenantId}/offboard")
     @Operation(summary = "Offboard tenant",
             description = "ACTIVE|SUSPENDED -> OFFBOARDED (terminal). API traffic permanently rejected. "
-                    + "Keycloak user deprovisioning is a documented follow-up (no admin-client integration exists yet).")
+                    + "Keycloak user deprovisioning runs best-effort after the transaction commits "
+                    + "(inert unless configured); a Keycloak outage never rolls back the offboard.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Tenant offboarded"),
             @ApiResponse(responseCode = "400", description = "Illegal transition (already OFFBOARDED)"),
@@ -125,6 +132,40 @@ public class TenantAdminController {
     })
     public ResponseEntity<TenantDto> offboard(@PathVariable UUID tenantId) {
         return ResponseEntity.ok(lifecycleService.offboard(tenantId));
+    }
+
+    /**
+     * Re-trigger Keycloak deprovisioning for an already-OFFBOARDED tenant (issue
+     * #102 remainder) — a recovery hook for when the after-commit sweep failed
+     * (Keycloak was unreachable) or the feature was only enabled after offboard.
+     * Idempotent: an already-deprovisioned tenant returns its existing marker.
+     *
+     * <p>Order of guards is deliberate so the two failure modes are distinct 400s
+     * even with the feature off: OFFBOARDED-only is checked first (a non-terminal
+     * tenant is never a valid target regardless of config), then not-configured.
+     */
+    @PostMapping("/{tenantId}/keycloak/deprovision")
+    @Operation(summary = "Re-trigger Keycloak user deprovisioning",
+            description = "Disables + logs out the OFFBOARDED tenant's Keycloak users across configured "
+                    + "realms and stamps keycloak_deprovisioned_at on full success. Idempotent. "
+                    + "Requires the tenant to be OFFBOARDED and the feature to be configured.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Deprovisioning run result (count + marker)"),
+            @ApiResponse(responseCode = "400", description = "Tenant not OFFBOARDED, or Keycloak admin not configured"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a platform admin"),
+            @ApiResponse(responseCode = "404", description = "Tenant not found")
+    })
+    public ResponseEntity<KeycloakDeprovisionResult> deprovisionKeycloak(@PathVariable UUID tenantId) {
+        TenantDto tenant = lifecycleService.get(tenantId); // 404 if missing (reuses not-found path)
+        if (tenant.status() != TenantStatus.OFFBOARDED) {
+            throw new InvalidStateTransitionException(
+                    "Tenant must be OFFBOARDED to deprovision Keycloak users (was " + tenant.status() + ")");
+        }
+        if (!keycloakDeprovisionService.configured()) {
+            // Matches the Stripe not-configured precedent (IllegalStateException -> 400).
+            throw new IllegalStateException("Keycloak admin is not configured — cannot deprovision users");
+        }
+        return ResponseEntity.ok(keycloakDeprovisionService.deprovision(tenantId));
     }
 
     /**

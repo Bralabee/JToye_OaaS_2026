@@ -6,7 +6,16 @@ metadata:
 data:
   # Keycloak configuration
   keycloak.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
-  
+
+  # Keycloak user deprovisioning on tenant offboard (issue #102 remainder).
+  # OFF by default. base-url is the IN-CLUSTER admin host (NOT the public
+  # issuer above). The admin PASSWORD is NOT here — it comes from the
+  # keycloak-credentials Secret (admin-password) via the deployment. realms is
+  # per-env (overlays patch it): base tracks the prod realm.
+  keycloak.admin.enabled: "false"
+  keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
+  keycloak.admin.realms: "jtoye-prod"
+
   # API URLs
   api.url: "https://api.jtoye.co.uk"
   frontend.url: "https://app.jtoye.co.uk"

@@ -10,6 +10,7 @@ import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.tenant.dto.CreateTenantRequest;
 import uk.jtoye.core.tenant.dto.TenantDto;
+import uk.jtoye.core.tenant.keycloak.KeycloakDeprovisionService;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.*;
 class TenantLifecycleServiceTest {
 
     @Mock private TenantRepository tenantRepository;
+    @Mock private KeycloakDeprovisionService keycloakDeprovisionService;
 
     private TenantLifecycleService service;
 
@@ -36,7 +38,7 @@ class TenantLifecycleServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TenantLifecycleService(tenantRepository);
+        service = new TenantLifecycleService(tenantRepository, keycloakDeprovisionService);
         service.setStatusCacheTtlSeconds(30);
 
         tenantId = UUID.randomUUID();
