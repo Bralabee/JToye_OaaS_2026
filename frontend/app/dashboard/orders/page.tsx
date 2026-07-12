@@ -567,7 +567,12 @@ function OrdersPageInner() {
                           onClick={() => router.push(`/dashboard/orders/${order.id}`)}
                         >
                           <TableCell className="font-mono text-xs">
-                            {order.id.substring(0, 8)}...
+                            {/* QA-council FIX-5 (L1): customers quote the ORD-…
+                                number from their receipt — show it here so a
+                                vendor can match a phone enquiry to a row.
+                                Legacy orders without a number keep the
+                                truncated-UUID fallback. */}
+                            {order.orderNumber ?? `${order.id.substring(0, 8)}...`}
                           </TableCell>
                           <TableCell>
                             <div>

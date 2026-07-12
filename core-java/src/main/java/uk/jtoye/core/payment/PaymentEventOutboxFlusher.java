@@ -12,7 +12,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderStateChangeEvent;
@@ -63,6 +64,7 @@ public class PaymentEventOutboxFlusher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
+    private final TransactionTemplate transactionTemplate;
     private final Counter deadLetterCounter;
     private final Counter resurrectedCounter;
     private final long backoffBaseMs;
@@ -72,6 +74,7 @@ public class PaymentEventOutboxFlusher {
                                      RabbitTemplate rabbitTemplate,
                                      ObjectMapper objectMapper,
                                      EntityManager entityManager,
+                                     PlatformTransactionManager transactionManager,
                                      ObjectProvider<MeterRegistry> meterRegistryProvider,
                                      @Value("${payment.outbox.backoff-base-ms:5000}") long backoffBaseMs,
                                      @Value("${payment.outbox.backoff-cap-ms:300000}") long backoffCapMs) {
@@ -79,6 +82,11 @@ public class PaymentEventOutboxFlusher {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
+        // Programmatic per-tenant transactions (QA-council C1 fix). A plain
+        // @Transactional on a private per-tenant method would be silently
+        // ignored (Spring self-invocation proxy trap), so the template is the
+        // idiomatic shape — same pattern as DemoDataSeeder/ScheduledCleanup.
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.backoffBaseMs = backoffBaseMs;
         this.backoffCapMs = backoffCapMs;
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
@@ -126,27 +134,52 @@ public class PaymentEventOutboxFlusher {
      * without TenantContext would return empty or fail. This also prevents
      * cross-tenant event leakage to RabbitMQ listeners.
      *
+     * <p>TRANSACTIONS (QA-council C1 fix): each tenant is drained in its OWN
+     * transaction. The RLS tenant GUC ({@code app.current_tenant_id}) is
+     * transaction-scoped, so a single whole-method transaction spanning all
+     * tenants made Hibernate auto-flush tenant A's dirty {@code SENT} updates
+     * at tenant B's native claim query — under B's GUC. FORCE RLS (V33) hid
+     * A's rows from that UPDATE → {@code StaleStateException} → rollback of
+     * the entire pass including the failure-path writeback (attempts stayed 0,
+     * backoff never engaged) → the same rows re-published every tick, forever.
+     * Per-tenant transactions guarantee every flush/commit runs under the GUC
+     * of the tenant that owns the dirty rows, regardless of tenant iteration
+     * order, and one tenant's failure can neither roll back nor starve the
+     * other tenants' events.
+     *
      * <p>CONCURRENCY: {@code claimPendingBatch} uses FOR UPDATE SKIP LOCKED,
      * so a second replica ticking at the same moment claims a disjoint set of
-     * rows (usually none) instead of double-publishing this one's batch.
+     * rows (usually none) instead of double-publishing this one's batch. The
+     * locks are now held for one tenant's batch rather than the whole pass.
      */
     @Scheduled(fixedDelayString = "${payment.outbox.flush-interval-ms:5000}")
-    @Transactional
     public void flushPending() {
         for (UUID tenantId : listTenantIds()) {
-            TenantContext.set(tenantId);
             try {
+                flushTenant(tenantId);
+            } catch (Exception e) {
+                log.error("Outbox flush failed for tenant {} — continuing with remaining tenants",
+                        tenantId, e);
+            }
+        }
+    }
+
+    /** Claim → publish → writeback for ONE tenant, in its own transaction. */
+    private void flushTenant(UUID tenantId) {
+        TenantContext.set(tenantId);
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
                 List<PaymentEventOutbox> claimed = repository.claimPendingBatch(BATCH_SIZE);
                 if (claimed.isEmpty()) {
-                    continue;
+                    return;
                 }
                 log.debug("Claimed {} publishable payment events for tenant {}", claimed.size(), tenantId);
                 for (PaymentEventOutbox row : claimed) {
                     publishRow(row);
                 }
-            } finally {
-                TenantContext.clear();
-            }
+            });
+        } finally {
+            TenantContext.clear();
         }
     }
 
@@ -156,13 +189,30 @@ public class PaymentEventOutboxFlusher {
      * corruption) are excluded — see {@link PaymentEventOutbox#isPoison()}.
      * Runs far less often than the flusher; multiple replicas racing here is
      * harmless because the UPDATE is idempotent.
+     *
+     * <p>Same per-tenant transaction shape as {@link #flushPending()} (C1 fix
+     * symmetry): the bulk UPDATE was never bitten by the auto-flush anomaly
+     * (no dirty entities between iterations), but the whole-method transaction
+     * had the same cross-tenant rollback coupling — one tenant's failure would
+     * discard every other tenant's resurrection.
      */
     @Scheduled(fixedDelayString = "${payment.outbox.resurrect-interval-ms:300000}")
-    @Transactional
     public void resurrectFailed() {
         for (UUID tenantId : listTenantIds()) {
-            TenantContext.set(tenantId);
             try {
+                resurrectTenant(tenantId);
+            } catch (Exception e) {
+                log.error("Outbox resurrection failed for tenant {} — continuing with remaining tenants",
+                        tenantId, e);
+            }
+        }
+    }
+
+    /** Resurrect ONE tenant's non-poison FAILED rows, in its own transaction. */
+    private void resurrectTenant(UUID tenantId) {
+        TenantContext.set(tenantId);
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
                 int resurrected = repository.resurrectFailed();
                 if (resurrected > 0) {
                     log.warn("Resurrected {} FAILED outbox events for tenant {} — returning to PENDING for retry",
@@ -171,9 +221,9 @@ public class PaymentEventOutboxFlusher {
                         resurrectedCounter.increment(resurrected);
                     }
                 }
-            } finally {
-                TenantContext.clear();
-            }
+            });
+        } finally {
+            TenantContext.clear();
         }
     }
 

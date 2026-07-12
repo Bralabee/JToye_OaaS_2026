@@ -300,4 +300,59 @@ describe("KitchenPage", () => {
     expect(card).not.toBeNull()
     expect(card).toHaveClass("border-green-500")
   })
+
+  // --- QA-council FIX-4 (M2 + L2): published-shop filter + sane default ---
+
+  function shopEntry(id: string, name: string, published: boolean) {
+    return { ...shopsPayload.content[0], id, name, slug: id, published }
+  }
+
+  function stubApiWithShops(shopContent: unknown[]) {
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) {
+        return Promise.resolve({ data: { content: shopContent } })
+      }
+      if (url.startsWith("/api/v1/orders?")) {
+        return Promise.resolve({ data: { content: [] } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    mockPost.mockReset()
+    mockPost.mockResolvedValue({ data: {} })
+  }
+
+  it("defaults to the first PUBLISHED shop and omits drafts from the selector (M2 + L2)", async () => {
+    // A draft/junk shop sorted FIRST — pre-fix the blind shopList[0] default
+    // selected it, so the kitchen showed "No active orders" while real orders
+    // waited on the published shop.
+    stubApiWithShops([
+      shopEntry("shop-draft", "Draft Junk Shop", false),
+      shopEntry("shop-live", "Brixton Village Grill", true),
+    ])
+    render(<KitchenPage />)
+
+    const select = (await screen.findByTestId("shop-select")) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe("shop-live"))
+    // Orders are fetched for the PUBLISHED shop, not the draft.
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith(expect.stringContaining("shopId=shop-live"))
+    )
+    // The selector no longer lists draft/junk shops.
+    expect(screen.getByText("Brixton Village Grill")).toBeInTheDocument()
+    expect(screen.queryByText("Draft Junk Shop")).not.toBeInTheDocument()
+  })
+
+  it("falls back to listing all shops when none are published (never selector-empty)", async () => {
+    stubApiWithShops([
+      shopEntry("shop-d1", "Draft One", false),
+      shopEntry("shop-d2", "Draft Two", false),
+    ])
+    render(<KitchenPage />)
+
+    const select = (await screen.findByTestId("shop-select")) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe("shop-d1"))
+    expect(screen.getByText("Draft One")).toBeInTheDocument()
+    expect(screen.getByText("Draft Two")).toBeInTheDocument()
+  })
 })

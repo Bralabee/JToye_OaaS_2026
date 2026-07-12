@@ -15,6 +15,10 @@ export interface PublicShop {
   deliveryFeePennies: number
   freeDeliveryThresholdPennies: number | null
   tags: string | null
+  // Whether checkout takes an online card payment (QA-council FIX-6 / M3).
+  // Optional for old-backend tolerance: when absent, checkout renders no
+  // "How you'll pay" section (the pre-fix behaviour).
+  acceptsCardPayments?: boolean
 }
 
 export interface PublicProduct {
