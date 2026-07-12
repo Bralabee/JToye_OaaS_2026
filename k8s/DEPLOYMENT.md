@@ -186,11 +186,11 @@ kubectl get svc nginx-ingress-ingress-nginx-controller -n ingress-nginx
 Edit `k8s/production/kustomization.yaml` and update image tags to the desired version:
 ```yaml
 images:
-  - name: ghcr.io/jtoye/core-java
+  - name: ghcr.io/bralabee/jtoye-core-java
     newTag: 2.1.0  # Update this
-  - name: ghcr.io/jtoye/edge-go
+  - name: ghcr.io/bralabee/jtoye-edge-go
     newTag: 2.1.0  # Update this
-  - name: ghcr.io/jtoye/frontend
+  - name: ghcr.io/bralabee/jtoye-frontend
     newTag: 2.1.0  # Update this
 ```
 
@@ -249,7 +249,14 @@ curl http://localhost:3000/api/health
 
 ### Staging Deployment
 
-Follow the same steps as production, but use `k8s/staging`:
+CI auto-deploys staging from `main` when the repository variable
+`DEPLOY_STAGING_ENABLED` is set to `'true'` (see `.github/workflows/ci-cd.yaml`
+`deploy-staging`). This replaces the old never-functional develop-branch gate —
+staging is off by default and only fires once the variable is enabled, exactly
+like the production `DEPLOY_ENABLED` gate. The CI job pins the full-sha image
+tag at deploy time via `kustomize edit set image`.
+
+For a manual deploy, follow the same steps as production but use `k8s/staging`:
 ```bash
 # Deploy to staging
 kubectl apply -k k8s/staging

@@ -20,14 +20,16 @@ labels:
 commonAnnotations:
   deployment.timestamp: "REPLACE_WITH_DEPLOYMENT_TIMESTAMP"
 
-# Image tags for production (override defaults)
+# Image tags for production. Names match what CI actually pushes
+# (ghcr.io/bralabee/jtoye-<service>). newTag stays the immutable 2.1.0 default;
+# CI pins the exact full-sha tag at deploy time via `kustomize edit set image`.
 images:
-  - name: ghcr.io/jtoye/core-java
-    newTag: 2.1.0
-  - name: ghcr.io/jtoye/edge-go
-    newTag: 2.1.0
-  - name: ghcr.io/jtoye/frontend
-    newTag: 2.1.0
+  - name: ghcr.io/bralabee/jtoye-core-java
+    newTag: "2.1.0"
+  - name: ghcr.io/bralabee/jtoye-edge-go
+    newTag: "2.1.0"
+  - name: ghcr.io/bralabee/jtoye-frontend
+    newTag: "2.1.0"
 
 # ConfigMap patches for production environment
 # `patches` with a bare `path` auto-detects strategic-merge, the

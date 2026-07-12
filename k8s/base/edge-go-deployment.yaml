@@ -41,7 +41,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: edge-go
-        image: ghcr.io/jtoye/edge-go:2.1.0
+        image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
