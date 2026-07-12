@@ -56,6 +56,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
     validate-on-migrate: true
+    # Issue #96 tail: V44 was a RESERVED slot filled AFTER V45/V46 shipped, so
+    # deployed DBs are already stamped past it. out-of-order lets Flyway apply
+    # the lower-versioned pending V44 instead of failing validation ("resolved
+    # migration not applied"). Fresh DBs still migrate strictly in order. May
+    # be reverted to false once every environment's flyway_schema_history
+    # shows version 44 applied. See V44__fts_leakproof_and_vector_backfill.sql.
+    out-of-order: true
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

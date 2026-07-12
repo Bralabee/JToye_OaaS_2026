@@ -50,7 +50,10 @@ spring:
   flyway:
     enabled: true
     validate-on-migrate: true
-    out-of-order: false
+    # Issue #96 tail: reserved-slot V44 must apply to DBs already stamped
+    # V45/V46 (see V44__fts_leakproof_and_vector_backfill.sql header). Revert
+    # to false once flyway_schema_history shows version 44 applied here.
+    out-of-order: true
     baseline-on-migrate: false
 
 server:
