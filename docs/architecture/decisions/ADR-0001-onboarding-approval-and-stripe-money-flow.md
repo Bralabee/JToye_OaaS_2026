@@ -1,6 +1,9 @@
 # ADR-0001: Vendor onboarding approval stance & Stripe money-flow
 
-- **Status:** Accepted (2026-07-11)
+- **Status:** Accepted (2026-07-11) — Decision 2's MARKETPLACE destination-charge flow
+  IMPLEMENTED 2026-07-12 (issue #102 slice: V48 Connect linkage on the tenant registry,
+  `StripeConnectService` Express onboarding + `account.updated` sync, destination-charge
+  routing in `PaymentService.createPaymentIntent`). WHITE_LABEL direct charges remain future.
 - **Deciders:** J'Toye engineering (developer decision, 2026-07-11)
 - **Tracking:** GitHub #178 (onboarding auto-approve), GitHub #102 (Stripe money flow)
 - **Related:** [VENDOR_ONBOARDING_STATE_MODEL.md](../VENDOR_ONBOARDING_STATE_MODEL.md) §9 item 1, Phase 18 UAT item 5
@@ -104,3 +107,23 @@ begins. This ADR records the decision only — **no Stripe implementation code i
   criterion on #102 only. #102 remains OPEN pending implementation.
 - The onboarding `PAYMENTS_CONNECTED`/`IDENTITY_KYC` gates (driven by the Stripe
   `account.updated` webhook) will attach to whichever connected-account shape the model selects.
+
+### Implementation note (2026-07-12, issue #102 slice)
+
+The destination-charge (MARKETPLACE) flow is now implemented:
+
+- **V48** adds `stripe_account_id` + `stripe_connect_status` (NONE/PENDING/ENABLED/DISABLED)
+  to the `tenants` registry, alongside the tenant lifecycle columns (status/plan/contacts).
+- **`StripeConnectService`** creates Express connected accounts + Stripe-hosted onboarding
+  links (admin endpoint `POST /api/v1/admin/tenants/{id}/stripe/connect`) and syncs the
+  capability state from the `account.updated` webhook (behind the existing
+  `processed_stripe_events` idempotency guard).
+- **`PaymentService.createPaymentIntent`** routes an order as a destination charge —
+  `transfer_data[destination]` + `application_fee_amount` (`stripe.platform-fee-bps`) —
+  **only when** the tenant's onboarding model is MARKETPLACE **and** its connected account
+  is ENABLED. WHITE_LABEL and unlinked tenants keep the previous single-account behaviour
+  unchanged (their direct-charge flow is still future work, per this decision).
+- Verification is unit/integration level with the Stripe SDK stubbed — the dev stack has
+  empty Stripe keys, so **live Connect verification is deferred to a keyed environment**.
+- Still open after this slice: WHITE_LABEL direct charges, `PAYMENTS_CONNECTED`/`IDENTITY_KYC`
+  onboarding gates wiring, per-Connect-endpoint webhook secret, billing/metering.

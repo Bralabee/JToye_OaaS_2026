@@ -498,6 +498,26 @@
         },
         "type" : "object"
       },
+      "ConnectAccountDto" : {
+        "properties" : {
+          "connectStatus" : {
+            "enum" : [
+              "NONE",
+              "PENDING",
+              "ENABLED",
+              "DISABLED"
+            ],
+            "type" : "string"
+          },
+          "onboardingUrl" : {
+            "type" : "string"
+          },
+          "stripeAccountId" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CreateAnnouncementRequest" : {
         "description" : "Announcement creation request",
         "properties" : {
@@ -911,6 +931,39 @@
             "type" : "string"
           },
           "tags" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CreateTenantRequest" : {
+        "properties" : {
+          "contactEmail" : {
+            "maxLength" : 320,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "contactName" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "contactPhone" : {
+            "maxLength" : 32,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "name" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "plan" : {
+            "enum" : [
+              "STANDARD",
+              "PREMIUM",
+              "INTERNAL"
+            ],
             "type" : "string"
           }
         },
@@ -3373,6 +3426,67 @@
         },
         "type" : "object"
       },
+      "TenantDto" : {
+        "properties" : {
+          "contactEmail" : {
+            "type" : "string"
+          },
+          "contactName" : {
+            "type" : "string"
+          },
+          "contactPhone" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "offboardedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "plan" : {
+            "enum" : [
+              "STANDARD",
+              "PREMIUM",
+              "INTERNAL"
+            ],
+            "type" : "string"
+          },
+          "status" : {
+            "enum" : [
+              "ACTIVE",
+              "SUSPENDED",
+              "OFFBOARDED"
+            ],
+            "type" : "string"
+          },
+          "stripeAccountId" : {
+            "type" : "string"
+          },
+          "stripeConnectStatus" : {
+            "enum" : [
+              "NONE",
+              "PENDING",
+              "ENABLED",
+              "DISABLED"
+            ],
+            "type" : "string"
+          },
+          "suspendedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "UpdateCustomerRequest" : {
         "description" : "Customer update request",
         "properties" : {
@@ -3489,6 +3603,371 @@
         },
         "tags" : [
           "core-application"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants" : {
+      "get" : {
+        "description" : "Lists all tenants in the registry",
+        "operationId" : "list_5",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TenantDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List tenants",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      },
+      "post" : {
+        "description" : "Creates an ACTIVE tenant in the registry (no SQL required)",
+        "operationId" : "create_6",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateTenantRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant created"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant name already exists"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Create tenant",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenantId}" : {
+      "get" : {
+        "description" : "Returns one tenant registry row",
+        "operationId" : "get",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant found"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get tenant",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenantId}/offboard" : {
+      "post" : {
+        "description" : "ACTIVE|SUSPENDED -> OFFBOARDED (terminal). API traffic permanently rejected. Keycloak user deprovisioning is a documented follow-up (no admin-client integration exists yet).",
+        "operationId" : "offboard",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant offboarded"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Illegal transition (already OFFBOARDED)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Offboard tenant",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenantId}/reactivate" : {
+      "post" : {
+        "description" : "SUSPENDED -> ACTIVE. Restores API traffic.",
+        "operationId" : "reactivate",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant reactivated"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Illegal transition (not SUSPENDED)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Reactivate tenant",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenantId}/stripe/connect" : {
+      "post" : {
+        "description" : "Creates an Express connected account for the tenant (idempotent: reuses an existing linked account) and returns a single-use Stripe-hosted onboarding link. Account capability state is then driven by the account.updated webhook.",
+        "operationId" : "connectStripe",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                }
+              }
+            },
+            "description" : "Connected account ready; onboarding link returned"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                }
+              }
+            },
+            "description" : "Tenant not ACTIVE or Stripe not configured"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          },
+          "502" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                }
+              }
+            },
+            "description" : "Stripe API error"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Create Stripe Connect account + onboarding link",
+        "tags" : [
+          "Tenant Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenantId}/suspend" : {
+      "post" : {
+        "description" : "ACTIVE -> SUSPENDED. The tenant's API traffic is rejected (403) until reactivated.",
+        "operationId" : "suspend",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "tenantId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant suspended"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Illegal transition (not ACTIVE)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantDto"
+                }
+              }
+            },
+            "description" : "Tenant not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Suspend tenant",
+        "tags" : [
+          "Tenant Admin"
         ]
       }
     },
@@ -7956,6 +8435,10 @@
     {
       "description" : "Data synchronization endpoints for Edge services",
       "name" : "Sync"
+    },
+    {
+      "description" : "Platform-admin tenant lifecycle: create, suspend, reactivate, offboard, Stripe Connect linkage",
+      "name" : "Tenant Admin"
     }
   ]
 }
