@@ -665,6 +665,10 @@ public class PublicStorefrontService {
         dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
         dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
         dto.setTags(shop.getTags());
+        // QA-council FIX-6 (M3): disclose the payment mode BEFORE order
+        // commit. Mirrors the exact gate createGuestOrder uses to decide
+        // card-intent vs COD (paymentService.isConfigured()).
+        dto.setAcceptsCardPayments(paymentService.isConfigured());
         return dto;
     }
 

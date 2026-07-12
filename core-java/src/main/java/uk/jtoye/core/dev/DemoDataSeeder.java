@@ -107,9 +107,30 @@ public class DemoDataSeeder implements ApplicationRunner {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** A single curated menu item, incl. "Popular" (featured) + dietary metadata. */
+    // FSA 14-allergen bit positions — MUST match the shared mask convention
+    // (PublicStorefrontService.ALLERGEN_NAMES index i == bit i) used by the
+    // storefront allergen list, the dashboard allergen column and the
+    // customer allergen-warning check (QA-council FIX-7 / M4).
+    private static final int A_GLUTEN = 1;            // bit 0
+    private static final int A_CRUSTACEANS = 1 << 1;  // crayfish, prawns
+    private static final int A_EGGS = 1 << 2;
+    private static final int A_FISH = 1 << 3;
+    private static final int A_PEANUTS = 1 << 4;      // yaji/suya spice
+    private static final int A_MILK = 1 << 6;
+    private static final int A_CELERY = 1 << 8;       // stock bases
+    private static final int A_MUSTARD = 1 << 9;      // mayonnaise
+
+    /**
+     * A single curated menu item, incl. "Popular" (featured), dietary metadata
+     * and PPDS allergen data (QA-council FIX-7 / M4): the FSA 14-allergen
+     * {@code allergenMask} plus {@code **…**} markup on allergen ingredients
+     * (the vendor markup convention {@code IngredientMarkupParser} parses into
+     * label-emphasis spans — Natasha's Law requires allergens emboldened
+     * INLINE in the ingredients list).
+     */
     private record MenuItem(String sku, String title, String category, long pricePennies,
-                            String ingredients, boolean featured, String dietaryTags) {}
+                            String ingredients, boolean featured, String dietaryTags,
+                            int allergenMask) {}
 
     @Override
     public void run(ApplicationArguments args) {
@@ -176,55 +197,65 @@ public class DemoDataSeeder implements ApplicationRunner {
     private List<MenuItem> shopOneMenu() {
         return List.of(
                 new MenuItem("MAK-JOL", "Jollof Rice", "Mains", 899L,
-                        "long-grain rice, tomatoes, peppers, onions, chicken stock", true, "Halal, Gluten-Free"),
+                        "long-grain rice, tomatoes, peppers, onions, **chicken stock (celery)**", true,
+                        "Halal, Gluten-Free", A_CELERY),
                 new MenuItem("MAK-EGU", "Egusi Soup", "Mains", 1050L,
-                        "melon seeds, spinach, palm oil, beef, dried fish, crayfish", false, "Halal"),
+                        "melon seeds, spinach, palm oil, beef, **dried fish**, **crayfish**", false,
+                        "Halal", A_FISH | A_CRUSTACEANS),
                 new MenuItem("MAK-PYE", "Pounded Yam & Egusi", "Mains", 1100L,
-                        "pounded yam, egusi soup, assorted meat", false, "Halal"),
+                        "pounded yam, **egusi soup (fish, crayfish)**, assorted meat", false,
+                        "Halal", A_FISH | A_CRUSTACEANS),
                 new MenuItem("MAK-PLA", "Fried Plantain", "Sides", 350L,
-                        "ripe plantain, sunflower oil", false, "Vegan, Gluten-Free"),
+                        "ripe plantain, sunflower oil", false, "Vegan, Gluten-Free", 0),
                 new MenuItem("MAK-MOI", "Moin Moin", "Sides", 400L,
-                        "steamed black-eyed bean pudding, peppers, onions", false, "Vegetarian, Gluten-Free"),
+                        "steamed black-eyed bean pudding, peppers, onions, **eggs**", false,
+                        "Vegetarian, Gluten-Free", A_EGGS),
                 new MenuItem("MAK-CHA", "Chapman", "Drinks", 450L,
-                        "Fanta, Sprite, blackcurrant, cucumber, bitters", true, "Vegetarian"),
+                        "Fanta, Sprite, blackcurrant, cucumber, bitters", true, "Vegetarian", 0),
                 new MenuItem("MAK-ZOB", "Zobo", "Drinks", 300L,
-                        "hibiscus, ginger, pineapple", false, "Vegan"));
+                        "hibiscus, ginger, pineapple", false, "Vegan", 0));
     }
 
     private List<MenuItem> shopTwoMenu() {
         return List.of(
                 new MenuItem("PJC-PJO", "Party Jollof Rice", "Mains", 950L,
-                        "smoky long-grain rice, scotch bonnet, tomatoes, peppers", true, "Halal"),
+                        "smoky long-grain rice, scotch bonnet, tomatoes, peppers", true, "Halal", 0),
                 new MenuItem("PJC-SUY", "Suya Platter", "Mains", 1200L,
-                        "grilled spiced beef skewers, yaji, red onion, tomato", true, "Halal, Spicy"),
+                        "grilled spiced beef skewers, **yaji (peanuts)**, red onion, tomato", true,
+                        "Halal, Spicy", A_PEANUTS),
                 new MenuItem("PJC-TIL", "Grilled Tilapia", "Mains", 1350L,
-                        "whole tilapia, pepper marinade, served with dodo", false, "Halal, Pescatarian"),
+                        "whole **tilapia (fish)**, pepper marinade, served with dodo", false,
+                        "Halal, Pescatarian", A_FISH),
                 new MenuItem("PJC-PUF", "Puff Puff", "Sides", 300L,
-                        "sweet fried dough balls, sugar dusting", false, "Vegetarian"),
+                        "sweet fried **wheat flour** dough balls, sugar dusting", false,
+                        "Vegetarian", A_GLUTEN),
                 new MenuItem("PJC-DOD", "Dodo", "Sides", 350L,
-                        "fried sweet plantain", false, "Vegan, Gluten-Free"),
+                        "fried sweet plantain", false, "Vegan, Gluten-Free", 0),
                 new MenuItem("PJC-PAL", "Palm Wine", "Drinks", 600L,
-                        "fresh tapped palm wine", false, null),
+                        "fresh tapped palm wine", false, null, 0),
                 new MenuItem("PJC-GIN", "Ginger Beer", "Drinks", 350L,
-                        "fiery homemade ginger beer", false, "Vegan"));
+                        "fiery homemade ginger beer", false, "Vegan", 0));
     }
 
     private List<MenuItem> shopThreeMenu() {
         return List.of(
                 new MenuItem("BVG-PER", "Peri Peri Chicken", "Mains", 900L,
-                        "flame-grilled chicken, peri peri marinade", true, "Halal, Spicy"),
+                        "flame-grilled chicken, peri peri marinade", true, "Halal, Spicy", 0),
                 new MenuItem("BVG-LAM", "Lamb Kebab", "Mains", 1000L,
-                        "marinated lamb skewers, flatbread, salad", false, "Halal"),
+                        "marinated lamb skewers, **flatbread (wheat)**, salad", false,
+                        "Halal", A_GLUTEN),
                 new MenuItem("BVG-BEE", "Beef Suya Wrap", "Mains", 850L,
-                        "spiced beef, red onion, wrap, yaji", true, "Halal, Spicy"),
+                        "spiced beef, red onion, **wheat wrap**, **yaji (peanuts)**", true,
+                        "Halal, Spicy", A_GLUTEN | A_PEANUTS),
                 new MenuItem("BVG-SWF", "Sweet Potato Fries", "Sides", 400L,
-                        "sweet potato, sea salt, sunflower oil", false, "Vegan, Gluten-Free"),
+                        "sweet potato, sea salt, sunflower oil", false, "Vegan, Gluten-Free", 0),
                 new MenuItem("BVG-COL", "Coleslaw", "Sides", 250L,
-                        "cabbage, carrot, mayonnaise", false, "Vegetarian, Gluten-Free"),
+                        "cabbage, carrot, **mayonnaise (egg, mustard)**", false,
+                        "Vegetarian, Gluten-Free", A_EGGS | A_MUSTARD),
                 new MenuItem("BVG-MAN", "Mango Lassi", "Drinks", 400L,
-                        "mango, yoghurt, cardamom", false, "Vegetarian"),
+                        "mango, **yoghurt (milk)**, cardamom", false, "Vegetarian", A_MILK),
                 new MenuItem("BVG-SOB", "Sobo Punch", "Drinks", 350L,
-                        "hibiscus punch, pineapple, orange", false, "Vegan"));
+                        "hibiscus punch, pineapple, orange", false, "Vegan", 0));
     }
 
     private Set<String> allCuratedSkus() {
@@ -303,15 +334,31 @@ public class DemoDataSeeder implements ApplicationRunner {
             Product p = new Product();
             p.setTenantId(DEMO_TENANT);
             p.setSku(item.sku());
-            p.setAllergenMask(0);
             result.productsCreated++;
             return p;
         });
+        // PPDS allergen data (QA-council FIX-7 / M4): ingredients_text keeps
+        // the raw **allergen** markup (the vendor convention); the persisted
+        // spans mirror ProductService's save-path cache and the PPDS label
+        // re-parses the text fresh at render time. The mask drives the
+        // storefront allergen list, dashboard column and allergen warnings.
+        // Applied UNCONDITIONALLY so pre-existing dev rows (seeded with
+        // mask=0) are repaired in place on restart, not skipped.
+        var parsedIngredients = uk.jtoye.core.product.IngredientMarkupParser.parse(item.ingredients());
+        // V41 durability data so the PPDS label endpoint can render for the
+        // demo menu (a compliant label 422s without it): fresh-prepared food
+        // gets a 2-day USE_BY — plausible for kitchen-made items and safe as
+        // dev/demo fixture data.
+        product.setShelfLifeDays(2);
+        product.setDurabilityType("USE_BY");
         product.setTitle(item.title());
         product.setCategory(item.category());
         product.setPricePennies(item.pricePennies());
         product.setIngredientsText(item.ingredients());
-        product.setDescription(item.title() + " — " + item.ingredients());
+        product.setAllergenMask(item.allergenMask());
+        product.setAllergenSpans(parsedIngredients.spans());
+        // Description is customer-facing prose — use the markup-stripped text.
+        product.setDescription(item.title() + " — " + parsedIngredients.plainText());
         product.setAvailable(true);
         product.setShopId(shopId);
         product.setFeatured(item.featured());

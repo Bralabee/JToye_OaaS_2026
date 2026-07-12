@@ -3,7 +3,7 @@
 import { use, useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
@@ -794,6 +794,35 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
           </div>
         </div>
+
+        {/* How you'll pay — QA-council FIX-6 (M3): disclose the payment
+            method BEFORE the customer commits a binding order. Driven by the
+            additive PublicShopDto.acceptsCardPayments (server derives it from
+            PaymentService.isConfigured()). When the backend doesn't send the
+            field (old backend), render nothing — the pre-fix behaviour. */}
+        {shop?.acceptsCardPayments !== undefined && (
+          <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">How you&apos;ll pay</h2>
+            {shop.acceptsCardPayments ? (
+              <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
+                <CreditCard className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
+                <span>
+                  Pay securely by card — you&apos;ll enter your card details after
+                  confirming your order.
+                </span>
+              </p>
+            ) : (
+              <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
+                <Banknote className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
+                <span>
+                  Pay on {fulfilmentType === "COLLECTION" ? "collection" : "delivery"} —
+                  cash to the {fulfilmentType === "COLLECTION" ? "shop" : "driver"}. No
+                  payment is taken online.
+                </span>
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
