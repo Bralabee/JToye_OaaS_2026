@@ -60,36 +60,42 @@ public class VendorOnboardingStateMachineService {
 
         stateMachine.startReactively().block();
 
-        Message<OnboardingEvent> message = MessageBuilder
-                .withPayload(event)
-                .setHeader(VendorOnboardingStateMachineConfig.ONBOARDING_ID_HEADER, onboardingId)
-                .build();
+        // IN-10: stop the per-call machine on EVERY exit path. The throw below
+        // previously abandoned the machine un-stopped (an inherited wart from
+        // OrderStateMachineService); the finally guarantees resource hygiene on
+        // both the success and the veto/denied path.
+        try {
+            Message<OnboardingEvent> message = MessageBuilder
+                    .withPayload(event)
+                    .setHeader(VendorOnboardingStateMachineConfig.ONBOARDING_ID_HEADER, onboardingId)
+                    .build();
 
-        var result = stateMachine.sendEvent(Mono.just(message)).blockLast();
+            var result = stateMachine.sendEvent(Mono.just(message)).blockLast();
 
-        OnboardingState newState = stateMachine.getState().getId();
+            OnboardingState newState = stateMachine.getState().getId();
 
-        // Two ways an event fails to transition:
-        //  (1) no matching transition for event+state  -> ResultType DENIED;
-        //  (2) a matching transition whose GUARD returned false -> Spring reports
-        //      ResultType ACCEPTED (the event was consumed) but the state does NOT
-        //      change. Because every onboarding transition moves to a DIFFERENT
-        //      state, an unchanged state after an "accepted" event means the guard
-        //      vetoed it. Both cases must surface as InvalidStateTransitionException.
-        boolean notAccepted = result == null
-                || result.getResultType() != StateMachineEventResult.ResultType.ACCEPTED;
-        boolean guardVetoed = newState == current;
-        if (notAccepted || guardVetoed) {
-            String errorMsg = String.format(
-                    "Invalid onboarding state transition for %s: cannot apply event %s in state %s",
-                    onboardingId, event, current);
-            log.warn(errorMsg);
-            throw new InvalidStateTransitionException(errorMsg);
+            // Two ways an event fails to transition:
+            //  (1) no matching transition for event+state  -> ResultType DENIED;
+            //  (2) a matching transition whose GUARD returned false -> Spring reports
+            //      ResultType ACCEPTED (the event was consumed) but the state does NOT
+            //      change. Because every onboarding transition moves to a DIFFERENT
+            //      state, an unchanged state after an "accepted" event means the guard
+            //      vetoed it. Both cases must surface as InvalidStateTransitionException.
+            boolean notAccepted = result == null
+                    || result.getResultType() != StateMachineEventResult.ResultType.ACCEPTED;
+            boolean guardVetoed = newState == current;
+            if (notAccepted || guardVetoed) {
+                String errorMsg = String.format(
+                        "Invalid onboarding state transition for %s: cannot apply event %s in state %s",
+                        onboardingId, event, current);
+                log.warn(errorMsg);
+                throw new InvalidStateTransitionException(errorMsg);
+            }
+
+            log.info("Onboarding {} transitioned: {} -> {} (event: {})", onboardingId, current, newState, event);
+            return newState;
+        } finally {
+            stateMachine.stopReactively().block();
         }
-
-        log.info("Onboarding {} transitioned: {} -> {} (event: {})", onboardingId, current, newState, event);
-
-        stateMachine.stopReactively().block();
-        return newState;
     }
 }
