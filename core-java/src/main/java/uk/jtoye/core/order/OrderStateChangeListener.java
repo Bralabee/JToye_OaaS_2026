@@ -30,8 +30,13 @@ import uk.jtoye.core.security.TenantContext;
  * {@code processed_order_events} (V47, FORCE RLS) mirrors the
  * {@code processed_stripe_events} precedent: 0 rows inserted ⇒ duplicate
  * delivery ⇒ skip ALL side effects. The INSERT sits inside this listener's
- * transaction on purpose — if a side effect throws, the dedup row rolls back
- * too and broker redelivery retries cleanly (DLQ bounds it).
+ * transaction on purpose — if a side effect throws INTO THIS TRANSACTION
+ * (e.g. the order lookup or metrics), the dedup row rolls back too and broker
+ * redelivery retries cleanly (DLQ bounds it). Precision note (Stage-4
+ * independent verification): the email send is dispatched {@code @Async} and
+ * {@code EmailNotificationService} catches {@code MailException} internally,
+ * so an SMTP outage does NOT reach this transaction — email delivery is
+ * at-most-once once the dedup row commits, exactly as it was pre-dedup.
  *
  * <p>SSE broadcasting deliberately does NOT live here (#92): emitters are
  * per-JVM, so it moved to {@link OrderSseFanoutListener}, which consumes a
