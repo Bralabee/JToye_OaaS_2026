@@ -154,9 +154,16 @@ export default function KitchenPage() {
       try {
         const res = await apiClient.get("/api/v1/shops?size=100")
         const shopList: Shop[] = res.data.content || []
-        setShops(shopList)
-        if (shopList.length > 0) {
-          setSelectedShopId(shopList[0].id)
+        // QA-council FIX-4 (M2 + L2): a blind shopList[0] default could select
+        // a draft/junk shop, making the kitchen look idle while real orders
+        // waited on a published shop — and the selector listed every draft.
+        // Prefer published (Live) shops; fall back to all so a vendor with
+        // only drafts still gets a working (never selector-empty) KDS.
+        const publishedShops = shopList.filter((s) => s.published)
+        const selectable = publishedShops.length > 0 ? publishedShops : shopList
+        setShops(selectable)
+        if (selectable.length > 0) {
+          setSelectedShopId(selectable[0].id)
         }
       } catch {
         toast({
