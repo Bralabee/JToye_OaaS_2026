@@ -1,5 +1,6 @@
 package uk.jtoye.core.security;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextImpl;
@@ -35,10 +37,19 @@ class JwtTenantFilterTest {
     private HttpServletResponse response;
     @Mock
     private FilterChain filterChain;
+    // issue #98 [P2-7]: null-safe MeterRegistry provider; getIfAvailable()
+    // returns null by default → counter absent, the intended no-op path here.
+    @Mock
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     @BeforeEach
     void setUp() {
-        filter = new JwtTenantFilter();
+        // issue #98 [P2-7]: JwtTenantFilter now takes a null-safe
+        // ObjectProvider<MeterRegistry>. These behaviours don't assert on the
+        // counter, so a mock provider (getIfAvailable() -> null by default) is
+        // enough; the isolation-failure counter is exercised in the dedicated
+        // JwtTenantFilterMetricsTest.
+        filter = new JwtTenantFilter(meterRegistryProvider);
         // Ensure OncePerRequestFilter internals work with our mock request
         lenient().when(request.getAttribute(any())).thenReturn(null);
         lenient().doNothing().when(request).setAttribute(any(), any());

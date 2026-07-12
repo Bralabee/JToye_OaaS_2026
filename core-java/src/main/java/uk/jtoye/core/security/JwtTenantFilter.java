@@ -1,11 +1,14 @@
 package uk.jtoye.core.security;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -28,6 +31,23 @@ import java.util.UUID;
 public class JwtTenantFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtTenantFilter.class);
 
+    // issue #98 [P2-7]: the isolation-failure signal the Prometheus alert
+    // TenantIsolationFailure (rate(tenant_context_missing_total[5m]) > 0.1)
+    // references — incremented when an authenticated JWT principal reaches this
+    // filter carrying no resolvable tenant claim. Null-safe MeterRegistry,
+    // mirroring the RateLimitInterceptor precedent. Label-free by design
+    // (no tenant id) to keep the series low-cardinality and PII-free (T-t6b-03).
+    private final Counter tenantMissingCounter;
+
+    public JwtTenantFilter(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        MeterRegistry reg = meterRegistryProvider.getIfAvailable();
+        this.tenantMissingCounter = reg != null
+                ? Counter.builder("tenant.context.missing")
+                    .description("Authenticated request reached the tenant filter with no resolvable tenant claim (issue #98 — TenantIsolationFailure signal)")
+                    .register(reg)
+                : null;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -40,6 +60,15 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                     // Override any header-based tenant with JWT tenant
                     TenantContext.set(jwtTenant.get());
                     log.debug("Set tenant context from JWT: {}", jwtTenant.get());
+                } else {
+                    // issue #98 [P2-7]: an authenticated principal reached this
+                    // filter carrying no resolvable tenant claim — the
+                    // isolation-failure signal behind the TenantIsolationFailure
+                    // alert. Emit the (null-safe) counter and warn.
+                    if (tenantMissingCounter != null) {
+                        tenantMissingCounter.increment();
+                    }
+                    log.warn("Authenticated JWT principal has no resolvable tenant claim — tenant context left unset");
                 }
             }
             // If no JWT tenant and TenantContext is still empty, header-based tenant (if any) remains
