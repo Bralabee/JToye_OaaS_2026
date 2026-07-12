@@ -345,6 +345,12 @@ public class DemoDataSeeder implements ApplicationRunner {
         // Applied UNCONDITIONALLY so pre-existing dev rows (seeded with
         // mask=0) are repaired in place on restart, not skipped.
         var parsedIngredients = uk.jtoye.core.product.IngredientMarkupParser.parse(item.ingredients());
+        // V41 durability data so the PPDS label endpoint can render for the
+        // demo menu (a compliant label 422s without it): fresh-prepared food
+        // gets a 2-day USE_BY — plausible for kitchen-made items and safe as
+        // dev/demo fixture data.
+        product.setShelfLifeDays(2);
+        product.setDurabilityType("USE_BY");
         product.setTitle(item.title());
         product.setCategory(item.category());
         product.setPricePennies(item.pricePennies());
