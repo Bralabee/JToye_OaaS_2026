@@ -259,4 +259,40 @@ class RefundControllerIntegrationTest {
 
         verify(refundService, times(1)).findByOrderId(orderId);
     }
+
+    // ------------------------------------------------------------------
+    // GET /api/v1/orders/{id}/refunds/{refundId} — issue #97 tail
+    // (single-resource GET matching the POST's Location URI)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET single refund returns 200 + RefundDto (the POST Location URI dereferences)")
+    void getRefund_exists_returns200WithRefundDto() throws Exception {
+        UUID refundId = UUID.randomUUID();
+        RefundDto stub = stubRefundDto(refundId, RefundStatus.succeeded);
+        when(refundService.findRefund(orderId, refundId)).thenReturn(stub);
+
+        mockMvc.perform(get("/api/v1/orders/" + orderId + "/refunds/" + refundId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(refundId.toString()))
+                .andExpect(jsonPath("$.orderId").value(orderId.toString()))
+                .andExpect(jsonPath("$.status").value("succeeded"));
+
+        verify(refundService, times(1)).findRefund(orderId, refundId);
+    }
+
+    @Test
+    @DisplayName("GET single refund returns 404 ProblemDetail when the service throws ResourceNotFound")
+    void getRefund_missing_returns404ProblemDetail() throws Exception {
+        UUID refundId = UUID.randomUUID();
+        when(refundService.findRefund(orderId, refundId))
+                .thenThrow(new uk.jtoye.core.exception.ResourceNotFoundException(
+                        "Refund not found: " + refundId + " for order " + orderId));
+
+        mockMvc.perform(get("/api/v1/orders/" + orderId + "/refunds/" + refundId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/not-found"))
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString(refundId.toString())));
+    }
 }

@@ -13,6 +13,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -21,7 +22,17 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.order.Order;
+import uk.jtoye.core.order.OrderRepository;
+import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.payment.RefundReason;
+import uk.jtoye.core.payment.StripeRefundClient;
+import uk.jtoye.core.payment.dto.CreateRefundRequest;
 import uk.jtoye.core.product.dto.CreateProductRequest;
+import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.dto.CreateAnnouncementRequest;
 import uk.jtoye.core.shop.dto.CreatePromotionRequest;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
@@ -32,6 +43,8 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -46,6 +59,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * headers WITHOUT that prefix, so the URI a client was told to follow 404'd.
  * Each test here performs the full round trip the RFC expects:
  * POST → 201 + Location → GET &lt;Location&gt; → 200 with the created entity.
+ *
+ * <p>The refund case (#97 tail) covers the seventh POST endpoint —
+ * {@code RefundController} hard-codes its own {@code /api/v1} prefix (BL-01)
+ * and, until this issue, had no single-resource GET for its Location URI to
+ * dereference to. Stripe is replaced by a {@link MockitoBean} so the round
+ * trip stays hermetic.
  *
  * <p>The static convention side of the same bug class is guarded by
  * {@code ApiPrefixConventionTest}.
@@ -76,6 +95,17 @@ class LocationHeaderContractTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ShopRepository shopRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    // Hermetic Stripe: RefundService calls stripeRefundClient.create() before
+    // returning; the refund round trip must not leave the test JVM.
+    @MockitoBean
+    private StripeRefundClient stripeRefundClient;
 
     private UUID testTenantId;
 
@@ -203,5 +233,58 @@ class LocationHeaderContractTest {
         request.setShopId(createShop());
 
         assertLocationDereferences("/api/v1/announcements", request, "/api/v1/announcements");
+    }
+
+    @Test
+    @WithMockUser(roles = "admin")  // issue #83 P1-1: refunds require the admin realm role
+    void refundCreateLocationDereferences() throws Exception {
+        UUID orderId = seedRefundableOrder();
+
+        com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
+        stripeRefund.setId("re_deref_" + UUID.randomUUID().toString().substring(0, 8));
+        stripeRefund.setStatus("succeeded");
+        when(stripeRefundClient.create(any(), any())).thenReturn(stripeRefund);
+
+        CreateRefundRequest request = new CreateRefundRequest(
+                500L, RefundReason.REQUESTED_BY_CUSTOMER, "Location contract refund");
+
+        // POST /orders/{id}/refund → 201 + Location /orders/{id}/refunds/{refundId}
+        // → GET <Location> → 200. The GET side is the #97-tail endpoint.
+        assertLocationDereferences(
+                "/api/v1/orders/" + orderId + "/refund",
+                request,
+                "/api/v1/orders/" + orderId + "/refunds");
+    }
+
+    /**
+     * Seeds a shop + CONFIRMED/CAPTURED order with a Stripe payment reference —
+     * the minimum RefundService accepts. Repository saves run as the
+     * Testcontainers bootstrap superuser, so RLS does not block seeding.
+     */
+    private UUID seedRefundableOrder() {
+        TenantContext.set(testTenantId);
+        try {
+            Shop shop = new Shop();
+            shop.setTenantId(testTenantId);
+            shop.setName("Refund Contract Shop");
+            shop.setSlug("refund-contract-" + UUID.randomUUID().toString().substring(0, 8));
+            shop.setAddress("1 Contract Way");
+            Shop savedShop = shopRepository.save(shop);
+
+            Order order = new Order();
+            order.setTenantId(testTenantId);
+            order.setShopId(savedShop.getId());
+            order.setOrderNumber("ORD-DEREF-" + UUID.randomUUID().toString().substring(0, 8));
+            order.setStatus(OrderStatus.CONFIRMED);
+            order.setPaymentStatus(PaymentStatus.CAPTURED);
+            order.setPaymentReference("pi_deref_" + UUID.randomUUID().toString().substring(0, 8));
+            order.setCustomerEmail("deref-refund@test.local");
+            order.setCustomerName("Deref Refund Customer");
+            order.setTotalAmountPennies(1000L);
+            order.setSubtotalPennies(1000L);
+            return orderRepository.save(order).getId();
+        } finally {
+            TenantContext.clear();
+        }
     }
 }

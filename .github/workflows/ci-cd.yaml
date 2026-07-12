@@ -174,6 +174,59 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
+  # Job 1d: OpenAPI breaking-change gate (#97 AC3).
+  # Regenerates the core-java OpenAPI spec from source — the
+  # generateOpenApiSpec Gradle task boots the FULL Spring context against a
+  # throwaway Testcontainers Postgres and captures a normalized (byte-stable)
+  # /v3/api-docs — then compares it with the reviewed snapshot at
+  # docs/api/openapi-snapshot.json using a pinned, checksum-verified oasdiff:
+  #   byte-identical              -> pass
+  #   breaking change             -> FAIL with oasdiff's breaking-change report
+  #   non-breaking drift          -> FAIL telling the author to regenerate
+  #
+  # INTENTIONAL API changes (including reviewed breaking ones): run
+  #   ./gradlew :core-java:updateOpenApiSnapshot
+  # and commit the snapshot diff in the SAME PR — the snapshot diff is the
+  # reviewable contract change that makes this gate green. Never edit the
+  # snapshot by hand. See docs/api/README.md.
+  openapi-compat:
+    name: OpenAPI Breaking-Change Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Regenerate OpenAPI spec from source (Testcontainers Postgres)
+        run: ./gradlew :core-java:generateOpenApiSpec --no-daemon
+
+      - name: Install oasdiff (pinned, checksum-verified)
+        run: |
+          OASDIFF_VERSION="1.23.0"
+          OASDIFF_SHA256="972b10535c3db4366b9dc3ebc11ca021279af3095267c3cffdca854a3a3c4f89"
+          curl -sSfL -o oasdiff.tar.gz "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  oasdiff.tar.gz" | sha256sum -c -
+          tar -xzf oasdiff.tar.gz oasdiff
+          ./oasdiff --version
+
+      - name: Gate — reviewed snapshot vs regenerated spec
+        run: |
+          chmod +x ./scripts/openapi-gate.sh
+          OASDIFF=./oasdiff ./scripts/openapi-gate.sh
+
+      - name: Upload regenerated spec (debugging aid)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-current
+          path: core-java/build-local/openapi/openapi-current.json
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan

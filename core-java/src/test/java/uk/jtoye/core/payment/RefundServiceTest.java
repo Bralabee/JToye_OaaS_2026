@@ -412,4 +412,47 @@ class RefundServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Tenant context not set");
     }
+
+    // ------------------------------------------------------------------
+    // findRefund — single-resource GET (issue #97 tail)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("findRefund returns the mapped DTO when the refund belongs to the given order")
+    void findRefund_belongsToOrder_returnsDto() {
+        UUID refundId = UUID.randomUUID();
+        Refund refund = new Refund(tenantId, orderId, "pi_test_3ABC", "idem-1",
+                500L, RefundReason.REQUESTED_BY_CUSTOMER, null);
+        when(refundRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        RefundDto dto = stubDto(refundId);
+        when(refundMapper.toDto(refund)).thenReturn(dto);
+
+        assertThat(refundService.findRefund(orderId, refundId)).isSameAs(dto);
+    }
+
+    @Test
+    @DisplayName("findRefund throws ResourceNotFound when no refund exists with that id")
+    void findRefund_missing_throwsResourceNotFound() {
+        UUID refundId = UUID.randomUUID();
+        when(refundRepository.findById(refundId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> refundService.findRefund(orderId, refundId))
+                .isInstanceOf(uk.jtoye.core.exception.ResourceNotFoundException.class)
+                .hasMessageContaining(refundId.toString());
+    }
+
+    @Test
+    @DisplayName("findRefund throws ResourceNotFound when the refund belongs to a DIFFERENT order (honest URI hierarchy)")
+    void findRefund_wrongOrder_throwsResourceNotFound() {
+        UUID refundId = UUID.randomUUID();
+        Refund refund = new Refund(tenantId, UUID.randomUUID() /* other order */, "pi_test_3ABC",
+                "idem-2", 500L, RefundReason.REQUESTED_BY_CUSTOMER, null);
+        when(refundRepository.findById(refundId)).thenReturn(Optional.of(refund));
+
+        assertThatThrownBy(() -> refundService.findRefund(orderId, refundId))
+                .isInstanceOf(uk.jtoye.core.exception.ResourceNotFoundException.class)
+                .hasMessageContaining(orderId.toString());
+
+        verifyNoInteractions(refundMapper);
+    }
 }
