@@ -1,10 +1,15 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
-import { MapPin, Clock, Search, Store, ChevronRight } from "lucide-react"
+import { MapPin, Clock, Search, Store, ChevronRight, Loader2 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
+import {
+  isRateLimitError,
+  getRetryDelayMs,
+  MAX_RETRY_ATTEMPTS,
+} from "@/lib/public-fetch-retry"
 import { PublicShop } from "@/types/storefront"
 import { PageResponse } from "@/types/api"
 
@@ -151,6 +156,15 @@ export default function ShopDiscoveryPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [totalPages, setTotalPages] = useState(0)
   const [page, setPage] = useState(0)
+  // F-RATE (#88): a public 429 must surface a transient "busy / retrying" state,
+  // never the authoritative "No shops found" empty state.
+  const [rateLimited, setRateLimited] = useState(false)
+  const [retriesExhausted, setRetriesExhausted] = useState(false)
+  const retryAttemptRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Latest fetch fn, so the retry timer always calls the current closure without
+  // a self-referential useCallback dependency.
+  const fetchRef = useRef<() => void>(() => {})
 
   const fetchShops = useCallback(async () => {
     setLoading(true)
@@ -164,14 +178,52 @@ export default function ShopDiscoveryPage() {
       )
       setShops(res.data.content)
       setTotalPages(res.data.totalPages)
-    } catch {
-      setShops([])
+      // A real (possibly empty) 200 clears the busy state and resets the budget.
+      setRateLimited(false)
+      setRetriesExhausted(false)
+      retryAttemptRef.current = 0
+    } catch (err) {
+      if (isRateLimitError(err)) {
+        // Rate limited — show busy and auto-retry with bounded backoff.
+        setRateLimited(true)
+        const attempt = retryAttemptRef.current
+        if (attempt < MAX_RETRY_ATTEMPTS) {
+          const delay = getRetryDelayMs(err, attempt)
+          retryAttemptRef.current = attempt + 1
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = setTimeout(() => fetchRef.current(), delay)
+        } else {
+          setRetriesExhausted(true)
+        }
+      } else {
+        // Genuine failure / empty — preserve the existing empty behaviour.
+        setShops([])
+        setRateLimited(false)
+        setRetriesExhausted(false)
+      }
     } finally {
       setLoading(false)
     }
   }, [page, searchQuery])
 
   useEffect(() => {
+    fetchRef.current = fetchShops
+  }, [fetchShops])
+
+  useEffect(() => {
+    fetchShops()
+  }, [fetchShops])
+
+  // Clear any pending retry timer on unmount to avoid leaks / act() warnings.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    }
+  }, [])
+
+  const handleManualRetry = useCallback(() => {
+    retryAttemptRef.current = 0
+    setRetriesExhausted(false)
     fetchShops()
   }, [fetchShops])
 
@@ -204,7 +256,33 @@ export default function ShopDiscoveryPage() {
       </div>
 
       {/* Results */}
-      {loading ? (
+      {rateLimited ? (
+        // F-RATE (#88): busy/retrying state — NEVER the "No shops found" empty
+        // state. Static copy only; the 429 body carries no useful detail.
+        <div className="text-center py-16">
+          <Loader2 className="mx-auto h-10 w-10 text-orange-500 animate-spin" />
+          <h3 className="mt-4 text-base font-medium text-slate-900">
+            High demand right now
+          </h3>
+          {retriesExhausted ? (
+            <>
+              <p className="mt-1 text-sm text-slate-500">
+                The marketplace is still busy. Please try again in a moment.
+              </p>
+              <button
+                onClick={handleManualRetry}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+              >
+                Try again
+              </button>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">
+              The marketplace is busy — retrying automatically…
+            </p>
+          )}
+        </div>
+      ) : loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-white rounded-2xl overflow-hidden animate-pulse">

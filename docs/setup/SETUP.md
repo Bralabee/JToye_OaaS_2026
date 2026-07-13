@@ -15,7 +15,7 @@ Access the application:
 - **Backend API**: http://localhost:9090
 - **Keycloak**: http://localhost:8085
 
-Login with: `tenant-a-user` / `password123`
+Login with: `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD` (from your `.env`)
 
 Stop the stack:
 ```bash
