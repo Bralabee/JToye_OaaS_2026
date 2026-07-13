@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import uk.jtoye.core.common.GlobalExceptionHandler;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.order.dto.OrderDto;
 
 import java.util.List;
@@ -56,6 +57,11 @@ class OrderControllerShopFilterTest {
 
     @MockitoBean
     private OrderSseService sseService;
+
+    // OrderController gained a constructor dependency (#204 idempotency contract);
+    // the slice context needs it satisfied even though these GET tests never hit it.
+    @MockitoBean
+    private IdempotencyService idempotencyService;
 
     private static final UUID SHOP_ID = UUID.fromString("33333333-3333-3333-3333-333333333333");
 

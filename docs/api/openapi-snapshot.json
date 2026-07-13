@@ -4420,8 +4420,20 @@
         ]
       },
       "post" : {
-        "description" : "Creates a new customer. Requires name and email (unique per tenant).",
+        "description" : "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
         "operationId" : "create_4",
+        "parameters" : [
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -5407,8 +5419,20 @@
         ]
       },
       "post" : {
-        "description" : "Creates an order with items for the authenticated tenant",
+        "description" : "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.",
         "operationId" : "createOrder",
+        "parameters" : [
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
         "requestBody" : {
           "content" : {
             "application/json" : {

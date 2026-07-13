@@ -1,6 +1,7 @@
 package uk.jtoye.core.order;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -12,6 +13,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -31,10 +35,13 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderSseService sseService;
+    private final IdempotencyService idempotencyService;
 
-    public OrderController(OrderService orderService, OrderSseService sseService) {
+    public OrderController(OrderService orderService, OrderSseService sseService,
+                           IdempotencyService idempotencyService) {
         this.orderService = orderService;
         this.sseService = sseService;
+        this.idempotencyService = idempotencyService;
     }
 
     /**
@@ -52,10 +59,23 @@ public class OrderController {
      * POST /orders
      */
     @PostMapping
-    @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant")
-    public ResponseEntity<OrderDto> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        OrderDto order = orderService.createOrder(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(order);
+    @Idempotent(endpoint = "orders.create")
+    @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.")
+    public ResponseEntity<OrderDto> createOrder(
+            @Valid @RequestBody CreateOrderRequest request,
+            // Hidden from springdoc: IdempotencyHeaderCustomizer advertises the rich
+            // Idempotency-Key parameter (description + maxLength) off @Idempotent, so
+            // documenting the raw @RequestHeader too would double-list the header.
+            @Parameter(hidden = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            OrderDto order = orderService.createOrder(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(order);
+        }
+        IdempotencyOutcome<OrderDto> outcome = idempotencyService.execute(
+                "orders.create", idempotencyKey, request, OrderDto.class,
+                () -> orderService.createOrder(request));
+        return ResponseEntity.status(outcome.status()).body(outcome.value());
     }
 
     /**
