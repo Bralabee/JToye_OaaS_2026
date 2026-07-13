@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 1235 logical invocations passing (872 Java `@Test` methods across 143 files + 231 Jest `it/test` blocks across 32 files + 77 top-level Go `Test*` funcs across 9 files + 28 Playwright `test()` blocks across 6 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
+- **Testing**: All new code requires tests — project standard is 1243 logical invocations passing (877 Java `@Test` methods across 144 files + 234 Jest `it/test` blocks across 33 files + 77 top-level Go `Test*` funcs across 9 files + 28 Playwright `test()` blocks across 6 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -375,7 +375,13 @@ Use these entry points:
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
 
+## Incremental Betterment Doctrine
 
+Improvements must *better* what is already good — never trade away a working good to add a new one.
+
+- Any plan that reworks an existing user-visible surface MUST enumerate the goods it displaces and account for each one (preserve it, or replace it with something strictly better and say why).
+- **Regression by omission is a defect** even when every test is green: shipping an empty demo catalog, a blank screen, or a silently-dropped capability is a failure regardless of a passing suite. Tests prove code does what it claims; they do not prove the product still does what users need.
+- When in doubt, make the change *additive*: extend the good path rather than removing it, and leave the existing invariants intact.
 
 <!-- GSD:profile-start -->
 ## Developer Profile
