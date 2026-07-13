@@ -69,7 +69,9 @@ if [ -z "${INTEGRATION_CATALOG_RO_SECRET:-}" ]; then
 fi
 pass "INTEGRATION_CATALOG_RO_SECRET is set (value hidden)"
 
-HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${MCP_URL}/health" 2>/dev/null || echo 000)"
+# NB: capture curl's exit separately — `|| echo 000` would APPEND a second 000
+# to the one curl's own -w write-out already emits on connection failure.
+HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${MCP_URL}/health" 2>/dev/null)" || HEALTH_CODE=000
 if [ "$HEALTH_CODE" != "200" ]; then
   fail "MCP /health returned ${HEALTH_CODE} (expected 200). Rebuild ALL containers and re-import the realm, then retry (docs/security-scopes.md §4)."
   exit 1
@@ -82,7 +84,7 @@ TOKEN_STATUS="$(curl -s -o "${WORK}/token.json" -w '%{http_code}' --max-time 10 
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'grant_type=client_credentials' \
   -d 'client_id=integration-catalog-ro' \
-  --data-urlencode "client_secret=${INTEGRATION_CATALOG_RO_SECRET}" 2>/dev/null || echo 000)"
+  --data-urlencode "client_secret=${INTEGRATION_CATALOG_RO_SECRET}" 2>/dev/null)" || TOKEN_STATUS=000
 
 ACCESS_TOKEN="$(jq -r '.access_token // empty' "${WORK}/token.json" 2>/dev/null || true)"
 if [ "$TOKEN_STATUS" != "200" ] || [ -z "$ACCESS_TOKEN" ]; then
@@ -99,7 +101,7 @@ MCP_STATUS="$(curl -s -o "${WORK}/mcp.out" -w '%{http_code}' --max-time 15 \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-  -d "$RPC_BODY" 2>/dev/null || echo 000)"
+  -d "$RPC_BODY" 2>/dev/null)" || MCP_STATUS=000
 
 if [ "$MCP_STATUS" != "200" ]; then
   fail "MCP list_products returned HTTP ${MCP_STATUS} (expected 200)."

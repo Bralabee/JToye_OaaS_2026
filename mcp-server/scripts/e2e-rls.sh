@@ -85,7 +85,9 @@ if [ -z "${KC_SEED_USER_PASSWORD:-}" ]; then
 fi
 pass "KC_SEED_USER_PASSWORD is set (value hidden)"
 
-HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${MCP_URL}/health" 2>/dev/null || echo 000)"
+# NB: capture curl's exit separately — `|| echo 000` would APPEND a second 000
+# to the one curl's own -w write-out already emits on connection failure.
+HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${MCP_URL}/health" 2>/dev/null)" || HEALTH_CODE=000
 if [ "$HEALTH_CODE" != "200" ]; then
   fail "MCP /health returned ${HEALTH_CODE} (expected 200). Rebuild ALL containers + re-import the realm (docs/security-scopes.md §4)."
   exit 1
@@ -99,7 +101,7 @@ pass "MCP server healthy (GET /health → 200)"
 # secret is present in the env we send it so the token endpoint authenticates
 # the client. Writes the token JSON to $2. Echoes the HTTP status.
 mint_password_token() { # <username> <outfile>
-  local user="$1" outfile="$2"
+  local user="$1" outfile="$2" status
   local -a form=(
     -d 'grant_type=password'
     -d 'client_id=core-api'
@@ -109,22 +111,26 @@ mint_password_token() { # <username> <outfile>
   if [ -n "${KEYCLOAK_CLIENT_SECRET:-}" ]; then
     form+=( --data-urlencode "client_secret=${KEYCLOAK_CLIENT_SECRET}" )
   fi
-  curl -s -o "$outfile" -w '%{http_code}' --max-time 10 \
+  # Capture curl's exit separately — `|| echo 000` would APPEND a second 000
+  # to the one curl's own -w write-out already emits on connection failure.
+  status="$(curl -s -o "$outfile" -w '%{http_code}' --max-time 10 \
     -X POST "$TOKEN_ENDPOINT" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
-    "${form[@]}" 2>/dev/null || echo 000
+    "${form[@]}" 2>/dev/null)" || status=000
+  printf '%s\n' "$status"
 }
 
 # Call an MCP tool with a Bearer token. Writes the raw (SSE) response to $3.
 # Echoes the HTTP status. Never prints the token or the body.
 mcp_call() { # <token> <rpc_body> <outfile>
-  local token="$1" body="$2" outfile="$3"
-  curl -s -o "$outfile" -w '%{http_code}' --max-time 15 \
+  local token="$1" body="$2" outfile="$3" status
+  status="$(curl -s -o "$outfile" -w '%{http_code}' --max-time 15 \
     -X POST "$MCP_ENDPOINT" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H "Authorization: Bearer ${token}" \
-    -d "$body" 2>/dev/null || echo 000
+    -d "$body" 2>/dev/null)" || status=000
+  printf '%s\n' "$status"
 }
 
 # Extract the tool result's inner text (the stringified core JSON) from an SSE
