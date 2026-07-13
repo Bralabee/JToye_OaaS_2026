@@ -51,6 +51,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client + feeds frontend NextAuth)}
       EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
+      INTEGRATION_CATALOG_RO_SECRET: ${INTEGRATION_CATALOG_RO_SECRET:?INTEGRATION_CATALOG_RO_SECRET must be set (renders realm integration-catalog-ro client)}
       # Customer realm (jtoye-customers, Phase 18) render inputs — non-secret local-dev config.
       CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
       CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
@@ -63,7 +64,7 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD' \
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
         # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit
