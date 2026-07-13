@@ -70,10 +70,13 @@ import java.util.stream.Collectors;
  * {@code <tenant>/products/seed/<filename>} key and its public URL stamped onto
  * the matching product's {@code image_url} by {@link #seedProductImages}. A
  * seeder-owns overwrite policy fills null/blank slots, re-affirms prior seed
- * URLs and replaces foreign/legacy env-only URLs, but NEVER clobbers a genuine
- * vendor upload (a URL under {@code <publicUrl>/<tenant>/products/} lacking the
- * {@code /products/seed/} marker). SafeImage remains the fallback only when no
- * seed image maps to a product. Shop <em>branding</em> (a logo) is also seeded.
+ * URLs and replaces foreign/legacy URLs, but NEVER clobbers a genuine vendor
+ * upload — a URL under the product's OWN upload folder
+ * ({@code <publicUrl>/<tenant>/products/<thisProductId>/}) lacking the
+ * {@code /products/seed/} marker. (A vendor upload always keys on the product's
+ * own id, so a URL under a DIFFERENT entity id is a foreign/legacy artifact the
+ * seeder owns.) SafeImage remains the fallback only when no seed image maps to a
+ * product. Shop <em>branding</em> (a logo) is also seeded.
  *
  * <p><strong>Profile gating:</strong> restricted to the {@code dev} Spring
  * profile and only wired as an {@link ApplicationRunner} at dev startup.
@@ -323,10 +326,15 @@ public class DemoDataSeeder implements ApplicationRunner {
      *   <li>current already contains {@code /products/seed/} → set (re-affirm prior
      *       seed, idempotent) — checked BEFORE the vendor-prefix test so a prior
      *       seed is never misread as a vendor upload;</li>
-     *   <li>current does NOT start with the vendor product-upload prefix → set
-     *       (foreign/legacy env-only URL of unverifiable provenance — "ours");</li>
-     *   <li>current starts with the vendor prefix AND lacks the seed marker →
-     *       LEAVE UNTOUCHED (a genuine vendor upload always wins).</li>
+     *   <li>current does NOT start with THIS product's own upload folder
+     *       ({@code <publicUrl>/<tenant>/products/<thisProductId>/}) → set
+     *       (foreign/legacy URL of unverifiable provenance — a vendor upload for
+     *       a DIFFERENT entity id, or an env-only artifact — "ours to overwrite";
+     *       this is what replaces the Peri Peri Chicken + Suya Platter legacy
+     *       URLs, whose embedded entity id does not match the product's own id);</li>
+     *   <li>current starts with the product's own upload folder AND lacks the
+     *       seed marker → LEAVE UNTOUCHED (a genuine vendor upload for THIS
+     *       product always wins).</li>
      * </ul>
      * A missing manifest, an unmatched dish, or an absent classpath image is logged
      * and skipped — never fatal to dev boot.
@@ -341,7 +349,6 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
 
         Map<String, List<MenuItem>> menusBySlug = curatedMenusBySlug();
-        String vendorPrefix = storageService.productUploadUrlPrefix(DEMO_TENANT);
 
         for (DemoImageManifest.ManifestEntry entry : entries) {
             String slug = DemoImageManifest.slugForShop(entry.shop());
@@ -369,16 +376,20 @@ public class DemoDataSeeder implements ApplicationRunner {
             byte[] bytes = DemoImageManifest.readImage(entry.filename());
             String seedUrl = storageService.putSeedImage(DEMO_TENANT, entry.filename(), bytes, "image/jpeg");
 
+            // A genuine vendor upload for THIS product lives under its own id's
+            // folder (<publicUrl>/<tenant>/products/<thisProductId>/); a URL under
+            // /products/ but a DIFFERENT entity id is a foreign/legacy artifact.
+            String ownUploadPrefix = storageService.productUploadUrlPrefix(DEMO_TENANT, product.getId());
             String current = product.getImageUrl();
             boolean apply;
             if (current == null || current.isBlank()) {
                 apply = true;                                          // fill the gap
             } else if (current.contains(StorageService.SEED_URL_MARKER)) {
                 apply = true;                                          // prior seed — re-affirm (idempotent)
-            } else if (!current.startsWith(vendorPrefix)) {
-                apply = true;                                          // foreign/legacy env-only URL — ours to overwrite
+            } else if (!current.startsWith(ownUploadPrefix)) {
+                apply = true;                                          // foreign/legacy URL (not this product's own upload) — ours to overwrite
             } else {
-                apply = false;                                        // genuine vendor upload wins
+                apply = false;                                        // genuine vendor upload for THIS product wins
             }
 
             if (apply && !seedUrl.equals(current)) {

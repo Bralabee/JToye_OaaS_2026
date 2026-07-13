@@ -134,13 +134,24 @@ public class StorageService {
 
     /**
      * Public-URL prefix shared by EVERY product upload (vendor and seed) for a
-     * tenant: {@code <publicUrl>/<tenantId>/products/}. The dev demo seeder uses
-     * this to implement its seeder-owns overwrite policy — a URL under this
-     * prefix that lacks {@link #SEED_URL_MARKER} is a genuine vendor upload and
-     * must never be clobbered.
+     * tenant: {@code <publicUrl>/<tenantId>/products/}.
      */
     public String productUploadUrlPrefix(UUID tenantId) {
         return properties.getS3().getPublicUrl() + "/" + tenantId + "/products/";
+    }
+
+    /**
+     * Public-URL prefix for a SPECIFIC product's own uploads:
+     * {@code <publicUrl>/<tenantId>/products/<productId>/}. This is the precise
+     * signature of a genuine vendor upload — {@link #upload} keys every vendor
+     * image under the product's OWN id ({@code entityId}). The dev demo seeder's
+     * seeder-owns policy uses this: a URL under {@code /products/} but a
+     * DIFFERENT entity id is a foreign/legacy artifact the seeder owns, whereas a
+     * URL under the product's own prefix (lacking {@link #SEED_URL_MARKER}) is a
+     * genuine vendor upload that must never be clobbered.
+     */
+    public String productUploadUrlPrefix(UUID tenantId, UUID productId) {
+        return productUploadUrlPrefix(tenantId) + productId + "/";
     }
 
     /**
