@@ -312,7 +312,7 @@ Suggested wave layout:
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
 | 19. Full-Frontend Experience Overhaul | v2.3 | 9/9 | Complete    | 2026-07-11 |
-| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 5/5 | Complete   | 2026-07-13 |
+| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 5/5 | Complete    | 2026-07-13 |
 
 ### Phase 20: AI-1 MCP Server (Read-Only Slice)
 
