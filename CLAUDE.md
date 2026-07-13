@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 1243 logical invocations passing (877 Java `@Test` methods across 144 files + 234 Jest `it/test` blocks across 33 files + 77 top-level Go `Test*` funcs across 9 files + 28 Playwright `test()` blocks across 6 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
+- **Testing**: All new code requires tests — project standard is 1258 logical invocations passing (877 Java `@Test` methods across 144 files + 249 Jest `it/test` blocks across 35 files + 77 top-level Go `Test*` funcs across 9 files + 28 Playwright `test()` blocks across 6 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
