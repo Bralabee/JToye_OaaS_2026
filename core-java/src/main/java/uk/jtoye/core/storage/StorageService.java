@@ -9,7 +9,10 @@ import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -118,6 +121,87 @@ public class StorageService {
 
         String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
         log.info("Uploaded {} image: {} ({} bytes)", imageType, publicUrl, imageBytes.length);
+        return publicUrl;
+    }
+
+    /**
+     * URL marker identifying a seeder-owned demo image (see
+     * {@link #putSeedImage}). Vendor uploads share the {@code /products/} segment
+     * but never carry {@code /products/seed/}, so this marker is what lets the
+     * dev seeder distinguish its own prior seeds from a genuine vendor upload.
+     */
+    public static final String SEED_URL_MARKER = "/products/seed/";
+
+    /**
+     * Public-URL prefix shared by EVERY product upload (vendor and seed) for a
+     * tenant: {@code <publicUrl>/<tenantId>/products/}. The dev demo seeder uses
+     * this to implement its seeder-owns overwrite policy — a URL under this
+     * prefix that lacks {@link #SEED_URL_MARKER} is a genuine vendor upload and
+     * must never be clobbered.
+     */
+    public String productUploadUrlPrefix(UUID tenantId) {
+        return properties.getS3().getPublicUrl() + "/" + tenantId + "/products/";
+    }
+
+    /**
+     * Idempotently upload a bundled demo-seed image to a DETERMINISTIC key
+     * ({@code <tenantId>/products/seed/<filename>}) and return its
+     * browser-reachable public URL. Dev-only demo-seeding seam
+     * ({@link uk.jtoye.core.dev.DemoDataSeeder}): the bytes are license-vetted,
+     * visually-verified classpath assets bundled at build time — never runtime or
+     * user input — so this deliberately does NOT run the vendor upload's
+     * MultipartFile/dimension pipeline. It reuses the same bucket, public-URL
+     * mechanism and immutable cache-control the vendor path uses, and skips the
+     * PUT when the object already exists (HeadObject) so repeated dev boots don't
+     * re-upload. The magic-byte {@link #detectContentType} check is retained as a
+     * sanity guard against a corrupt/non-image asset.
+     */
+    public String putSeedImage(UUID tenantId, String filename, byte[] bytes, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seed image bytes are empty: " + filename);
+        }
+        String detected = detectContentType(bytes);
+        if (detected == null || !properties.getAllowedContentTypes().contains(detected)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seed image is not a recognised image type: " + filename);
+        }
+
+        String bucket = properties.getS3().getBucket();
+        // Deterministic key so re-seeds are idempotent and the URL is stable.
+        String key = tenantId + SEED_URL_MARKER + filename;
+        String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
+
+        boolean exists;
+        try {
+            s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            exists = true;
+        } catch (NoSuchKeyException e) {
+            exists = false;
+        } catch (S3Exception e) {
+            // MinIO / some S3-compatible stores surface a missing object as a
+            // generic 404 rather than NoSuchKeyException; treat only 404 as absent.
+            if (e.statusCode() == 404) {
+                exists = false;
+            } else {
+                throw e;
+            }
+        }
+
+        if (exists) {
+            log.info("Seed image already present, skipping upload: {}", key);
+            return publicUrl;
+        }
+
+        s3Client.putObject(
+                PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .contentType(contentType != null ? contentType : detected)
+                        .cacheControl("public, max-age=31536000, immutable")
+                        .build(),
+                RequestBody.fromBytes(bytes)
+        );
+        log.info("Uploaded seed image: {} ({} bytes)", publicUrl, bytes.length);
         return publicUrl;
     }
 
