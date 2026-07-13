@@ -42,8 +42,10 @@ USER nodejs
 EXPOSE 9100
 
 # Liveness probe hits the server's own GET /health, which does NOT call core.
+# Honors MCP_PORT (index.ts binds it, default 9100) — a hardcoded 9100 would
+# leave an MCP_PORT-overridden container permanently unhealthy.
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:9100/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"
+  CMD node -e "require('http').get('http://localhost:' + (process.env.MCP_PORT || 9100) + '/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"
 
 # Start the stateless Streamable HTTP host.
 CMD ["node", "dist/index.js"]
