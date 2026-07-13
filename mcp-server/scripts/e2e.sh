@@ -37,7 +37,7 @@ CLIENT_ID="integration-catalog-ro"
 # ---- Colored pass/fail helpers (mirror scripts/verify-env.sh) --------------
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 pass() { echo -e "${GREEN}✓ PASS${NC}: $1"; }
-fail() { echo -e "${RED}✗ FAIL${NC}: $1"; }
+fail() { echo -e "${RED}✗ FAIL${NC}: $1"; FAILURES=$((FAILURES + 1)); }
 info() { echo -e "${YELLOW}ℹ INFO${NC}: $1"; }
 
 # ---- Optionally source an env file so secrets need not be pre-exported ------
