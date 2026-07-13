@@ -312,7 +312,7 @@ Suggested wave layout:
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
 | 19. Full-Frontend Experience Overhaul | v2.3 | 9/9 | Complete    | 2026-07-11 |
-| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 0/5 | Planned | - |
+| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 1/5 | In Progress|  |
 
 ### Phase 20: AI-1 MCP Server (Read-Only Slice)
 
@@ -321,7 +321,7 @@ Suggested wave layout:
 **Requirements**: AI-1
 **Tracks**: GitHub issue #203 — EPIC #209 Wave 2. Read-only first slice; mutating MCP tools and #205 outbound webhooks are separate later phases.
 **Depends on:** #204 idempotency contract (DONE, PR #211) + #206 scoped machine credentials (DONE, PR #212). Both merged — `integration-catalog-ro` client + `catalog:read`/`orders:read` scopes already seeded in the realm template. No blocking dependencies remain.
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 **Success criteria (issue #203 acceptance criteria):**
 1. New TypeScript `mcp-server/` workspace using the official `@modelcontextprotocol/sdk`, packaged as its own Docker container wired into docker-compose. No new Python/Go runtime.
@@ -335,7 +335,7 @@ Suggested wave layout:
 **Constraints:** feature branch → PR (never main); rebuild ALL containers before any live E2E claim; dev realm re-import is a pending operational step (`docs/security-scopes.md` §Re-import) required for the `integration-catalog-ro` client to exist in the running Keycloak; docs-freshness gate must stay green (baseline metrics 1208 / schema V50 — an MCP TS test surface may add to test counts; `scripts/docs-freshness.sh --write` is the arbiter).
 
 Plans:
-- [ ] 20-01-PLAN.md — Walking slice: mcp-server workspace + list_products end-to-end (stateless HTTP, Bearer pass-through, RFC 7807 errors) [W1]
+- [x] 20-01-PLAN.md — Walking slice: mcp-server workspace + list_products end-to-end (stateless HTTP, Bearer pass-through, RFC 7807 errors) [W1]
 - [ ] 20-02-PLAN.md — Widen tools: list_shops + read_orders (list/shop/detail) registered on the server [W2]
 - [ ] 20-03-PLAN.md — Own Docker container + compose wiring + README + tenant-B seed for the RLS proof [W2]
 - [ ] 20-04-PLAN.md — docs-freshness mcp test family + metrics regen + e2e.sh/e2e-rls.sh scripts [W3]

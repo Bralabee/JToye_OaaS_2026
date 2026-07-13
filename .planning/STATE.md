@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
-status: milestone_complete
-stopped_at: Milestone complete (Phase 19 was final phase)
-last_updated: 2026-07-11T20:36:47.571Z
-last_activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
+status: executing
+stopped_at: 19-09 Task 3 — human whole-app browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate)
+last_updated: "2026-07-13T10:44:33.830Z"
+last_activity: 2026-07-13 -- Phase 20 execution started
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 7
-  total_plans: 31
+  total_plans: 36
   completed_plans: 33
-  percent: 78
+  percent: 70
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Milestone complete
+**Current focus:** Phase 20 — ai-1-mcp-server-read-only-slice
 
 ## Current Position
 
-Phase: 19
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-07-13 - Completed quick task 260713-2g8: #206 scoped machine credentials (research + validated — verifier 7/7 with live re-runs; combined role+scope converter, catalog write-gates, read-only machine client in realm template). EPIC #209 Wave 1 complete.
+Phase: 20 (ai-1-mcp-server-read-only-slice) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 20
+Last activity: 2026-07-13 -- Phase 20 execution started
 
 Progress: [██████████] 100%
 
