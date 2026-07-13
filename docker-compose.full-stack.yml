@@ -338,6 +338,40 @@ services:
     networks:
       - jtoye-network
 
+  # MCP Server (read-only Model Context Protocol, #203 / AI-1)
+  # Thin, stateless read wrapper over the core REST API. Bearer pass-through:
+  # the calling agent presents its OWN tenant-scoped Keycloak token per request
+  # and the server forwards it verbatim to core-java — RLS in core is the sole
+  # isolation boundary. The container holds NO client secret and NO DB creds
+  # (T-20-07 secret-sprawl mitigation). CORE_BASE_URL is a FIXED internal service
+  # name, never caller-controlled (T-20-04 SSRF guard). No issuer/JWKS env — the
+  # server forwards an opaque token and never validates `iss` (split-horizon is
+  # core-java's concern, not this tier's).
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: jtoye-mcp-server
+    restart: unless-stopped
+    environment:
+      TZ: Europe/London
+      CORE_BASE_URL: http://core-java:9090
+    ports:
+      - "9100:9100"
+    depends_on:
+      core-java:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9100/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    networks:
+      - jtoye-network
+
   # MinIO — S3-compatible object storage for images
   minio:
     image: minio/minio:${MINIO_IMAGE_TAG:-latest}
