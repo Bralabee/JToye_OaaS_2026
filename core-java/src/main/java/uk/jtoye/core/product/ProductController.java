@@ -13,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -103,6 +104,7 @@ public class ProductController {
                 .body(csv);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/bulk/csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Bulk import from CSV", description = "Import multiple products from a CSV file. Returns created products and per-row errors.")
     public ResponseEntity<BulkImportResult> bulkImportCsv(@RequestParam("file") MultipartFile file) {
@@ -110,6 +112,7 @@ public class ProductController {
         return ResponseEntity.ok(result);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/bulk/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Bulk import from images", description = "Upload multiple food photos. AI identifies each item and creates draft products.")
     public ResponseEntity<BulkImportResult> bulkImportImages(@RequestParam("files") MultipartFile[] files) {
@@ -129,6 +132,7 @@ public class ProductController {
                 .body(pdf);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping
     @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text, allergen_mask, and price per Natasha's Law (UK) and business requirements.")
     @ApiResponses(value = {
@@ -147,6 +151,7 @@ public class ProductController {
         return ResponseEntity.created(location).body(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PutMapping("/{id}")
     @Operation(summary = "Update product", description = "Updates an existing product for the authenticated tenant")
     @ApiResponses(value = {
@@ -165,6 +170,7 @@ public class ProductController {
         }
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload product image", description = "Uploads an image and runs AI analysis to suggest name, ingredients, category, and dietary info.")
     @ApiResponses(value = {
@@ -207,6 +213,7 @@ public class ProductController {
         }
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Add additional product image", description = "Adds an additional image to the product gallery")
     public ResponseEntity<ProductDto> addAdditionalImage(
@@ -216,6 +223,7 @@ public class ProductController {
         return ResponseEntity.ok(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @DeleteMapping("/{id}/images/{index}")
     @Operation(summary = "Remove additional product image", description = "Removes an additional image by index")
     public ResponseEntity<ProductDto> removeAdditionalImage(
@@ -225,6 +233,7 @@ public class ProductController {
         return ResponseEntity.ok(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @DeleteMapping("/{id}/image")
     @Operation(summary = "Remove product image", description = "Removes the image from a product")
     @ApiResponses(value = {
@@ -237,6 +246,7 @@ public class ProductController {
         return ResponseEntity.ok(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete product", description = "Deletes a product for the authenticated tenant")
     @ApiResponses(value = {
