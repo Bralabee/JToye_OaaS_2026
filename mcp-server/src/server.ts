@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerListProducts } from "./tools/list-products.js";
+import { registerListShops } from "./tools/list-shops.js";
 
 /**
  * server.ts — McpServer factory.
@@ -7,7 +8,8 @@ import { registerListProducts } from "./tools/list-products.js";
  * `buildServer(bearer)` is called ONCE PER REQUEST by the stateless transport
  * (index.ts), so each tool handler closes over exactly the caller's token. The
  * MCP tier holds no tenant state and makes no auth decisions — it forwards.
- * (list_shops / read_orders are added in 20-02 on this same skeleton.)
+ * The three read-only tools (list_products, list_shops, read_orders) all share
+ * this skeleton — each a thin coreGet forwarder.
  */
 export function buildServer(bearer: string): McpServer {
   const server = new McpServer(
@@ -16,6 +18,7 @@ export function buildServer(bearer: string): McpServer {
   );
 
   registerListProducts(server, bearer);
+  registerListShops(server, bearer);
 
   return server;
 }
