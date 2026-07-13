@@ -97,6 +97,7 @@ Progress: [██████████] 100%
 
 - Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
 - Phase 16.1 (Pre-prod Hardening) — DONE 2026-04-28. 5 council-audit blockers closed (cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables). V35 migration ships them atomically. RlsContractTest is a permanent CI guard against future RLS drift. AUDIT-W0-01..05 retrospectively registered in REQUIREMENTS.md (16-entry total, traceability complete).
+- Phase 20 added 2026-07-13: AI-1 MCP Server (Read-Only Slice) [MVP mode] — EPIC #209 Wave 2, issue #203. TypeScript `mcp-server/` over the core REST API; read-only tenant-scoped tools; auth reuses #206 client-credentials + scopes; RLS is the boundary. First roadmap phase of the AI-readiness track (Wave 1 #204/#206/#98 shipped as gsd-quick tasks). Mutating tools + #205 webhooks deferred to later phases.
 
 ### Decisions
 

@@ -104,6 +104,12 @@ Every one of the 15 audit backlog items maps to a closing plan, or is a document
 
 **Deferred edge case (RESEARCH OQ3).** Collection-only shops / minimum-order interplay with the fulfilment toggle is outside the 15-item backlog's explicit scope and is an **accepted deferred edge case**: the toggle ships with **Delivery as default + Collection selectable for all shops**; forcing Collection for no-delivery shops is not implemented this phase (documented in `19-RESEARCH.md` OQ3).
 
+### AI/agent readiness (AI) — v2.3 — added 2026-07-13
+
+EPIC #209 AI/agent-readiness remediation track. Wave 1 (idempotency #204, scoped credentials #206, observability #98) shipped as gsd-quick tasks and is GitHub-issue-tracked. Wave 2+ is tracked as roadmap phases starting with Phase 20. The unfakeable prerequisites (FORCE RLS isolation, drift-proof OpenAPI contract, scoped-token IdP, per-tenant rate limits) already exist; these requirements add the thin agent-facing surface.
+
+- [ ] **AI-1**: A Model Context Protocol server (`mcp-server/`, TypeScript, official `@modelcontextprotocol/sdk`, own Docker container) exposes read-only tenant-scoped tools — list shops, list products, read orders — each wrapping the EXISTING core REST API over HTTP (never Postgres directly; core-java + RLS stay the security boundary). Auth reuses #206 Keycloak client-credentials token pass-through, `tenant_id` claim drives RLS, read tools map to `catalog:read`/`orders:read` scopes. Cross-tenant access returns empty/403 (RLS-proven test); tool errors surface RFC 7807 problem-detail not raw stack traces; live E2E against the dev stack; README documents the client-credentials setup. Mutating MCP tools (gated by #204 Idempotency-Key) and #205 outbound webhooks are separate later phases. Source: GitHub issue #203 [AI-1], EPIC #209 Wave 2. **Phase 20.**
+
 ## Future Requirements
 
 Deferred to v2.3+. These roll over from HANDOFF.md P2 + Work Orders that v2.2 didn't scope.
