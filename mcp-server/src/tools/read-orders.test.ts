@@ -70,6 +70,21 @@ describe("read_orders handler", () => {
     expect(coreGet).toHaveBeenCalledWith("/api/v1/orders/shop/sh1", "tok");
   });
 
+  it("forwards page/size on the shop-scoped path too (core's Pageable)", async () => {
+    vi.mocked(coreGet).mockResolvedValue(ok200);
+
+    await readOrdersHandler("tok")({
+      shopId: "7f000001-0000-4000-8000-000000000002",
+      page: 2,
+      size: 10,
+    });
+
+    expect(coreGet).toHaveBeenCalledWith(
+      "/api/v1/orders/shop/7f000001-0000-4000-8000-000000000002?page=2&size=10",
+      "tok",
+    );
+  });
+
   it("reads one order's detail at /api/v1/orders/{id}/detail when orderId is set", async () => {
     vi.mocked(coreGet).mockResolvedValue(ok200);
 
