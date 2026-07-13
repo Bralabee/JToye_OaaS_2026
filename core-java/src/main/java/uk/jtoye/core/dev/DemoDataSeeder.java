@@ -18,6 +18,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
+import software.amazon.awssdk.core.exception.SdkClientException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -373,29 +374,47 @@ public class DemoDataSeeder implements ApplicationRunner {
                 continue;
             }
 
-            byte[] bytes = DemoImageManifest.readImage(entry.filename());
-            String seedUrl = storageService.putSeedImage(DEMO_TENANT, entry.filename(), bytes, "image/jpeg");
+            try {
+                byte[] bytes = DemoImageManifest.readImage(entry.filename());
+                String seedUrl = storageService.putSeedImage(DEMO_TENANT, entry.filename(), bytes, "image/jpeg");
 
-            // A genuine vendor upload for THIS product lives under its own id's
-            // folder (<publicUrl>/<tenant>/products/<thisProductId>/); a URL under
-            // /products/ but a DIFFERENT entity id is a foreign/legacy artifact.
-            String ownUploadPrefix = storageService.productUploadUrlPrefix(DEMO_TENANT, product.getId());
-            String current = product.getImageUrl();
-            boolean apply;
-            if (current == null || current.isBlank()) {
-                apply = true;                                          // fill the gap
-            } else if (current.contains(StorageService.SEED_URL_MARKER)) {
-                apply = true;                                          // prior seed — re-affirm (idempotent)
-            } else if (!current.startsWith(ownUploadPrefix)) {
-                apply = true;                                          // foreign/legacy URL (not this product's own upload) — ours to overwrite
-            } else {
-                apply = false;                                        // genuine vendor upload for THIS product wins
-            }
+                // A genuine vendor upload for THIS product lives under its own id's
+                // folder (<publicUrl>/<tenant>/products/<thisProductId>/); a URL under
+                // /products/ but a DIFFERENT entity id is a foreign/legacy artifact.
+                String ownUploadPrefix = storageService.productUploadUrlPrefix(DEMO_TENANT, product.getId());
+                String current = product.getImageUrl();
+                boolean apply;
+                if (current == null || current.isBlank()) {
+                    apply = true;                                          // fill the gap
+                } else if (current.contains(StorageService.SEED_URL_MARKER)) {
+                    apply = true;                                          // prior seed — re-affirm (idempotent)
+                } else if (!current.startsWith(ownUploadPrefix)) {
+                    apply = true;                                          // foreign/legacy URL (not this product's own upload) — ours to overwrite
+                } else {
+                    apply = false;                                        // genuine vendor upload for THIS product wins
+                }
 
-            if (apply && !seedUrl.equals(current)) {
-                product.setImageUrl(seedUrl);
-                productRepository.save(product);
-                result.imagesSeeded++;
+                if (apply && !seedUrl.equals(current)) {
+                    product.setImageUrl(seedUrl);
+                    productRepository.save(product);
+                    result.imagesSeeded++;
+                }
+            } catch (SdkClientException e) {
+                // Client-side failure means the object store is unreachable — e.g. a
+                // dev-profile integration test (@ActiveProfiles("dev")) boots Postgres/
+                // Redis but no MinIO. Honour the seeder's "never fatal to dev boot"
+                // contract: abort image seeding entirely rather than incur one
+                // connection-timeout per remaining manifest entry. Data seeding above
+                // has already committed; only the (optional) image URLs are skipped.
+                log.warn("Object store unreachable; skipping demo image seeding "
+                                + "({} image(s) applied before it became unreachable): {}",
+                        result.imagesSeeded, e.getMessage());
+                return;
+            } catch (RuntimeException e) {
+                // Store IS reachable but this one entry failed (service error, empty/
+                // unreadable image, bad request). Skip it and keep seeding the rest.
+                log.warn("Failed to seed image for dish '{}' (SKU {}); skipping: {}",
+                        entry.dish(), match.sku(), e.getMessage());
             }
         }
     }
