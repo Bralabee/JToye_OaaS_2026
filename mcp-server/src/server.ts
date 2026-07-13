@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerListProducts } from "./tools/list-products.js";
 import { registerListShops } from "./tools/list-shops.js";
+import { registerReadOrders } from "./tools/read-orders.js";
 
 /**
  * server.ts — McpServer factory.
@@ -19,6 +20,7 @@ export function buildServer(bearer: string): McpServer {
 
   registerListProducts(server, bearer);
   registerListShops(server, bearer);
+  registerReadOrders(server, bearer);
 
   return server;
 }
