@@ -55,7 +55,7 @@ docker-compose -f docker-compose.full-stack.yml up
 - API: http://localhost:9090
 - Keycloak: http://localhost:8085
 
-**Login:** `tenant-a-user` / `password123`
+**Login:** `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD` (from your `.env`)
 
 ### Option 2: Local Development (10 Minutes)
 

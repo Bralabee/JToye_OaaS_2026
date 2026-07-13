@@ -295,9 +295,11 @@ curl -I http://localhost:3000
 
 | Username | Password | Tenant | Purpose |
 |----------|----------|--------|---------|
-| admin-user | admin123 | - | Admin testing |
-| tenant-a-user | password123 | Tenant A | Tenant A testing |
-| tenant-b-user | password123 | Tenant B | Tenant B testing |
+| admin-user | `$KC_SEED_USER_PASSWORD` | - | Admin testing |
+| tenant-a-user | `$KC_SEED_USER_PASSWORD` | Tenant A | Tenant A testing |
+| tenant-b-user | `$KC_SEED_USER_PASSWORD` | Tenant B | Tenant B testing |
+
+> All seed users share the value of `KC_SEED_USER_PASSWORD` (from your `.env`) — never a hard-coded literal.
 
 **Test Tenant IDs:**
 ```bash
@@ -316,8 +318,9 @@ KC=http://localhost:8085
 TOKEN_A=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 echo "Tenant A Token: $TOKEN_A"
@@ -326,17 +329,26 @@ echo "Tenant A Token: $TOKEN_A"
 TOKEN_B=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-b-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 echo "Tenant B Token: $TOKEN_B"
 ```
 
+> **`core-api` is a confidential client** — every token request above must also
+> include `-d "client_secret=$KEYCLOAK_CLIENT_SECRET"`, and every password is the
+> value of `KC_SEED_USER_PASSWORD` (never a literal). If a stale/wrong password
+> locks a seed user (the realm sets `bruteForceProtected=true`, issue #87),
+> unlock it in the Keycloak admin console (realm `jtoye-dev` → **Users** →
+> **Unlock user**) and re-run with `KC_SEED_USER_PASSWORD`. Full recovery steps:
+> `docs/guides/TESTING.md`.
+
 **Option 2: Via Frontend (Manual)**
 1. Go to http://localhost:3000
 2. Click "Sign In"
-3. Login with tenant-a-user / password123
+3. Login with tenant-a-user / the value of `KC_SEED_USER_PASSWORD`
 4. Open Browser DevTools → Application → Cookies
 5. Find `next-auth.session-token`
 
@@ -868,7 +880,7 @@ curl -s -H "Authorization: Bearer $TOKEN_A" \
 
 **Manual Test:**
 1. Open http://localhost:3000
-2. Sign in with `tenant-a-user` / `password123`
+2. Sign in with `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD`
 3. Navigate to Dashboard
 4. Go to Shops page
 5. Create new shop
