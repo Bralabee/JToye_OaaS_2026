@@ -32,7 +32,7 @@ to Core → return the JSON, or a sanitized error. Paths are never composed from
 
 | MCP tool        | Core endpoint                | Scope (Core-enforced) | Notes |
 | --------------- | ---------------------------- | --------------------- | ----- |
-| `list_products` | `GET /api/v1/products`       | `catalog:read`        | Optional search → `GET /api/v1/products/search?q=`. |
+| `list_products` | `GET /api/v1/products`       | `catalog:read`        | Optional `page`/`size` pagination (size ≤ 100). No search argument in this slice. |
 | `list_shops`    | `GET /api/v1/shops`          | authenticated         | Tenant's shops. |
 | `read_orders`   | `GET /api/v1/orders`         | (`orders:read` reserved) | Output carries customer PII — RLS-scoped; the server **never** logs the body. |
 
