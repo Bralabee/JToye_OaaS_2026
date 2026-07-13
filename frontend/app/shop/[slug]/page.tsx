@@ -1,13 +1,18 @@
 "use client"
 
-import { useEffect, useState, useRef, useMemo, use } from "react"
+import { useEffect, useState, useRef, useMemo, useCallback, use } from "react"
 import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
   Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
-  ShoppingBag, Plus as PlusIcon, Minus, UtensilsCrossed
+  ShoppingBag, Plus as PlusIcon, Minus, UtensilsCrossed, Loader2
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import {
+  isRateLimitError,
+  getRetryDelayMs,
+  MAX_RETRY_ATTEMPTS,
+} from "@/lib/public-fetch-retry"
 import { PublicShop, PublicProduct, ProductsByCategory, Review } from "@/types/storefront"
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 
@@ -241,40 +246,82 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
+  // F-RATE (#88): a public 429 on the critical shop/products calls must surface
+  // a transient "busy / retrying" state, never the authoritative "Shop not
+  // found" empty state.
+  const [rateLimited, setRateLimited] = useState(false)
+  const [retriesExhausted, setRetriesExhausted] = useState(false)
+  const retryAttemptRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadRef = useRef<() => void>(() => {})
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      // Only the critical shop + products calls can drive the busy state; the 4
+      // optional calls already .catch() to defaults so they never reject.
+      const [shopRes, productsRes, reviewsRes, configRes, promotionsRes, announcementsRes] = await Promise.all([
+        publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
+        publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
+        publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
+        publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
+        publicApiClient.get<PublicPromotion[]>(`/public/shops/${slug}/promotions`).catch(() => ({ data: [] as PublicPromotion[] })),
+        publicApiClient.get<PublicAnnouncement[]>(`/public/shops/${slug}/announcements`).catch(() => ({ data: [] as PublicAnnouncement[] })),
+      ])
+      setShop(shopRes.data)
+      setProducts(productsRes.data)
+      setReviews(reviewsRes.data.content)
+      setReviewCount(reviewsRes.data.totalElements)
+      if (reviewsRes.data.content.length > 0) {
+        const avg = reviewsRes.data.content.reduce((sum: number, r: Review) => sum + r.foodRating, 0) / reviewsRes.data.content.length
+        setAvgRating(Math.round(avg * 10) / 10)
+      }
+      if (configRes.data) setShopConfig(configRes.data)
+      setPromotions(promotionsRes.data || [])
+      setAnnouncements(announcementsRes.data || [])
+      const cats = Object.keys(productsRes.data)
+      if (cats.length > 0) setActiveCategory(cats[0])
+      setRateLimited(false)
+      setRetriesExhausted(false)
+      retryAttemptRef.current = 0
+    } catch (err) {
+      if (isRateLimitError(err)) {
+        setRateLimited(true)
+        const attempt = retryAttemptRef.current
+        if (attempt < MAX_RETRY_ATTEMPTS) {
+          const delay = getRetryDelayMs(err, attempt)
+          retryAttemptRef.current = attempt + 1
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = setTimeout(() => loadRef.current(), delay)
+        } else {
+          setRetriesExhausted(true)
+        }
+      } else {
+        setShop(null)
+        setRateLimited(false)
+        setRetriesExhausted(false)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [slug])
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const [shopRes, productsRes, reviewsRes, configRes, promotionsRes, announcementsRes] = await Promise.all([
-          publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
-          publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
-          publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
-          publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
-          publicApiClient.get<PublicPromotion[]>(`/public/shops/${slug}/promotions`).catch(() => ({ data: [] as PublicPromotion[] })),
-          publicApiClient.get<PublicAnnouncement[]>(`/public/shops/${slug}/announcements`).catch(() => ({ data: [] as PublicAnnouncement[] })),
-        ])
-        setShop(shopRes.data)
-        setProducts(productsRes.data)
-        setReviews(reviewsRes.data.content)
-        setReviewCount(reviewsRes.data.totalElements)
-        if (reviewsRes.data.content.length > 0) {
-          const avg = reviewsRes.data.content.reduce((sum: number, r: Review) => sum + r.foodRating, 0) / reviewsRes.data.content.length
-          setAvgRating(Math.round(avg * 10) / 10)
-        }
-        if (configRes.data) setShopConfig(configRes.data)
-        setPromotions(promotionsRes.data || [])
-        setAnnouncements(announcementsRes.data || [])
-        const cats = Object.keys(productsRes.data)
-        if (cats.length > 0) setActiveCategory(cats[0])
-      } catch {
-        setShop(null)
-      } finally {
-        setLoading(false)
-      }
-    }
+    loadRef.current = load
+  }, [load])
+
+  useEffect(() => {
     load()
-  }, [slug])
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    }
+  }, [load])
+
+  const handleManualRetry = useCallback(() => {
+    retryAttemptRef.current = 0
+    setRetriesExhausted(false)
+    load()
+  }, [load])
 
   const categories = Object.keys(products)
   const featuredProducts = Object.values(products)
@@ -292,6 +339,46 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   function scrollToCategory(cat: string) {
     setActiveCategory(cat)
     categoryRefs.current[cat]?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  // F-RATE (#88): busy/retrying takes precedence over both the skeleton and the
+  // "Shop not found" empty state so a 429 can never fall through to a definitive
+  // "this shop is gone" message. Static copy only — never surface error details.
+  if (rateLimited) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <Loader2 className="mx-auto h-10 w-10 text-orange-500 animate-spin" />
+        <h2 className="mt-4 text-lg font-semibold text-slate-900">
+          High demand right now
+        </h2>
+        {retriesExhausted ? (
+          <>
+            <p className="mt-1 text-sm text-slate-500">
+              This shop is still busy. Please try again in a moment.
+            </p>
+            <button
+              onClick={handleManualRetry}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-sm text-slate-500">
+            This shop is busy — retrying automatically…
+          </p>
+        )}
+        <div className="mt-4">
+          <Link
+            href="/shop"
+            className="inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to all shops
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
