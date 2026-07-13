@@ -1,0 +1,9 @@
+# Build output (root .gitignore anchors /dist/ to the repo root, so mcp-server/dist/
+# is NOT otherwise ignored — ignore it here to avoid committing compiled .js).
+dist/
+node_modules/
+
+# Logs / local env
+*.log
+.env
+.env.*

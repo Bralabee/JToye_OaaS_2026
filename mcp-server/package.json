@@ -1,0 +1,27 @@
+{
+  "name": "@jtoye/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "J'Toye MCP server — thin, tenant-scoped read wrapper over the core REST API (Bearer pass-through; RLS is the sole isolation boundary).",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5",
+    "pino": "^10",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/express": "^5",
+    "@types/node": "20.19.43",
+    "tsx": "^4",
+    "typescript": "~5.9",
+    "vitest": "^4"
+  }
+}
