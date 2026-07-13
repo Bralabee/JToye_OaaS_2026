@@ -95,9 +95,11 @@ code changes require a full rebuild:
 Then verify pass-through end to end — read allowed, write denied:
 
 ```bash
-# Read is allowed (authenticated, catalog:read):
+# Read is allowed (authenticated, catalog:read). The Streamable HTTP transport
+# hard-requires the dual Accept header on POST (406 without it):
 curl -s -o /dev/null -w '%{http_code}\n' "$MCP/mcp" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_products","arguments":{}}}'
 # -> 200
 
