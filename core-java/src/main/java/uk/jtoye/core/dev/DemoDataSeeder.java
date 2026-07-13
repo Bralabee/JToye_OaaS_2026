@@ -17,9 +17,12 @@ import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.storage.StorageService;
+import software.amazon.awssdk.core.exception.SdkClientException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -60,10 +63,21 @@ import java.util.stream.Collectors;
  * Nothing is deleted (order_items reference products via snapshot + id), so this
  * is safe against the live dev volume.
  *
- * <p><strong>No product photography (#15):</strong> product cards deliberately
- * carry no {@code image_url} — the storefront renders the approved SafeImage
- * branded fallback tile. Shop <em>branding</em> (a logo) IS seeded so the
- * "populated images resolve naturalWidth&gt;0" contract is exercised on real data.
+ * <p><strong>Product photography (#15 — reversed 260713-kds):</strong> curated
+ * products now carry seeded, license-verified dish imagery. Each of the 21
+ * bundled Wikimedia photos (CC0/CC-BY/CC-BY-SA, zero NC/ND — attributed in
+ * {@code docs/CREDITS-demo-images.md}) is uploaded to MinIO via
+ * {@link uk.jtoye.core.storage.StorageService#putSeedImage} at a deterministic
+ * {@code <tenant>/products/seed/<filename>} key and its public URL stamped onto
+ * the matching product's {@code image_url} by {@link #seedProductImages}. A
+ * seeder-owns overwrite policy fills null/blank slots, re-affirms prior seed
+ * URLs and replaces foreign/legacy URLs, but NEVER clobbers a genuine vendor
+ * upload — a URL under the product's OWN upload folder
+ * ({@code <publicUrl>/<tenant>/products/<thisProductId>/}) lacking the
+ * {@code /products/seed/} marker. (A vendor upload always keys on the product's
+ * own id, so a URL under a DIFFERENT entity id is a foreign/legacy artifact the
+ * seeder owns.) SafeImage remains the fallback only when no seed image maps to a
+ * product. Shop <em>branding</em> (a logo) is also seeded.
  *
  * <p><strong>Profile gating:</strong> restricted to the {@code dev} Spring
  * profile and only wired as an {@link ApplicationRunner} at dev startup.
@@ -105,17 +119,20 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
     private final VendorOnboardingRepository onboardingRepository;
+    private final StorageService storageService;
     private final TransactionTemplate transactionTemplate;
 
     public DemoDataSeeder(ShopRepository shopRepository,
                           ProductRepository productRepository,
                           CustomerRepository customerRepository,
                           VendorOnboardingRepository onboardingRepository,
+                          StorageService storageService,
                           PlatformTransactionManager transactionManager) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.customerRepository = customerRepository;
         this.onboardingRepository = onboardingRepository;
+        this.storageService = storageService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -154,9 +171,11 @@ public class DemoDataSeeder implements ApplicationRunner {
             if (result != null) {
                 log.info("DemoDataSeeder complete for tenant {}: {} shop(s) created, "
                                 + "{} product(s) created, {} customer(s) created, "
-                                + "{} non-curated product(s) quarantined, {} shop(s) unpublished.",
+                                + "{} non-curated product(s) quarantined, {} shop(s) unpublished, "
+                                + "{} demo image(s) seeded.",
                         DEMO_TENANT, result.shopsCreated, result.productsCreated,
-                        result.customersCreated, result.productsQuarantined, result.shopsUnpublished);
+                        result.customersCreated, result.productsQuarantined, result.shopsUnpublished,
+                        result.imagesSeeded);
             }
         } finally {
             TenantContext.clear();
@@ -260,10 +279,147 @@ public class DemoDataSeeder implements ApplicationRunner {
         upsertCustomer(result, "Priya Sharma", "priya.sharma@example.com", "07700 900234");
         upsertCustomer(result, "James Okafor", "james.okafor@example.com", "07700 900567");
 
+        // ADDITIVE image-seeding step (260713-kds): now that the curated products
+        // are persisted, upload each bundled dish photo to MinIO and stamp the
+        // matching product's image_url under the seeder-owns overwrite policy.
+        seedProductImages(result);
+
         return result;
     }
 
-    private List<MenuItem> shopOneMenu() {
+    /**
+     * Curated menu keyed by shop slug — the SINGLE SOURCE OF TRUTH shared by the
+     * seeding path ({@link #seed}), the image-seeding step ({@link #seedProductImages})
+     * and the unit test (via {@link #curatedTitlesBySlug}). Keeping this one map
+     * means the test cannot silently rot against a second literal title list.
+     */
+    private static Map<String, List<MenuItem>> curatedMenusBySlug() {
+        return Map.of(
+                "mama-ades-kitchen", shopOneMenu(),
+                "peckham-jollof-co", shopTwoMenu(),
+                "brixton-village-grill", shopThreeMenu());
+    }
+
+    /**
+     * Test-visible view of the curated catalogue: slug → set of curated dish
+     * titles. Derived from {@link #curatedMenusBySlug} so it can never diverge
+     * from the real menu definitions. Used by {@code DemoImageManifestTest} to
+     * assert every manifest entry maps to a real curated product (guarding the
+     * Peckham-period / Mama-Ade's-apostrophe shop-name traps).
+     */
+    static Map<String, Set<String>> curatedTitlesBySlug() {
+        return curatedMenusBySlug().entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> e.getValue().stream().map(MenuItem::title).collect(Collectors.toSet())));
+    }
+
+    /**
+     * Seed license-verified dish photography onto the curated demo catalogue
+     * (260713-kds — reverses the phase 19-09 "no image_url" design note). For each
+     * of the 21 manifest entries: resolve the target shop slug, find the curated
+     * {@link MenuItem} whose title matches the manifest dish (to get its SKU), load
+     * the persisted {@link Product}, upload the bundled image to MinIO via
+     * {@link StorageService#putSeedImage} (idempotent, deterministic key), then
+     * apply the SEEDER-OWNS OVERWRITE POLICY:
+     * <ul>
+     *   <li>null/blank image_url → set the seed URL (fill the gap);</li>
+     *   <li>current already contains {@code /products/seed/} → set (re-affirm prior
+     *       seed, idempotent) — checked BEFORE the vendor-prefix test so a prior
+     *       seed is never misread as a vendor upload;</li>
+     *   <li>current does NOT start with THIS product's own upload folder
+     *       ({@code <publicUrl>/<tenant>/products/<thisProductId>/}) → set
+     *       (foreign/legacy URL of unverifiable provenance — a vendor upload for
+     *       a DIFFERENT entity id, or an env-only artifact — "ours to overwrite";
+     *       this is what replaces the Peri Peri Chicken + Suya Platter legacy
+     *       URLs, whose embedded entity id does not match the product's own id);</li>
+     *   <li>current starts with the product's own upload folder AND lacks the
+     *       seed marker → LEAVE UNTOUCHED (a genuine vendor upload for THIS
+     *       product always wins).</li>
+     * </ul>
+     * A missing manifest, an unmatched dish, or an absent classpath image is logged
+     * and skipped — never fatal to dev boot.
+     */
+    private void seedProductImages(SeedResult result) {
+        List<DemoImageManifest.ManifestEntry> entries;
+        try {
+            entries = DemoImageManifest.load();
+        } catch (RuntimeException e) {
+            log.warn("Demo image manifest unavailable; skipping image seeding: {}", e.getMessage());
+            return;
+        }
+
+        Map<String, List<MenuItem>> menusBySlug = curatedMenusBySlug();
+
+        for (DemoImageManifest.ManifestEntry entry : entries) {
+            String slug = DemoImageManifest.slugForShop(entry.shop());
+            List<MenuItem> menu = menusBySlug.get(slug);
+            if (menu == null) {
+                log.warn("No curated menu for slug '{}' (manifest dish '{}'); skipping image", slug, entry.dish());
+                continue;
+            }
+            MenuItem match = menu.stream()
+                    .filter(m -> m.title().equalsIgnoreCase(entry.dish()))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null) {
+                log.warn("Manifest dish '{}' not found in curated menu for '{}'; skipping image",
+                        entry.dish(), slug);
+                continue;
+            }
+            Product product = productRepository.findBySku(match.sku()).orElse(null);
+            if (product == null) {
+                log.warn("Curated product SKU {} ('{}') not persisted; skipping image",
+                        match.sku(), entry.dish());
+                continue;
+            }
+
+            try {
+                byte[] bytes = DemoImageManifest.readImage(entry.filename());
+                String seedUrl = storageService.putSeedImage(DEMO_TENANT, entry.filename(), bytes, "image/jpeg");
+
+                // A genuine vendor upload for THIS product lives under its own id's
+                // folder (<publicUrl>/<tenant>/products/<thisProductId>/); a URL under
+                // /products/ but a DIFFERENT entity id is a foreign/legacy artifact.
+                String ownUploadPrefix = storageService.productUploadUrlPrefix(DEMO_TENANT, product.getId());
+                String current = product.getImageUrl();
+                boolean apply;
+                if (current == null || current.isBlank()) {
+                    apply = true;                                          // fill the gap
+                } else if (current.contains(StorageService.SEED_URL_MARKER)) {
+                    apply = true;                                          // prior seed — re-affirm (idempotent)
+                } else if (!current.startsWith(ownUploadPrefix)) {
+                    apply = true;                                          // foreign/legacy URL (not this product's own upload) — ours to overwrite
+                } else {
+                    apply = false;                                        // genuine vendor upload for THIS product wins
+                }
+
+                if (apply && !seedUrl.equals(current)) {
+                    product.setImageUrl(seedUrl);
+                    productRepository.save(product);
+                    result.imagesSeeded++;
+                }
+            } catch (SdkClientException e) {
+                // Client-side failure means the object store is unreachable — e.g. a
+                // dev-profile integration test (@ActiveProfiles("dev")) boots Postgres/
+                // Redis but no MinIO. Honour the seeder's "never fatal to dev boot"
+                // contract: abort image seeding entirely rather than incur one
+                // connection-timeout per remaining manifest entry. Data seeding above
+                // has already committed; only the (optional) image URLs are skipped.
+                log.warn("Object store unreachable; skipping demo image seeding "
+                                + "({} image(s) applied before it became unreachable): {}",
+                        result.imagesSeeded, e.getMessage());
+                return;
+            } catch (RuntimeException e) {
+                // Store IS reachable but this one entry failed (service error, empty/
+                // unreadable image, bad request). Skip it and keep seeding the rest.
+                log.warn("Failed to seed image for dish '{}' (SKU {}); skipping: {}",
+                        entry.dish(), match.sku(), e.getMessage());
+            }
+        }
+    }
+
+    private static List<MenuItem> shopOneMenu() {
         return List.of(
                 new MenuItem("MAK-JOL", "Jollof Rice", "Mains", 899L,
                         "long-grain rice, tomatoes, peppers, onions, **chicken stock (celery)**", true,
@@ -285,7 +441,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                         "hibiscus, ginger, pineapple", false, "Vegan", 0));
     }
 
-    private List<MenuItem> shopTwoMenu() {
+    private static List<MenuItem> shopTwoMenu() {
         return List.of(
                 new MenuItem("PJC-PJO", "Party Jollof Rice", "Mains", 950L,
                         "smoky long-grain rice, scotch bonnet, tomatoes, peppers", true, "Halal", 0),
@@ -306,7 +462,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                         "fiery homemade ginger beer", false, "Vegan", 0));
     }
 
-    private List<MenuItem> shopThreeMenu() {
+    private static List<MenuItem> shopThreeMenu() {
         return List.of(
                 new MenuItem("BVG-PER", "Peri Peri Chicken", "Mains", 900L,
                         "flame-grilled chicken, peri peri marinade", true, "Halal, Spicy", 0),
@@ -432,7 +588,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         product.setShopId(shopId);
         product.setFeatured(item.featured());
         product.setDietaryTags(item.dietaryTags());
-        // No image_url: product cards use the SafeImage branded fallback (#15).
+        // image_url is stamped separately by seedProductImages (#15, reversed
+        // 260713-kds): curated products carry seeded, license-verified dish photos
+        // under /products/seed/, governed by the seeder-owns overwrite policy.
         productRepository.save(product);
     }
 
@@ -510,5 +668,6 @@ public class DemoDataSeeder implements ApplicationRunner {
         int customersCreated;
         int productsQuarantined;
         int shopsUnpublished;
+        int imagesSeeded;
     }
 }

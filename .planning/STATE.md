@@ -144,6 +144,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260713-kds | Restore demo catalog images (Phase 19-09 regression-by-omission): 21 license-verified Wikimedia dish photos bundled + DemoImageManifest/StorageService.putSeedImage + idempotent seeder step + CREDITS-demo-images.md + Incremental Betterment Doctrine in CLAUDE.md; browser-proven 21/21 naturalWidth>0 across 3 demo shops; metrics 1243 | 2026-07-13 | 572faf4 | [260713-kds-restore-demo-catalog-images](./quick/260713-kds-restore-demo-catalog-images/) |
 | 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
 | 260708-g8c | Issue #79 P0-3: untrack/relocate 147 db dumps off-tree, pii-guard CI, UK GDPR Art 33/34 exposure assessment (history rewrite handled post-merge) | 2026-07-08 | d162e82 | [260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h](./quick/260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h/) |
 | 260708-jj1 | Issue #77 P0-1: add frontend /api/health route (+2 Jest tests), align compose healthcheck; verified live — curl 200 {"status":"ok"} unauthenticated, container healthy under new probe | 2026-07-08 | 9712eb2 | [260708-jj1-issue-77-p0-1-add-frontend-api-health-ro](./quick/260708-jj1-issue-77-p0-1-add-frontend-api-health-ro/) |
