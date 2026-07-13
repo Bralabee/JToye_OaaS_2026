@@ -63,6 +63,7 @@ Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `mi
 ### 🚧 v2.3 Phases (in progress)
 
 - [x] **Phase 19: Full-Frontend Experience Overhaul** — **DONE 2026-07-11** (9/9 plans, 4 waves, on `feature/19-ui-overhaul`). Closed the 15-item remediation backlog from the full-frontend UI audit (18-UI-REVIEW.md, whole-app 42/72): public landing page + information architecture (killed the `/` blind redirect, connected the 3 surfaces, de-orphaned every route), responsive dashboard shell, real product names in kitchen/orders, checkout delivery address + fee transparency (V45 migration — V44 stays reserved for #96), per-shop menus, and comparator-grade polish (Deliveroo/Just Eat storefront bar; Square/Toast dashboard bar). Registered UIX-01..06. Palette kept orange/emerald/slate (editorial redesign explicitly rejected), mobile-first; test invocations grew 921 → 988 (no regression), schema V43 → V45, docs-freshness green. Backlog #14 (error boundary) documented LEAVE-AS-IS.
+- [x] **Phase 20: AI-1 MCP Server (Read-Only Slice)** [MVP] — EPIC #209 Wave 2, issue #203. New TypeScript `mcp-server/` (official `@modelcontextprotocol/sdk`) exposing read-only tenant-scoped tools (list shops/products, read orders) over the existing core REST API; auth reuses #206 client-credentials + `catalog:read`/`orders:read` scopes (RLS is the boundary). Cross-tenant → empty/403 (RLS-proven test); RFC 7807 tool errors; live E2E on dev stack; README. Mutating tools + #205 webhooks deferred. — **NOT STARTED** (completed 2026-07-13)
 
 ## Phase Details
 
@@ -311,3 +312,31 @@ Suggested wave layout:
 | 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
 | 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
 | 19. Full-Frontend Experience Overhaul | v2.3 | 9/9 | Complete    | 2026-07-11 |
+| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 5/5 | Complete    | 2026-07-13 |
+
+### Phase 20: AI-1 MCP Server (Read-Only Slice)
+
+**Goal:** As an external AI agent holding only a tenant-scoped Keycloak client-credentials token, I want to discover and read the platform (list shops, list products, read orders) through a Model Context Protocol server, so that I can integrate with J'Toye without hand-rolling an HTTP client and without any possibility of cross-tenant access.
+**Mode:** mvp
+**Requirements**: AI-1
+**Tracks**: GitHub issue #203 — EPIC #209 Wave 2. Read-only first slice; mutating MCP tools and #205 outbound webhooks are separate later phases.
+**Depends on:** #204 idempotency contract (DONE, PR #211) + #206 scoped machine credentials (DONE, PR #212). Both merged — `integration-catalog-ro` client + `catalog:read`/`orders:read` scopes already seeded in the realm template. No blocking dependencies remain.
+**Plans:** 5/5 plans complete
+
+**Success criteria (issue #203 acceptance criteria):**
+1. New TypeScript `mcp-server/` workspace using the official `@modelcontextprotocol/sdk`, packaged as its own Docker container wired into docker-compose. No new Python/Go runtime.
+2. Read-only MCP tools — list shops, list products, read orders — each wraps the EXISTING core REST API over HTTP (never touches Postgres directly; core-java + RLS stay the security boundary).
+3. Auth reuses #206: Keycloak client-credentials token pass-through; the `tenant_id` claim drives RLS. Read tools map to `catalog:read` / `orders:read` scopes.
+4. Agent with a tenant-scoped token can list shops/products and read orders via MCP against the dev stack — LIVE E2E, not just unit.
+5. Cross-tenant access attempt returns empty/403 — RLS-proven, test included.
+6. Tool errors surface RFC 7807 problem-detail, not raw stack traces.
+7. README documents the client-credentials setup.
+
+**Constraints:** feature branch → PR (never main); rebuild ALL containers before any live E2E claim; dev realm re-import is a pending operational step (`docs/security-scopes.md` §Re-import) required for the `integration-catalog-ro` client to exist in the running Keycloak; docs-freshness gate must stay green (baseline metrics 1208 / schema V50 — an MCP TS test surface may add to test counts; `scripts/docs-freshness.sh --write` is the arbiter).
+
+Plans:
+- [x] 20-01-PLAN.md — Walking slice: mcp-server workspace + list_products end-to-end (stateless HTTP, Bearer pass-through, RFC 7807 errors) [W1]
+- [x] 20-02-PLAN.md — Widen tools: list_shops + read_orders (list/shop/detail) registered on the server [W2]
+- [x] 20-03-PLAN.md — Own Docker container + compose wiring + README + tenant-B seed for the RLS proof [W2]
+- [x] 20-04-PLAN.md — docs-freshness mcp test family + metrics regen + e2e.sh/e2e-rls.sh scripts [W3]
+- [x] 20-05-PLAN.md — Rebuild all + realm re-import + live E2E (read happy-path + cross-tenant RLS proof) [W4]

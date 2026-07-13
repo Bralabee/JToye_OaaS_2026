@@ -86,6 +86,18 @@ public class DemoDataSeeder implements ApplicationRunner {
     /** Default demo tenant seeded by V13 — matches the dev Keycloak tenant claim. */
     private static final UUID DEMO_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    /**
+     * Second demo tenant (also seeded by V13; matches the tenant-b-user Keycloak
+     * tenant claim). Given a single probe shop + product below so the #203 / AI-1
+     * cross-tenant RLS proof can assert DISJOINT NON-EMPTY sets — token B sees the
+     * probe product-id, token A does NOT — instead of a doubly-explained "empty for B".
+     */
+    private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
+    /** Distinct slug/SKU for tenant B's probe fixture (no collision with tenant-A rows). */
+    private static final String TENANT_B_SHOP_SLUG = "tenant-b-probe";
+    private static final String TENANT_B_PRODUCT_SKU = "TENANTB-PROBE-1";
+
     /** Slug of the hidden archive shop that absorbs every non-curated product. */
     private static final String ARCHIVE_SLUG = "unsorted-legacy-items";
 
@@ -149,6 +161,63 @@ public class DemoDataSeeder implements ApplicationRunner {
         } finally {
             TenantContext.clear();
         }
+
+        // Tenant-B probe fixture (#203 / AI-1). A SEPARATE TenantContext.set(TENANT_B)
+        // pins the RLS GUC to tenant B for these writes (mirrors the tenant-A block
+        // above) so the row's tenant_id matches the RLS WITH CHECK. Its own
+        // transaction — independent of the tenant-A seed — keeps the two tenants'
+        // writes cleanly isolated.
+        TenantContext.set(TENANT_B);
+        try {
+            transactionTemplate.execute(status -> {
+                seedTenantB();
+                return null;
+            });
+            log.info("DemoDataSeeder tenant-B probe seeded");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Seed tenant B (…0002) with exactly ONE shop + ONE product — a minimal probe
+     * fixture (NOT a full catalogue) whose sole purpose is to make the #203 / AI-1
+     * cross-tenant RLS proof bidirectional and unfakeable: token B must see this
+     * product-id while token A must NOT. Idempotent (upsert by slug / SKU) so
+     * repeated dev boots never duplicate. Dev-only ({@code @Profile("dev")}); the
+     * tenant-B rows are synthetic, PII-free and never seeded in staging/prod
+     * (threat T-20-08 accepted).
+     */
+    private void seedTenantB() {
+        Shop shop = shopRepository.findBySlug(TENANT_B_SHOP_SLUG).orElseGet(() -> {
+            Shop s = new Shop();
+            s.setTenantId(TENANT_B);
+            s.setSlug(TENANT_B_SHOP_SLUG);
+            return s;
+        });
+        shop.setName("Tenant B Probe Kitchen");
+        shop.setAddress("1 Probe Lane, London");
+        shop.setDescription("Cross-tenant RLS probe fixture for tenant B (dev only).");
+        shop.setMinimumOrderPennies(0L);
+        shop.setDeliveryFeePennies(0L);
+        shop.setPublished(false);
+        Shop savedShop = shopRepository.save(shop);
+
+        Product product = productRepository.findBySku(TENANT_B_PRODUCT_SKU).orElseGet(() -> {
+            Product p = new Product();
+            p.setTenantId(TENANT_B);
+            p.setSku(TENANT_B_PRODUCT_SKU);
+            return p;
+        });
+        product.setTitle("Tenant B Probe Product");
+        product.setIngredientsText("probe");
+        product.setAllergenMask(0);
+        product.setPricePennies(999L);
+        product.setCategory("Probe");
+        product.setAvailable(true);
+        product.setFeatured(false);
+        product.setShopId(savedShop.getId());
+        productRepository.save(product);
     }
 
     private SeedResult seed() {

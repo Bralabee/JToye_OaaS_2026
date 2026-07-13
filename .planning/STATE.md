@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: production-hardening-vendor-order-ops
 status: milestone_complete
-stopped_at: Milestone complete (Phase 19 was final phase)
-last_updated: 2026-07-11T20:36:47.571Z
-last_activity: 2026-07-11 -- Phase 19 closure plan 19-09 executing
+stopped_at: Milestone complete (Phase 20 was final phase)
+last_updated: 2026-07-13T12:24:36.898Z
+last_activity: 2026-07-13 -- Phase 20 execution started
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 7
-  total_plans: 31
-  completed_plans: 33
-  percent: 78
+  total_plans: 36
+  completed_plans: 38
+  percent: 70
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 
 ## Current Position
 
-Phase: 19
+Phase: 20
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-07-13 - Completed quick task 260713-2g8: #206 scoped machine credentials (research + validated — verifier 7/7 with live re-runs; combined role+scope converter, catalog write-gates, read-only machine client in realm template). EPIC #209 Wave 1 complete.
+Last activity: 2026-07-13
 
 Progress: [██████████] 100%
 
@@ -65,6 +65,7 @@ Progress: [██████████] 100%
 | 17 | 4 | - | - |
 | 18 | 7 | - | - |
 | 19 | 9 | - | - |
+| 20 | 5 | - | - |
 
 **Milestone v2.2 (executing):**
 
@@ -97,6 +98,7 @@ Progress: [██████████] 100%
 
 - Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
 - Phase 16.1 (Pre-prod Hardening) — DONE 2026-04-28. 5 council-audit blockers closed (cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables). V35 migration ships them atomically. RlsContractTest is a permanent CI guard against future RLS drift. AUDIT-W0-01..05 retrospectively registered in REQUIREMENTS.md (16-entry total, traceability complete).
+- Phase 20 added 2026-07-13: AI-1 MCP Server (Read-Only Slice) [MVP mode] — EPIC #209 Wave 2, issue #203. TypeScript `mcp-server/` over the core REST API; read-only tenant-scoped tools; auth reuses #206 client-credentials + scopes; RLS is the boundary. First roadmap phase of the AI-readiness track (Wave 1 #204/#206/#98 shipped as gsd-quick tasks). Mutating tools + #205 webhooks deferred to later phases.
 
 ### Decisions
 
