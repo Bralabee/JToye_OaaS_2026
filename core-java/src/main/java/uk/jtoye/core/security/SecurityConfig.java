@@ -31,16 +31,19 @@ import java.util.Arrays;
 public class SecurityConfig {
 
     /**
-     * Translate the Keycloak {@code realm_access.roles} claim into Spring
-     * {@code ROLE_*} authorities so {@code @PreAuthorize("hasRole('admin')")}
-     * can gate the sensitive surfaces (issue #83 P1-1). Kept as a private helper
-     * so the same converter instance is wired into the resource server below and
-     * exercised verbatim by {@code KeycloakRealmRoleConverterTest} /
-     * {@code RoleBasedAccessIntegrationTest}.
+     * Translate Keycloak token claims into Spring authorities: {@code realm_access.roles}
+     * into {@code ROLE_*} (issue #83 P1-1) AND the OAuth2 {@code scope} claim into
+     * {@code SCOPE_*} (issue #206 [AI-4] scoped machine credentials). The combined
+     * {@link JwtRolesAndScopesConverter} is additive — it keeps every
+     * {@code @PreAuthorize("hasRole('admin')")} gate working while enabling the new
+     * {@code hasAuthority('SCOPE_catalog:write')} gate on the product write surface.
+     * Kept as a private helper so the same converter instance is wired into the resource
+     * server below and exercised verbatim by {@code JwtRolesAndScopesConverterTest} /
+     * {@code ScopedCatalogAccessIntegrationTest} / {@code RoleBasedAccessIntegrationTest}.
      */
     private JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
+        converter.setJwtGrantedAuthoritiesConverter(new JwtRolesAndScopesConverter());
         return converter;
     }
 
@@ -150,10 +153,11 @@ public class SecurityConfig {
                 auth.requestMatchers("/actuator/prometheus").permitAll();
                 auth.anyRequest().authenticated();
             })
-            // issue #83 P1-1: replace the default authority converter with the
-            // Keycloak realm-role mapper so realm_access.roles -> ROLE_* authorities.
-            // JwtTenantFilter (added AFTER BearerTokenAuthenticationFilter below) still
-            // maps tenant_id -> TenantContext; role checks are additive to RLS scoping.
+            // issue #83 P1-1 + #206 [AI-4]: replace the default authority converter with the
+            // combined JwtRolesAndScopesConverter so realm_access.roles -> ROLE_* AND the
+            // scope claim -> SCOPE_* authorities. JwtTenantFilter (added AFTER
+            // BearerTokenAuthenticationFilter below) still maps tenant_id -> TenantContext;
+            // role/scope checks are additive to RLS scoping.
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                     jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 

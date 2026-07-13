@@ -174,7 +174,11 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser
+    // issue #206 [AI-4]: product create is now gated on SCOPE_catalog:write. The mock user
+    // keeps ROLE_USER (authenticated read of the dereferenced Location) and gains the write
+    // scope so the POST reaches the handler (mirrors an operator token, which core-api
+    // default-grants catalog:write).
+    @WithMockUser(authorities = {"ROLE_USER", "SCOPE_catalog:write"})
     void productCreateLocationDereferences() throws Exception {
         CreateProductRequest request = new CreateProductRequest();
         request.setSku("DEREF-" + UUID.randomUUID());

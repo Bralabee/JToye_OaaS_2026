@@ -44,6 +44,7 @@ REQUIRED_VARS=(
   KEYCLOAK_CLIENT_SECRET
   EDGE_API_CLIENT_SECRET
   KC_SEED_USER_PASSWORD
+  INTEGRATION_CATALOG_RO_SECRET
 )
 
 # Weak values that must never be used. Tokens are stored canonical UPPER-case and

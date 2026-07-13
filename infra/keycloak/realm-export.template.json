@@ -446,6 +446,22 @@
     "notBefore" : 0,
     "groups" : [ ]
   }, {
+    "id" : "9e0bf075-b61a-408e-800e-63d2e0bcb770",
+    "username" : "service-account-integration-catalog-ro",
+    "emailVerified" : false,
+    "attributes" : {
+      "tenant_id" : [ "00000000-0000-0000-0000-000000000001" ]
+    },
+    "enabled" : true,
+    "totp" : false,
+    "serviceAccountClientId" : "integration-catalog-ro",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-jtoye-dev" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
     "id" : "b24ef5ca-82d6-4cc6-900f-82db92e10ab7",
     "username" : "tenant-a-user",
     "firstName" : "User",
@@ -714,7 +730,7 @@
         "introspection.token.claim" : "true"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "d0c5835f-543c-4b47-a554-4cad011884f9",
@@ -916,8 +932,105 @@
     } ],
     "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+  }, {
+    "id" : "f5757cc0-994a-4b61-afb7-f73f71de8c15",
+    "clientId" : "integration-catalog-ro",
+    "name" : "Integration — Catalog (read-only)",
+    "description" : "Sample per-tenant machine client (issue #206 [AI-4]). Client-credentials grant, service-account only, granted catalog:read ONLY — proves least-privilege catalog access: 200 on GET /api/v1/products, 403 on any product write.",
+    "surrogateAuthRequired" : false,
+    "enabled" : true,
+    "alwaysDisplayInConsole" : false,
+    "clientAuthenticatorType" : "client-secret",
+    "secret" : "${INTEGRATION_CATALOG_RO_SECRET}",
+    "redirectUris" : [ ],
+    "webOrigins" : [ ],
+    "notBefore" : 0,
+    "bearerOnly" : false,
+    "consentRequired" : false,
+    "standardFlowEnabled" : false,
+    "implicitFlowEnabled" : false,
+    "directAccessGrantsEnabled" : false,
+    "serviceAccountsEnabled" : true,
+    "publicClient" : false,
+    "frontchannelLogout" : false,
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "post.logout.redirect.uris" : "+"
+    },
+    "authenticationFlowBindingOverrides" : { },
+    "fullScopeAllowed" : true,
+    "nodeReRegistrationTimeout" : -1,
+    "protocolMappers" : [ {
+      "id" : "2f19637c-f80d-46dd-bf62-8b5effe77f84",
+      "name" : "tenant-id-mapper",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usermodel-attribute-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "userinfo.token.claim" : "true",
+        "user.attribute" : "tenant_id",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "tenant_id",
+        "jsonType.label" : "String"
+      }
+    }, {
+      "id" : "b553683e-64a1-42fc-98f2-916f3f41ed07",
+      "name" : "core-api-audience-mapper",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "included.client.audience" : "core-api",
+        "access.token.claim" : "true",
+        "id.token.claim" : "false",
+        "introspection.token.claim" : "true"
+      }
+    } ],
+    "defaultClientScopes" : [ "catalog:read", "web-origins", "acr", "roles", "profile", "email" ],
+    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   } ],
   "clientScopes" : [ {
+    "id" : "02dc904b-8484-4df8-8bb1-3e944bffba64",
+    "name" : "catalog:read",
+    "description" : "Read-only access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:read.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
+    "id" : "bd0fed87-456d-45f6-afa9-cade6e9b40f9",
+    "name" : "catalog:write",
+    "description" : "Write access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:write, which gates all nine ProductController mutations.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
+    "id" : "3e8600a0-8553-459b-b707-6997abd6ce59",
+    "name" : "orders:read",
+    "description" : "Reserved taxonomy scope for the [AI-1] MCP auth model (#203). DEFINED to seed the capability taxonomy; NOT granted to any client and NOT enforced in this slice.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
+    "id" : "d73e3a39-9cf8-4ef0-bf5e-305a315c4a67",
+    "name" : "orders:write",
+    "description" : "Reserved taxonomy scope for the [AI-1] MCP auth model (#203). DEFINED to seed the capability taxonomy; NOT granted to any client and NOT enforced in this slice.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
     "id" : "78b14b25-7c61-430f-bfe7-b5c53668fa1e",
     "name" : "email",
     "description" : "OpenID Connect built-in scope: email",
