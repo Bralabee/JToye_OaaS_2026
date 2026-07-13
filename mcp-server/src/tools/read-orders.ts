@@ -24,11 +24,15 @@ import { toToolError } from "../errors.js";
 const logger = pino({ name: "jtoye-mcp" });
 
 // Raw Zod shape (NOT z.object) — the @modelcontextprotocol/sdk v1.29.0 contract.
+// shopId/orderId are strict UUIDs (core's @PathVariable UUID contract): a bare
+// z.string() admitted ".." — encodeURIComponent does not encode dots, so the
+// WHATWG URL parser inside fetch collapsed the segment and re-routed the
+// request off the allow-listed template (T-20-04). UUID validation closes it.
 export const readOrdersInputSchema = {
   page: z.number().int().min(0).optional().describe("0-based page index (list mode)"),
   size: z.number().int().min(1).max(100).optional().describe("page size, max 100 (list mode)"),
-  shopId: z.string().optional().describe("scope the order list to one shop"),
-  orderId: z.string().optional().describe("fetch a single order's detail"),
+  shopId: z.string().uuid().optional().describe("scope the order list to one shop (UUID)"),
+  orderId: z.string().uuid().optional().describe("fetch a single order's detail (UUID)"),
 };
 
 interface ReadOrdersArgs {

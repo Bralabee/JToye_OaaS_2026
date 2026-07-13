@@ -19,8 +19,9 @@ vi.mock("pino", () => ({ default: () => logSpies }));
 // delegation path is exercised end-to-end.
 vi.mock("../core-client.js", () => ({ coreGet: vi.fn() }));
 
+import { z } from "zod";
 import { coreGet } from "../core-client.js";
-import { readOrdersHandler } from "./read-orders.js";
+import { readOrdersHandler, readOrdersInputSchema } from "./read-orders.js";
 
 const ok200 = {
   ok: true as const,
@@ -137,5 +138,29 @@ describe("read_orders handler", () => {
     expect(serialized).not.toContain(PII);
     expect(serialized).not.toContain("customerEmail");
     expect(serialized).not.toContain("customerPhone");
+  });
+});
+
+/**
+ * Schema-level allow-list hardening (T-20-04): the SDK validates tool args
+ * against this shape BEFORE the handler runs, so a dot-segment id can never
+ * reach buildPath — encodeURIComponent does not encode dots, and the WHATWG
+ * URL parser inside fetch would collapse "/orders/../detail" into a different
+ * core endpoint. Strict UUIDs (core's @PathVariable UUID contract) close it.
+ */
+describe("read_orders input schema (T-20-04 dot-segment guard)", () => {
+  const schema = z.object(readOrdersInputSchema);
+
+  it("rejects dot-segment ids ('..') so the path template cannot be escaped", () => {
+    expect(schema.safeParse({ orderId: ".." }).success).toBe(false);
+    expect(schema.safeParse({ shopId: ".." }).success).toBe(false);
+    expect(schema.safeParse({ orderId: "../orders" }).success).toBe(false);
+    expect(schema.safeParse({ shopId: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("accepts well-formed UUIDs (and both ids absent — list mode)", () => {
+    expect(schema.safeParse({ orderId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7" }).success).toBe(true);
+    expect(schema.safeParse({ shopId: "7f000001-0000-4000-8000-000000000002" }).success).toBe(true);
+    expect(schema.safeParse({}).success).toBe(true);
   });
 });
