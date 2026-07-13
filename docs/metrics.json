@@ -9,5 +9,7 @@
   "jest_files": 32,
   "playwright_blocks": 28,
   "playwright_specs": 6,
-  "total_logical_invocations": 1208
+  "mcp_test_blocks": 23,
+  "mcp_test_files": 6,
+  "total_logical_invocations": 1231
 }
