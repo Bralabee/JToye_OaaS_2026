@@ -37,8 +37,35 @@ app.post("/mcp", async (req, res) => {
     transport.close();
     server.close();
   });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch {
+    // Sanitized 500 (T-20-05): never surface a stack, message or filesystem
+    // path — in ANY NODE_ENV, not just production.
+    if (!res.headersSent) {
+      res.status(500).json({ error: "internal_error" });
+    }
+  }
+});
+
+// Terminal 4-arg error middleware (T-20-05): catches whatever falls through
+// the routes — most trivially express.json() parse failures, which Express's
+// DEFAULT handler would otherwise answer with an HTML page carrying the full
+// stack trace (absolute node_modules paths) whenever NODE_ENV != production.
+// Sanitization must live in code, not in an env var. The 4-arg signature is
+// what marks this as an error handler; `_next` stays declared though unused.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (res.headersSent) return;
+  const status = (err as { status?: number; statusCode?: number } | null)?.status ??
+    (err as { statusCode?: number } | null)?.statusCode;
+  const isClientError =
+    err instanceof SyntaxError || (typeof status === "number" && status >= 400 && status < 500);
+  if (isClientError) {
+    res.status(400).json({ error: "bad_request" });
+  } else {
+    res.status(500).json({ error: "internal_error" });
+  }
 });
 
 // Only bind a port when run as the entrypoint (not when imported by tests).

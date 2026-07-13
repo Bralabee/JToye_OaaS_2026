@@ -41,4 +41,26 @@ describe("mcp http host", () => {
     const body = (await r.json()) as { status?: string };
     expect(body.status).toBe("ok");
   });
+
+  it("returns sanitized JSON 400 (no stack, no paths) for malformed JSON bodies (T-20-05)", async () => {
+    // Pre-fix failure mode: express.json() parse errors fell through to
+    // Express's DEFAULT handler, which emits an HTML page with the full stack
+    // trace (absolute node_modules paths) whenever NODE_ENV != production.
+    const r = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: "Bearer tok",
+      },
+      body: "{not-json",
+    });
+
+    expect(r.status).toBe(400);
+    const text = await r.text();
+    expect(JSON.parse(text)).toEqual({ error: "bad_request" });
+    expect(text).not.toContain("<html");
+    expect(text).not.toContain("SyntaxError");
+    expect(text).not.toContain("node_modules");
+  });
 });
