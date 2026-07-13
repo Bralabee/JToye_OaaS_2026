@@ -1,0 +1,66 @@
+{
+  "$schema_note": "SURFACE-PARITY LEDGER — the recorded 'what is good' baseline for J'Toye OaaS. Future QA-council runs and per-increment gates DIFF the live surface against this. Any disappearance or material decrease (a route gone, a nav destination lost, content density collapsed, a journey that completed before and doesn't now) is a REGRESSION-BY-OMISSION finding unless a recorded decision retired it. Update this file ONLY when an improvement is proven or a retirement is explicitly decided — never silently.",
+  "seeded_by_run": "20260713-152124",
+  "seeded_iso": "2026-07-13T14:32:45Z",
+  "branch_at_seed": "feature/ux-mobile-nav-rsc-fixes",
+  "sha_at_seed": "6de0155",
+  "correction_note": "The live census crawled all 3 shop pages back-to-back and tripped the public 30-req/min per-IP rate limiter (#88), which 429'd /shop/brixton-village-grill and returned it EMPTY. That reading is a MEASUREMENT ARTIFACT, not the true surface. Corrected here from three converging evidence sources that all show brixton fully populated: (1) journey-matrix cells desktop1280-stale + mobile390-fresh render /shop/brixton-village-grill with imgTotal:10 imgVisible:10 imgBroken:0 (+11-image modal); (2) correctness lane proved all 21 product imageUrls resolve HTTP 200 image/jpeg incl. brixton's 7; (3) the seeder quick-task browser proof showed brixton 7/7 naturalWidth>0. The rate-limit stranding is filed as finding F-RATE (see QA-COUNCIL-REPORT).",
+  "routes": [
+    {"path": "/", "reachable": true},
+    {"path": "/shop", "reachable": true},
+    {"path": "/track", "reachable": true},
+    {"path": "/for-operators", "reachable": true},
+    {"path": "/business-model-guide", "reachable": true},
+    {"path": "/auth/signin", "reachable": true},
+    {"path": "/shop/brixton-village-grill", "reachable": true},
+    {"path": "/shop/mama-ades-kitchen", "reachable": true},
+    {"path": "/shop/peckham-jollof-co", "reachable": true}
+  ],
+  "nav_destinations_per_page": {
+    "/": ["/", "/shop", "/for-operators", "/track", "/auth/signin", "/business-model-guide"],
+    "/shop": ["/shop", "/for-operators", "/track", "/shop/brixton-village-grill", "/shop/mama-ades-kitchen", "/shop/peckham-jollof-co"],
+    "/track": ["/", "/shop", "/for-operators", "/track", "/auth/signin", "/business-model-guide"]
+  },
+  "mobile_nav_control": {
+    "note": "At 390px, /shop and /shop/[slug] now expose a visible 'Open menu' hamburger (menuControlVisible:true) containing every primary destination — the Phase-19-09 regression (menu-less /shop) is FIXED and this is the protected baseline. Regression if any public page at mobile width loses its menu control leaving destinations only in the footer.",
+    "pages_with_menu_control_at_390px": ["/", "/shop", "/shop/brixton-village-grill", "/for-operators", "/track"]
+  },
+  "content_led_surfaces": [
+    {"surface": "/shop", "items_listed": 3, "unique": 3, "pct_with_images": 100},
+    {"surface": "/shop/brixton-village-grill", "unique_products": 7, "pct_with_images": 100, "corrected_from_rate_limit_artifact": true},
+    {"surface": "/shop/mama-ades-kitchen", "unique_products": 7, "pct_with_images": 100},
+    {"surface": "/shop/peckham-jollof-co", "unique_products": 7, "pct_with_images": 100}
+  ],
+  "catalogue_ground_truth": {
+    "published_demo_shops": 3,
+    "products_per_demo_shop": 7,
+    "tenant_a_total_products": 46,
+    "tenant_a_total_pages": 3,
+    "all_curated_products_imaged": true,
+    "image_source": "core-java/src/main/resources/dev/demo-images/manifest.json (21 license-verified dishes)"
+  },
+  "journeys": [
+    {"name": "land-home", "completes": true, "time_to_content_ms": 121},
+    {"name": "browse-shops", "completes": true, "time_to_content_ms": 96},
+    {"name": "open-shop", "completes": true, "time_to_content_ms": 77},
+    {"name": "view-product", "completes": true, "time_to_content_ms": 39},
+    {"name": "reach-for-operators", "completes": true, "time_to_content_ms": 71},
+    {"name": "reach-track", "completes": true, "time_to_content_ms": 825}
+  ],
+  "navigation_feedback": {
+    "note": "loading.tsx boundaries at /, /shop, /shop/[slug] give instant skeleton feedback on client navigation (43ms measured). Protected baseline: client navigations must render feedback within ~100ms, not freeze until full RSC round-trip.",
+    "click_to_feedback_ms_baseline": 43
+  },
+  "domain_goods": [
+    "3 published demo shops each with a full 7-item menu of real, license-attributed dish photos",
+    "mobile hamburger nav exposing every primary destination on every public page at 390px",
+    "instant client-navigation feedback via loading boundaries",
+    "cross-tenant RLS isolation proven bidirectionally at the live HTTP boundary",
+    "read-only MCP surface (3 tools) with Bearer pass-through and tenant-scoped catalogue reads"
+  ],
+  "known_findings_at_seed": [
+    "F-RATE (High, pre-existing #88): public 30-req/min per-IP limiter strands the storefront with an empty marketplace + no retry under normal multi-shop browsing — likely the root of the originally-reported 'landing hit or miss'.",
+    "F-DOCS (High, pre-existing): systemic wrong credentials in README/CREDENTIALS/TESTING docs (password123) fail against the re-imported realm; CREDENTIALS.md test-client recipe is structurally dead (aud:null → 401).",
+    "OBS-ARCHIVE (Low): 18/25 archived legacy products still available=true (quarantine only flips flag on move); public control holds (archive 404s)."
+  ]
+}
