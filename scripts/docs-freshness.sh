@@ -59,7 +59,12 @@ JEST_FILES=$(count_files_with '^frontend/(app|components|lib|hooks|types|__tests
 PLAYWRIGHT_BLOCKS=$(count_occurrences '^frontend/e2e/.*\.spec\.ts$' '\btest\(')
 PLAYWRIGHT_SPECS=$(count_files_with '^frontend/e2e/.*\.spec\.ts$' '\btest\(')
 
-TOTAL=$((JAVA_TEST_METHODS + JEST_BLOCKS + GO_TEST_FUNCS + PLAYWRIGHT_BLOCKS))
+# MCP server vitest suite (mcp-server/) — the same \b(it|test)\( content-regex
+# that matches Jest blocks matches vitest blocks; only the path family is new.
+MCP_TEST_BLOCKS=$(count_occurrences '^mcp-server/(src|test)/.*\.(test|spec)\.ts$' '\b(it|test)\(')
+MCP_TEST_FILES=$(count_files_with '^mcp-server/(src|test)/.*\.(test|spec)\.ts$' '\b(it|test)\(')
+
+TOTAL=$((JAVA_TEST_METHODS + JEST_BLOCKS + GO_TEST_FUNCS + PLAYWRIGHT_BLOCKS + MCP_TEST_BLOCKS))
 
 read -r -d '' COMPUTED <<JSON || true
 {
@@ -73,6 +78,8 @@ read -r -d '' COMPUTED <<JSON || true
   "jest_files": ${JEST_FILES},
   "playwright_blocks": ${PLAYWRIGHT_BLOCKS},
   "playwright_specs": ${PLAYWRIGHT_SPECS},
+  "mcp_test_blocks": ${MCP_TEST_BLOCKS},
+  "mcp_test_files": ${MCP_TEST_FILES},
   "total_logical_invocations": ${TOTAL}
 }
 JSON
