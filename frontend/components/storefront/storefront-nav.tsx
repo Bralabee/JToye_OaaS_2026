@@ -3,9 +3,16 @@
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { User, LogOut, Package, MapPin } from "lucide-react"
+import { User, LogOut, Package, MapPin, Menu, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getCustomerSession, customerLogin, customerLogout } from "@/lib/customer-auth"
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 
 interface CustomerProfile {
   email: string
@@ -14,6 +21,7 @@ interface CustomerProfile {
 
 export function StorefrontNav() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
@@ -58,40 +66,52 @@ export function StorefrontNav() {
     }
   }, [checkSession])
 
+  const desktopLink = (active: boolean) =>
+    cn(
+      "transition-colors",
+      active ? "text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900"
+    )
+
+  // Same mobile sheet-link idiom as PublicHeader (44px touch target, active tint).
+  const mobileLink = (active: boolean) =>
+    cn(
+      "flex min-h-11 items-center rounded-lg px-4 text-sm transition-colors",
+      active
+        ? "bg-slate-100 text-slate-900 font-semibold"
+        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+    )
+
   return (
     <nav className="flex items-center gap-3 sm:gap-4 text-sm">
-      <Link
-        href="/shop"
-        className={cn(
-          "transition-colors",
-          isActive("/shop") && pathname === "/shop"
-            ? "text-slate-900 font-semibold"
-            : "text-slate-600 hover:text-slate-900"
-        )}
-      >
-        Browse
-      </Link>
-      <Link
-        href="/track"
-        className={cn(
-          "flex items-center gap-1 transition-colors",
-          isActive("/track")
-            ? "text-slate-900 font-semibold"
-            : "text-slate-600 hover:text-slate-900"
-        )}
-      >
-        <MapPin className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Track order</span>
-      </Link>
-      {profile && (
-        <Link
-          href="/shop/orders"
-          className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
-        >
-          <Package className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">My Orders</span>
+      {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
+          including "For operators" so the operator door is reachable from /shop. */}
+      <div className="hidden sm:flex items-center gap-4">
+        <Link href="/shop" className={desktopLink(pathname === "/shop")}>
+          Browse
         </Link>
-      )}
+        <Link
+          href="/for-operators"
+          className={desktopLink(isActive("/for-operators"))}
+        >
+          For operators
+        </Link>
+        <Link
+          href="/track"
+          className={cn("flex items-center gap-1", desktopLink(isActive("/track")))}
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          Track order
+        </Link>
+        {profile && (
+          <Link
+            href="/shop/orders"
+            className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
+          >
+            <Package className="h-3.5 w-3.5" />
+            My Orders
+          </Link>
+        )}
+      </div>
 
       {profile ? (
         <div className="flex items-center gap-2">
@@ -119,6 +139,63 @@ export function StorefrontNav() {
           Sign in
         </button>
       )}
+
+      {/* Mobile hamburger (<sm) — same idiom as PublicHeader so every public
+          destination (incl. /for-operators) is one visible tap from /shop. */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetTrigger asChild>
+          <button
+            type="button"
+            aria-label="Open menu"
+            className="sm:hidden inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </SheetTrigger>
+        <SheetContent side="right" hideCloseButton className="w-72 p-0">
+          <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
+            <SheetTitle className="text-base font-semibold text-slate-900">
+              Menu
+            </SheetTitle>
+            <SheetClose
+              aria-label="Close menu"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            >
+              <X className="h-5 w-5" />
+            </SheetClose>
+          </div>
+          <nav className="flex flex-col p-2">
+            <SheetClose asChild>
+              <Link href="/shop" className={mobileLink(pathname === "/shop")}>
+                Browse shops
+              </Link>
+            </SheetClose>
+            <SheetClose asChild>
+              <Link
+                href="/for-operators"
+                className={mobileLink(isActive("/for-operators"))}
+              >
+                For operators
+              </Link>
+            </SheetClose>
+            <SheetClose asChild>
+              <Link href="/track" className={mobileLink(isActive("/track"))}>
+                Track order
+              </Link>
+            </SheetClose>
+            {profile && (
+              <SheetClose asChild>
+                <Link
+                  href="/shop/orders"
+                  className={mobileLink(isActive("/shop/orders"))}
+                >
+                  My Orders
+                </Link>
+              </SheetClose>
+            )}
+          </nav>
+        </SheetContent>
+      </Sheet>
     </nav>
   )
 }
