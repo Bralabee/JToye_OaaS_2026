@@ -23,10 +23,10 @@ docker-compose -f docker-compose.full-stack.yml up
 - Core API: http://localhost:9090
 - Keycloak: http://localhost:8085
 
-**Test credentials:**
-- Tenant A: `tenant-a-user` / `password123`
-- Tenant B: `tenant-b-user` / `password123`
-- Admin: `admin-user` / `admin123`
+**Test credentials** (all seed users share the value of `KC_SEED_USER_PASSWORD` from your `.env`):
+- Tenant A: `tenant-a-user` / `$KC_SEED_USER_PASSWORD`
+- Tenant B: `tenant-b-user` / `$KC_SEED_USER_PASSWORD`
+- Admin: `admin-user` / `$KC_SEED_USER_PASSWORD`
 
 **Stop the stack:**
 ```bash
@@ -124,7 +124,7 @@ go run ./cmd/edge
 Once services are running, verify everything works:
 
 - [ ] **Frontend loads:** http://localhost:3000
-- [ ] **Sign in works:** Use `tenant-a-user` / `password123`
+- [ ] **Sign in works:** Use `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD`
 - [ ] **Dashboard visible:** Should show shops, products, orders
 - [ ] **API responds:** http://localhost:9090/actuator/health
 - [ ] **Keycloak accessible:** http://localhost:8085

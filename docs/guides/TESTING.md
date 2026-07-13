@@ -86,12 +86,29 @@ KC=http://localhost:8085
 TOKEN=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 echo "Token: $TOKEN"
 ```
+
+> **Credentials come from your `.env`, never hard-coded.** The seed users
+> (`tenant-a-user`, `tenant-b-user`, `admin-user`) all authenticate with the
+> value of `KC_SEED_USER_PASSWORD`. The realm's `core-api` client is
+> **confidential**, so every password-grant (ROPC) request must also send
+> `-d "client_secret=$KEYCLOAK_CLIENT_SECRET"` — omitting it returns
+> `unauthorized_client`.
+>
+> **Seed-user lockout recovery.** The `jtoye-dev` realm sets
+> `bruteForceProtected=true` (issue #87), so replaying a stale/wrong password
+> temporarily **locks** the user — after which even the correct password fails.
+> To recover: open the Keycloak admin console → realm `jtoye-dev` → **Users** →
+> select the user → **Unlock user** (or wait out the lockout window). Always
+> source the password from `KC_SEED_USER_PASSWORD` to avoid re-locking. Note: a
+> live seed user may already be locked from a prior QA run and need this
+> one-time admin unlock.
 
 ### CRUD Operations
 
@@ -262,8 +279,9 @@ curl -X POST http://localhost:9090/sync/batch \
 TOKEN_A=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 curl -X POST http://localhost:9090/shops \
@@ -277,8 +295,9 @@ curl -X POST http://localhost:9090/shops \
 TOKEN_B=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-b-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 curl -X POST http://localhost:9090/shops \
@@ -306,8 +325,9 @@ curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/shops | jq '.c
 TOKEN=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 # 1. Create order (DRAFT)
@@ -349,7 +369,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 - Go to: http://localhost:3000
 - Click "Sign In"
 - Username: `tenant-a-user`
-- Password: `password123`
+- Password: the value of `KC_SEED_USER_PASSWORD` (from your `.env`)
 
 **2. Navigate pages:**
 - Dashboard - Overview metrics
@@ -366,7 +386,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **4. Test tenant isolation:**
 - Sign out
-- Sign in as `tenant-b-user` / `password123`
+- Sign in as `tenant-b-user` / the value of `KC_SEED_USER_PASSWORD`
 - Verify you don't see Tenant A's data
 
 ---
@@ -377,16 +397,19 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 | Username | Password | Tenant | Description |
 |----------|----------|--------|-------------|
-| admin-user | admin123 | - | System admin |
-| tenant-a-user | password123 | Tenant A | Regular user |
-| tenant-b-user | password123 | Tenant B | Regular user |
+| admin-user | `$KC_SEED_USER_PASSWORD` | - | System admin |
+| tenant-a-user | `$KC_SEED_USER_PASSWORD` | Tenant A | Regular user |
+| tenant-b-user | `$KC_SEED_USER_PASSWORD` | Tenant B | Regular user |
+
+> All seed users share the value of `KC_SEED_USER_PASSWORD` (from your `.env`) — never a hard-coded literal.
 
 ### Sample Data Creation
 
 **Bulk create shops:**
 ```bash
 TOKEN=$(curl -s -d 'grant_type=password' -d 'client_id=core-api' \
-  -d 'username=tenant-a-user' -d 'password=password123' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+  -d 'username=tenant-a-user' -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 for i in {1..5}; do
@@ -463,7 +486,8 @@ API=http://localhost:9090
 # 1. Get token
 echo "1. Getting authentication token..."
 TOKEN=$(curl -s -d 'grant_type=password' -d 'client_id=core-api' \
-  -d 'username=tenant-a-user' -d 'password=password123' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+  -d 'username=tenant-a-user' -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 # 2. Create shop
@@ -570,7 +594,8 @@ curl http://localhost:8085/realms/jtoye-dev
 
 # Get fresh token
 TOKEN=$(curl -s -d 'grant_type=password' -d 'client_id=core-api' \
-  -d 'username=tenant-a-user' -d 'password=password123' \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+  -d 'username=tenant-a-user' -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 ```
 
