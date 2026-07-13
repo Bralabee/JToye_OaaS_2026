@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Scoped machine credentials (#206 [AI-4]) — 2026-07-13
+
+Least-privilege machine/integration access to the catalog surface: a client-credentials token scoped to `catalog:read` only can list products (200) but cannot create or mutate them (403), while operator/admin flows are untouched. This is the auth substrate the [AI-1] MCP model (#203) will consume. No DB migration (schema stays V50).
+
+#### Added
+- **Combined role+scope authority converter.** New `JwtRolesAndScopesConverter` composes the #83 `KeycloakRealmRoleConverter` (`realm_access.roles → ROLE_*`) with the stock `JwtGrantedAuthoritiesConverter` (`scope → SCOPE_*`) and returns their union. `SecurityConfig` now wires it in place of the bare role converter — the #83 replacement had discarded all `SCOPE_*` mapping, so this restores it additively without weakening any `hasRole('admin')` gate. Proven by `JwtRolesAndScopesConverterTest`.
+- **Positive write-scope gate on the product surface.** All nine `ProductController` mutations (create, update, delete, uploadImage, addAdditionalImage, removeAdditionalImage, removeImage, bulkImportCsv, bulkImportImages) now carry `@PreAuthorize("hasAuthority('SCOPE_catalog:write')")`; reads stay authenticated-only (so a `catalog:read` token still lists). Proven end-to-end by `ScopedCatalogAccessIntegrationTest` (Testcontainers): `catalog:read` → 200 list / 403 create (with a fully valid body so the 403 is the authorization gate, not a 400 validation error), operator scope → non-403 create, and a scopeless legacy token → 403 (explicit fail-closed stale-token contract).
+- **Realm catalog scopes + read-only machine client.** `catalog:read`/`catalog:write` client scopes (plus `orders:read`/`orders:write`, defined-only to seed the [AI-1]/#203 taxonomy) are added to the `jtoye-dev` realm template with `include.in.token.scope=true`; `core-api` default-grants both catalog scopes (operators gain `catalog:write` transparently after re-import). A sample `integration-catalog-ro` machine client (client-credentials, `catalog:read` ONLY, mandatory `core-api` audience + `tenant_id` mappers) and its service-account user (seeded with a `tenant_id` attribute as the RLS carrier) ship as the reference per-tenant integration. `INTEGRATION_CATALOG_RO_SECRET` is wired as an envsubst placeholder into all three compose renderers, both `.env.example` files, and `verify-env.sh` — never a committed literal.
+- **Scope taxonomy documented + advertised.** New `docs/security-scopes.md` (taxonomy, per-tenant client-credentials recipe, realm re-import migration note, KC24 managed-attribute trap, #203 MCP feed-forward); `OpenApiConfig` defines a `catalog-scopes` OAuth2 client-credentials security scheme (tokenUrl derived from `issuerUri`, never hardcoded) so the catalog scopes appear in the committed OpenAPI snapshot.
+
+#### Security
+- Fail-closed migration posture (same as #87/#88): tokens minted before the realm re-import lack `catalog:write` and 403 on product writes until re-login — asserted as an explicit test contract, not left to chance. The mandatory `core-api` audience mapper on the machine client keeps #88's `AudienceValidator` from 401'ing the token before the scope check.
+
 ### Observability honesty — do-now slice (#98 [P2-7]) — 2026-07-12
 
 Turns "demo-grade" observability wiring into honest, provable coverage: no phantom alerts, no dead scrape targets, no publicly-exposed prod metrics, no deploy pipeline that fails against a healthy release. Five local-repo-provable gaps closed.

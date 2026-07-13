@@ -4,6 +4,11 @@
 
 This directory contains the Keycloak realm configuration for the `jtoye-dev` realm used in development and testing.
 
+> **Scoped machine credentials (#206 [AI-4]):** the `catalog:read`/`catalog:write` client
+> scopes, the read-only `integration-catalog-ro` machine client, the per-tenant
+> client-credentials recipe, and the realm re-import migration note are documented in
+> [`docs/security-scopes.md`](../../docs/security-scopes.md).
+
 ## Files
 
 - **realm-export.json**: Complete realm configuration including:
