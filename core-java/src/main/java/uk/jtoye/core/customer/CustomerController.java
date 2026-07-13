@@ -14,6 +14,9 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 
 import java.net.URI;
@@ -31,9 +34,11 @@ import java.util.UUID;
 @SecurityRequirement(name = "tenant-header")
 public class CustomerController {
     private final CustomerService customerService;
+    private final IdempotencyService idempotencyService;
 
-    public CustomerController(CustomerService customerService) {
+    public CustomerController(CustomerService customerService, IdempotencyService idempotencyService) {
         this.customerService = customerService;
+        this.idempotencyService = idempotencyService;
     }
 
     @GetMapping
@@ -63,21 +68,35 @@ public class CustomerController {
     }
 
     @PostMapping
-    @Operation(summary = "Create customer", description = "Creates a new customer. Requires name and email (unique per tenant).")
+    @Idempotent(endpoint = "customers.create")
+    @Operation(summary = "Create customer", description = "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Customer created successfully"),
             @ApiResponse(responseCode = "400", description = "Validation error - missing required fields"),
             @ApiResponse(responseCode = "409", description = "Customer email already exists for this tenant")
     })
     public ResponseEntity<CustomerDto> create(
-            @Parameter(description = "Customer creation request") @Valid @RequestBody CreateCustomerRequest req) {
-        CustomerDto dto = customerService.createCustomer(req);
-        // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves
+            @Parameter(description = "Customer creation request") @Valid @RequestBody CreateCustomerRequest req,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        CustomerDto dto;
+        int status;
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            dto = customerService.createCustomer(req);
+            status = 201;
+        } else {
+            IdempotencyOutcome<CustomerDto> outcome = idempotencyService.execute(
+                    "customers.create", idempotencyKey, req, CustomerDto.class,
+                    () -> customerService.createCustomer(req));
+            dto = outcome.value();
+            status = outcome.status();
+        }
+        // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves.
+        // Rebuild from the returned (fresh or replayed) dto so the 201 Location resolves identically on replay.
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(dto.id())
                 .toUri();
-        return ResponseEntity.created(location).body(dto);
+        return ResponseEntity.status(status).location(location).body(dto);
     }
 
     @PutMapping("/{id}")
