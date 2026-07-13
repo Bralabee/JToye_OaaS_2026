@@ -1,6 +1,7 @@
 package uk.jtoye.core.order;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -62,6 +63,10 @@ public class OrderController {
     @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.")
     public ResponseEntity<OrderDto> createOrder(
             @Valid @RequestBody CreateOrderRequest request,
+            // Hidden from springdoc: IdempotencyHeaderCustomizer advertises the rich
+            // Idempotency-Key parameter (description + maxLength) off @Idempotent, so
+            // documenting the raw @RequestHeader too would double-list the header.
+            @Parameter(hidden = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             OrderDto order = orderService.createOrder(request);

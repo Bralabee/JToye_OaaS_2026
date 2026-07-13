@@ -77,6 +77,10 @@ public class CustomerController {
     })
     public ResponseEntity<CustomerDto> create(
             @Parameter(description = "Customer creation request") @Valid @RequestBody CreateCustomerRequest req,
+            // Hidden from springdoc: IdempotencyHeaderCustomizer advertises the rich
+            // Idempotency-Key parameter (description + maxLength) off @Idempotent, so
+            // documenting the raw @RequestHeader too would double-list the header.
+            @Parameter(hidden = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         CustomerDto dto;
         int status;
