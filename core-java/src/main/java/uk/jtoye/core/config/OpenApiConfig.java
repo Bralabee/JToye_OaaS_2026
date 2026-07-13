@@ -5,6 +5,9 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.security.OAuthFlow;
+import io.swagger.v3.oas.models.security.OAuthFlows;
+import io.swagger.v3.oas.models.security.Scopes;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
@@ -50,6 +53,17 @@ public class OpenApiConfig {
                                                                 - **Natasha's Law**: All products require `ingredients_text` and `allergen_mask`
                                                                 - **HMRC VAT**: All financial transactions require `vat_rate`
 
+                                                                ### Client Scopes (issue #206 [AI-4])
+                                                                Least-privilege machine/integration access is granted via OAuth2 client
+                                                                scopes (`catalog-scopes` security scheme, client-credentials grant):
+                                                                - `catalog:read` — list/get products (read surface, authenticated-only)
+                                                                - `catalog:write` — create/update/delete products + images (gates all nine product mutations)
+                                                                - `orders:read`, `orders:write` — reserved taxonomy for the [AI-1] MCP model (#203); defined, not yet enforced
+
+                                                                A `catalog:read`-only token gets **200** on `GET /products` and **403** on
+                                                                any product write. See `docs/security-scopes.md` for the client-credentials
+                                                                recipe and realm re-import note.
+
                                                                 ### Pagination
                                                                 List endpoints support pagination via query parameters:
                                                                 - `page` (default: 0)
@@ -81,6 +95,24 @@ public class OpenApiConfig {
                                                                 .type(SecurityScheme.Type.APIKEY)
                                                                 .in(SecurityScheme.In.HEADER)
                                                                 .name("X-Tenant-Id")
-                                                                .description("Dev fallback: UUID of tenant (only used when JWT lacks tenant claim)")));
+                                                                .description("Dev fallback: UUID of tenant (only used when JWT lacks tenant claim)"))
+                                                // issue #206 [AI-4]: advertise the catalog capability scopes as an
+                                                // OAuth2 client-credentials scheme. tokenUrl derives from issuerUri
+                                                // (never hardcoded); catalog:read/catalog:write are enforced today,
+                                                // orders:* are reserved for the [AI-1] MCP model (#203).
+                                                .addSecuritySchemes("catalog-scopes", new SecurityScheme()
+                                                                .type(SecurityScheme.Type.OAUTH2)
+                                                                .description("Least-privilege machine/integration access via OAuth2 "
+                                                                                + "client-credentials scopes (issue #206 [AI-4]). A "
+                                                                                + "catalog:read-only token lists products (200) but cannot "
+                                                                                + "mutate them (403).")
+                                                                .flows(new OAuthFlows()
+                                                                                .clientCredentials(new OAuthFlow()
+                                                                                                .tokenUrl(issuerUri + "/protocol/openid-connect/token")
+                                                                                                .scopes(new Scopes()
+                                                                                                                .addString("catalog:read", "Read the product catalog (list/get products)")
+                                                                                                                .addString("catalog:write", "Create, update, and delete products and product images")
+                                                                                                                .addString("orders:read", "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced")
+                                                                                                                .addString("orders:write", "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced"))))));
         }
 }
