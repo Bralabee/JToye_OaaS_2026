@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.exception.IdempotencyConflictException;
+import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
@@ -306,6 +308,35 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Incomplete Label Data");
         problem.setType(URI.create("https://jtoye.uk/errors/incomplete-label-data"));
+        return problem;
+    }
+
+    /**
+     * Issue #204 (AI-2) — a concurrent same-{@code Idempotency-Key} request that
+     * arrives while the first request is still in-flight (the reserved row has a
+     * NULL {@code response_status}). 409 Conflict is the honest, race-safe answer
+     * (matching Stripe): a later retry, once the first request commits, replays
+     * the stored response.
+     */
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ProblemDetail handleIdempotencyConflict(IdempotencyConflictException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Idempotency Conflict");
+        problem.setType(URI.create("https://jtoye.uk/errors/idempotency-conflict"));
+        return problem;
+    }
+
+    /**
+     * Issue #204 (AI-2) — the same {@code Idempotency-Key} reused with a
+     * DIFFERENT request body (stored {@code request_hash} mismatch). The request
+     * is well-formed but semantically conflicts with the key's prior use, so it
+     * is neither replayed nor executed afresh: 422 Unprocessable Entity.
+     */
+    @ExceptionHandler(IdempotencyPayloadMismatchException.class)
+    public ProblemDetail handleIdempotencyPayloadMismatch(IdempotencyPayloadMismatchException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Idempotency Key Reused");
+        problem.setType(URI.create("https://jtoye.uk/errors/idempotency-payload-mismatch"));
         return problem;
     }
 
