@@ -2,9 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { User, LogOut, Package, MapPin, Menu, X } from "lucide-react"
+import { useParams, usePathname } from "next/navigation"
+import { m } from "framer-motion"
+import { User, LogOut, Package, MapPin, Menu, X, ShoppingBag } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { springPop } from "@/lib/motion"
+import { useCartCount } from "@/hooks/use-cart-count"
 import { getCustomerSession, customerLogin, customerLogout } from "@/lib/customer-auth"
 import {
   Sheet,
@@ -23,6 +26,9 @@ export function StorefrontNav() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
+  const params = useParams<{ slug?: string }>()
+  const slug = params?.slug
+  const cartCount = useCartCount(slug)
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
 
@@ -112,6 +118,30 @@ export function StorefrontNav() {
           </Link>
         )}
       </div>
+
+      {/* Basket — only on /shop/[slug] routes where a cart exists (all
+          viewports). Badge remounts on count change so the spring replays. */}
+      {slug && (
+        <Link
+          href={`/shop/${slug}/cart`}
+          aria-live="polite"
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+          <ShoppingBag className="h-5 w-5" />
+          {cartCount > 0 && (
+            <m.span
+              key={cartCount}
+              initial={{ scale: 0.5 }}
+              animate={{ scale: 1 }}
+              transition={springPop}
+              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold leading-none text-white"
+            >
+              {cartCount}
+            </m.span>
+          )}
+          <span className="sr-only">{cartCount} items in basket</span>
+        </Link>
+      )}
 
       {profile ? (
         <div className="flex items-center gap-2">

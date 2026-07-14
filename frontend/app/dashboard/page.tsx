@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { m } from "framer-motion"
 import { staggerContainer, staggerItem } from "@/lib/motion"
+import { useCountUp } from "@/hooks/use-count-up"
+import { CHART_COLORS } from "@/lib/chart-colors"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -81,14 +83,21 @@ interface DashboardStats {
   customers: number
 }
 
+// Hooks cannot run inside statCards.map — a tiny component hosts the
+// count-up per stat (instant jump under prefers-reduced-motion).
+function StatValue({ value }: { value: number }) {
+  const displayed = useCountUp(value)
+  return <>{displayed}</>
+}
+
 const statusConfig: Record<
   OrderStatus,
   { label: string; color: string; chartColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   DRAFT: { label: "Draft", color: "bg-gray-500", chartColor: "#6b7280", icon: Clock },
   PENDING: { label: "Pending", color: "bg-yellow-500", chartColor: "#eab308", icon: Clock },
-  CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: "#3b82f6", icon: CheckCircle2 },
-  PREPARING: { label: "Preparing", color: "bg-amber-500", chartColor: "#f59e0b", icon: Clock },
+  CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: CHART_COLORS.ember, icon: CheckCircle2 },
+  PREPARING: { label: "Preparing", color: "bg-amber-500", chartColor: CHART_COLORS.amber, icon: Clock },
   READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },
   COMPLETED: { label: "Completed", color: "bg-emerald-600", chartColor: "#059669", icon: CheckCircle2 },
   CANCELLED: { label: "Cancelled", color: "bg-red-500", chartColor: "#ef4444", icon: XCircle },
@@ -98,7 +107,7 @@ const statusConfig: Record<
 }
 
 const vatRateLabels: Record<string, { label: string; color: string }> = {
-  STANDARD: { label: "Standard (20%)", color: "#3b82f6" },
+  STANDARD: { label: "Standard (20%)", color: CHART_COLORS.ember },
   REDUCED: { label: "Reduced (5%)", color: "#eab308" },
   ZERO: { label: "Zero (0%)", color: "#22c55e" },
   EXEMPT: { label: "Exempt", color: "#6b7280" },
@@ -192,7 +201,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-orange-600"></div>
       </div>
     )
   }
@@ -266,7 +275,7 @@ export default function DashboardPage() {
               <CardContent>
                 <div className="flex items-baseline gap-2">
                   <div className="text-3xl font-bold text-slate-900">
-                    {stat.value}
+                    <StatValue value={stat.value} />
                   </div>
                   <div className="flex items-center text-sm text-green-600">
                     <TrendingUp className="mr-1 h-4 w-4" />
@@ -348,8 +357,8 @@ export default function DashboardPage() {
                     <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `£${v}`} />
                     <Tooltip formatter={(value) => [`£${Number(value).toFixed(2)}`, ""]} />
                     <Legend />
-                    <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="vat" name="VAT" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="revenue" name="Revenue" fill={CHART_COLORS.ember} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="vat" name="VAT" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
+import { m, AnimatePresence } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useStomp } from "@/hooks/use-stomp"
 import { useToast } from "@/hooks/use-toast"
@@ -147,6 +148,19 @@ export default function KitchenPage() {
     ordersMapRef.current = ordersMap
   }, [ordersMap])
 
+  // One-shot ember glow bookkeeping: ids in the FIRST loaded batch are seeded
+  // without glowing (null until the first non-empty batch); ids appearing
+  // later glow exactly once — this effect runs AFTER the glow render, so the
+  // next render sees the id as seen and the keyframe never replays.
+  const seenIdsRef = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (seenIdsRef.current === null) {
+      if (ordersMap.size > 0) seenIdsRef.current = new Set(ordersMap.keys())
+      return
+    }
+    for (const id of ordersMap.keys()) seenIdsRef.current.add(id)
+  }, [ordersMap])
+
   // --- Fetch shops on mount ---
 
   useEffect(() => {
@@ -214,6 +228,9 @@ export default function KitchenPage() {
 
   useEffect(() => {
     if (selectedShopId) {
+      // Switching shops loads a different board — reseed the glow set from
+      // that board's first batch instead of glowing every carried-over card.
+      seenIdsRef.current = null
       fetchOrders()
     }
   }, [selectedShopId, fetchOrders])
@@ -415,80 +432,106 @@ export default function KitchenPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {sortedOrders.map((order) => {
-            const config = statusConfig[order.status]
-            const action = bumpActions[order.status]
-            const StatusIcon = config?.icon || Clock
-            const itemNames =
-              order.items
-                ?.map((item) => item.productName)
-                .join(", ") || "No items"
-            const itemSummary =
-              order.items && order.items.length > 0
-                ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
-                : "No items"
+          <AnimatePresence mode="popLayout">
+            {sortedOrders.map((order) => {
+              const config = statusConfig[order.status]
+              const action = bumpActions[order.status]
+              const StatusIcon = config?.icon || Clock
+              const itemNames =
+                order.items
+                  ?.map((item) => item.productName)
+                  .join(", ") || "No items"
+              const itemSummary =
+                order.items && order.items.length > 0
+                  ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
+                  : "No items"
+              const isNew =
+                seenIdsRef.current !== null && !seenIdsRef.current.has(order.id)
 
-            return (
-              <Card
-                key={order.id}
-                className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="min-w-0 truncate text-lg font-semibold">
-                      {order.orderNumber || `#${order.id.substring(0, 6)}`}
-                    </CardTitle>
-                    {config && (
-                      <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
-                        <StatusIcon className="h-3 w-3" />
-                        {config.label}
-                      </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {/* Customer name */}
-                  <div className="text-sm font-medium text-slate-700">
-                    {order.customerName || "Walk-in"}
-                  </div>
-
-                  {/* Items */}
-                  <div className="text-sm text-slate-600">
-                    <span className="font-medium">{itemSummary}</span>
-                    {order.items && order.items.length > 0 && (
-                      <div className="mt-1 text-xs text-slate-500">
-                        {order.items.map((item, i) => (
-                          <span key={item.id || i}>
-                            {i > 0 && ", "}
-                            {item.quantity}x {item.productName}
-                          </span>
-                        ))}
+              return (
+                <m.div
+                  layout
+                  key={order.id}
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={
+                    isNew
+                      ? {
+                          opacity: 1,
+                          scale: 1,
+                          // One-shot ember glow (sketch --shadow-glow-ember)
+                          boxShadow: [
+                            "0 0 0 rgba(249,115,22,0)",
+                            "0 8px 32px rgba(249,115,22,0.35)",
+                            "0 0 0 rgba(249,115,22,0)",
+                          ],
+                        }
+                      : { opacity: 1, scale: 1 }
+                  }
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  transition={isNew ? { boxShadow: { duration: 1.6 } } : undefined}
+                  className="rounded-lg"
+                >
+                  <Card
+                    className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="min-w-0 truncate text-lg font-semibold">
+                          {order.orderNumber || `#${order.id.substring(0, 6)}`}
+                        </CardTitle>
+                        {config && (
+                          <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
+                            <StatusIcon className="h-3 w-3" />
+                            {config.label}
+                          </Badge>
+                        )}
                       </div>
-                    )}
-                  </div>
-
-                  {/* Elapsed time */}
-                  <div className="flex items-center gap-1 text-xs text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    {elapsedText(order.createdAt)}
-                  </div>
-
-                  {/* Bump button */}
-                  {action && (
-                    <Button
-                      className={`w-full ${action.color} text-white`}
-                      onClick={() => handleBump(order.id, order.status)}
-                    >
-                      {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}
-                      {order.status === "PREPARING" && <Package className="mr-2 h-4 w-4" />}
-                      {order.status === "READY" && <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      {action.label}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Customer name */}
+                      <div className="text-sm font-medium text-slate-700">
+                        {order.customerName || "Walk-in"}
+                      </div>
+    
+                      {/* Items */}
+                      <div className="text-sm text-slate-600">
+                        <span className="font-medium">{itemSummary}</span>
+                        {order.items && order.items.length > 0 && (
+                          <div className="mt-1 text-xs text-slate-500">
+                            {order.items.map((item, i) => (
+                              <span key={item.id || i}>
+                                {i > 0 && ", "}
+                                {item.quantity}x {item.productName}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+    
+                      {/* Elapsed time */}
+                      <div className="flex items-center gap-1 text-xs text-slate-500">
+                        <Clock className="h-3 w-3" />
+                        {elapsedText(order.createdAt)}
+                      </div>
+    
+                      {/* Bump button */}
+                      {action && (
+                        <Button
+                          className={`w-full ${action.color} text-white`}
+                          onClick={() => handleBump(order.id, order.status)}
+                        >
+                          {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}
+                          {order.status === "PREPARING" && <Package className="mr-2 h-4 w-4" />}
+                          {order.status === "READY" && <CheckCircle2 className="mr-2 h-4 w-4" />}
+                          {action.label}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </m.div>
+              )
+            })}
+          </AnimatePresence>
         </div>
       )}
     </div>
