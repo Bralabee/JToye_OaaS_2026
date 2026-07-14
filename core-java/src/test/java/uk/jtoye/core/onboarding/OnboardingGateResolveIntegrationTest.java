@@ -258,6 +258,33 @@ class OnboardingGateResolveIntegrationTest {
         assertThat(dbGateStatus(onboardingId, GateType.FOOD_HYGIENE_RATING)).isEqualTo("MANUAL_REVIEW");
     }
 
+    // --- WR-01: gate resolution is VERIFYING-only ----------------------------------------
+
+    /**
+     * WR-01: resolving a gate on an onboarding that has already left VERIFYING (here
+     * PENDING_APPROVAL — post-recompute, awaiting the admin queue) is rejected with a
+     * 400 (RFC 7807) and does NOT mutate the gate row. Without this guard the gate row
+     * would flip but the recompute (which only advances from VERIFYING) could never act
+     * on it, stranding the onboarding until a later /approve failed with an unexplained
+     * gate-guard veto.
+     */
+    @Test
+    void gateResolveOutsideVerifyingIs400_gateRowUnchanged() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.PENDING_APPROVAL);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.MANUAL_REVIEW);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED);
+
+        mockMvc.perform(post(resolveUrl(onboardingId, GateType.FOOD_HYGIENE_RATING))
+                        .with(adminJwt(tenantId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"FAIL\",\"reason\":\"Hygiene rating could not be confirmed\"}"))
+                .andExpect(status().isBadRequest());
+
+        // No silent mutation: the onboarding status AND the gate row are untouched.
+        assertThat(dbStatus(onboardingId)).isEqualTo("PENDING_APPROVAL");
+        assertThat(dbGateStatus(onboardingId, GateType.FOOD_HYGIENE_RATING)).isEqualTo("MANUAL_REVIEW");
+    }
+
     // --- helpers --------------------------------------------------------------------------
 
     private UUID seedOnboarding(OnboardingState state) {

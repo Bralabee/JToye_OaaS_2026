@@ -323,6 +323,15 @@ public class VendorOnboardingService {
      * foreign onboarding is a clean 404, no existence oracle). A real J'Toye
      * platform-operator console is a deferred phase.
      *
+     * <p><strong>VERIFYING-only guard (WR-01):</strong> a gate can only be resolved while
+     * the onboarding is in {@code VERIFYING}. {@code runAndRecompute} advances the state
+     * machine ONLY from VERIFYING, so resolving a gate once the onboarding has already left
+     * that state (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute
+     * can never act on — silently stranding the application until a later {@code /approve}
+     * fails with an unexplained gate-guard veto. Resolving outside VERIFYING is therefore
+     * rejected with {@link InvalidStateTransitionException} → HTTP 400, and no gate row is
+     * touched.
+     *
      * <p>The gate write is Envers-audited automatically ({@code VendorOnboardingGate}
      * is {@code @Audited} → {@code vendor_onboarding_gate_aud}). A FAIL decision
      * REQUIRES a reason (A5); a blank one is an {@link IllegalArgumentException} → HTTP
@@ -332,6 +341,18 @@ public class VendorOnboardingService {
                                           GateDecision decision, String reason) {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboardingById(onboardingId);
+
+        // WR-01: gate resolution is VERIFYING-only. The recompute this method dispatches
+        // (GateChainRunner.runAndRecompute) advances the state machine ONLY from VERIFYING;
+        // resolving a gate on an onboarding already at PENDING_APPROVAL/APPROVED/LIVE would
+        // silently mutate a gate row the recompute can never act on, stranding the onboarding
+        // and surfacing later as an unexplained APPROVE guard veto. Reject up front instead.
+        if (onboarding.getStatus() != OnboardingState.VERIFYING) {
+            throw new InvalidStateTransitionException(
+                    "Gate " + gateType + " cannot be resolved while onboarding " + onboardingId
+                    + " is in state " + onboarding.getStatus()
+                    + " — gate resolution is only valid during manual review (VERIFYING)");
+        }
 
         if (decision == GateDecision.FAIL && (reason == null || reason.isBlank())) {
             throw new IllegalArgumentException("A FAIL decision requires a reason");
