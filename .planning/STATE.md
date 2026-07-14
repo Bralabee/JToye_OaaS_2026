@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 20
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-07-13 - Completed quick task 260713-svx: F-RATE 429 busy/retry storefront fix + F-DOCS credential-recipe repair
+Last activity: 2026-07-14 - Completed quick task 260714-2c4: #113 RLS uuid-cast safety (V51, 10 policies) + WS query-param JWT removal
 
 Progress: [██████████] 100%
 
@@ -144,6 +144,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260714-2c4 | Issue #113 [P3-11] security hardening: V51 migration hardens current_tenant_id() (cast inside exception guard — garbage GUC now filters instead of 22P02) + recreates ALL 10 raw-cast RLS policies with the V39-safe idiom (scope verified larger than the issue's 4: V43×4, V47, V50 reused the bug class post-audit) + permanent pg_policy raw-cast sweep in RlsContractTest; WS handshake query-param JWT path DELETED (JwtHandshakeInterceptor + session-attr fallback removed, header-only CONNECT; frontend already header-only, zero callers). Local proof: 15/15 RLS integration (NOSUPERUSER Testcontainers), 658 unit green; metrics 1258→1257, schema V51. Deferred: guest-GUC DB-guard (TEXT comparison, no cast risk, needs design) | 2026-07-14 | 4a6d4b4 | [260714-2c4-fix-113-migrate-4-rls-policies-to-safe-u](./quick/260714-2c4-fix-113-migrate-4-rls-policies-to-safe-u/) |
 | 260713-svx | QA-council 20260713-152124 High findings: F-RATE — public 429 now surfaces as transient busy/retrying state with bounded backoff (public-fetch-retry.ts helper honouring Retry-After, wired into /shop + /shop/[slug]; +15 Jest tests, full suite 244 green, tsc clean) instead of authoritative empty catalogue; F-DOCS-1 — purged password123/admin123 from README/TESTING/QA_TEST_PLAN/QUICK_START/SETUP → env-var refs (KC_SEED_USER_PASSWORD, KEYCLOAK_CLIENT_SECRET), repaired dead token recipes, added lockout-recovery note; metrics 1243→1258 via docs-freshness --write. Deferred: backend limiter tuning (#88), live tenant-a-user unlock | 2026-07-13 | 4073ebf | [260713-svx-fix-qa-high-findings-f-rate-storefront-4](./quick/260713-svx-fix-qa-high-findings-f-rate-storefront-4/) |
 | 260713-kds | Restore demo catalog images (Phase 19-09 regression-by-omission): 21 license-verified Wikimedia dish photos bundled + DemoImageManifest/StorageService.putSeedImage + idempotent seeder step + CREDITS-demo-images.md + Incremental Betterment Doctrine in CLAUDE.md; browser-proven 21/21 naturalWidth>0 across 3 demo shops; metrics 1243 | 2026-07-13 | 572faf4 | [260713-kds-restore-demo-catalog-images](./quick/260713-kds-restore-demo-catalog-images/) |
 | 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
