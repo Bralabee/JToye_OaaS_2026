@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Phase 21 context gathered
-last_updated: "2026-07-14T11:02:51.810Z"
+last_updated: "2026-07-14T11:34:04.214Z"
 last_activity: 2026-07-14
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 21 (onboarding-blocker-ux) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-07-14
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Milestone v2.3 Phase Map
 
@@ -68,6 +68,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 *Updated after each plan completion*
 | Phase 21 P02 | 25min | 2 tasks | 9 files |
+| Phase 21 P03 | 21min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21]: 21-01: POST /onboarding/withdraw reuses the already-wired WITHDRAW state-machine transitions (no SM change) via the canonical transition() path; terminal source -> RFC 7807 400; WITHDRAW never touches Shop.published.
 - [Phase 21]: 21-01: company-number correction is POST /onboarding/company-number — a data edit firing NO state-machine event, gated to DRAFT/ACTION_REQUIRED (else RFC 7807 400), reusing create's @Size(32)+@Pattern verbatim; blank/whitespace = sole trader (null).
 - [Phase 21]: 21-02: manual-review stall notification writes an onboarding.events row to the shared V46 outbox; exchange bean + producer + flusher dispatch shipped atomically (Pitfall 1) so the shared flusher never poison-casts it; unbound topic exchange (Phase 24 #205 delivers); emit only on MANUAL_REVIEW park, at-least-once; SM untouched, zero migrations.
+- [Phase 21]: 21-03: vendor OnboardingDto derives reviewPending = VERIFYING && anyGate==MANUAL_REVIEW && noGate==PENDING at the single toDto site (D-03) and now carries rejectionReason (D-09); hand-built record (not MapStruct), zero migration.
+- [Phase 21]: 21-03: admin gate-resolve (POST /onboarding/admin/{id}/gates/{gateType}/resolve, PASS|WAIVE|FAIL+reason) writes ONLY the gate row (Envers-audited) then kickGateChainAfterCommit — the existing recompute advances the SM (GATES_PASSED/GATE_FAILED); never writes status/published, never runs recompute inline (CR-01). Interim resolver = tenant's own admin (D-01).
+- [Phase 21]: 21-03: admin review queue is a NEW GET /onboarding/admin/reviews (VERIFYING + MANUAL_REVIEW) — the /pending approve/reject contract is untouched (Incremental Betterment, A4). ONBD-03/05 NOT marked complete: the user-visible vendor-UI halves land in 21-04.
 
 ### Pending Todos
 
@@ -101,6 +105,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-14T11:01:50.551Z
+Last session: 2026-07-14T11:30:45.350Z
 Stopped at: Phase 21 context gathered
 Resume file: None

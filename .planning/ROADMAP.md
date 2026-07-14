@@ -69,7 +69,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 21-03-PLAN.md (Wave 2) — Backend manual-review visibility: DTO-derived `reviewPending` + `rejectionReason` on the vendor `OnboardingDto` + admin `GET /onboarding/admin/reviews` queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, recompute-after-commit → SM advances) + RLS/Envers/403/404 proofs
+- [x] 21-03-PLAN.md (Wave 2) — Backend manual-review visibility: DTO-derived `reviewPending` + `rejectionReason` on the vendor `OnboardingDto` + admin `GET /onboarding/admin/reviews` queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, recompute-after-commit → SM advances) + RLS/Envers/403/404 proofs
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -194,7 +194,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 21. Onboarding Blocker UX | v2.3 | 2/5 | In Progress|  |
+| 21. Onboarding Blocker UX | v2.3 | 3/5 | In Progress|  |
 | 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |
