@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { MotionProvider } from "@/components/motion-provider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,6 +19,15 @@ export const metadata: Metadata = {
   description: "Enterprise-grade order-as-a-service platform with tenant isolation",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,7 +36,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <MotionProvider>
+          <Providers>{children}</Providers>
+        </MotionProvider>
       </body>
     </html>
   );

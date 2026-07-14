@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
+import { staggerContainer, staggerItem } from "@/lib/motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -188,19 +189,6 @@ export default function DashboardPage() {
     color: vatRateLabels[vat.vatRate]?.color || "#6b7280",
   })) || []
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 },
-    },
-  }
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
-  }
-
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -219,7 +207,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -228,7 +216,7 @@ export default function DashboardPage() {
         <p className="mt-2 text-slate-600">
           Welcome to your J&apos;Toye OaaS management dashboard
         </p>
-      </motion.div>
+      </m.div>
 
       {/* Incomplete-onboarding banner (hidden once LIVE) */}
       {!bannerDismissed &&
@@ -258,14 +246,14 @@ export default function DashboardPage() {
         })()}
 
       {/* Stats Cards */}
-      <motion.div
-        variants={containerVariants}
+      <m.div
+        variants={staggerContainer}
         initial="hidden"
         animate="visible"
         className="grid gap-6 md:grid-cols-2 lg:grid-cols-4"
       >
         {statCards.map((stat) => (
-          <motion.div key={stat.title} variants={itemVariants}>
+          <m.div key={stat.title} variants={staggerItem}>
             <Card className="overflow-hidden transition-all hover:shadow-lg">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-slate-600">
@@ -287,14 +275,14 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </m.div>
         ))}
-      </motion.div>
+      </m.div>
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Order Status Distribution */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
@@ -332,10 +320,10 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Revenue by VAT Rate */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
@@ -367,11 +355,11 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       </div>
 
       {/* Recent Orders */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.5 }}
@@ -407,7 +395,7 @@ export default function DashboardPage() {
                     {recentOrders.map((order) => {
                       const StatusIcon = statusConfig[order.status].icon
                       return (
-                        <motion.tr
+                        <m.tr
                           key={order.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -444,7 +432,7 @@ export default function DashboardPage() {
                               addSuffix: true,
                             })}
                           </td>
-                        </motion.tr>
+                        </m.tr>
                       )
                     })}
                   </tbody>
@@ -453,7 +441,7 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
     </div>
   )
 }
