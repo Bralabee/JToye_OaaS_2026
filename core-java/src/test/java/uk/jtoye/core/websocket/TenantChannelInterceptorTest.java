@@ -170,25 +170,21 @@ class TenantChannelInterceptorTest {
     }
 
     @Test
-    void shouldPreferStompHeaderOverSessionAttribute() {
-        Jwt jwtA = buildJwt("tenant_id", TENANT_A.toString());
-        when(jwtDecoder.decode("header-token")).thenReturn(jwtA);
-
-        // Both session and header have tokens — header should win
+    void sessionAttributeTokenIsRejected() {
+        // #113: the handshake jwt_token session-attribute fallback was removed.
+        // A decodable token present ONLY in session attributes (no Authorization
+        // CONNECT header) must be ignored — CONNECT is rejected as tokenless.
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setLeaveMutable(true);
-        accessor.addNativeHeader("Authorization", "Bearer header-token");
         Map<String, Object> sessionAttrs = new HashMap<>();
         sessionAttrs.put("jwt_token", "session-token");
         accessor.setSessionAttributes(sessionAttrs);
         accessor.setSessionId("test-session");
         Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-        interceptor.preSend(message, mock(MessageChannel.class));
-
-        // Should have decoded "header-token", not "session-token"
-        StompHeaderAccessor resultAccessor = StompHeaderAccessor.wrap(message);
-        assertThat(resultAccessor.getSessionAttributes()).containsEntry("tenantId", TENANT_A);
+        assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("Missing JWT token");
     }
 
     // --- SUBSCRIBE tests ---
@@ -317,10 +313,13 @@ class TenantChannelInterceptorTest {
             accessor.setDestination(destination);
         }
 
-        Map<String, Object> sessionAttrs = new HashMap<>();
+        // #113: the token travels ONLY in the STOMP CONNECT Authorization header
+        // (the query-param / jwt_token session-attribute path was removed).
         if (jwtToken != null) {
-            sessionAttrs.put("jwt_token", jwtToken);
+            accessor.addNativeHeader("Authorization", "Bearer " + jwtToken);
         }
+
+        Map<String, Object> sessionAttrs = new HashMap<>();
         if (tenantId != null) {
             sessionAttrs.put("tenantId", tenantId);
         }
