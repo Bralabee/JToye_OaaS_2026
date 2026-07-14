@@ -1,7 +1,7 @@
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import OnboardingApprovalsPage from "../page"
 import apiClient from "@/lib/api-client"
-import type { AdminOnboardingDto, GateStatus } from "@/types/api"
+import type { AdminOnboardingDto, GateDto, GateStatus } from "@/types/api"
 
 // Mock the API client (mirrors the onboarding-page test idiom)
 jest.mock("@/lib/api-client")
@@ -42,12 +42,54 @@ function application(overrides: Partial<AdminOnboardingDto> = {}): AdminOnboardi
   }
 }
 
+// A VERIFYING application parked on a MANUAL_REVIEW gate — the review-queue shape.
+const reviewGates: GateDto[] = [
+  {
+    gateType: "FOOD_HYGIENE_RATING",
+    status: "MANUAL_REVIEW",
+    mandatory: true,
+    reason: "No confident FHRS match",
+    checkedAt: null,
+  },
+  { gateType: "BUSINESS_VERIFIED", status: "PASSED", mandatory: true, reason: null, checkedAt: null },
+  {
+    gateType: "ALLERGEN_DATA_COMPLETE",
+    status: "PASSED",
+    mandatory: true,
+    reason: null,
+    checkedAt: null,
+  },
+]
+
+function reviewApplication(overrides: Partial<AdminOnboardingDto> = {}): AdminOnboardingDto {
+  return application({
+    id: "rev-1",
+    status: "VERIFYING",
+    shopName: "Lagos Grill",
+    gates: reviewGates,
+    ...overrides,
+  })
+}
+
 const forbidden = { response: { status: 403 } }
 const guardVeto = { response: { status: 400 } }
 
+// Routes only the /pending queue; /reviews (and anything else) resolves empty.
 function routePending(impl: () => Promise<unknown>) {
   mockedApiClient.get.mockImplementation((url: string) => {
     if (url.startsWith("/api/v1/onboarding/admin/pending")) return impl() as Promise<never>
+    return Promise.resolve({ data: [] }) as Promise<never>
+  })
+}
+
+// Routes both admin queues independently.
+function routeQueues(
+  pendingImpl: () => Promise<unknown>,
+  reviewsImpl: () => Promise<unknown>
+) {
+  mockedApiClient.get.mockImplementation((url: string) => {
+    if (url.startsWith("/api/v1/onboarding/admin/pending")) return pendingImpl() as Promise<never>
+    if (url.startsWith("/api/v1/onboarding/admin/reviews")) return reviewsImpl() as Promise<never>
     return Promise.resolve({ data: [] }) as Promise<never>
   })
 }
@@ -181,6 +223,111 @@ describe("Onboarding Approvals Page", () => {
           variant: "destructive",
           title: "Couldn't load the approval queue",
         })
+      )
+    })
+  })
+
+  // --- ONBD-03: review-pending queue + gate-resolve --------------------------
+
+  it("lists review-pending applications (VERIFYING + manual review) with a per-gate resolve control", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [] }),
+      () => Promise.resolve({ data: [reviewApplication()] })
+    )
+
+    render(<OnboardingApprovalsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("In manual review")).toBeInTheDocument()
+    })
+    expect(screen.getByText("Lagos Grill")).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: /resolve food hygiene rating/i })
+    ).toBeInTheDocument()
+    // The approve/reject queue is empty, but the "nothing waiting" card must NOT show
+    // while review-pending work exists.
+    expect(screen.queryByText("No applications waiting")).not.toBeInTheDocument()
+  })
+
+  it("resolves a stuck gate: posts {decision, reason} to the resolve endpoint and refreshes", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [] }),
+      () => Promise.resolve({ data: [reviewApplication()] })
+    )
+    mockedApiClient.post.mockResolvedValue({ data: {} })
+
+    render(<OnboardingApprovalsPage />)
+    await waitFor(() => expect(screen.getByText("Lagos Grill")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("button", { name: /resolve food hygiene rating/i }))
+    const dialog = await screen.findByRole("dialog")
+
+    fireEvent.change(within(dialog).getByLabelText("Decision"), { target: { value: "WAIVE" } })
+    fireEvent.change(within(dialog).getByLabelText(/reason/i), {
+      target: { value: "Verified manually against the FSA register" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: /resolve check/i }))
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        "/api/v1/onboarding/admin/rev-1/gates/FOOD_HYGIENE_RATING/resolve",
+        { decision: "WAIVE", reason: "Verified manually against the FSA register" }
+      )
+    })
+    // Refresh re-fetches both queues (the initial load already called each once).
+    await waitFor(() => {
+      expect(mockedApiClient.get).toHaveBeenCalledWith("/api/v1/onboarding/admin/reviews")
+    })
+  })
+
+  it("requires a reason when failing a gate (confirm disabled until entered)", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [] }),
+      () => Promise.resolve({ data: [reviewApplication()] })
+    )
+
+    render(<OnboardingApprovalsPage />)
+    await waitFor(() => expect(screen.getByText("Lagos Grill")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("button", { name: /resolve food hygiene rating/i }))
+    const dialog = await screen.findByRole("dialog")
+
+    fireEvent.change(within(dialog).getByLabelText("Decision"), { target: { value: "FAIL" } })
+    const confirm = within(dialog).getByRole("button", { name: /resolve check/i })
+    expect(confirm).toBeDisabled()
+
+    fireEvent.change(within(dialog).getByLabelText(/reason/i), {
+      target: { value: "Rating below the required threshold" },
+    })
+    expect(confirm).not.toBeDisabled()
+  })
+
+  it("keeps the approve/reject queue working alongside the review queue", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [application()] }),
+      () => Promise.resolve({ data: [reviewApplication()] })
+    )
+    mockedApiClient.post.mockResolvedValue({ data: application({ status: "APPROVED" }) })
+
+    render(<OnboardingApprovalsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("In manual review")).toBeInTheDocument()
+    })
+    // Both queues render: the review app and the approve/reject app.
+    expect(screen.getByText("Lagos Grill")).toBeInTheDocument()
+    expect(screen.getByText("Mama's Kitchen")).toBeInTheDocument()
+    expect(screen.getByText("Awaiting approval")).toBeInTheDocument()
+
+    // The existing approve flow still posts to /approve unchanged.
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }))
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        "/api/v1/onboarding/admin/onb-1/approve",
+        {}
       )
     })
   })
