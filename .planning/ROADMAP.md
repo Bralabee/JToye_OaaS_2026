@@ -55,13 +55,14 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
   3. Each FAILED / MANUAL_REVIEW gate renders *why → what to do → a button that goes there* — inline company-number edit, a "fix these N products" allergen deep link, and an FHRS address-confirm / establishment picker. (ONBD-04)
   4. A vendor can withdraw an in-progress application from a confirm dialog; the application reaches `WITHDRAWN` (terminal, valid from DRAFT/VERIFYING/ACTION_REQUIRED) and restarting begins a fresh application. (ONBD-01)
   5. On a rejected application the vendor sees the actual `rejectionReason` (now on the vendor-facing DTO) plus a real, configured support channel (mailto/link) — not a bare "contact support"; and one blocked-onboarding journey (bad company number → fix inline → resubmit → live) passes end-to-end in Playwright. (ONBD-05)
-**Plans**: TBD (est. 4)
+**Plans**: 5 plans (4 waves)
 
 Plans:
-- [ ] 21-01: Backend — `WITHDRAW` event + `POST /onboarding/withdraw` + update endpoint (company number / sole-trader / FHRS override, DRAFT/ACTION_REQUIRED guard, re-validated like create) + state-machine + controller tests
-- [ ] 21-02: Backend — manual-review visibility: DTO-derived `reviewPending` + admin review queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, triggers recompute → advance) + `rejectionReason` on vendor `OnboardingDto`
-- [ ] 21-03: Frontend — per-gate remediation blocks (why → what → deep link) + honest in-review copy with polling back-off + withdraw confirm dialog + rejection reason + configurable support channel
-- [ ] 21-04: Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + `docs/metrics.json` reconcile + closure
+- [ ] 21-01-PLAN.md (Wave 1) — Backend vendor endpoints: `POST /onboarding/withdraw` (reuses the already-wired WITHDRAW transitions) + `POST /onboarding/company-number` update (blank=sole trader, DRAFT/ACTION_REQUIRED guard, create-identical validation, RFC 7807) + Testcontainers proofs
+- [ ] 21-02-PLAN.md (Wave 1, parallel) — Backend outbox stall-event seam (Pitfall-1 atomic unit): `onboarding.events` TopicExchange + `OnboardingStateChangeEvent` + `OnboardingEventPublisher` + flusher dispatch branch + `GateChainRunner` emission from the MANUAL_REVIEW park branch
+- [ ] 21-03-PLAN.md (Wave 2) — Backend manual-review visibility: DTO-derived `reviewPending` + `rejectionReason` on the vendor `OnboardingDto` + admin `GET /onboarding/admin/reviews` queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, recompute-after-commit → SM advances) + RLS/Envers/403/404 proofs
+- [ ] 21-04-PLAN.md (Wave 3) — Frontend: per-gate remediation blocks (why → what → deep link) + honest in-review copy with polling back-off + withdraw confirm dialog + inline company-number edit + rejection reason + config-injected support channel (NEXT_PUBLIC_*) + admin gate-resolve UI + Jest/tsc
+- [ ] 21-05-PLAN.md (Wave 4) — Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + human-verify FHRS manual-review path + `docs/metrics.json` reconcile + closure
 
 **UI hint**: yes
 
@@ -158,7 +159,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 21. Onboarding Blocker UX | v2.3 | 0/4 | Not started | - |
+| 21. Onboarding Blocker UX | v2.3 | 0/5 | Not started | - |
 | 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |
