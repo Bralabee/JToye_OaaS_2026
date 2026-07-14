@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
@@ -302,13 +302,13 @@ export default function OnboardingPage() {
   if (!onboarding) {
     return (
       <div className="space-y-6">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+        <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-4xl font-semibold text-slate-900">Take your shop live</h1>
           <p className="mt-2 text-sm text-slate-600">
             Run our free compliance checks — business registration, food hygiene rating, and
             allergen data — then publish your storefront. It takes a couple of minutes.
           </p>
-        </motion.div>
+        </m.div>
 
         {shops.length === 0 ? (
           <Card>
@@ -418,7 +418,7 @@ export default function OnboardingPage() {
   return (
     <div className="space-y-6">
       {/* Header + overall-state badge (a focal point) */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+      <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">
           <h1 className="text-4xl font-semibold text-slate-900">Go live</h1>
           <Badge className={`${stateMeta.badge} pointer-events-none`}>{stateMeta.label}</Badge>
@@ -426,7 +426,7 @@ export default function OnboardingPage() {
         <p className="mt-2 text-sm text-slate-600">
           {STATE_SUBTITLE[onboarding.status] ?? ""}
         </p>
-      </motion.div>
+      </m.div>
 
       {/* Gate breakdown */}
       <Card>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -102,7 +102,7 @@ export default function FinancePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
@@ -110,11 +110,11 @@ export default function FinancePage() {
         <p className="mt-2 text-slate-600">
           Revenue, expenses, and VAT reporting
         </p>
-      </motion.div>
+      </m.div>
 
       {/* Summary Cards */}
       {summary && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -176,12 +176,12 @@ export default function FinancePage() {
               </p>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* VAT Breakdown */}
       {summary && summary.vatBreakdown.length > 0 && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -219,11 +219,11 @@ export default function FinancePage() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* Transactions Table */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
@@ -308,7 +308,7 @@ export default function FinancePage() {
             />
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
     </div>
   )
 }

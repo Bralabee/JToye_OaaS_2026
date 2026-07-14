@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -517,13 +517,13 @@ export default function MarketingPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
         <h1 className="text-4xl font-bold text-slate-900">Marketing</h1>
         <p className="mt-2 text-slate-600">Manage promotions and announcements</p>
-      </motion.div>
+      </m.div>
 
       {/* Tab bar */}
       <div className="flex border-b border-slate-200">
@@ -551,7 +551,7 @@ export default function MarketingPage() {
 
       {/* ==================== PROMOTIONS TAB ==================== */}
       {activeTab === "promotions" && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -615,7 +615,7 @@ export default function MarketingPage() {
                       {filteredPromotions.map((promo) => {
                         const status = getPromotionStatus(promo)
                         return (
-                          <motion.tr
+                          <m.tr
                             key={promo.id}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -676,7 +676,7 @@ export default function MarketingPage() {
                                 </Button>
                               </div>
                             </TableCell>
-                          </motion.tr>
+                          </m.tr>
                         )
                       })}
                     </TableBody>
@@ -692,12 +692,12 @@ export default function MarketingPage() {
               />
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* ==================== ANNOUNCEMENTS TAB ==================== */}
       {activeTab === "announcements" && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -762,7 +762,7 @@ export default function MarketingPage() {
                       {filteredAnnouncements.map((ann) => {
                         const status = getAnnouncementStatus(ann)
                         return (
-                          <motion.tr
+                          <m.tr
                             key={ann.id}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -837,7 +837,7 @@ export default function MarketingPage() {
                                 </Button>
                               </div>
                             </TableCell>
-                          </motion.tr>
+                          </m.tr>
                         )
                       })}
                     </TableBody>
@@ -853,7 +853,7 @@ export default function MarketingPage() {
               />
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* ==================== PROMOTION CREATE/EDIT DIALOG ==================== */}

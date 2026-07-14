@@ -3,6 +3,8 @@
 import { Suspense, useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
+import { m } from "framer-motion"
+import { springPop } from "@/lib/motion"
 import {
   Package, Search, Loader2, CheckCircle2, Clock,
   ChefHat, CircleDot, XCircle, Store
@@ -230,19 +232,26 @@ function TrackOrderContent() {
               <div className="flex items-center justify-between gap-1">
                 {STEPS.map((step, i) => {
                   const isComplete = i <= currentStep
+                  const isActive = i === currentStep
                   return (
                     <div key={step.key} className="flex flex-col items-center flex-1">
-                      <div
+                      {/* Keyed on completion so a step newly reaching complete
+                          remounts and springs in; active step pulses finitely. */}
+                      <m.div
+                        key={`${step.key}-${isComplete}`}
+                        initial={{ scale: 0.6 }}
+                        animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
+                        transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
                         className={`flex h-8 w-8 items-center justify-center rounded-full text-xs ${
                           isComplete
-                            ? i === currentStep
+                            ? isActive
                               ? "bg-orange-500 text-white ring-2 ring-orange-200"
                               : "bg-emerald-500 text-white"
                             : "bg-slate-100 text-slate-400"
                         }`}
                       >
                         <step.icon className="h-3.5 w-3.5" />
-                      </div>
+                      </m.div>
                       <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-700" : "text-slate-400"}`}>
                         {step.label}
                       </p>
@@ -250,11 +259,14 @@ function TrackOrderContent() {
                   )
                 })}
               </div>
-              {/* Progress bar */}
+              {/* Progress bar — scaleX from the left, animated on status change */}
               <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-orange-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.max(5, (currentStep / (STEPS.length - 1)) * 100)}%` }}
+                <m.div
+                  className="h-full w-full bg-orange-500 rounded-full"
+                  style={{ transformOrigin: "left" }}
+                  initial={false}
+                  animate={{ scaleX: Math.max(0.05, currentStep / (STEPS.length - 1)) }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
               <p className="mt-2 text-center text-xs text-slate-400">

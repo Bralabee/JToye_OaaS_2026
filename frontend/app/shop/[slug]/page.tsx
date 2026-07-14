@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useMemo, useCallback, use } from "react"
 import Link from "next/link"
+import { m, AnimatePresence } from "framer-motion"
+import { springPop } from "@/lib/motion"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
   Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
@@ -712,40 +714,48 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
   const { itemCount, totalPennies } = useCart()
 
-  if (itemCount === 0) return null
-
   const belowMinimum = minimumOrderPennies > 0 && totalPennies < minimumOrderPennies
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4">
-      <div className="mx-auto max-w-4xl">
-        <Link
-          href={`/shop/${slug}/cart`}
-          className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
-            belowMinimum
-              ? "bg-slate-700 hover:bg-slate-800"
-              : "bg-orange-500 hover:bg-orange-600"
-          } text-white`}
+    <AnimatePresence>
+      {itemCount > 0 && (
+        <m.div
+          initial={{ y: 96, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 96, opacity: 0 }}
+          transition={springPop}
+          className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
         >
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <ShoppingBag className="h-5 w-5" />
-              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-600">
-                {itemCount}
-              </span>
-            </div>
-            <span className="text-sm font-medium">View basket</span>
+          <div className="mx-auto max-w-4xl">
+            <Link
+              href={`/shop/${slug}/cart`}
+              className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
+                belowMinimum
+                  ? "bg-slate-700 hover:bg-slate-800"
+                  : "bg-orange-500 hover:bg-orange-600"
+              } text-white`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <ShoppingBag className="h-5 w-5" />
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-600">
+                    {itemCount}
+                  </span>
+                </div>
+                <span className="text-sm font-medium">View basket</span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
+                {belowMinimum && (
+                  <p className="text-xs text-slate-300">
+                    Min {formatPrice(minimumOrderPennies)}
+                  </p>
+                )}
+              </div>
+            </Link>
           </div>
-          <div className="text-right">
-            <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
-            {belowMinimum && (
-              <p className="text-xs text-slate-300">
-                Min {formatPrice(minimumOrderPennies)}
-              </p>
-            )}
-          </div>
-        </Link>
-      </div>
-    </div>
+        </m.div>
+      )}
+    </AnimatePresence>
   )
 }

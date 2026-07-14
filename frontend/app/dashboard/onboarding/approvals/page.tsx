@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -229,7 +229,7 @@ export default function OnboardingApprovalsPage() {
             const summary = gateSummary(app)
             const allGreen = summary.green === summary.total && summary.total > 0
             return (
-              <motion.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <m.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <Card>
                   <CardHeader className="pb-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -290,7 +290,7 @@ export default function OnboardingApprovalsPage() {
                     </div>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </m.div>
             )
           })}
         </div>
@@ -380,7 +380,7 @@ export default function OnboardingApprovalsPage() {
 
 function Header() {
   return (
-    <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+    <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="flex items-center gap-3">
         <h1 className="text-4xl font-semibold text-slate-900">Approvals</h1>
       </div>
@@ -388,6 +388,6 @@ function Header() {
         Onboarding applications whose checks passed and now need a human decision. Marketplace
         vendors always require approval before they can go live.
       </p>
-    </motion.div>
+    </m.div>
   )
 }

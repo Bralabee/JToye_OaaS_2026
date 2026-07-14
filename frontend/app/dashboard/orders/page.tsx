@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -432,7 +432,7 @@ function OrdersPageInner() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center justify-between"
@@ -449,10 +449,10 @@ function OrdersPageInner() {
           <Plus className="h-4 w-4" />
           Create Order
         </Button>
-      </motion.div>
+      </m.div>
 
       {/* Status Flow Visualization */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -484,10 +484,10 @@ function OrdersPageInner() {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
 
       {/* Orders Table */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
@@ -554,7 +554,7 @@ function OrdersPageInner() {
                       const isProcessing = processingOrderId === order.id
 
                       return (
-                        <motion.tr
+                        <m.tr
                           key={order.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -632,7 +632,7 @@ function OrdersPageInner() {
                               )}
                             </div>
                           </TableCell>
-                        </motion.tr>
+                        </m.tr>
                       )
                     })}
                   </TableBody>
@@ -648,7 +648,7 @@ function OrdersPageInner() {
             />
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
 
       {/* Create Order Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

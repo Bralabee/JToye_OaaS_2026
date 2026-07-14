@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -252,7 +252,7 @@ export default function ShopsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center justify-between"
@@ -265,10 +265,10 @@ export default function ShopsPage() {
           <Plus className="h-4 w-4" />
           Add Shop
         </Button>
-      </motion.div>
+      </m.div>
 
       {/* Shops Table */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -320,7 +320,7 @@ export default function ShopsPage() {
                   </TableHeader>
                   <TableBody>
                     {shops.map((shop) => (
-                      <motion.tr
+                      <m.tr
                         key={shop.id}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -381,7 +381,7 @@ export default function ShopsPage() {
                             </Button>
                           </div>
                         </TableCell>
-                      </motion.tr>
+                      </m.tr>
                     ))}
                   </TableBody>
                 </Table>
@@ -396,7 +396,7 @@ export default function ShopsPage() {
             />
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
