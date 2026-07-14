@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.common.CurrentTenant;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
@@ -189,6 +190,38 @@ public class VendorOnboardingService {
 
         log.info("Vendor withdrawing onboarding {} (tenant {})", onboarding.getId(), tenantId);
         transition(onboarding, OnboardingEvent.WITHDRAW);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
+    /**
+     * Correct the caller's onboarding company number (ONBD-02, D-06). A DATA EDIT
+     * ONLY — it fires NO {@link OnboardingEvent}, so it never touches {@code status}
+     * or {@code Shop.published} (the state machine stays the sole writer, threat
+     * T-21-01-03). Permitted only in DRAFT or ACTION_REQUIRED — the states where the
+     * vendor is still building / fixing the application; anywhere else the edit is
+     * rejected with {@link InvalidStateTransitionException} → HTTP 400 (threat
+     * T-21-01-04), so a company number cannot be mutated mid-verification or after a
+     * terminal outcome. The value is re-validated at the boundary by
+     * {@code UpdateOnboardingRequest} (identical {@code @Size}+{@code @Pattern} to
+     * create) and normalised here: a blank/whitespace value becomes null (= sole
+     * trader), matching create semantics. After correcting, the vendor triggers the
+     * existing {@link #resubmit()} to re-run the gate chain against the fixed data.
+     */
+    public OnboardingDto updateCompanyNumber(String companyNumber) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        if (onboarding.getStatus() != OnboardingState.DRAFT
+                && onboarding.getStatus() != OnboardingState.ACTION_REQUIRED) {
+            throw new InvalidStateTransitionException(
+                    "Company number can only be changed while onboarding is in DRAFT or ACTION_REQUIRED "
+                            + "(current: " + onboarding.getStatus() + ")");
+        }
+
+        onboarding.setCompanyNumber(normaliseCompanyNumber(companyNumber));
+        onboardingRepository.save(onboarding);
+        log.info("Vendor updated onboarding {} company number (tenant {})", onboarding.getId(), tenantId);
 
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
