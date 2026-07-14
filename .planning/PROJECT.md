@@ -16,7 +16,7 @@ Vendors can manage their business end-to-end — from marketing to kitchen fulfi
 
 Vendor operations:
 - **Onboarding blocker UX** — visible per-gate blockers with remediation, correctable onboarding data (company number / sole-trader / FHRS override update endpoint), reachable WITHDRAW exit, manual-review made visible (DTO-derived "in review" + admin gate-resolve endpoint), rejection reason surfaced to vendor. Zero migrations.
-- **Shop-scoped access (RBAC)** — `shop_staff` mapping table (V52), roles GROUP_ADMIN/SHOP_MANAGER/STAFF, application-layer second gate (RLS stays the tenant wall), dashboard shop-context switcher with explicit "apply to all shops", GROUP_ADMIN backfill (no day-one regression).
+- **Vendor-scoped access (RBAC)** — the vendor's internal access model (hierarchy Vendor/tenant → Shop; one vendor owns many shops). `shop_staff` mapping table (V52), roles GROUP_ADMIN (vendor-wide) / SHOP_MANAGER / STAFF, application-layer second gate (RLS stays the tenant wall), dashboard shop-context switcher with explicit "apply to all shops", GROUP_ADMIN backfill (no day-one regression). Shop is the finest grain; a department tier is a future layer.
 - **Image architecture** — `media_asset` copy-on-write model (V53) with reference counting, safe async RabbitMQ upload/normalize pipeline (magic-byte sniff, decode-to-verify, EXIF strip, resize/re-encode), compress = hard veto, content-relevance = review queue.
 - **Dashboard mobile (#104)** — fixed `w-64` sidebar overlays content at 375px; responsive nav pairing with the shop switcher.
 
@@ -75,11 +75,11 @@ Infrastructure:
 - [ ] ONBD-04: Per-gate remediation blocks (why → what to do → deep link to the fix surface) for FAILED/MANUAL_REVIEW gates
 - [ ] ONBD-05: Rejection reason surfaced on the vendor DTO + a configurable real support channel on terminal states
 
-**Shop-scoped access (SHOP):**
-- [ ] SHOP-01: `shop_staff` mapping table (user ↔ shop ↔ role), ENABLE+FORCE RLS tenant-scoped, GROUP_ADMIN backfill for existing users (V52)
-- [ ] SHOP-02: Application-layer `ShopAccessService.require(shopId, minRole)` gate on shop-scoped endpoints (shops/products/orders/KDS/marketing), deny-by-default writes, 403 RFC 7807 distinct from the RLS 404
-- [ ] SHOP-03: Dashboard shop-context switcher (persisted) with explicit GROUP_ADMIN-only "apply to all shops" action
-- [ ] SHOP-04: Staff management screen — list + grant + revoke roles per shop
+**Vendor-scoped access (VSA):**
+- [ ] VSA-01: `shop_staff` mapping table (user ↔ shop ↔ role), ENABLE+FORCE RLS tenant-scoped, GROUP_ADMIN backfill for existing users (V52)
+- [ ] VSA-02: Application-layer `ShopAccessService.require(shopId, minRole)` gate on shop-scoped endpoints (shops/products/orders/KDS/marketing), deny-by-default writes, 403 RFC 7807 distinct from the RLS 404
+- [ ] VSA-03: Dashboard shop-context switcher (persisted) with explicit GROUP_ADMIN-only "apply to all shops" action
+- [ ] VSA-04: Staff management screen — list + grant + revoke roles per shop
 
 **Image architecture (IMG):**
 - [ ] IMG-01: `media_asset` model (tenant-scoped RLS, sha256 dedup) — products reference assets, copy-on-write on edit, reference-counted physical delete (V53)

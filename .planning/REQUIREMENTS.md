@@ -7,7 +7,7 @@
 
 ## v1 Requirements
 
-v2.3 scopes 18 requirements across 6 categories. Scope locked by user 2026-07-14 (do not re-litigate). Phase order is thinnest/highest-pain first: Onboarding UX → Shop-scoped access → Image architecture → Dashboard mobile → AI track → Infrastructure.
+v2.3 scopes 18 requirements across 6 categories. Scope locked by user 2026-07-14 (do not re-litigate). Phase order is thinnest/highest-pain first: Onboarding UX → Vendor-scoped access → Image architecture → Dashboard mobile → AI track → Infrastructure.
 
 Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first). The onboarding-blocker path is zero-migration.
 
@@ -25,17 +25,17 @@ Make onboarding blockers visible, onboarding data correctable, and exits reachab
 
 - [ ] **ONBD-05**: Rejection reason reaches the vendor + a real support channel. Expose `rejectionReason` on the vendor-facing `OnboardingDto` (currently admin-only) and render it plus a configurable mailto/link (not a bare "contact support") on terminal states. Tests: DTO serialization test (reason present), Jest for terminal-state copy. Source: `RejectOnboardingRequest.reason` is `@NotBlank` but only `AdminOnboardingDto` exposes it (spec Problem #4). Journey-matrix add: drive one blocked onboarding end-to-end (bad company number → fix inline → resubmit → live) in Playwright.
 
-### Shop-scoped access (SHOP) — spec `shop-scoped-access-SPEC.md`
+### Vendor-scoped access (VSA) — spec `shop-scoped-access-SPEC.md`
 
-Add a finer authorization boundary *inside* the tenant. RLS stays the tenant wall; this is a second, application-layer gate. Incremental Betterment: every existing tenant user gets a GROUP_ADMIN row at migration time — zero day-one regression.
+Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (tenant) → Shop** — one vendor owns many shops, and this is the vendor's internal access model spanning vendor-wide grants (GROUP_ADMIN) down to a single shop (SHOP_MANAGER/STAFF). RLS stays the tenant wall; this is a second, application-layer gate. Shop is the finest grain this milestone; an intermediate **department** tier (Vendor → Department → Shop) is noted as a future organizational layer, not modeled in v2.3. Incremental Betterment: every existing tenant user gets a GROUP_ADMIN row at migration time — zero day-one regression.
 
-- [ ] **SHOP-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
+- [ ] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
 
-- [ ] **SHOP-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
+- [ ] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
 
-- [ ] **SHOP-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
+- [ ] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
 
-- [ ] **SHOP-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
+- [ ] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
 
 ### Image architecture (IMG) — spec `image-architecture-SPEC.md`
 
@@ -51,7 +51,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 ### Dashboard mobile (MOBL) — HANDOFF #104
 
-- [ ] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the SHOP-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
+- [ ] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the VSA-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
 
 ### AI / automation (AI) — HANDOFF #205 / #204
 
@@ -95,4 +95,23 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 
 | Requirement | Phase | Plan(s) | Status |
 |-------------|-------|---------|--------|
-| _(filled by roadmap)_ | | | |
+| ONBD-01 | Phase 21 | 21-01, 21-03 | Pending |
+| ONBD-02 | Phase 21 | 21-01, 21-03 | Pending |
+| ONBD-03 | Phase 21 | 21-02, 21-03 | Pending |
+| ONBD-04 | Phase 21 | 21-03 | Pending |
+| ONBD-05 | Phase 21 | 21-02, 21-03, 21-04 | Pending |
+| VSA-01 | Phase 22 | 22-01 | Pending |
+| VSA-02 | Phase 22 | 22-02 | Pending |
+| VSA-03 | Phase 22 | 22-03 | Pending |
+| VSA-04 | Phase 22 | 22-03 | Pending |
+| MOBL-01 | Phase 22 | 22-03 | Pending |
+| IMG-01 | Phase 23 | 23-01 | Pending |
+| IMG-02 | Phase 23 | 23-02 | Pending |
+| IMG-03 | Phase 23 | 23-03 | Pending |
+| IMG-04 | Phase 23 | 23-03 | Pending |
+| AI-01 | Phase 24 | 24-01, 24-02 | Pending |
+| AI-02 | Phase 25 | 25-01, 25-02 | Pending |
+| INFRA-01 | Phase 26 | 26-01 | Pending |
+| INFRA-02 | Phase 26 | 26-02 | Pending |
+
+**Coverage:** 18/18 v1 requirements mapped to exactly one phase. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`.)

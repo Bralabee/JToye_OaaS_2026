@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: planning
-last_updated: "2026-07-14T08:04:52.819Z"
+last_updated: "2026-07-14T09:30:00.000Z"
 last_activity: 2026-07-14
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 16
   completed_plans: 0
   percent: 0
 ---
@@ -17,175 +17,84 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-14)
+See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Milestone complete
+**Current focus:** Phase 21 — Onboarding Blocker UX (first phase of v2.3)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-14 — Milestone v2.3 started
+Phase: 21 of 26 (Onboarding Blocker UX) — not started
+Plan: — (roadmap created; ready to plan Phase 21)
+Status: Ready to plan
+Last activity: 2026-07-14 — Milestone v2.3 roadmap created (6 phases, 21–26; 18/18 requirements mapped)
 
-## Post-Milestone Activity (v2.2 → v2.3 gap)
+Progress: [░░░░░░░░░░] 0%
 
-- 2026-07-06 — Phase 17 merged (PR #57); k8s kustomize cleanup series (PRs #66-#69)
-- 2026-07-07 — QA-council remediation merged (PR #70): KDS tenantId, shop-write IDORs (M3+ext), per-tenant cleanup job (M1), error codes (L1/L2), frontend deps (M4)
-- 2026-07-07 — edge-go image pipeline restored (PR #72): Dockerfile golang 1.22→1.25 drift from #57 had broken every main image build since 2026-07-06
-- 2026-07-07 — Observability stack restored after 7 weeks down (PR #73): Grafana port param, core-java scrape auth (2-layer), edge-go dead target removed, redis-exporter healthcheck
-- 2026-07-07 — #71 RLS integration-suite CI enablement: integrationTest Gradle task + CI job, IntegrationTestSupport harness, 9 never-running classes repaired, NOSUPERUSER RLS-enforcement pattern, ShopImageCrossTenantIntegrationTest IDOR guard (+7 tests → 692)
-- OPEN: #61 refund E2E — BLOCKED on Stripe test-mode keys (none in env; STRIPE_API_KEY empty in running container) + WR-09 product decision (single vs multiple partial refunds)
+## Milestone v2.3 Phase Map
+
+| Phase | Name | Requirements | Migration | Est. plans |
+|-------|------|--------------|-----------|-----------|
+| 21 | Onboarding Blocker UX | ONBD-01..05 | none | 4 |
+| 22 | Vendor-Scoped Access + Responsive Dashboard Nav | VSA-01..04, MOBL-01 | V52 shop_staff | 3 |
+| 23 | Image Architecture — CoW Assets + Safe Upload Pipeline | IMG-01..04 | V53 media_asset | 3 |
+| 24 | Outbound Webhooks | AI-01 | (subscription table) | 2 |
+| 25 | Mutating MCP Tools | AI-02 | none | 2 |
+| 26 | Local-K8s Overlay + Verified Breakage Fixes | INFRA-01, INFRA-02 | none | 2 |
+
+Execution order: 21 → 22 → 23 → 24 → 25 → 26 (locked). Hard dependency: 22 before 23 (V52 precedes V53).
 
 ## Performance Metrics
 
-**Velocity:**
+Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan durations) is preserved in `milestones/v2.2-ROADMAP.md`, git history, and MEMORY.md. v2.3 velocity starts fresh below.
 
-- Total plans completed (M2): 10 + Milestone v2.2: 5
+**Velocity (v2.3):**
+- Total plans completed: 0 / ~16 estimated
 - Average duration: —
 - Total execution time: — hours
 
-**By Phase (milestone 2 history):**
+**By Phase (v2.3):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 | 1 | - | - |
-| 2 | 1 | - | - |
-| 3 | 2 | - | - |
-| 4 | 1 | - | - |
-| 5 | 1 | - | - |
-| 6 | 1 | - | - |
-| 7 | 1 | - | - |
-| 8 | 2 | - | - |
-| 11 | 3 | - | - |
-| 17 | 4 | - | - |
-| 18 | 7 | - | - |
-| 19 | 9 | - | - |
-| 20 | 5 | - | - |
-
-**Milestone v2.2 (executing):**
-
-| Phase | Plan | Duration | Tasks | Files | Tests added |
-|-------|------|----------|-------|-------|-------------|
-| 12    | 01   | ~90min   | 4     | 6     | 8 Java      |
-| 12    | 02   | ~5min    | 6     | 7     | 8 Jest + 3 Playwright |
-| 13    | 01   | ~45min   | 5     | 8     | 10 Java (6 integration + 4 unit) |
-| 14    | 01   | ~20min   | 5     | 17    | 8 Java (5 StockService unit + 1 Concurrent integration + 2 StockDecrementLocation + 1 Handler + 2 refactored OrderService) |
-| 14    | 02   | ~40min   | 3     | 12    | 6 Java (1 Golden-file + 1 QueryPlan + 1 QueryCount + 1 CrossTenant + 2 rewritten GetSummary) + committed 1k-row JSON fixture |
-| 15    | 01   | ~60min   | 6     | 14    | Offline validator (k8s/scripts/validate-networkpolicies.py: 6 manifests, 13 podSelector refs resolved against workload labels). No code-level tests — phase is infra-docs-only. |
-| 16    | 01   | ~2h      | 5     | 13    | 4 Go (TestOpenAPISpec_IsValidJSON + TestOpenAPISpec_AllRoutesDocumented + TestOpenAPISpec_HasSecurityDefinition + TestOpenAPISpec_Fresh). Plus npm validator gate in CI. |
-
-**Recent Trend:**
-
-- Last plan: 16.1-06 Phase 16.1 closure (admin/metadata) — 4 file edits (REQUIREMENTS.md AUDIT-W0-01..05 registration; CHANGELOG.md Phase 16.1 [Unreleased] entry; ROADMAP.md Phase 16.1 entry marked 6/6 complete + Progress table row; STATE.md Current Position advances to Phase 17). 0 source/test changes. AUDIT-W0-01..05 retrospectively added to the requirements ledger; coverage block updated 11 → 16. Closes Phase 16.1 administratively.
-- Trend: milestone v2.2 execution continues green; phases 13, 14, 16, and 16.1 complete (drafting), 15 implementation-complete, 12 operationally complete. Phase 16.1 branch feature/phase-16.1-pre-prod-hardening has 12 atomic commits (6 plans × 2 commits each on average) closing the 5 council-audit Wave-0 blockers. Branches ready for PR: feature/phase-13-guest-tracking-tenant-validation, feature/phase-14-stock-race-summary-aggregation, feature/phase-15-k8s-networkpolicies-sealed-secrets, feature/phase-16-go-edge-openapi, feature/phase-16.1-pre-prod-hardening. Phase 12 Task 12-02-07 staging-observation gate still pending. Only Phase 17 (vendor order detail + Stripe refund) remains to close out v2.2.
+| 21 | 0/4 | - | - |
+| 22 | 0/3 | - | - |
+| 23 | 0/3 | - | - |
+| 24 | 0/2 | - | - |
+| 25 | 0/2 | - | - |
+| 26 | 0/2 | - | - |
 
 *Updated after each plan completion*
-| Phase 16.1 P01 | 2min | 1 tasks | 1 files |
-| Phase 16.1 P02 | 4min | 2 tasks | 3 files |
-| Phase 16.1 P03 | 4min | 1 tasks | 3 files |
-| Phase 16.1 P04 | 10min | 2 tasks | 3 files |
-| Phase 16.1 P05 | 22min | 2 tasks | 2 files |
-| Phase 16.1 P06 | ~5min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
-- Phase 16.1 inserted after Phase 16: Pre-prod Hardening — Wave 0 council audit fixes (5 confirmed pre-prod blockers): OrderSseService cross-tenant leak, Customer-orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables. Must land before Phase 17 Stripe refund work. (URGENT)
-- Phase 16.1 (Pre-prod Hardening) — DONE 2026-04-28. 5 council-audit blockers closed (cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables). V35 migration ships them atomically. RlsContractTest is a permanent CI guard against future RLS drift. AUDIT-W0-01..05 retrospectively registered in REQUIREMENTS.md (16-entry total, traceability complete).
-- Phase 20 added 2026-07-13: AI-1 MCP Server (Read-Only Slice) [MVP mode] — EPIC #209 Wave 2, issue #203. TypeScript `mcp-server/` over the core REST API; read-only tenant-scoped tools; auth reuses #206 client-credentials + scopes; RLS is the boundary. First roadmap phase of the AI-readiness track (Wave 1 #204/#206/#98 shipped as gsd-quick tasks). Mutating tools + #205 webhooks deferred to later phases.
+- 2026-07-14 — Milestone v2.3 (Vendor Ops + AI interleaved) roadmap created. 6 phases (21–26) continue numbering from v2.2's Phase 20. Derived from 18 requirements across 6 categories in REQUIREMENTS.md; scope locked by user 2026-07-14. MOBL-01 folded into Phase 22 (pairs with the VSA-03 shop-switcher, avoids a one-requirement phase). AI track split into two phases (24 webhooks / 25 mutating MCP — independent surfaces, `fine` granularity). Infrastructure kept as a standalone durable phase (26). Migration ordering enforced: V52 `shop_staff` (Phase 22) precedes V53 `media_asset` (Phase 23).
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
-- [M2 Roadmap]: API versioning first — changes every URL, doing later means double rework
-- [M2 Roadmap]: KDS split into 3 phases (security, pipeline, UI) — highest complexity feature, security must be proven before UI
-- [M2 Roadmap]: Test coverage has no dependencies — can parallel any phase
-- [M3 Scope]: Work Orders A+B+C only — A ships in 2 days as a safety net, B/C each ~1 week. Deferring D–O to keep the milestone bounded at ~2.5 weeks
-- [M3 Scope]: Skip research — state-of-codebase doc is already research-grade with file:line evidence; phase-level research will cover framework-specific pitfalls (StompBrokerRelay, Alertmanager)
-- [M3 Scope]: STOMP broker behind `stomp.broker.mode` config flag — keeps local dev on in-memory, staging/prod on RabbitMQ relay
-- [M3 Roadmap]: Phase 9 (SECR) ships first as standalone safety net — no dependencies, 2 days, closes credential-exposure hole before B/C start
-- [M3 Roadmap]: Phase 10 (STFR) is independent of 9 and 11 — can run in parallel with either
-- [M3 Roadmap]: Phase 11 (STMP) depends on Phase 9 — STMP-05 reuses the Alertmanager + Slack route from SECR-04/SECR-05
-- [M3 Roadmap]: One phase per work order (no splitting) — task breakdown fits cleanly, preserves audit traceability
-- [Phase 16.1]: Bundled three audit-finding fixes (AUDIT-W0-03 Stripe idempotency, AUDIT-W0-04 reviews_tenant_write rewrite, AUDIT-W0-05 FORCE RLS on 9 tables) into a single V35 Flyway migration. — Partial application would leave the DB in an unsafe state where idempotency exists but FORCE RLS does not. Atomic deploy is required per phase 16.1 LOCKED CONTEXT decisions.
-- [Phase 16.1]: Fail-closed at OrderSseService.subscribe() — throw IllegalStateException when TenantContext is unset, rather than silently attaching a tenant-less emitter — LOCKED in 16.1-CONTEXT.md Item 1: silent fallback to a default bucket would mask a misconfigured request pipeline (JwtTenantFilter not populating context) and could re-introduce the cross-tenant leak this plan exists to close.
-- [Phase 16.1]: Filter SSE broadcasts at the service layer (per-tenant ConcurrentHashMap routed by event.tenantId()), not via @PreAuthorize on OrderController — Broadcasts run on the RabbitMQ consumer thread off-request — Spring SecurityContext is not propagated there, so controller-level annotation cannot enforce tenant scoping at broadcast time. Filtering inside OrderSseService is the correct layer.
-- [Phase 16.1]: AUDIT-W0-02 closed: GET /public/orders requires mandatory verify order-number; trackOrder runs unconditionally as proof-of-ownership — LOCKED in 16.1-CONTEXT.md Item 2; the prior optional verify allowed trivial enumeration of any customer's order history by email
-- [Phase 16.1]: GlobalExceptionHandler now preserves controller-thrown ResponseStatusException + maps MissingServletRequestParameterException to 400 — Auto-fix Rule 1/2 deviation during 16.1-03 — without these handlers the catch-all Exception matcher swallowed both as 500, masking the LOCKED 400 contract
-- [Phase ?]: [Phase 16.1-04]: Stripe webhook idempotency guard sits INSIDE the existing @Transactional boundary (not REQUIRES_NEW) — semantic is 'processed at least once', so a downstream throw rolls back the dedup row and Stripe's retry succeeds cleanly. REQUIRES_NEW path requires a separate failed-event reconciliation flow which is out of scope for Wave 0.
-- [Phase ?]: [Phase 16.1-04]: TOCTOU-safe single-statement INSERT ... ON CONFLICT DO NOTHING via JdbcTemplate, NOT a JPA ProcessedStripeEvent entity + repo with existsByEventId+saveAndFlush — the JPA pattern has a SELECT-then-INSERT race window under concurrent webhook delivery from Stripe's edge.
-- [Phase ?]: [Phase 16.1-05]: Drop SUPERUSER via SET LOCAL ROLE rls_test_role in Testcontainers RLS-denial tests — postgres:15 testcontainer creates the test user as SUPERUSER which bypasses RLS regardless of NOBYPASSRLS / FORCE; provisioning a dedicated NOSUPERUSER NOBYPASSRLS LOGIN role and SET LOCAL ROLE-ing to it for each RLS-sensitive test transaction is the canonical pattern.
-- [Phase ?]: [Phase 16.1-05]: EXEMPT_TABLES list expanded to 4 entries (flyway_schema_history, processed_stripe_events, tenants, revinfo) — tenants and revinfo are infrastructure tables with no tenant column and were caught by the schema-walk; each carries a written code-comment justification per the LOCKED 'add with justification' rule.
-- [Phase ?]: [Phase 16.1-05]: Storefront review-submit wiring confirmed correct as-is — ReviewService.createReview sets TenantContext, TenantSetLocalAspect translates to set_config('app.current_tenant_id', ?, true), and the V35 policy's app branch fires. The customer-email branch exists for defense-in-depth and is exercised in the test only. No production code change required.
+- [v2.3 Scope]: Vendor Ops + AI interleaved, thinnest/highest-pain first — onboarding (zero-migration) leads, then vendor-scoped access, image architecture, AI track, infra. Locked by user 2026-07-14; do not re-litigate.
+- [v2.3 Roadmap]: MOBL-01 folded into Phase 22 — the responsive nav pairs with the shop-context switcher (same dashboard-nav surface).
+- [v2.3 Roadmap]: AI track split 24/25 — outbound webhooks and mutating MCP are independent deliverables (issues #205 vs #204) on separately-shipped infra.
+- [v2.3 Constraint]: onboarding-blocker path is zero-migration (`WITHDRAWN` already in V43 CHECK); derive "in review" at the DTO layer, no `IN_REVIEW` state migration.
 
 ### Pending Todos
 
-- **Plan 12-02 Task 07 manual gate (human-verify):** after ≥1-week staging observation of Report-Only CSP, flip header key in `frontend/next.config.mjs` from `Content-Security-Policy-Report-Only` to `Content-Security-Policy` (enforce), regenerate header snapshot via `npm test -- __tests__/header-snapshot.test.ts -u`, commit both files in one PR. Verification steps (Stripe 3DS, NextAuth signin, CSP-no-violations Playwright spec against staging) documented in 12-02-PLAN.md Task 07 + 12-02-SUMMARY.md
-- Backfill `status: complete` frontmatter on the 5 quick-task SUMMARY.md files (Deferred Items below) during an early v2.2 housekeeping pass
-- Commit `frontend/.env.local.example` placeholder hardening change (block-secrets hook prevents Claude from staging it — needs a manual commit outside Claude)
-- Advance to next Phase 13+ plan now that Phase 12 operational work (both plans) is complete
-- **Phase 15 cluster-admin rollout (4 steps):** (1) `helm install sealed-secrets-controller sealed-secrets/sealed-secrets -n kube-system`; (2) `kubeseal --fetch-cert > k8s/certs/<env>/sealed-secrets-pub.pem` per cluster; (3) `./k8s/scripts/seal-secrets.sh --cert <cert> --namespace jtoye-production --input <plaintext> --output k8s/production/sealed-secrets/`; (4) `kubectl apply -k k8s/staging/` + functional verification (frontend cannot nc postgres, frontend can wget core-java). Full details: `.planning/phases/15-k8s-networkpolicies-sealed-secrets/15-01-SUMMARY.md` + `docs/runbooks/sealed-secrets.md`.
+- After v2.3 work pauses/completes: re-count the remediation backlog (`gh issue list --label remediation --state all`) — HANDOFF Step 2.
+- Then (LAST): run the comprehensive QA audit with the upgraded charter (lifecycle dead-end sweep + role-spanning journey matrix) — HANDOFF Step 3. Rebuild ALL containers first.
 
 ### Blockers/Concerns
 
-- Port conflicts in dev env (frontend 3100 because MCP server holds 3000; Postgres 5432 shared with unrelated `dealflow_*` containers) — E2E smoke tests may need those containers stopped first
-- Stripe refund API (VOPS-02) requires phase-level research into idempotency keys + webhook `charge.refunded` handling — treat as a design-gate before writing the controller
-- K8s Sealed Secrets (INF-02) requires an operator install in the cluster + key rotation policy — not just a manifest change
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260714-2c4 | Issue #113 [P3-11] security hardening: V51 migration hardens current_tenant_id() (cast inside exception guard — garbage GUC now filters instead of 22P02) + recreates ALL 10 raw-cast RLS policies with the V39-safe idiom (scope verified larger than the issue's 4: V43×4, V47, V50 reused the bug class post-audit) + permanent pg_policy raw-cast sweep in RlsContractTest; WS handshake query-param JWT path DELETED (JwtHandshakeInterceptor + session-attr fallback removed, header-only CONNECT; frontend already header-only, zero callers). Local proof: 15/15 RLS integration (NOSUPERUSER Testcontainers), 658 unit green; metrics 1258→1257, schema V51. Deferred: guest-GUC DB-guard (TEXT comparison, no cast risk, needs design) | 2026-07-14 | 4a6d4b4 | [260714-2c4-fix-113-migrate-4-rls-policies-to-safe-u](./quick/260714-2c4-fix-113-migrate-4-rls-policies-to-safe-u/) |
-| 260713-svx | QA-council 20260713-152124 High findings: F-RATE — public 429 now surfaces as transient busy/retrying state with bounded backoff (public-fetch-retry.ts helper honouring Retry-After, wired into /shop + /shop/[slug]; +15 Jest tests, full suite 244 green, tsc clean) instead of authoritative empty catalogue; F-DOCS-1 — purged password123/admin123 from README/TESTING/QA_TEST_PLAN/QUICK_START/SETUP → env-var refs (KC_SEED_USER_PASSWORD, KEYCLOAK_CLIENT_SECRET), repaired dead token recipes, added lockout-recovery note; metrics 1243→1258 via docs-freshness --write. Deferred: backend limiter tuning (#88), live tenant-a-user unlock | 2026-07-13 | 4073ebf | [260713-svx-fix-qa-high-findings-f-rate-storefront-4](./quick/260713-svx-fix-qa-high-findings-f-rate-storefront-4/) |
-| 260713-kds | Restore demo catalog images (Phase 19-09 regression-by-omission): 21 license-verified Wikimedia dish photos bundled + DemoImageManifest/StorageService.putSeedImage + idempotent seeder step + CREDITS-demo-images.md + Incremental Betterment Doctrine in CLAUDE.md; browser-proven 21/21 naturalWidth>0 across 3 demo shops; metrics 1243 | 2026-07-13 | 572faf4 | [260713-kds-restore-demo-catalog-images](./quick/260713-kds-restore-demo-catalog-images/) |
-| 260708-bu6 | Create docs/analysis/REMEDIATION-BACKLOG-2026-07-08.md — prioritized remediation backlog from the 2026-07-08 enterprise-readiness audit | 2026-07-08 | fe43427 | [260708-bu6-create-docs-analysis-remediation-backlog](./quick/260708-bu6-create-docs-analysis-remediation-backlog/) |
-| 260708-g8c | Issue #79 P0-3: untrack/relocate 147 db dumps off-tree, pii-guard CI, UK GDPR Art 33/34 exposure assessment (history rewrite handled post-merge) | 2026-07-08 | d162e82 | [260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h](./quick/260708-g8c-issue-79-p0-3-purge-pii-dumps-from-git-h/) |
-| 260708-jj1 | Issue #77 P0-1: add frontend /api/health route (+2 Jest tests), align compose healthcheck; verified live — curl 200 {"status":"ok"} unauthenticated, container healthy under new probe | 2026-07-08 | 9712eb2 | [260708-jj1-issue-77-p0-1-add-frontend-api-health-ro](./quick/260708-jj1-issue-77-p0-1-add-frontend-api-health-ro/) |
-| 260708-jzm | Issue #78 P0-2: k8s production→prod, ActiveProfileValidator fail-fast (+6 tests), application-dev.yml, Dockerfile baked -Dspring.profiles.active override removed; container-proven (production→hard fail, prod→boots, live dev healthy) | 2026-07-08 | a389739 | [260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-](./quick/260708-jzm-issue-78-p0-2-fix-prod-profile-mismatch-/) |
-| 260708-l2c | Issue #80 P0-4: rotate all committed Keycloak/MinIO creds; realm-export → template + envsubst sidecar (KeyProvider material + PBKDF2 user hashes stripped), :?-required compose vars, verify-env.sh deny-list wired into start-dev.sh; live-proven — old secret 401, rotated grant 200 → API 200, Playwright SSO login green, app DB untouched | 2026-07-08 | 81035e2 | [260708-l2c-issue-80-p0-4-rotate-committed-keycloak-](./quick/260708-l2c-issue-80-p0-4-rotate-committed-keycloak-/) |
-| 260708-mow | Issue #81 P0-5: VAT ledger correctness (VALIDATE) — HMRC fraction method net-of-gross (single VatCalculator used by entity + JPQL), per-product vat_rate (V40) + predominant-liability delivery, idempotent single ledger entry (partial unique index, race-safe), V40 in-place backfill+dedupe+audit note; +VatCalculatorTest/LedgerSingleEntryIntegrationTest, golden regen; verified 10/10, live DB V40 zero dup ledger rows | 2026-07-08 | 0a0217c | [260708-mow-issue-81-p0-5-vat-ledger-correctness-fra](./quick/260708-mow-issue-81-p0-5-vat-ledger-correctness-fra/) |
-| 260708-ovt | Issue #82 P0-6: PPDS/Natasha's-Law label (VALIDATE) — inline allergen emphasis via IngredientMarkupParser (fail-soft, render-time authoritative + allergen_spans cache), V41 shelf_life_days/durability_type/allergen_spans, computed Use-by/Best-before, tenant-scoped business identity, fail-loud IncompleteLabelDataException→422 (no non-compliant PDF), removed CONTAINS block + 'No allergens declared' fallback; AC3 golden-file test + docs/ppds-label-markup.md; frontend 'mark allergens' editor deferred to fast-follow; verified 7/7, live V41 | 2026-07-08 | dc56b37 | [260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i](./quick/260708-ovt-issue-82-p0-6-ppds-natasha-s-law-label-i/) |
-| 260708-rlp | Issue #83 P1-1: RBAC — KeycloakRealmRoleConverter (realm_access.roles→ROLE_*) + @EnableMethodSecurity, @PreAuthorize("hasRole('admin')") on refunds/finance/GDPR/dev-admin; +3 converter unit tests +6 RoleBasedAccessIntegrationTest (low-priv 403 on refund/finance/GDPR, admin allowed); full test+integrationTest green (96/96), docs-freshness synced at 735 | 2026-07-08 | 2dfce74 | [260708-rlp-implement-issue-83-p1-1-rbac-method-secu](./quick/260708-rlp-implement-issue-83-p1-1-rbac-method-secu/) |
-| 260708-ses | Issue #84 P1-2: GDPR erasure completeness — guest-order email sweep (reaches customer_id NULL rows), Envers orders_aud/customers_aud PII scrub via tenant-scoped native UPDATEs + V42 RLS UPDATE policies (were SELECT+INSERT only → scrub silently denied), S3 review-photo deletion via StorageService, durable PII-free erasure_records table (SHA-256 email hash, FORCE RLS); TDD, +GdprErasureIntegrationTest guest-PII reachability proof; full local test+integrationTest BUILD SUCCESSFUL, docs-freshness 736/V42 | 2026-07-08 | a11348c | [260708-ses-implement-issue-84-p1-2-gdpr-erasure-dep](./quick/260708-ses-implement-issue-84-p1-2-gdpr-erasure-dep/) |
-| 260708-teb | Issue #85 P1-3: guest-checkout stock — VERIFY-FIRST characterization test empirically CONFIRMED the double-decrement (qty=3, stock 10→4 pre-fix), then converged to a single retry-safe decrement at CONFIRM via StockService (removed eager naked read-modify-write in PublicStorefrontService.createGuestOrder; TOCTOU 500 gone; cancel-path restock symmetry preserved); +GuestCheckoutStockConvergenceIntegrationTest (A delta 1×qty=7, B concurrent last-unit no-500) + StockDecrementLocationTest guard; no schema change; full gate BUILD SUCCESSFUL (8m49s), docs-freshness 739. Executor hit account session limit mid-gate → recovered inline | 2026-07-08 | 8ffdf1f | [260708-teb-implement-issue-85-p1-3-guest-checkout-s](./quick/260708-teb-implement-issue-85-p1-3-guest-checkout-s/) |
-| 260708-tsl | Issue #86 P1-4: Redis resilience — RedisCacheErrorHandler (CachingConfigurer) degrades cache GET/PUT (WARN) + EVICT/CLEAR (ERROR, staleness-alarmed) to source-of-truth so a Redis blip is a cache miss not a 500; explicit Lettuce command timeout on the rate-limit client sourced from per-profile spring.data.redis.timeout (2000/3000/2500ms — no hardcoded literal) replacing the 60s default; RateLimitInterceptor wraps the Redis section in try/catch → fail-open-with-alarm (jtoye.ratelimit.fail_open counter) preserving the genuine 429 path; jtoye.cache.errors metric; +RedisFaultInjectionIntegrationTest (Testcontainers, redis.stop() mid-test) +RedisCacheErrorHandlerTest +RateLimitInterceptorFailOpenTest; no schema change; full gate green (447 unit + 100 integration, 9m35s), docs-freshness 746 | 2026-07-08 | fd5c193 | [260708-tsl-implement-issue-86-p1-4-redis-resilience](./quick/260708-tsl-implement-issue-86-p1-4-redis-resilience/) |
-| 260709-bl2 | Issue #87 P1-5: JWT audience + realm hardening + session refresh-token leak (all 3 tiers) — core-java AudienceValidator wired additively via DelegatingOAuth2TokenValidator(createDefaultWithIssuer + AudienceValidator), fail-closed on blank config, expected-audience env-injected (jtoye.security.jwt.expected-audience:${JWT_EXPECTED_AUDIENCE:core-api}); ALSO strengthens issuer (custom decoder was timestamp-only); #83 role converter untouched; edge-go audience now fail-closed (defaultJWTAudience core-api, check unconditional, runs before tenant check) + jwt_test table cases; realm template bruteForceProtected=true + passwordPolicy len(12)+classes+notUsername + core-api oidc-audience-mapper; frontend refreshToken removed from client Session (buildSession pure fn, deleted defensively + dropped from Session type) kept on server JWT; +AudienceValidatorTest +session-callback.test; 3-suite gate green (452 unit + 100 integration + edge-go 6 pkgs/75 funcs + 104 Jest), docs-freshness 755. Post-merge CI caught a tsc-only weak-type error jest missed (buildSession param typed as JWT, fix cebacdf). RUNTIME FOLLOW-UP: realm needs Keycloak DB-drop + re-import to emit aud=core-api (live tokens fail-closed until then) | 2026-07-09 | 074a639 | [260709-bl2-implement-issue-87-p1-5-jwt-audience-val](./quick/260709-bl2-implement-issue-87-p1-5-jwt-audience-val/) |
-| 260709-iro | Issue #88 P1-6: public-path rate limiting — closes the tenant-less bypass where RateLimitInterceptor returned true when TenantContext absent (every /public/** guest path). New IP-keyed public bucket branch runs before tenant logic; ClientIpResolver (XFF-first-hop, getRemoteAddr fallback, "unknown" sentinel, spoofing caveat documented); distinct rl:public:{ip} Redis namespace so public floods never touch tenant buckets; 429 + Retry-After + generic body (no tenantId leak); limits env-injected rate-limiting.public.requests-per-minute/burst/window-seconds (base ${}-overridable, prod literals); runs INSIDE #86 fail-open try/catch + jtoye.ratelimit.fail_open counter; +ClientIpResolverTest(7) +RateLimitInterceptorTest(+public cases,13) +PublicRateLimitIntegrationTest (Testcontainers real Redis: flood→429+Retry-After, tenant req unaffected, fail-open on redis.stop()→200); core-java-only; full gate green (463 unit + 101 integration, 9m33s), docs-freshness 767 | 2026-07-09 | d8254dd | [260709-iro-implement-issue-88-p1-6-ip-session-keyed](./quick/260709-iro-implement-issue-88-p1-6-ip-session-keyed/) |
-| 260710-qeq | Issue #91 P1-9: supply-chain gate — Trivy fs+image scans now gate the build (exit-code:'1' + ignore-unfixed:true, SARIF upload preserved via if:always()); Snyk drops continue-on-error → real HIGH+ gate guarded by if env.SNYK_TOKEN!='' (job-level env) so an unconfigured secret skips-not-fails; all 11 third-party actions (trivy×2, snyk, docker×4, azure×2, slack×2) pinned @master/@vN → 40-char commit SHAs w/ # vX comments (actions/* + codeql left for Dependabot); new .github/dependabot.yml v2 covering gradle(/,/core-java) + gomod(/edge-go) + npm(/frontend) + docker(×3) + github-actions(/), weekly, grouped minor+patch, limit 5. FIX 05cb93b: split Trivy into sarif-report + table-gate steps because format:sarif forces an all-severities scan (single-step exit-code gated on LOW/MED too — first CI run red on non-critical gomod/npm advisories); gate now scoped to fixable CRITICAL,HIGH + prints CVEs. AC#1 EMPIRICALLY PROVEN on PR #140 both directions: gate failed build on findings (red), then passed (green 35s) once scoped → current tree has no fixable CRITICAL/HIGH. MERGED #140 → main 8f99b15, #91 CLOSED | 2026-07-10 | 05cb93b | [260710-qeq-gate-ci-on-trivy-snyk-criticals-dependab](./quick/260710-qeq-gate-ci-on-trivy-snyk-criticals-dependab/) |
-| 260710-s6d | Issue #89 P1-7: CSP enforce + drop script-src 'unsafe-inline' via nonce. Moved CSP from static next.config headers() into middleware.ts (per-request nonce + 'strict-dynamic', canonical Next recipe: x-nonce+CSP on request so Next stamps its scripts, enforcing by default, CSP_REPORT_ONLY opt-out) wrapped in NextAuth auth (matcher broadened; /dashboard still gated server-side, no authorized callback). New lib/security-headers.ts buildCsp() (testable, no unsafe-inline in script-src, style-src unsafe-inline kept per AC, upgrade-insecure-requests gated behind CSP_UPGRADE_INSECURE_REQUESTS off-by-default so local http+MinIO images work). CRITICAL live-E2E find: nonce can't reach statically-prerendered pages → their inline/chunk scripts blocked (homepage+dashboard failed first run); fixed via app/layout.tsx export const dynamic='force-dynamic' (app already mostly dynamic — only auth/utility pages were static). Reworked csp-headers.test + header-snapshot (+snap regen); metrics 105→109 jest / 771→775 total; CLAUDE.md count synced. PROOF: jest 108 green, build green (27 routes ƒ), curl shows enforcing CSP w/ nonce no unsafe-inline, Playwright csp-no-violations 6/6 green, storefront screenshot renders (11 imgs, 0 violations). Stripe 3DS verified by config only (allowlists intact, no live card). MERGED #166 → main 59cb1d4, #89 CLOSED | 2026-07-10 | 59cb1d4 | [260710-s6d-enforce-csp-by-default-drop-script-src-u](./quick/260710-s6d-enforce-csp-by-default-drop-script-src-u/) |
-| 260710-u1q | Issue #90 P1-8: k8s backup hardening. Root causes all confirmed: postgres:15-alpine busybox (GNU date -d/grep -oP fail under set -e), runtime apk add aws-cli (default-deny NetworkPolicy blocks), no BYPASSRLS role (FORCE RLS → app-role dump captures 0 tenant rows), CronJob referenced NON-EXISTENT resources (jtoye-secrets/jtoye-config vs real postgres-credentials/app-config → pod never started). Fix: new infra/backups/Dockerfile (postgres:15-bookworm + aws-cli + GNU baked) running new hardened infra/backups/k8s-backup.sh (custom-format, fail-loud, size-floor + pg_restore --list verify, empty-bucket-safe prune); infra/backups/create-backup-role.sql (least-priv jtoye_backup BYPASSRLS, SELECT tables+SEQUENCES — sequence grant added after live test caught revinfo_seq perm error); rewired cronjob to real secret/configmap + backup role; added backup-username/password + s3-backup-credentials + s3.backup.* keys (REPLACE_WITH placeholders). PROVEN LOCALLY end-to-end vs live pg+MinIO: AC#2 app-role=0/BYPASSRLS=25 products; AC#1 image runs exit0, 133KiB dump→MinIO S3; AC#3 seeded 2025 object PRUNED (job exit0); AC#4 restore drill S3→pg_restore scratch DB ~5s RTO, restored products=25/orders=57/customers=4/shops=10, RPO≤24h. kubectl kustomize builds (27 res), all env refs resolve, bash -n clean. PENDING (no cluster — AKS unreachable): in-cluster exit0 to PROD S3 + prod restore drill; image needs build+push to registry (not in CI). PR pending | 2026-07-10 | (pending) | [260710-u1q-harden-k8s-pg-backup-cronjob-bypassrls-d](./quick/260710-u1q-harden-k8s-pg-backup-cronjob-bypassrls-d/) |
-| 260711-bej | Two USER decisions recorded + code: (1) #178 item 1 auto-approve stance = HYBRID BY MODEL — new onboarding.auto-approve-models (default [WHITE_LABEL]) + OnboardingProperties.autoApprovesModel(); GateChainRunner fires APPROVE on global force-on OR per-model policy (two external calls preserve @SpyBean E2E path); WHITE_LABEL auto-approves on green gates, MARKETPLACE parks at PENDING_APPROVAL (admin queue = #178 slice 2). (2) #102 Stripe = CONNECT KEYED TO MODEL — destination charges MARKETPLACE / direct charges + app fee WHITE_LABEL, destination first in future phase, decision-only (no Stripe code). ADR-0001 seeded (docs/architecture/decisions/), state-model §9 item 1 DECIDED, 18-HUMAN-UAT item 5 PASS (5/5), decision comments on #178+#102 (both stay open). Tests 918→921 (693 Java @Test), docs-freshness green, no migration (V43) | 2026-07-11 | d936d6e | [260711-bej-record-onboarding-auto-approve-stripe-co](./quick/260711-bej-record-onboarding-auto-approve-stripe-co/) |
-| 260711-u22 | Fix image uploader: compress BEFORE size gate (preflight 50MB browser cap → canvas compress 1600px/0.85 → enforce 5MB server cap; non-transparent PNG→JPEG quality ladder 0.85/0.75/0.65; GIF-only 5MB hard limit; honest error copy). 13 new jest tests (190 total), metrics 988→1001 | 2026-07-11 | e6b202e | [260711-u22-fix-image-uploader-compress-before-size-](./quick/260711-u22-fix-image-uploader-compress-before-size-/) |
-| 260712-hnc | Issue #102 remainder: Keycloak deprovisioning on offboard — first Java-side Keycloak admin integration (KeycloakAdminClient RestClient seam + KeycloakDeprovisionService, REQUIRES_NEW inside afterCommit so a plain write isn't silently lost in the committed tx), V49 keycloak_deprovisioned_at marker (stamped only on full success), best-effort non-rolling-back offboard hook, admin-gated OFFBOARDED-only idempotent re-trigger POST /api/v1/admin/tenants/{id}/keycloak/deprovision, env + all-overlay k8s wiring, INERT by default (WARN no-op + RFC 7807 400 not-configured). Tests 1166→1181 (+15 Java), OpenAPI snapshot regenerated, docs-freshness green. LIVE E2E PROVEN 12/12 vs real Keycloak 24 (pre-offboard mint → post-offboard enabled=false + "Account disabled" + marker + idempotent re-trigger); merged PR #195 (main 78b7ba5). KC-24 finding: admin-API user creation silently strips unmanaged tenant_id attribute — realm templates must declare it before programmatic provisioning | 2026-07-12 | 97753d9 | [260712-hnc-keycloak-deprovisioning-on-tenant-offboa](./quick/260712-hnc-keycloak-deprovisioning-on-tenant-offboa/) |
-| 260712-fst | Issue #101 do-now slice (gsd-fast): SYSTEM_DESIGN_V2 PITR/HA honesty — §3.2 diagram (replicas/Patroni/PgBouncer/WAL-G) + §7.1 backup spec (6h incrementals, continuous WAL, weekly restore tests, "PITR: Yes") relabelled TARGET with explicit CURRENT posture first (daily verified pg_dump via #90 CronJob, RPO ≤24h, NO PITR); ADR-0002 Proposed: hybrid managed-vs-manifest (managed Azure Postgres/Redis, operator RabbitMQ) — if accepted, #101 closes via provisioning + runbook. PR #197 | 2026-07-12 | 4f72463 | — |
-| 260712-pzi | Issue #99 do-now (remainder, VALIDATE + premortem): CI/CD deploy honesty — dead `develop` trigger/gate removed (staging now main + vars.DEPLOY_STAGING_ENABLED, mirroring prod's vars gate); LATENT BUG fixed: deploys referenced :${{github.sha}} which metadata-action NEVER pushed (guaranteed ImagePullBackOff) → type=raw full-sha immutable tag added + both deploy jobs rewritten to pinned-kustomize overlay deploys (v5.6.0 sha-verified) with fail-loud rendered-manifest sha assertion; PREMORTEM-FOUND BUG fixed: SecurityConfig permitted only exact /actuator/health so k8s startup/liveness/readiness probes (+ new smoke asserts) would 401 → permitAll("/actuator/health/**") + 2 unauthenticated-200 regression tests (SecurityHeadersIntegrationTest, probes.enabled=true override; metrics 1183→1185); smoke-test prod-shape-safe (T4/T5 → liveness/readiness, swagger conditional on EXPECT_SWAGGER, staging passes =true; proven vs 2 node stub shapes 10/10+10/10, independently replicated by verifier); k8s image names unified ghcr.io/jtoye/*:2.1.0 → ghcr.io/bralabee/jtoye-* (staging mutable :staging tag → immutable 2.1.0 default; kustomize builds + both guard scripts green); ESLint was DEAD (Next 16 removed `next lint`; ESLint 9 vs legacy .eslintrc) → native flat-config eslint.config.mjs (FlatCompat crashes — use eslint-config-next subpath exports), lint script = `eslint .`, 11 errors fixed (Link swap, tailwind import, 4 annotated set-state-in-effect sites, test-file overrides), NEW CI lint job (eslint + gofmt + go vet); verifier 11/11 must_haves, human_needed only for CI-covered gradle/build/jest. PR #201 | 2026-07-12 | a58f3fd | [260712-pzi-issue-99-do-now-remainder-ci-cd-deploy-h](./quick/260712-pzi-issue-99-do-now-remainder-ci-cd-deploy-h/) |
-| 260712-lxt | Issue #99 do-now (first slice): path-filter the ~22-min "Integration Tests (Testcontainers RLS)" CI job on pull_request via SHA-pinned dorny/paths-filter@de90cc6 (v3.0.2) — in-job STEP gating so the job still reports SUCCESS on filtered PRs (required-check-safe if branch protection is ever added, skip-notice step logs why); scoped to pull_request only so push/release always run the full suite and the build-and-push needs-chain never sees a skipped dep; trigger paths core-java/** + root Gradle inputs (build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat) + ci-cd.yaml itself; + explicit least-priv job permissions (contents:read, pull-requests:read — repo default GITHUB_TOKEN is restricted and paths-filter lists PR files via the pulls API, would 403 without). actionlint clean; no metrics change. Suite-still-runs proof = this PR's own CI (touches ci-cd.yaml, a trigger path); skip-path proof lands with the next docs-only PR | 2026-07-12 | 5381f9d | [260712-lxt-path-filter-ci-integration-tests-job-to-](./quick/260712-lxt-path-filter-ci-integration-tests-job-to-/) |
-| 260712-t6b | Issue #98 do-now (VALIDATE): observability slice — prod JSON log double-emit fixed (single-emit pattern); phantom alerts made honest: real Micrometer counters tenant_context_missing_total (JwtTenantFilter) + jtoye_payment_failed_total (PaymentService) + new PaymentFailureSpike alert, DiskSpace rules disabled PENDING node-exporter (no live alert references a never-emitted metric); edge-go Prometheus /metrics (client_golang, route-template labels, unmatched-route cardinality bound proven by test) + scrape job re-enabled; prod /actuator/prometheus opened on internal management port 9091 with app-port posture unchanged (ROOT CAUSE also fixed: deprecated Boot-2 property management.metrics.export.prometheus.enabled silently no-ops in Boot 3.5 → endpoint was 404 everywhere → management.prometheus.metrics.export.enabled) + full deploy-pipeline alignment (ci-cd health checks → 9091, smoke EXPECT_PUBLIC_ACTUATOR default-false asserts actuator NOT public, k8s probes/annotations → 9091, Service stays 9090-only); Alertmanager SMTP env-injection confirmed pre-existing (verify-only). Tests 1185→1192 (+5 Java, +2 Go); verifier 8/8 must_haves (independent re-run: smoke stub 10/10 + gate-flip 6/10 as designed, kustomize×3 clean, docs-freshness green). Cluster-blocked #98 tails (Loki, tracing, node-exporter, live scrape proof) stay open | 2026-07-12 | 6f4411c | [260712-t6b-98-observability-do-now-slice](./quick/260712-t6b-98-observability-do-now-slice/) |
-| 260713-0p3 | Issue #204 [AI-2] (RESEARCH+VALIDATE): uniform Idempotency-Key contract — evidence-backed AUDIT first (committed as docs/idempotency.md: dashboard orders NOT idempotent, guest checkout body-key only, refunds already had the target header contract, customers 409'd instead of replaying, /sync/batch idempotent-by-UPSERT); V50 idempotency_keys store (composite PK tenant_id+endpoint+key, ENABLE+FORCE RLS, no _aud, V47 precedent); IdempotencyService.execute reserve-first INSERT..ON CONFLICT DO NOTHING + replay-original-response + 409 in-flight + 422 payload-mismatch (SHA-256 request hash), defensive set_config GUC pin (OrderStateChangeListener N1 precedent); @Idempotent + springdoc IdempotencyHeaderCustomizer advertises header on exactly orders.create + customers.create (header OPTIONAL — absent = unchanged behavior; refunds/guest-checkout carve-outs documented); Testcontainers proof: same-key replay 1 row, CONCURRENT race exactly-1-order, 422 mismatch, cross-tenant RLS under NOSUPERUSER rls_test_role downgrade (plan-checker forced this — superuser scaffold would mask broken policy); OpenAPI snapshot regenerated. Tests 1192→1199 (+7 Java), schema V49→V50; verifier 8/8 with LIVE Testcontainers re-runs. Feeds #203 MCP (Wave 2) | 2026-07-13 | 102c0db | [260713-0p3-204-idempotency-key-contract](./quick/260713-0p3-204-idempotency-key-contract/) |
-| 260713-2g8 | Issue #206 [AI-4] (RESEARCH+VALIDATE): scoped machine credentials — #83 converter REPLACED Spring's default so no SCOPE_* authority existed; new JwtRolesAndScopesConverter unions ROLE_* (KeycloakRealmRoleConverter, untouched) + SCOPE_* (stock JwtGrantedAuthoritiesConverter) wired at SecurityConfig; all 9 ProductController write handlers gated hasAuthority('SCOPE_catalog:write'), 6 reads authenticated-only; realm template: catalog:read/catalog:write client scopes DEFAULT-granted to operator core-api client (operators unchanged on new tokens; stale pre-reimport tokens fail closed on writes — documented, test-asserted, #87/#88 precedent) + read-only machine client integration-catalog-ro (client-credentials, core-api audience mapper — #88 rejects without it — managed tenant_id on SA user, KC24 trap documented) + orders:* taxonomy seeded UNENFORCED for #203; INTEGRATION_CATALOG_RO_SECRET env-injected (3 composes allowlist+environment, verify-env.sh); docs/security-scopes.md (taxonomy, per-tenant recipe, re-import via kc.sh import --override, stale-token migration, MCP feed-forward); OpenAPI scopes advertised + snapshot regen. Full-gate catch: pre-existing LocationHeaderContractTest @WithMockUser needed the write scope (the foundational-bean full test+integrationTest gate the checker demanded caught it). Tests 1199→1208 (+9 Java), schema stays V50; verifier 7/7 with live re-runs (Scoped 5/5, RBAC 6/6 zero-edit). EPIC #209 Wave 1 COMPLETE → Wave 2 = #203 MCP + #205 webhooks | 2026-07-13 | 1717f98 | [260713-2g8-206-scoped-machine-credentials](./quick/260713-2g8-206-scoped-machine-credentials/) |
-
-## Deferred Items
-
-Items acknowledged and deferred at milestone v2.1 close on 2026-04-18:
-
-| Category | Item | Status |
-|----------|------|--------|
-| quick_task | 260414-fe3-frontend-security-and-tests | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
-| quick_task | 260414-inf-infrastructure-hardening | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
-| quick_task | 260414-j9c-edge-go-security-hardening-batch-phase-1 | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
-| quick_task | 260414-jkp-java-core-data-integrity-batch-phase-2-o | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
-| quick_task | 260414-ltc-low-touch-cleanup | Complete (shipped PR #40); no frontmatter status field — tool reports "unknown" |
-
-All 5 are deep-audit P1 quick tasks that shipped in PR #40 on 2026-04-16. Work is done; only tooling metadata is missing. Consider adding `status: complete` frontmatter during v2.2 planning cleanup.
+- **RULE 0 — one runtime at a time on local**: compose and the minikube `jtoye` cluster share one dev Postgres. Never run compose `core-java`/`edge-go` AND cluster core/edge writers at once. Compose is canonical; cluster is STOPPED at handoff.
+- **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
+- **Phase 23 vision provider**: content-relevance gate (IMG-03 stage 6) needs Ollama (host :11434 conflict) or a hosted model — ships behind an advisory-default flag; the pipeline is not blocked on it.
+- **Phase 26 netpol caveat**: minikube's default CNI does NOT enforce NetworkPolicies — local is not proof for netpol behaviour (needs policy-enforcing CNI or AKS).
 
 ## Session Continuity
 
-Last session: 2026-07-11 — Phase 19 closure (19-09) Task 2 full gate green; awaiting human UAT
-Stopped at: 19-09 Task 3 — human whole-app browser UAT of the 6 ROADMAP success criteria (blocking human-verify gate)
-Resume file: .planning/phases/19-full-frontend-experience-overhaul/19-09-SUMMARY.md
+Last session: 2026-07-14 09:30 — Milestone v2.3 roadmap created (ROADMAP.md replaced, REQUIREMENTS.md traceability filled, STATE.md refreshed)
+Stopped at: Roadmap complete; ready to plan Phase 21 (Onboarding Blocker UX)
+Resume file: None (next: `/gsd-plan-phase 21` or `/gsd-execute-phase 21`)
