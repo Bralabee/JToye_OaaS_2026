@@ -383,6 +383,17 @@ Improvements must *better* what is already good — never trade away a working g
 - **Regression by omission is a defect** even when every test is green: shipping an empty demo catalog, a blank screen, or a silently-dropped capability is a failure regardless of a passing suite. Tests prove code does what it claims; they do not prove the product still does what users need.
 - When in doubt, make the change *additive*: extend the good path rather than removing it, and leave the existing invariants intact.
 
+## Cross-Cutting Quality Contracts (design-time)
+
+Four quality dimensions are **standing acceptance criteria** — plans and executors treat them as build-time requirements on the relevant surfaces, not as things a later audit will catch. Each has an **audit-time counterpart** in the QA council (`/qa-discover` Phase 1 API / Phase 2 browser); the two must agree. **Security is the model** — it already gates at plan time (the `<threat_model>` block) and audits in QA Phase 1/5; the other three are brought to the same bar here (surfaced 2026-07-14).
+
+- **Web performance (mobile-first)** — any phase touching a user-facing page owns its Core Web Vitals. For such phases, acceptance criteria include: no route regresses LCP/CLS/INP at a **throttled mobile profile**; no unbounded/duplicate bundle growth or unoptimised images shipped; measured against a **config-declared budget** where one exists (introduce one rather than inventing an ad-hoc number). "Builds clean" ≠ "loads fast" — verify on a throttled profile, never localhost-unthrottled.
+- **SEO / discoverability** — any phase building or reworking a **public/unauthenticated** surface (storefront, marketing, shop pages, docs) owns its discoverability: unique title + meta description + canonical + Open Graph per page; schema.org JSON-LD on products/shops (Product/Offer/LocalBusiness); valid `sitemap.xml` + `robots.txt`; crawlable `<a href>` nav (not JS-only); no stray `noindex` on public pages. For J'Toye this is storefront reach → vendor revenue, not polish. Internal/authenticated dashboards are exempt (record N/A).
+- **AI agent-readiness / machine-consumability** — any phase adding or changing an **API surface** owns its agent-operability: mutating endpoints carry an Idempotency-Key contract (or are provably idempotent); errors are typed/machine-parseable (RFC 7807, stable codes) not prose-only; credentials are scoped/least-privilege for the action; the OpenAPI/machine-readable contract matches live responses; and — where the MCP server exists — a core new capability gets a corresponding MCP tool (or a recorded reason it's out of scope). This is the standing form of the AI Readiness track (idempotency #204, scoped creds #206, MCP tools #203).
+- **Security** — already contracted: every plan carries a `<threat_model>` block (ASVS L1), routed through `/gsd-secure-phase` + `/gsd-code-review` + CI scanners (trivy/gitleaks/dependabot). Listed here so the four dimensions read as one set; no change to the existing gate.
+
+Accessibility stays contracted via the existing UI standards + QA Phase 4. When a dimension genuinely doesn't apply to a phase, record it **N/A** — never silently drop it (same rule as the QA council roster).
+
 <!-- GSD:profile-start -->
 ## Developer Profile
 
