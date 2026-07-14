@@ -14,6 +14,8 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import uk.jtoye.core.config.RabbitMQConfig;
+import uk.jtoye.core.onboarding.OnboardingState;
+import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 
@@ -329,6 +331,53 @@ class PaymentEventOutboxFlusherTest {
         ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
         verify(repository).save(savedCaptor.capture());
         assertEquals(PaymentEventOutbox.Status.SENT, savedCaptor.getValue().getStatus());
+    }
+
+    private PaymentEventOutbox onboardingRow() throws Exception {
+        OnboardingStateChangeEvent event = new OnboardingStateChangeEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                OnboardingState.VERIFYING, "One or more checks need a manual review",
+                OffsetDateTime.now()
+        );
+        return new PaymentEventOutbox(
+                event.tenantId(),
+                "ONBOARDING_STALLED",
+                "onboarding.state.manual_review",
+                objectMapper.writeValueAsString(event),
+                RabbitMQConfig.ONBOARDING_EVENTS_EXCHANGE
+        );
+    }
+
+    @Test
+    @DisplayName("publishRow with exchange=onboarding.events deserializes OnboardingStateChangeEvent (not PaymentEvent) and marks SENT — no poison (Pitfall 1)")
+    void publishRow_onboardingExchangeRow_deserializesOnboardingEvent_notPoisoned() throws Exception {
+        PaymentEventOutbox row = onboardingRow();
+        when(repository.claimPendingBatch(PaymentEventOutboxFlusher.BATCH_SIZE))
+                .thenReturn(List.of(row));
+
+        flusher.flushPending();
+
+        ArgumentCaptor<String> exchangeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> routingCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(rabbitTemplate).convertAndSend(exchangeCaptor.capture(), routingCaptor.capture(), payloadCaptor.capture());
+        assertEquals(RabbitMQConfig.ONBOARDING_EVENTS_EXCHANGE, exchangeCaptor.getValue());
+        assertEquals("onboarding.state.manual_review", routingCaptor.getValue());
+        // The row was routed through the onboarding branch, NOT the final
+        // PaymentEvent else-arm: the wire object is an OnboardingStateChangeEvent.
+        OnboardingStateChangeEvent sent = org.junit.jupiter.api.Assertions
+                .assertInstanceOf(OnboardingStateChangeEvent.class, payloadCaptor.getValue());
+        assertEquals(OnboardingState.VERIFYING, sent.status());
+        assertEquals("One or more checks need a manual review", sent.reason());
+
+        // Marked SENT, not poison-FAILED — the shared flusher published the new
+        // exchange without poisoning it.
+        ArgumentCaptor<PaymentEventOutbox> savedCaptor = ArgumentCaptor.forClass(PaymentEventOutbox.class);
+        verify(repository).save(savedCaptor.capture());
+        PaymentEventOutbox saved = savedCaptor.getValue();
+        assertEquals(PaymentEventOutbox.Status.SENT, saved.getStatus());
+        assertFalse(saved.isPoison(), "onboarding.events row must NOT be poisoned");
+        assertNull(saved.getLastError());
     }
 
     @Test

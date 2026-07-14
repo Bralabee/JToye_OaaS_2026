@@ -1,15 +1,21 @@
 package uk.jtoye.core.shop.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.util.Map;
 
 public class CreateShopRequest {
+    // QA BE-2: bound free-text so over-length fails validation with a 400, not a
+    // misleading 409. name matches the varchar(255) column; description is TEXT so the
+    // cap is a generous abuse guard (mirrors the ingredientsText @Size precedent).
     @NotBlank
+    @Size(max = 255)
     private String name;
 
     private String address;
     private String slug;
+    @Size(max = 5000)
     private String description;
     private String logoUrl;
     private String bannerUrl;

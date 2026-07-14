@@ -615,14 +615,18 @@
             "type" : "integer"
           },
           "email" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "phone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
             "type" : "string"
           }
         },
@@ -713,6 +717,8 @@
           },
           "description" : {
             "description" : "Customer-facing product description",
+            "maxLength" : 5000,
+            "minLength" : 0,
             "type" : "string"
           },
           "dietaryTags" : {
@@ -948,6 +954,8 @@
             "type" : "string"
           },
           "description" : {
+            "maxLength" : 5000,
+            "minLength" : 0,
             "type" : "string"
           },
           "email" : {
@@ -969,7 +977,8 @@
             "type" : "integer"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "openingHours" : {
@@ -1736,6 +1745,12 @@
               "WHITE_LABEL"
             ],
             "type" : "string"
+          },
+          "rejectionReason" : {
+            "type" : "string"
+          },
+          "reviewPending" : {
+            "type" : "boolean"
           },
           "shopId" : {
             "format" : "uuid",
@@ -3097,6 +3112,28 @@
         },
         "type" : "object"
       },
+      "ResolveGateRequest" : {
+        "description" : "Gate-resolve decision + optional reason",
+        "properties" : {
+          "decision" : {
+            "enum" : [
+              "PASS",
+              "WAIVE",
+              "FAIL"
+            ],
+            "type" : "string"
+          },
+          "reason" : {
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "decision"
+        ],
+        "type" : "object"
+      },
       "ReviewDto" : {
         "properties" : {
           "comment" : {
@@ -3590,14 +3627,30 @@
             "type" : "integer"
           },
           "email" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "phone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "UpdateOnboardingRequest" : {
+        "description" : "Company-number correction request",
+        "properties" : {
+          "companyNumber" : {
+            "maxLength" : 32,
+            "minLength" : 0,
+            "pattern" : "^\\s*([A-Za-z0-9]{2,10})?\\s*$",
             "type" : "string"
           }
         },
@@ -5044,6 +5097,52 @@
         ]
       }
     },
+    "/api/v1/onboarding/admin/reviews" : {
+      "get" : {
+        "description" : "Onboardings in VERIFYING with a MANUAL_REVIEW gate for the caller's tenant, oldest submission first, each with its gate breakdown. Distinct from /pending. Requires admin.",
+        "operationId" : "reviews",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Review-pending applications (possibly empty)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Caller lacks the admin role"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List review-pending applications",
+        "tags" : [
+          "Onboarding Admin"
+        ]
+      }
+    },
     "/api/v1/onboarding/admin/{id}/approve" : {
       "post" : {
         "description" : "Fires APPROVE (PENDING_APPROVAL -> APPROVED) via the state machine. The APPROVE guard re-checks that every mandatory gate is PASSED/WAIVED and vetoes (400) otherwise.",
@@ -5111,6 +5210,107 @@
           }
         ],
         "summary" : "Approve onboarding",
+        "tags" : [
+          "Onboarding Admin"
+        ]
+      }
+    },
+    "/api/v1/onboarding/admin/{id}/gates/{gateType}/resolve" : {
+      "post" : {
+        "description" : "Overrides a gate row (PASS/WAIVE/FAIL) then lets the existing recompute advance the state machine. FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).",
+        "operationId" : "resolveGate",
+        "parameters" : [
+          {
+            "description" : "Onboarding id",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Gate type",
+            "in" : "path",
+            "name" : "gateType",
+            "required" : true,
+            "schema" : {
+              "enum" : [
+                "BUSINESS_VERIFIED",
+                "FOOD_HYGIENE_RATING",
+                "FOOD_BUSINESS_REGISTRATION",
+                "IDENTITY_KYC",
+                "PAYMENTS_CONNECTED",
+                "AGREEMENT_SIGNED",
+                "ALLERGEN_DATA_COMPLETE",
+                "MENU_MINIMUM"
+              ],
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResolveGateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Gate resolved; recompute triggered"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "FAIL with no reason, or invalid decision/body"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Caller lacks the admin role"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding or gate not found (incl. foreign tenant)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Resolve an onboarding gate",
         "tags" : [
           "Onboarding Admin"
         ]
@@ -5195,6 +5395,66 @@
         "summary" : "Reject onboarding",
         "tags" : [
           "Onboarding Admin"
+        ]
+      }
+    },
+    "/api/v1/onboarding/company-number" : {
+      "post" : {
+        "description" : "Corrects the caller's onboarding company number (blank/whitespace = sole trader). Permitted only in DRAFT or ACTION_REQUIRED; re-validated exactly like create. Fires no state-machine event — the state machine stays the sole writer of published.",
+        "operationId" : "updateCompanyNumber",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateOnboardingRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "Company number updated"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "Invalid state (not DRAFT/ACTION_REQUIRED) or malformed company number"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "No onboarding for this tenant"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Update onboarding company number",
+        "tags" : [
+          "Onboarding"
         ]
       }
     },
@@ -5383,6 +5643,56 @@
           }
         ],
         "summary" : "Submit onboarding",
+        "tags" : [
+          "Onboarding"
+        ]
+      }
+    },
+    "/api/v1/onboarding/withdraw" : {
+      "post" : {
+        "description" : "Withdraws the caller's onboarding from any pre-live state (DRAFT/VERIFYING/ACTION_REQUIRED/PENDING_APPROVAL/APPROVED -> WITHDRAWN). Terminal — restarting requires a new application.",
+        "operationId" : "withdraw",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "Onboarding withdrawn (WITHDRAWN)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "Illegal transition (already terminal / LIVE / SUSPENDED)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OnboardingDto"
+                }
+              }
+            },
+            "description" : "No onboarding for this tenant"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Withdraw onboarding",
         "tags" : [
           "Onboarding"
         ]

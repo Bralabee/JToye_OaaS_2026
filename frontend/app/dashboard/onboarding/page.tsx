@@ -33,8 +33,12 @@ import {
   Building2,
   CheckCircle2,
   Circle,
+  ExternalLink,
+  LifeBuoy,
   Loader2,
+  LogOut,
   MinusCircle,
+  Pencil,
   Store,
   UtensilsCrossed,
   Wheat,
@@ -42,6 +46,7 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { resolveSupportChannel } from "@/lib/env-validation"
 import type {
   CreateOnboardingRequest,
   GateDto,
@@ -51,6 +56,7 @@ import type {
   OnboardingModel,
   OnboardingState,
   Shop,
+  UpdateOnboardingRequest,
 } from "@/types/api"
 
 // --- Static mappings (from the LOCKED 18-UI-SPEC "State & Status Mapping") ---
@@ -106,9 +112,55 @@ const GATE_STATUS_FALLBACK = {
   icon: MinusCircle as LucideIcon,
 }
 
+// Remediation map (ONBD-04): (gateType, status) -> why / what-to-do / where to go.
+// The gate `reason` already carries the specifics (offending SKUs, the FHRS miss);
+// these blocks add a generic "why" fallback, the actionable "what", and the deep
+// link (D-08): BUSINESS_VERIFIED -> the inline company-number edit (#company-number),
+// ALLERGEN_DATA_COMPLETE -> the products screen, FOOD_HYGIENE_RATING -> the shop edit
+// screen. An unmapped (gateType, status) falls back to a neutral render — never crashes.
+const REMEDIATION: Partial<
+  Record<`${GateType}:${GateStatus}`, { why: string; what: string; href: string; cta: string }>
+> = {
+  "BUSINESS_VERIFIED:FAILED": {
+    why: "We couldn't verify your business against Companies House.",
+    what:
+      "Check your Companies House number is right — or clear it if you trade as a sole trader — then re-run your checks.",
+    href: "#company-number",
+    cta: "Edit company number",
+  },
+  "ALLERGEN_DATA_COMPLETE:FAILED": {
+    why: "Some of your products are missing the allergen information the law requires.",
+    what: "Add the missing allergen data to the products listed above, then re-run your checks.",
+    href: "/dashboard/products",
+    cta: "Fix these products",
+  },
+  "FOOD_HYGIENE_RATING:MANUAL_REVIEW": {
+    why: "We couldn't automatically match your shop to a Food Standards Agency hygiene rating.",
+    what:
+      "Make sure your shop's registered name and address match your premises exactly, then re-run your checks.",
+    href: "/dashboard/shops",
+    cta: "Edit shop details",
+  },
+}
+
+// The 5 pre-live states the state machine wires WITHDRAW from (D-05) — a vendor
+// can bail any time before LIVE; terminal states can't.
+const WITHDRAWABLE_STATES: OnboardingState[] = [
+  "DRAFT",
+  "VERIFYING",
+  "ACTION_REQUIRED",
+  "PENDING_APPROVAL",
+  "APPROVED",
+]
+
 // States that warrant background polling of GET /me (async gate landing +
 // background auto-approve).
 const POLL_STATES: OnboardingState[] = ["VERIFYING", "PENDING_APPROVAL"]
+// Fast poll while gates are actively running; back right off once a human is in
+// the loop (reviewPending) — a manual review advances on a reviewer action, not a
+// webhook, so hammering GET /me every 4s is pointless (ONBD-03 / Pitfall 5).
+const FAST_POLL_MS = 4000
+const REVIEW_POLL_MS = 30000
 
 function httpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "response" in err) {
@@ -139,6 +191,15 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [goLiveOpen, setGoLiveOpen] = useState(false)
   const [goingLive, setGoingLive] = useState(false)
+
+  // Withdraw confirm dialog (ONBD-01)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  // Inline company-number correction (ONBD-02) — seeded from the loaded
+  // application (see the id-keyed effect below) so a re-poll never clobbers typing.
+  const [editCompanyNumber, setEditCompanyNumber] = useState("")
+  const [savingCompanyNumber, setSavingCompanyNumber] = useState(false)
 
   // --- Data loading ---------------------------------------------------------
 
@@ -180,17 +241,28 @@ export default function OnboardingPage() {
     fetchShops()
   }, [loadOnboarding, fetchShops])
 
-  // Poll GET /me every 4s while VERIFYING / PENDING_APPROVAL; the interval is
-  // cleared on unmount and as soon as status leaves the polling set (the effect
-  // re-runs when `pollStatus` changes and returns early / cleans up).
+  // Poll GET /me while VERIFYING / PENDING_APPROVAL; the interval is cleared on
+  // unmount and as soon as status leaves the polling set (the effect re-runs when
+  // `pollStatus`/`reviewPending` change and returns early / cleans up). Once a human
+  // is in the loop (reviewPending) the cadence backs off from 4s to 30s (ONBD-03).
   const pollStatus = onboarding?.status ?? null
+  const reviewPending = onboarding?.reviewPending ?? false
   useEffect(() => {
     if (!pollStatus || !POLL_STATES.includes(pollStatus)) return
+    const intervalMs = reviewPending ? REVIEW_POLL_MS : FAST_POLL_MS
     const interval = setInterval(() => {
       void loadOnboarding(false)
-    }, 4000)
+    }, intervalMs)
     return () => clearInterval(interval)
-  }, [pollStatus, loadOnboarding])
+  }, [pollStatus, reviewPending, loadOnboarding])
+
+  // Seed the inline company-number field once per application (keyed by id, so a
+  // background re-poll of the same application never overwrites in-progress typing).
+  const onboardingId = onboarding?.id ?? null
+  useEffect(() => {
+    setEditCompanyNumber(onboarding?.companyNumber ?? "")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboardingId])
 
   // --- Actions --------------------------------------------------------------
 
@@ -288,6 +360,57 @@ export default function OnboardingPage() {
       setGoLiveOpen(false)
     } finally {
       setGoingLive(false)
+    }
+  }
+
+  // ONBD-01: withdraw from any pre-live state. POST /onboarding/withdraw is body-less
+  // and drives the canonical WITHDRAW transition server-side -> terminal WITHDRAWN.
+  const handleWithdraw = async () => {
+    try {
+      setWithdrawing(true)
+      const res = await apiClient.post("/api/v1/onboarding/withdraw", {})
+      setOnboarding(res.data)
+      setWithdrawOpen(false)
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't withdraw your application",
+        description: err instanceof Error ? err.message : "Please try again.",
+      })
+      setWithdrawOpen(false)
+    } finally {
+      setWithdrawing(false)
+    }
+  }
+
+  // ONBD-02: correct the company number in place (blank = sole trader), then the
+  // vendor re-runs the checks via the existing handleResubmit. POST /onboarding/company-number
+  // is gated to DRAFT/ACTION_REQUIRED server-side and re-validated like create (400 on garbage).
+  const handleSaveCompanyNumber = async () => {
+    try {
+      setSavingCompanyNumber(true)
+      const body: UpdateOnboardingRequest = {
+        companyNumber: editCompanyNumber.trim() || undefined,
+      }
+      const res = await apiClient.post("/api/v1/onboarding/company-number", body)
+      setOnboarding(res.data)
+      toast({
+        title: "Company number updated",
+        description: "Re-run your checks to verify it.",
+      })
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't update your company number",
+        description:
+          httpStatus(err) === 400
+            ? "That doesn't look like a valid Companies House number. Enter 2–10 letters or digits, or leave it blank if you're a sole trader."
+            : err instanceof Error
+              ? err.message
+              : "Please try again.",
+      })
+    } finally {
+      setSavingCompanyNumber(false)
     }
   }
 
@@ -411,7 +534,37 @@ export default function OnboardingPage() {
     label: onboarding.status,
     badge: "bg-slate-100 text-slate-600",
   }
-  const failedGates = onboarding.gates.filter((g) => g.status === "FAILED")
+
+  // ONBD-03: an honest "in review" state the moment a human is needed. `reviewPending`
+  // is derived server-side; the SLA copy is config-injected (no "N days" literal here).
+  const inReview = onboarding.reviewPending === true
+  const reviewSlaDays = process.env.NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS?.trim()
+  const badgeLabel = inReview ? "In review" : stateMeta.label
+  const subtitle = inReview
+    ? reviewSlaDays
+      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — you can safely leave this page and check back here for an update.`
+      : `Your checks are with our team for review. A reviewer is looking at these now — you can safely leave this page and check back here for an update.`
+    : STATE_SUBTITLE[onboarding.status] ?? ""
+
+  // ONBD-05: config-injected support channel for REJECTED/SUSPENDED — the email
+  // link scheme is built inside resolveSupportChannel, so no link literal lives here.
+  const support = resolveSupportChannel(
+    process.env.NEXT_PUBLIC_SUPPORT_EMAIL,
+    process.env.NEXT_PUBLIC_SUPPORT_URL
+  )
+
+  // ONBD-04: gates the vendor can act on now — anything FAILED, plus any (gateType,status)
+  // with an explicit remediation (e.g. FHRS MANUAL_REVIEW). Still-running PENDING gates
+  // are excluded so we never nag mid-check.
+  const actionableGates = onboarding.gates.filter(
+    (g) =>
+      g.status === "FAILED" ||
+      Boolean(REMEDIATION[`${g.gateType}:${g.status}` as `${GateType}:${GateStatus}`])
+  )
+
+  const canWithdraw = WITHDRAWABLE_STATES.includes(onboarding.status)
+  const canEditCompanyNumber =
+    onboarding.status === "DRAFT" || onboarding.status === "ACTION_REQUIRED"
 
   const milestones: { label: string; at: string | null }[] = [
     { label: "Submitted", at: onboarding.submittedAt },
@@ -425,12 +578,52 @@ export default function OnboardingPage() {
       <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">
           <h1 className="text-4xl font-semibold text-slate-900">Go live</h1>
-          <Badge className={`${stateMeta.badge} pointer-events-none`}>{stateMeta.label}</Badge>
+          <Badge className={`${stateMeta.badge} pointer-events-none`}>{badgeLabel}</Badge>
         </div>
-        <p className="mt-2 text-sm text-slate-600">
-          {STATE_SUBTITLE[onboarding.status] ?? ""}
-        </p>
+        <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
       </m.div>
+
+      {/* Rejection / suspension (ONBD-05): the actual recorded reason + a
+          config-injected support channel — replaces the bare "Contact support". */}
+      {(onboarding.status === "REJECTED" || onboarding.status === "SUSPENDED") && (
+        <Card className="border-red-100">
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {onboarding.status === "REJECTED"
+                ? "Your application wasn't approved"
+                : "Your storefront is suspended"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {onboarding.rejectionReason ? (
+              <p className="text-sm text-slate-700">{onboarding.rejectionReason}</p>
+            ) : (
+              <p className="text-sm text-slate-600">
+                No specific reason was recorded. Our support team can explain what happened and
+                what to do next.
+              </p>
+            )}
+            {support.href ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <LifeBuoy className="h-4 w-4 text-slate-400" />
+                <span className="text-slate-600">Need help?</span>
+                <a
+                  href={support.href}
+                  target={support.href.startsWith("http") ? "_blank" : undefined}
+                  rel={support.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Contact support{support.label ? ` (${support.label})` : ""}
+                </a>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Please contact your J&apos;Toye account manager for details.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Gate breakdown */}
       <Card>
@@ -449,23 +642,57 @@ export default function OnboardingPage() {
         </CardContent>
       </Card>
 
-      {/* Action-required: surface each failed gate reason */}
-      {onboarding.status === "ACTION_REQUIRED" && failedGates.length > 0 && (
+      {/* Action-required (ONBD-04): each actionable gate as why -> what -> go-there.
+          The gate reason (which names the offending SKUs / states the FHRS miss) is
+          preserved; an unmapped gate falls back to a neutral render, never a crash. */}
+      {actionableGates.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Action required</CardTitle>
+            <CardTitle className="text-lg">What needs your attention</CardTitle>
+            <CardDescription>Fix the items below, then re-run your checks.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {failedGates.map((gate) => (
-                <li key={gate.gateType} className="text-sm text-slate-600">
-                  <span className="font-semibold text-slate-900">
-                    {(GATE_META[gate.gateType] ?? GATE_FALLBACK).label}:
-                  </span>{" "}
-                  {gate.reason ?? "This check needs your attention."}
-                </li>
+            <ul className="space-y-4">
+              {actionableGates.map((gate) => (
+                <RemediationRow key={gate.gateType} gate={gate} />
               ))}
             </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Correctable data (ONBD-02): edit the company number in place, then re-run.
+          `id` is the deep-link target of the BUSINESS_VERIFIED remediation block. */}
+      {canEditCompanyNumber && (
+        <Card id="company-number">
+          <CardHeader>
+            <CardTitle className="text-lg">Company details</CardTitle>
+            <CardDescription>
+              Correct your Companies House number here, then re-run your checks. Leave it blank if
+              you trade as a sole trader.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="edit-company-number" className="font-normal">
+                Companies House number
+              </Label>
+              <Input
+                id="edit-company-number"
+                value={editCompanyNumber}
+                onChange={(e) => setEditCompanyNumber(e.target.value)}
+                placeholder="e.g. 01234567"
+              />
+              <div className="pt-1">
+                <Button
+                  variant="outline"
+                  onClick={handleSaveCompanyNumber}
+                  disabled={savingCompanyNumber}
+                >
+                  {savingCompanyNumber ? "Saving…" : "Save company number"}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -497,22 +724,43 @@ export default function OnboardingPage() {
       </Card>
 
       {/* State-driven primary CTA */}
-      <div>
-        {onboarding.status === "DRAFT" && (
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Submitting…" : "Submit for verification"}
-          </Button>
-        )}
-        {onboarding.status === "ACTION_REQUIRED" && (
-          <Button onClick={handleResubmit} disabled={submitting}>
-            {submitting ? "Re-running…" : "Re-run checks"}
-          </Button>
-        )}
-        {onboarding.status === "APPROVED" && (
-          <Button onClick={() => setGoLiveOpen(true)}>Go live</Button>
-        )}
-        {onboarding.status === "LIVE" && (
-          <p className="text-sm font-semibold text-emerald-700">Your storefront is live.</p>
+      <div className="space-y-3">
+        <div>
+          {onboarding.status === "DRAFT" && (
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? "Submitting…" : "Submit for verification"}
+            </Button>
+          )}
+          {onboarding.status === "ACTION_REQUIRED" && (
+            <Button onClick={handleResubmit} disabled={submitting}>
+              {submitting ? "Re-running…" : "Re-run checks"}
+            </Button>
+          )}
+          {onboarding.status === "APPROVED" && (
+            <Button onClick={() => setGoLiveOpen(true)}>Go live</Button>
+          )}
+          {onboarding.status === "LIVE" && (
+            <p className="text-sm font-semibold text-emerald-700">Your storefront is live.</p>
+          )}
+          {onboarding.status === "WITHDRAWN" && (
+            <p className="text-sm text-slate-600">
+              This application has been withdrawn. Contact support if you&apos;d like to onboard again.
+            </p>
+          )}
+        </div>
+
+        {/* Withdraw (ONBD-01): a low-emphasis exit available on any pre-live state. */}
+        {canWithdraw && (
+          <div>
+            <Button
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setWithdrawOpen(true)}
+            >
+              <LogOut className="mr-1.5 h-4 w-4" />
+              Withdraw application
+            </Button>
+          </div>
         )}
       </div>
 
@@ -535,7 +783,76 @@ export default function OnboardingPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Withdraw confirmation dialog (destructive, terminal) */}
+      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Withdraw your application?</DialogTitle>
+            <DialogDescription>
+              This cancels your onboarding and can&apos;t be undone — your storefront won&apos;t go
+              live. To onboard again afterwards, you&apos;ll need to contact support.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWithdrawOpen(false)} disabled={withdrawing}>
+              Keep my application
+            </Button>
+            <Button variant="destructive" onClick={handleWithdraw} disabled={withdrawing}>
+              {withdrawing ? "Withdrawing…" : "Withdraw application"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+// --- Remediation row ----------------------------------------------------------
+// (gateType, status) -> why (the specific gate reason, or a generic fallback) ->
+// what-to-do -> a button that goes there (deep link). Unmapped gates render a
+// neutral instruction and never crash.
+
+function RemediationRow({ gate }: { gate: GateDto }) {
+  const label = (GATE_META[gate.gateType] ?? GATE_FALLBACK).label
+  const remediation =
+    REMEDIATION[`${gate.gateType}:${gate.status}` as `${GateType}:${GateStatus}`]
+  const isInternal = remediation?.href.startsWith("/") ?? false
+
+  return (
+    <li className="rounded-lg border border-slate-100 p-4">
+      <p className="text-sm font-semibold text-slate-900">{label}</p>
+      {/* The gate reason carries the specifics (offending SKUs / the FHRS miss). */}
+      <p className="mt-1 text-sm text-slate-600">
+        {gate.reason ?? remediation?.why ?? "This check needs your attention."}
+      </p>
+      {remediation ? (
+        <>
+          <p className="mt-2 text-sm text-slate-600">{remediation.what}</p>
+          <div className="mt-3">
+            {isInternal ? (
+              <Link href={remediation.href}>
+                <Button variant="outline" size="sm">
+                  {remediation.cta}
+                  <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                </Button>
+              </Link>
+            ) : (
+              <a href={remediation.href}>
+                <Button variant="outline" size="sm">
+                  {remediation.cta}
+                  <Pencil className="ml-1.5 h-3.5 w-3.5" />
+                </Button>
+              </a>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">
+          Update the flagged information, then re-run your checks.
+        </p>
+      )}
+    </li>
   )
 }
 

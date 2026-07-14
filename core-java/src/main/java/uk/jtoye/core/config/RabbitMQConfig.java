@@ -31,6 +31,19 @@ public class RabbitMQConfig {
     public static final String PAYMENT_EVENTS_DLX = "payment.events.dlx";
     public static final String PAYMENT_EVENTS_DLQ = "payment.events.dlq";
 
+    /**
+     * Onboarding notification exchange (Phase 21 / D-01 seam). Carries
+     * {@code onboarding.state.*} events (currently the MANUAL_REVIEW stall
+     * emitted from {@code GateChainRunner}) written through the shared V46
+     * transactional outbox. Declared as an unbound topic exchange this phase:
+     * there is NO queue/binding yet, so a published message is discarded
+     * cleanly at the exchange until Phase 24 (#205 webhook delivery) attaches
+     * the subscription. Its own constant so the outbox flusher can dispatch the
+     * correct payload type (Pitfall 1 — an unrecognised exchange would be
+     * deserialized as a PaymentEvent and poison-dead-lettered).
+     */
+    public static final String ONBOARDING_EVENTS_EXCHANGE = "onboarding.events";
+
     @Bean
     public TopicExchange orderEventsExchange() {
         return new TopicExchange(ORDER_EVENTS_EXCHANGE);
@@ -129,6 +142,20 @@ public class RabbitMQConfig {
     public Binding paymentDeadLetterBinding(Queue paymentDeadLetterQueue, FanoutExchange paymentDeadLetterExchange) {
         return BindingBuilder.bind(paymentDeadLetterQueue)
                 .to(paymentDeadLetterExchange);
+    }
+
+    // --- Onboarding events topology (Phase 21 / D-01 seam) ---
+    //
+    // Deliberately a lone TopicExchange with NO Queue and NO Binding this
+    // phase. The outbox flusher publishes the MANUAL_REVIEW stall event here;
+    // with no bound queue RabbitMQ discards it cleanly (a topic exchange drops
+    // messages that match no binding), so nothing dead-letters while the
+    // consumer side is still absent. Phase 24 (#205) adds the durable queue +
+    // binding + @RabbitListener without touching the producer.
+
+    @Bean
+    public TopicExchange onboardingEventsExchange() {
+        return new TopicExchange(ONBOARDING_EVENTS_EXCHANGE);
     }
 
     @Bean

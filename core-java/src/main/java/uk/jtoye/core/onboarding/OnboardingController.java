@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
+import uk.jtoye.core.onboarding.dto.UpdateOnboardingRequest;
 
 import java.net.URI;
 
@@ -96,6 +97,24 @@ public class OnboardingController {
     }
 
     /**
+     * Withdraw the caller's in-progress onboarding (any pre-live state → WITHDRAWN).
+     * POST /onboarding/withdraw
+     */
+    @PostMapping("/withdraw")
+    @Operation(summary = "Withdraw onboarding",
+            description = "Withdraws the caller's onboarding from any pre-live state "
+                    + "(DRAFT/VERIFYING/ACTION_REQUIRED/PENDING_APPROVAL/APPROVED -> WITHDRAWN). "
+                    + "Terminal — restarting requires a new application.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Onboarding withdrawn (WITHDRAWN)"),
+            @ApiResponse(responseCode = "400", description = "Illegal transition (already terminal / LIVE / SUSPENDED)"),
+            @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
+    })
+    public ResponseEntity<OnboardingDto> withdraw() {
+        return ResponseEntity.ok(vendorOnboardingService.withdraw());
+    }
+
+    /**
      * Take the caller's onboarding live (APPROVED → LIVE), publishing the shop.
      * POST /onboarding/go-live
      */
@@ -110,6 +129,32 @@ public class OnboardingController {
     })
     public ResponseEntity<OnboardingDto> goLive() {
         return ResponseEntity.ok(vendorOnboardingService.goLive());
+    }
+
+    /**
+     * Correct the caller's onboarding company number (blank = sole trader).
+     * POST /onboarding/company-number
+     *
+     * <p>Chosen verb: POST to match the all-POST vendor surface — this controller
+     * has no {@code @PatchMapping} precedent. The company number is re-validated
+     * exactly like create and is only editable while the vendor is still building /
+     * fixing the application (DRAFT / ACTION_REQUIRED); the service rejects any other
+     * state with an RFC 7807 400.
+     */
+    @PostMapping("/company-number")
+    @Operation(summary = "Update onboarding company number",
+            description = "Corrects the caller's onboarding company number (blank/whitespace = sole trader). "
+                    + "Permitted only in DRAFT or ACTION_REQUIRED; re-validated exactly like create. "
+                    + "Fires no state-machine event — the state machine stays the sole writer of published.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Company number updated"),
+            @ApiResponse(responseCode = "400", description = "Invalid state (not DRAFT/ACTION_REQUIRED) or malformed company number"),
+            @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
+    })
+    public ResponseEntity<OnboardingDto> updateCompanyNumber(
+            @Parameter(description = "Company-number correction request")
+            @Valid @RequestBody UpdateOnboardingRequest req) {
+        return ResponseEntity.ok(vendorOnboardingService.updateCompanyNumber(req.getCompanyNumber()));
     }
 
     /**

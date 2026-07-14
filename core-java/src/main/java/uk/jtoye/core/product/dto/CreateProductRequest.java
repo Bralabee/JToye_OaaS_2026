@@ -53,7 +53,10 @@ public class CreateProductRequest {
     private VatRate vatRate = VatRate.STANDARD;
 
     // Optional storefront presentation fields
+    // QA BE-2: description is TEXT (unbounded); a generous @Size guards against abusive
+    // payloads and keeps over-length behaviour a clear 400, consistent with the other DTOs.
     @Schema(description = "Customer-facing product description")
+    @Size(max = 5000, message = "Description must be at most 5000 characters")
     private String description;
 
     @Schema(description = "Product image URL")

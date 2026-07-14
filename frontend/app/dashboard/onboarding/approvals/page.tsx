@@ -1,9 +1,5 @@
 "use client"
 
-// ⚠ MERGE NOTE: the app runs `<LazyMotion strict>` — full `motion.*` components
-// THROW at runtime; only `m.*` (import { m } from "framer-motion") is allowed.
-// jest mocks framer-motion so it won't catch a stray `motion.*` — verify this
-// page in a browser after resolving. Recipe: docs/integration/motion-foundation-integration.md
 import { useCallback, useEffect, useState } from "react"
 import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
@@ -40,7 +36,14 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
-import type { AdminOnboardingDto, GateStatus, GateType, OnboardingModel } from "@/types/api"
+import type {
+  AdminOnboardingDto,
+  GateDto,
+  GateStatus,
+  GateType,
+  OnboardingModel,
+  ResolveGateRequest,
+} from "@/types/api"
 
 // --- Static mappings (same vocabulary as the vendor onboarding page) ----------
 
@@ -90,6 +93,9 @@ export default function OnboardingApprovalsPage() {
   const { toast } = useToast()
 
   const [applications, setApplications] = useState<AdminOnboardingDto[]>([])
+  // ONBD-03: review-pending queue (VERIFYING + a MANUAL_REVIEW gate) — an addition
+  // alongside the existing approve/reject queue (Incremental Betterment).
+  const [reviews, setReviews] = useState<AdminOnboardingDto[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
 
@@ -99,10 +105,23 @@ export default function OnboardingApprovalsPage() {
   const [rejectTarget, setRejectTarget] = useState<AdminOnboardingDto | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
+  // Gate-resolve dialog target + form state
+  const [resolveTarget, setResolveTarget] = useState<{
+    app: AdminOnboardingDto
+    gate: GateDto
+  } | null>(null)
+  const [resolveDecision, setResolveDecision] = useState<ResolveGateRequest["decision"]>("PASS")
+  const [resolveReason, setResolveReason] = useState("")
+
   const loadQueue = useCallback(async () => {
     try {
-      const res = await apiClient.get("/api/v1/onboarding/admin/pending")
-      setApplications(res.data ?? [])
+      // Both queues in parallel; a 403 on either surfaces the same forbidden state.
+      const [pendingRes, reviewsRes] = await Promise.all([
+        apiClient.get("/api/v1/onboarding/admin/pending"),
+        apiClient.get("/api/v1/onboarding/admin/reviews"),
+      ])
+      setApplications(pendingRes.data ?? [])
+      setReviews(reviewsRes.data ?? [])
       setForbidden(false)
     } catch (err: unknown) {
       if (httpStatus(err) === 403) {
@@ -184,6 +203,53 @@ export default function OnboardingApprovalsPage() {
     }
   }
 
+  const openResolve = (app: AdminOnboardingDto, gate: GateDto) => {
+    setResolveTarget({ app, gate })
+    setResolveDecision("PASS")
+    setResolveReason("")
+  }
+
+  const closeResolve = () => {
+    setResolveTarget(null)
+    setResolveReason("")
+    setResolveDecision("PASS")
+  }
+
+  // ONBD-03 (D-01 interim resolver): unstick a MANUAL_REVIEW/FAILED gate. The backend
+  // writes only the gate row then recomputes; the state machine advances itself.
+  // FAIL requires a reason (also enforced server-side).
+  const handleResolveGate = async () => {
+    if (!resolveTarget) return
+    if (resolveDecision === "FAIL" && !resolveReason.trim()) return
+    const { app, gate } = resolveTarget
+    try {
+      setActioning(true)
+      const body: ResolveGateRequest = {
+        decision: resolveDecision,
+        reason: resolveReason.trim() || undefined,
+      }
+      await apiClient.post(
+        `/api/v1/onboarding/admin/${app.id}/gates/${gate.gateType}/resolve`,
+        body
+      )
+      toast({
+        title: "Check resolved",
+        description: `${GATE_META[gate.gateType]?.label ?? "The check"} was updated.`,
+      })
+      // Refresh both queues — the application may leave manual review (or advance).
+      await loadQueue()
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't resolve the check",
+        description: err instanceof Error ? err.message : "Please try again.",
+      })
+    } finally {
+      setActioning(false)
+      closeResolve()
+    }
+  }
+
   // --- Render: loading / access denied ----------------------------------------
 
   if (loading) {
@@ -213,11 +279,35 @@ export default function OnboardingApprovalsPage() {
 
   // --- Render: queue ------------------------------------------------------------
 
+  const nothingWaiting = applications.length === 0 && reviews.length === 0
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Header />
 
-      {applications.length === 0 ? (
+      {/* Manual-review queue (ONBD-03): VERIFYING + MANUAL_REVIEW applications an
+          admin can unstick by resolving the flagged gate (interim resolver, D-01). */}
+      {reviews.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">In manual review</h2>
+            <p className="text-sm text-slate-600">
+              These applications have a check that needs a human decision. Resolve the flagged gate
+              to let the checks continue.
+            </p>
+          </div>
+          {reviews.map((app) => (
+            <ReviewCard
+              key={app.id}
+              app={app}
+              onResolve={(gate) => openResolve(app, gate)}
+              disabled={actioning}
+            />
+          ))}
+        </section>
+      )}
+
+      {nothingWaiting ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Inbox className="mb-4 h-12 w-12 text-slate-300" />
@@ -227,8 +317,11 @@ export default function OnboardingApprovalsPage() {
             </p>
           </CardContent>
         </Card>
-      ) : (
-        <div className="space-y-4">
+      ) : applications.length > 0 ? (
+        <section className="space-y-4">
+          {reviews.length > 0 && (
+            <h2 className="text-lg font-semibold text-slate-900">Awaiting approval</h2>
+          )}
           {applications.map((app) => {
             const summary = gateSummary(app)
             const allGreen = summary.green === summary.total && summary.total > 0
@@ -297,8 +390,8 @@ export default function OnboardingApprovalsPage() {
               </m.div>
             )
           })}
-        </div>
-      )}
+        </section>
+      ) : null}
 
       {/* Approve confirmation dialog */}
       <Dialog open={approveTarget !== null} onOpenChange={(open) => !open && setApproveTarget(null)}>
@@ -378,6 +471,68 @@ export default function OnboardingApprovalsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Gate-resolve dialog — decision (PASS/WAIVE/FAIL) + reason; FAIL requires a reason */}
+      <Dialog open={resolveTarget !== null} onOpenChange={(open) => !open && closeResolve()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolve this check?</DialogTitle>
+            <DialogDescription>
+              {resolveTarget
+                ? `${GATE_META[resolveTarget.gate.gateType]?.label ?? "This check"} for ${
+                    resolveTarget.app.shopName ?? "this vendor"
+                  }. `
+                : ""}
+              Choose an outcome. A reason is required when you fail a check; it is recorded in the
+              audit history.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="resolve-decision" className="font-normal">
+                Decision
+              </Label>
+              <select
+                id="resolve-decision"
+                value={resolveDecision}
+                onChange={(e) =>
+                  setResolveDecision(e.target.value as ResolveGateRequest["decision"])
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="PASS">Pass — mark this check satisfied</option>
+                <option value="WAIVE">Waive — not required for this vendor</option>
+                <option value="FAIL">Fail — send back for action</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="resolve-reason" className="font-normal">
+                Reason{resolveDecision === "FAIL" ? " (required)" : " (optional)"}
+              </Label>
+              <textarea
+                id="resolve-reason"
+                value={resolveReason}
+                onChange={(e) => setResolveReason(e.target.value)}
+                maxLength={500}
+                rows={3}
+                placeholder="e.g. Verified the FHRS rating manually against the FSA register"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeResolve} disabled={actioning}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleResolveGate}
+              disabled={actioning || (resolveDecision === "FAIL" && !resolveReason.trim())}
+            >
+              {actioning ? "Saving…" : "Resolve check"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -392,6 +547,87 @@ function Header() {
         Onboarding applications whose checks passed and now need a human decision. Marketplace
         vendors always require approval before they can go live.
       </p>
+    </m.div>
+  )
+}
+
+// --- Review-pending card ------------------------------------------------------
+// A VERIFYING application whose gate chain parked on a MANUAL_REVIEW (or FAILED)
+// gate. Reuses the same gate vocabulary as the approve/reject queue and offers a
+// per-gate "Resolve" control that opens the gate-resolve dialog.
+
+function ReviewCard({
+  app,
+  onResolve,
+  disabled,
+}: {
+  app: AdminOnboardingDto
+  onResolve: (gate: GateDto) => void
+  disabled: boolean
+}) {
+  const summary = gateSummary(app)
+  const resolvable = app.gates.filter(
+    (g) => g.status === "MANUAL_REVIEW" || g.status === "FAILED"
+  )
+
+  return (
+    <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <CardTitle className="text-lg">{app.shopName ?? "Unnamed shop"}</CardTitle>
+            <Badge
+              className={`${MODEL_META[app.model]?.badge ?? GATE_STATUS_FALLBACK.badge} pointer-events-none`}
+            >
+              {MODEL_META[app.model]?.label ?? app.model}
+            </Badge>
+          </div>
+          <CardDescription>
+            {app.submittedAt
+              ? `Submitted ${formatDistanceToNow(new Date(app.submittedAt), { addSuffix: true })}`
+              : "Submission date unknown"}
+            {app.companyNumber ? ` · Company no. ${app.companyNumber}` : " · Sole trader"}
+            {" · "}
+            <span className="font-medium text-amber-700">
+              {summary.green}/{summary.total} required checks green
+            </span>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {app.gates.map((gate) => {
+              const typeMeta = GATE_META[gate.gateType] ?? GATE_FALLBACK
+              const statusMeta = GATE_STATUS_META[gate.status] ?? GATE_STATUS_FALLBACK
+              const StatusIcon = statusMeta.icon
+              return (
+                <Badge
+                  key={gate.gateType}
+                  className={`${statusMeta.badge} pointer-events-none`}
+                  title={gate.reason ?? undefined}
+                >
+                  <StatusIcon className="mr-1 h-3 w-3" />
+                  {typeMeta.label}: {statusMeta.label}
+                </Badge>
+              )
+            })}
+          </div>
+          {resolvable.length > 0 && (
+            <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+              {resolvable.map((gate) => (
+                <Button
+                  key={gate.gateType}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onResolve(gate)}
+                  disabled={disabled}
+                >
+                  Resolve {GATE_META[gate.gateType]?.label ?? "check"}
+                </Button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </m.div>
   )
 }
