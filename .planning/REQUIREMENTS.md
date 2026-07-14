@@ -95,11 +95,11 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 
 | Requirement | Phase | Plan(s) | Status |
 |-------------|-------|---------|--------|
-| ONBD-01 | Phase 21 | 21-01, 21-03 | Pending |
-| ONBD-02 | Phase 21 | 21-01, 21-03 | Pending |
-| ONBD-03 | Phase 21 | 21-02, 21-03 | Pending |
-| ONBD-04 | Phase 21 | 21-03 | Pending |
-| ONBD-05 | Phase 21 | 21-02, 21-03, 21-04 | Pending |
+| ONBD-01 | Phase 21 | 21-01, 21-04 | Complete |
+| ONBD-02 | Phase 21 | 21-01, 21-04 | Complete |
+| ONBD-03 | Phase 21 | 21-02, 21-03, 21-04 | Complete |
+| ONBD-04 | Phase 21 | 21-04 | Complete |
+| ONBD-05 | Phase 21 | 21-03, 21-04, 21-05 | Complete |
 | VSA-01 | Phase 22 | 22-01 | Pending |
 | VSA-02 | Phase 22 | 22-02 | Pending |
 | VSA-03 | Phase 22 | 22-03 | Pending |
