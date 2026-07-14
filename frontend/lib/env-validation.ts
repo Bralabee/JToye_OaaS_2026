@@ -35,6 +35,15 @@ const requiredEnvVars: (keyof EnvVars)[] = [
   'NEXT_PUBLIC_KEYCLOAK_URL',
   'NEXTAUTH_URL',
   'NEXTAUTH_SECRET',
+];
+
+// WR-03: optional-with-fallback. The onboarding UI degrades gracefully when these
+// are absent — resolveSupportChannel() returns { href: null } so the page renders
+// plain "contact your account manager" copy instead of a dead link, and a missing
+// SLA falls back to a genericised "a reviewer is looking at these now" line. So a
+// missing value is a soft misconfiguration (worth an operator signal), NOT a boot
+// failure — keeping them out of requiredEnvVars is what makes that classification true.
+const optionalEnvVars: (keyof EnvVars)[] = [
   'NEXT_PUBLIC_SUPPORT_EMAIL',
   'NEXT_PUBLIC_SUPPORT_URL',
   'NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS',
@@ -67,6 +76,7 @@ export function resolveSupportChannel(email?: string, url?: string): SupportChan
 
 export function validateEnvironment(): void {
   const missing: string[] = [];
+  const missingOptional: string[] = [];
   const warnings: string[] = [];
 
   for (const envVar of requiredEnvVars) {
@@ -92,18 +102,51 @@ export function validateEnvironment(): void {
     }
   }
 
-  // Only log in development to avoid noise in production
-  if (process.env.NODE_ENV === 'production') return;
+  // WR-03: optional onboarding config — absent values are a soft misconfiguration
+  // (UI uses graceful fallbacks), collected separately so they never masquerade as
+  // a missing REQUIRED var.
+  for (const envVar of optionalEnvVars) {
+    const value = process.env[envVar];
+    if (!value || value.trim() === '') {
+      missingOptional.push(envVar);
+    }
+  }
 
-  // Only fail if variables are completely missing
+  // WR-03: production is no longer silent. A missing REQUIRED var used to produce
+  // ZERO operator signal in prod because the old code returned before this check.
+  // Emit a real console.error (a genuine operator signal) — but do NOT throw: the
+  // non-fatal-at-boot contract stays intact so a partial misconfig can't hard-crash
+  // the server. Optional-var absences log at warn level (UI still works via fallbacks).
+  if (process.env.NODE_ENV === 'production') {
+    if (missing.length > 0) {
+      console.error(
+        `[ERROR] Missing required environment variables in production: ${missing.join(', ')}`
+      );
+    }
+    if (missingOptional.length > 0) {
+      console.warn(
+        `[WARN] Missing optional onboarding config (UI uses graceful fallbacks): ${missingOptional.join(', ')}`
+      );
+    }
+    return;
+  }
+
+  // Development: verbose guidance. Split REQUIRED (must fix) from optional onboarding
+  // config (safe to omit — the UI degrades gracefully).
   if (missing.length > 0) {
     console.warn('\n[WARN] Environment Configuration Warning!\n');
-    console.warn('Missing environment variables (will use defaults):');
+    console.warn('Missing REQUIRED environment variables (will use defaults):');
     missing.forEach(v => console.warn(`  - ${v}`));
     console.warn('\n[INFO] For production use:');
     console.warn('  1. Copy frontend/.env.local.example to frontend/.env.local');
     console.warn('  2. Update values as needed');
     console.warn('  3. See docs/ENVIRONMENT_SETUP.md for detailed guide\n');
+  }
+
+  if (missingOptional.length > 0) {
+    console.warn('[INFO] Missing optional onboarding config (UI uses graceful fallbacks):');
+    missingOptional.forEach(v => console.warn(`  - ${v}`));
+    console.warn('');
   }
 
   // Show warnings but don't fail
@@ -113,7 +156,7 @@ export function validateEnvironment(): void {
     console.warn('');
   }
 
-  if (missing.length === 0 && warnings.length === 0) {
+  if (missing.length === 0 && missingOptional.length === 0 && warnings.length === 0) {
     console.log('[OK] Environment variables validated successfully');
   }
 }
