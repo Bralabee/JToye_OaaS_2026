@@ -146,4 +146,23 @@ public class OnboardingAdminController {
         return ResponseEntity.ok(
                 vendorOnboardingService.resolveGate(id, gateType, req.getDecision(), req.getReason()));
     }
+
+    /**
+     * List onboardings parked in manual review (VERIFYING + a MANUAL_REVIEW gate).
+     * GET /onboarding/admin/reviews
+     *
+     * <p>A NEW queue distinct from {@code /pending} (which stays the PENDING_APPROVAL
+     * approve/reject queue) — Incremental Betterment: the existing contract is untouched.
+     */
+    @GetMapping("/reviews")
+    @Operation(summary = "List review-pending applications",
+            description = "Onboardings in VERIFYING with a MANUAL_REVIEW gate for the caller's tenant, oldest "
+                    + "submission first, each with its gate breakdown. Distinct from /pending. Requires admin.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Review-pending applications (possibly empty)"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks the admin role")
+    })
+    public ResponseEntity<List<AdminOnboardingDto>> reviews() {
+        return ResponseEntity.ok(vendorOnboardingService.listReviewPending());
+    }
 }

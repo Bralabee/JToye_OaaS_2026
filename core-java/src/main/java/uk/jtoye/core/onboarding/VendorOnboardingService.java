@@ -251,6 +251,25 @@ public class VendorOnboardingService {
     }
 
     /**
+     * Admin review queue (ONBD-03 / D-04): onboardings parked in VERIFYING because a
+     * gate needs a human — i.e. VERIFYING with at least one MANUAL_REVIEW gate row.
+     * This is the black-hole state the existing {@link #listPendingApproval() /pending}
+     * approve/reject queue never showed; per D-04/A4 it is a NEW queue (Incremental
+     * Betterment — the /pending contract is untouched). Runs under RLS, so the list is
+     * scoped to the caller's tenant (same interim-resolver boundary as gate-resolve;
+     * see {@link OnboardingAdminController}). Oldest submission first, mirroring
+     * {@link #listPendingApproval()}.
+     */
+    @Transactional(readOnly = true)
+    public List<AdminOnboardingDto> listReviewPending() {
+        CurrentTenant.require();
+        return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.VERIFYING).stream()
+                .filter(o -> gateRepository.existsByOnboardingIdAndStatus(o.getId(), GateStatus.MANUAL_REVIEW))
+                .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
+                .toList();
+    }
+
+    /**
      * Admin approval: fire APPROVE (PENDING_APPROVAL → APPROVED) through the single
      * canonical {@link #transition} path — never a direct status write. The APPROVE
      * guard still enforces that every mandatory gate is PASSED/WAIVED, so a human

@@ -17,4 +17,11 @@ public interface VendorOnboardingGateRepository extends JpaRepository<VendorOnbo
     List<VendorOnboardingGate> findByOnboardingId(UUID onboardingId);
 
     Optional<VendorOnboardingGate> findByOnboardingIdAndGateType(UUID onboardingId, GateType gateType);
+
+    /**
+     * Review-queue predicate (ONBD-03): does this onboarding have a gate row in
+     * {@code status}? Backs {@code listReviewPending}'s "VERIFYING + a MANUAL_REVIEW
+     * gate" filter without loading the full gate list per candidate.
+     */
+    boolean existsByOnboardingIdAndStatus(UUID onboardingId, GateStatus status);
 }
