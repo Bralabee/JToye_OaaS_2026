@@ -329,6 +329,10 @@ describe("Onboarding Page", () => {
     // Honest, config-driven SLA copy — the dishonest "under a minute" is gone.
     expect(screen.getByText(/within 2 business days/i)).toBeInTheDocument()
     expect(screen.queryByText(/under a minute/i)).not.toBeInTheDocument()
+    // QA ONB-3: no email is delivered (the notification consumer is a deferred phase),
+    // so the copy must not promise one — it directs the vendor to check back here.
+    expect(screen.queryByText(/email you/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/check back here for an update/i)).toBeInTheDocument()
     // The "In review" badge is shown instead of "Running checks".
     expect(screen.getByText("In review")).toBeInTheDocument()
 
@@ -373,10 +377,15 @@ describe("Onboarding Page", () => {
       expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/onboarding/withdraw", {})
     })
     await waitFor(() => {
+      // QA ONB-5: honest terminal copy — WITHDRAWN is terminal (re-create → 409), so
+      // the page must not promise a self-serve fresh application it can't deliver.
       expect(
-        screen.getByText(/starting again begins a fresh application/i)
+        screen.getByText(/contact support if you.?d like to onboard again/i)
       ).toBeInTheDocument()
     })
+    expect(
+      screen.queryByText(/starting again begins a fresh application/i)
+    ).not.toBeInTheDocument()
   })
 
   // --- ONBD-02: inline company-number edit -----------------------------------

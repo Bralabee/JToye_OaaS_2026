@@ -542,8 +542,8 @@ export default function OnboardingPage() {
   const badgeLabel = inReview ? "In review" : stateMeta.label
   const subtitle = inReview
     ? reviewSlaDays
-      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — we'll email you when there's an update, so you can safely leave this page.`
-      : `Your checks are with our team for review. A reviewer is looking at these now — we'll email you when there's an update, so you can safely leave this page.`
+      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — you can safely leave this page and check back here for an update.`
+      : `Your checks are with our team for review. A reviewer is looking at these now — you can safely leave this page and check back here for an update.`
     : STATE_SUBTITLE[onboarding.status] ?? ""
 
   // ONBD-05: config-injected support channel for REJECTED/SUSPENDED — the email
@@ -744,7 +744,7 @@ export default function OnboardingPage() {
           )}
           {onboarding.status === "WITHDRAWN" && (
             <p className="text-sm text-slate-600">
-              This application has been withdrawn. Starting again begins a fresh application.
+              This application has been withdrawn. Contact support if you&apos;d like to onboard again.
             </p>
           )}
         </div>
@@ -791,7 +791,7 @@ export default function OnboardingPage() {
             <DialogTitle>Withdraw your application?</DialogTitle>
             <DialogDescription>
               This cancels your onboarding and can&apos;t be undone — your storefront won&apos;t go
-              live. You can always start a fresh application later.
+              live. To onboard again afterwards, you&apos;ll need to contact support.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
