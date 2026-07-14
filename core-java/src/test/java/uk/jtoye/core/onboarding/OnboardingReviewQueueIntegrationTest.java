@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -153,6 +154,60 @@ class OnboardingReviewQueueIntegrationTest {
                 .andExpect(jsonPath("$.rejectionReason").value(reason));
     }
 
+    // --- ONBD-03: admin review queue (GET /onboarding/admin/reviews) --------------------
+
+    @Test
+    void reviewQueueListsVerifyingWithManualReviewGate() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.VERIFYING, OffsetDateTime.now().minusMinutes(10), null);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.MANUAL_REVIEW);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED);
+
+        String body = mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(adminJwt(tenantId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode row = findById(objectMapper.readTree(body), onboardingId);
+        assertThat(row).as("VERIFYING + MANUAL_REVIEW onboarding is in the review queue").isNotNull();
+        assertThat(row.get("status").asText()).isEqualTo("VERIFYING");
+        assertThat(row.get("shopName").asText()).startsWith("Mama's Kitchen");
+        assertThat(row.get("gates").size()).isEqualTo(2);
+    }
+
+    @Test
+    void reviewQueueOmitsVerifyingWithOnlyPendingGates() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.VERIFYING, OffsetDateTime.now().minusMinutes(2), null);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.PENDING);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PENDING);
+
+        String body = mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(adminJwt(tenantId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(findById(objectMapper.readTree(body), onboardingId))
+                .as("VERIFYING with only PENDING gates (no MANUAL_REVIEW) must not be in the review queue")
+                .isNull();
+    }
+
+    @Test
+    void reviewQueueOmitsPendingApproval() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.PENDING_APPROVAL, OffsetDateTime.now().minusHours(1), null);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED);
+
+        String body = mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(adminJwt(tenantId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(findById(objectMapper.readTree(body), onboardingId))
+                .as("PENDING_APPROVAL stays in the /pending approve/reject queue, not /reviews")
+                .isNull();
+    }
+
+    @Test
+    void reviewQueueByNonAdminIs403() throws Exception {
+        mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(tenantJwt(tenantId)))
+                .andExpect(status().isForbidden());
+    }
+
     // --- helpers --------------------------------------------------------------------------
 
     private UUID seedOnboarding(OnboardingState state, OffsetDateTime submittedAt, String rejectionReason) {
@@ -177,7 +232,6 @@ class OnboardingReviewQueueIntegrationTest {
     }
 
     /** find OUR row by id in a JSON array (the bootstrap superuser datasource bypasses RLS). */
-    @SuppressWarnings("unused")
     private JsonNode findById(JsonNode list, UUID id) {
         for (JsonNode row : list) {
             if (id.toString().equals(row.get("id").asText())) {
