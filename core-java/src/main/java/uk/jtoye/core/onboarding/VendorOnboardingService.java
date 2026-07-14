@@ -287,6 +287,62 @@ public class VendorOnboardingService {
     }
 
     /**
+     * Admin gate-resolve (ONBD-03 / D-01): unstick a gate parked at MANUAL_REVIEW by
+     * overriding its row status, then let the EXISTING recompute advance the state
+     * machine. This method writes ONLY the gate row and registers the recompute — it
+     * NEVER writes {@code status}/{@code Shop.published} directly (the state machine
+     * stays the sole authority, threat T-21-03-03). It also NEVER calls
+     * {@code runAndRecompute} inline: the recompute is dispatched
+     * {@link #kickGateChainAfterCommit after this transaction commits} (CR-01), so the
+     * async worker sees the committed gate write. {@code runAndRecompute} advances only
+     * from VERIFYING and skips non-PENDING rows, so a PASS/WAIVE on the last blocking
+     * gate fires GATES_PASSED (advancing out of VERIFYING) while a FAIL fires
+     * GATE_FAILED (→ ACTION_REQUIRED), and the admin-set row survives the re-run.
+     *
+     * <p><strong>Interim resolver (D-01):</strong> the caller is the tenant's own
+     * {@code admin} (RLS pins {@code requireOnboardingById} to the caller-tenant — a
+     * foreign onboarding is a clean 404, no existence oracle). A real J'Toye
+     * platform-operator console is a deferred phase.
+     *
+     * <p>The gate write is Envers-audited automatically ({@code VendorOnboardingGate}
+     * is {@code @Audited} → {@code vendor_onboarding_gate_aud}). A FAIL decision
+     * REQUIRES a reason (A5); a blank one is an {@link IllegalArgumentException} → HTTP
+     * 400. PASS/WAIVE reasons are optional.
+     */
+    public AdminOnboardingDto resolveGate(UUID onboardingId, GateType gateType,
+                                          GateDecision decision, String reason) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboardingById(onboardingId);
+
+        if (decision == GateDecision.FAIL && (reason == null || reason.isBlank())) {
+            throw new IllegalArgumentException("A FAIL decision requires a reason");
+        }
+
+        VendorOnboardingGate row = gateRepository.findByOnboardingIdAndGateType(onboardingId, gateType)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Gate " + gateType + " not found for onboarding " + onboardingId));
+
+        GateStatus newStatus = switch (decision) {
+            case PASS -> GateStatus.PASSED;
+            case WAIVE -> GateStatus.WAIVED;
+            case FAIL -> GateStatus.FAILED;
+        };
+        row.setStatus(newStatus);
+        row.setReason(reason == null || reason.isBlank() ? null : reason.trim());
+        row.setCheckedAt(OffsetDateTime.now());
+        gateRepository.save(row);  // Envers auto-writes vendor_onboarding_gate_aud
+
+        log.info("Admin resolved gate {} -> {} on onboarding {} (tenant {})",
+                gateType, newStatus, onboardingId, tenantId);
+
+        // CR-01: recompute AFTER commit — never inline. Reuses the existing advance
+        // logic (GATES_PASSED / GATE_FAILED); the state machine remains the sole writer.
+        kickGateChainAfterCommit(onboardingId, tenantId);
+
+        return toAdminDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
+    }
+
+    /**
      * Advance an onboarding by id. Package-private: called by {@link GateChainRunner}
      * (same package) so the async recompute drives GATES_PASSED / GATE_FAILED /
      * APPROVE through this single canonical transition path.
