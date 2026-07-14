@@ -1,5 +1,9 @@
 "use client"
 
+// ⚠ MERGE NOTE: the app runs `<LazyMotion strict>` — full `motion.*` components
+// THROW at runtime; only `m.*` (import { m } from "framer-motion") is allowed.
+// jest mocks framer-motion so it won't catch a stray `motion.*` — verify this
+// page in a browser after resolving. Recipe: docs/integration/motion-foundation-integration.md
 import { useCallback, useEffect, useState } from "react"
 import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
