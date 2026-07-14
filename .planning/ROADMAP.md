@@ -194,7 +194,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete   | 2026-07-14 |
+| 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |

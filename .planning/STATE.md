@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: verifying
-stopped_at: Phase 21 context gathered
-last_updated: "2026-07-14T12:54:36.253Z"
+status: ready_to_plan
+stopped_at: Phase 21 complete (5/5) — ready to discuss Phase 22
+last_updated: 2026-07-14T13:27:18.214Z
 last_activity: 2026-07-14
 progress:
   total_phases: 6
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 21 — onboarding-blocker-ux
+**Current focus:** Phase 22 — vendor scoped access + responsive dashboard nav
 
 ## Current Position
 
-Phase: 21 (onboarding-blocker-ux) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
+Phase: 22
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-07-14
 
 Progress: [██████████] 100%
@@ -51,7 +51,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 1 / ~16 estimated
+- Total plans completed: 6 / ~16 estimated
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -59,7 +59,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 21 | 1/5 | ~15m | ~15m |
+| 21 | 5 | - | - |
 | 22 | 0/3 | - | - |
 | 23 | 0/3 | - | - |
 | 24 | 0/2 | - | - |
