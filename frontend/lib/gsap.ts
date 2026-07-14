@@ -19,6 +19,13 @@ import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
 import { useGSAP } from "@gsap/react"
 
-gsap.registerPlugin(ScrollTrigger, useGSAP)
+// Register only in a real browser. ScrollTrigger.register() calls
+// `window.matchMedia` on enable, which is undefined during the SSR/prerender
+// Node pass and in jsdom — the same condition the enhancers gate scene-builds
+// on (`canEnhance()`), so skipping registration there is safe: no GSAP scene
+// is ever built without matchMedia. In the browser this runs once per chunk.
+if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+  gsap.registerPlugin(ScrollTrigger, useGSAP)
+}
 
 export { gsap, ScrollTrigger, useGSAP }
