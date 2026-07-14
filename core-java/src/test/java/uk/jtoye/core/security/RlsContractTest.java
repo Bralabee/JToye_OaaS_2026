@@ -196,4 +196,37 @@ class RlsContractTest {
                         "(canonical is `app.current_tenant_id`)")
                 .isEmpty();
     }
+
+    /**
+     * Issue #113 [P3-11] permanent drift guard: no policy may read the tenant
+     * GUC via the raw {@code current_setting('app.current_tenant_id', true)::uuid}
+     * cast. That cast is a query-level constant Postgres evaluates at query init,
+     * so an empty / malformed GUC raises 22P02 ("invalid input syntax for type
+     * uuid") even on an empty table — the latent crash V39 removed from the
+     * storefront SELECT policies and V51 removed from the remaining ten.
+     *
+     * <p>The canonical accessor is the safe helper {@code current_tenant_id()}
+     * (renders as {@code current_tenant_id()} in {@code pg_get_expr}), which
+     * returns NULL for a bad GUC instead of crashing. The predicate is scoped to
+     * the {@code ::uuid} cast on purpose: the safe
+     * {@code (tenant_id)::text = current_setting('app.current_tenant_id', true)}
+     * TEXT comparisons (orders / customers / shop_*_write) read the same GUC but
+     * never cast it to uuid, carry no 22P02 risk, and are legitimately out of
+     * this bug class — matching them here would be a false positive.
+     */
+    @Test
+    void noPolicyUsesRawTenantGucCast() {
+        List<String> bad = jdbc.queryForList(
+                "SELECT polname || ' on ' || polrelid::regclass::text " +
+                        "FROM pg_policy " +
+                        "WHERE (pg_get_expr(polqual, polrelid)      LIKE '%current_setting(''app.current_tenant_id''%' " +
+                        "       AND pg_get_expr(polqual, polrelid)      LIKE '%::uuid%') " +
+                        "   OR (pg_get_expr(polwithcheck, polrelid)  LIKE '%current_setting(''app.current_tenant_id''%' " +
+                        "       AND pg_get_expr(polwithcheck, polrelid)  LIKE '%::uuid%')",
+                String.class);
+        assertThat(bad)
+                .as("policies still using the raw `current_setting('app.current_tenant_id', true)::uuid` " +
+                        "cast (22P02 bug class — use the safe helper current_tenant_id() instead; see V51)")
+                .isEmpty();
+    }
 }

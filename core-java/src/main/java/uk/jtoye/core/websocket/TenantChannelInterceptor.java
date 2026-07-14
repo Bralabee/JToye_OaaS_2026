@@ -76,12 +76,10 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
             throw new MessageDeliveryException("No session attributes");
         }
 
-        // Prefer token from STOMP CONNECT frame headers (avoids URL query param leakage).
-        // Fall back to session attribute from handshake for backwards compatibility.
+        // The STOMP CONNECT Authorization header is the ONLY token path. The
+        // /ws handshake query-parameter path was removed for #113: a JWT carried
+        // in the URL leaks via access logs, reverse proxies and Referer headers.
         String token = extractTokenFromConnectHeaders(accessor);
-        if (token == null || token.isBlank()) {
-            token = (String) sessionAttrs.get("jwt_token");
-        }
         if (token == null || token.isBlank()) {
             throw new MessageDeliveryException("Missing JWT token");
         }

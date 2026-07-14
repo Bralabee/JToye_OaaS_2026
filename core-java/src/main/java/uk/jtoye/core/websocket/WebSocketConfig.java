@@ -82,7 +82,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .addInterceptors(new JwtHandshakeInterceptor())
                 .setAllowedOrigins(allowedOrigins.toArray(String[]::new));
         // D-09: No .withSockJS() -- modern browsers all support native WebSocket
     }
