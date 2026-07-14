@@ -30,6 +30,7 @@ jest.mock('next/navigation', () => ({
     prefetch: jest.fn(),
   })),
   usePathname: jest.fn(() => '/'),
+  useParams: jest.fn(() => ({})),
   useSearchParams: jest.fn(() => ({
     get: jest.fn(),
     getAll: jest.fn(),
@@ -41,13 +42,53 @@ jest.mock('next/navigation', () => ({
   })),
 }))
 
-// Mock framer-motion
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => <div {...props}>{children}</div>,
-    tr: ({ children, ...props }) => <tr {...props}>{children}</tr>,
-  },
-}))
+// Mock framer-motion — covers the LazyMotion `m.` components, presence/config
+// wrappers, and the standalone animate() used by useCountUp. Tests that need
+// the REAL library (e.g. MotionProvider under LazyMotion strict) re-mock with
+// jest.requireActual in their own file.
+jest.mock('framer-motion', () => {
+  const React = jest.requireActual('react')
+  // Strip framer-only props so they never hit the DOM as unknown attributes.
+  const MOTION_ONLY_PROPS = [
+    'initial', 'animate', 'exit', 'transition', 'variants', 'layout',
+    'layoutId', 'whileHover', 'whileTap', 'whileInView', 'viewport', 'drag',
+    'dragConstraints', 'onAnimationStart', 'onAnimationComplete',
+  ]
+  const stripMotionProps = (props) => {
+    const rest = { ...props }
+    for (const key of MOTION_ONLY_PROPS) delete rest[key]
+    return rest
+  }
+  const passthrough = (tag) =>
+    function MockMotionComponent({ children, ...props }) {
+      return React.createElement(tag, stripMotionProps(props), children)
+    }
+  const componentCache = {}
+  const proxy = new Proxy({}, {
+    get: (_target, tag) => {
+      const key = String(tag)
+      if (!componentCache[key]) componentCache[key] = passthrough(key)
+      return componentCache[key]
+    },
+  })
+  const Passthrough = ({ children }) => <>{children}</>
+  return {
+    motion: proxy,
+    m: proxy,
+    AnimatePresence: Passthrough,
+    LazyMotion: Passthrough,
+    MotionConfig: Passthrough,
+    useReducedMotion: jest.fn(() => false),
+    // Immediate-jump fake: report the target once and complete, returning
+    // stoppable controls — deterministic for jsdom (no rAF timing).
+    animate: jest.fn((from, to, options = {}) => {
+      options.onUpdate?.(to)
+      options.onComplete?.()
+      return { stop: jest.fn() }
+    }),
+    domMax: {},
+  }
+})
 
 // Mock environment variables
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8080/api'
