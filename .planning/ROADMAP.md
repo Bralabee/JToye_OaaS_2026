@@ -64,7 +64,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 Plans:
 **Wave 1**
 
-- [ ] 21-01-PLAN.md (Wave 1) — Backend vendor endpoints: `POST /onboarding/withdraw` (reuses the already-wired WITHDRAW transitions) + `POST /onboarding/company-number` update (blank=sole trader, DRAFT/ACTION_REQUIRED guard, create-identical validation, RFC 7807) + Testcontainers proofs
+- [x] 21-01-PLAN.md (Wave 1) — Backend vendor endpoints: `POST /onboarding/withdraw` (reuses the already-wired WITHDRAW transitions) + `POST /onboarding/company-number` update (blank=sole trader, DRAFT/ACTION_REQUIRED guard, create-identical validation, RFC 7807) + Testcontainers proofs
 - [ ] 21-02-PLAN.md (Wave 1, parallel) — Backend outbox stall-event seam (Pitfall-1 atomic unit): `onboarding.events` TopicExchange + `OnboardingStateChangeEvent` + `OnboardingEventPublisher` + flusher dispatch branch + `GateChainRunner` emission from the MANUAL_REVIEW park branch
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -194,7 +194,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 21. Onboarding Blocker UX | v2.3 | 0/5 | Not started | - |
+| 21. Onboarding Blocker UX | v2.3 | 1/5 | In Progress|  |
 | 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |

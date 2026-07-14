@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Phase 21 context gathered
-last_updated: "2026-07-14T10:10:28.745Z"
-last_activity: 2026-07-14 -- Phase 21 planning complete
+last_updated: "2026-07-14T10:39:50.959Z"
+last_activity: 2026-07-14 -- Completed 21-01 (backend withdraw + company-number endpoints)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 21 — Onboarding Blocker UX (first phase of v2.3)
+**Current focus:** Phase 21 — onboarding-blocker-ux
 
 ## Current Position
 
-Phase: 21 of 26 (Onboarding Blocker UX) — not started
-Plan: — (roadmap created; ready to plan Phase 21)
+Phase: 21 (onboarding-blocker-ux) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-07-14 -- Phase 21 planning complete
+Last activity: 2026-07-14 -- Completed 21-01 (backend withdraw + company-number endpoints)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Milestone v2.3 Phase Map
 
@@ -51,15 +51,15 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 0 / ~16 estimated
-- Average duration: —
-- Total execution time: — hours
+- Total plans completed: 1 / ~16 estimated
+- Average duration: ~15m
+- Total execution time: ~0.25 hours
 
 **By Phase (v2.3):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 21 | 0/4 | - | - |
+| 21 | 1/5 | ~15m | ~15m |
 | 22 | 0/3 | - | - |
 | 23 | 0/3 | - | - |
 | 24 | 0/2 | - | - |
@@ -82,6 +82,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [v2.3 Roadmap]: MOBL-01 folded into Phase 22 — the responsive nav pairs with the shop-context switcher (same dashboard-nav surface).
 - [v2.3 Roadmap]: AI track split 24/25 — outbound webhooks and mutating MCP are independent deliverables (issues #205 vs #204) on separately-shipped infra.
 - [v2.3 Constraint]: onboarding-blocker path is zero-migration (`WITHDRAWN` already in V43 CHECK); derive "in review" at the DTO layer, no `IN_REVIEW` state migration.
+- [Phase 21]: 21-01: POST /onboarding/withdraw reuses the already-wired WITHDRAW state-machine transitions (no SM change) via the canonical transition() path; terminal source -> RFC 7807 400; WITHDRAW never touches Shop.published.
+- [Phase 21]: 21-01: company-number correction is POST /onboarding/company-number — a data edit firing NO state-machine event, gated to DRAFT/ACTION_REQUIRED (else RFC 7807 400), reusing create's @Size(32)+@Pattern verbatim; blank/whitespace = sole trader (null).
 
 ### Pending Todos
 
@@ -97,6 +99,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-14T09:11:22.078Z
+Last session: 2026-07-14T10:36:55.904Z
 Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-onboarding-blocker-ux/21-CONTEXT.md
+Resume file: None
