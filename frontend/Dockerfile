@@ -27,6 +27,18 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ARG NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL
 ENV NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL=${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL}
 
+# Phase 21 (ONBD-05/03, QA ONB-1): onboarding support channel + review SLA are
+# NEXT_PUBLIC_* and therefore inlined at BUILD time — a runtime `environment:`
+# value cannot reach the client bundle. Without these baked in, a REJECTED/SUSPENDED
+# vendor's support link degrades to a dead-end "contact your account manager" with
+# no channel. The code still degrades gracefully when they are genuinely absent.
+ARG NEXT_PUBLIC_SUPPORT_EMAIL
+ENV NEXT_PUBLIC_SUPPORT_EMAIL=${NEXT_PUBLIC_SUPPORT_EMAIL}
+ARG NEXT_PUBLIC_SUPPORT_URL
+ENV NEXT_PUBLIC_SUPPORT_URL=${NEXT_PUBLIC_SUPPORT_URL}
+ARG NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS
+ENV NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS}
+
 RUN npm run build
 
 # Stage 2: Runner
