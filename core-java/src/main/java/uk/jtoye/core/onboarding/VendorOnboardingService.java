@@ -171,6 +171,28 @@ public class VendorOnboardingService {
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
 
+    /**
+     * Withdraw the caller's onboarding (ONBD-01, D-05). Fires WITHDRAW through the
+     * single canonical {@link #transition} path from any pre-live state (DRAFT /
+     * VERIFYING / ACTION_REQUIRED / PENDING_APPROVAL / APPROVED → terminal
+     * WITHDRAWN). WITHDRAW is a no-side-effect status change — it falls into the
+     * {@code transition} {@code default} arm and never touches {@code Shop.published}
+     * (the state machine stays the sole writer, threat T-21-01-03). A terminal
+     * source (REJECTED / WITHDRAWN / LIVE / SUSPENDED) has no WITHDRAW transition, so
+     * the state machine vetoes it → {@code InvalidStateTransitionException} → HTTP
+     * 400. Withdrawal is terminal; a vendor who wants to try again starts a new
+     * application.
+     */
+    public OnboardingDto withdraw() {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        log.info("Vendor withdrawing onboarding {} (tenant {})", onboarding.getId(), tenantId);
+        transition(onboarding, OnboardingEvent.WITHDRAW);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
     /** The caller-tenant's onboarding plus its per-gate breakdown. */
     @Transactional(readOnly = true)
     public OnboardingDto getMyOnboarding() {

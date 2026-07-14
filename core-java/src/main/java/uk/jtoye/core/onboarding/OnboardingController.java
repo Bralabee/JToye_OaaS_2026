@@ -96,6 +96,24 @@ public class OnboardingController {
     }
 
     /**
+     * Withdraw the caller's in-progress onboarding (any pre-live state → WITHDRAWN).
+     * POST /onboarding/withdraw
+     */
+    @PostMapping("/withdraw")
+    @Operation(summary = "Withdraw onboarding",
+            description = "Withdraws the caller's onboarding from any pre-live state "
+                    + "(DRAFT/VERIFYING/ACTION_REQUIRED/PENDING_APPROVAL/APPROVED -> WITHDRAWN). "
+                    + "Terminal — restarting requires a new application.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Onboarding withdrawn (WITHDRAWN)"),
+            @ApiResponse(responseCode = "400", description = "Illegal transition (already terminal / LIVE / SUSPENDED)"),
+            @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
+    })
+    public ResponseEntity<OnboardingDto> withdraw() {
+        return ResponseEntity.ok(vendorOnboardingService.withdraw());
+    }
+
+    /**
      * Take the caller's onboarding live (APPROVED → LIVE), publishing the shop.
      * POST /onboarding/go-live
      */
