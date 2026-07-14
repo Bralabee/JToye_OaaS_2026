@@ -7,9 +7,9 @@
 
 ## v1 Requirements
 
-v2.3 scopes 18 requirements across 6 categories. Scope locked by user 2026-07-14 (do not re-litigate). Phase order is thinnest/highest-pain first: Onboarding UX → Vendor-scoped access → Image architecture → Dashboard mobile → AI track → Infrastructure.
+v2.3 scopes **24 requirements across 7 categories**. Original scope locked by user 2026-07-14 (do not re-litigate); a **Notifications & Comms** category was inserted as **Phase 22** on 2026-07-14, absorbing the former standalone Outbound Webhooks (#205 → COMMS-04/05/06) + WhatsApp (#208). Phase order is thinnest/highest-pain first: Onboarding UX → **Notifications & Comms** → Vendor-scoped access → Image architecture → AI (mutating MCP) → Infrastructure (Dashboard mobile MOBL-01 folded into Vendor-scoped access).
 
-Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first). The onboarding-blocker path is zero-migration.
+Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first); Comms tables take later versions under `out-of-order=true` so that ordering is undisturbed. The onboarding-blocker path is zero-migration.
 
 ### Onboarding UX (ONBD) — spec `onboarding-blocker-ux-SPEC.md`
 
@@ -24,6 +24,18 @@ Make onboarding blockers visible, onboarding data correctable, and exits reachab
 - [x] **ONBD-04**: Per-gate remediation blocks. Each FAILED / MANUAL_REVIEW gate renders *why → what to do → a button that goes there*: company-number inline edit, "fix these N products" deep link for allergen offenders, address-confirm / establishment-picker for FHRS. Tests: Jest per remediation block type (renders reason + action + deep link). Source: gate reasons render verbatim with no next-step (spec Problem #5).
 
 - [x] **ONBD-05**: Rejection reason reaches the vendor + a real support channel. Expose `rejectionReason` on the vendor-facing `OnboardingDto` (currently admin-only) and render it plus a configurable mailto/link (not a bare "contact support") on terminal states. Tests: DTO serialization test (reason present), Jest for terminal-state copy. Source: `RejectOnboardingRequest.reason` is `@NotBlank` but only `AdminOnboardingDto` exposes it (spec Problem #4). Journey-matrix add: drive one blocked onboarding end-to-end (bad company number → fix inline → resubmit → live) in Playwright.
+
+### Notifications & Comms (COMMS) — spec `phases/22-notifications-comms/22-SPEC.md`
+
+The platform's first governed delivery of the V46 outbox. **Extend** the already-working order-email path (never regress it), bind the dead onboarding exchange, add the missing consent/unsubscribe governance, stand up outbound webhooks (absorbed from #205), and scaffold WhatsApp/SMS (#208) behind an off-by-default flag. Prod email = SES over SMTP config (no SDK). Respects the outbox-flusher dispatch trap.
+
+- [ ] **COMMS-01**: Bind the dead channels; preserve the working one. Bind `onboardingEventsExchange` + add payment/refund consumers; each new event type ships exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch atomically; the existing `OrderStateChangeListener → EmailNotificationService` order path is untouched. Tests: per-event dispatch integration test, existing order-email test still green, no poison dead-letter.
+- [ ] **COMMS-02**: Transactional email to both audiences. Templated emails for order (customer+vendor), onboarding (vendor), payment (customer+vendor), refund (customer+vendor). Tests: per-event correct-recipient assertions; stalled onboarding → vendor email in Mailhog.
+- [ ] **COMMS-03**: Consent + one-click unsubscribe + suppression (GDPR/PECR). Transactional under legitimate interest + unsubscribe→suppression; marketing requires explicit opt-in; suppression/consent tables ENABLE+FORCE RLS. Tests: unsubscribe suppresses next send; marketing-without-opt-in refused; RLS under NOSUPERUSER.
+- [ ] **COMMS-04**: Vendor webhook subscriptions (#205). `webhook_subscription` (ENABLE+FORCE RLS) + event-type selection + signing secret + create/list/rotate/pause/revoke API. Tests: CRUD; cross-tenant empty/403; secret-rotation invalidates old signatures.
+- [ ] **COMMS-05**: Signed, retried, observable delivery (#205). HMAC-SHA256 signed POST + bounded-backoff retry + `webhook_delivery` status rows + no head-of-line block + bounded retention (#107). Tests: signature verify, retry-then-failed, healthy-sibling-still-delivered, retention prune.
+- [ ] **COMMS-06**: Webhook management + delivery-log UI. Create/list/pause/revoke + rotate secret + delivery-log browser (filter by event/status) + manual replay (tagged attempt). Mobile-first at 375px. Tests: Jest/Playwright for create→list, filter, replay, 375px no-overflow.
+- [ ] **COMMS-07**: WhatsApp/SMS channel seam (#208, scaffold). `NotificationChannel` abstraction + WhatsApp/SMS stub behind an OFF-by-default flag; no-op when off, never blocks email/webhooks; creds via config. Tests: flag-off delivers email+webhooks with zero WhatsApp errors; no-op unit test; enable-without-creds = WARN no-op not crash.
 
 ### Vendor-scoped access (VSA) — spec `shop-scoped-access-SPEC.md`
 
@@ -55,7 +67,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 ### AI / automation (AI) — HANDOFF #205 / #204
 
-- [ ] **AI-01**: Outbound webhooks (#205). Vendor-registered webhook subscriptions delivered from the V46 transactional outbox on state changes (onboarding/order/refund), with retry + payload signing + delivery status. This is also the tie-in for ONBD state-change notifications (spec "Later tie-in"). Tests: outbox→delivery integration test, retry-on-failure test, signature verification test, tenant-scoped subscription RLS. Source: HANDOFF Step 1 phase 5; V46 outbox ready.
+- [~] **AI-01**: Outbound webhooks (#205). **ABSORBED into Phase 22 Notifications & Comms on 2026-07-14** (COMMS-04 subscriptions + COMMS-05 signed/retried delivery + COMMS-06 management/delivery-log UI). A delivery consumer of the outbox had to be built as one coherent channel alongside email, not as a standalone later phase. No longer a separate deliverable — see the COMMS category.
 
 - [ ] **AI-02**: Mutating MCP tools (#204 wiring). Extend the Phase 20 read-only MCP server with write tools (e.g. orders.create / customers.create) riding the uniform Idempotency-Key contract already wired via `IdempotencyService.execute` (#204, V50). Tests: MCP write-tool integration test with idempotent replay, RLS-scoped proof under the MCP credential. Source: HANDOFF Step 1 phase 5; #204 idempotency wiring exists.
 
@@ -100,18 +112,25 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | ONBD-03 | Phase 21 | 21-02, 21-03, 21-04 | Complete |
 | ONBD-04 | Phase 21 | 21-04 | Complete |
 | ONBD-05 | Phase 21 | 21-03, 21-04, 21-05 | Complete |
-| VSA-01 | Phase 22 | 22-01 | Pending |
-| VSA-02 | Phase 22 | 22-02 | Pending |
-| VSA-03 | Phase 22 | 22-03 | Pending |
-| VSA-04 | Phase 22 | 22-03 | Pending |
-| MOBL-01 | Phase 22 | 22-03 | Pending |
-| IMG-01 | Phase 23 | 23-01 | Pending |
-| IMG-02 | Phase 23 | 23-02 | Pending |
-| IMG-03 | Phase 23 | 23-03 | Pending |
-| IMG-04 | Phase 23 | 23-03 | Pending |
-| AI-01 | Phase 24 | 24-01, 24-02 | Pending |
+| COMMS-01 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-02 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-03 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-04 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-05 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-06 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-07 | Phase 22 | TBD (plan-phase) | Pending |
+| VSA-01 | Phase 23 | 23-01 | Pending |
+| VSA-02 | Phase 23 | 23-02 | Pending |
+| VSA-03 | Phase 23 | 23-03 | Pending |
+| VSA-04 | Phase 23 | 23-03 | Pending |
+| MOBL-01 | Phase 23 | 23-03 | Pending |
+| IMG-01 | Phase 24 | 24-01 | Pending |
+| IMG-02 | Phase 24 | 24-02 | Pending |
+| IMG-03 | Phase 24 | 24-03 | Pending |
+| IMG-04 | Phase 24 | 24-03 | Pending |
+| AI-01 | Phase 22 | absorbed → COMMS-04/05/06 | Absorbed |
 | AI-02 | Phase 25 | 25-01, 25-02 | Pending |
 | INFRA-01 | Phase 26 | 26-01 | Pending |
 | INFRA-02 | Phase 26 | 26-02 | Pending |
 
-**Coverage:** 18/18 v1 requirements mapped to exactly one phase. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`.)
+**Coverage:** 24 v1 requirements (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2) mapped to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`.)

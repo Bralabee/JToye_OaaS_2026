@@ -4,9 +4,9 @@ Multi-tenant UK retail SaaS for food vendors — shops, products, orders, custom
 
 ## Overview
 
-Milestone v2.3 turns from platform hardening to **vendor operational control**. It unblocks stuck onboarding (visible per-gate blockers, correctable data, reachable exits — zero migrations), adds a finer authorization boundary *inside* the tenant (`shop_staff` mapping, roles, an application-layer gate, a shop-context switcher — with a GROUP_ADMIN backfill so day one has no regression), and hardens image handling ahead of real vendor uploads (a copy-on-write `media_asset` model + a safe async upload pipeline that stores only the validated, normalized derivative). It also extends the AI/automation surface (vendor-registered outbound webhooks off the V46 outbox + mutating MCP tools riding the #204 Idempotency-Key contract) and replaces the imperative k8s deploy patches with a committed `k8s/local` overlay plus the verified breakage fixes.
+Milestone v2.3 turns from platform hardening to **vendor operational control**. It unblocks stuck onboarding (visible per-gate blockers, correctable data, reachable exits — zero migrations), stands up the platform's first **delivery consumer** of the V46 transactional outbox (email-first notifications + the outbound-webhook machine channel + a WhatsApp/SMS seam), adds a finer authorization boundary *inside* the tenant (`shop_staff` mapping, roles, an application-layer gate, a shop-context switcher — with a GROUP_ADMIN backfill so day one has no regression), and hardens image handling ahead of real vendor uploads (a copy-on-write `media_asset` model + a safe async upload pipeline that stores only the validated, normalized derivative). It also extends the AI/automation surface (mutating MCP tools riding the #204 Idempotency-Key contract) and replaces the imperative k8s deploy patches with a committed `k8s/local` overlay plus the verified breakage fixes.
 
-18 requirements across 6 categories → **6 phases (21–26)**, continuing phase numbering from v2.2's Phase 20. Scope locked by user 2026-07-14 (three phase-ready specs in `.planning/specs/` carry file:line evidence and locked decisions). Phase order is thinnest/highest-pain first. Granularity: `fine`.
+**6 phases (21–26)**, continuing phase numbering from v2.2's Phase 20. Original scope locked by user 2026-07-14 (three phase-ready specs in `.planning/specs/` carry file:line evidence and locked decisions); the **Notifications & Comms phase was inserted at 22 on 2026-07-14**, ahead of the original order, absorbing the standalone Outbound Webhooks phase (#205) + WhatsApp (#208) — a dedicated delivery consumer had to precede the surfaces that depend on it. Phase order is thinnest/highest-pain first. Granularity: `fine`.
 
 ## Milestones
 
@@ -38,9 +38,9 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 ### 🚧 v2.3 Vendor Ops + AI Interleaved (Phases 21–26)
 
 - [x] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations) (completed 2026-07-14)
-- [ ] **Phase 22: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px
-- [ ] **Phase 23: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
-- [ ] **Phase 24: Outbound Webhooks** — Vendor-registered webhook subscriptions delivered from the V46 transactional outbox with retry + HMAC signing + delivery status
+- [ ] **Phase 22: Notifications & Comms** — First delivery consumer of the V46 transactional outbox: email-first transactional notifications (Mailhog dev → SES prod) + vendor-registered outbound webhooks (HMAC-signed, retried; absorbs #205) + a WhatsApp/SMS seam behind a provider flag (absorbs #208), with GDPR consent + unsubscribe
+- [ ] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px
+- [ ] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
 - [ ] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential
 - [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
 
@@ -81,10 +81,30 @@ Plans:
 
 **UI hint**: yes
 
-### Phase 22: Vendor-Scoped Access + Responsive Dashboard Nav
+### Phase 22: Notifications & Comms
+
+**Goal**: The platform gains its first **delivery consumer** of the V46 transactional outbox. Order/payment/refund and Phase 21 onboarding state-change events — today emitted to the outbox but delivered nowhere — reach the people and systems that need them. Email first (Mailhog dev → SES prod), with the outbound-webhook machine channel (the delivery seam ONBD-05 / AI-01 left open) and a WhatsApp/SMS seam as further channels on the same consumer.
+**Depends on**: V46 transactional outbox + Phase 21 `onboarding.events` (both shipped). Reuses the RabbitMQ/AMQP infra. **Respects the outbox-flusher dispatch trap**: any new event type ships its exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch in the same change, or it poison-dead-letters. Migration(s) TBD in SPEC — the V52 `shop_staff` (Phase 23) / V53 `media_asset` (Phase 24) ordering is preserved (Comms migrations take later versions under `out-of-order=true`).
+**Requirements**: COMMS-01, COMMS-02, COMMS-03, COMMS-04 (absorbs AI-01 outbound webhooks + #208 WhatsApp) — *finalized by SPEC.md*
+**Success Criteria** (what must be TRUE) — *provisional; locked by `22-SPEC.md`*:
+
+  1. A single outbox consumer fans each matching event to its registered delivery channels; a channel/subscription failure is retried with bounded backoff and does not block delivery to other channels or subscriptions (no head-of-line block).
+  2. Transactional email is delivered for a defined event set through a provider abstraction (Mailhog in dev, SES in prod), tenant-scoped, with a working unsubscribe and recorded consent (GDPR) — no email sent to a recipient who has not consented / has opted out.
+  3. A vendor can register tenant-scoped webhook subscriptions (ENABLE+FORCE RLS, isolation-proven) that receive HMAC-signed, retried deliveries of chosen event types (onboarding / order / refund) — the machine channel folded in from #205.
+  4. The WhatsApp/SMS channel is scaffolded behind a provider flag defaulting off until credentials are configured (#208), and its absence never blocks email or webhook delivery.
+
+**Plans**: TBD (est. 3)
+
+Plans:
+
+- [ ] 22-xx: (defined after SPEC + plan-phase)
+
+**UI hint**: yes (vendor notification preferences + webhook management + unsubscribe)
+
+### Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav
 
 **Goal**: A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
-**Depends on**: Nothing structural (RLS/onboarding untouched). Sequenced after Phase 21 per the locked order. Ships Flyway **V52** (must precede V53 in Phase 23).
+**Depends on**: Nothing structural (RLS/onboarding untouched). Sequenced after Phase 22 per the locked order. Ships Flyway **V52** (must precede V53 in Phase 24).
 **Requirements**: VSA-01, VSA-02, VSA-03, VSA-04, MOBL-01
 **Success Criteria** (what must be TRUE):
 
@@ -98,16 +118,16 @@ Plans:
 
 Plans:
 
-- [ ] 22-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
-- [ ] 22-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
-- [ ] 22-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
+- [ ] 23-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
+- [ ] 23-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
+- [ ] 23-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
 
 **UI hint**: yes
 
-### Phase 23: Image Architecture — CoW Assets + Safe Upload Pipeline
+### Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline
 
 **Goal**: Vendor image uploads are backed by a shared copy-on-write asset model with reference counting, and every upload passes through a safe async pipeline that stores only a validated, normalized derivative — never the raw bytes.
-**Depends on**: Phase 22 (migration ordering — `media_asset` is **V53**, which must land after `shop_staff` V52). Reuses the V46 outbox/AMQP infra.
+**Depends on**: Phase 23 (migration ordering — `media_asset` is **V53**, which must land after `shop_staff` V52). Reuses the V46 outbox/AMQP infra.
 **Requirements**: IMG-01, IMG-02, IMG-03, IMG-04
 **Success Criteria** (what must be TRUE):
 
@@ -120,31 +140,11 @@ Plans:
 
 Plans:
 
-- [ ] 23-01: V53 `media_asset` (+`_aud` if audited, ENABLE+FORCE RLS, sha256 tenant-unique) + product↔asset reference (FK/join) + copy-on-write repoint + reference-counted physical delete + `image_url` backfill dual-read + RLS-under-NOSUPERUSER proof
-- [ ] 23-02: Safe async upload pipeline — reject-early Content-Length/streaming size guard + quarantine store + PENDING row + AMQP outbox publish (202-style) + queue worker (magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode/thumbnail, raw-delete-on-success, tenant-GUC pin) + BulkImportService unification
-- [ ] 23-03: Gate strictness (compress-fail → FAILED reject; low-relevance → ACTIVE + review queue; vision advisory flag) + product UI processing/failed/flagged states + vendor review/rejection queue + `docs/metrics.json` reconcile
+- [ ] 24-01: V53 `media_asset` (+`_aud` if audited, ENABLE+FORCE RLS, sha256 tenant-unique) + product↔asset reference (FK/join) + copy-on-write repoint + reference-counted physical delete + `image_url` backfill dual-read + RLS-under-NOSUPERUSER proof
+- [ ] 24-02: Safe async upload pipeline — reject-early Content-Length/streaming size guard + quarantine store + PENDING row + AMQP outbox publish (202-style) + queue worker (magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode/thumbnail, raw-delete-on-success, tenant-GUC pin) + BulkImportService unification
+- [ ] 24-03: Gate strictness (compress-fail → FAILED reject; low-relevance → ACTIVE + review queue; vision advisory flag) + product UI processing/failed/flagged states + vendor review/rejection queue + `docs/metrics.json` reconcile
 
 **UI hint**: yes
-
-### Phase 24: Outbound Webhooks
-
-**Goal**: A vendor can register webhook subscriptions and reliably receive signed, retried deliveries of onboarding/order/refund state changes from the transactional outbox — the delivery seam onboarding (ONBD-05) left open.
-**Depends on**: V46 transactional outbox (shipped v2.2). Soft: Phase 21 provides onboarding state-change events as one delivery source.
-**Requirements**: AI-01
-**Success Criteria** (what must be TRUE):
-
-  1. A vendor can register a tenant-scoped webhook subscription (ENABLE+FORCE RLS, proven isolated per tenant) for chosen event types (onboarding / order / refund). (AI-01)
-  2. A state change already written to the V46 outbox is delivered to every matching subscription with an HMAC signature the receiver can verify, and the delivered payload is tenant-scoped. (AI-01)
-  3. A delivery that fails is retried with bounded backoff and its delivery status is observable; a permanently-failing endpoint does not block deliveries to other subscriptions. (AI-01)
-
-**Plans**: TBD (est. 2)
-
-Plans:
-
-- [ ] 24-01: `webhook_subscription` model (tenant-scoped ENABLE+FORCE RLS) + registration API + delivery worker consuming the V46 outbox + event-type routing (onboarding/order/refund)
-- [ ] 24-02: HMAC payload signing + retry-with-backoff + delivery-status tracking + onboarding/order/refund tie-in + outbox→delivery / retry / signature-verification / RLS tests
-
-**UI hint**: no
 
 ### Phase 25: Mutating MCP Tools
 
@@ -169,7 +169,7 @@ Plans:
 ### Phase 26: Local-K8s Overlay + Verified Breakage Fixes
 
 **Goal**: The imperative deploy patches from the 2026-07-14 live-deploy rehearsal are replaced by a committed, buildable `k8s/local` overlay, and the verified k8s breakage list is fixed so core boots as the NOSUPERUSER app role on a single replica.
-**Depends on**: Nothing structural (infra/deploy config). Best sequenced last so the overlay ships all v2.3 schema (V52 `shop_staff`, V53 `media_asset`) and services. `compose XOR k8s` on local (RULE 0) still applies.
+**Depends on**: Nothing structural (infra/deploy config). Best sequenced last so the overlay ships all v2.3 schema (V52 `shop_staff`, V53 `media_asset`, Comms migrations) and services. `compose XOR k8s` on local (RULE 0) still applies.
 **Requirements**: INFRA-01, INFRA-02
 **Success Criteria** (what must be TRUE):
 
@@ -190,13 +190,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 → 23 → 24 → 25 → 26**. The one hard dependency is Phase 22 before Phase 23 (Flyway V52 `shop_staff` must precede V53 `media_asset`). Phase 21 is independent (zero migrations) and leads because it is the cheapest fix for the highest user pain. Phases 24 (webhooks) and 25 (mutating MCP) build only on shipped infra (V46 outbox, #204 idempotency, Phase 20 MCP) and could parallelize, but run in order per the lock. Phase 26 (infra) lands last so the committed overlay ships all v2.3 schema and services.
+Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 → 23 → 24 → 25 → 26**. Phase 21 is independent (zero migrations) and led because it was the cheapest fix for the highest user pain. **Phase 22 (Notifications & Comms) was inserted ahead of Vendor-Scoped Access** because a delivery consumer of the V46 outbox is the seam onboarding (ONBD-05) and future surfaces depend on, and it folds in the previously-standalone Outbound Webhooks (#205) + WhatsApp (#208). The one hard migration dependency is Phase 23 before Phase 24 (Flyway V52 `shop_staff` must precede V53 `media_asset`); Comms migrations take later versions under `out-of-order=true` so that ordering is undisturbed. Phase 25 (mutating MCP) builds only on shipped infra (#204 idempotency, Phase 20 MCP) and is structurally independent. Phase 26 (infra) lands last so the committed overlay ships all v2.3 schema and services.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
-| 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
-| 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
-| 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |
+| 22. Notifications & Comms | v2.3 | 0/3 | Not started | - |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
+| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 22 — vendor scoped access + responsive dashboard nav
+**Current focus:** Phase 22 — Notifications & Comms (SPEC written 2026-07-14; ready to discuss)
 
 ## Current Position
 
@@ -37,13 +37,13 @@ Progress: [██████████] 100%
 | Phase | Name | Requirements | Migration | Est. plans |
 |-------|------|--------------|-----------|-----------|
 | 21 | Onboarding Blocker UX | ONBD-01..05 | none | 4 |
-| 22 | Vendor-Scoped Access + Responsive Dashboard Nav | VSA-01..04, MOBL-01 | V52 shop_staff | 3 |
-| 23 | Image Architecture — CoW Assets + Safe Upload Pipeline | IMG-01..04 | V53 media_asset | 3 |
-| 24 | Outbound Webhooks | AI-01 | (subscription table) | 2 |
+| 22 | Notifications & Comms | COMMS-01..07 (absorbs AI-01 #205, #208) | Comms tables (post-V53, out-of-order) | ~5 |
+| 23 | Vendor-Scoped Access + Responsive Dashboard Nav | VSA-01..04, MOBL-01 | V52 shop_staff | 3 |
+| 24 | Image Architecture — CoW Assets + Safe Upload Pipeline | IMG-01..04 | V53 media_asset | 3 |
 | 25 | Mutating MCP Tools | AI-02 | none | 2 |
 | 26 | Local-K8s Overlay + Verified Breakage Fixes | INFRA-01, INFRA-02 | none | 2 |
 
-Execution order: 21 → 22 → 23 → 24 → 25 → 26 (locked). Hard dependency: 22 before 23 (V52 precedes V53).
+Execution order: 21 → 22 → 23 → 24 → 25 → 26 (locked; Comms inserted at 22 on 2026-07-14, absorbing the former standalone Outbound Webhooks). Hard dependency: 23 before 24 (V52 `shop_staff` precedes V53 `media_asset`).
 
 ## Performance Metrics
 
@@ -60,9 +60,9 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 21 | 5 | - | - |
-| 22 | 0/3 | - | - |
+| 22 | 0/~5 | - | - |
 | 23 | 0/3 | - | - |
-| 24 | 0/2 | - | - |
+| 24 | 0/3 | - | - |
 | 25 | 0/2 | - | - |
 | 26 | 0/2 | - | - |
 
@@ -76,6 +76,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 ### Roadmap Evolution
 
+- 2026-07-14 — **Phase 22 "Notifications & Comms" inserted** ahead of the original order (was Vendor-Scoped Access). Absorbs the former standalone Outbound Webhooks (#205) + WhatsApp (#208). Vendor-Scoped Access → 23, Image → 24; Mutating MCP (25) + K8s (26) unchanged. Scout found order-lifecycle email already works (`EmailNotificationService` + `OrderStateChangeListener`) — so the phase is extend+govern+add-channels, not build-first-consumer. SPEC written (7 reqs COMMS-01..07, ambiguity 0.16). Decided by user; roadmap-slot + 6 spec answers logged in `22-SPEC.md`.
 - 2026-07-14 — Milestone v2.3 (Vendor Ops + AI interleaved) roadmap created. 6 phases (21–26) continue numbering from v2.2's Phase 20. Derived from 18 requirements across 6 categories in REQUIREMENTS.md; scope locked by user 2026-07-14. MOBL-01 folded into Phase 22 (pairs with the VSA-03 shop-switcher, avoids a one-requirement phase). AI track split into two phases (24 webhooks / 25 mutating MCP — independent surfaces, `fine` granularity). Infrastructure kept as a standalone durable phase (26). Migration ordering enforced: V52 `shop_staff` (Phase 22) precedes V53 `media_asset` (Phase 23).
 
 ### Decisions
