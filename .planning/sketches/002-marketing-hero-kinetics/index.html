@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 002 — Marketing Hero Kinetics</title>
+<link rel="stylesheet" href="../themes/default.css">
+<!-- GSAP + ScrollTrigger from CDN (marketing variant only). If this fails to
+     load, the no-gsap fallback reveals all content — nothing ever stays hidden. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/ScrollTrigger.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; font-family: var(--font-sans); color: var(--color-text);
+    background: var(--color-bg); padding-top: 46px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { margin: 0; }
+
+  /* ---------- variant scaffolding ---------- */
+  #variant-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+    background: var(--color-slate-deep); color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    padding: 8px 14px; display: flex; gap: 8px; align-items: center;
+    font-size: 13px;
+  }
+  #variant-nav .brand { font-weight: 800; letter-spacing: -.01em; margin-right: 6px; }
+  #variant-nav .brand .flame { color: var(--color-primary-bright); }
+  .variant-tab {
+    font: inherit; font-weight: 700; cursor: pointer;
+    background: rgba(255,255,255,.08); color: #fff;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 999px;
+    padding: 5px 13px; transition: all .15s ease; white-space: nowrap;
+  }
+  .variant-tab:hover { background: rgba(255,255,255,.16); }
+  .variant-tab.active { background: var(--color-primary); border-color: var(--color-primary); }
+  .variant-tab .star { color: #fff; }
+  .engine-note { margin-left: auto; font-size: 11px; opacity: .6; }
+  .variant { display: none; }
+  .variant.active { display: block; }
+
+  /* ---------- shared marketing styles ---------- */
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  .hero {
+    position: relative; overflow: hidden; background: var(--color-bg);
+    padding: 80px 0 92px;
+  }
+  .hero .heatwash {
+    position: absolute; inset: -20% -10% 0 -10%; z-index: 0; pointer-events: none;
+    background: radial-gradient(60% 55% at 78% 8%, rgba(249,115,22,.28), transparent 60%),
+                linear-gradient(135deg, rgba(251,146,60,.16), rgba(244,63,94,.12) 60%, transparent);
+  }
+  .hero .wrap { position: relative; z-index: 1; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--color-primary); background: rgba(234,88,12,.09);
+    border: 1px solid rgba(234,88,12,.2); border-radius: 999px; padding: 6px 13px;
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary-bright); }
+  h1.display {
+    font-size: clamp(2.4rem, 7vw, 4.4rem); font-weight: 900; line-height: 1.02;
+    letter-spacing: -.035em; margin: 20px 0 0; max-width: 15ch;
+  }
+  h1.display .accent { color: var(--color-primary); }
+  .subcopy { font-size: clamp(1.05rem, 2.2vw, 1.3rem); color: var(--color-text-muted); max-width: 46ch; margin: 20px 0 0; line-height: 1.55; }
+  .doors { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 38px; }
+  @media (min-width: 640px) { .doors { grid-template-columns: 1fr 1fr; gap: 22px; } }
+  .door {
+    display: flex; flex-direction: column; border-radius: var(--radius-lg);
+    padding: 26px; color: #fff; text-decoration: none;
+    box-shadow: var(--shadow-md); transition: transform .2s ease, box-shadow .2s ease;
+    min-height: 172px;
+  }
+  .door:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .door.order { background: var(--color-primary); }
+  .door.order:hover { box-shadow: var(--shadow-glow-ember); }
+  .door.operate { background: var(--color-slate-deep); }
+  .door .ico { font-size: 30px; line-height: 1; }
+  .door .t { margin-top: 18px; font-size: 1.22rem; font-weight: 800; }
+  .door .d { margin-top: 6px; font-size: .95rem; opacity: .85; }
+  .door .go { margin-top: auto; padding-top: 16px; font-weight: 700; font-size: .95rem; display: inline-flex; align-items: center; gap: 6px; }
+  .door.operate .go, .door.operate .t small { color: var(--color-accent); }
+
+  section.how { background: var(--color-surface); padding: 84px 0; border-top: 1px solid var(--color-border); }
+  h2.section-title { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 900; letter-spacing: -.03em; }
+  .steps { position: relative; margin-top: 42px; display: grid; gap: 26px; }
+  @media (min-width: 720px) { .steps { grid-template-columns: repeat(3, 1fr); gap: 30px; } }
+  .steprail { position: absolute; top: 26px; left: 8%; right: 8%; height: 3px; background: var(--color-border); border-radius: 2px; display: none; }
+  @media (min-width: 720px) { .steprail { display: block; } }
+  .steprail .fill { position: absolute; inset: 0 100% 0 0; background: linear-gradient(90deg, var(--color-primary-bright), var(--color-primary)); border-radius: 2px; }
+  .step { position: relative; }
+  .step .num {
+    width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: rgba(234,88,12,.1); color: var(--color-primary); font-size: 26px; position: relative; z-index: 1;
+    border: 3px solid var(--color-surface); transition: background .3s ease, color .3s ease, transform .3s ease;
+  }
+  .step.on .num { background: var(--color-primary); color: #fff; transform: scale(1.06); }
+  .step h3 { margin-top: 16px; font-size: 1.2rem; font-weight: 800; }
+  .step p { margin-top: 8px; color: var(--color-text-muted); font-size: .96rem; line-height: 1.55; }
+
+  section.trust { background: var(--color-bg); border-top: 1px solid var(--color-border); padding: 46px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 9px; background: var(--color-surface);
+    border: 1px solid var(--color-border); border-radius: 999px; padding: 10px 16px;
+    font-size: .92rem; font-weight: 600; color: var(--color-text); box-shadow: var(--shadow-sm);
+  }
+  .chip .tick { color: var(--color-trust); font-weight: 900; }
+
+  .scroll-hint { text-align: center; color: var(--color-text-muted); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding: 22px 0 8px; }
+
+  /* ---------- reveal base states ---------- */
+  /* Motion-class (variant A) uses .reveal + IntersectionObserver */
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .6s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  .reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; } .reveal.d3 { transition-delay: .24s; }
+
+  /* GSAP variant (B) starts hidden ONLY if gsap is present; otherwise fallback shows it */
+  body.gsap-ready #variant-b .g-hide { opacity: 0; }
+  #variant-b .word { display: inline-block; }
+
+  /* fallback banner */
+  .cdn-note { display: none; margin: 0 auto; max-width: 1040px; padding: 10px 20px; }
+  body.no-gsap #variant-b .cdn-note { display: block; }
+  .cdn-note b { color: var(--color-primary); }
+
+  /* toolbar */
+  #tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px;
+    background: rgba(2,6,23,.82); color: #fff; padding: 8px 10px; border-radius: 10px; opacity: .5; transition: opacity .2s; display: flex; gap: 8px; align-items: center; }
+  #tools:hover { opacity: 1; }
+  #tools button, #tools select { font: inherit; background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { transition: none; opacity: 1; transform: none; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="brand">J&apos;<span class="flame">Toye</span></span>
+  <button class="variant-tab active" data-v="a" onclick="showVariant('a')">A: Motion (installed)</button>
+  <button class="variant-tab" data-v="b" onclick="showVariant('b')">B: GSAP full-award <span class="star">★</span></button>
+  <span class="engine-note" id="engine-note">Landing hero · scroll to feel it</span>
+</div>
+
+<!-- ============================= VARIANT A: Motion-class ============================= -->
+<div id="variant-a" class="variant active">
+  <div class="hero">
+    <div class="heatwash" aria-hidden="true"></div>
+    <div class="wrap">
+      <span class="eyebrow reveal"><span class="dot"></span>Local kitchens · order or operate</span>
+      <h1 class="display reveal d1">Order from local kitchens. <span class="accent">Or run yours.</span></h1>
+      <p class="subcopy reveal d2">J&apos;Toye connects hungry customers with independent food businesses — order in minutes, or take your kitchen online and go live in a day.</p>
+      <div class="doors">
+        <a class="door order reveal d2" href="#">
+          <span class="ico">🍽️</span>
+          <span class="t">Order food near you</span>
+          <span class="d">Browse independent kitchens and order in minutes.</span>
+          <span class="go">Browse shops →</span>
+        </a>
+        <a class="door operate reveal d3" href="#">
+          <span class="ico">🏪</span>
+          <span class="t">Run your food business</span>
+          <span class="d">Take orders, manage your kitchen, go live in a day.</span>
+          <span class="go">Learn more →</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <section class="how">
+    <div class="wrap">
+      <h2 class="section-title reveal">How it works</h2>
+      <div class="steps">
+        <div class="steprail"><div class="fill" style="inset:0 100% 0 0"></div></div>
+        <div class="step reveal d1"><div class="num">🔍</div><h3>Browse</h3><p>Find independent kitchens near you and explore their menus.</p></div>
+        <div class="step reveal d2"><div class="num">🛍️</div><h3>Order &amp; pay</h3><p>Add to your basket and check out securely — delivery or collection.</p></div>
+        <div class="step reveal d3"><div class="num">📍</div><h3>Track live</h3><p>Follow your order from the kitchen to your door in real time.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="trust">
+    <div class="wrap">
+      <div class="chips">
+        <span class="chip reveal"><span class="tick">✓</span>UK food-hygiene verified</span>
+        <span class="chip reveal d1"><span class="tick">✓</span>Allergen info on every item</span>
+        <span class="chip reveal d2"><span class="tick">✓</span>No app to download</span>
+      </div>
+    </div>
+  </section>
+  <div class="scroll-hint">Motion-class: IntersectionObserver reveals — what <code>whileInView</code> compiles to. No pin, no scrub.</div>
+</div>
+
+<!-- ============================= VARIANT B: GSAP full-award ============================= -->
+<div id="variant-b" class="variant">
+  <div class="cdn-note"><b>Offline?</b> The GSAP CDN didn&apos;t load, so this variant is showing its resting state (all content visible, no scroll choreography). Reconnect and reload to feel the pinned/scrubbed motion.</div>
+  <div class="hero" id="b-hero">
+    <div class="heatwash" id="b-heatwash" aria-hidden="true"></div>
+    <div class="wrap">
+      <span class="eyebrow g-hide" id="b-eyebrow"><span class="dot"></span>Local kitchens · order or operate</span>
+      <h1 class="display" id="b-headline" data-split>Order from local kitchens. <span class="accent">Or run yours.</span></h1>
+      <p class="subcopy g-hide" id="b-subcopy">J&apos;Toye connects hungry customers with independent food businesses — order in minutes, or take your kitchen online and go live in a day.</p>
+      <div class="doors">
+        <a class="door order g-hide b-door" href="#">
+          <span class="ico">🍽️</span><span class="t">Order food near you</span>
+          <span class="d">Browse independent kitchens and order in minutes.</span><span class="go">Browse shops →</span>
+        </a>
+        <a class="door operate g-hide b-door" href="#">
+          <span class="ico">🏪</span><span class="t">Run your food business</span>
+          <span class="d">Take orders, manage your kitchen, go live in a day.</span><span class="go">Learn more →</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <section class="how" id="b-how">
+    <div class="wrap">
+      <h2 class="section-title g-hide b-howtitle">How it works</h2>
+      <div class="steps">
+        <div class="steprail"><div class="fill" id="b-railfill"></div></div>
+        <div class="step b-step"><div class="num">🔍</div><h3>Browse</h3><p>Find independent kitchens near you and explore their menus.</p></div>
+        <div class="step b-step"><div class="num">🛍️</div><h3>Order &amp; pay</h3><p>Add to your basket and check out securely — delivery or collection.</p></div>
+        <div class="step b-step"><div class="num">📍</div><h3>Track live</h3><p>Follow your order from the kitchen to your door in real time.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="trust" id="b-trust">
+    <div class="wrap">
+      <div class="chips">
+        <span class="chip g-hide b-chip"><span class="tick">✓</span>UK food-hygiene verified</span>
+        <span class="chip g-hide b-chip"><span class="tick">✓</span>Allergen info on every item</span>
+        <span class="chip g-hide b-chip"><span class="tick">✓</span>No app to download</span>
+      </div>
+    </div>
+  </section>
+  <div class="scroll-hint">GSAP full-award: split-type headline stagger · parallax heat-wash · scrubbed step-rail that draws + activates as you scroll.</div>
+</div>
+
+<div id="tools">
+  <button onclick="setW(375)">📱</button>
+  <button onclick="setW(768)">▭</button>
+  <button onclick="setW(0)">🖥️</button>
+  <button onclick="location.reload()">↻ replay</button>
+</div>
+
+<script>
+/* ---------- variant switching ---------- */
+var gsapReady = false, bInit = false;
+function showVariant(v) {
+  document.querySelectorAll('.variant').forEach(function(el){ el.classList.remove('active'); });
+  document.querySelectorAll('.variant-tab').forEach(function(t){ t.classList.remove('active'); });
+  document.getElementById('variant-' + v).classList.add('active');
+  document.querySelector('.variant-tab[data-v="'+v+'"]').classList.add('active');
+  document.getElementById('engine-note').textContent =
+    v === 'a' ? 'Landing hero · Motion-class reveals' : 'Landing hero · GSAP pin/scrub/split-type';
+  window.scrollTo(0, 0);
+  if (v === 'b') { initB(); if (gsapReady && window.ScrollTrigger) ScrollTrigger.refresh(); }
+}
+
+/* ---------- viewport tool ---------- */
+function setW(px) {
+  document.querySelectorAll('.variant').forEach(function(el){
+    el.style.margin = px ? '0 auto' : ''; el.style.maxWidth = px ? px + 'px' : '';
+    el.style.boxShadow = px ? '0 0 0 1px rgba(0,0,0,.12)' : '';
+  });
+  if (gsapReady && window.ScrollTrigger) setTimeout(function(){ ScrollTrigger.refresh(); }, 60);
+}
+
+/* ---------- Variant A: IntersectionObserver reveals ---------- */
+(function(){
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: .18 });
+  document.querySelectorAll('#variant-a .reveal').forEach(function(el){ io.observe(el); });
+  // Motion-class step rail: grow the fill + activate steps as the section enters
+  var howA = document.querySelector('#variant-a .how');
+  var railFillA = document.querySelector('#variant-a .steprail .fill');
+  var stepsA = document.querySelectorAll('#variant-a .step');
+  var io2 = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if (e.isIntersecting) {
+        if (railFillA) railFillA.style.transition = 'inset 1.1s ease', railFillA.style.inset = '0 0 0 0';
+        stepsA.forEach(function(s, i){ setTimeout(function(){ s.classList.add('on'); }, 250 + i*280); });
+        io2.unobserve(e.target);
+      }
+    });
+  }, { threshold: .3 });
+  if (howA) io2.observe(howA);
+})();
+
+/* ---------- Variant B: GSAP full-award ---------- */
+function splitWords(el) {
+  // Wrap each top-level text word in .word spans, preserving inner markup (.accent).
+  var nodes = Array.prototype.slice.call(el.childNodes);
+  el.innerHTML = '';
+  nodes.forEach(function(node){
+    if (node.nodeType === 3) {
+      node.textContent.split(/(\s+)/).forEach(function(tok){
+        if (tok.trim() === '') { el.appendChild(document.createTextNode(tok)); return; }
+        var s = document.createElement('span'); s.className = 'word'; s.textContent = tok; el.appendChild(s);
+      });
+    } else {
+      // keep the element (e.g. .accent) but split its inner words too
+      var inner = node.textContent.split(/(\s+)/);
+      node.textContent = '';
+      inner.forEach(function(tok){
+        if (tok.trim() === '') { node.appendChild(document.createTextNode(tok)); return; }
+        var s = document.createElement('span'); s.className = 'word'; s.textContent = tok;
+        s.style.color = 'inherit'; node.appendChild(s);
+      });
+      el.appendChild(node);
+    }
+  });
+  return el.querySelectorAll('.word');
+}
+
+function initB() {
+  if (bInit) return; bInit = true;
+  if (!window.gsap) { document.body.classList.add('no-gsap'); return; }
+  gsapReady = true;
+  gsap.registerPlugin(ScrollTrigger);
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Headline split-type entrance
+  var words = splitWords(document.getElementById('b-headline'));
+  if (reduce) {
+    gsap.set(['#variant-b .g-hide', words], { opacity: 1, y: 0 });
+  } else {
+    gsap.set(words, { yPercent: 115, opacity: 0 });
+    var tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    tl.to(words, { yPercent: 0, opacity: 1, duration: .7, stagger: .045 }, .1)
+      .from('#b-eyebrow', { opacity: 0, y: -12, duration: .5 }, 0)
+      .to('#b-eyebrow', { opacity: 1, duration: .01 }, 0)
+      .to('#b-subcopy', { opacity: 1, y: 0, duration: .6, onStart: function(){ gsap.set('#b-subcopy', {clearProps:'opacity'}); } }, .35)
+      .fromTo('.b-door', { opacity: 0, y: 34, rotateZ: -1.5 }, { opacity: 1, y: 0, rotateZ: 0, duration: .6, stagger: .12 }, .45);
+    gsap.set('#b-subcopy', { opacity: 0, y: 16 });
+    gsap.to('#b-subcopy', { opacity: 1, y: 0, duration: .6, delay: .45, ease: 'power3.out' });
+
+    // Parallax heat-wash on scroll
+    gsap.to('#b-heatwash', { yPercent: 30, ease: 'none', scrollTrigger: { trigger: '#b-hero', start: 'top top', end: 'bottom top', scrub: true } });
+    gsap.to('#b-headline', { yPercent: -12, opacity: .85, ease: 'none', scrollTrigger: { trigger: '#b-hero', start: 'top top', end: 'bottom top', scrub: true } });
+  }
+
+  // How-it-works: scrubbed rail draw + step activation, section title reveal
+  gsap.set('#variant-b .g-hide', { opacity: 1 }); // eyebrow/subcopy/doors handled above; ensure chips/title revealed by triggers below
+  gsap.set(['.b-howtitle', '.b-chip'], { opacity: 0, y: 24 });
+
+  gsap.to('.b-howtitle', { opacity: 1, y: 0, duration: .6, ease: 'power3.out',
+    scrollTrigger: { trigger: '#b-how', start: 'top 78%' } });
+
+  if (!reduce) {
+    gsap.to('#b-railfill', { xPercent: 0, ease: 'none',
+      scrollTrigger: { trigger: '#b-how .steps', start: 'top 72%', end: 'bottom 60%', scrub: true } });
+    // set rail fill origin
+    gsap.set('#b-railfill', { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, transformOrigin: 'left', scaleX: 0 });
+    gsap.to('#b-railfill', { scaleX: 1, ease: 'none',
+      scrollTrigger: { trigger: '#b-how .steps', start: 'top 75%', end: 'bottom 62%', scrub: .5 } });
+  }
+  document.querySelectorAll('.b-step').forEach(function(step, i){
+    gsap.from(step, { opacity: 0, y: 30, duration: .5, ease: 'power3.out',
+      scrollTrigger: { trigger: step, start: 'top 82%' } });
+    ScrollTrigger.create({ trigger: step, start: 'top 62%', end: 'bottom 40%',
+      onEnter: function(){ step.classList.add('on'); }, onLeaveBack: function(){ step.classList.remove('on'); } });
+  });
+
+  // Trust chips pop-in
+  gsap.to('.b-chip', { opacity: 1, y: 0, duration: .5, stagger: .1, ease: 'back.out(1.6)',
+    scrollTrigger: { trigger: '#b-trust', start: 'top 82%' } });
+}
+
+/* ---------- boot ---------- */
+window.addEventListener('DOMContentLoaded', function(){
+  if (window.gsap) document.body.classList.add('gsap-ready');
+  // If GSAP failed to load, mark no-gsap so variant B falls back to visible resting state.
+  if (!window.gsap) document.body.classList.add('no-gsap');
+});
+</script>
+</body>
+</html>
