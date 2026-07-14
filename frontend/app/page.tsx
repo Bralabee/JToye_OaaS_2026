@@ -10,6 +10,8 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { PublicShell } from "@/components/public/public-shell"
+import { HeroScene } from "@/components/marketing/hero-scene"
+import { Reveal } from "@/components/marketing/reveal"
 
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
@@ -53,15 +55,20 @@ const trustMarkers = [
 export default function Home() {
   return (
     <PublicShell>
+      <HeroScene>
       {/* Split-persona hero */}
-      <section className="relative overflow-hidden bg-slate-50">
+      <section data-hero-section className="relative overflow-hidden bg-slate-50">
         <div
+          data-hero-heatwash
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500 opacity-10"
         />
         <div className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-16 md:py-24">
           <div className="max-w-2xl">
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold leading-[1.05] tracking-tight text-slate-900">
+            <h1
+              data-hero-headline
+              className="text-4xl sm:text-5xl md:text-6xl font-bold leading-[1.05] tracking-tight text-slate-900"
+            >
               Order from local kitchens. Or run yours.
             </h1>
             <p className="mt-4 max-w-xl text-lg text-slate-600">
@@ -75,6 +82,7 @@ export default function Home() {
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
             <Link
               href="/shop"
+              data-hero-door
               className="group flex flex-col rounded-2xl bg-orange-500 p-6 text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2"
             >
               <UtensilsCrossed className="h-8 w-8" />
@@ -90,6 +98,7 @@ export default function Home() {
 
             <Link
               href="/for-operators"
+              data-hero-door
               className="group flex flex-col rounded-2xl bg-slate-900 p-6 text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
             >
               <Store className="h-8 w-8 text-orange-400" />
@@ -111,13 +120,33 @@ export default function Home() {
       {/* How it works */}
       <section className="bg-white py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-4xl font-semibold leading-tight text-slate-900">
+          <h2
+            data-hero-howtitle
+            className="text-4xl font-semibold leading-tight text-slate-900"
+          >
             How it works
           </h2>
-          <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
+          <div
+            data-hero-steps
+            className="relative mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3"
+          >
+            {/* Decorative connector rail — desktop only; GSAP draws the fill. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-[16%] right-[16%] top-6 hidden h-0.5 rounded bg-slate-200 sm:block"
+            >
+              <div
+                data-hero-railfill
+                className="absolute inset-0 origin-left rounded bg-orange-500"
+              />
+            </div>
             {steps.map((step) => (
-              <div key={step.title} className="flex flex-col">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+              <div
+                key={step.title}
+                data-hero-step
+                className="group relative flex flex-col"
+              >
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-orange-600 ring-4 ring-white transition-colors group-data-[step-active=true]:bg-orange-500 group-data-[step-active=true]:text-white">
                   <step.icon className="h-6 w-6" />
                 </span>
                 <h3 className="mt-4 text-lg font-semibold text-slate-900">
@@ -130,22 +159,24 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Trust strip */}
+      {/* Trust strip — framer-motion reveal floor (GSAP-inert on desktop) */}
       <section className="border-t border-slate-200 bg-slate-50 py-12">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap gap-3">
+          <Reveal as="div" className="flex flex-wrap gap-3">
             {trustMarkers.map((marker) => (
               <span
                 key={marker}
+                data-hero-chip
                 className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200"
               >
                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 {marker}
               </span>
             ))}
-          </div>
+          </Reveal>
         </div>
       </section>
+      </HeroScene>
     </PublicShell>
   )
 }
