@@ -18,7 +18,7 @@ import { canEnhance, DESKTOP_MOTION_QUERY } from "@/lib/gsap-gate"
  * JS never runs the content is never hidden. The floor gate is read via
  * `useSyncExternalStore` (React 19) subscribing to a matchMedia listener —
  * NOT `useEffect` + `setState`, which trips `react-hooks/set-state-in-effect`
- * (the rule that bit PR #221).
+ * (the rule that bit PR 221).
  */
 
 const MOTION_TAGS = {
