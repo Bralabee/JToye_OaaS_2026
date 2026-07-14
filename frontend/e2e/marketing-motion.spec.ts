@@ -35,6 +35,18 @@ test.describe("desktop GSAP scenes (>=768px + motion)", () => {
       await page.locator("h1[data-hero-headline] .gsap-word").count(),
     ).toBeGreaterThanOrEqual(2)
 
+    // The two persona-door CTAs MUST end fully visible after the deal-in
+    // settles — a `gsap.from` here was re-hidden by ScrollTrigger.refresh(),
+    // shipping them invisible on desktop while every other check stayed green.
+    await page.waitForTimeout(1400) // past the 0.45s delay + 0.6s tween
+    const doors = page.locator("[data-hero-door]")
+    expect(await doors.count()).toBeGreaterThanOrEqual(2)
+    for (let i = 0; i < (await doors.count()); i++) {
+      await expect(doors.nth(i)).toBeVisible()
+      const opacity = await doors.nth(i).evaluate((el) => getComputedStyle(el).opacity)
+      expect(Number(opacity)).toBeGreaterThan(0.9)
+    }
+
     const heatwash = page.locator("[data-hero-heatwash]").first()
     const before = await heatwash.evaluate((el) => getComputedStyle(el).transform)
     await page.mouse.wheel(0, 700)

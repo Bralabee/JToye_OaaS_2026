@@ -52,13 +52,19 @@ export function HeroScene({ children }: { children: ReactNode }) {
           })
         }
 
-        // Persona doors deal-in.
+        // Persona doors deal-in. Explicit set+to (NOT `gsap.from`): a plain
+        // `from` (no ScrollTrigger to own its lifecycle) has immediateRender,
+        // and the fonts.ready `ScrollTrigger.refresh()` below re-asserts its
+        // hidden start state — leaving the doors stuck at autoAlpha:0 (the
+        // primary CTAs invisible on desktop). set+to animates toward the
+        // natural visible state and is refresh-safe, mirroring the headline.
         const doors = root.querySelectorAll<HTMLElement>("[data-hero-door]")
         if (doors.length) {
-          gsap.from(doors, {
-            autoAlpha: 0,
-            y: 34,
-            rotateZ: -1.5,
+          gsap.set(doors, { autoAlpha: 0, y: 34, rotateZ: -1.5 })
+          gsap.to(doors, {
+            autoAlpha: 1,
+            y: 0,
+            rotateZ: 0,
             duration: 0.6,
             stagger: 0.12,
             delay: 0.45,
