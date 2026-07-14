@@ -37,7 +37,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 
 ### 🚧 v2.3 Vendor Ops + AI Interleaved (Phases 21–26)
 
-- [ ] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations)
+- [x] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations) (completed 2026-07-14)
 - [ ] **Phase 22: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px
 - [ ] **Phase 23: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
 - [ ] **Phase 24: Outbound Webhooks** — Vendor-registered webhook subscriptions delivered from the V46 transactional outbox with retry + HMAC signing + delivery status
@@ -77,7 +77,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 21-05-PLAN.md (Wave 4) — Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + human-verify FHRS manual-review path + `docs/metrics.json` reconcile + closure
+- [x] 21-05-PLAN.md (Wave 4) — Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + human-verify FHRS manual-review path + `docs/metrics.json` reconcile + closure
 
 **UI hint**: yes
 
@@ -194,7 +194,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 21. Onboarding Blocker UX | v2.3 | 4/5 | In Progress|  |
+| 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete   | 2026-07-14 |
 | 22. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 23. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 24. Outbound Webhooks | v2.3 | 0/2 | Not started | - |
