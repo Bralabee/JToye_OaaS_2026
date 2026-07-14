@@ -234,4 +234,24 @@ class CustomerControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @WithMockUser
+    void createCustomerWithOverLengthNameShouldReturn400NotConflict() throws Exception {
+        // QA BE-2 regression: an over-length name (> the varchar(255) column) must fail
+        // bean validation with a 400 — NOT reach the DB and surface as the misleading
+        // 409 "Duplicate Entry" the blanket DataIntegrityViolation→409 mapping produced.
+        CreateCustomerRequest request = new CreateCustomerRequest(
+                "a".repeat(256),
+                "overlength@example.com",
+                "+1234567890",
+                0
+        );
+
+        mockMvc.perform(post("/api/v1/customers")
+                        .header("X-Tenant-ID", testTenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
 }

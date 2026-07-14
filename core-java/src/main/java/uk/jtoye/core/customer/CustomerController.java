@@ -149,17 +149,21 @@ public class CustomerController {
             OffsetDateTime updatedAt
     ) {}
 
+    // QA BE-2: @Size caps match the DB varchar lengths (name/email 255, phone 50) so an
+    // over-length value fails bean validation with a clear 400, instead of reaching the
+    // DB and surfacing as a misleading 409 "Duplicate Entry" (the blanket
+    // DataIntegrityViolation→409 mapping conflates length with uniqueness).
     public record CreateCustomerRequest(
-            @jakarta.validation.constraints.NotBlank String name,
-            @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-            String phone,
+            @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String name,
+            @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String email,
+            @jakarta.validation.constraints.Size(max = 50) String phone,
             Integer allergenRestrictions
     ) {}
 
     public record UpdateCustomerRequest(
-            @jakarta.validation.constraints.NotBlank String name,
-            @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-            String phone,
+            @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String name,
+            @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String email,
+            @jakarta.validation.constraints.Size(max = 50) String phone,
             Integer allergenRestrictions
     ) {}
 }
