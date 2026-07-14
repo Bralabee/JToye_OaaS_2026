@@ -14,6 +14,14 @@ export const springPop: Transition = {
   damping: 30,
 }
 
+// Gentler spring for layout/list reflow (e.g. cart-drawer row add/remove) where
+// the snappy `springPop` would overshoot. Generic — not tied to any one surface.
+export const springSoft: Transition = {
+  type: "spring",
+  stiffness: 300,
+  damping: 32,
+}
+
 export const fadeInUp: Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0 },

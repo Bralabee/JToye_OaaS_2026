@@ -125,7 +125,14 @@ export function StorefrontNav() {
         <Link
           href={`/shop/${slug}/cart`}
           aria-live="polite"
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 transition-colors"
+          onClick={(e) => {
+            // Plain left-click opens the slide-over drawer; modified clicks
+            // (new tab/window) and keyboard/AT/JS-off still hit the cart PAGE.
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+            e.preventDefault()
+            window.dispatchEvent(new CustomEvent("jtoye:cart-open"))
+          }}
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 active:scale-95 transition-all"
         >
           <ShoppingBag className="h-5 w-5" />
           {cartCount > 0 && (
