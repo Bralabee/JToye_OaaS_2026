@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: ready_to_plan
-stopped_at: Phase 21 complete (5/5) — ready to discuss Phase 22
-last_updated: 2026-07-14T13:27:18.214Z
+status: planning
+stopped_at: Phase 22 context gathered
+last_updated: "2026-07-14T20:43:57.148Z"
 last_activity: 2026-07-14
 progress:
   total_phases: 6
@@ -110,6 +110,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-14T12:54:17.269Z
-Stopped at: Phase 21 context gathered
-Resume file: None
+Last session: 2026-07-14T20:43:57.137Z
+Stopped at: Phase 22 context gathered
+Resume file: .planning/phases/22-notifications-comms/22-CONTEXT.md
