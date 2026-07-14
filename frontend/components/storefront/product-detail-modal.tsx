@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
@@ -218,9 +219,10 @@ export function ProductDetailModal({
             {product.ingredientsText && (
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">Ingredients</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  {product.ingredientsText}
-                </p>
+                <IngredientText
+                  text={product.ingredientsText}
+                  className="block text-sm text-slate-500 leading-relaxed"
+                />
               </div>
             )}
 

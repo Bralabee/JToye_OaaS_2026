@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { IngredientText } from "@/components/ui/ingredient-text"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -413,9 +414,10 @@ export default function ProductsPage() {
                               />
                               <div>
                                 <div className="font-medium">{product.title}</div>
-                                <div className="line-clamp-1 text-xs text-slate-500">
-                                  {product.ingredientsText}
-                                </div>
+                                <IngredientText
+                                  text={product.ingredientsText}
+                                  className="line-clamp-1 block text-xs text-slate-500"
+                                />
                               </div>
                             </div>
                           </TableCell>
