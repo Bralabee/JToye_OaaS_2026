@@ -42,9 +42,12 @@ export function CartDrawer() {
     return () => window.removeEventListener("jtoye:cart-open", onOpen)
   }, [])
 
-  // Dismiss on navigation (e.g. tapping Checkout / View full basket) so the
-  // drawer never lingers over a freshly-entered route.
+  // Dismiss on navigation (e.g. tapping Checkout / View full basket, or a
+  // browser back/forward while open) so the drawer never lingers over a
+  // freshly-entered route. setOpen(false) is a no-op when already closed, so
+  // this cannot cascade renders — the lint rule's concern does not apply here.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional close-on-route-change of a controlled Sheet; idempotent no-op when already closed
     setOpen(false)
   }, [pathname])
 
