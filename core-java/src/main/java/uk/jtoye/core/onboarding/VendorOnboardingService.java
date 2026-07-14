@@ -447,6 +447,14 @@ public class VendorOnboardingService {
         List<GateDto> gateDtos = gates.stream()
                 .map(g -> new GateDto(g.getGateType(), g.getStatus(), g.isMandatory(), g.getReason(), g.getCheckedAt()))
                 .toList();
+        // ONBD-03 / D-03 exact predicate: "in review" is VERIFYING with at least one
+        // MANUAL_REVIEW gate (a human is the blocker) AND no still-PENDING gate (the
+        // automated checks have all landed). Derived here — the single site where the
+        // gate list is already loaded — so the UI renders the flag and never re-derives
+        // gate lifecycle logic.
+        boolean reviewPending = onboarding.getStatus() == OnboardingState.VERIFYING
+                && gates.stream().anyMatch(g -> g.getStatus() == GateStatus.MANUAL_REVIEW)
+                && gates.stream().noneMatch(g -> g.getStatus() == GateStatus.PENDING);
         return new OnboardingDto(
                 onboarding.getId(),
                 onboarding.getStatus(),
@@ -456,6 +464,8 @@ public class VendorOnboardingService {
                 onboarding.getSubmittedAt(),
                 onboarding.getApprovedAt(),
                 onboarding.getWentLiveAt(),
+                onboarding.getRejectionReason(),  // ONBD-05 / D-09 — already on the entity
+                reviewPending,                    // ONBD-03 / D-03
                 gateDtos);
     }
 }
