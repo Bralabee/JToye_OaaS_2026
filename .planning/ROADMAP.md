@@ -18,6 +18,7 @@ Milestone v2.3 turns from platform hardening to **vendor operational control**. 
 ## Phases
 
 **Phase Numbering:**
+
 - Integer phases (21, 22, …): planned milestone work
 - Decimal phases (22.1, …): urgent insertions (marked INSERTED)
 
@@ -46,39 +47,57 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 ## Phase Details
 
 ### Phase 21: Onboarding Blocker UX
+
 **Goal**: A vendor who hits an onboarding blocker can see exactly what is wrong, fix bad data in place, withdraw if they want out, and reach a real human — no more silent black holes. The state machine stays the sole writer of `Shop.published`; every transition goes through events.
 **Depends on**: Nothing (v2.2 shipped the onboarding state machine + gate chain). Zero Flyway migrations (`WITHDRAWN` is already in the V43 status CHECK).
 **Requirements**: ONBD-01, ONBD-02, ONBD-03, ONBD-04, ONBD-05
 **Success Criteria** (what must be TRUE):
+
   1. A vendor whose application hit a manual-review gate (e.g. a fuzzy FHRS name/address mismatch) sees an honest "In review — a reviewer checks these within N business days" state (DTO-derived from `status==VERIFYING && anyGate==MANUAL_REVIEW && noGate==PENDING`), and an admin sees that same application in a review queue with a gate-resolve control that recomputes and advances the state machine — neither is a dead end. (ONBD-03)
   2. A vendor can correct a typo'd company number, toggle the sole-trader flag, or override the FHRS establishment via an update endpoint valid only in DRAFT/ACTION_REQUIRED (RFC 7807 rejection outside those states), then resubmit and have the gates re-run against the corrected data. (ONBD-02)
   3. Each FAILED / MANUAL_REVIEW gate renders *why → what to do → a button that goes there* — inline company-number edit, a "fix these N products" allergen deep link, and an FHRS address-confirm / establishment picker. (ONBD-04)
   4. A vendor can withdraw an in-progress application from a confirm dialog; the application reaches `WITHDRAWN` (terminal, valid from DRAFT/VERIFYING/ACTION_REQUIRED) and restarting begins a fresh application. (ONBD-01)
   5. On a rejected application the vendor sees the actual `rejectionReason` (now on the vendor-facing DTO) plus a real, configured support channel (mailto/link) — not a bare "contact support"; and one blocked-onboarding journey (bad company number → fix inline → resubmit → live) passes end-to-end in Playwright. (ONBD-05)
+
 **Plans**: 5 plans (4 waves)
 
 Plans:
+**Wave 1**
+
 - [ ] 21-01-PLAN.md (Wave 1) — Backend vendor endpoints: `POST /onboarding/withdraw` (reuses the already-wired WITHDRAW transitions) + `POST /onboarding/company-number` update (blank=sole trader, DRAFT/ACTION_REQUIRED guard, create-identical validation, RFC 7807) + Testcontainers proofs
 - [ ] 21-02-PLAN.md (Wave 1, parallel) — Backend outbox stall-event seam (Pitfall-1 atomic unit): `onboarding.events` TopicExchange + `OnboardingStateChangeEvent` + `OnboardingEventPublisher` + flusher dispatch branch + `GateChainRunner` emission from the MANUAL_REVIEW park branch
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 21-03-PLAN.md (Wave 2) — Backend manual-review visibility: DTO-derived `reviewPending` + `rejectionReason` on the vendor `OnboardingDto` + admin `GET /onboarding/admin/reviews` queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, recompute-after-commit → SM advances) + RLS/Envers/403/404 proofs
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 21-04-PLAN.md (Wave 3) — Frontend: per-gate remediation blocks (why → what → deep link) + honest in-review copy with polling back-off + withdraw confirm dialog + inline company-number edit + rejection reason + config-injected support channel (NEXT_PUBLIC_*) + admin gate-resolve UI + Jest/tsc
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 21-05-PLAN.md (Wave 4) — Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + human-verify FHRS manual-review path + `docs/metrics.json` reconcile + closure
 
 **UI hint**: yes
 
 ### Phase 22: Vendor-Scoped Access + Responsive Dashboard Nav
+
 **Goal**: A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
 **Depends on**: Nothing structural (RLS/onboarding untouched). Sequenced after Phase 21 per the locked order. Ships Flyway **V52** (must precede V53 in Phase 23).
 **Requirements**: VSA-01, VSA-02, VSA-03, VSA-04, MOBL-01
 **Success Criteria** (what must be TRUE):
+
   1. After migration, the tenant behaves exactly as today: every existing user has a GROUP_ADMIN `shop_staff` row and the realm `admin` role acts as implicit GROUP_ADMIN — zero day-one regression, proven under the NOSUPERUSER RLS role-downgrade. (VSA-01)
   2. A SHOP_MANAGER granted one shop can CRUD that shop's products/orders/marketing/KDS but receives a 403 (RFC 7807, distinct from the RLS 404) on any other shop in the tenant; STAFF is operational-read + order-state-only; shop-scoped writes without a grant are denied by default. (VSA-02)
   3. The dashboard carries a persisted shop-context switcher; all shop-scoped screens operate on the selected shop, and a group-wide "apply to all shops" action is visible only to GROUP_ADMIN. (VSA-03)
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
+
 **Plans**: TBD (est. 3)
 
 Plans:
+
 - [ ] 22-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
 - [ ] 22-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
 - [ ] 22-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
@@ -86,17 +105,21 @@ Plans:
 **UI hint**: yes
 
 ### Phase 23: Image Architecture — CoW Assets + Safe Upload Pipeline
+
 **Goal**: Vendor image uploads are backed by a shared copy-on-write asset model with reference counting, and every upload passes through a safe async pipeline that stores only a validated, normalized derivative — never the raw bytes.
 **Depends on**: Phase 22 (migration ordering — `media_asset` is **V53**, which must land after `shop_staff` V52). Reuses the V46 outbox/AMQP infra.
 **Requirements**: IMG-01, IMG-02, IMG-03, IMG-04
 **Success Criteria** (what must be TRUE):
+
   1. Products reference `media_asset` rows (never own bytes); editing a shared asset mints a new asset and repoints only that product (copy-on-write), and a physical MinIO delete happens only at reference-count 0 — with sha256 per-tenant dedup, proven under the NOSUPERUSER RLS role-downgrade; existing `image_url` values are backfilled behind a dual-read window. (IMG-01)
   2. An oversize upload is refused *before* it is buffered; a valid upload stores a raw quarantine object + a PENDING `media_asset` and returns immediately, then an async worker magic-byte-sniffs, enforces the jpeg/png/webp allowlist, decodes-to-verify, strips EXIF, and stores the normalized/re-encoded derivative (never the raw upload), pinning the tenant GUC before any DB write; single uploads and BulkImportService share the one path. (IMG-02)
   3. A file that fails normalization/decode/allowlist is marked FAILED and rejected with a vendor-visible reason; an image below the content-relevance threshold still goes ACTIVE but lands in a vendor-visible review queue; the vision stage sits behind a flag defaulting to advisory until the provider is reliably up. (IMG-03)
   4. The product UI shows a "processing" state while an asset is PENDING and surfaces FAILED (with reason) and content-flagged (ACTIVE) assets in a vendor-visible review/rejection queue. (IMG-04)
+
 **Plans**: TBD (est. 3)
 
 Plans:
+
 - [ ] 23-01: V53 `media_asset` (+`_aud` if audited, ENABLE+FORCE RLS, sha256 tenant-unique) + product↔asset reference (FK/join) + copy-on-write repoint + reference-counted physical delete + `image_url` backfill dual-read + RLS-under-NOSUPERUSER proof
 - [ ] 23-02: Safe async upload pipeline — reject-early Content-Length/streaming size guard + quarantine store + PENDING row + AMQP outbox publish (202-style) + queue worker (magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode/thumbnail, raw-delete-on-success, tenant-GUC pin) + BulkImportService unification
 - [ ] 23-03: Gate strictness (compress-fail → FAILED reject; low-relevance → ACTIVE + review queue; vision advisory flag) + product UI processing/failed/flagged states + vendor review/rejection queue + `docs/metrics.json` reconcile
@@ -104,49 +127,61 @@ Plans:
 **UI hint**: yes
 
 ### Phase 24: Outbound Webhooks
+
 **Goal**: A vendor can register webhook subscriptions and reliably receive signed, retried deliveries of onboarding/order/refund state changes from the transactional outbox — the delivery seam onboarding (ONBD-05) left open.
 **Depends on**: V46 transactional outbox (shipped v2.2). Soft: Phase 21 provides onboarding state-change events as one delivery source.
 **Requirements**: AI-01
 **Success Criteria** (what must be TRUE):
+
   1. A vendor can register a tenant-scoped webhook subscription (ENABLE+FORCE RLS, proven isolated per tenant) for chosen event types (onboarding / order / refund). (AI-01)
   2. A state change already written to the V46 outbox is delivered to every matching subscription with an HMAC signature the receiver can verify, and the delivered payload is tenant-scoped. (AI-01)
   3. A delivery that fails is retried with bounded backoff and its delivery status is observable; a permanently-failing endpoint does not block deliveries to other subscriptions. (AI-01)
+
 **Plans**: TBD (est. 2)
 
 Plans:
+
 - [ ] 24-01: `webhook_subscription` model (tenant-scoped ENABLE+FORCE RLS) + registration API + delivery worker consuming the V46 outbox + event-type routing (onboarding/order/refund)
 - [ ] 24-02: HMAC payload signing + retry-with-backoff + delivery-status tracking + onboarding/order/refund tie-in + outbox→delivery / retry / signature-verification / RLS tests
 
 **UI hint**: no
 
 ### Phase 25: Mutating MCP Tools
+
 **Goal**: An external AI agent holding a tenant-scoped credential can safely create orders/customers through MCP write tools that ride the uniform Idempotency-Key contract, with RLS as the boundary — extending the Phase 20 read-only server.
 **Depends on**: Phase 20 read-only MCP server + #204 Idempotency-Key contract (V50) + #206 scoped machine credentials (all shipped v2.2). Structurally independent of other v2.3 phases.
 **Requirements**: AI-02
 **Success Criteria** (what must be TRUE):
+
   1. The MCP server exposes write tools (e.g. `orders.create`, `customers.create`) mapped to the appropriate write scopes; each rides the uniform Idempotency-Key contract so a replayed call returns the original result, not a duplicate. (AI-02)
   2. A write attempt targeting another tenant returns empty/403 under the MCP credential — RLS-proven, test included. (AI-02)
   3. Tool errors surface as RFC 7807 problem-detail (consistent with the read-only slice), not raw stack traces, and the flow is proven live against the dev stack. (AI-02)
+
 **Plans**: TBD (est. 2)
 
 Plans:
+
 - [ ] 25-01: MCP write tools (`orders.create` / `customers.create`) over the core REST API + `Idempotency-Key` header wiring (#204) + write-scope mapping
 - [ ] 25-02: cross-tenant RLS proof under the MCP credential + RFC 7807 tool errors + idempotent-replay integration test + live E2E + `docs/metrics.json` reconcile
 
 **UI hint**: no
 
 ### Phase 26: Local-K8s Overlay + Verified Breakage Fixes
+
 **Goal**: The imperative deploy patches from the 2026-07-14 live-deploy rehearsal are replaced by a committed, buildable `k8s/local` overlay, and the verified k8s breakage list is fixed so core boots as the NOSUPERUSER app role on a single replica.
 **Depends on**: Nothing structural (infra/deploy config). Best sequenced last so the overlay ships all v2.3 schema (V52 `shop_staff`, V53 `media_asset`) and services. `compose XOR k8s` on local (RULE 0) still applies.
 **Requirements**: INFRA-01, INFRA-02
 **Success Criteria** (what must be TRUE):
+
   1. `kubectl kustomize k8s/local` builds and a server dry-run apply resolves every reference — no dangling secret/configmap/label refs. (INFRA-01)
   2. The `k8s/local` overlay shims endpoints to `host.minikube.internal`, sets `minReplicas=1`, and repoints the backup CronJob to host MinIO — committed, replacing the imperative secret/configmap patches. (INFRA-01)
   3. `DB_PORT` is injected via `valueFrom.secretKeyRef` (no hardcoded `5432`), and secrets use `DB_USER`/`DB_PASSWORD` (the `jtoye_app` NOSUPERUSER role) so core boots without `DatabaseConfigurationValidator` refusing a DB superuser. (INFRA-02)
   4. The pg-backup CronJob targets host MinIO and the STOMP relay stomp-login/passcode wiring reaches the spring config (no boot-time `Access refused for user 'guest'`). (INFRA-02)
+
 **Plans**: TBD (est. 2)
 
 Plans:
+
 - [ ] 26-01: Committed `k8s/local` overlay (host.minikube.internal endpoint shims, `minReplicas=1`, backup→MinIO) replacing imperative patches + `kubectl kustomize` build + server dry-run
 - [ ] 26-02: Verified breakage fixes — `DB_PORT` via `secretKeyRef`, `DB_USER`/`DB_PASSWORD` NOSUPERUSER role, pg-backup→host MinIO, STOMP relay login wiring + config-injection (no-hardcoded-port) assertion + boot-as-app-role smoke
 

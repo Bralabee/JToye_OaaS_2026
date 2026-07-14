@@ -420,18 +420,21 @@ const REMEDIATION: Partial<Record<`${GateType}:${GateStatus}`, { why: string; wh
 
 **If any A# is wrong, it is a local, cheap correction — none blocks the zero-migration boundary or the sole-writer invariant.**
 
-## Open Questions
+## Open Questions (RESOLVED — planner adopted every recommendation, 2026-07-14)
 
 1. **Support-channel & SLA config location (frontend env vs backend property).**
    - What we know: frontend config is `NEXT_PUBLIC_*` (build-time, `env-validation.ts`); backend has `OnboardingProperties` (`onboarding.*`, runtime-overridable).
    - What's unclear: whether ops needs to change the support link/SLA without a frontend rebuild.
    - Recommendation: default to `NEXT_PUBLIC_SUPPORT_EMAIL` / `NEXT_PUBLIC_SUPPORT_URL` / `NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS`; register in `env-validation.ts` + `.env.local.example`. Revisit if runtime override is a hard requirement.
+   - **RESOLVED:** plan 21-04 uses the `NEXT_PUBLIC_*` frontend env channel as recommended (A1).
 
 2. **Review-queue endpoint: extend `/pending` vs new `/reviews`.**
    - What we know: `/pending` currently returns only `PENDING_APPROVAL` (`OnboardingAdminController.java:62-72`) and the approvals UI treats it as the approve/reject queue.
    - Recommendation: a separate `/reviews` keeps the approve/reject queue semantics clean and avoids changing the existing endpoint's contract (Incremental Betterment). Planner's call.
+   - **RESOLVED:** plan 21-03 adds a new `GET /onboarding/admin/reviews` (does NOT touch `/pending`), per the recommendation (A4).
 
 3. **Stall-event de-duplication policy** (see Pitfall 4 / A3).
+   - **RESOLVED:** plan 21-02 emits at-least-once with an idempotent downstream consumer — no already-emitted guard added (A3).
 
 ## Environment Availability
 
