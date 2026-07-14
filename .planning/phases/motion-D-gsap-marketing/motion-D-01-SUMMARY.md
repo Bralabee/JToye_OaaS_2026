@@ -148,15 +148,20 @@ No new network endpoints, auth paths, or trust-boundary surface. `splitWords` us
 ## Known Stubs
 None. The count-up mechanism is real and wired; it animates `[data-count-to]` hooks added to the terms band (copy preserved). Because the real terms values are prose/ranges rather than sketch-style single proof numbers, only the leading integer of each value counts up (a subtle desktop flourish) — intentional, not a stub.
 
-## Pending Human/Orchestrator Check (Task 5 `<human-check>`)
-The live scroll behaviour was NOT run in this execution environment (no prod stack; the running Docker stack must not be touched per constraints). The deterministic gates (build/tsc typecheck of the specs, eslint, full jest, docs-freshness) are green. The following must be run by the orchestrator/developer against a PRODUCTION build before merge:
+## Task 5 `<human-check>` — RUN BY ORCHESTRATOR, PASSED (2026-07-14)
+The orchestrator built a standalone PRODUCTION build (`next build` + `next start -p 3100`, isolated from the running Docker stack) and ran the specs against it:
 
 ```
-PLAYWRIGHT_BASE_URL=http://localhost:3100 \
-  npx playwright test e2e/marketing-motion.spec.ts e2e/csp-no-violations.spec.ts
+PLAYWRIGHT_BASE_URL=http://localhost:3100 npx playwright test e2e/marketing-motion.spec.ts e2e/csp-no-violations.spec.ts
+→ 18 passed, 2 skipped (the 2 skips = desktop-only scene tests correctly skipped on the mobile project)
 ```
 
-Expected (both projects): on `/` the headline splits and the heat-wash parallaxes; on `/for-operators` the Service-rail pins/builds and the pilot rail scrolls horizontally; 375px + reduced-motion show fully-visible static content with no pin/scrub/parallax; both routes report zero CSP violations. **The phase's live scroll behaviour is therefore NOT yet verified — only the deterministic gates are.**
+Result: **18/18 meaningful checks pass.** Verified live against the prod build:
+- Prod CSP header confirmed strict-dynamic nonce form with **no `unsafe-eval`** in `script-src`; `/` and `/for-operators` emit **zero CSP violations** with GSAP bundled (no CDN).
+- Desktop (1440): `/` splits the headline (`.gsap-word`), sets `data-motion-active="desktop"`, heat-wash transform changes on scroll; `/for-operators` pins the Service-rail (`.pin-spacer` present) and horizontal pilot rail moves. **Visual proof captured** — the pinned Service-rail scene builds its items on scrub live in the real app.
+- Mobile 375px + `prefers-reduced-motion: reduce`: zero `.gsap-word`, no `.pin-spacer`, no `data-motion-active`, all headings + pilot steps fully visible (the framer-motion floor).
+
+**One test-only fix applied during verification** (`fix` commit): the reduced-motion describe used `test.use({ reducedMotion: "reduce" })`, which did NOT propagate to the `page` fixture in this Playwright/project setup (headline still split → false failure). Replaced with an explicit `await page.emulateMedia({ reducedMotion: "reduce" })` per the phase plan's Task 5 action. The CODE was proven correct four independent ways (context-level + emulateMedia, both routes: 0 words under reduce) — the fix aligns the test with reality, it does not mask a defect. No production code changed; test-block count unchanged (metrics stay 1300).
 
 ## Self-Check: PASSED
 - All 10 created files present on disk (verified).

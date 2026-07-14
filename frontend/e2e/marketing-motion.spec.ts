@@ -103,12 +103,15 @@ test.describe("mobile floor (375px) — no heavy scenes", () => {
 })
 
 test.describe("reduced motion — no heavy scenes", () => {
-  test.use({ reducedMotion: "reduce" })
-
   for (const path of ["/", "/for-operators"]) {
     test(`${path} builds no GSAP scene under prefers-reduced-motion: reduce`, async ({
       page,
     }) => {
+      // Emulate reduced-motion explicitly BEFORE navigation. (Describe-level
+      // `test.use({ reducedMotion })` did not propagate to the page fixture in
+      // this Playwright/project setup, so the DESKTOP_MOTION_QUERY still matched;
+      // page.emulateMedia is the reliable path and matches the phase plan.)
+      await page.emulateMedia({ reducedMotion: "reduce" })
       await page.goto(`${BASE}${path}`)
       await page.waitForLoadState("networkidle")
       await page.waitForTimeout(500)
