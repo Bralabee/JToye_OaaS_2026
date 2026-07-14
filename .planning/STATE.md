@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Phase 21 context gathered
-last_updated: "2026-07-14T10:39:50.959Z"
-last_activity: 2026-07-14 -- Completed 21-01 (backend withdraw + company-number endpoints)
+last_updated: "2026-07-14T11:02:51.810Z"
+last_activity: 2026-07-14
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 21 (onboarding-blocker-ux) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
-Last activity: 2026-07-14 -- Completed 21-01 (backend withdraw + company-number endpoints)
+Last activity: 2026-07-14
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Milestone v2.3 Phase Map
 
@@ -67,6 +67,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 26 | 0/2 | - | - |
 
 *Updated after each plan completion*
+| Phase 21 P02 | 25min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [v2.3 Constraint]: onboarding-blocker path is zero-migration (`WITHDRAWN` already in V43 CHECK); derive "in review" at the DTO layer, no `IN_REVIEW` state migration.
 - [Phase 21]: 21-01: POST /onboarding/withdraw reuses the already-wired WITHDRAW state-machine transitions (no SM change) via the canonical transition() path; terminal source -> RFC 7807 400; WITHDRAW never touches Shop.published.
 - [Phase 21]: 21-01: company-number correction is POST /onboarding/company-number — a data edit firing NO state-machine event, gated to DRAFT/ACTION_REQUIRED (else RFC 7807 400), reusing create's @Size(32)+@Pattern verbatim; blank/whitespace = sole trader (null).
+- [Phase 21]: 21-02: manual-review stall notification writes an onboarding.events row to the shared V46 outbox; exchange bean + producer + flusher dispatch shipped atomically (Pitfall 1) so the shared flusher never poison-casts it; unbound topic exchange (Phase 24 #205 delivers); emit only on MANUAL_REVIEW park, at-least-once; SM untouched, zero migrations.
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-14T10:36:55.904Z
+Last session: 2026-07-14T11:01:50.551Z
 Stopped at: Phase 21 context gathered
 Resume file: None
