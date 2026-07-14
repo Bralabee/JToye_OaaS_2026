@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.config.RabbitMQConfig;
+import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.security.TenantContext;
@@ -252,7 +253,13 @@ public class PaymentEventOutboxFlusher {
             // message carries the same __TypeId__ the listeners expect:
             //   order.events + 'order.state.*'  → OrderStateChangeEvent (#93)
             //   order.events (order.refunded)   → RefundEvent (V36)
+            //   onboarding.events               → OnboardingStateChangeEvent (Phase 21)
             //   payment.events                  → PaymentEvent (V31)
+            //
+            // The onboarding branch MUST precede the final else: that else is a
+            // poison sink — it casts anything unrecognised to PaymentEvent,
+            // which for an onboarding payload throws JsonProcessingException →
+            // the row is marked poison-FAILED and dead-lettered (Pitfall 1).
             Object event;
             if (RabbitMQConfig.ORDER_EVENTS_EXCHANGE.equals(exchange)) {
                 if (row.getRoutingKey() != null
@@ -261,6 +268,8 @@ public class PaymentEventOutboxFlusher {
                 } else {
                     event = objectMapper.readValue(row.getPayload(), RefundEvent.class);
                 }
+            } else if (RabbitMQConfig.ONBOARDING_EVENTS_EXCHANGE.equals(exchange)) {
+                event = objectMapper.readValue(row.getPayload(), OnboardingStateChangeEvent.class);
             } else {
                 event = objectMapper.readValue(row.getPayload(), PaymentEvent.class);
             }

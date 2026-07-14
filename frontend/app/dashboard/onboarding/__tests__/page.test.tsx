@@ -1,7 +1,15 @@
 import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react"
+
+// Config-injected support channel + review SLA (GLOBAL_RULE_6). Set BEFORE the
+// component reads them at render time — resolveSupportChannel prefers the URL, so
+// the rejection support link resolves to NEXT_PUBLIC_SUPPORT_URL below.
+process.env.NEXT_PUBLIC_SUPPORT_EMAIL = "support@jtoye.test"
+process.env.NEXT_PUBLIC_SUPPORT_URL = "https://help.jtoye.test/onboarding"
+process.env.NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS = "2"
+
 import OnboardingPage from "../page"
 import apiClient from "@/lib/api-client"
-import type { OnboardingDto, OnboardingState, GateStatus, GateType } from "@/types/api"
+import type { GateDto, OnboardingDto, OnboardingState, GateStatus, GateType } from "@/types/api"
 
 // Mock the API client (mirrors the products-page test idiom)
 jest.mock("@/lib/api-client")
@@ -31,6 +39,17 @@ function gates(status: GateStatus) {
   }))
 }
 
+// A single gate at a chosen status, the rest PASSED — for isolating one blocker.
+function gatesWith(gateType: GateType, status: GateStatus, reason: string | null): GateDto[] {
+  return GATE_TYPES.map((gt) => ({
+    gateType: gt,
+    status: gt === gateType ? status : "PASSED",
+    mandatory: true,
+    reason: gt === gateType ? reason : null,
+    checkedAt: null,
+  }))
+}
+
 function onboarding(status: OnboardingState, overrides: Partial<OnboardingDto> = {}): OnboardingDto {
   return {
     id: "onb-1",
@@ -41,6 +60,8 @@ function onboarding(status: OnboardingState, overrides: Partial<OnboardingDto> =
     submittedAt: null,
     approvedAt: null,
     wentLiveAt: null,
+    rejectionReason: null,
+    reviewPending: false,
     gates: gates("PENDING"),
     ...overrides,
   }
@@ -284,5 +305,198 @@ describe("Onboarding Page", () => {
         })
       )
     })
+  })
+
+  // --- ONBD-03: honest in-review state + polling back-off --------------------
+
+  it("renders honest in-review copy (config SLA, not 'under a minute') and backs polling off to 30s", async () => {
+    jest.useFakeTimers()
+    const me = jest.fn().mockResolvedValue({
+      data: onboarding("VERIFYING", {
+        reviewPending: true,
+        gates: gatesWith("FOOD_HYGIENE_RATING", "MANUAL_REVIEW", "Awaiting a reviewer."),
+      }),
+    })
+    routeGet(() => me())
+
+    render(<OnboardingPage />)
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // Honest, config-driven SLA copy — the dishonest "under a minute" is gone.
+    expect(screen.getByText(/within 2 business days/i)).toBeInTheDocument()
+    expect(screen.queryByText(/under a minute/i)).not.toBeInTheDocument()
+    // The "In review" badge is shown instead of "Running checks".
+    expect(screen.getByText("In review")).toBeInTheDocument()
+
+    // Backed off: the old fast 4s tick must NOT fire a poll.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(4000)
+    })
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // The backed-off 30s poll fires.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(26000)
+    })
+    expect(me).toHaveBeenCalledTimes(2)
+
+    jest.useRealTimers()
+  })
+
+  // --- ONBD-01: withdraw confirm dialog + terminal copy ----------------------
+
+  it("withdraws from a confirm dialog (POST /withdraw) and shows the terminal WITHDRAWN copy", async () => {
+    routeGet(() =>
+      Promise.resolve({ data: onboarding("PENDING_APPROVAL", { gates: gates("PASSED") }) })
+    )
+    mockedApiClient.post.mockResolvedValue({
+      data: onboarding("WITHDRAWN", { gates: gates("PASSED") }),
+    })
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /withdraw application/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /withdraw application/i }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Withdraw your application?")).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Withdraw application" }))
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/onboarding/withdraw", {})
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByText(/starting again begins a fresh application/i)
+      ).toBeInTheDocument()
+    })
+  })
+
+  // --- ONBD-02: inline company-number edit -----------------------------------
+
+  it("edits the company number inline (POST /company-number) seeded from the loaded application", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("ACTION_REQUIRED", {
+          companyNumber: "OLD123",
+          gates: gatesWith("BUSINESS_VERIFIED", "FAILED", "We couldn't verify your company."),
+        }),
+      })
+    )
+    mockedApiClient.post.mockResolvedValue({
+      data: onboarding("ACTION_REQUIRED", { companyNumber: "SC654321" }),
+    })
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Companies House number")).toBeInTheDocument()
+    })
+    const input = screen.getByLabelText("Companies House number") as HTMLInputElement
+    // Seeded from the loaded application (not blank).
+    expect(input.value).toBe("OLD123")
+
+    fireEvent.change(input, { target: { value: "SC654321" } })
+    fireEvent.click(screen.getByRole("button", { name: /save company number/i }))
+
+    await waitFor(() => {
+      expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/onboarding/company-number", {
+        companyNumber: "SC654321",
+      })
+    })
+  })
+
+  // --- ONBD-04: per-(gateType,status) remediation block ----------------------
+
+  it("renders a per-gate remediation block: reason preserved + guidance + a deep link", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("ACTION_REQUIRED", {
+          gates: gatesWith(
+            "ALLERGEN_DATA_COMPLETE",
+            "FAILED",
+            "Missing allergen data on SKU-123, SKU-456"
+          ),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    // why: the specific gate reason (names the offending SKUs) is preserved — it
+    // renders in both the gate breakdown and the remediation block, so assert >= 1.
+    expect(screen.getAllByText(/SKU-123, SKU-456/).length).toBeGreaterThan(0)
+    // what + where: allergen failures deep-link to the products screen (D-08).
+    const fix = screen.getByRole("link", { name: /fix these products/i })
+    expect(fix).toHaveAttribute("href", "/dashboard/products")
+  })
+
+  it("renders the FHRS manual-review remediation deep-linking to the shop edit screen", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          reviewPending: true,
+          gates: gatesWith("FOOD_HYGIENE_RATING", "MANUAL_REVIEW", "No confident FHRS match."),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    const edit = screen.getByRole("link", { name: /edit shop details/i })
+    expect(edit).toHaveAttribute("href", "/dashboard/shops")
+  })
+
+  // --- ONBD-05: rejection reason + configured support channel -----------------
+
+  it("renders the rejection reason and a configured support link on REJECTED", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("REJECTED", {
+          rejectionReason: "Hygiene evidence inconsistent with the registered premises",
+          gates: gates("PASSED"),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/hygiene evidence inconsistent/i)).toBeInTheDocument()
+    })
+    // The support link derives from NEXT_PUBLIC_SUPPORT_URL (config-injected).
+    const support = screen.getByRole("link", { name: /contact support/i })
+    expect(support).toHaveAttribute("href", "https://help.jtoye.test/onboarding")
+  })
+
+  it("renders the recorded reason + support link on SUSPENDED", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("SUSPENDED", {
+          rejectionReason: "Repeated late fulfilment complaints",
+          gates: gates("PASSED"),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/repeated late fulfilment complaints/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole("link", { name: /contact support/i })).toBeInTheDocument()
   })
 })

@@ -367,6 +367,14 @@ export interface OnboardingDto {
   submittedAt: string | null
   approvedAt: string | null
   wentLiveAt: string | null
+  // ONBD-05: reason shown to the vendor on REJECTED/SUSPENDED (already stored
+  // server-side; surfaced on the vendor DTO in 21-03).
+  rejectionReason: string | null
+  // ONBD-03: derived server-side (VERIFYING && a gate is MANUAL_REVIEW && no gate
+  // is still PENDING) so the UI renders an honest "in review" state and never
+  // re-computes gate lifecycle math. Kept in EXACT sync with the Java OnboardingDto
+  // record — a missing/extra field breaks `next build` (tsc). — 21-03.
+  reviewPending: boolean
   gates: GateDto[]
 }
 
@@ -374,6 +382,21 @@ export interface CreateOnboardingRequest {
   model: OnboardingModel
   shopId: string
   companyNumber?: string
+}
+
+// ONBD-02: vendor corrects the onboarding company number in place (blank =
+// sole trader), then resubmits. Mirrors the backend UpdateOnboardingRequest
+// (POST /onboarding/company-number). — 21-01.
+export interface UpdateOnboardingRequest {
+  companyNumber?: string
+}
+
+// ONBD-03 admin surface: an admin resolves a stuck gate. Mirrors the backend
+// ResolveGateRequest (POST /onboarding/admin/{id}/gates/{gateType}/resolve);
+// reason is required for FAIL (enforced server-side), optional for PASS/WAIVE. — 21-03.
+export interface ResolveGateRequest {
+  decision: "PASS" | "WAIVE" | "FAIL"
+  reason?: string
 }
 
 // Admin approve/reject queue (#178 slice 2) — mirrors AdminOnboardingDto.

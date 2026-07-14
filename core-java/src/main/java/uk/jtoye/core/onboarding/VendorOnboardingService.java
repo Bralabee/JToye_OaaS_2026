@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.common.CurrentTenant;
+import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
@@ -171,6 +172,60 @@ public class VendorOnboardingService {
         return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
     }
 
+    /**
+     * Withdraw the caller's onboarding (ONBD-01, D-05). Fires WITHDRAW through the
+     * single canonical {@link #transition} path from any pre-live state (DRAFT /
+     * VERIFYING / ACTION_REQUIRED / PENDING_APPROVAL / APPROVED → terminal
+     * WITHDRAWN). WITHDRAW is a no-side-effect status change — it falls into the
+     * {@code transition} {@code default} arm and never touches {@code Shop.published}
+     * (the state machine stays the sole writer, threat T-21-01-03). A terminal
+     * source (REJECTED / WITHDRAWN / LIVE / SUSPENDED) has no WITHDRAW transition, so
+     * the state machine vetoes it → {@code InvalidStateTransitionException} → HTTP
+     * 400. Withdrawal is terminal; a vendor who wants to try again starts a new
+     * application.
+     */
+    public OnboardingDto withdraw() {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        log.info("Vendor withdrawing onboarding {} (tenant {})", onboarding.getId(), tenantId);
+        transition(onboarding, OnboardingEvent.WITHDRAW);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
+    /**
+     * Correct the caller's onboarding company number (ONBD-02, D-06). A DATA EDIT
+     * ONLY — it fires NO {@link OnboardingEvent}, so it never touches {@code status}
+     * or {@code Shop.published} (the state machine stays the sole writer, threat
+     * T-21-01-03). Permitted only in DRAFT or ACTION_REQUIRED — the states where the
+     * vendor is still building / fixing the application; anywhere else the edit is
+     * rejected with {@link InvalidStateTransitionException} → HTTP 400 (threat
+     * T-21-01-04), so a company number cannot be mutated mid-verification or after a
+     * terminal outcome. The value is re-validated at the boundary by
+     * {@code UpdateOnboardingRequest} (identical {@code @Size}+{@code @Pattern} to
+     * create) and normalised here: a blank/whitespace value becomes null (= sole
+     * trader), matching create semantics. After correcting, the vendor triggers the
+     * existing {@link #resubmit()} to re-run the gate chain against the fixed data.
+     */
+    public OnboardingDto updateCompanyNumber(String companyNumber) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboarding(tenantId);
+
+        if (onboarding.getStatus() != OnboardingState.DRAFT
+                && onboarding.getStatus() != OnboardingState.ACTION_REQUIRED) {
+            throw new InvalidStateTransitionException(
+                    "Company number can only be changed while onboarding is in DRAFT or ACTION_REQUIRED "
+                            + "(current: " + onboarding.getStatus() + ")");
+        }
+
+        onboarding.setCompanyNumber(normaliseCompanyNumber(companyNumber));
+        onboardingRepository.save(onboarding);
+        log.info("Vendor updated onboarding {} company number (tenant {})", onboarding.getId(), tenantId);
+
+        return toDto(onboarding, gateRepository.findByOnboardingId(onboarding.getId()));
+    }
+
     /** The caller-tenant's onboarding plus its per-gate breakdown. */
     @Transactional(readOnly = true)
     public OnboardingDto getMyOnboarding() {
@@ -191,6 +246,25 @@ public class VendorOnboardingService {
     public List<AdminOnboardingDto> listPendingApproval() {
         CurrentTenant.require();
         return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.PENDING_APPROVAL).stream()
+                .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
+                .toList();
+    }
+
+    /**
+     * Admin review queue (ONBD-03 / D-04): onboardings parked in VERIFYING because a
+     * gate needs a human — i.e. VERIFYING with at least one MANUAL_REVIEW gate row.
+     * This is the black-hole state the existing {@link #listPendingApproval() /pending}
+     * approve/reject queue never showed; per D-04/A4 it is a NEW queue (Incremental
+     * Betterment — the /pending contract is untouched). Runs under RLS, so the list is
+     * scoped to the caller's tenant (same interim-resolver boundary as gate-resolve;
+     * see {@link OnboardingAdminController}). Oldest submission first, mirroring
+     * {@link #listPendingApproval()}.
+     */
+    @Transactional(readOnly = true)
+    public List<AdminOnboardingDto> listReviewPending() {
+        CurrentTenant.require();
+        return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.VERIFYING).stream()
+                .filter(o -> gateRepository.existsByOnboardingIdAndStatus(o.getId(), GateStatus.MANUAL_REVIEW))
                 .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
                 .toList();
     }
@@ -227,6 +301,83 @@ public class VendorOnboardingService {
         onboarding.setRejectionReason(reason.trim());
         log.info("Admin rejecting onboarding {} (tenant {})", onboardingId, tenantId);
         transition(onboarding, OnboardingEvent.REJECT);
+
+        return toAdminDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
+    }
+
+    /**
+     * Admin gate-resolve (ONBD-03 / D-01): unstick a gate parked at MANUAL_REVIEW by
+     * overriding its row status, then let the EXISTING recompute advance the state
+     * machine. This method writes ONLY the gate row and registers the recompute — it
+     * NEVER writes {@code status}/{@code Shop.published} directly (the state machine
+     * stays the sole authority, threat T-21-03-03). It also NEVER calls
+     * {@code runAndRecompute} inline: the recompute is dispatched
+     * {@link #kickGateChainAfterCommit after this transaction commits} (CR-01), so the
+     * async worker sees the committed gate write. {@code runAndRecompute} advances only
+     * from VERIFYING and skips non-PENDING rows, so a PASS/WAIVE on the last blocking
+     * gate fires GATES_PASSED (advancing out of VERIFYING) while a FAIL fires
+     * GATE_FAILED (→ ACTION_REQUIRED), and the admin-set row survives the re-run.
+     *
+     * <p><strong>Interim resolver (D-01):</strong> the caller is the tenant's own
+     * {@code admin} (RLS pins {@code requireOnboardingById} to the caller-tenant — a
+     * foreign onboarding is a clean 404, no existence oracle). A real J'Toye
+     * platform-operator console is a deferred phase.
+     *
+     * <p><strong>VERIFYING-only guard (WR-01):</strong> a gate can only be resolved while
+     * the onboarding is in {@code VERIFYING}. {@code runAndRecompute} advances the state
+     * machine ONLY from VERIFYING, so resolving a gate once the onboarding has already left
+     * that state (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute
+     * can never act on — silently stranding the application until a later {@code /approve}
+     * fails with an unexplained gate-guard veto. Resolving outside VERIFYING is therefore
+     * rejected with {@link InvalidStateTransitionException} → HTTP 400, and no gate row is
+     * touched.
+     *
+     * <p>The gate write is Envers-audited automatically ({@code VendorOnboardingGate}
+     * is {@code @Audited} → {@code vendor_onboarding_gate_aud}). A FAIL decision
+     * REQUIRES a reason (A5); a blank one is an {@link IllegalArgumentException} → HTTP
+     * 400. PASS/WAIVE reasons are optional.
+     */
+    public AdminOnboardingDto resolveGate(UUID onboardingId, GateType gateType,
+                                          GateDecision decision, String reason) {
+        UUID tenantId = CurrentTenant.require();
+        VendorOnboarding onboarding = requireOnboardingById(onboardingId);
+
+        // WR-01: gate resolution is VERIFYING-only. The recompute this method dispatches
+        // (GateChainRunner.runAndRecompute) advances the state machine ONLY from VERIFYING;
+        // resolving a gate on an onboarding already at PENDING_APPROVAL/APPROVED/LIVE would
+        // silently mutate a gate row the recompute can never act on, stranding the onboarding
+        // and surfacing later as an unexplained APPROVE guard veto. Reject up front instead.
+        if (onboarding.getStatus() != OnboardingState.VERIFYING) {
+            throw new InvalidStateTransitionException(
+                    "Gate " + gateType + " cannot be resolved while onboarding " + onboardingId
+                    + " is in state " + onboarding.getStatus()
+                    + " — gate resolution is only valid during manual review (VERIFYING)");
+        }
+
+        if (decision == GateDecision.FAIL && (reason == null || reason.isBlank())) {
+            throw new IllegalArgumentException("A FAIL decision requires a reason");
+        }
+
+        VendorOnboardingGate row = gateRepository.findByOnboardingIdAndGateType(onboardingId, gateType)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Gate " + gateType + " not found for onboarding " + onboardingId));
+
+        GateStatus newStatus = switch (decision) {
+            case PASS -> GateStatus.PASSED;
+            case WAIVE -> GateStatus.WAIVED;
+            case FAIL -> GateStatus.FAILED;
+        };
+        row.setStatus(newStatus);
+        row.setReason(reason == null || reason.isBlank() ? null : reason.trim());
+        row.setCheckedAt(OffsetDateTime.now());
+        gateRepository.save(row);  // Envers auto-writes vendor_onboarding_gate_aud
+
+        log.info("Admin resolved gate {} -> {} on onboarding {} (tenant {})",
+                gateType, newStatus, onboardingId, tenantId);
+
+        // CR-01: recompute AFTER commit — never inline. Reuses the existing advance
+        // logic (GATES_PASSED / GATE_FAILED); the state machine remains the sole writer.
+        kickGateChainAfterCommit(onboardingId, tenantId);
 
         return toAdminDto(onboarding, gateRepository.findByOnboardingId(onboardingId));
     }
@@ -392,6 +543,14 @@ public class VendorOnboardingService {
         List<GateDto> gateDtos = gates.stream()
                 .map(g -> new GateDto(g.getGateType(), g.getStatus(), g.isMandatory(), g.getReason(), g.getCheckedAt()))
                 .toList();
+        // ONBD-03 / D-03 exact predicate: "in review" is VERIFYING with at least one
+        // MANUAL_REVIEW gate (a human is the blocker) AND no still-PENDING gate (the
+        // automated checks have all landed). Derived here — the single site where the
+        // gate list is already loaded — so the UI renders the flag and never re-derives
+        // gate lifecycle logic.
+        boolean reviewPending = onboarding.getStatus() == OnboardingState.VERIFYING
+                && gates.stream().anyMatch(g -> g.getStatus() == GateStatus.MANUAL_REVIEW)
+                && gates.stream().noneMatch(g -> g.getStatus() == GateStatus.PENDING);
         return new OnboardingDto(
                 onboarding.getId(),
                 onboarding.getStatus(),
@@ -401,6 +560,8 @@ public class VendorOnboardingService {
                 onboarding.getSubmittedAt(),
                 onboarding.getApprovedAt(),
                 onboarding.getWentLiveAt(),
+                onboarding.getRejectionReason(),  // ONBD-05 / D-09 — already on the entity
+                reviewPending,                    // ONBD-03 / D-03
                 gateDtos);
     }
 }

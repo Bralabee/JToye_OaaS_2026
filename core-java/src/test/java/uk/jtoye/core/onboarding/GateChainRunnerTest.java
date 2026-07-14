@@ -37,6 +37,7 @@ class GateChainRunnerTest {
     private final VendorOnboardingGateRepository gateRepository = mock(VendorOnboardingGateRepository.class);
     private final OnboardingProperties onboardingProperties = new OnboardingProperties();
     private final VendorOnboardingService vendorOnboardingService = mock(VendorOnboardingService.class);
+    private final OnboardingEventPublisher onboardingEventPublisher = mock(OnboardingEventPublisher.class);
 
     @AfterEach
     void clearTenant() {
@@ -45,7 +46,7 @@ class GateChainRunnerTest {
 
     private GateChainRunner runner(List<OnboardingGate> gates) {
         return new GateChainRunner(gates, onboardingRepository, gateRepository,
-                onboardingProperties, vendorOnboardingService);
+                onboardingProperties, vendorOnboardingService, onboardingEventPublisher);
     }
 
     private VendorOnboarding onboardingIn(OnboardingState state, UUID id, UUID tenantId) {
@@ -127,6 +128,8 @@ class GateChainRunnerTest {
 
         verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATES_PASSED);
         verify(vendorOnboardingService, never()).transition(onboardingId, OnboardingEvent.APPROVE);
+        // No stall event on the GATES_PASSED branch (D-01: emit only on MANUAL_REVIEW park).
+        verify(onboardingEventPublisher, never()).publishStall(any(), any(), any(), any(), any());
         assertThat(TenantContext.get()).isEmpty(); // cleared in finally
     }
 
@@ -223,6 +226,54 @@ class GateChainRunnerTest {
 
         verify(vendorOnboardingService).transition(onboardingId, OnboardingEvent.GATE_FAILED);
         verify(vendorOnboardingService, never()).transition(onboardingId, OnboardingEvent.GATES_PASSED);
+        // No stall event on the GATE_FAILED branch (it advances to ACTION_REQUIRED, not a park).
+        verify(onboardingEventPublisher, never()).publishStall(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("runAndRecompute emits a stall event when a mandatory gate is MANUAL_REVIEW (stays VERIFYING)")
+    void recomputeEmitsStallOnManualReviewPark() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        VendorOnboarding onboarding = onboardingIn(OnboardingState.VERIFYING, onboardingId, tenantId);
+        onboarding.setShopId(shopId);
+        when(onboardingRepository.findById(onboardingId)).thenReturn(Optional.of(onboarding));
+        // One mandatory gate parked at MANUAL_REVIEW, the rest PASSED/WAIVED:
+        // no FAILED and not all passed -> stays VERIFYING (the stall park case).
+        when(gateRepository.findByOnboardingId(onboardingId)).thenReturn(List.of(
+                gateRow(GateType.FOOD_HYGIENE_RATING, GateStatus.MANUAL_REVIEW, true),
+                gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gateRow(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.WAIVED, true)));
+
+        runner(List.of()).runAndRecompute(onboardingId, tenantId);
+
+        // Emits exactly the stall notification, tenant + shop stamped, VERIFYING, fixed reason.
+        verify(onboardingEventPublisher).publishStall(
+                eq(onboardingId), eq(tenantId), eq(shopId),
+                eq(OnboardingState.VERIFYING), eq("One or more checks need a manual review"));
+        // The SM is NOT driven on a park — no GATES_PASSED / GATE_FAILED / APPROVE.
+        verify(vendorOnboardingService, never()).transition(any(), any());
+        assertThat(TenantContext.get()).isEmpty(); // cleared in finally
+    }
+
+    @Test
+    @DisplayName("runAndRecompute does NOT emit a stall when a mandatory gate is still PENDING (webhook wait, not a review)")
+    void recomputeDoesNotEmitStallWhilePending() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        when(onboardingRepository.findById(onboardingId))
+                .thenReturn(Optional.of(onboardingIn(OnboardingState.VERIFYING, onboardingId, tenantId)));
+        // A still-PENDING mandatory gate (awaiting a webhook) also stays VERIFYING,
+        // but that is NOT a manual-review stall -> no notification.
+        when(gateRepository.findByOnboardingId(onboardingId)).thenReturn(List.of(
+                gateRow(GateType.FOOD_HYGIENE_RATING, GateStatus.PENDING, true),
+                gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true)));
+
+        runner(List.of()).runAndRecompute(onboardingId, tenantId);
+
+        verify(onboardingEventPublisher, never()).publishStall(any(), any(), any(), any(), any());
+        verify(vendorOnboardingService, never()).transition(any(), any());
     }
 
     @Test

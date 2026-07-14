@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.RejectOnboardingRequest;
+import uk.jtoye.core.onboarding.dto.ResolveGateRequest;
 
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +41,14 @@ import java.util.UUID;
  * (finance, GDPR, refunds). A true cross-tenant platform queue needs a separate
  * platform-operator role plus a deliberate, audited RLS bypass (or per-tenant
  * fan-out) and is documented as follow-up work on #178.
+ *
+ * <p><strong>Gate-resolve authority is INTERIM (Phase 21 / D-01).</strong> The
+ * {@code POST /{id}/gates/{gateType}/resolve} control lets a stuck MANUAL_REVIEW
+ * gate be unstuck, and the {@code GET /reviews} queue surfaces those parked
+ * applications. Per D-01 ("seams now, J'Toye console later") the resolver is the
+ * tenant's OWN {@code admin} — the same tenant-scoped trust boundary as approve/
+ * reject, NOT a cross-tenant J'Toye operator. The real platform-operator reviewer
+ * (with cross-tenant oversight) is a deferred phase; this endpoint is the seam.
  */
 @RestController
 @RequestMapping("/onboarding/admin")
@@ -108,5 +117,52 @@ public class OnboardingAdminController {
             @Parameter(description = "Onboarding id") @PathVariable UUID id,
             @Parameter(description = "Rejection reason") @Valid @RequestBody RejectOnboardingRequest req) {
         return ResponseEntity.ok(vendorOnboardingService.reject(id, req.getReason()));
+    }
+
+    /**
+     * Resolve a stuck onboarding gate (ONBD-03 / D-01 seam).
+     * POST /onboarding/admin/{id}/gates/{gateType}/resolve
+     *
+     * <p>Writes the gate row (PASS→PASSED / WAIVE→WAIVED / FAIL→FAILED, Envers-audited)
+     * and triggers the existing recompute after commit — the state machine advances
+     * itself (GATES_PASSED / GATE_FAILED); this endpoint never writes status/published.
+     * Interim resolver = the tenant's own admin (see class Javadoc).
+     */
+    @PostMapping("/{id}/gates/{gateType}/resolve")
+    @Operation(summary = "Resolve an onboarding gate",
+            description = "Overrides a gate row (PASS/WAIVE/FAIL) then lets the existing recompute advance the "
+                    + "state machine. FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Gate resolved; recompute triggered"),
+            @ApiResponse(responseCode = "400", description = "FAIL with no reason, or invalid decision/body"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks the admin role"),
+            @ApiResponse(responseCode = "404", description = "Onboarding or gate not found (incl. foreign tenant)")
+    })
+    public ResponseEntity<AdminOnboardingDto> resolveGate(
+            @Parameter(description = "Onboarding id") @PathVariable UUID id,
+            @Parameter(description = "Gate type") @PathVariable GateType gateType,
+            @Parameter(description = "Gate-resolve decision + optional reason")
+            @Valid @RequestBody ResolveGateRequest req) {
+        return ResponseEntity.ok(
+                vendorOnboardingService.resolveGate(id, gateType, req.getDecision(), req.getReason()));
+    }
+
+    /**
+     * List onboardings parked in manual review (VERIFYING + a MANUAL_REVIEW gate).
+     * GET /onboarding/admin/reviews
+     *
+     * <p>A NEW queue distinct from {@code /pending} (which stays the PENDING_APPROVAL
+     * approve/reject queue) — Incremental Betterment: the existing contract is untouched.
+     */
+    @GetMapping("/reviews")
+    @Operation(summary = "List review-pending applications",
+            description = "Onboardings in VERIFYING with a MANUAL_REVIEW gate for the caller's tenant, oldest "
+                    + "submission first, each with its gate breakdown. Distinct from /pending. Requires admin.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Review-pending applications (possibly empty)"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks the admin role")
+    })
+    public ResponseEntity<List<AdminOnboardingDto>> reviews() {
+        return ResponseEntity.ok(vendorOnboardingService.listReviewPending());
     }
 }

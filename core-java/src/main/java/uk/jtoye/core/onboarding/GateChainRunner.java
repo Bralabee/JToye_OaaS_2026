@@ -50,23 +50,29 @@ public class GateChainRunner {
     private final VendorOnboardingGateRepository gateRepository;
     private final OnboardingProperties onboardingProperties;
     private final VendorOnboardingService vendorOnboardingService;
+    private final OnboardingEventPublisher onboardingEventPublisher;
 
     /**
      * @param vendorOnboardingService injected {@code @Lazy} to break the cycle
      *        (the service injects this runner for {@code submit()}); the runner
      *        drives GATES_PASSED / GATE_FAILED / APPROVE through the service's
      *        single canonical transition path.
+     * @param onboardingEventPublisher writes the MANUAL_REVIEW stall notification
+     *        to the transactional outbox (Phase 21 / D-01); no cycle, so injected
+     *        directly.
      */
     public GateChainRunner(List<OnboardingGate> gates,
                            VendorOnboardingRepository onboardingRepository,
                            VendorOnboardingGateRepository gateRepository,
                            OnboardingProperties onboardingProperties,
-                           @Lazy VendorOnboardingService vendorOnboardingService) {
+                           @Lazy VendorOnboardingService vendorOnboardingService,
+                           OnboardingEventPublisher onboardingEventPublisher) {
         this.gates = gates;
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.onboardingProperties = onboardingProperties;
         this.vendorOnboardingService = vendorOnboardingService;
+        this.onboardingEventPublisher = onboardingEventPublisher;
     }
 
     /**
@@ -195,8 +201,32 @@ public class GateChainRunner {
                 }
             } else if (anyFailed) {
                 vendorOnboardingService.transition(onboardingId, OnboardingEvent.GATE_FAILED);
+            } else {
+                // Stays in VERIFYING: no mandatory gate FAILED and not all
+                // PASSED/WAIVED. This covers two shapes — still-PENDING gates
+                // awaiting a webhook/resubmit (NOT a stall), and ≥1 mandatory
+                // gate parked at MANUAL_REVIEW awaiting a human decision (a
+                // stall). Only the latter is a notification-worthy stall, so
+                // guard on MANUAL_REVIEW before emitting (D-01 seam; Phase 24
+                // delivers the event). The state machine is untouched here — the
+                // application parks in VERIFYING exactly as before; this only
+                // ADDS an outbox emission alongside the existing park behaviour.
+                //
+                // At-least-once by design (A3): the outbox contract is
+                // at-least-once + idempotent consumer, so NO already-emitted
+                // guard is added — a resubmit that re-parks simply re-emits.
+                boolean anyManualReview = mandatory.stream()
+                        .anyMatch(g -> g.getStatus() == GateStatus.MANUAL_REVIEW);
+                if (anyManualReview) {
+                    // Fixed, human-readable reason (FhrsGate discipline): the
+                    // specific per-gate detail lives on the gate rows / in WARN
+                    // logs, never as raw provider text in the event payload.
+                    onboardingEventPublisher.publishStall(
+                            onboardingId, tenantId, onboarding.getShopId(),
+                            OnboardingState.VERIFYING,
+                            "One or more checks need a manual review");
+                }
             }
-            // else: still-PENDING gates await webhooks/resubmit -> leave in VERIFYING
         } catch (RuntimeException e) {
             // WR-01: make an otherwise-silent async failure observable. Spring's default
             // async uncaught-exception handler only emits a bare stack; log at ERROR with
