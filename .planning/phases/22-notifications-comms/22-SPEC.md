@@ -31,7 +31,7 @@ The gap this phase closes: bind + consume the onboarding/payment/refund events, 
 
 2. **COMMS-02 — Transactional email to both audiences across all lifecycle events**: Customers and vendors each receive the emails relevant to them.
    - Current: emails exist only for order lifecycle → customer.
-   - Target: templated transactional emails for order (customer + vendor), onboarding (vendor admin), payment (customer + vendor), refund (customer + vendor) — "both audiences where relevant" (onboarding is vendor-only; customers get order/payment/refund).
+   - Target: templated transactional emails for order (customer + vendor), onboarding (vendor admin), payment (customer + vendor), refund (customer + vendor) — "both audiences where relevant" (onboarding is vendor-only; customers get order/payment/refund). *(Planning note: the order-family customer stays on the untouched legacy `EmailNotificationService` path; the vendor order email is added on the new `EmailChannel` via a dedicated `order.notifications` consumer — no duplicate customer email.)*
    - Acceptance: per event type, a test asserts the correct recipient set gets an email with the right subject/body; a stalled onboarding application produces a vendor email in Mailhog; a refund produces both a customer and a vendor email.
 
 3. **COMMS-03 — Consent, one-click unsubscribe, suppression (GDPR/PECR)**: No email is sent to a recipient who has opted out; marketing requires explicit opt-in.
@@ -78,33 +78,34 @@ The gap this phase closes: bind + consume the onboarding/payment/refund events, 
 - **Rewriting order notifications into a new framework** — the existing `EmailNotificationService` order path stays; new events are added alongside (Incremental Betterment)
 - **In-app / web-push notifications** — separate backlog
 - **Customer notification-preference UI beyond unsubscribe** — this phase ships the vendor webhook UI + the unsubscribe surface only
+- **Webhook-subscription MCP tools (agent-readiness disposition, W6)** — the Phase 20 MCP server (`mcp-server/`) is NOT extended with a webhook-subscription capability this phase; mutating MCP tools are deferred to the roadmapped **Phase 25 (Mutating MCP Tools)**. The webhook subscription REST API + errors stay RFC 7807 + Idempotency-Key-safe (the standing agent-readiness contract) regardless — only the MCP-tool surface is deferred.
 
 ## Constraints
 
-- **Outbox-flusher dispatch trap** (memory `outbox_flusher_dispatch_trap`): every new event type ships its exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch atomically, or it poison-dead-letters.
-- **Multi-tenancy/RLS**: `webhook_subscription`, `webhook_delivery`, and consent/suppression tables are ENABLE+FORCE RLS, tenant-scoped, proven under the NOSUPERUSER role-downgrade.
+- **Outbox-flusher dispatch trap** (memory `outbox_flusher_dispatch_trap`): every new event type ships its exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch atomically, or it poison-dead-letters. *(This phase adds CONSUMERS only — all four dispatch branches already exist — so the flusher is untouched; Pitfall 3.)*
+- **Multi-tenancy/RLS**: `webhook_subscription`, `webhook_delivery`, and consent/suppression tables (BOTH `notification_suppression` AND `marketing_opt_in`) are ENABLE+FORCE RLS, tenant-scoped, proven under the NOSUPERUSER role-downgrade.
 - **Prod email transport = SES via SMTP config** (`spring.mail.*` env pointed at the SES SMTP endpoint) — no transport code change; dev = Mailhog.
 - **No head-of-line block**: one failing subscription/endpoint must not stall deliveries to others (per-subscription isolation).
-- **Bounded accumulators** (#107): `webhook_delivery` + suppression rows must have a retention/prune policy — not unbounded growth.
+- **Bounded accumulators** (#107): `webhook_delivery` is time-pruned; suppression rows are bounded-by-construction via their UNIQUE key (see AC #13 note — deliberately NOT time-pruned, to preserve consent).
 - **Config-injection** (GLOBAL_RULE_6): provider creds, channel flags, retry tunables, from-address, review SLA — all via the config layer, never hardcoded.
 - **Machine-consumability** (CLAUDE.md cross-cutting): webhook payloads are typed + versioned; tool/API errors are RFC 7807 where applicable; replay is idempotent-safe.
-- **Migration ordering**: V52 `shop_staff` (Phase 23) and V53 `media_asset` (Phase 24) keep their versions; Comms migrations take later versions with `out-of-order=true` already enabled.
+- **Migration ordering**: V52 `shop_staff` (Phase 23) and V53 `media_asset` (Phase 24) keep their versions; Comms migrations take V54/V55/V56 with `out-of-order=true` already enabled.
 
 ## Acceptance Criteria
 
 - [ ] An onboarding stall event that was previously discarded now produces a vendor email in Mailhog (dead channel bound).
 - [ ] The pre-existing order-confirmation email path still passes its test unchanged (no regression).
-- [ ] Order/onboarding/payment/refund each notify the correct recipient set (customer and/or vendor) — one test per event type.
+- [ ] Order/onboarding/payment/refund each notify the correct recipient set (customer and/or vendor) — one test per event type. *(Order: customer via the untouched legacy path + vendor via the new `order.notifications` consumer — no duplicate customer email.)*
 - [ ] No outbox event type poison-dead-letters — the flusher dispatches every event type.
 - [ ] A one-click unsubscribe link creates a suppression row and the recipient's next matching event sends NO email.
 - [ ] A marketing/promotional send with no recorded opt-in is refused.
-- [ ] Suppression + webhook tables are tenant-isolated under the NOSUPERUSER RLS role-downgrade (cross-tenant → empty/403).
+- [ ] Suppression + webhook tables are tenant-isolated under the NOSUPERUSER RLS role-downgrade (cross-tenant → empty/403) — proven for `notification_suppression`, `marketing_opt_in`, `webhook_subscription`, and `webhook_delivery`.
 - [ ] Webhook subscription CRUD API works; secret rotation invalidates old-secret signatures.
 - [ ] A delivered webhook payload carries a verifiable HMAC-SHA256 signature.
 - [ ] A failing endpoint retries with bounded backoff then marks `failed`, while a healthy subscription still receives its delivery (no head-of-line block).
 - [ ] The webhook UI creates a subscription, shows the delivery log, filters by status, and a replay re-delivers as a tagged attempt; renders without overflow at 375px.
 - [ ] With the WhatsApp/SMS flag OFF (default), email + webhooks deliver with zero WhatsApp errors; enabling it without creds is a documented WARN no-op, not a crash.
-- [ ] `webhook_delivery` + suppression rows are pruned by a bounded-retention job.
+- [ ] `webhook_delivery` rows are pruned by a bounded-retention job. *(Planning decision 2026-07-15, recorded during `/gsd:plan-phase` — W3: `webhook_delivery` is time-pruned; **suppression rows are deliberately NOT time-pruned** — they are bounded-by-construction via `UNIQUE(tenant_id, recipient, category)` idempotent upsert, and time-pruning a GDPR/PECR opt-out would resurrect a suppressed recipient (an Incremental-Betterment / consent regression). The retention job is scoped to `webhook_delivery` ONLY. `/gsd:verify-work` should treat this AC as MET by the webhook_delivery prune + the suppression uniqueness bound; do NOT flag "suppression not time-pruned" as a gap.)*
 - [ ] `docs/metrics.json` reconciled; docs-freshness CI gate green.
 
 ## Ambiguity Report
@@ -131,8 +132,14 @@ Status: ✓ = met minimum, ⚠ = below minimum (planner treats as assumption)
 | 2     | Boundary/Failure     | Webhook surface depth?                            | Full — registration API + management UI + delivery-log browser + manual replay + HMAC + retry |
 | 2     | Boundary/Failure     | Prod email transport?                             | SES via SMTP config (no new code); bounce/complaint deferred                 |
 
+## Planner Annotations (during /gsd:plan-phase revision, 2026-07-15)
+
+- **AC #13 (retention) — decision recorded (W3):** suppression rows are NOT time-pruned (GDPR/PECR — an opt-out must not silently expire); they are bounded by `UNIQUE(tenant_id, recipient, category)`. Only `webhook_delivery` is time-pruned. This reinterprets the literal "webhook_delivery + suppression rows are pruned" wording; verify-work treats it as met.
+- **COMMS-02 order audience — wiring recorded (BLOCKER fix):** the vendor order email is added via a new `order.notifications` durable queue + `OrderNotificationListener` (vendor-only) so the untouched legacy customer path is not duplicated. Plan 22-04.
+- **Agent-readiness (W6):** webhook-subscription MCP tools deferred to Phase 25 (recorded in Boundaries out-of-scope). The REST surface remains RFC 7807 + Idempotency-Key-safe.
+
 ---
 
 *Phase: 22-notifications-comms*
-*Spec created: 2026-07-14*
-*Next step: /gsd:discuss-phase 22 — implementation decisions (how to build what's specified above)*
+*Spec created: 2026-07-14 · Planner annotations added 2026-07-15*
+*Next step: /gsd:plan-phase 22 (revision applied) → /gsd:execute-phase 22*
