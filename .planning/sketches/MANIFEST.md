@@ -13,6 +13,15 @@ Current live storefront at localhost:3000 (screenshots taken 2026-07-12 — the 
 | 001 | storefront-theme-punch | Which art direction gives punch + branding + enterprise credibility without photography? | D (B+A synthesis) | storefront, theme, branding |
 | 002 | marketing-hero-kinetics | How should the landing (/) hero arrive + scroll — and is GSAP worth a second engine over Motion? | B (GSAP full-award; A = mobile/reduced-motion floor) | marketing, motion, gsap, hero |
 | 003 | operator-scroll-story | How does /for-operators carry the reader — Motion reveal or GSAP pinned+horizontal signature scene? | B (GSAP full-award; A = mobile/reduced-motion floor) | marketing, motion, gsap, scroll-story |
+| 004 | landing-brand-refresh | Which landing direction makes the homepage appetizing AND on-brand (oxblood #3A0B0D + Work Sans, matched to jtoyedigital.co.uk)? | _pending_ | landing, marketing, branding, oxblood, appetite |
+
+## Brand thread update (sketch 004, 2026-07-15)
+User directive: match the parent site **jtoyedigital.co.uk** — confirmed live palette **oxblood
+`#3A0B0D`** primary + **Work Sans** (deep `#1F0F28`, text `#3D3D4E`, on white). This **extends**
+the sketch-001 "Market-Heat" identity rather than replacing it: oxblood becomes the brand anchor
+(header/footer/deep accents), **amber/orange stays the appetite accent** (bridging the locked
+"keep orange" constraint). Sans-only + no-editorial constraint unchanged. Goal: kill the "bland
+SaaS" landing — appetite-forward, food photography (emoji as mockup stand-in), mobile-first.
 
 ## Motion Direction (sketches 002–003, decided 2026-07-14)
 Locked calibration from the design lead: **"full award-site"** intensity + **GSAP on

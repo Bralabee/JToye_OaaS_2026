@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sketch 004 — Landing brand refresh (oxblood + appetite)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800;900&display=swap');
+
+/* ── J'Toye landing brand theme ──────────────────────────────────────────
+   Parent brand (jtoyedigital.co.uk, confirmed live): oxblood #3A0B0D primary,
+   deep accent #1F0F28, text #3D3D4E, Work Sans. Appetite accent = amber/orange
+   (retained from the food-delivery palette). Sans only, mobile-first. */
+:root{
+  --oxblood:#3A0B0D; --oxblood-700:#571417; --oxblood-600:#6E1D21; --oxblood-deep:#1F0F28;
+  --text:#2A2A38; --text-muted:#6b6b7a; --slate-purple:#3D3D4E;
+  --amber:#F59E0B; --amber-600:#D97706; --orange:#F97316; --gold:#E8B04B;
+  --emerald:#0E9F6E;
+  --cream:#FBF6F0; --cream-2:#F4EBE1; --white:#fff; --line:#ECE3DA;
+  --r-sm:8px; --r-md:14px; --r-lg:22px; --r-xl:30px; --r-full:9999px;
+  --sh-sm:0 1px 2px rgba(58,11,13,.06); --sh-md:0 8px 24px rgba(58,11,13,.10);
+  --sh-lg:0 24px 60px rgba(58,11,13,.18); --sh-amber:0 12px 34px rgba(217,119,6,.30);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Work Sans',system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;padding-top:46px;line-height:1.5}
+.variant{display:none}
+.variant.active{display:block}
+h1,h2,h3{line-height:1.05;letter-spacing:-.02em}
+a{text-decoration:none;color:inherit}
+img{max-width:100%}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+.eyebrow{font-size:.74rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:var(--r-full);padding:13px 22px;font-size:.95rem;cursor:pointer;border:0;transition:transform .15s,box-shadow .15s,background .15s}
+.btn:hover{transform:translateY(-2px)}
+.btn-amber{background:var(--amber);color:#3a2400;box-shadow:var(--sh-amber)}
+.btn-oxblood{background:var(--oxblood);color:#fff}
+.btn-ghost{background:transparent;border:1.5px solid rgba(255,255,255,.4);color:#fff}
+.badge{display:inline-flex;align-items:center;gap:7px;background:var(--white);border:1px solid var(--line);border-radius:var(--r-full);padding:9px 15px;font-size:.83rem;font-weight:600;color:var(--slate-purple);box-shadow:var(--sh-sm)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--emerald)}
+
+/* header */
+.hdr{position:sticky;top:46px;z-index:40;backdrop-filter:blur(8px)}
+.hdr .row{display:flex;align-items:center;justify-content:space-between;height:64px}
+.mark{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.15rem;letter-spacing:-.02em}
+.mark .glyph{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:900;color:#fff;background:var(--oxblood)}
+.nav{display:flex;gap:26px;align-items:center;font-weight:600;font-size:.92rem}
+.nav a{color:var(--text-muted)} .nav a:hover{color:var(--oxblood)}
+.signin{background:var(--oxblood);color:#fff;border-radius:var(--r-full);padding:9px 16px;font-size:.85rem;font-weight:700}
+@media(max-width:720px){.nav .lk{display:none}}
+
+/* persona doors (shared skeleton) */
+.doors{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+@media(max-width:640px){.doors{grid-template-columns:1fr}}
+.door{border-radius:var(--r-lg);padding:24px;display:flex;flex-direction:column;gap:6px;min-height:150px;transition:transform .18s,box-shadow .18s;position:relative;overflow:hidden}
+.door:hover{transform:translateY(-3px);box-shadow:var(--sh-lg)}
+.door .ico{font-size:1.7rem}
+.door .t{font-weight:800;font-size:1.15rem;margin-top:6px}
+.door .s{font-size:.9rem;opacity:.85}
+.door .go{margin-top:auto;font-weight:700;font-size:.9rem;display:inline-flex;gap:6px;align-items:center}
+.door-cust{background:linear-gradient(140deg,var(--amber),var(--orange));color:#3a2400}
+.door-op{background:var(--oxblood);color:#fff}
+.door-op .go{color:var(--gold)}
+
+/* trust */
+.trust{display:flex;flex-wrap:wrap;gap:10px}
+
+/* how it works */
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:26px}
+@media(max-width:720px){.how{grid-template-columns:1fr}}
+.step .n{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:1.3rem;background:#fff;box-shadow:var(--sh-sm);border:1px solid var(--line)}
+.step h3{font-size:1.05rem;margin-top:12px;letter-spacing:-.01em}
+.step p{color:var(--text-muted);font-size:.9rem;margin-top:5px}
+
+/* dish cards */
+.dishrow{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px;scroll-snap-type:x mandatory}
+.dish{min-width:180px;scroll-snap-align:start;background:#fff;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;box-shadow:var(--sh-sm)}
+.dish .pic{height:112px;display:grid;place-items:center;font-size:2.6rem}
+.dish .meta{padding:11px 13px}
+.dish .meta .nm{font-weight:700;font-size:.92rem}
+.dish .meta .sub{font-size:.78rem;color:var(--text-muted);margin-top:2px}
+.dish .meta .pr{font-weight:800;color:var(--oxblood);margin-top:7px;font-size:.9rem}
+
+/* footer */
+.ft{background:var(--oxblood);color:#f3e6e0;padding:44px 0 30px}
+.ft a{color:#f3e6e0;opacity:.85} .ft a:hover{opacity:1}
+.ft .cols{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:26px}
+@media(max-width:640px){.ft .cols{grid-template-columns:1fr 1fr}}
+.ft .mark .glyph{background:#fff;color:var(--oxblood)}
+.ft small{color:#d9b8b3}
+
+/* variant tab bar */
+#vnav{position:fixed;top:0;left:0;right:0;z-index:9998;background:#241014;color:#fff;
+  display:flex;gap:6px;align-items:center;padding:7px 12px;font-family:'Work Sans',system-ui;font-size:.8rem}
+#vnav b{opacity:.6;font-weight:600;margin-right:6px;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase}
+.vtab{background:rgba(255,255,255,.10);color:#fff;border:0;border-radius:var(--r-full);padding:6px 13px;font:inherit;font-weight:600;cursor:pointer}
+.vtab.active{background:var(--amber);color:#3a2400}
+.vp{margin-left:auto;display:flex;gap:5px}
+.vp button{background:rgba(255,255,255,.10);color:#fff;border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}
+.vp button.on{background:#fff;color:#241014}
+.stage{transition:max-width .2s;margin:0 auto}
+</style>
+</head>
+<body>
+
+<div id="vnav">
+  <b>Sketch 004 · landing</b>
+  <button class="vtab active" onclick="show('a',this)">A · Appetite Table</button>
+  <button class="vtab" onclick="show('b',this)">B · Oxblood Premium</button>
+  <button class="vtab" onclick="show('c',this)">C · Warm Marketplace</button>
+  <span class="vp">
+    <button onclick="vp(390,this)">📱 390</button>
+    <button class="on" onclick="vp(0,this)">🖥 full</button>
+  </span>
+</div>
+
+<!-- ══════════════════ VARIANT A — APPETITE TABLE ══════════════════ -->
+<div class="variant active" id="variant-a"><div class="stage">
+  <header class="hdr" style="background:rgba(251,246,240,.85);border-bottom:1px solid var(--line)">
+    <div class="wrap"><div class="row">
+      <div class="mark"><span class="glyph">J</span> J'Toye</div>
+      <nav class="nav"><a class="lk" href="#">Shops</a><a class="lk" href="#">For operators</a><a class="lk" href="#">Track order</a><a class="signin" href="#">Sign in</a></nav>
+    </div></div>
+  </header>
+
+  <section style="background:radial-gradient(120% 90% at 85% -10%,#fde7c8 0%,var(--cream) 55%)">
+    <div class="wrap" style="padding:52px 22px 40px">
+      <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:34px;align-items:center">
+        <div>
+          <span class="eyebrow" style="color:var(--oxblood-600)">🇬🇧 Independent UK kitchens</span>
+          <h1 style="font-size:3.3rem;font-weight:900;color:var(--oxblood);margin-top:14px">Order from local kitchens.<br><span style="color:var(--amber-600)">Or run yours.</span></h1>
+          <p style="font-size:1.12rem;color:var(--slate-purple);margin-top:16px;max-width:480px">J'Toye connects hungry customers with independent food businesses — order in minutes, or take your kitchen online and go live in a day.</p>
+          <div class="doors">
+            <a class="door door-cust"><span class="ico">🍔</span><span class="t">Order food near you</span><span class="s">Browse independent kitchens and order in minutes.</span><span class="go">Browse shops →</span></a>
+            <a class="door door-op"><span class="ico" style="color:var(--gold)">🧑‍🍳</span><span class="t">Run your food business</span><span class="s">Take orders, manage your kitchen, go live in a day.</span><span class="go">Learn more →</span></a>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="background:linear-gradient(150deg,#fff,#fbe9d4);border-radius:var(--r-lg);height:150px;display:grid;place-items:center;font-size:3.4rem;box-shadow:var(--sh-md);transform:rotate(-2deg)">🍜</div>
+          <div style="background:linear-gradient(150deg,#fff,#f6dcd8);border-radius:var(--r-lg);height:150px;display:grid;place-items:center;font-size:3.4rem;box-shadow:var(--sh-md);transform:rotate(2deg);margin-top:24px">🥘</div>
+          <div style="background:linear-gradient(150deg,#fff,#e7f3ea);border-radius:var(--r-lg);height:150px;display:grid;place-items:center;font-size:3.4rem;box-shadow:var(--sh-md);transform:rotate(2deg)">🥗</div>
+          <div style="background:linear-gradient(150deg,#fff,#fdeecb);border-radius:var(--r-lg);height:150px;display:grid;place-items:center;font-size:3.4rem;box-shadow:var(--sh-md);transform:rotate(-2deg);margin-top:-8px">🍰</div>
+        </div>
+      </div>
+      <div class="trust" style="margin-top:34px">
+        <span class="badge"><span class="dot"></span> UK food-hygiene verified</span>
+        <span class="badge"><span class="dot"></span> Allergen info on every item</span>
+        <span class="badge"><span class="dot"></span> No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="background:var(--white);border-top:1px solid var(--line)">
+    <div class="wrap" style="padding:40px 22px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:1.5rem;color:var(--oxblood)">Cooking near you right now</h2><a style="color:var(--amber-600);font-weight:700;font-size:.9rem">See all kitchens →</a></div>
+      <div class="dishrow" style="margin-top:18px">
+        <div class="dish"><div class="pic" style="background:linear-gradient(150deg,#fbe9d4,#f6c99a)">🍗</div><div class="meta"><div class="nm">Jollof & Grilled Chicken</div><div class="sub">Mama's Kitchen · ⭐ 4.8 · FHRS 5</div><div class="pr">£9.50</div></div></div>
+        <div class="dish"><div class="pic" style="background:linear-gradient(150deg,#f6dcd8,#e8a9a2)">🍛</div><div class="meta"><div class="nm">Lamb Biryani</div><div class="sub">Spice Route · ⭐ 4.9 · FHRS 5</div><div class="pr">£11.00</div></div></div>
+        <div class="dish"><div class="pic" style="background:linear-gradient(150deg,#e7f3ea,#a9d9bb)">🥙</div><div class="meta"><div class="nm">Halloumi Wrap</div><div class="sub">Olive & Vine · ⭐ 4.7 · FHRS 5</div><div class="pr">£7.25</div></div></div>
+        <div class="dish"><div class="pic" style="background:linear-gradient(150deg,#fdeecb,#f3cf7a)">🍰</div><div class="meta"><div class="nm">Basque Cheesecake</div><div class="sub">Crumb & Co · ⭐ 4.9 · FHRS 5</div><div class="pr">£5.00</div></div></div>
+        <div class="dish"><div class="pic" style="background:linear-gradient(150deg,#efe4f3,#c9a9d9)">🍜</div><div class="meta"><div class="nm">Pho Bo</div><div class="sub">Hanoi House · ⭐ 4.8 · FHRS 5</div><div class="pr">£10.50</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section style="background:var(--cream)"><div class="wrap" style="padding:44px 22px">
+    <h2 style="font-size:1.6rem;color:var(--oxblood)">How it works</h2>
+    <div class="how">
+      <div class="step"><div class="n">🔎</div><h3>Browse</h3><p>Find independent kitchens near you and explore their menus.</p></div>
+      <div class="step"><div class="n">🛍️</div><h3>Order & pay</h3><p>Add to your basket and check out securely — delivery or collection.</p></div>
+      <div class="step"><div class="n">📍</div><h3>Track live</h3><p>Follow your order from the kitchen to your door in real time.</p></div>
+    </div>
+  </div></section>
+
+  <footer class="ft"><div class="wrap"><div class="cols">
+    <div><div class="mark" style="color:#fff"><span class="glyph">J</span> J'Toye</div><p style="margin-top:12px;max-width:280px;color:#e9cfc9;font-size:.9rem">Order from independent local kitchens, or run your own food business end-to-end.</p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Customers</div><p style="margin-top:12px;line-height:2.1"><a href="#">Browse shops</a><br><a href="#">Track an order</a><br><a href="#">Allergen info</a></p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Operators</div><p style="margin-top:12px;line-height:2.1"><a href="#">Run your business</a><br><a href="#">Go live in a day</a><br><a href="#">Sign in</a></p></div>
+  </div><small style="display:block;margin-top:26px">© 2026 J'Toye Digital Ltd · Registered in England &amp; Wales · company no. 16471464</small></div></footer>
+</div></div>
+
+<!-- ══════════════════ VARIANT B — OXBLOOD PREMIUM ══════════════════ -->
+<div class="variant" id="variant-b"><div class="stage">
+  <header class="hdr" style="background:rgba(31,15,40,.72);border-bottom:1px solid rgba(255,255,255,.08)">
+    <div class="wrap"><div class="row">
+      <div class="mark" style="color:#fff"><span class="glyph" style="background:#fff;color:var(--oxblood)">J</span> J'Toye</div>
+      <nav class="nav"><a class="lk" style="color:#e9cfc9" href="#">Shops</a><a class="lk" style="color:#e9cfc9" href="#">For operators</a><a class="lk" style="color:#e9cfc9" href="#">Track order</a><a class="signin" style="background:var(--gold);color:#3a2400" href="#">Sign in</a></nav>
+    </div></div>
+  </header>
+
+  <section style="background:radial-gradient(130% 100% at 20% 0%,#3A0B0D 0%,#1F0F28 70%);color:#fbeee9;position:relative;overflow:hidden">
+    <div style="position:absolute;inset:0;opacity:.09;font-size:8rem;line-height:1.1;letter-spacing:.4em;user-select:none;pointer-events:none">🍷🥘🍯🫒🍞🍷🥘🍯🫒🍞</div>
+    <div class="wrap" style="padding:70px 22px 56px;position:relative">
+      <span class="eyebrow" style="color:var(--gold)">A curated table of independent UK kitchens</span>
+      <h1 style="font-size:3.7rem;font-weight:900;margin-top:16px;max-width:760px">Real food, from real kitchens near you.</h1>
+      <p style="font-size:1.18rem;color:#e9cfc9;margin-top:18px;max-width:560px">Order in minutes from independent food businesses — or take your own kitchen online and go live in a day. One platform, marketing to fulfilment.</p>
+      <div class="doors" style="max-width:720px">
+        <a class="door" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(4px)"><span class="ico">🍽️</span><span class="t">Order food near you</span><span class="s" style="color:#e9cfc9">Browse independent kitchens and order in minutes.</span><span class="go" style="color:var(--gold)">Browse shops →</span></a>
+        <a class="door" style="background:var(--gold);color:#3a2400"><span class="ico">🧑‍🍳</span><span class="t">Run your food business</span><span class="s" style="color:#5a3d10">Take orders, manage your kitchen, go live in a day.</span><span class="go" style="color:var(--oxblood)">Learn more →</span></a>
+      </div>
+      <div class="trust" style="margin-top:32px">
+        <span class="badge" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fbeee9"><span class="dot"></span> UK food-hygiene verified</span>
+        <span class="badge" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fbeee9"><span class="dot"></span> Allergen info on every item</span>
+        <span class="badge" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fbeee9"><span class="dot"></span> No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="background:var(--cream)"><div class="wrap" style="padding:48px 22px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      <div style="grid-column:span 2"><h2 style="font-size:1.6rem;color:var(--oxblood)">Tonight's kitchens</h2><p style="color:var(--text-muted);margin-top:8px;max-width:340px">Hand-picked independents, hygiene-verified, cooking near you now.</p><a class="btn btn-oxblood" style="margin-top:16px">Explore all kitchens →</a></div>
+      <div class="dish" style="min-width:0"><div class="pic" style="background:linear-gradient(150deg,#fbe9d4,#f6c99a)">🍗</div><div class="meta"><div class="nm">Jollof & Chicken</div><div class="sub">Mama's · ⭐4.8 · FHRS 5</div><div class="pr">£9.50</div></div></div>
+      <div class="dish" style="min-width:0"><div class="pic" style="background:linear-gradient(150deg,#f6dcd8,#e8a9a2)">🍛</div><div class="meta"><div class="nm">Lamb Biryani</div><div class="sub">Spice Route · ⭐4.9 · FHRS 5</div><div class="pr">£11.00</div></div></div>
+    </div>
+  </div></section>
+
+  <section style="background:var(--white)"><div class="wrap" style="padding:44px 22px">
+    <h2 style="font-size:1.55rem;color:var(--oxblood)">How it works</h2>
+    <div class="how">
+      <div class="step"><div class="n" style="background:var(--oxblood);color:#fff;border:0">🔎</div><h3>Browse</h3><p>Find independent kitchens near you and explore their menus.</p></div>
+      <div class="step"><div class="n" style="background:var(--oxblood);color:#fff;border:0">🛍️</div><h3>Order &amp; pay</h3><p>Add to your basket and check out securely — delivery or collection.</p></div>
+      <div class="step"><div class="n" style="background:var(--oxblood);color:#fff;border:0">📍</div><h3>Track live</h3><p>Follow your order from the kitchen to your door in real time.</p></div>
+    </div>
+  </div></section>
+
+  <footer class="ft" style="background:var(--oxblood-deep)"><div class="wrap"><div class="cols">
+    <div><div class="mark" style="color:#fff"><span class="glyph">J</span> J'Toye</div><p style="margin-top:12px;max-width:280px;color:#e9cfc9;font-size:.9rem">Order from independent local kitchens, or run your own food business end-to-end.</p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Customers</div><p style="margin-top:12px;line-height:2.1"><a href="#">Browse shops</a><br><a href="#">Track an order</a><br><a href="#">Allergen info</a></p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Operators</div><p style="margin-top:12px;line-height:2.1"><a href="#">Run your business</a><br><a href="#">Go live in a day</a><br><a href="#">Sign in</a></p></div>
+  </div><small style="display:block;margin-top:26px">© 2026 J'Toye Digital Ltd · Registered in England &amp; Wales · company no. 16471464</small></div></footer>
+</div></div>
+
+<!-- ══════════════════ VARIANT C — WARM MARKETPLACE ══════════════════ -->
+<div class="variant" id="variant-c"><div class="stage">
+  <header class="hdr" style="background:rgba(255,255,255,.9);border-bottom:1px solid var(--line)">
+    <div class="wrap"><div class="row">
+      <div class="mark"><span class="glyph">J</span> J'Toye</div>
+      <nav class="nav"><a class="lk" href="#">Shops</a><a class="lk" href="#">For operators</a><a class="lk" href="#">Track order</a><a class="signin" href="#">Sign in</a></nav>
+    </div></div>
+  </header>
+
+  <section style="background:linear-gradient(180deg,var(--cream),#fff)"><div class="wrap" style="padding:44px 22px 26px">
+    <div style="max-width:680px">
+      <h1 style="font-size:2.9rem;font-weight:900;color:var(--oxblood)">Good food from independent kitchens near you.</h1>
+      <p style="font-size:1.08rem;color:var(--slate-purple);margin-top:12px">Order in minutes — or run your own food business on J'Toye.</p>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;max-width:620px">
+      <div style="flex:1;display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--line);border-radius:var(--r-full);padding:13px 20px;box-shadow:var(--sh-sm)"><span>🔎</span><span style="color:var(--text-muted)">Search kitchens or dishes — e.g. “jollof”, “vegan”, “SO51”…</span></div>
+      <a class="btn btn-amber">Search</a>
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px">
+      <span class="badge">🍗 Grill</span><span class="badge">🍚 Jollof</span><span class="badge">🥘 Caribbean</span><span class="badge">🍛 South Asian</span><span class="badge">🥗 Vegan</span><span class="badge">🍞 Bakery</span><span class="badge">☕ Brunch</span><span class="badge">🍰 Desserts</span>
+    </div>
+    <div class="doors" style="max-width:640px;margin-top:22px">
+      <a class="door door-cust" style="min-height:120px"><span class="t">🍔 Order food near you</span><span class="s">Browse independent kitchens and order in minutes.</span><span class="go">Browse shops →</span></a>
+      <a class="door door-op" style="min-height:120px"><span class="t" style="color:#fff">🧑‍🍳 Run your food business</span><span class="s">Take orders, manage your kitchen, go live in a day.</span><span class="go">Learn more →</span></a>
+    </div>
+  </div></section>
+
+  <section style="background:#fff"><div class="wrap" style="padding:34px 22px 46px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:1.5rem;color:var(--oxblood)">Kitchens near SO51</h2><a style="color:var(--amber-600);font-weight:700;font-size:.9rem">See all →</a></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px" class="mgrid">
+      <div class="dish" style="min-width:0"><div class="pic" style="height:130px;background:linear-gradient(150deg,#fbe9d4,#f0b878);font-size:3.2rem">🍗</div><div class="meta" style="padding:14px"><div class="nm">Mama's Kitchen</div><div class="sub">Nigerian · Grill · 25–35 min</div><div style="display:flex;gap:8px;margin-top:8px"><span class="badge" style="padding:4px 10px;font-size:.72rem">⭐ 4.8</span><span class="badge" style="padding:4px 10px;font-size:.72rem;color:var(--emerald)">✔ FHRS 5</span><span class="badge" style="padding:4px 10px;font-size:.72rem">£2.50 del</span></div></div></div>
+      <div class="dish" style="min-width:0"><div class="pic" style="height:130px;background:linear-gradient(150deg,#f6dcd8,#e19a92);font-size:3.2rem">🍛</div><div class="meta" style="padding:14px"><div class="nm">Spice Route</div><div class="sub">South Asian · Halal · 30–40 min</div><div style="display:flex;gap:8px;margin-top:8px"><span class="badge" style="padding:4px 10px;font-size:.72rem">⭐ 4.9</span><span class="badge" style="padding:4px 10px;font-size:.72rem;color:var(--emerald)">✔ FHRS 5</span><span class="badge" style="padding:4px 10px;font-size:.72rem">Free del</span></div></div></div>
+      <div class="dish" style="min-width:0"><div class="pic" style="height:130px;background:linear-gradient(150deg,#e7f3ea,#a9d9bb);font-size:3.2rem">🥗</div><div class="meta" style="padding:14px"><div class="nm">Olive &amp; Vine</div><div class="sub">Mediterranean · Vegan-friendly · 20–30 min</div><div style="display:flex;gap:8px;margin-top:8px"><span class="badge" style="padding:4px 10px;font-size:.72rem">⭐ 4.7</span><span class="badge" style="padding:4px 10px;font-size:.72rem;color:var(--emerald)">✔ FHRS 5</span><span class="badge" style="padding:4px 10px;font-size:.72rem">£1.99 del</span></div></div></div>
+    </div>
+    <div class="trust" style="margin-top:26px">
+      <span class="badge"><span class="dot"></span> UK food-hygiene verified</span>
+      <span class="badge"><span class="dot"></span> Allergen info on every item</span>
+      <span class="badge"><span class="dot"></span> No app to download</span>
+    </div>
+  </div></section>
+
+  <footer class="ft"><div class="wrap"><div class="cols">
+    <div><div class="mark" style="color:#fff"><span class="glyph">J</span> J'Toye</div><p style="margin-top:12px;max-width:280px;color:#e9cfc9;font-size:.9rem">Order from independent local kitchens, or run your own food business end-to-end.</p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Customers</div><p style="margin-top:12px;line-height:2.1"><a href="#">Browse shops</a><br><a href="#">Track an order</a><br><a href="#">Allergen info</a></p></div>
+    <div><div class="eyebrow" style="color:var(--gold)">Operators</div><p style="margin-top:12px;line-height:2.1"><a href="#">Run your business</a><br><a href="#">Go live in a day</a><br><a href="#">Sign in</a></p></div>
+  </div><small style="display:block;margin-top:26px">© 2026 J'Toye Digital Ltd · Registered in England &amp; Wales · company no. 16471464</small></div></footer>
+</div></div>
+
+<script>
+function show(id, btn){
+  document.querySelectorAll('.variant').forEach(v=>v.classList.remove('active'));
+  document.getElementById('variant-'+id).classList.add('active');
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  window.scrollTo(0,0);
+}
+function vp(w, btn){
+  document.querySelectorAll('.stage').forEach(s=>s.style.maxWidth = w? w+'px':'none');
+  document.querySelectorAll('.vp button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+}
+</script>
+</body>
+</html>
