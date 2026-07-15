@@ -29,6 +29,14 @@ export function PublicHeader() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
 
+  // The wordmark returns you to the "home" of the surface you're actually on.
+  // /track is a customer order surface — part of the shopping app — so its logo
+  // goes to the shop home, not the marketing landing (which previously kicked
+  // shoppers out of the storefront flow). Marketing surfaces (/, /for-operators,
+  // /business-model-guide) home to the landing page. /shop* pages use the shop
+  // layout's own wordmark (already -> /shop), so the whole app is now consistent.
+  const homeHref = isActive("/track") ? "/shop" : "/"
+
   const desktopLink = (active: boolean) =>
     cn(
       "transition-colors",
@@ -47,9 +55,9 @@ export function PublicHeader() {
     <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
-          {/* Wordmark -> home */}
+          {/* Wordmark -> home (context-aware: /track -> /shop, marketing -> /) */}
           <Link
-            href="/"
+            href={homeHref}
             className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-sm font-bold text-white">
