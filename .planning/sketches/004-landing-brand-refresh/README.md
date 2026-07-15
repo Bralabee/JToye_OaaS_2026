@@ -2,7 +2,7 @@
 sketch: 004
 name: landing-brand-refresh
 question: "Which landing direction makes J'Toye appetizing AND on-brand (oxblood #3A0B0D + Work Sans, matched to jtoyedigital.co.uk)?"
-winner: null
+winner: "D"
 tags: [landing, marketing, branding, oxblood, appetite, work-sans]
 ---
 
@@ -37,6 +37,9 @@ open .planning/sketches/004-landing-brand-refresh/index.html
   brand-forward (closest to the parent site's confidence).
 - **C: Warm Marketplace** — compact hero + search bar + category chips + a live grid of vendor
   cards (rating · FHRS · delivery). Discovery-forward — "there's food here right now."
+- **D: A+C Hybrid ★ (winner, chosen 2026-07-15)** — A's warm appetite hero + food-tile collage +
+  "cooking near you" dish row, with C's search bar + category chips grafted under the intro.
+  Appetite + fast discovery. This is what gets built into `frontend/app/page.tsx`.
 
 ## What to Look For
 - Which hero makes you *hungry* in the first second (appetite is the whole point)?
