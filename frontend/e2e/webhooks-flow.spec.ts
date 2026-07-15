@@ -175,8 +175,14 @@ test.describe("Webhook dashboard journey (COMMS-06)", () => {
     await dialog.getByRole("button", { name: /add endpoint/i }).click()
 
     // --- Once-only secret reveal ---------------------------------------------
+    // Scope to the reveal dialog's textbox: getByLabel("Signing secret") is
+    // page-wide and strict-mode-collides with the "Copy signing secret" button
+    // (substring match). The textbox role excludes the button unambiguously.
     await expect(page.getByText("Copy your signing secret")).toBeVisible()
-    await expect(page.getByLabel("Signing secret")).toHaveValue(SECRET)
+    const secretDialog = page.getByRole("dialog")
+    await expect(
+      secretDialog.getByRole("textbox", { name: "Signing secret" })
+    ).toHaveValue(SECRET)
     await page.getByRole("button", { name: /i've saved it/i }).click()
 
     // --- Row now in the list --------------------------------------------------
@@ -205,7 +211,9 @@ test.describe("Webhook dashboard journey (COMMS-06)", () => {
     // --- Replay a delivery → toast + a new Replay-tagged attempt --------------
     await table.getByRole("button", { name: /^replay$/i }).first().click()
     await page.getByRole("button", { name: /replay delivery/i }).click()
-    await expect(page.getByText(/replay queued/i)).toBeVisible({ timeout: 10_000 })
+    // Exact match targets the toast TITLE only; /replay queued/i also matches the
+    // toast description ("Replay queued — the new attempt…") → strict-mode collision.
+    await expect(page.getByText("Replay queued", { exact: true })).toBeVisible({ timeout: 10_000 })
     await expect(table.getByText("Replay").first()).toBeVisible({ timeout: 10_000 })
 
     // --- 375px: no horizontal overflow ---------------------------------------
