@@ -95,6 +95,19 @@ public class WebhookUrlValidator {
         }
     }
 
+    /**
+     * True if {@code addr} may be used as a webhook egress target. This is the
+     * single source of truth for the IP classification, reused by
+     * {@link SsrfGuardAddressResolverGroup} so the address the delivery worker
+     * actually CONNECTS to is the same address that was validated — closing the
+     * DNS-rebinding TOCTOU that a resolve-then-discard check leaves open
+     * (T-22-05-03). When {@code block-private-ranges} is off (dev/test) every
+     * address is allowed, matching {@link #validate}'s toggle.
+     */
+    public boolean isAddressAllowed(InetAddress addr) {
+        return !blockPrivateRanges || !isBlocked(addr);
+    }
+
     private boolean isBlocked(InetAddress addr) {
         if (addr.isLoopbackAddress()        // 127.0.0.0/8, ::1
                 || addr.isAnyLocalAddress()      // 0.0.0.0, ::

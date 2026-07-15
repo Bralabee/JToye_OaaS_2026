@@ -71,7 +71,7 @@ public class WebhookDeliveryWorker {
                                  WebhookProperties properties,
                                  EntityManager entityManager,
                                  PlatformTransactionManager transactionManager,
-                                 WebClient.Builder webClientBuilder) {
+                                 WebClient webhookDeliveryWebClient) {
         this.deliveryRepository = deliveryRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.signer = signer;
@@ -79,7 +79,10 @@ public class WebhookDeliveryWorker {
         this.properties = properties;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
-        this.webClient = webClientBuilder.build();
+        // Dedicated SSRF-hardened client (WebhookDeliveryClientConfig): its Netty
+        // resolver connects to the SAME address it validates, closing the
+        // DNS-rebinding TOCTOU (T-22-05-03). Never the app-wide WebClient.Builder.
+        this.webClient = webhookDeliveryWebClient;
     }
 
     /**
@@ -154,8 +157,11 @@ public class WebhookDeliveryWorker {
             return;
         }
 
-        // Re-guard SSRF at egress (a subscription created before validation
-        // tightened, or DNS-rebinding since create) — T-22-05-03.
+        // Early SSRF reject at egress (cheap: catches non-HTTPS + a subscription
+        // created before validation tightened + a statically-private host). The
+        // DNS-rebinding TOCTOU itself is closed at the connection layer by
+        // WebhookDeliveryClientConfig's validated-IP resolver (T-22-05-03), so the
+        // address this worker actually connects to is always the validated one.
         try {
             urlValidator.validate(sub.getTargetUrl());
         } catch (IllegalArgumentException e) {

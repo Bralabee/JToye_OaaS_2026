@@ -320,5 +320,15 @@ class WebhookDeliveryWorkerIntegrationTest {
         WebClient.Builder webhookMockWebClientBuilder(CapturingExchange exchange) {
             return WebClient.builder().exchangeFunction(exchange);
         }
+
+        // The worker now consumes a dedicated WebClient bean (the SSRF-hardened
+        // webhookDeliveryWebClient in prod). A DIFFERENT bean name + @Primary wins
+        // the by-type injection without colliding with the prod bean's name (Spring
+        // Boot disables same-name override). Intercepts egress — no real network.
+        @Bean
+        @Primary
+        WebClient mockWebhookDeliveryWebClient(CapturingExchange exchange) {
+            return WebClient.builder().exchangeFunction(exchange).build();
+        }
     }
 }
