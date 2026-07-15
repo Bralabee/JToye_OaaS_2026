@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
 
@@ -45,11 +47,14 @@ public class WebhookDeliveryController {
 
     private final WebhookDeliveryRepository deliveryRepository;
     private final WebhookSubscriptionService subscriptionService;
+    private final IdempotencyService idempotencyService;
 
     public WebhookDeliveryController(WebhookDeliveryRepository deliveryRepository,
-                                     WebhookSubscriptionService subscriptionService) {
+                                     WebhookSubscriptionService subscriptionService,
+                                     IdempotencyService idempotencyService) {
         this.deliveryRepository = deliveryRepository;
         this.subscriptionService = subscriptionService;
+        this.idempotencyService = idempotencyService;
     }
 
     @GetMapping
@@ -67,21 +72,47 @@ public class WebhookDeliveryController {
     @PostMapping("/{deliveryId}/replay")
     @Operation(summary = "Replay a webhook delivery",
             description = "Re-enqueues a past delivery as a NEW attempt tagged replay, reusing the original "
-                    + "envelope id so a retry can never double-deliver at the receiver (Idempotency-Key safe). "
-                    + "The original delivery's status history is left intact.")
+                    + "envelope id so a retry can never double-deliver at the receiver. Supply an "
+                    + "Idempotency-Key header to make a retried replay safe: a repeated key replays the "
+                    + "original result and never creates a second delivery. The original delivery's status "
+                    + "history is left intact.")
     public ResponseEntity<WebhookDeliveryView> replay(
             @PathVariable UUID subscriptionId,
             @PathVariable UUID deliveryId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         requireOwnedSubscription(subscriptionId);
 
+        // WR-01: without a key, one click == one replay row (legacy behavior).
+        // With a key, route through the generic V50 idempotency store so a
+        // same-key retry (the frontend api-client auto-retries same key on 5xx)
+        // returns the ORIGINAL replay and creates NO second delivery row / POST.
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(createReplay(subscriptionId, deliveryId));
+        }
+
+        IdempotencyOutcome<WebhookDeliveryView> outcome = idempotencyService.execute(
+                "webhooks.replay",
+                idempotencyKey,
+                new ReplayRequest(subscriptionId, deliveryId),
+                WebhookDeliveryView.class,
+                () -> createReplay(subscriptionId, deliveryId));
+        return ResponseEntity.status(outcome.status()).body(outcome.value());
+    }
+
+    /**
+     * Insert the replay row and return its view. Runs exactly once per
+     * Idempotency-Key when invoked through {@link IdempotencyService#execute}.
+     *
+     * <p>A NEW row, PENDING, tagged is_replay/replay_of. It REUSES the original
+     * envelope id (X-JToye-Event-Id), so the vendor's receiver dedupes it against
+     * the original event — a replay (and its retries) can never double-deliver.
+     * The original row is untouched.
+     */
+    private WebhookDeliveryView createReplay(UUID subscriptionId, UUID deliveryId) {
         WebhookDelivery original = deliveryRepository.findByIdAndSubscriptionId(deliveryId, subscriptionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Webhook delivery not found: " + deliveryId));
 
-        // A NEW row, PENDING, tagged is_replay/replay_of. It REUSES the original
-        // envelope id (X-JToye-Event-Id), so the vendor's receiver dedupes it
-        // against the original event — a replay (and its retries) can never
-        // double-deliver. The original row is untouched.
         WebhookDelivery replay = new WebhookDelivery();
         replay.setTenantId(original.getTenantId());
         replay.setSubscriptionId(original.getSubscriptionId());
@@ -93,9 +124,13 @@ public class WebhookDeliveryController {
         replay.setReplayOf(original.getId());
 
         WebhookDelivery saved = deliveryRepository.save(replay);
-        log.info("event=webhook_delivery_replayed subscription={} original={} replay={} idempotencyKey={}",
-                subscriptionId, original.getId(), saved.getId(), idempotencyKey);
-        return ResponseEntity.status(HttpStatus.CREATED).body(WebhookDeliveryView.from(saved));
+        log.info("event=webhook_delivery_replayed subscription={} original={} replay={}",
+                subscriptionId, original.getId(), saved.getId());
+        return WebhookDeliveryView.from(saved);
+    }
+
+    /** Request identity for the Idempotency-Key hash (same-key/different-target = 422). */
+    private record ReplayRequest(UUID subscriptionId, UUID deliveryId) {
     }
 
     /** 404 (RFC 7807) unless the subscription exists and belongs to the caller's tenant. */

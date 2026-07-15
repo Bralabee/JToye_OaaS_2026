@@ -9211,7 +9211,7 @@
     },
     "/api/v1/webhooks/{subscriptionId}/deliveries/{deliveryId}/replay" : {
       "post" : {
-        "description" : "Re-enqueues a past delivery as a NEW attempt tagged replay, reusing the original envelope id so a retry can never double-deliver at the receiver (Idempotency-Key safe). The original delivery's status history is left intact.",
+        "description" : "Re-enqueues a past delivery as a NEW attempt tagged replay, reusing the original envelope id so a retry can never double-deliver at the receiver. Supply an Idempotency-Key header to make a retried replay safe: a repeated key replays the original result and never creates a second delivery. The original delivery's status history is left intact.",
         "operationId" : "replay",
         "parameters" : [
           {
