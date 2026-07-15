@@ -145,4 +145,54 @@ class CompaniesHouseClientTest {
                 .as("no request should ever be exchanged when the API key is unconfigured")
                 .isNull();
     }
+
+    @Test
+    @DisplayName("the real active-company payload shape (J'Toye Digital Ltd, no. 16471464) parses via the lenient projection")
+    void realActiveCompanyContractParses() {
+        // Recorded contract fixture: a representative Companies House Public Data
+        // API `GET /company/{number}` body for the platform operator's own ACTIVE
+        // company, verified against the public register on 2026-07-15
+        // (find-and-update.company-information.service.gov.uk/company/16471464).
+        // The other tests use 2-field bodies; this pins the lenient CompanyProfile
+        // projection against a realistic FULL payload, proving the many extra
+        // provider fields (name, address, SIC, accounts, confirmation statement)
+        // are tolerated (@JsonIgnoreProperties) rather than breaking the
+        // BUSINESS_VERIFIED lookup when the upstream shape grows.
+        String realBody = """
+                {
+                  "company_name": "J'TOYE DIGITAL LTD",
+                  "company_number": "16471464",
+                  "company_status": "active",
+                  "type": "ltd",
+                  "date_of_creation": "2025-05-23",
+                  "jurisdiction": "england-wales",
+                  "sic_codes": ["62020"],
+                  "registered_office_address": {
+                    "address_line_1": "Crispins Manor Farm Lane",
+                    "locality": "Michelmersh",
+                    "region": "Romsey",
+                    "postal_code": "SO51 0NT",
+                    "country": "England"
+                  },
+                  "accounts": {
+                    "next_due": "2027-02-23",
+                    "accounting_reference_date": { "day": "31", "month": "05" }
+                  },
+                  "confirmation_statement": {
+                    "next_due": "2027-06-05",
+                    "next_made_up_to": "2027-05-22"
+                  }
+                }
+                """;
+        CompaniesHouseClient client = clientReturning(
+                CH_KEY, jsonResponse(HttpStatus.OK, realBody), null);
+
+        Optional<CompanyProfile> result = client.lookup("16471464");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().companyNumber()).isEqualTo("16471464");
+        assertThat(result.get().companyStatus())
+                .as("only \"active\" passes the BUSINESS_VERIFIED gate")
+                .isEqualTo("active");
+    }
 }
