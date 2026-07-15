@@ -65,6 +65,7 @@ Infrastructure:
 - ✓ **[v2.2 Frontend]** Full-frontend experience overhaul — mobile nav, loading states, demo catalog images, storefront theme groundwork (Phase 19)
 - ✓ **[v2.2 AI]** Read-only MCP server slice with live RLS proof (Phase 20); uniform Idempotency-Key contract (#204, V50); scoped machine credentials (#206)
 - ✓ **[v2.2 P1/P2 security backlog]** RBAC method security (#83), GDPR erasure completeness (#84), guest-checkout stock convergence (#85), Redis resilience (#86), JWT audience validation (#87), public-path rate limiting (#88), supply-chain CI gate (#91), Keycloak deprovisioning on offboard (#102, V49), RLS uuid-cast safety (#113, V51)
+- ✓ **[v2.3 COMMS]** Notifications & Comms — first delivery consumer of the V46 outbox: multipart branded email + INERT WhatsApp/SMS seam (COMMS-02/07), GDPR consent/suppression + one-click unsubscribe (COMMS-03, V54), vendor-registered HMAC-signed outbound webhooks with retry/auto-pause/replay + delivery-log UI (COMMS-04/05/06, V55/V56, absorbs AI-01/#205 + #208), the previously-dead onboarding.events exchange now bound to a vendor email, all new tables ENABLE+FORCE RLS — Phase 22 (7 plans, verified 34/34; 5 code-review fixes; CR-01 SSRF DNS-rebinding hardening deferred to a tracked security follow-up)
 
 ### Active
 
@@ -91,7 +92,7 @@ Infrastructure:
 - [ ] MOBL-01: Dashboard sidebar no longer overlays content at 375px — responsive nav (drawer/collapse) pairing with the shop switcher
 
 **AI / automation (AI):**
-- [ ] AI-01: Vendor-registered outbound webhook subscriptions delivered from the V46 transactional outbox with retry/signing (#205)
+- [x] AI-01: Vendor-registered outbound webhook subscriptions delivered from the V46 transactional outbox with retry/signing (#205) — ✓ delivered as Phase 22 COMMS-04/05/06 (V55/V56)
 - [ ] AI-02: Mutating MCP tools extending the Phase 20 read-only server, riding the uniform Idempotency-Key contract (#204)
 
 **Infrastructure (INFRA):**
@@ -168,4 +169,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-14 — Milestone v2.3 (Vendor Ops + AI interleaved) started; v2.2 archived to `.planning/milestones/v2.2-*`. Phases continue from 21.*
+*Last updated: 2026-07-15 — Phase 22 (Notifications & Comms, COMMS-01..07) complete: first V46-outbox delivery consumer (email + HMAC webhooks + WhatsApp seam + consent/unsubscribe), AI-01/#205 delivered. Milestone v2.3 (Vendor Ops + AI interleaved); v2.2 archived to `.planning/milestones/v2.2-*`. Next: Phase 23 (Vendor-Scoped Access + Responsive Nav).*
