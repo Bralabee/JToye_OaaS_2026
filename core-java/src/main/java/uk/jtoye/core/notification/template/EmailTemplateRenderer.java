@@ -81,6 +81,23 @@ public class EmailTemplateRenderer {
     private Copy paymentCopy(RecipientRole role, Map<String, Object> m) {
         String order = s(m, "orderNumber");
         String amount = s(m, "amount");
+        // WR-02: payment.succeeded AND payment.failed share this family/prefix, so
+        // branch on the outcome carried in the model — a failed payment must NEVER
+        // render the "received / thank you" success copy.
+        boolean failed = "FAILED".equalsIgnoreCase(s(m, "paymentType"));
+
+        if (failed) {
+            String subject = "Payment failed — order %s".formatted(order);
+            if (role == RecipientRole.VENDOR) {
+                return new Copy(subject, "Payment failed",
+                        "<p style=\"margin:0;font-size:15px;line-height:1.6;\">A payment attempt of %s for order <strong>%s</strong> failed — no funds were captured. The customer has been asked to try again.</p>".formatted(amount, order),
+                        "A payment attempt of %s for order %s failed — no funds were captured. The customer has been asked to try again.".formatted(amount, order));
+            }
+            return new Copy(subject, "Payment failed",
+                    "<p style=\"margin:0;font-size:15px;line-height:1.6;\">We couldn't process your payment of %s for order <strong>%s</strong>. Please try again or update your payment details — your order is not yet paid.</p>".formatted(amount, order),
+                    "We couldn't process your payment of %s for order %s. Please try again or update your payment details — your order is not yet paid.".formatted(amount, order));
+        }
+
         String subject = "Payment received — order %s".formatted(order);
         if (role == RecipientRole.VENDOR) {
             return new Copy(subject, "Payment received",

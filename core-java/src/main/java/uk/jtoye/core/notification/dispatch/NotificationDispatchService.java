@@ -154,6 +154,9 @@ public class NotificationDispatchService {
         } else if (payload instanceof PaymentEvent payment) {
             model.put("orderNumber", payment.orderNumber());
             model.put("amount", formatAmount(payment.amountPennies(), payment.currency()));
+            // WR-02: carry the outcome so the renderer selects success vs failure
+            // copy — payment.succeeded and payment.failed share the "payment" family.
+            model.put("paymentType", payment.type() == null ? "" : payment.type().name());
         } else if (payload instanceof OnboardingStateChangeEvent onboarding) {
             // No shop name on the event; the renderer tolerates a missing key.
             model.put("reason", onboarding.reason() == null ? "" : onboarding.reason());
