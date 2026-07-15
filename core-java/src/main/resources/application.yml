@@ -151,6 +151,17 @@ jtoye:
       realms: ${KC_DEPROVISION_REALMS:jtoye-dev}
       username: ${KEYCLOAK_ADMIN:admin}
       password: ${KEYCLOAK_ADMIN_PASSWORD:}
+  # Phase 22 COMMS-07: WhatsApp/SMS provider seam. FULLY INERT by default —
+  # WhatsAppSmsChannel logs one WARN and no-ops unless enabled=true AND all
+  # provider credentials are present. Live send is out of scope this phase
+  # (#208 scaffold-only); every value is ${ENV:default}, secrets default empty
+  # (house convention) so nothing is hardcoded (GLOBAL_RULE_6).
+  whatsapp:
+    enabled: ${WHATSAPP_ENABLED:false}
+    provider: ${WHATSAPP_PROVIDER:}
+    account-sid: ${WHATSAPP_ACCOUNT_SID:}
+    auth-token: ${WHATSAPP_AUTH_TOKEN:}
+    from-number: ${WHATSAPP_FROM_NUMBER:}
 
 stomp:
   broker:
@@ -285,6 +296,14 @@ notification:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:true}
     from: ${NOTIFICATION_EMAIL_FROM:noreply@jtoye.uk}
     tracking-base-url: ${NOTIFICATION_EMAIL_TRACKING_BASE_URL:http://localhost:3000}
+  # Phase 22 COMMS-03: stateless one-click unsubscribe (RFC 8058). The signing
+  # secret keys the HMAC unsubscribe token; empty default keeps the feature
+  # inert until an operator wires it (NotificationProperties.configured()).
+  # base-url is the public origin unsubscribe links are built against. No
+  # literals in code (GLOBAL_RULE_6).
+  unsubscribe:
+    signing-secret: ${NOTIFICATION_UNSUBSCRIBE_SECRET:}
+    base-url: ${NOTIFICATION_UNSUBSCRIBE_BASE_URL:http://localhost:3000}
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
