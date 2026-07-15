@@ -305,6 +305,29 @@ notification:
     signing-secret: ${NOTIFICATION_UNSUBSCRIBE_SECRET:}
     base-url: ${NOTIFICATION_UNSUBSCRIBE_BASE_URL:http://localhost:3000}
 
+# Phase 22 COMMS-05: outbound webhook delivery engine (WebhookDeliveryWorker +
+# WebhookRetentionCleanup). Every tunable is ${ENV:default} (GLOBAL_RULE_6) —
+# attempt count, backoff schedule, auto-pause threshold and the webhook_delivery
+# retention window are config-injected, never literals. target.block-private-ranges
+# (default ON, also read by WebhookUrlValidator) re-guards SSRF at delivery time
+# against a subscription created before URL validation tightened / DNS rebinding.
+webhook:
+  delivery:
+    interval-ms: ${WEBHOOK_DELIVERY_INTERVAL_MS:5000}
+    batch-size: ${WEBHOOK_DELIVERY_BATCH_SIZE:50}
+    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}
+    backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:1000}
+    backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:3600000}
+    auto-pause-threshold: ${WEBHOOK_DELIVERY_AUTO_PAUSE_THRESHOLD:10}
+    retention-days: ${WEBHOOK_DELIVERY_RETENTION_DAYS:30}
+    retention-interval-ms: ${WEBHOOK_DELIVERY_RETENTION_INTERVAL_MS:86400000}
+    timeout-seconds: ${WEBHOOK_DELIVERY_TIMEOUT_SECONDS:10}
+    signature-tolerance-seconds: ${WEBHOOK_DELIVERY_SIGNATURE_TOLERANCE_SECONDS:300}
+  envelope:
+    version: ${WEBHOOK_ENVELOPE_VERSION:1}
+  target:
+    block-private-ranges: ${WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES:true}
+
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
@@ -353,6 +376,15 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 60s
         permitted-number-of-calls-in-half-open-state: 1
+        register-health-indicator: true
+      # Phase 22 COMMS-05: outbound webhook egress breaker. Per-subscription
+      # isolation + auto-pause already bound a hostile endpoint; this breaker
+      # trips the shared WebClient so a broadly-down egress path fails fast.
+      webhook:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
   retry:
     instances:
