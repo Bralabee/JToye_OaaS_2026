@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { CompanyLegalLine } from "@/components/platform/company-legal"
 
 /**
  * Operator sign-in. This page is a LANDING DESTINATION, not just transit:
@@ -20,7 +21,7 @@ import {
  */
 export default function SignInPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-white to-slate-100 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-slate-100 p-4">
       <Card className="w-full max-w-md border-slate-200 shadow-xl">
         <CardHeader className="space-y-4 text-center pb-6">
           <Link
@@ -68,6 +69,7 @@ export default function SignInPage() {
           </div>
         </CardContent>
       </Card>
+      <CompanyLegalLine className="mt-6 max-w-md text-center" />
     </div>
   )
 }

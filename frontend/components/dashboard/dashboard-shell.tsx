@@ -3,6 +3,7 @@
 import { Store } from "lucide-react"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
+import { CompanyLegalLine } from "@/components/platform/company-legal"
 import type { ReactNode } from "react"
 
 /**
@@ -29,6 +30,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         </div>
         <div className="container mx-auto p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100">
           {children}
+          <footer className="mt-10 border-t border-slate-200 pt-4 dark:border-slate-800">
+            <CompanyLegalLine />
+          </footer>
         </div>
       </main>
       <MobileTabBar className="md:hidden" />
