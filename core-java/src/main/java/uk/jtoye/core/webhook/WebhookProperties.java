@@ -22,7 +22,6 @@ public class WebhookProperties {
 
     private final Delivery delivery = new Delivery();
     private final Envelope envelope = new Envelope();
-    private final Target target = new Target();
 
     public Delivery getDelivery() {
         return delivery;
@@ -30,10 +29,6 @@ public class WebhookProperties {
 
     public Envelope getEnvelope() {
         return envelope;
-    }
-
-    public Target getTarget() {
-        return target;
     }
 
     /** Delivery-worker + retention tunables. */
@@ -151,20 +146,6 @@ public class WebhookProperties {
 
         public void setVersion(String version) {
             this.version = version;
-        }
-    }
-
-    /** Egress-target guarding (shared toggle with {@code WebhookUrlValidator}). */
-    public static class Target {
-        /** Re-guard SSRF at delivery time (default ON). */
-        private boolean blockPrivateRanges = true;
-
-        public boolean isBlockPrivateRanges() {
-            return blockPrivateRanges;
-        }
-
-        public void setBlockPrivateRanges(boolean blockPrivateRanges) {
-            this.blockPrivateRanges = blockPrivateRanges;
         }
     }
 }
