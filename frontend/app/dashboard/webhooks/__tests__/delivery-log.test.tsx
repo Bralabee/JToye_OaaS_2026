@@ -18,9 +18,12 @@ import apiClient from "@/lib/api-client"
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
 
-jest.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: jest.fn() }),
-}))
+// Stable toast identity across renders — mirrors the real module-level `toast`
+// (an unstable one would spin the detail page's useCallback([id, toast]) deps).
+jest.mock("@/hooks/use-toast", () => {
+  const toast = jest.fn()
+  return { useToast: () => ({ toast }) }
+})
 
 // Override the global next/navigation mock to supply useParams for [id].
 jest.mock("next/navigation", () => ({

@@ -13,9 +13,10 @@ import apiClient from "@/lib/api-client"
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
 
-jest.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: jest.fn() }),
-}))
+jest.mock("@/hooks/use-toast", () => {
+  const toast = jest.fn()
+  return { useToast: () => ({ toast }) }
+})
 
 const now = new Date().toISOString()
 
