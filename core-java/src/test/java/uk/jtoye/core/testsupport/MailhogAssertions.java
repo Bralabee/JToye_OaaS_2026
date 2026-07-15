@@ -2,6 +2,7 @@ package uk.jtoye.core.testsupport;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.mail.internet.MimeUtility;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -143,7 +144,16 @@ public final class MailhogAssertions {
 
     private static String firstHeader(JsonNode headers, String name) {
         JsonNode arr = headers.path(name);
-        return arr.isArray() && arr.size() > 0 ? arr.get(0).asText() : "";
+        String raw = arr.isArray() && arr.size() > 0 ? arr.get(0).asText() : "";
+        // Mailhog stores the RAW header. A subject containing non-ASCII (e.g. the
+        // em-dash in "Order X — an update") is RFC 2047 word-encoded, so a plain
+        // substring match on the raw value would miss (Q-encoding turns spaces
+        // into '_'). Decode back to the human subject before matching.
+        try {
+            return MimeUtility.decodeText(raw);
+        } catch (Exception e) {
+            return raw;
+        }
     }
 
     private static void sleep(long ms) {
