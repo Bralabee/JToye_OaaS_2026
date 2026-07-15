@@ -123,6 +123,37 @@ class EmailTemplateRendererTest {
     }
 
     @Test
+    @DisplayName("WR-03 — onboarding email renders the stall reason (not a blank shopName)")
+    void onboardingRendersReason() {
+        String reason = "Manual review required: business verification pending";
+        RenderedEmail email = renderer.render(
+                "onboarding.state.changed", RecipientRole.VENDOR,
+                Map.of("reason", reason), UNSUB);
+
+        assertFalse(email.html().isBlank(), "onboarding html must not be blank");
+        assertTrue(email.html().contains(reason),
+                "onboarding html must state WHY onboarding stalled (the reason)");
+        assertTrue(email.text().contains(reason),
+                "onboarding text must state the reason too");
+    }
+
+    @Test
+    @DisplayName("WR-03/IN-02 — the rendered reason is HTML-escaped in the html path, raw in the text path")
+    void onboardingReasonIsHtmlEscaped() {
+        String reason = "Blocked by <script>alert(1)</script> & manual review";
+        RenderedEmail email = renderer.render(
+                "onboarding.state.changed", RecipientRole.VENDOR,
+                Map.of("reason", reason), UNSUB);
+
+        assertFalse(email.html().contains("<script>"),
+                "raw <script> must never reach the html body (injection guard)");
+        assertTrue(email.html().contains("&lt;script&gt;"),
+                "the reason must be HTML-escaped in the html path");
+        assertTrue(email.text().contains(reason),
+                "the plain-text path stays unescaped (no markup context)");
+    }
+
+    @Test
     @DisplayName("render — a null unsubscribe URL never produces a broken template")
     void nullUnsubscribeIsSafe() {
         RenderedEmail email = assertDoesNotThrow(() ->
