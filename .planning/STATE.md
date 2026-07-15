@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-07-15T03:04:35.733Z"
+stopped_at: Completed 22-04-PLAN.md
+last_updated: "2026-07-15T03:34:00.526Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 22 (notifications-comms) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-07-15
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Milestone v2.3 Phase Map
 
@@ -74,6 +74,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 22 P01 | 11min | 3 tasks | 13 files |
 | Phase 22 P02 | 20m | 3 tasks | 14 files |
 | Phase 22 P03 | 50m | 3 tasks | 13 files |
+| Phase 22 P04 | 16min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 22]: 22-03: WebhookSubscriptionController mounts /api/v1/webhooks hard-coded (webhook pkg NOT in WebConfig.API_V1_PACKAGES; RefundController precedent) — keeps change inside webhook/*, no WebConfig edit.
 - [Phase 22]: 22-03: vendor target_url HTTPS-only + SSRF-blocked (loopback/RFC1918/link-local/169.254.169.254/IPv6-ULA) via WebhookUrlValidator at create; toggle webhook.target.block-private-ranges default ON; RFC 7807 400.
 - [Phase 22]: 22-03: OpenAPI snapshot regen DEFERRED to phase gate — committed snapshot already stale for Phase 21 + 22-02; webhook-only partial regen impossible, out-of-scope per SCOPE BOUNDARY (deferred-items.md).
+- [Phase 22]: 22-04: order-audience wired additively — the new order.notifications path is VENDOR-ONLY so the untouched legacy customer path is not duplicated (COMMS-02 = customer + vendor, no double-email; Pitfall 5 path A)
+- [Phase 22]: 22-04: bound the Phase-21 dead onboarding.events exchange + a refund.notifications queue on order.refunded + a second payment.notifications queue — each its OWN durable queue (never steals from an incumbent consumer); PaymentEventOutboxFlusher untouched (Pitfall 3, consumers only)
+- [Phase 22]: 22-04: first-deploy onboarding-stall backlog re-delivery ACCEPTED with no cutoff (RESEARCH A5) — genuine unresolved stalls, ConsentGate still applies
 
 ### Pending Todos
 
@@ -120,6 +124,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T03:04:16.398Z
-Stopped at: Completed 22-02-PLAN.md
+Last session: 2026-07-15T03:33:25.370Z
+Stopped at: Completed 22-04-PLAN.md
 Resume file: None
