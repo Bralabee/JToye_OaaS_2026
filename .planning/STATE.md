@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: executing
+status: verifying
 stopped_at: Completed 22-04-PLAN.md
-last_updated: "2026-07-15T04:36:12.898Z"
+last_updated: "2026-07-15T04:57:41.074Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 12
-  completed_plans: 11
-  percent: 17
+  completed_plans: 12
+  percent: 33
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 Phase: 22 (notifications-comms) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-15
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Milestone v2.3 Phase Map
 
@@ -77,6 +77,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 22 P04 | 16min | 3 tasks | 11 files |
 | Phase 22 P05 | 32min | 3 tasks | 15 files |
 | Phase 22 P06 | 12min | 3 tasks | 10 files |
+| Phase 22 P07 | 13min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 22]: 22-04: bound the Phase-21 dead onboarding.events exchange + a refund.notifications queue on order.refunded + a second payment.notifications queue — each its OWN durable queue (never steals from an incumbent consumer); PaymentEventOutboxFlusher untouched (Pitfall 3, consumers only)
 - [Phase 22]: 22-04: first-deploy onboarding-stall backlog re-delivery ACCEPTED with no cutoff (RESEARCH A5) — genuine unresolved stalls, ConsentGate still applies
 - [Phase ?]: 22-06: webhook management UI in lib/webhooks-api.ts wrapping the default apiClient (api-client.ts untouched); grouped event-type checkboxes map one-per-backend-enum-family; once-only SecretRevealDialog blocks backdrop/Esc/X; cards below sm + Table at sm+ (375px); replay carries a secure Idempotency-Key
+- [Phase ?]: 22-07: Public /unsubscribe is a server page.tsx (exports metadata.robots noindex,nofollow) wrapping a Suspense'd use-client content module; token/email sent to the API but never rendered into meta/body (PII-safe); route sitemap-excluded + link-graph-allowlisted (email-only entry).
+- [Phase ?]: 22-07: Phase-gate docs reconcile = docs-freshness.sh --write (schema 56, total 1388) + gradle updateOpenApiSnapshot (+14 endpoints, 0 removed) -> docs-freshness EXIT=0; whole-repo artifacts reconciled once at the last plan.
+- [Phase ?]: 22-07: Authenticated E2E = real Keycloak login + Playwright route() stubs (dashboard-mobile pattern); unsubscribe-flow 6/6 live green; webhook dashboard specs need E2E_VENDOR_PASSWORD for a live authenticated run (env creds unknown).
 
 ### Pending Todos
 
@@ -127,6 +131,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T04:35:20.414Z
+Last session: 2026-07-15T04:56:35.210Z
 Stopped at: Completed 22-04-PLAN.md
 Resume file: None
