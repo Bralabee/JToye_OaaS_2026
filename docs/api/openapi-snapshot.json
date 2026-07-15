@@ -3733,18 +3733,6 @@
         },
         "type" : "object"
       },
-      "UpdateOnboardingRequest" : {
-        "description" : "Company-number correction request",
-        "properties" : {
-          "companyNumber" : {
-            "maxLength" : 32,
-            "minLength" : 0,
-            "pattern" : "^\\s*([A-Za-z0-9]{2,10})?\\s*$",
-            "type" : "string"
-          }
-        },
-        "type" : "object"
-      },
       "UpdateOrderRequest" : {
         "properties" : {
           "customerEmail" : {
