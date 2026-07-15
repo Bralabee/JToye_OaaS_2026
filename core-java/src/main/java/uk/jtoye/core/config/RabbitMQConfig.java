@@ -44,6 +44,21 @@ public class RabbitMQConfig {
      */
     public static final String ONBOARDING_EVENTS_EXCHANGE = "onboarding.events";
 
+    // --- Phase 22 (22-04) notification CONSUMER topology ---
+    // Second durable queues that fan lifecycle events out to email WITHOUT
+    // competing with the incumbent consumers (see the topology section below).
+    public static final String ORDER_NOTIFICATIONS_QUEUE = "order.notifications";
+    public static final String ONBOARDING_NOTIFICATIONS_QUEUE = "onboarding.notifications";
+    public static final String PAYMENT_NOTIFICATIONS_QUEUE = "payment.notifications";
+    public static final String REFUND_NOTIFICATIONS_QUEUE = "refund.notifications";
+    public static final String ONBOARDING_EVENTS_ROUTING_PATTERN = "onboarding.state.*";
+    public static final String PAYMENT_EVENTS_ROUTING_PATTERN = "payment.*";
+    /** Refund routing key ({@link uk.jtoye.core.payment.RefundEvent}); matches NO existing binding today. */
+    public static final String ORDER_REFUNDED_ROUTING_KEY = "order.refunded";
+
+    // --- Phase 22 (22-05) webhook fanout CONSUMER queue (consumed by WebhookFanoutListener) ---
+    public static final String WEBHOOK_DELIVERIES_QUEUE = "webhook.deliveries";
+
     @Bean
     public TopicExchange orderEventsExchange() {
         return new TopicExchange(ORDER_EVENTS_EXCHANGE);
@@ -156,6 +171,126 @@ public class RabbitMQConfig {
     @Bean
     public TopicExchange onboardingEventsExchange() {
         return new TopicExchange(ONBOARDING_EVENTS_EXCHANGE);
+    }
+
+    // ===================================================================
+    // Phase 22 (22-04 / 22-05) — notification + webhook CONSUMER topology
+    // ===================================================================
+    //
+    // Each new consumer gets its OWN durable queue bound to an EXISTING
+    // exchange (RESEARCH Pattern 1). A second @RabbitListener on an existing
+    // queue would STEAL messages from the incumbent via competing-consumer
+    // semantics, so:
+    //   • order.notifications does NOT reuse ORDER_EVENTS_QUEUE
+    //     (order.state-changes) — the incumbent OrderStateChangeListener keeps
+    //     emailing the CUSTOMER; this new queue drives the VENDOR order email.
+    //   • payment.notifications does NOT reuse PAYMENT_EVENTS_QUEUE — the
+    //     incumbent PaymentEventAuditListener keeps its audit copy.
+    // Producers and PaymentEventOutboxFlusher.publishRow are UNTOUCHED
+    // (Pitfall 3 — all four dispatch branches already exist; this plan adds
+    // consumers only, never a new outbox event type).
+    //
+    // First-deploy backlog (RESEARCH Assumption A5) — ACCEPTED, no cutoff:
+    // binding onboarding.notifications flushes any onboarding-stall events
+    // already sitting in the shared outbox that were discarded while the
+    // exchange was unbound. Those are genuine unresolved stalls the vendor was
+    // NEVER notified about, so delivering them is the point of COMMS-01;
+    // at-least-once is the outbox contract and the ConsentGate still applies.
+
+    // (1) VENDOR order email — SECOND durable queue on order.events (order.state.*).
+    @Bean
+    public Queue orderNotificationsQueue() {
+        return QueueBuilder.durable(ORDER_NOTIFICATIONS_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding orderNotificationsBinding(Queue orderNotificationsQueue, TopicExchange orderEventsExchange) {
+        return BindingBuilder.bind(orderNotificationsQueue)
+                .to(orderEventsExchange)
+                .with(ORDER_EVENTS_ROUTING_PATTERN);
+    }
+
+    // (2) ONBOARDING vendor email — BINDS the previously-unbound onboarding.events exchange
+    //     (Phase 21 dead channel). No DLX: onboarding.events has none, and a
+    //     repeatedly-failing best-effort notification is dropped after the
+    //     retry interceptor exhausts — the vendor email is not a durable
+    //     side effect the way the order state machine is.
+    @Bean
+    public Queue onboardingNotificationsQueue() {
+        return QueueBuilder.durable(ONBOARDING_NOTIFICATIONS_QUEUE).build();
+    }
+
+    @Bean
+    public Binding onboardingNotificationsBinding(Queue onboardingNotificationsQueue,
+                                                  TopicExchange onboardingEventsExchange) {
+        return BindingBuilder.bind(onboardingNotificationsQueue)
+                .to(onboardingEventsExchange)
+                .with(ONBOARDING_EVENTS_ROUTING_PATTERN);
+    }
+
+    // (3) PAYMENT email — SECOND durable queue on payment.events (payment.*);
+    //     does NOT compete with PaymentEventAuditListener.
+    @Bean
+    public Queue paymentNotificationsQueue() {
+        return QueueBuilder.durable(PAYMENT_NOTIFICATIONS_QUEUE)
+                .withArgument("x-dead-letter-exchange", PAYMENT_EVENTS_DLX)
+                .build();
+    }
+
+    @Bean
+    public Binding paymentNotificationsBinding(Queue paymentNotificationsQueue, TopicExchange paymentEventsExchange) {
+        return BindingBuilder.bind(paymentNotificationsQueue)
+                .to(paymentEventsExchange)
+                .with(PAYMENT_EVENTS_ROUTING_PATTERN);
+    }
+
+    // (4) REFUND email — order.refunded matches NO binding today (discarded).
+    //     Bind exactly order.refunded; do NOT widen order.state.* to order.*
+    //     (Pitfall 2 — would double-deliver order-state events).
+    @Bean
+    public Queue refundNotificationsQueue() {
+        return QueueBuilder.durable(REFUND_NOTIFICATIONS_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .build();
+    }
+
+    @Bean
+    public Binding refundNotificationsBinding(Queue refundNotificationsQueue, TopicExchange orderEventsExchange) {
+        return BindingBuilder.bind(refundNotificationsQueue)
+                .to(orderEventsExchange)
+                .with(ORDER_REFUNDED_ROUTING_KEY);
+    }
+
+    // (5) WEBHOOK fanout — ONE durable queue bound to ALL FOUR families;
+    //     consumed by 22-05's WebhookFanoutListener (which owns its own
+    //     delivery-state table, so no DLX here).
+    @Bean
+    public Queue webhookDeliveriesQueue() {
+        return QueueBuilder.durable(WEBHOOK_DELIVERIES_QUEUE).build();
+    }
+
+    @Bean
+    public Binding webhookDeliveriesOrderStateBinding(Queue webhookDeliveriesQueue, TopicExchange orderEventsExchange) {
+        return BindingBuilder.bind(webhookDeliveriesQueue).to(orderEventsExchange).with(ORDER_EVENTS_ROUTING_PATTERN);
+    }
+
+    @Bean
+    public Binding webhookDeliveriesRefundBinding(Queue webhookDeliveriesQueue, TopicExchange orderEventsExchange) {
+        return BindingBuilder.bind(webhookDeliveriesQueue).to(orderEventsExchange).with(ORDER_REFUNDED_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding webhookDeliveriesOnboardingBinding(Queue webhookDeliveriesQueue,
+                                                      TopicExchange onboardingEventsExchange) {
+        return BindingBuilder.bind(webhookDeliveriesQueue).to(onboardingEventsExchange)
+                .with(ONBOARDING_EVENTS_ROUTING_PATTERN);
+    }
+
+    @Bean
+    public Binding webhookDeliveriesPaymentBinding(Queue webhookDeliveriesQueue, TopicExchange paymentEventsExchange) {
+        return BindingBuilder.bind(webhookDeliveriesQueue).to(paymentEventsExchange).with(PAYMENT_EVENTS_ROUTING_PATTERN);
     }
 
     @Bean
