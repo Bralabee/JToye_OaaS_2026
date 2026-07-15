@@ -58,6 +58,8 @@ public class RabbitMQConfig {
 
     // --- Phase 22 (22-05) webhook fanout CONSUMER queue (consumed by WebhookFanoutListener) ---
     public static final String WEBHOOK_DELIVERIES_QUEUE = "webhook.deliveries";
+    public static final String WEBHOOK_DELIVERIES_DLX = "webhook.deliveries.dlx";
+    public static final String WEBHOOK_DELIVERIES_DLQ = "webhook.deliveries.dlq";
 
     @Bean
     public TopicExchange orderEventsExchange() {
@@ -264,11 +266,37 @@ public class RabbitMQConfig {
     }
 
     // (5) WEBHOOK fanout — ONE durable queue bound to ALL FOUR families;
-    //     consumed by 22-05's WebhookFanoutListener (which owns its own
-    //     delivery-state table, so no DLX here).
+    //     consumed by 22-05's WebhookFanoutListener.
+    //
+    // WR-05: bound to its own DLX (mirroring order.notifications /
+    // payment.notifications). If insertPendingRows() throws a TRANSIENT error
+    // (e.g. a DB connection blip — NOT "no matching subscriptions"), the retry
+    // interceptor exhausts and the message would otherwise be silently DROPPED
+    // with no webhook_delivery row and no trace. Dead-lettering makes that
+    // failure observable/replayable rather than a permanent silent loss for
+    // every subscribed vendor endpoint.
+    @Bean
+    public FanoutExchange webhookDeliveriesDeadLetterExchange() {
+        return new FanoutExchange(WEBHOOK_DELIVERIES_DLX);
+    }
+
     @Bean
     public Queue webhookDeliveriesQueue() {
-        return QueueBuilder.durable(WEBHOOK_DELIVERIES_QUEUE).build();
+        return QueueBuilder.durable(WEBHOOK_DELIVERIES_QUEUE)
+                .withArgument("x-dead-letter-exchange", WEBHOOK_DELIVERIES_DLX)
+                .build();
+    }
+
+    @Bean
+    public Queue webhookDeliveriesDeadLetterQueue() {
+        return QueueBuilder.durable(WEBHOOK_DELIVERIES_DLQ).build();
+    }
+
+    @Bean
+    public Binding webhookDeliveriesDeadLetterBinding(Queue webhookDeliveriesDeadLetterQueue,
+                                                      FanoutExchange webhookDeliveriesDeadLetterExchange) {
+        return BindingBuilder.bind(webhookDeliveriesDeadLetterQueue)
+                .to(webhookDeliveriesDeadLetterExchange);
     }
 
     @Bean
