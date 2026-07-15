@@ -28,7 +28,7 @@ Infrastructure:
 - **Local-k8s overlay** — committed `k8s/local` overlay (endpoint shims to `host.minikube.internal`, minReplicas=1, backup→MinIO) replacing imperative patches; fixes the verified breakage list (DB_PORT hardcode repo defect, NOSUPERUSER role secrets, HPA minReplicas, pg-backup→S3).
 
 **Key context:**
-- Direct predecessor is v2.2 (production hardening + vendor order ops), fully merged to main; at v2.2 close schema was V51 with 1257 test invocations, docs-freshness green. Current branch state post-Phase-22 is schema V56 / 1401 test invocations.
+- Direct predecessor is v2.2 (production hardening + vendor order ops), fully merged to main; at v2.2 close schema was V51 with 1257 test invocations, docs-freshness green. Current branch state post-Phase-22 (reconciled with main incl. motion-uplift #220-226, Phase 21 #228, platform company-reg #229) is schema V56 / 1452 test invocations.
 - Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first per HANDOFF ordering).
 - No milestone-level research — all three specs carry locked decisions with file:line evidence; the only genuinely-new surfaces (outbound webhooks, mutating MCP, async image pipeline) have prescribed approaches (V46 outbox, #204 idempotency, RabbitMQ worker). Framework pitfalls covered at phase-level research.
 - Deferred within-track items (per specs): platform-wide stock image library (cross-tenant), reviewer SLA/multi-reviewer, reapply-after-REJECTED, self-serve user invitation, per-capability permissions beyond the three roles.
