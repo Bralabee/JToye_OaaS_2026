@@ -108,7 +108,7 @@ Plans:
 
 **Wave 3** *(blocked on 22-03 + 22-04)*
 
-- [ ] 22-05-PLAN.md (Wave 3) — Webhook delivery engine: V56 `webhook_delivery` (FORCE RLS) + `WebhookSigner` (HMAC-SHA256 t=,v1=) + versioned envelope + fanout listener + `@Scheduled` SKIP-LOCKED worker (backoff + auto-pause + no head-of-line block) + retention prune + delivery-log/replay API + config tunables (COMMS-05)
+- [x] 22-05-PLAN.md (Wave 3) — Webhook delivery engine: V56 `webhook_delivery` (FORCE RLS) + `WebhookSigner` (HMAC-SHA256 t=,v1=) + versioned envelope + fanout listener + `@Scheduled` SKIP-LOCKED worker (backoff + auto-pause + no head-of-line block) + retention prune + delivery-log/replay API + config tunables (COMMS-05)
 
 **Wave 4** *(blocked on 22-03 + 22-05)*
 
@@ -214,7 +214,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
-| 22. Notifications & Comms | v2.3 | 4/7 | In Progress|  |
+| 22. Notifications & Comms | v2.3 | 5/7 | In Progress|  |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
