@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-07-15T02:40:39.956Z"
+last_updated: "2026-07-15T03:04:35.733Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 22 (notifications-comms) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-07-15
 
-Progress: [██████░░░░] 58%
+Progress: [███████░░░] 67%
 
 ## Milestone v2.3 Phase Map
 
@@ -73,6 +73,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 21 P05 | 45min | 3 tasks | 2 files |
 | Phase 22 P01 | 11min | 3 tasks | 13 files |
 | Phase 22 P02 | 20m | 3 tasks | 14 files |
+| Phase 22 P03 | 50m | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 22]: 22-01: Order-email path frozen (Pitfall 5 path A) — EmailNotificationService + its SimpleMailMessage test untouched; all NEW events ride the MimeMessageHelper multipart EmailChannel. — Guarantees zero regression to the one working channel (Incremental Betterment).
 - [Phase 22]: 22-01: NotificationChannel seam owns NO consent category (22-02 owns NotificationCategory); RecipientRole {CUSTOMER,VENDOR} is the audience axis. Keeps 22-01/02/03 parallel-safe. — Decoupled contract so Wave-1 plans do not share a type.
 - [Phase 22]: 22-01: Marked only COMMS-07 complete; COMMS-02 left pending (shared with 22-04's dispatch, which delivers its Mailhog/recipient acceptance). — Avoids a false-green — COMMS-02 acceptance is unmet until 22-04.
+- [Phase 22]: 22-03: webhook_subscription (V55) FORCE-RLS via current_tenant_id(); plaintext signing_secret returned once on create+rotate, never on GET/list; rotate regenerates via SecureRandom.
+- [Phase 22]: 22-03: WebhookSubscriptionController mounts /api/v1/webhooks hard-coded (webhook pkg NOT in WebConfig.API_V1_PACKAGES; RefundController precedent) — keeps change inside webhook/*, no WebConfig edit.
+- [Phase 22]: 22-03: vendor target_url HTTPS-only + SSRF-blocked (loopback/RFC1918/link-local/169.254.169.254/IPv6-ULA) via WebhookUrlValidator at create; toggle webhook.target.block-private-ranges default ON; RFC 7807 400.
+- [Phase 22]: 22-03: OpenAPI snapshot regen DEFERRED to phase gate — committed snapshot already stale for Phase 21 + 22-02; webhook-only partial regen impossible, out-of-scope per SCOPE BOUNDARY (deferred-items.md).
 
 ### Pending Todos
 
@@ -115,6 +120,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T02:40:39.946Z
+Last session: 2026-07-15T03:04:16.398Z
 Stopped at: Completed 22-02-PLAN.md
 Resume file: None
