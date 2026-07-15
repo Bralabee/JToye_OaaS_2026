@@ -1,6 +1,7 @@
 package uk.jtoye.core.notification.template;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.HtmlUtils;
 
 import java.util.Map;
 
@@ -70,12 +71,23 @@ public class EmailTemplateRenderer {
     }
 
     private Copy onboardingCopy(RecipientRole role, Map<String, Object> m) {
-        String shop = s(m, "shopName");
         // Onboarding notifications are vendor-only (D-04, arch_no_platform_operator).
+        // WR-03: render the "reason" the model actually carries (shopName was never
+        // populated, so the previous template rendered blank). The reason is the
+        // whole point of the stall email — it tells the vendor WHY onboarding
+        // paused. IN-02: HTML-escape the reason in the html path only (it can carry
+        // vendor/system free text); the plain-text path has no markup context.
+        String reason = s(m, "reason");
         String subject = "Your J'Toye onboarding — an update";
+        if (reason.isBlank()) {
+            return new Copy(subject, "Onboarding update",
+                    "<p style=\"margin:0;font-size:15px;line-height:1.6;\">There's an update on your J'Toye onboarding. Open your dashboard to see what's needed next.</p>",
+                    "There's an update on your J'Toye onboarding. Open your dashboard to see what's needed next.");
+        }
+        String reasonHtml = HtmlUtils.htmlEscape(reason);
         return new Copy(subject, "Onboarding update",
-                "<p style=\"margin:0;font-size:15px;line-height:1.6;\">There's an update on the onboarding for <strong>%s</strong>. Open your dashboard to see what's needed next.</p>".formatted(shop),
-                "There's an update on the onboarding for %s. Open your dashboard to see what's needed next.".formatted(shop));
+                "<p style=\"margin:0;font-size:15px;line-height:1.6;\">There's an update on your J'Toye onboarding: <strong>%s</strong>. Open your dashboard to see what's needed next.</p>".formatted(reasonHtml),
+                "There's an update on your J'Toye onboarding: %s. Open your dashboard to see what's needed next.".formatted(reason));
     }
 
     private Copy paymentCopy(RecipientRole role, Map<String, Object> m) {
