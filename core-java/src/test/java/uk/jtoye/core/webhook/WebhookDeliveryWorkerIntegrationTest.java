@@ -221,6 +221,57 @@ class WebhookDeliveryWorkerIntegrationTest {
 
     @Test
     @WithMockUser
+    void replay_sameIdempotencyKey_createsExactlyOneRow_differentKeyCreatesAnother() throws Exception {
+        UUID subscription = insertSubscription("https://ok.example.com/hook", "whsec-idem");
+        fanoutOrderReady();
+        UUID original = deliveryIdFor(subscription);
+
+        String base = "/api/v1/webhooks/" + subscription + "/deliveries/" + original + "/replay";
+        String sameKey = "idem-replay-" + UUID.randomUUID();
+
+        // First replay with key K.
+        String firstBody = mockMvc.perform(post(base)
+                        .header("X-Tenant-Id", tenantId.toString())
+                        .header("Idempotency-Key", sameKey))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String firstId = com.jayway.jsonpath.JsonPath.read(firstBody, "$.id");
+
+        // Second replay with the SAME key — must NOT create a second row (WR-01).
+        String secondBody = mockMvc.perform(post(base)
+                        .header("X-Tenant-Id", tenantId.toString())
+                        .header("Idempotency-Key", sameKey))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String secondId = com.jayway.jsonpath.JsonPath.read(secondBody, "$.id");
+
+        assertThat(secondId)
+                .as("a same-key replay returns the ORIGINAL replay, not a fresh one")
+                .isEqualTo(firstId);
+
+        Integer replayRows = jdbc.queryForObject(
+                "SELECT count(*) FROM webhook_delivery WHERE is_replay = true AND replay_of = ?",
+                Integer.class, original);
+        assertThat(replayRows)
+                .as("same Idempotency-Key must produce exactly ONE replay row")
+                .isEqualTo(1);
+
+        // A DIFFERENT key genuinely creates a new replay row.
+        mockMvc.perform(post(base)
+                        .header("X-Tenant-Id", tenantId.toString())
+                        .header("Idempotency-Key", "idem-replay-" + UUID.randomUUID()))
+                .andExpect(status().isCreated());
+
+        Integer afterDifferentKey = jdbc.queryForObject(
+                "SELECT count(*) FROM webhook_delivery WHERE is_replay = true AND replay_of = ?",
+                Integer.class, original);
+        assertThat(afterDifferentKey)
+                .as("a different Idempotency-Key creates a new replay row")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @WithMockUser
     void deliveryLog_listsRowsForSubscription() throws Exception {
         UUID subscription = insertSubscription("https://ok.example.com/hook", "whsec-log");
         fanoutOrderReady();
