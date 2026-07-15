@@ -34,7 +34,8 @@ VSA-03 (shop-context switcher), VSA-04 (staff-management screen), MOBL-01 (375px
 
 **In scope (from SPEC):** `shop_staff` table + `_aud`; roles GROUP_ADMIN / SHOP_MANAGER / STAFF;
 application-layer enforcement on shop-scoped endpoints; dashboard shop-context switcher;
-minimal staff management (list/grant/revoke).
+minimal staff management (list/grant/revoke); a lightweight login-populated user-directory
+table (RLS, no `_aud`) backing the staff grant-target picker (D-09).
 
 **Out of scope (from SPEC — do NOT build):** cross-tenant / platform-operator roles;
 per-shop Keycloak clients or shop claims in the token; self-serve user-invitation flows
@@ -103,6 +104,37 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
   no per-form toggle state. *Rejected:* per-mutation "apply to all" toggle; hybrid context+override
   (both over-scoped for this minimal slice).
 
+### Staff management (VSA-04) — added 2026-07-15 (reconciled from a parallel discuss session; D-01..D-08 above stand unchanged)
+- **D-09 — Login-populated user directory as the grant-target picker.** No local users table exists
+  and the V49 Keycloak admin client is inert by default (`jtoye.keycloak.admin.enabled=false`); so
+  **upsert a lightweight tenant-scoped directory row `(tenant_id, user_id sub, email, display_name,
+  last_seen)` from the authenticated JWT** (email/name are token claims) — the same request point that
+  drives D-04 JIT provisioning. The grant screen picks from "seen" users. **ENABLE+FORCE RLS
+  tenant-scoped, but NO `_aud`** (it's a derived cache, high-churn; audit lives on `shop_staff`). New
+  staff appear after their first login. The upsert MUST be **throttled** (gate on stale `last_seen`
+  via a config-injected interval / `ON CONFLICT DO UPDATE … WHERE` — never a write per request).
+  *Rejected:* Keycloak-admin email search (fragile infra + KC24 trap); raw-sub entry (hostile UX).
+- **D-10 — GROUP_ADMIN-only staff nav item, mirroring Approvals.** A standalone "Staff"/"Team"
+  entry in the `sidebar.tsx` `navigation` array that renders the existing access-required state for
+  non-GROUP_ADMIN (same convention as Approvals/Finance); overflow falls into the mobile "More" sheet
+  automatically. *Rejected:* a new "Settings" grouping (no settings IA exists today).
+- **D-11 — Guard the last GROUP_ADMIN.** Block revoking/downgrading the final GROUP_ADMIN row with an
+  RFC 7807 **409**, and warn on self-downgrade. (Realm-`admin` implicit-GROUP_ADMIN is a recovery
+  backstop, but a non-realm-admin group admin could otherwise lock themselves out of staff mgmt.)
+
+### Access-model refinements — added 2026-07-15
+- **D-12 — Strict-scoping switch on top of D-04 JIT provisioning.** Adds the off-ramp D-04 lacked: a
+  **config-injected `strict-scoping` switch (default OFF)**. While OFF, behaviour is exactly D-04
+  (first-request ungranted users auto-provision GROUP_ADMIN — day-one behaviour preserved). Turning it
+  ON makes ungranted users **deny-by-default** (no more auto-provision) so a vendor can genuinely
+  tighten. Global flag now (GLOBAL_RULE_6); **per-tenant granularity deferred**. This reconciles the
+  user's "lazy grandfather *with a strict switch*" choice with the committed JIT decision.
+- **D-13 — Out-of-scope-shop UX = in-page access-required state.** Refines D-01/D-02's typed-403: a
+  direct-URL/bookmark hit on a non-granted shop renders the **existing** access-required state the
+  Approvals/Finance pages already show on 403 (not a redirect, not a blank) — the switcher already
+  prevents *choosing* a forbidden shop (D-01/D-06), so this is the direct-hit fallback. Still a
+  distinct RFC 7807 403 (never the RLS 404).
+
 ### Claude's Discretion
 - **MOBL-01 is verify-first, not build-from-scratch.** The dashboard sidebar is already
   `hidden md:flex ... w-64` (`sidebar.tsx:65`) — it is **hidden below `md`**, not overlaying — and
@@ -159,6 +191,26 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
   the mobile "More" sheet; existing `localStorage` theme persistence to mirror for D-07.
 - `qa/surface-ledger.json` — the surface-parity baseline + endpoint-inventory seed for VSA-02;
   update ONLY with proof (never silently) if MOBL-01 state changes.
+- `frontend/components/dashboard/dashboard-shell.tsx` — the responsive shell: desktop `<Sidebar/>`
+  + mobile slim top bar (wordmark-only) + fixed `<MobileTabBar/>`. Proves MOBL-01 already responsive;
+  the mobile switcher slot for D-06 lives in the top bar.
+- `frontend/components/dashboard/mobile-tab-bar.tsx` — 4 primary tabs + "More" sheet; overflow
+  absorbs the D-10 Staff nav item automatically. Do NOT rebuild (MOBL-01 verify-first).
+- `frontend/components/dashboard/__tests__/dashboard-shell.test.tsx` — existing 375px test surface
+  to extend for the MOBL-01 regression proof.
+
+### Staff-management + user directory (added 2026-07-15)
+- `core-java/src/main/java/uk/jtoye/core/security/JwtTenantFilter.java` — where `TenantContext` is set
+  per request; the throttled D-09 directory upsert + D-04 JIT provision hang off here. `jwt.getSubject()`
+  is the Keycloak `sub` → `shop_staff.user_id` + the directory `user_id`.
+- `core-java/src/main/java/uk/jtoye/core/tenant/TenantLifecycleService.java` — the V49 Keycloak admin
+  client, **inert by default** (`jtoye.keycloak.admin.enabled=false`) — the reason D-09 avoids Keycloak
+  enumeration and D-04 avoids a migrate-time sweep.
+- `frontend/components/dashboard/sidebar.tsx` §24-41 `navigation` array + Approvals "access-required
+  on 403" convention — the model for the D-10 GROUP_ADMIN-only Staff item and the D-13 out-of-scope 403.
+- Memory: `arch_no_platform_operator` (GROUP_ADMIN is tenant-scoped, NOT a platform operator),
+  `reference_keycloak24_user_profile_trap` (KC24 strips unmanaged attributes — relevant to any future
+  Keycloak read), `project_vendor_ops_specs`, `project_v23_sequencing`.
 
 </canonical_refs>
 
@@ -189,6 +241,11 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
   inventory during planning from `qa/surface-ledger.json` + the controller list.
 - Staff-management UI + switcher wire into the dashboard shell (`sidebar.tsx`) and a new
   `/dashboard/staff` (or similar) screen; grant/revoke calls a new authenticated staff endpoint.
+- New login-populated **user-directory** table (RLS, no `_aud`) + a throttled upsert wired after
+  `JwtTenantFilter` (D-09); the staff GROUP_ADMIN-gated REST (list/grant/revoke) enforces the
+  **last-GROUP_ADMIN 409 guard** (D-11). Directory version = part of V52 or the next free slot
+  (planner assigns; must land before Phase 24 V53).
+- Strict-scoping switch = a config flag (default OFF) read by `ShopAccessService` (D-12).
 
 </code_context>
 
@@ -213,6 +270,13 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
 - **Server-side (cross-device) switcher preference** — considered for D-07, deferred as a new
   surface out of proportion to this slice; revisit if users report per-device drift.
 - **Fine-grained per-capability permissions beyond the three roles** — explicitly out of scope.
+- **Per-tenant strict-scoping switch** — D-12's switch is a global config flag now; letting each vendor
+  flip their own strict mode (a `tenants` column / settings table) is a follow-up.
+- **Keycloak-admin user search / grant to never-logged-in users** — grant targets come from the
+  login-populated directory (D-09); searching Keycloak users who haven't authenticated stays out
+  (admin client inert; KC24 traps).
+- **Multi-shop grant in one action** — the minimal slice grants one `(user, shop, role)` at a time;
+  a multi-shop-select convenience is polish for later.
 
 None of the above were in-scope creep — discussion stayed within the phase boundary.
 

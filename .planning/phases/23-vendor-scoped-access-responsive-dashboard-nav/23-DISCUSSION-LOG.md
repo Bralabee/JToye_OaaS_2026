@@ -113,3 +113,51 @@
 - Self-serve user invitation / account creation — stays in Keycloak admin.
 - Server-side (cross-device) switcher preference — deferred; revisit on per-device-drift reports.
 - Fine-grained per-capability permissions beyond the three roles — out of scope.
+
+---
+
+# Reconciliation session (2026-07-15) — additive VSA-04 depth + refinements
+
+> A parallel discuss-phase session (committed as `c13acc9` above) ran concurrently and decomposed the
+> phase into four areas (read-visibility / enforcement / switcher / grant-lifecycle). This second
+> session, with the same user, decomposed differently and went deep on **staff management (VSA-04)**
+> — which the committed log left thin — plus two refinements. User chose the recommended option in
+> every case. Decisions folded into CONTEXT.md as **D-09..D-13** (D-01..D-08 above unchanged).
+
+**Areas discussed:** Switcher behaviour · Access boundary & grandfathering · Staff management UX · Responsive nav (MOBL-01)
+
+## Staff-grant target (VSA-04) → D-09
+| Option | Selected |
+|--------|----------|
+| Login-populated user directory (sub/email/name from JWT; RLS, no `_aud`) | ✓ |
+| Keycloak-admin email search (fragile infra + KC24 trap) | |
+| Raw Keycloak-sub entry (hostile UX) | |
+
+## Staff screen placement (VSA-04) → D-10
+| Option | Selected |
+|--------|----------|
+| GROUP_ADMIN-only nav item, mirroring Approvals | ✓ |
+| Under a (non-existent) Settings area | |
+
+## Last-GROUP_ADMIN lockout guard → D-11
+| Option | Selected |
+|--------|----------|
+| Guard the last GROUP_ADMIN (RFC 7807 409) + self-downgrade warning | ✓ |
+| No guard (rely on realm-admin backstop) | |
+
+## Grandfathering off-ramp → D-12 (refines committed D-04)
+| Option | Selected |
+|--------|----------|
+| Implicit-admin + lazy grandfather behind a config strict-scoping switch (default OFF) | ✓ |
+| Implicit-admin only, strict from day one | |
+| Bootstrap-enumerate from Keycloak | |
+
+## Out-of-scope-shop UX → D-13 (refines committed typed-403)
+| Option | Selected |
+|--------|----------|
+| In-page access-required state (reuse Approvals/Finance pattern) | ✓ |
+| Redirect to default shop | |
+
+## MOBL-01 → confirmed verify-first (agrees with committed discretion)
+Sidebar already `hidden md:flex`; MobileTabBar already ships. Scope = 375px regression proof +
+switcher integration into the existing mobile top bar; NO drawer rebuild.
