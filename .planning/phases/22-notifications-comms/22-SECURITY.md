@@ -1,10 +1,11 @@
 ---
 phase: 22
 slug: notifications-comms
-status: blocked
-threats_open: 1
+status: verified
+threats_open: 0
 asvs_level: 1
 created: 2026-07-15
+verified: 2026-07-15
 ---
 
 # Phase 22 — Security
@@ -13,8 +14,10 @@ created: 2026-07-15
 > Register authored at plan time (all 7 PLANs carried a `<threat_model>` block); verified in
 > **verify-mitigations-exist mode** against real source by `gsd-security-auditor` (2026-07-15).
 
-**GATE: BLOCKED.** 1 CRITICAL threat open (T-22-05-03) — `block_on: high`. Phase advancement/ship is
-blocked until `threats_open: 0`. Fix on the CR-01 security follow-up branch, then re-run `/gsd-secure-phase 22`.
+**GATE: SECURED.** All 38 threats have a verified disposition; `threats_open: 0`. The lone CRITICAL
+blocker (T-22-05-03, SSRF/DNS-rebinding) was FIXED (commit `5d7b88d`) and independently re-verified
+CLOSED by the auditor. Two non-blocking WARNING residuals (WR-04, IN-02-general) remain tracked in
+`deferred-items.md` for follow-up.
 
 ---
 
@@ -54,7 +57,7 @@ blocked until `threats_open: 0`. Fix on the CR-01 security follow-up branch, the
 | T-22-04-05 | Repudiation | Order-email regression / duplicate customer email | mitigate | legacy `EmailNotificationService` untouched; new order path VENDOR-only — `RecipientResolver.java:98-110` | closed |
 | T-22-05-01 | Tampering/Spoofing | Forged/tampered webhook payload | mitigate | HMAC-SHA256 `t=,v1=` over exact POSTed bytes — `WebhookSigner.java:45-59`, `WebhookDeliveryWorker.java:168-179` | closed |
 | T-22-05-02 | Repudiation | Replay of a captured webhook | mitigate | signed timestamp + 300s tolerance + `X-JToye-Event-Id` — `WebhookSigner.java:53`, `WebhookDeliveryWorker.java:177`, `application.yml:325` | closed |
-| **T-22-05-03** | **Elevation/Info Disclosure** | **SSRF at delivery / DNS-rebinding** | **mitigate (INCOMPLETE)** | **validator resolves+DISCARDS the IP, WebClient re-resolves independently (no IP pinning) — TOCTOU reachable to Azure metadata. `WebhookDeliveryWorker.java:157-182` + `WebhookUrlValidator.java:80-95`. Deferred as CR-01.** | **OPEN** |
+| T-22-05-03 | Elevation/Info Disclosure | SSRF at delivery / DNS-rebinding | mitigate | **FIXED (`5d7b88d`):** `SsrfGuardAddressResolverGroup` validates the exact address Netty connects to (single resolution, no TOCTOU); `WebhookDeliveryClientConfig` wires it into the webhook-only WebClient with `followRedirect(false)`; `WebhookUrlValidator.isAddressAllowed` is the shared block-list. Proven by `WebhookSsrfResolverTest` (6) + auditor re-verify. | closed |
 | T-22-05-04 | Denial of Service | Head-of-line block starving other subs/tenants | mitigate | per-(sub,event) rows + `FOR UPDATE SKIP LOCKED` + per-tenant tx + auto-pause — `WebhookDeliveryRepository.java:42`, `WebhookDeliveryWorker.java:123-144,219-227` | closed |
 | T-22-05-05 | Denial of Service | Unbounded webhook_delivery growth (#107) | mitigate | `@Scheduled` per-tenant retention prune — `WebhookRetentionCleanup.java:49-73` | closed |
 | T-22-05-06 | Information Disclosure | signing_secret in logs | mitigate | logs status/attempts/exception-class only — `WebhookDeliveryWorker.java:193,208,231` | closed |
@@ -84,7 +87,7 @@ blocked until `threats_open: 0`. Fix on the CR-01 security follow-up branch, the
 |---------|------------|-----------|-------------|------|
 | SC-22 | T-22-0X-SC (×7) | No third-party packages installed this phase — all deps (Spring mail/webflux, resilience4j, jackson, vendored shadcn primitives) already present + first-party; slopcheck N/A | plan-time disposition | 2026-07-15 |
 
-*Note: T-22-05-03 was explicitly NOT accepted (user decision 2026-07-15) — it remains OPEN and blocking.*
+*Note: T-22-05-03 was explicitly NOT accepted (user decision 2026-07-15) — it was FIXED (`5d7b88d`) and re-verified CLOSED, not risk-accepted.*
 
 ---
 
@@ -93,6 +96,7 @@ blocked until `threats_open: 0`. Fix on the CR-01 security follow-up branch, the
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-07-15 | 38 | 37 | 1 | gsd-security-auditor (opus) + code review (22-REVIEW.md) |
+| 2026-07-15 (re-verify after `5d7b88d`) | 38 | 38 | 0 | gsd-security-auditor (opus) — T-22-05-03 CLOSED |
 
 ---
 
@@ -100,7 +104,7 @@ blocked until `threats_open: 0`. Fix on the CR-01 security follow-up branch, the
 
 - [x] All threats have a disposition (mitigate / accept / transfer)
 - [x] Accepted risks documented in Accepted Risks Log
-- [ ] `threats_open: 0` confirmed — **BLOCKED: T-22-05-03 (CR-01 SSRF/DNS-rebinding) open**
-- [ ] `status: verified` set in frontmatter
+- [x] `threats_open: 0` confirmed — T-22-05-03 fixed (`5d7b88d`) + re-verified CLOSED
+- [x] `status: verified` set in frontmatter
 
-**Approval:** pending — blocked on CR-01. Fix (resolve-once + pin the validated IP, preserving Host/SNI; test proving connected-IP == validated-IP), then re-run `/gsd-secure-phase 22`.
+**Approval:** verified 2026-07-15. All 38 threats closed. Non-blocking residuals WR-04 (unsubscribe POST body) + IN-02 (general HTML-escape helper) tracked in `deferred-items.md`.

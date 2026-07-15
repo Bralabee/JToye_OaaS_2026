@@ -53,29 +53,25 @@ OpenAPI snapshot regeneration above.
 
 # SECURITY FOLLOW-UP — deferred code-review findings (from 22-REVIEW.md)
 
-Three findings from the Phase 22 code review (`22-REVIEW.md`, reviewed 2026-07-15)
-were **deliberately NOT fixed** in the 2026-07-15 fix batch (which closed WR-01, WR-02,
-WR-03, WR-05, IN-01). They are carried here so they are tracked, not lost. **CR-01 is
-the priority.** These want their own security-focused follow-up branch + tests.
+Of the three findings from the Phase 22 code review (`22-REVIEW.md`, reviewed 2026-07-15)
+that were deferred out of the correctness-bug batch, **CR-01 is now RESOLVED** (2026-07-15,
+commit `5d7b88d`). WR-04 + IN-02 remain tracked below.
 
-## CR-01 (CRITICAL, PRIORITY) — SSRF / DNS-rebinding TOCTOU in webhook delivery
+## CR-01 (CRITICAL) — SSRF / DNS-rebinding TOCTOU in webhook delivery — ✅ RESOLVED 2026-07-15 (`5d7b88d`)
 
-**Files:** `core-java/src/main/java/uk/jtoye/core/webhook/WebhookDeliveryWorker.java:157-174`
-(call site) + `WebhookUrlValidator.java:80-95` (validator).
+**Was:** delivery-time re-validation resolved + discarded an IP, then `webClient.post()`
+performed an INDEPENDENT DNS resolution through Reactor Netty's own resolver — a rebinding
+window to `169.254.169.254` (Azure metadata) on the `@Scheduled` loop.
 
-**What:** delivery-time re-validation resolves + discards an IP, then `webClient.post()`
-performs an INDEPENDENT DNS resolution through Reactor Netty's own resolver — so an
-attacker-controlled DNS server with a short/zero TTL can pass validation with a public IP
-and then resolve to `169.254.169.254` (Azure/AWS/GCP metadata) or an internal address for
-the actual TCP connection. Runs on a `@Scheduled` loop → unlimited retries to win the race.
-Platform runs in Azure (see memory `k8s_kustomize_deploy`), so the metadata endpoint is a
-live SSRF target.
-
-**Why deferred:** the correct fix (resolve once → validate → connect to the PINNED
-`InetAddress` while preserving the original `Host` header / SNI for TLS, via a per-request
-Reactor Netty `HttpClient` with a custom `AddressResolverGroup`) needs careful Reactor
-Netty resolver work + dedicated tests proving the connected address equals the validated
-address. Out of scope for a targeted correctness-bug batch.
+**Fixed by:** `SsrfGuardAddressResolverGroup` (a Netty `AddressResolverGroup` that validates
+the exact address it returns for the connection → single resolution, no TOCTOU), wired into a
+dedicated webhook-only `WebClient` via `WebhookDeliveryClientConfig` with `followRedirect(false)`;
+`WebhookUrlValidator.isAddressAllowed` is the shared block-list (create/delivery/connect can't
+diverge). Only the DNS lookup is intercepted, so `Host`/SNI/cert verification still target the
+hostname. Scoped to webhook egress only (trusted `keycloak:8080`/Stripe untouched). Proven by
+`WebhookSsrfResolverTest` (6 tests, incl. metadata/RFC1918/loopback rejection + exact-validated-
+address pinning + multi-record any-private rejection) and independently re-verified CLOSED by
+`gsd-security-auditor`. `22-SECURITY.md` → `threats_open: 0, status: verified`.
 
 ## WR-04 (WARNING) — unsubscribe token/email sent as query-string params on POST
 
