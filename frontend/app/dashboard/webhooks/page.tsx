@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
 import {
   Webhook,
@@ -254,7 +254,7 @@ export default function WebhooksPage() {
   return (
     <div className="space-y-6">
       {/* Header — stacks on mobile so the CTA never collides with the title */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"
@@ -274,7 +274,7 @@ export default function WebhooksPage() {
           <Plus className="h-4 w-4" />
           Add endpoint
         </Button>
-      </motion.div>
+      </m.div>
 
       <Card>
         <CardHeader>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
 import {
   ArrowLeft,
@@ -263,7 +263,7 @@ export default function WebhookDetailPage() {
       </Link>
 
       {/* Summary card */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+      <m.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Endpoint</CardTitle>
@@ -322,7 +322,7 @@ export default function WebhookDetailPage() {
             )}
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
 
       {/* Auto-pause amber alert */}
       {subscription.status === "AUTO_PAUSED" && (
