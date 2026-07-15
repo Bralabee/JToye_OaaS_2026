@@ -1,40 +1,37 @@
-# J'Toye OaaS — Milestone v2.2: Production Hardening + Vendor Order Operations
+# J'Toye OaaS — Milestone v2.3: Vendor Ops + AI Interleaved
 
 ## What This Is
 
-J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. As of v2.1 (shipped 2026-04-16), the platform has secret-hygiene CI enforcement, deployed Alertmanager routing 15 Prometheus rules to email, a customer-facing storefront that renders vendor promotions/announcements with working cart + order-history routes, and a horizontally-scalable kitchen display system backed by RabbitMQ STOMP relay. Milestone v2.2 closes the 8 highest-priority P2 security/quality items from the deep-audit backlog and ships the vendor-facing order detail + Stripe refund flow (Work Order E).
+J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. Through v2.2 (production hardening + vendor order operations, 2026-07) the platform gained the full P1/P2 security backlog (RBAC, GDPR erasure, JWT audience, CSP enforcement, rate limiting, Redis resilience), vendor onboarding with a compliance gate state machine, a full-frontend overhaul, a read-only MCP server, and a uniform Idempotency-Key contract — running on a live-verified minikube deployment. Milestone v2.3 turns to vendor operational control: unblocking stuck onboarding, scoping access per shop within a tenant, hardening image handling with a copy-on-write asset model + safe async upload pipeline, fixing dashboard mobile, and extending the AI/automation surface (outbound webhooks + mutating MCP tools) — with a committed local-k8s overlay replacing the imperative deploy patches.
 
 ## Core Value
 
 Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
 
-## Current Milestone: v2.2 Production Hardening + Vendor Order Operations
+## Current Milestone: v2.3 Vendor Ops + AI Interleaved
 
-**Goal:** Close the 8 highest-priority P2 security/quality items from the 2026-04-16 deep-audit HANDOFF, and ship the vendor-facing order detail + Stripe refund flow (Work Order E from the state-of-codebase doc) so vendors can operate orders end-to-end.
+**Goal:** Give vendors real operational control — unblock stuck onboarding, scope access per shop, harden image handling — and extend the AI/automation surface, all on verified local-k8s-capable infrastructure. Scope locked by user 2026-07-14 (do not re-litigate); three phase-ready specs drive it (`.planning/specs/`).
 
-**Target features:**
+**Target features (phase order — thinnest/highest-pain first):**
 
-Security + quality hardening (8 items):
-- Application-layer tenant validation for guest tracking
-- Content Security Policy (CSP) headers for the Next.js frontend
-- Security response headers on Spring Boot (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
-- K8s NetworkPolicies for pod-to-pod isolation
-- K8s Sealed Secrets to replace plain Secret manifests
-- OpenAPI spec generation for the Go edge gateway
-- Stock race fix — validate stock at order confirmation, not creation
-- `getSummary()` DB aggregation rewrite (replace `findAll()` + in-memory sum)
+Vendor operations:
+- **Onboarding blocker UX** — visible per-gate blockers with remediation, correctable onboarding data (company number / sole-trader / FHRS override update endpoint), reachable WITHDRAW exit, manual-review made visible (DTO-derived "in review" + admin gate-resolve endpoint), rejection reason surfaced to vendor. Zero migrations.
+- **Vendor-scoped access (RBAC)** — the vendor's internal access model (hierarchy Vendor/tenant → Shop; one vendor owns many shops). `shop_staff` mapping table (V52), roles GROUP_ADMIN (vendor-wide) / SHOP_MANAGER / STAFF, application-layer second gate (RLS stays the tenant wall), dashboard shop-context switcher with explicit "apply to all shops", GROUP_ADMIN backfill (no day-one regression). Shop is the finest grain; a department tier is a future layer.
+- **Image architecture** — `media_asset` copy-on-write model (V53) with reference counting, safe async RabbitMQ upload/normalize pipeline (magic-byte sniff, decode-to-verify, EXIF strip, resize/re-encode), compress = hard veto, content-relevance = review queue.
+- **Dashboard mobile (#104)** — fixed `w-64` sidebar overlays content at 375px; responsive nav pairing with the shop switcher.
 
-Vendor operations (Work Order E):
-- `/dashboard/orders/[id]` order detail view
-- Refund flow wired to Stripe refund API
-- Refund state transition in the order state machine
+AI / automation track:
+- **Outbound webhooks (#205)** — vendor-registered webhook subscriptions delivered from the V46 transactional outbox (onboarding/order/refund state changes).
+- **Mutating MCP tools (#204 wiring)** — extend the read-only MCP server (Phase 20) with write tools riding the uniform Idempotency-Key contract.
+
+Infrastructure:
+- **Local-k8s overlay** — committed `k8s/local` overlay (endpoint shims to `host.minikube.internal`, minReplicas=1, backup→MinIO) replacing imperative patches; fixes the verified breakage list (DB_PORT hardcode repo defect, NOSUPERUSER role secrets, HPA minReplicas, pg-backup→S3).
 
 **Key context:**
-- Direct predecessor to v2.2 is v2.1, fully merged to main as of 2026-04-18 (tag `v2.1`, squashed PR #41)
-- 14 P2 items identified in HANDOFF.md — this milestone scopes to 8, the remaining 6 (Grafana dashboards, Alertmanager inhibition rules, frontend error logging, reactive state-machine fix, tenantId in DTOs, runbook completion) stay deferred to v2.3+
-- Starts from 516+ test invocations baseline (390 Java + 76 Jest + 50 Go). Every requirement must ship tests; total must grow, not regress.
-- Work Order E adds Stripe refund surface — upstream Stripe SDK already wired for payment intents (PaymentController), refund API is adjacent
-- No research needed — all 11 requirements have file:line evidence in HANDOFF.md + state-of-codebase doc; framework pitfalls (Stripe refunds, K8s sealed-secrets) will be covered in phase-level research
+- Direct predecessor is v2.2 (production hardening + vendor order ops), fully merged to main; at v2.2 close schema was V51 with 1257 test invocations, docs-freshness green. Current branch state post-Phase-22 (reconciled with main incl. motion-uplift #220-226, Phase 21 #228, platform company-reg #229) is schema V56 / 1452 test invocations.
+- Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first per HANDOFF ordering).
+- No milestone-level research — all three specs carry locked decisions with file:line evidence; the only genuinely-new surfaces (outbound webhooks, mutating MCP, async image pipeline) have prescribed approaches (V46 outbox, #204 idempotency, RabbitMQ worker). Framework pitfalls covered at phase-level research.
+- Deferred within-track items (per specs): platform-wide stock image library (cross-tenant), reviewer SLA/multi-reviewer, reapply-after-REJECTED, self-serve user invitation, per-capability permissions beyond the three roles.
 
 ## Requirements
 
@@ -63,26 +60,44 @@ Vendor operations (Work Order E):
 - ✓ **[v2.2 VOPS-02]** `POST /api/v1/orders/{id}/refund` wired to Stripe `Refund.create` with stored-first idempotency; refund.created/refund.updated/refund.failed webhook lifecycle (after Phase 16.1 dedup); V36 refunds + refunds_aud + RLS migration; `RefundEventPublisher` writes `order.refunded` to outbox — Phase 17
 - ✓ **[v2.2 VOPS-03]** Order state machine extended with `REFUND_REQUESTED` event + `REFUNDED` state + 4 transitions (`CONFIRMED|PREPARING|READY|COMPLETED → REFUNDED`); idempotent (service-level short-circuit on already-refunded); audited via Hibernate Envers — Phase 17
 - ⚠ **[v2.2 VOPS-01]** `/dashboard/orders/[id]` route + `OrderDetailPanel` (header, customer, items, payment block, refund history) — header-level **state-transition timeline subcomponent NOT implemented**; tracked in `17-VERIFICATION.md` gaps + `17-HUMAN-UAT.md` — Phase 17
+- ✓ **[v2.2 SEC/CQ/INF/DOC]** Guest-tracking tenant validation (Phase 13), Spring security headers + Next.js CSP enforce (Phase 12), stock-race fix + getSummary aggregation (Phase 14), K8s NetworkPolicies + Sealed Secrets manifests (Phase 15), Go edge OpenAPI (Phase 16), pre-prod hardening council fixes (Phase 16.1) — all shipped v2.2
+- ✓ **[v2.2 Vendor onboarding]** Onboarding state machine as sole writer of `Shop.published`, CH/FHRS/allergen compliance gates, hybrid auto-approve by model (Phase 18)
+- ✓ **[v2.2 Frontend]** Full-frontend experience overhaul — mobile nav, loading states, demo catalog images, storefront theme groundwork (Phase 19)
+- ✓ **[v2.2 AI]** Read-only MCP server slice with live RLS proof (Phase 20); uniform Idempotency-Key contract (#204, V50); scoped machine credentials (#206)
+- ✓ **[v2.2 P1/P2 security backlog]** RBAC method security (#83), GDPR erasure completeness (#84), guest-checkout stock convergence (#85), Redis resilience (#86), JWT audience validation (#87), public-path rate limiting (#88), supply-chain CI gate (#91), Keycloak deprovisioning on offboard (#102, V49), RLS uuid-cast safety (#113, V51)
+- ✓ **[v2.3 COMMS]** Notifications & Comms — first delivery consumer of the V46 outbox: multipart branded email + INERT WhatsApp/SMS seam (COMMS-02/07), GDPR consent/suppression + one-click unsubscribe (COMMS-03, V54), vendor-registered HMAC-signed outbound webhooks with retry/auto-pause/replay + delivery-log UI (COMMS-04/05/06, V55/V56, absorbs AI-01/#205 + #208), the previously-dead onboarding.events exchange now bound to a vendor email, all new tables ENABLE+FORCE RLS — Phase 22 (7 plans, verified 34/34; 5 code-review fixes; CR-01 SSRF DNS-rebinding hardening deferred to a tracked security follow-up)
 
 ### Active
 
-**Security hardening (SEC):**
-- [ ] SEC-01: Application-layer tenant validation for guest tracking (blocks cross-tenant access on anonymous/session-based requests)
-- [ ] SEC-02: CSP headers on Next.js frontend responses (default-src, script-src, style-src, img-src, connect-src, frame-ancestors)
-- [ ] SEC-03: Security response headers on Spring Boot (X-Frame-Options DENY, HSTS, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin)
+**Onboarding UX (ONBD):**
+- [ ] ONBD-01: Vendor can withdraw an in-progress application (WITHDRAW event + endpoint, terminal, restart = new application)
+- [ ] ONBD-02: Vendor can correct onboarding data (company number / sole-trader flag / FHRS establishment override) via an update endpoint valid in DRAFT/ACTION_REQUIRED, re-validated like create
+- [ ] ONBD-03: Manual-review applications are visible — vendor sees "in review" (DTO-derived), admin sees a review-queue entry, with a human gate-resolve mechanism that recomputes and advances the state machine
+- [ ] ONBD-04: Per-gate remediation blocks (why → what to do → deep link to the fix surface) for FAILED/MANUAL_REVIEW gates
+- [ ] ONBD-05: Rejection reason surfaced on the vendor DTO + a configurable real support channel on terminal states
 
-**Code quality (CQ):**
-- [ ] CQ-01: Stock race fix — validate and decrement stock inside the OrderStateMachine `CONFIRM` transition with optimistic lock, not at order creation
-- [ ] CQ-02: `getSummary()` rewrite to use `SUM()` + `COUNT()` DB aggregation via JPQL or native query, replacing `findAll()` + in-memory reduction
+**Vendor-scoped access (VSA):**
+- [ ] VSA-01: `shop_staff` mapping table (user ↔ shop ↔ role), ENABLE+FORCE RLS tenant-scoped, GROUP_ADMIN backfill for existing users (V52)
+- [ ] VSA-02: Application-layer `ShopAccessService.require(shopId, minRole)` gate on shop-scoped endpoints (shops/products/orders/KDS/marketing), deny-by-default writes, 403 RFC 7807 distinct from the RLS 404
+- [ ] VSA-03: Dashboard shop-context switcher (persisted) with explicit GROUP_ADMIN-only "apply to all shops" action
+- [ ] VSA-04: Staff management screen — list + grant + revoke roles per shop
 
-**Infrastructure (INF):**
-- [ ] INF-01: K8s NetworkPolicies for `frontend ↔ core-java`, `core-java ↔ db/redis/rabbitmq`, deny-all-else
-- [ ] INF-02: K8s Sealed Secrets to replace plain Secret manifests for all production-sensitive env vars
+**Image architecture (IMG):**
+- [ ] IMG-01: `media_asset` model (tenant-scoped RLS, sha256 dedup) — products reference assets, copy-on-write on edit, reference-counted physical delete (V53)
+- [ ] IMG-02: Safe async upload pipeline — early size/streaming reject, quarantine + PENDING row + AMQP publish; worker does magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode (stored artifact is always the normalized derivative)
+- [ ] IMG-03: Gate strictness — compress failure = hard veto (FAILED), content-relevance below threshold = review queue (asset stays ACTIVE), vision stage behind advisory flag
+- [ ] IMG-04: Product UI "processing" state while asset PENDING; vendor-visible review/rejection queue
 
-**API documentation (DOC):**
-- [ ] DOC-01: Go edge gateway OpenAPI spec generated from Gin routes; served at `/openapi.json` with Swagger UI at `/docs`
+**Dashboard mobile (MOBL):**
+- [ ] MOBL-01: Dashboard sidebar no longer overlays content at 375px — responsive nav (drawer/collapse) pairing with the shop switcher
 
-**Vendor operations (VOPS):** — validated in Phase 17, see Validated section below for status notes
+**AI / automation (AI):**
+- [x] AI-01: Vendor-registered outbound webhook subscriptions delivered from the V46 transactional outbox with retry/signing (#205) — ✓ delivered as Phase 22 COMMS-04/05/06 (V55/V56)
+- [ ] AI-02: Mutating MCP tools extending the Phase 20 read-only server, riding the uniform Idempotency-Key contract (#204)
+
+**Infrastructure (INFRA):**
+- [ ] INFRA-01: Committed `k8s/local` overlay (host.minikube.internal shims, minReplicas=1, backup→MinIO) replacing imperative patches
+- [ ] INFRA-02: Fix verified k8s breakage — DB_PORT hardcode (secretKeyRef), NOSUPERUSER role secrets (DB_USER/DB_PASSWORD not POSTGRES_USER), HPA minReplicas, pg-backup target
 
 ### Out of Scope
 
@@ -113,12 +128,14 @@ Vendor operations (Work Order E):
 
 ## Constraints
 
-- **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.22, PostgreSQL 15
-- **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10); always set `JAVA_HOME=/usr/lib/jvm/jdk-21.0.6-oracle-x64`
-- **Multi-tenancy**: All new features must respect RLS and TenantContext; new public endpoints must be tenant-scoped by slug
-- **Testing**: Every requirement ships with tests; baseline is 335 Java + 69 frontend + 28 Go and the milestone must not regress that count
+- **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16.2.2, Go 1.25, PostgreSQL 15
+- **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
+- **Multi-tenancy**: All new features must respect RLS and TenantContext; new tables ENABLE+FORCE RLS tenant-scoped, proven under the NOSUPERUSER role-downgrade (RlsContractTest pattern); new public endpoints tenant-scoped by slug
+- **Migration numbering**: shop_staff = V52, media_asset = V53 (shop_staff first); onboarding-blocker path is zero-migration
+- **Testing**: Every requirement ships with tests; baseline is 1257 logical invocations (single source of truth `docs/metrics.json`, enforced by the `docs-freshness` CI gate). Reconcile via `scripts/docs-freshness.sh --write`. Total must grow, not regress.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing (stale images cause subtle failures)
-- **Credentials**: SECR work must not leave any secret in git history going forward; prefer rotation over redaction
+- **Runtime**: compose XOR k8s on local (shared dev Postgres) — never both writers; compose is canonical
+- **Incremental Betterment**: no capability regression on day one (RBAC backfills GROUP_ADMIN; image backfill has a dual-read window)
 
 ## Key Decisions
 
@@ -152,4 +169,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Phase 17 (Vendor Order Detail + Stripe Refund Flow) complete; VOPS-02 + VOPS-03 fully validated, VOPS-01 partial (state-transition timeline pending — tracked in 17-HUMAN-UAT.md)*
+*Last updated: 2026-07-15 — Phase 22 (Notifications & Comms, COMMS-01..07) complete: first V46-outbox delivery consumer (email + HMAC webhooks + WhatsApp seam + consent/unsubscribe), AI-01/#205 delivered. Milestone v2.3 (Vendor Ops + AI interleaved); v2.2 archived to `.planning/milestones/v2.2-*`. Next: Phase 23 (Vendor-Scoped Access + Responsive Nav).*

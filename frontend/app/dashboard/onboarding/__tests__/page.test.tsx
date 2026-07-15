@@ -329,10 +329,11 @@ describe("Onboarding Page", () => {
     // Honest, config-driven SLA copy — the dishonest "under a minute" is gone.
     expect(screen.getByText(/within 2 business days/i)).toBeInTheDocument()
     expect(screen.queryByText(/under a minute/i)).not.toBeInTheDocument()
-    // QA ONB-3: no email is delivered (the notification consumer is a deferred phase),
-    // so the copy must not promise one — it directs the vendor to check back here.
-    expect(screen.queryByText(/email you/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/check back here for an update/i)).toBeInTheDocument()
+    // Phase 22: onboarding state-change events now email the vendor
+    // (onboarding.events → onboarding.notifications consumer), so the in-review copy
+    // promises the email again — the QA ONB-3 "deferred consumer" premise is now met.
+    expect(screen.getByText(/email you/i)).toBeInTheDocument()
+    expect(screen.queryByText(/check back here for an update/i)).not.toBeInTheDocument()
     // The "In review" badge is shown instead of "Running checks".
     expect(screen.getByText("In review")).toBeInTheDocument()
 

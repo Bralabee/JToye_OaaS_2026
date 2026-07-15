@@ -1065,6 +1065,29 @@
         ],
         "type" : "object"
       },
+      "CreateWebhookSubscriptionRequest" : {
+        "properties" : {
+          "eventTypes" : {
+            "items" : {
+              "enum" : [
+                "ORDER_STATE_CHANGED",
+                "ORDER_REFUNDED",
+                "ONBOARDING_STATE_CHANGED",
+                "PAYMENT_EVENT"
+              ],
+              "type" : "string"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          },
+          "targetUrl" : {
+            "minLength" : 1,
+            "pattern" : "^https://.*",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CustomerDto" : {
         "properties" : {
           "allergenRestrictions" : {
@@ -2538,6 +2561,52 @@
         },
         "type" : "object"
       },
+      "PageWebhookDeliveryView" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/WebhookDeliveryView"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "Pageable" : {
         "properties" : {
           "page" : {
@@ -3619,6 +3688,14 @@
         },
         "type" : "object"
       },
+      "UnsubscribeResponse" : {
+        "properties" : {
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "UpdateCustomerRequest" : {
         "description" : "Customer update request",
         "properties" : {
@@ -3702,6 +3779,109 @@
           }
         },
         "type" : "object"
+      },
+      "WebhookDeliveryView" : {
+        "properties" : {
+          "attemptCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "eventId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "eventType" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastError" : {
+            "type" : "string"
+          },
+          "lastHttpStatus" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "nextAttemptAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "replay" : {
+            "type" : "boolean"
+          },
+          "replayOf" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "subscriptionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "WebhookSubscriptionDto" : {
+        "properties" : {
+          "consecutiveFailures" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "eventTypes" : {
+            "items" : {
+              "enum" : [
+                "ORDER_STATE_CHANGED",
+                "ORDER_REFUNDED",
+                "ONBOARDING_STATE_CHANGED",
+                "PAYMENT_EVENT"
+              ],
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "targetUrl" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "WithSecret" : {
+        "properties" : {
+          "signingSecret" : {
+            "type" : "string"
+          },
+          "subscription" : {
+            "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+          }
+        },
+        "type" : "object"
       }
     },
     "securitySchemes" : {
@@ -3772,7 +3952,7 @@
     "/api/v1/admin/tenants" : {
       "get" : {
         "description" : "Lists all tenants in the registry",
-        "operationId" : "list_5",
+        "operationId" : "list_6",
         "responses" : {
           "200" : {
             "content" : {
@@ -3800,7 +3980,7 @@
       },
       "post" : {
         "description" : "Creates an ACTIVE tenant in the registry (no SQL required)",
-        "operationId" : "create_6",
+        "operationId" : "create_7",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -3847,7 +4027,7 @@
     "/api/v1/admin/tenants/{tenantId}" : {
       "get" : {
         "description" : "Returns one tenant registry row",
-        "operationId" : "get",
+        "operationId" : "get_1",
         "parameters" : [
           {
             "in" : "path",
@@ -4205,7 +4385,7 @@
     "/api/v1/announcements" : {
       "get" : {
         "description" : "Returns a paginated list of announcements for the authenticated tenant",
-        "operationId" : "list_4",
+        "operationId" : "list_5",
         "responses" : {
           "200" : {
             "content" : {
@@ -4243,7 +4423,7 @@
       },
       "post" : {
         "description" : "Creates a new announcement for the authenticated tenant",
-        "operationId" : "create_5",
+        "operationId" : "create_6",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -4451,7 +4631,7 @@
     "/api/v1/customers" : {
       "get" : {
         "description" : "Returns a paginated list of customers for the authenticated tenant",
-        "operationId" : "list_3",
+        "operationId" : "list_4",
         "responses" : {
           "200" : {
             "content" : {
@@ -4489,7 +4669,7 @@
       },
       "post" : {
         "description" : "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
-        "operationId" : "create_4",
+        "operationId" : "create_5",
         "parameters" : [
           {
             "description" : "Client-supplied key; same key replays the original response, never duplicates.",
@@ -4994,7 +5174,7 @@
     "/api/v1/onboarding" : {
       "post" : {
         "description" : "Creates a DRAFT onboarding for the authenticated tenant",
-        "operationId" : "create_3",
+        "operationId" : "create_4",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -6491,7 +6671,7 @@
     "/api/v1/products" : {
       "get" : {
         "description" : "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law.",
-        "operationId" : "list_2",
+        "operationId" : "list_3",
         "responses" : {
           "200" : {
             "content" : {
@@ -6529,7 +6709,7 @@
       },
       "post" : {
         "description" : "Creates a new product. Requires ingredients_text, allergen_mask, and price per Natasha's Law (UK) and business requirements.",
-        "operationId" : "create_2",
+        "operationId" : "create_3",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -7253,7 +7433,7 @@
     "/api/v1/promotions" : {
       "get" : {
         "description" : "Returns a paginated list of promotions for the authenticated tenant",
-        "operationId" : "list_1",
+        "operationId" : "list_2",
         "responses" : {
           "200" : {
             "content" : {
@@ -7291,7 +7471,7 @@
       },
       "post" : {
         "description" : "Creates a new promotion for the authenticated tenant",
-        "operationId" : "create_1",
+        "operationId" : "create_2",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -8011,10 +8191,134 @@
         ]
       }
     },
+    "/api/v1/public/unsubscribe" : {
+      "get" : {
+        "description" : "Same contract as the POST, for the browser confirmation page.",
+        "operationId" : "unsubscribeViaLink_1",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "tenant",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "email",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "category",
+            "required" : true,
+            "schema" : {
+              "enum" : [
+                "ORDERS",
+                "ONBOARDING",
+                "FINANCIAL",
+                "MARKETING"
+              ],
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UnsubscribeResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Unsubscribe (link GET)",
+        "tags" : [
+          "Public Unsubscribe"
+        ]
+      },
+      "post" : {
+        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently.",
+        "operationId" : "unsubscribe_1",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "tenant",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "email",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "category",
+            "required" : true,
+            "schema" : {
+              "enum" : [
+                "ORDERS",
+                "ONBOARDING",
+                "FINANCIAL",
+                "MARKETING"
+              ],
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UnsubscribeResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Unsubscribe (one-click POST)",
+        "tags" : [
+          "Public Unsubscribe"
+        ]
+      }
+    },
     "/api/v1/shops" : {
       "get" : {
         "description" : "Returns a paginated list of shops for the authenticated tenant",
-        "operationId" : "list",
+        "operationId" : "list_1",
         "responses" : {
           "200" : {
             "content" : {
@@ -8062,7 +8366,7 @@
       },
       "post" : {
         "description" : "Creates a new shop for the authenticated tenant",
-        "operationId" : "create",
+        "operationId" : "create_1",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -8548,6 +8852,431 @@
         "summary" : "Batch Sync",
         "tags" : [
           "Sync"
+        ]
+      }
+    },
+    "/api/v1/webhooks" : {
+      "get" : {
+        "description" : "Returns this tenant's webhook subscriptions. Never includes the signing secret.",
+        "operationId" : "list",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List webhook subscriptions",
+        "tags" : [
+          "Webhooks"
+        ]
+      },
+      "post" : {
+        "description" : "Creates a subscription. The response carries the signing secret in plaintext ONCE — store it now; it is never returned again.",
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateWebhookSubscriptionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithSecret"
+                }
+              }
+            },
+            "description" : "Subscription created (secret shown once)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithSecret"
+                }
+              }
+            },
+            "description" : "Validation error (non-HTTPS / disallowed URL / no event types)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Register a webhook subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}" : {
+      "get" : {
+        "description" : "Returns a single subscription by id. Never includes the signing secret.",
+        "operationId" : "get",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                }
+              }
+            },
+            "description" : "Subscription found"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                }
+              }
+            },
+            "description" : "Subscription not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get a webhook subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/pause" : {
+      "post" : {
+        "description" : "Manually pauses delivery (status PAUSED).",
+        "operationId" : "pause",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Pause a subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/resume" : {
+      "post" : {
+        "description" : "Resumes delivery (status ACTIVE) and clears the consecutive-failure counter.",
+        "operationId" : "resume",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Resume a subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/revoke" : {
+      "post" : {
+        "description" : "Terminally revokes the subscription (status REVOKED).",
+        "operationId" : "revoke",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Revoke a subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/rotate-secret" : {
+      "post" : {
+        "description" : "Generates a new signing secret and returns it in plaintext ONCE. Signatures made with the previous secret stop verifying.",
+        "operationId" : "rotateSecret",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithSecret"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Rotate the signing secret",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{subscriptionId}/deliveries" : {
+      "get" : {
+        "description" : "Paged delivery log for a subscription, newest first, filterable by status + event type.",
+        "operationId" : "list_7",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "subscriptionId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "status",
+            "required" : false,
+            "schema" : {
+              "enum" : [
+                "PENDING",
+                "DELIVERED",
+                "RETRYING",
+                "FAILED"
+              ],
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "eventType",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "pageable",
+            "required" : true,
+            "schema" : {
+              "$ref" : "#/components/schemas/Pageable"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageWebhookDeliveryView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List webhook deliveries",
+        "tags" : [
+          "Webhook Deliveries"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{subscriptionId}/deliveries/{deliveryId}/replay" : {
+      "post" : {
+        "description" : "Re-enqueues a past delivery as a NEW attempt tagged replay, reusing the original envelope id so a retry can never double-deliver at the receiver. Supply an Idempotency-Key header to make a retried replay safe: a repeated key replays the original result and never creates a second delivery. The original delivery's status history is left intact.",
+        "operationId" : "replay",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "subscriptionId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "deliveryId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookDeliveryView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Replay a webhook delivery",
+        "tags" : [
+          "Webhook Deliveries"
         ]
       }
     },
@@ -9085,6 +9814,130 @@
           "Public Storefront"
         ]
       }
+    },
+    "/public/unsubscribe" : {
+      "get" : {
+        "description" : "Same contract as the POST, for the browser confirmation page.",
+        "operationId" : "unsubscribeViaLink",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "tenant",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "email",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "category",
+            "required" : true,
+            "schema" : {
+              "enum" : [
+                "ORDERS",
+                "ONBOARDING",
+                "FINANCIAL",
+                "MARKETING"
+              ],
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UnsubscribeResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Unsubscribe (link GET)",
+        "tags" : [
+          "Public Unsubscribe"
+        ]
+      },
+      "post" : {
+        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently.",
+        "operationId" : "unsubscribe",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "tenant",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "email",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "category",
+            "required" : true,
+            "schema" : {
+              "enum" : [
+                "ORDERS",
+                "ONBOARDING",
+                "FINANCIAL",
+                "MARKETING"
+              ],
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UnsubscribeResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Unsubscribe (one-click POST)",
+        "tags" : [
+          "Public Unsubscribe"
+        ]
+      }
     }
   },
   "security" : [
@@ -9141,6 +9994,10 @@
       "name" : "Public Storefront"
     },
     {
+      "description" : "No-auth, token-verified one-click unsubscribe (GDPR/PECR). Canonical prefix /api/v1/public.",
+      "name" : "Public Unsubscribe"
+    },
+    {
       "description" : "Stripe refund issuance for vendor orders",
       "name" : "Refunds"
     },
@@ -9155,6 +10012,14 @@
     {
       "description" : "Platform-admin tenant lifecycle: create, suspend, reactivate, offboard, Stripe Connect linkage",
       "name" : "Tenant Admin"
+    },
+    {
+      "description" : "Webhook delivery log + manual replay (COMMS-05)",
+      "name" : "Webhook Deliveries"
+    },
+    {
+      "description" : "Vendor webhook subscription management (COMMS-04)",
+      "name" : "Webhooks"
     }
   ]
 }

@@ -1,342 +1,221 @@
-# Roadmap: J'Toye OaaS — Milestone v2.2 (Production Hardening + Vendor Order Operations)
+# Roadmap: J'Toye OaaS — Milestone v2.3 (Vendor Ops + AI Interleaved)
 
 Multi-tenant UK retail SaaS for food vendors — shops, products, orders, customers, marketing, kitchen fulfilment.
 
 ## Overview
 
-Milestone v2.2 closes the 8 highest-priority P2 security/quality items from the 2026-04-16 deep-audit backlog and ships vendor-facing order detail + Stripe refund flow (Work Order E from the state-of-codebase doc). Three work streams:
+Milestone v2.3 turns from platform hardening to **vendor operational control**. It unblocks stuck onboarding (visible per-gate blockers, correctable data, reachable exits — zero migrations), stands up the platform's first **delivery consumer** of the V46 transactional outbox (email-first notifications + the outbound-webhook machine channel + a WhatsApp/SMS seam), adds a finer authorization boundary *inside* the tenant (`shop_staff` mapping, roles, an application-layer gate, a shop-context switcher — with a GROUP_ADMIN backfill so day one has no regression), and hardens image handling ahead of real vendor uploads (a copy-on-write `media_asset` model + a safe async upload pipeline that stores only the validated, normalized derivative). It also extends the AI/automation surface (mutating MCP tools riding the #204 Idempotency-Key contract) and replaces the imperative k8s deploy patches with a committed `k8s/local` overlay plus the verified breakage fixes.
 
-1. **Security + Spring/Next.js hardening** (SEC-01..03) — tenant validation on guest tracking, CSP headers on the frontend, security response headers on Spring.
-2. **Correctness + data access** (CQ-01..02) — fix stock race at order confirmation with optimistic lock; replace `findAll()`-then-reduce summaries with DB-side aggregation.
-3. **K8s + API docs** (INF-01..02, DOC-01) — NetworkPolicies + Sealed Secrets + Go edge OpenAPI spec.
-4. **Vendor order operations — Work Order E** (VOPS-01..03) — order detail view, Stripe refund API integration, refund state transition in the order state machine.
-
-11 requirements across 5 categories. 6 phases, continuing phase numbering from 11. Estimated ~3 weeks.
+**6 phases (21–26)**, continuing phase numbering from v2.2's Phase 20. Original scope locked by user 2026-07-14 (three phase-ready specs in `.planning/specs/` carry file:line evidence and locked decisions); the **Notifications & Comms phase was inserted at 22 on 2026-07-14**, ahead of the original order, absorbing the standalone Outbound Webhooks phase (#205) + WhatsApp (#208) — a dedicated delivery consumer had to precede the surfaces that depend on it. Phase order is thinnest/highest-pain first. Granularity: `fine`.
 
 ## Milestones
 
-- ✅ **v2.0 Tier 3 Enhancements** — Phases 1-8 (shipped 2026-04-10, PR #27)
-- ✅ **v2.1 Post-Audit Hardening + Storefront Completion** — Phases 9-11 (shipped 2026-04-16, archived 2026-04-18)
-- ✅ **v2.2 Production Hardening + Vendor Order Operations** — Phases 12-18 (finished 2026-07-11, PR #176)
-- 🚧 **v2.3 Experience Overhaul + P2 Scale-out** — Phase 19+ (started 2026-07-11); backlog candidates: P2 #92-#94, 6 remaining P2 HANDOFF items, Work Orders F/J/K, Postgres PITR
+- ✅ **v2.0 Tier 3 Enhancements** — Phases 1–8 (shipped 2026-04-10, PR #27)
+- ✅ **v2.1 Post-Audit Hardening + Storefront Completion** — Phases 9–11 (shipped 2026-04-16; archived `milestones/v2.1-*`)
+- ✅ **v2.2 Production Hardening + Vendor Order Ops + Onboarding + MCP** — Phases 12–20 (shipped 2026-07-13; archived `milestones/v2.2-*`)
+- 🚧 **v2.3 Vendor Ops + AI Interleaved** — Phases 21–26 (in progress)
 
 ## Phases
 
+**Phase Numbering:**
+
+- Integer phases (21, 22, …): planned milestone work
+- Decimal phases (22.1, …): urgent insertions (marked INSERTED)
+
 <details>
-<summary>✅ v2.0 Tier 3 Enhancements (Phases 1-8) — SHIPPED 2026-04-10</summary>
+<summary>✅ Shipped milestones — Phases 1–20 (v2.0 → v2.2)</summary>
 
-- [x] Phase 1: API Versioning — Backend (1/1 plans) — completed 2026-04-07
-- [x] Phase 2: API Versioning — Edge & Frontend (1/1 plans) — completed 2026-04-08
-- [x] Phase 3: Vendor Marketing Backend (2/2 plans) — completed 2026-04-08
-- [x] Phase 4: Vendor Dashboard UI (1/1 plans) — completed 2026-04-08
-- [x] Phase 5: KDS Security & WebSocket Foundation (1/1 plans) — completed 2026-04-08
-- [x] Phase 6: KDS Event Pipeline (1/1 plans) — completed 2026-04-08
-- [x] Phase 7: Kitchen Display UI (1/1 plans) — completed 2026-04-09
-- [x] Phase 8: Test Coverage Closure (2/2 plans) — completed 2026-04-09
+Full phase detail lives in the milestone archives:
 
-v2.0 shipped before `/gsd-complete-milestone` was adopted — no archive files. Source of truth: PR #27 (commit `955e641`).
+- **v2.0** (Phases 1–8) — API versioning, vendor marketing, KDS WebSocket, test coverage closure. Source: PR #27 (commit `955e641`); no archive file (pre-`/gsd-complete-milestone`).
+- **v2.1** (Phases 9–11) — repo secrets + Alertmanager, storefront marketing render + customer routes, STOMP broker relay. Archives: `milestones/v2.1-ROADMAP.md`, `milestones/v2.1-REQUIREMENTS.md`, `milestones/v2.1-MILESTONE-AUDIT.md`.
+- **v2.2** (Phases 12–20) — Spring/Next.js security headers + CSP, guest-tracking tenant validation, stock-race + summary aggregation, K8s NetworkPolicies + Sealed Secrets, Go edge OpenAPI, pre-prod hardening (16.1), vendor order detail + Stripe refund flow, vendor onboarding first slice, full-frontend overhaul (19), read-only MCP server (20). Archives: `milestones/v2.2-ROADMAP.md`, `milestones/v2.2-REQUIREMENTS.md`.
+
+Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-freshness green. Running on a live-verified minikube deployment.
 
 </details>
 
-<details>
-<summary>✅ v2.1 Post-Audit Hardening + Storefront Completion (Phases 9-11) — SHIPPED 2026-04-16</summary>
+### 🚧 v2.3 Vendor Ops + AI Interleaved (Phases 21–26)
 
-- [x] Phase 9: Repository Secrets + Alerting (3/3 plans) — completed 2026-04-15
-- [x] Phase 10: Storefront Marketing Render + Missing Customer Routes (3/3 plans) — completed 2026-04-16
-- [x] Phase 11: STOMP Broker Relay for Horizontal Scale (3/3 plans) — completed 2026-04-16
-
-Archived: `milestones/v2.1-ROADMAP.md` | `milestones/v2.1-REQUIREMENTS.md` | `milestones/v2.1-MILESTONE-AUDIT.md`
-
-</details>
-
-### 🚧 v2.2 Phases (in progress)
-
-- [🟡] **Phase 12: Spring Security Response Headers + Frontend CSP** - X-Frame-Options, HSTS (prod-only), X-Content-Type-Options, Referrer-Policy on Spring; CSP on Next.js (SEC-02, SEC-03) — 12-01 DONE, 12-02 operationally complete (Tasks 01-06 shipped; Task 07 manual cutover gate pending human verification)
-- [🟡] **Phase 13: Guest Tracking Tenant Validation** - Application-layer tenant check in guest/session paths, closes cross-tenant spoof via path slug (SEC-01) — 13-01 DONE 2026-04-18, ready for PR
-- [x] **Phase 14: Stock Race Fix + Summary Aggregation** - Move stock decrement into OrderStateMachine CONFIRM transition with optimistic lock; rewrite `getSummary()` to use DB-side `SUM/COUNT/GROUP BY` (CQ-01, CQ-02) — **DONE 2026-04-19, both plans shipped on feature/phase-14-stock-race-summary-aggregation, ready for PR**
-- [🟡] **Phase 15: K8s NetworkPolicies + Sealed Secrets** - Pod-to-pod isolation policies + bitnami sealed-secrets runbook + batch `kubeseal` conversion script (INF-01, INF-02) — **DRAFTING COMPLETE 2026-04-18 on `feature/phase-15-k8s-networkpolicies-sealed-secrets` (6 commits). 6 NetworkPolicy manifests + offline validator + runbook + `seal-secrets.sh` + `secrets-template.yaml` legacy flag. Cluster-admin rollout pending — 4-step checklist in 15-01-SUMMARY.md. Actual layout: `k8s/staging/` + `k8s/production/` (not `k8s/overlays/*`).**
-- [x] **Phase 16: Go Edge OpenAPI** - swaggo-annotated Gin handlers, `/openapi.json`, Swagger UI at `/docs`, CI validation of spec (DOC-01) — **DONE 2026-04-19 on `feature/phase-16-go-edge-openapi` (5 commits: aa6e292, 1d95bb3, 36a29fc, 197243b + metadata). 4 business routes documented (/health, /ready, /api/v1/sync/batch, /api/v1/webhooks/whatsapp), 7 response-type definitions, BearerAuth security scheme. CI installs `swag@v1.16.3`, runs `TestOpenAPISpec_Fresh` (regenerate-and-diff), + `@seriousme/openapi-schema-validator validate-api` (spec validity). Swagger 2.0 (not OpenAPI 3.0) — explicit tradeoff documented in 16-01-SUMMARY.md; v2.3 upgrade to swag v2 (OpenAPI 3.1) once stable.**
-- [x] **Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes** — DONE 2026-04-28 on `feature/phase-16.1-pre-prod-hardening` (V35 migration + 19 new Java tests; ready for PR). Closes AUDIT-W0-01..05: OrderSseService cross-tenant SSE leak, /public/orders IDOR, Stripe webhook idempotency, reviews_tenant_write RLS rewrite, FORCE RLS on 9 tables.
-- [x] **Phase 17: Vendor Order Detail + Stripe Refund Flow** - `/dashboard/orders/[id]` detail view, `POST /api/v1/orders/{id}/refund` endpoint wired to Stripe (stored-first idempotency), `REFUND_REQUESTED` state-machine transition, `refunds` table via Flyway V36 migration, refund webhook handlers reusing the Phase 16.1 dedup guard, and `order.refunded` published to RabbitMQ via the shared payment_event_outbox (UC-2 LOCKED `exchange` column added in V36) (VOPS-01, VOPS-02, VOPS-03) — 4 plans drafted 2026-04-27 (completed 2026-04-28)
-- [x] **Phase 18: Vendor Onboarding — First Slice (MVP)** — `vendor_onboarding` state machine + gate chain (Flyway V43): auto-verify business (Companies House) + food-hygiene rating (FSA FHRS, `min-rating=2`) at signup, gate go-live on allergen completeness, state machine as sole writer of `Shop.published`. Seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`. — planning via `/gsd plan-phase 18` (MVP mode) (completed 2026-07-11)
-
-### 🚧 v2.3 Phases (in progress)
-
-- [x] **Phase 19: Full-Frontend Experience Overhaul** — **DONE 2026-07-11** (9/9 plans, 4 waves, on `feature/19-ui-overhaul`). Closed the 15-item remediation backlog from the full-frontend UI audit (18-UI-REVIEW.md, whole-app 42/72): public landing page + information architecture (killed the `/` blind redirect, connected the 3 surfaces, de-orphaned every route), responsive dashboard shell, real product names in kitchen/orders, checkout delivery address + fee transparency (V45 migration — V44 stays reserved for #96), per-shop menus, and comparator-grade polish (Deliveroo/Just Eat storefront bar; Square/Toast dashboard bar). Registered UIX-01..06. Palette kept orange/emerald/slate (editorial redesign explicitly rejected), mobile-first; test invocations grew 921 → 988 (no regression), schema V43 → V45, docs-freshness green. Backlog #14 (error boundary) documented LEAVE-AS-IS.
-- [x] **Phase 20: AI-1 MCP Server (Read-Only Slice)** [MVP] — EPIC #209 Wave 2, issue #203. New TypeScript `mcp-server/` (official `@modelcontextprotocol/sdk`) exposing read-only tenant-scoped tools (list shops/products, read orders) over the existing core REST API; auth reuses #206 client-credentials + `catalog:read`/`orders:read` scopes (RLS is the boundary). Cross-tenant → empty/403 (RLS-proven test); RFC 7807 tool errors; live E2E on dev stack; README. Mutating tools + #205 webhooks deferred. — **NOT STARTED** (completed 2026-07-13)
+- [x] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations) (completed 2026-07-14)
+- [x] **Phase 22: Notifications & Comms** — First delivery consumer of the V46 transactional outbox: email-first transactional notifications (Mailhog dev → SES prod) + vendor-registered outbound webhooks (HMAC-signed, retried; absorbs #205) + a WhatsApp/SMS seam behind a provider flag (absorbs #208), with GDPR consent + unsubscribe (completed 2026-07-15)
+- [ ] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px
+- [ ] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
+- [ ] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential
+- [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
 
 ## Phase Details
 
-### Phase 12: Spring Security Response Headers + Frontend CSP
+### Phase 21: Onboarding Blocker UX
 
-**Goal**: Every HTTP response from both Spring Boot and Next.js carries the baseline browser-security headers that block clickjacking, MIME-type sniffing, weak referrers, and inline script/XSS vectors.
-**Depends on**: Nothing (standalone — can ship first)
-**Requirements**: SEC-02, SEC-03
+**Goal**: A vendor who hits an onboarding blocker can see exactly what is wrong, fix bad data in place, withdraw if they want out, and reach a real human — no more silent black holes. The state machine stays the sole writer of `Shop.published`; every transition goes through events.
+**Depends on**: Nothing (v2.2 shipped the onboarding state machine + gate chain). Zero Flyway migrations (`WITHDRAWN` is already in the V43 status CHECK).
+**Requirements**: ONBD-01, ONBD-02, ONBD-03, ONBD-04, ONBD-05
 **Success Criteria** (what must be TRUE):
 
-  1. `GET /api/v1/shops` 200 response includes `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (verified by MockMvc assertion + curl against running dev stack)
-  2. `Strict-Transport-Security` header present on Spring responses in `prod` profile only, absent in `dev` (profile-based `HttpSecurity.headers().hsts()` configuration)
-  3. Next.js responses (homepage, `/shop/[slug]`, `/dashboard`) include a `Content-Security-Policy` header whose `default-src 'self'`, `script-src` allows the minimum set needed for NextAuth + Stripe, `frame-ancestors 'none'`
-  4. Playwright e2e passes with no browser-console CSP violations across the full storefront + dashboard flow
-  5. Header snapshot test committed to CI (fails if a header regresses)
+  1. A vendor whose application hit a manual-review gate (e.g. a fuzzy FHRS name/address mismatch) sees an honest "In review — a reviewer checks these within N business days" state (DTO-derived from `status==VERIFYING && anyGate==MANUAL_REVIEW && noGate==PENDING`), and an admin sees that same application in a review queue with a gate-resolve control that recomputes and advances the state machine — neither is a dead end. (ONBD-03)
+  2. A vendor can correct a typo'd company number, toggle the sole-trader flag, or override the FHRS establishment via an update endpoint valid only in DRAFT/ACTION_REQUIRED (RFC 7807 rejection outside those states), then resubmit and have the gates re-run against the corrected data. (ONBD-02)
+  3. Each FAILED / MANUAL_REVIEW gate renders *why → what to do → a button that goes there* — inline company-number edit, a "fix these N products" allergen deep link, and an FHRS address-confirm / establishment picker. (ONBD-04)
+  4. A vendor can withdraw an in-progress application from a confirm dialog; the application reaches `WITHDRAWN` (terminal, valid from DRAFT/VERIFYING/ACTION_REQUIRED) and restarting begins a fresh application. (ONBD-01)
+  5. On a rejected application the vendor sees the actual `rejectionReason` (now on the vendor-facing DTO) plus a real, configured support channel (mailto/link) — not a bare "contact support"; and one blocked-onboarding journey (bad company number → fix inline → resubmit → live) passes end-to-end in Playwright. (ONBD-05)
 
-**Plans**: 2 plans (2 operationally complete; 1 manual gate pending)
-
-  - [x] 12-01-PLAN.md — Spring Security response headers (SEC-03): HttpSecurity.headers() DSL with X-Frame-Options/X-Content-Type-Options/Referrer-Policy + profile-gated HSTS + MockMvc tests + Java-side header snapshot — **DONE 2026-04-18, see 12-01-SUMMARY.md (commits f428184, 68e903b, 953a25b, 09149c6)**
-  - [🟡] 12-02-PLAN.md — Next.js CSP (SEC-02): next.config.mjs Report-Only CSP with Stripe/Keycloak/API/WS allowlist + Jest unit + snapshot + Playwright spec + port 3100 reconcile + manual enforce-cutover gate — **Tasks 01-06 DONE 2026-04-18 (commits 9163143, 0a19c4c, fddbc4e, 445f169, 30d94ee, 8baf065); Task 07 manual human-verify gate pending ≥1-week staging observation; see 12-02-SUMMARY.md**
-
-**UI hint**: no
-
-### Phase 13: Guest Tracking Tenant Validation
-
-**Goal**: Anonymous/session-based requests cannot slip across tenant boundaries by manipulating the URL slug or session cookie — application-layer rejects mismatches with 403 before any tenant-scoped data touches the response.
-**Depends on**: Phase 12 (share security-test scaffolding; non-blocking but natural ordering)
-**Requirements**: SEC-01
-**Success Criteria** (what must be TRUE):
-
-  1. A guest session established on tenant A cannot retrieve tenant B data via `/public/shops/{B-slug}/...` — rejected with 403 and structured audit log entry
-  2. Legitimate browse flow on tenant A still passes (no regression in Playwright storefront e2e)
-  3. Cross-tenant spoof attempt is covered by an integration test that seeds two tenants + attempts the spoof + asserts 403
-  4. `GuestTrackingService` (or equivalent) has explicit unit tests for tenant-match, tenant-mismatch, and missing-tenant paths
-
-**Plans**: 1 plan
-
-  - [x] 13-01-PLAN.md — Service-layer tenant-match gate in PublicStorefrontService + ReviewService (resolvePublicShopForSlug helper, TenantAccessDeniedException → 403, CrossTenantSpoofIntegrationTest on Testcontainers Postgres, 4 unit tests on helper) — **DONE 2026-04-18, see 13-01-SUMMARY.md (commits 1f0b9aa, 1e7f357, e978939, 9c5309b, 300cae2)**
-
-**UI hint**: no
-
-### Phase 14: Stock Race Fix + Summary Aggregation
-
-**Goal**: The platform cannot oversell stock under concurrent order confirmations, and summary endpoints (`getSummary()` on FinancialTransactionService/OrderService) scale to 10k+ rows without loading the full table into memory.
-**Depends on**: Nothing (backend-only, can run in parallel with 12/13)
-**Requirements**: CQ-01, CQ-02
-**Success Criteria** (what must be TRUE):
-
-  1. Two concurrent `CONFIRM` events on the last-in-stock product: exactly one succeeds, the other throws `InsufficientStockException` (Testcontainers integration test exercises the real Postgres optimistic lock path)
-  2. Stock decrement lives inside the `OrderStateMachine` CONFIRM transition, not in `OrderService.createOrder` (verified by code search + behavioral test)
-  3. `getSummary()` returns the same output on a seeded 1k-row fixture as the previous `findAll()`+reduce implementation (golden-file comparison)
-  4. `getSummary()` query plan uses an index (verified by `EXPLAIN ANALYZE` in the integration test)
-  5. No regression in `OrderServiceTest` / `FinancialTransactionServiceTest` existing assertions
-
-**Plans**: 2 plans (both complete)
-
-  - [x] 14-01-PLAN.md — CQ-01 Stock Race Fix: V34 migration adding `@Version` to `products`, new `InsufficientStockException` → 409 via GlobalExceptionHandler, `StockService.decrementForOrder` with `@Retryable(ObjectOptimisticLockingFailureException.class, maxAttempts=3, backoff=50ms)` + `@Recover`, `OrderService.transitionOrder` rewire (save-after-decrement ordering fix), `adjustStockInBatch` + silent `Math.max(0,…)` clamp deleted, Testcontainers concurrent two-thread race test — **DONE 2026-04-19, see 14-01-SUMMARY.md (commits ec89443, c062f3a, ad02c98, fe27915, 20ebf24, c77fbdd, 98176a5)**
-  - [x] 14-02-PLAN.md — CQ-02 getSummary DB Aggregation: 2 JPQL constructor-target queries (`FinancialAggregateRow` scalar + `FinancialVatRow` GROUP BY vatRate) with `COALESCE(SUM(CASE WHEN…), 0L)`, `ORDER BY ft.vatRate` + Java `Comparator` defense-in-depth, golden-file parity test (1k rows), EXPLAIN ANALYZE Index Scan assertion (10k rows + enable_seqscan=off), Hibernate `getPrepareStatementCount() == 2` pin, cross-tenant isolation test (raw-SQL disjointness + reflection-based no-explicit-tenant-WHERE — superuser RLS bypass environmental caveat documented) — **DONE 2026-04-19, see 14-02-SUMMARY.md (commits 635cc22, 06964ac, 83fa33a)**
-
-**UI hint**: no
-
-### Phase 15: K8s NetworkPolicies + Sealed Secrets
-
-**Goal**: Production cluster enforces pod-to-pod isolation so a compromised pod cannot pivot laterally, and secrets live in git as sealed ciphertext rather than base64-encoded plaintext.
-**Depends on**: Nothing from earlier v2.2 phases (infra-only); requires bitnami-labs/sealed-secrets controller installed in the cluster before INF-02 ships
-**Requirements**: INF-01, INF-02
-**Success Criteria** (what must be TRUE):
-
-  1. `k8s/base/networkpolicies/` directory contains policies enforcing: frontend↔core-java only, core-java↔(postgres, redis, rabbitmq, keycloak, minio, alertmanager), infra pods only accept from core-java, deny-all for all other combinations
-  2. `kubectl --dry-run=server -k k8s/overlays/staging` applies cleanly; no policy references a non-existent pod label
-  3. `k8s/base/secrets-template.yaml` replaced by `SealedSecret` manifests encrypted via `kubeseal` against the staging cluster public key; documentation for key rotation committed at `docs/runbooks/sealed-secrets.md`
-  4. Dev/local docker-compose workflow unchanged (dev uses `.env` files, not k8s)
-  5. CI validation: `kubeseal --dry-run` round-trips a plaintext Secret to SealedSecret and back without error
-
-**Plans**: 1 plan (consolidated — both requirements ship in one atomic DRAFT-ONLY plan)
-
-  - [🟡] 15-01-PLAN.md — K8s NetworkPolicies (default-deny + 5 tier allow-lists, offline YAML + label-reference validator, live `kubectl --dry-run=server` documented for cluster admin) + Sealed Secrets runbook (`docs/runbooks/sealed-secrets.md`) + batch conversion script (`k8s/scripts/seal-secrets.sh`) + `secrets-template.yaml` legacy-flag header — **DRAFTING COMPLETE 2026-04-18, see 15-01-SUMMARY.md (commits 69710e7, 1ec1187, 5ac74b2, a3755b5, f59a0fb + metadata commit). Cluster-admin rollout pending: operator install, public-key export, plaintext→SealedSecret conversion, `kubectl apply -k` + functional verification — all 4 steps enumerated in SUMMARY.md.**
-
-**UI hint**: no
-
-### Phase 16: Go Edge OpenAPI
-
-**Goal**: Every Go edge gateway route is documented in a machine-readable OpenAPI 3.0 spec served at `/openapi.json`, with an interactive Swagger UI at `/docs`, so downstream teams (frontend, mobile, integration partners) don't have to read Go source to learn the API surface.
-**Depends on**: Nothing (edge-only)
-**Requirements**: DOC-01
-**Success Criteria** (what must be TRUE):
-
-  1. `GET /openapi.json` returns a valid OpenAPI 3.0 document (validated by `openapi-spec-validator` in CI)
-  2. Every existing Gin route in `cmd/edge/main.go` and `internal/` has a matching `@Summary`/`@Router`/`@Success`/`@Failure` swaggo annotation (line-count assertion: route count == annotation count)
-  3. `GET /docs` renders Swagger UI with all routes browsable
-  4. Go edge test suite grows to include a spec-freshness test (regenerate spec in CI, diff vs committed copy, fail on drift)
-
-**Plans**: 1 plan
-
-  - [x] 16-01-PLAN.md — swaggo annotations on 4 Gin handlers + generated Swagger 2.0 spec at `edge-go/docs/` + `/openapi.json` + Swagger UI at `/docs` + in-process freshness test + CI validation via `@seriousme/openapi-schema-validator` — **DONE 2026-04-19, see 16-01-SUMMARY.md. Swagger 2.0 vs OpenAPI 3.0 tradeoff: `swaggo/swag v1` emits 2.0; npm validator accepts both; v2.3 upgrade path to `swag v2` (OpenAPI 3.1) when stable. Pinned swaggo deps at `swag v1.16.3 / gin-swagger v1.6.0 / files v1.0.1` to keep edge-go on Go 1.22 (CLAUDE.md constraint).**
-
-**UI hint**: no
-
-### Phase 16.1: Pre-prod Hardening — Wave 0 Council Audit Fixes — DONE 2026-04-28
-
-**Goal**: Close the 5 confirmed pre-prod blockers from the 2026-04-27 council audit before any production rollout >1 tenant or real payments. Eliminates 3 cross-tenant data-integrity bugs, adds Stripe webhook idempotency, and forces RLS on tables where superuser/owner bypass would defeat tenant isolation.
-**Depends on**: Phase 16
-**Requirements** (must land before Phase 17 Stripe refund work):
-
-  1. **`OrderSseService` cross-tenant leak fix** — capture `TenantContext.get()` at `subscribe()`, filter `broadcast()` by event tenant. Regression test: `OrderSseServiceTenantIsolationTest` — two SSE subscriptions from different tenants, tenant A's transition NOT seen by tenant B.
-     - File: `core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java:17,29-40`
-  2. **Customer-orders IDOR mitigation** — make `verify` parameter mandatory on `/public/orders`; reject 400 without it. Test: `curl '/public/orders?email=victim@example.com'` → 400 not 200.
-     - File: `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java:91-104`
-  3. **Stripe webhook idempotency** — V35 migration adds `processed_stripe_events(event_id PRIMARY KEY, processed_at TIMESTAMPTZ)`. Guard `handleWebhookEvent` with TOCTOU-safe `INSERT ... ON CONFLICT DO NOTHING` at top. Test: same `event.id` POSTed twice → exactly one `financial_transactions` row.
-     - File: `core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:113-132`
-  4. **`reviews_tenant_write` RLS rewrite** — V35 migration: drop `app.tenant_id` reference (use `app.current_tenant_id`), drop the `customer_email` OR-clause, require `EXISTS (SELECT 1 FROM orders WHERE id=order_id AND customer_email=app.customer_email)`. Test: spam-review attempt with arbitrary `tenant_id` → INSERT rejected.
-     - File: original policy in `db/migration/V27__customer_reviews.sql:31-36`; replacement migration V35.
-  5. **`FORCE ROW LEVEL SECURITY`** on `reviews`, `shop_promotions`, `shop_announcements`, and all 6 `_aud` audit tables (V35 migration). Test: `SELECT relforcerowsecurity FROM pg_class WHERE relname IN (...)` → all true.
-
-**Plans:** 6 plans (all complete)
-
-Plans:
-
-- [x] 16.1-01-PLAN.md — V35 Flyway migration: processed_stripe_events table + reviews_tenant_write rewrite + FORCE RLS on 9 tables (AUDIT-W0-03/04/05) [Wave 1]
-- [x] 16.1-02-PLAN.md — OrderSseService per-tenant emitter routing + OrderSseServiceTenantIsolationTest (AUDIT-W0-01) [Wave 1]
-- [x] 16.1-03-PLAN.md — Mandatory `verify` param on /public/orders + PublicStorefrontControllerIdorTest (AUDIT-W0-02) [Wave 1]
-- [x] 16.1-04-PLAN.md — PaymentService.handleWebhookEvent TOCTOU-safe idempotency guard + StripeWebhookIdempotencyIntegrationTest (AUDIT-W0-03) [Wave 2; depends on 16.1-01]
-- [x] 16.1-05-PLAN.md — RlsContractTest + ReviewsRlsPolicyIntegrationTest (AUDIT-W0-04/05) [Wave 2; depends on 16.1-01]
-- [x] 16.1-06-PLAN.md — REQUIREMENTS/CHANGELOG/STATE/ROADMAP closure: register AUDIT-W0-01..05, mark phase complete [Wave 3; depends on 01-05]
-
-### Phase 17: Vendor Order Detail + Stripe Refund Flow
-
-**Goal**: Vendors can open any order from `/dashboard/orders`, see its full context (items, payment, transitions), and issue a full or partial Stripe refund with a structured reason — and the refund flows through Stripe, the database, the order state machine, and the RabbitMQ event bus consistently.
-**Depends on**: Phase 14 (shares OrderStateMachine changes — STMP refund transition is added after CQ-01 lands to avoid merge conflicts)
-**Requirements**: VOPS-01, VOPS-02, VOPS-03
-**Success Criteria** (what must be TRUE):
-
-  1. `/dashboard/orders/[id]` renders all order context: header (status, timestamps, state-transition timeline), customer block, item lines (product, qty, modifiers, price), payment block (Stripe payment intent, refund history)
-  2. `POST /api/v1/orders/{id}/refund` with `{ amount_pennies, reason, note? }` creates a Stripe refund via `Refund.create`, persists a `Refund` entity via Flyway V34 migration, and publishes `order.refunded` to RabbitMQ
-  3. `OrderStateMachine` accepts `REFUND_REQUESTED` event transitioning `CONFIRMED|PREPARING|READY|COMPLETED → REFUNDED`; second invocation on REFUNDED order is idempotent (no exception, no-op)
-  4. Stripe webhook `charge.refunded` / `refund.updated` events update `Refund.status` in the database (webhook handler integration test with fixture payload)
-  5. Playwright e2e: vendor logs in → navigates to `/dashboard/orders` → clicks row → lands on `/dashboard/orders/[id]` → clicks refund → enters partial amount → confirms → Stripe test-mode refund succeeds → UI updates to show `REFUNDED` state and refund history
-
-**Plans**: 4 plans
-
-Plans:
-
-- [x] 17-01-PLAN.md — V36 migration (refunds + refunds_aud + orders CHECK rewrite + payment_event_outbox.exchange) + Refund entity stack + RefundService stored-first idempotency + state-machine extension (REFUND_REQUESTED, REFUNDED, .end()) + unit tests [Wave 1]
-- [x] 17-02-PLAN.md — PaymentEventOutbox.exchange field + Flusher per-row routing + RefundEvent record + RefundEventPublisher [Wave 1; consumes V36 column from 17-01]
-- [x] 17-03-PLAN.md — RefundController (POST /orders/{id}/refund + Idempotency-Key + GET /orders/{id}/refunds) + PaymentService webhook refund.* cases (after Phase 16.1 dedup) + OrderDetailDto extension + GlobalExceptionHandler StripeException→502 + RefundWebhookHandlingIntegrationTest (Testcontainers) [Wave 2; depends on 17-01 + 17-02]
-- [x] 17-04-PLAN.md — Frontend /dashboard/orders/[id] route + OrderDetailPanel extraction + RefundDialog (Zod + Idempotency-Key) + OrderStatus REFUNDED type extension + Jest unit tests + Playwright vendor-refund-flow E2E (port 3100) [Wave 3; depends on 17-03]
-
-**UI hint**: yes
-
-### Phase 18: Vendor Onboarding — First Slice
-
-**Goal:** As a food vendor, I want to auto-verify my business and hygiene rating at signup, so that my shop goes live without manual review.
-**Mode:** mvp
-**Requirements**: VOB-01, VOB-02, VOB-03, VOB-04, VOB-05 (new capability; minted during Phase 18 planning — registered in REQUIREMENTS.md by Plan 18-06; scope seeded from `docs/architecture/VENDOR_ONBOARDING_STATE_MODEL.md`)
-**Success Criteria** (what must be TRUE):
-
-  1. A tenant-scoped `vendor_onboarding` aggregate with a state machine (DRAFT → VERIFYING → ACTION_REQUIRED/PENDING_APPROVAL → APPROVED → LIVE) persists under RLS via Flyway V43, mirroring the Order state-machine pattern; the state machine is the sole writer of `Shop.published`.
-  2. On submit, the `BUSINESS_VERIFIED` (Companies House) and `FOOD_HYGIENE_RATING` (FSA FHRS, threshold `min-rating=2`, header `x-api-version: 2`) gates run automatically, recording pass/fail + evidence; no/ambiguous FHRS match → `MANUAL_REVIEW` (never hard-fail).
-  3. The `ALLERGEN_DATA_COMPLETE` gate blocks `GO_LIVE` until every product carries required allergen data (V41 fields).
-  4. FHRS threshold and API base URLs are injected via config (`onboarding.*`, `${ENV:default}`), never literals.
-  5. Tests added (state-machine transitions, RLS Testcontainers, gate evaluators) and `docs/metrics.json` bumped so the `docs-freshness` gate stays green.
-
-**Plans**: 6 plans (MVP vertical slices; planned 2026-07-10)
-
-Plans:
-
-- [x] 18-01-PLAN.md — Persistence foundation: Flyway V43 (vendor_onboarding + _gate + _aud, FORCE RLS), enums, audited entities/repos, OnboardingProperties + config [Wave 1]
-- [x] 18-02-PLAN.md — Submit slice: onboarding state machine (sole writer of Shop.published) + VendorOnboardingService + gate-chain registry/runner + create/submit/status API [Wave 2]
-- [x] 18-03-PLAN.md — FOOD_HYGIENE_RATING gate: FhrsClient (x-api-version:2 + circuit breaker) + FhrsGate (min-rating=2, MANUAL_REVIEW fallback) [Wave 3]
-- [x] 18-04-PLAN.md — BUSINESS_VERIFIED gate: CompaniesHouseClient (HTTP Basic + circuit breaker) + CompaniesHouseGate (active->PASSED, sole trader->WAIVED) [Wave 3]
-- [x] 18-05-PLAN.md — ALLERGEN_DATA_COMPLETE gate (V41 fields) + POST /onboarding/go-live + Shop.published sole-writer hardening [Wave 3]
-- [x] 18-06-PLAN.md — Cross-gate end-to-end proof + docs/metrics.json reconcile (docs-freshness) + REQUIREMENTS/ROADMAP/CHANGELOG closure [Wave 4]
-
-### Phase 19: Full-Frontend Experience Overhaul
-
-**Goal:** Every visitor — customer, prospective vendor, or operator — lands on a coherent product: a real front door routes them to their surface, every page is reachable through navigation, every flow is complete and comparator-grade (Deliveroo/Just Eat for storefront, Square/Toast for dashboard), on mobile first.
-**Depends on**: Phase 18 (onboarding UI is the quality reference — replicate its pattern, do not regress it)
-**Requirements**: UIX-01..UIX-06 (minted from `phases/18-vendor-onboarding-first-slice/18-UI-REVIEW.md` remediation backlog — register in REQUIREMENTS.md during planning)
-**Success Criteria** (what must be TRUE):
-
-  1. `/` renders a public landing page (no blind redirect) routing the 3 personas: order food → shop directory, run your food business → `/for-operators`, sign in → dashboard; shared public header/footer connects `/`, `/for-operators`, `/business-model-guide`, `/track`, `/shop` — zero orphan routes (every route ≥1 inbound nav link, verified by a link-graph test).
-  2. All 11 dashboard routes usable at 390px (sidebar collapses to drawer/bottom nav); Playwright mobile viewport spec passes.
-  3. Kitchen display and order detail show real product names on live orders — `OrderItem` snapshot populated at order creation; "Unknown Product" never renders for a product that exists.
-  4. Checkout collects a delivery address (persisted via V45 — V44 stays reserved for #96) and shows the fee breakdown (subtotal + delivery + VAT) BEFORE payment; Playwright checkout e2e updated.
-  5. Each shop renders its own menu: seeded/live products assigned `shop_id`, `ProductRepository` `IS NULL` fallback behaviour resolved deliberately (kept only if product-decision says tenant-wide items are a feature — then rendered as such, not duplicated).
-  6. All 15 audit backlog items closed or explicitly deferred with reason; existing 921 logical test invocations stay green; palette stays orange/emerald/slate (no editorial/serif redesign).
-
-**Plans**: 9 plans (4 waves) — planned 2026-07-11 (UI-SPEC + RESEARCH + PATTERNS + VALIDATION → 9 executable plans)
+**Plans**: 5 plans (4 waves)
 
 Plans:
 **Wave 1**
 
-- [x] 19-01-PLAN.md — Backend order-creation completeness: V45 fulfilment/address (+orders_aud mirror) + productName snapshot fix + backfill + GDPR address scrub + audited-write proof (UIX-03, UIX-04) [Wave 1]
-- [x] 19-02-PLAN.md — Per-shop menus: dev-profile DemoDataSeeder (realistic UK data, shop_id assigned) + ProductRepository scoping (drop IS NULL bleed) + Testcontainers isolation (UIX-05) [Wave 1]
-- [x] 19-03-PLAN.md — Public shell + persona landing page + sheet primitive + IA cross-links + static link-graph orphan guard (UIX-01) [Wave 1]
+- [x] 21-01-PLAN.md (Wave 1) — Backend vendor endpoints: `POST /onboarding/withdraw` (reuses the already-wired WITHDRAW transitions) + `POST /onboarding/company-number` update (blank=sole trader, DRAFT/ACTION_REQUIRED guard, create-identical validation, RFC 7807) + Testcontainers proofs
+- [x] 21-02-PLAN.md (Wave 1, parallel) — Backend outbox stall-event seam (Pitfall-1 atomic unit): `onboarding.events` TopicExchange + `OnboardingStateChangeEvent` + `OnboardingEventPublisher` + flusher dispatch branch + `GateChainRunner` emission from the MANUAL_REVIEW park branch
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 19-04-PLAN.md — Dashboard responsive shell: exported navigation + mobile bottom tab bar (4 + More sheet) + Playwright mobile spec (UIX-02) [Wave 2]
-- [x] 19-05-PLAN.md — Marketing token re-skin (operator-pitch + business-model-guide) + /track guest lookup (no auth wall) + PublicShell (UIX-01) [Wave 2]
-- [x] 19-06-PLAN.md — Checkout fulfilment toggle + UK address + fee-before-payment + empty-state centring + menu empty state (UIX-04) [Wave 2]
-- [x] 19-07-PLAN.md — Kitchen + order-detail: badge-clip fix + elapsed cap + real product-name render + e2e (UIX-06) [Wave 2]
+- [x] 21-03-PLAN.md (Wave 2) — Backend manual-review visibility: DTO-derived `reviewPending` + `rejectionReason` on the vendor `OnboardingDto` + admin `GET /onboarding/admin/reviews` queue + `POST /onboarding/admin/{id}/gates/{gateType}/resolve` (writes gate row via V43 `_aud`, recompute-after-commit → SM advances) + RLS/Envers/403/404 proofs
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [x] 19-08-PLAN.md — Cross-cutting sweep: purple→amber/blue + text-[10px]→text-xs + VERIFY-FIRST 401 quiet + discipline test (UIX-06) [Wave 3]
+- [x] 21-04-PLAN.md (Wave 3) — Frontend: per-gate remediation blocks (why → what → deep link) + honest in-review copy with polling back-off + withdraw confirm dialog + inline company-number edit + rejection reason + config-injected support channel (NEXT_PUBLIC_*) + admin gate-resolve UI + Jest/tsc
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [x] 19-09-PLAN.md — Closure: UIX-01..06 registration + docs-freshness reconcile (schema 45, 921 → 988) + full gate + browser UAT (UIX-06) [Wave 4]
+- [x] 21-05-PLAN.md (Wave 4) — Playwright blocked-onboarding journey (bad company number → fix inline → resubmit → live) + human-verify FHRS manual-review path + `docs/metrics.json` reconcile + closure
 
-**UI hint**: yes — UI-SPEC approved (checker 6/6)
+**UI hint**: yes
+
+### Phase 22: Notifications & Comms
+
+**Goal**: The platform gains its first **delivery consumer** of the V46 transactional outbox. Order/payment/refund and Phase 21 onboarding state-change events — today emitted to the outbox but delivered nowhere — reach the people and systems that need them. Email first (Mailhog dev → SES prod), with the outbound-webhook machine channel (the delivery seam ONBD-05 / AI-01 left open) and a WhatsApp/SMS seam as further channels on the same consumer.
+**Depends on**: V46 transactional outbox + Phase 21 `onboarding.events` (both shipped). Reuses the RabbitMQ/AMQP infra. **Respects the outbox-flusher dispatch trap**: this phase adds consumers (not producers) — all four `publishRow` dispatch branches already exist, so the shared flusher is untouched. Migrations take **V54/V55/V56** under `out-of-order=true` — the V52 `shop_staff` (Phase 23) / V53 `media_asset` (Phase 24) ordering is preserved.
+**Requirements**: COMMS-01, COMMS-02, COMMS-03, COMMS-04, COMMS-05, COMMS-06, COMMS-07 (COMMS-04/05/06 absorb AI-01 outbound webhooks #205; COMMS-07 absorbs #208 WhatsApp) — *finalized by 22-SPEC.md*
+**Success Criteria** (what must be TRUE) — *locked by `22-SPEC.md`*:
+
+  1. A single set of outbox consumers fans each matching event to its channels; a channel/subscription failure is retried with bounded backoff and does not block delivery to other channels or subscriptions (no head-of-line block). The pre-existing order-confirmation email path stays intact (no regression) and no event type poison-dead-letters. (COMMS-01, COMMS-05)
+  2. Transactional email is delivered to the correct audiences (customer and/or vendor) across order/onboarding/payment/refund through a provider-abstracted multipart renderer (Mailhog dev, SES-over-SMTP prod), tenant-scoped, with a working one-click unsubscribe + recorded consent (GDPR/PECR) — no email to a suppressed recipient; marketing requires explicit opt-in. (COMMS-02, COMMS-03)
+  3. A vendor can register tenant-scoped webhook subscriptions (ENABLE+FORCE RLS, isolation-proven) that receive HMAC-SHA256-signed, retried, observable deliveries of chosen event types, self-served through a mobile-first management + delivery-log/replay UI (375px). (COMMS-04, COMMS-05, COMMS-06)
+  4. The WhatsApp/SMS channel is scaffolded behind a provider flag defaulting off until credentials are configured (#208); its absence never blocks email or webhook delivery. (COMMS-07)
+
+**Plans**: 7 plans (5 waves)
+
+Plans:
+**Wave 1** *(parallel foundations — no shared-file overlap)*
+
+- [x] 22-01-PLAN.md (Wave 1) — Notification channel seam: `NotificationChannel` abstraction + `MimeMessageHelper` multipart `EmailChannel` + `EmailTemplateRenderer` (D-01) + INERT-by-default `WhatsAppSmsChannel` stub (COMMS-07) + notification/whatsapp config keys (GLOBAL_RULE_6). Order-email path untouched (Pitfall 5 path A). [COMMS-02, COMMS-07]
+- [x] 22-02-PLAN.md (Wave 1, parallel) — Consent backend: V54 `notification_suppression` + `marketing_opt_in` (FORCE RLS helper form) + `NotificationCategory` + `ConsentGate` + stateless HMAC `UnsubscribeTokenService` + no-auth `PublicUnsubscribeController` + NOSUPERUSER RLS proof (COMMS-03)
+- [x] 22-03-PLAN.md (Wave 1, parallel) — Webhook subscription data + CRUD API: V55 `webhook_subscription` (FORCE RLS, plaintext secret) + `WebhookUrlValidator` (HTTPS + SSRF block) + create/list/rotate/pause/resume/revoke REST (RFC 7807, secret-once) + RLS proof (COMMS-04)
+
+**Wave 2** *(blocked on 22-01 + 22-02)*
+
+- [x] 22-04-PLAN.md (Wave 2) — Email dispatch + all RabbitMQ topology: bind `onboarding.events` + add payment/refund/webhook-fanout durable queues + `RecipientResolver` (D-04) + `NotificationDispatchService` (consent-gated fan-out) + onboarding/financial `@RabbitListener`s → Mailhog landing proofs; order path un-regressed, no poison (COMMS-01, COMMS-02)
+
+**Wave 3** *(blocked on 22-03 + 22-04)*
+
+- [x] 22-05-PLAN.md (Wave 3) — Webhook delivery engine: V56 `webhook_delivery` (FORCE RLS) + `WebhookSigner` (HMAC-SHA256 t=,v1=) + versioned envelope + fanout listener + `@Scheduled` SKIP-LOCKED worker (backoff + auto-pause + no head-of-line block) + retention prune + delivery-log/replay API + config tunables (COMMS-05)
+
+**Wave 4** *(blocked on 22-03 + 22-05)*
+
+- [x] 22-06-PLAN.md (Wave 4) — Webhook management + delivery-log UI (mobile-first 375px): subscriptions list + create/pause/resume/revoke + once-only secret reveal + rotate + delivery-log filter + Idempotency-Key replay + status-badge taxonomy + sidebar nav + Jest 375px coverage (COMMS-06)
+
+**Wave 5** *(blocked on 22-02 + 22-06)*
+
+- [x] 22-07-PLAN.md (Wave 5) — Public unsubscribe page (noindex, sitemap-excluded, PII-safe) + Playwright E2E (webhook create→list→filter→replay→375px + unsubscribe flow) + `docs/metrics.json` reconcile (schema 51→56) + docs-freshness green + closure (COMMS-03, COMMS-06)
+
+**UI hint**: yes (vendor webhook management + delivery-log/replay + public unsubscribe)
+
+### Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav
+
+**Goal**: A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
+**Depends on**: Nothing structural (RLS/onboarding untouched). Sequenced after Phase 22 per the locked order. Ships Flyway **V52** (must precede V53 in Phase 24).
+**Requirements**: VSA-01, VSA-02, VSA-03, VSA-04, MOBL-01
+**Success Criteria** (what must be TRUE):
+
+  1. After migration, the tenant behaves exactly as today: every existing user has a GROUP_ADMIN `shop_staff` row and the realm `admin` role acts as implicit GROUP_ADMIN — zero day-one regression, proven under the NOSUPERUSER RLS role-downgrade. (VSA-01)
+  2. A SHOP_MANAGER granted one shop can CRUD that shop's products/orders/marketing/KDS but receives a 403 (RFC 7807, distinct from the RLS 404) on any other shop in the tenant; STAFF is operational-read + order-state-only; shop-scoped writes without a grant are denied by default. (VSA-02)
+  3. The dashboard carries a persisted shop-context switcher; all shop-scoped screens operate on the selected shop, and a group-wide "apply to all shops" action is visible only to GROUP_ADMIN. (VSA-03)
+  4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
+  5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
+
+**Plans**: TBD (est. 3)
+
+Plans:
+
+- [ ] 23-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
+- [ ] 23-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
+- [ ] 23-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
+
+**UI hint**: yes
+
+### Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline
+
+**Goal**: Vendor image uploads are backed by a shared copy-on-write asset model with reference counting, and every upload passes through a safe async pipeline that stores only a validated, normalized derivative — never the raw bytes.
+**Depends on**: Phase 23 (migration ordering — `media_asset` is **V53**, which must land after `shop_staff` V52). Reuses the V46 outbox/AMQP infra.
+**Requirements**: IMG-01, IMG-02, IMG-03, IMG-04
+**Success Criteria** (what must be TRUE):
+
+  1. Products reference `media_asset` rows (never own bytes); editing a shared asset mints a new asset and repoints only that product (copy-on-write), and a physical MinIO delete happens only at reference-count 0 — with sha256 per-tenant dedup, proven under the NOSUPERUSER RLS role-downgrade; existing `image_url` values are backfilled behind a dual-read window. (IMG-01)
+  2. An oversize upload is refused *before* it is buffered; a valid upload stores a raw quarantine object + a PENDING `media_asset` and returns immediately, then an async worker magic-byte-sniffs, enforces the jpeg/png/webp allowlist, decodes-to-verify, strips EXIF, and stores the normalized/re-encoded derivative (never the raw upload), pinning the tenant GUC before any DB write; single uploads and BulkImportService share the one path. (IMG-02)
+  3. A file that fails normalization/decode/allowlist is marked FAILED and rejected with a vendor-visible reason; an image below the content-relevance threshold still goes ACTIVE but lands in a vendor-visible review queue; the vision stage sits behind a flag defaulting to advisory until the provider is reliably up. (IMG-03)
+  4. The product UI shows a "processing" state while an asset is PENDING and surfaces FAILED (with reason) and content-flagged (ACTIVE) assets in a vendor-visible review/rejection queue. (IMG-04)
+
+**Plans**: TBD (est. 3)
+
+Plans:
+
+- [ ] 24-01: V53 `media_asset` (+`_aud` if audited, ENABLE+FORCE RLS, sha256 tenant-unique) + product↔asset reference (FK/join) + copy-on-write repoint + reference-counted physical delete + `image_url` backfill dual-read + RLS-under-NOSUPERUSER proof
+- [ ] 24-02: Safe async upload pipeline — reject-early Content-Length/streaming size guard + quarantine store + PENDING row + AMQP outbox publish (202-style) + queue worker (magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode/thumbnail, raw-delete-on-success, tenant-GUC pin) + BulkImportService unification
+- [ ] 24-03: Gate strictness (compress-fail → FAILED reject; low-relevance → ACTIVE + review queue; vision advisory flag) + product UI processing/failed/flagged states + vendor review/rejection queue + `docs/metrics.json` reconcile
+
+**UI hint**: yes
+
+### Phase 25: Mutating MCP Tools
+
+**Goal**: An external AI agent holding a tenant-scoped credential can safely create orders/customers through MCP write tools that ride the uniform Idempotency-Key contract, with RLS as the boundary — extending the Phase 20 read-only server.
+**Depends on**: Phase 20 read-only MCP server + #204 Idempotency-Key contract (V50) + #206 scoped machine credentials (all shipped v2.2). Structurally independent of other v2.3 phases.
+**Requirements**: AI-02
+**Success Criteria** (what must be TRUE):
+
+  1. The MCP server exposes write tools (e.g. `orders.create`, `customers.create`) mapped to the appropriate write scopes; each rides the uniform Idempotency-Key contract so a replayed call returns the original result, not a duplicate. (AI-02)
+  2. A write attempt targeting another tenant returns empty/403 under the MCP credential — RLS-proven, test included. (AI-02)
+  3. Tool errors surface as RFC 7807 problem-detail (consistent with the read-only slice), not raw stack traces, and the flow is proven live against the dev stack. (AI-02)
+
+**Plans**: TBD (est. 2)
+
+Plans:
+
+- [ ] 25-01: MCP write tools (`orders.create` / `customers.create`) over the core REST API + `Idempotency-Key` header wiring (#204) + write-scope mapping
+- [ ] 25-02: cross-tenant RLS proof under the MCP credential + RFC 7807 tool errors + idempotent-replay integration test + live E2E + `docs/metrics.json` reconcile
+
+**UI hint**: no
+
+### Phase 26: Local-K8s Overlay + Verified Breakage Fixes
+
+**Goal**: The imperative deploy patches from the 2026-07-14 live-deploy rehearsal are replaced by a committed, buildable `k8s/local` overlay, and the verified k8s breakage list is fixed so core boots as the NOSUPERUSER app role on a single replica.
+**Depends on**: Nothing structural (infra/deploy config). Best sequenced last so the overlay ships all v2.3 schema (V52 `shop_staff`, V53 `media_asset`, Comms migrations) and services. `compose XOR k8s` on local (RULE 0) still applies.
+**Requirements**: INFRA-01, INFRA-02
+**Success Criteria** (what must be TRUE):
+
+  1. `kubectl kustomize k8s/local` builds and a server dry-run apply resolves every reference — no dangling secret/configmap/label refs. (INFRA-01)
+  2. The `k8s/local` overlay shims endpoints to `host.minikube.internal`, sets `minReplicas=1`, and repoints the backup CronJob to host MinIO — committed, replacing the imperative secret/configmap patches. (INFRA-01)
+  3. `DB_PORT` is injected via `valueFrom.secretKeyRef` (no hardcoded `5432`), and secrets use `DB_USER`/`DB_PASSWORD` (the `jtoye_app` NOSUPERUSER role) so core boots without `DatabaseConfigurationValidator` refusing a DB superuser. (INFRA-02)
+  4. The pg-backup CronJob targets host MinIO and the STOMP relay stomp-login/passcode wiring reaches the spring config (no boot-time `Access refused for user 'guest'`). (INFRA-02)
+
+**Plans**: TBD (est. 2)
+
+Plans:
+
+- [ ] 26-01: Committed `k8s/local` overlay (host.minikube.internal endpoint shims, `minReplicas=1`, backup→MinIO) replacing imperative patches + `kubectl kustomize` build + server dry-run
+- [ ] 26-02: Verified breakage fixes — `DB_PORT` via `secretKeyRef`, `DB_USER`/`DB_PASSWORD` NOSUPERUSER role, pg-backup→host MinIO, STOMP relay login wiring + config-injection (no-hardcoded-port) assertion + boot-as-app-role smoke
+
+**UI hint**: no
 
 ## Progress
 
 **Execution Order:**
-v2.0 + v2.1: shipped (phases 1-11).
-v2.2: Phase 12 first (broadest blast radius — all responses), then 13 + 14 can run in parallel (both backend, independent subsystems), then 15 + 16 can run in parallel (infra/edge, both standalone), Phase 17 depends on 14 (shares state machine surface).
-
-Suggested wave layout:
-
-- Wave 1: Phase 12
-- Wave 2: Phases 13, 14 (parallel)
-- Wave 3: Phases 15, 16 (parallel)
-- Wave 4: Phase 17
+Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 → 23 → 24 → 25 → 26**. Phase 21 is independent (zero migrations) and led because it was the cheapest fix for the highest user pain. **Phase 22 (Notifications & Comms) was inserted ahead of Vendor-Scoped Access** because a delivery consumer of the V46 outbox is the seam onboarding (ONBD-05) and future surfaces depend on, and it folds in the previously-standalone Outbound Webhooks (#205) + WhatsApp (#208). The one hard migration dependency is Phase 23 before Phase 24 (Flyway V52 `shop_staff` must precede V53 `media_asset`); Comms migrations take V54/V55/V56 under `out-of-order=true` so that ordering is undisturbed. Phase 25 (mutating MCP) builds only on shipped infra (#204 idempotency, Phase 20 MCP) and is structurally independent. Phase 26 (infra) lands last so the committed overlay ships all v2.3 schema and services.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. API Versioning — Backend | v2.0 | 1/1 | Complete | 2026-04-07 |
-| 2. API Versioning — Edge & Frontend | v2.0 | 1/1 | Complete | 2026-04-08 |
-| 3. Vendor Marketing Backend | v2.0 | 2/2 | Complete | 2026-04-08 |
-| 4. Vendor Dashboard UI | v2.0 | 1/1 | Complete | 2026-04-08 |
-| 5. KDS Security & WebSocket Foundation | v2.0 | 1/1 | Complete | 2026-04-08 |
-| 6. KDS Event Pipeline | v2.0 | 1/1 | Complete | 2026-04-08 |
-| 7. Kitchen Display UI | v2.0 | 1/1 | Complete | 2026-04-09 |
-| 8. Test Coverage Closure | v2.0 | 2/2 | Complete | 2026-04-09 |
-| 9. Repository Secrets + Alerting | v2.1 | 3/3 | Complete | 2026-04-15 |
-| 10. Storefront Marketing + Missing Customer Routes | v2.1 | 3/3 | Complete | 2026-04-16 |
-| 11. STOMP Broker Relay for Horizontal Scale | v2.1 | 3/3 | Complete | 2026-04-16 |
-| 12. Spring Security Response Headers + Frontend CSP | v2.2 | 0/2 | Not started | - |
-| 13. Guest Tracking Tenant Validation | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-18 |
-| 14. Stock Race Fix + Summary Aggregation | v2.2 | 0/2 | Not started | - |
-| 15. K8s NetworkPolicies + Sealed Secrets | v2.2 | 1/1 | Drafting complete; cluster rollout pending | 2026-04-18 |
-| 16. Go Edge OpenAPI | v2.2 | 1/1 | Complete (ready for PR) | 2026-04-19 |
-| 16.1. Pre-prod Hardening (Wave 0) | v2.2 | 6/6 | Complete (ready for PR) | 2026-04-28 |
-| 17. Vendor Order Detail + Stripe Refund Flow | v2.2 | 4/4 | Complete    | 2026-04-28 |
-| 18. Vendor Onboarding — First Slice (MVP) | v2.2 | 7/7 | Complete    | 2026-07-11 |
-| 19. Full-Frontend Experience Overhaul | v2.3 | 9/9 | Complete    | 2026-07-11 |
-| 20. AI-1 MCP Server (Read-Only Slice) [MVP] | v2.3 | 5/5 | Complete    | 2026-07-13 |
-
-### Phase 20: AI-1 MCP Server (Read-Only Slice)
-
-**Goal:** As an external AI agent holding only a tenant-scoped Keycloak client-credentials token, I want to discover and read the platform (list shops, list products, read orders) through a Model Context Protocol server, so that I can integrate with J'Toye without hand-rolling an HTTP client and without any possibility of cross-tenant access.
-**Mode:** mvp
-**Requirements**: AI-1
-**Tracks**: GitHub issue #203 — EPIC #209 Wave 2. Read-only first slice; mutating MCP tools and #205 outbound webhooks are separate later phases.
-**Depends on:** #204 idempotency contract (DONE, PR #211) + #206 scoped machine credentials (DONE, PR #212). Both merged — `integration-catalog-ro` client + `catalog:read`/`orders:read` scopes already seeded in the realm template. No blocking dependencies remain.
-**Plans:** 5/5 plans complete
-
-**Success criteria (issue #203 acceptance criteria):**
-1. New TypeScript `mcp-server/` workspace using the official `@modelcontextprotocol/sdk`, packaged as its own Docker container wired into docker-compose. No new Python/Go runtime.
-2. Read-only MCP tools — list shops, list products, read orders — each wraps the EXISTING core REST API over HTTP (never touches Postgres directly; core-java + RLS stay the security boundary).
-3. Auth reuses #206: Keycloak client-credentials token pass-through; the `tenant_id` claim drives RLS. Read tools map to `catalog:read` / `orders:read` scopes.
-4. Agent with a tenant-scoped token can list shops/products and read orders via MCP against the dev stack — LIVE E2E, not just unit.
-5. Cross-tenant access attempt returns empty/403 — RLS-proven, test included.
-6. Tool errors surface RFC 7807 problem-detail, not raw stack traces.
-7. README documents the client-credentials setup.
-
-**Constraints:** feature branch → PR (never main); rebuild ALL containers before any live E2E claim; dev realm re-import is a pending operational step (`docs/security-scopes.md` §Re-import) required for the `integration-catalog-ro` client to exist in the running Keycloak; docs-freshness gate must stay green (baseline metrics 1208 / schema V50 — an MCP TS test surface may add to test counts; `scripts/docs-freshness.sh --write` is the arbiter).
-
-Plans:
-- [x] 20-01-PLAN.md — Walking slice: mcp-server workspace + list_products end-to-end (stateless HTTP, Bearer pass-through, RFC 7807 errors) [W1]
-- [x] 20-02-PLAN.md — Widen tools: list_shops + read_orders (list/shop/detail) registered on the server [W2]
-- [x] 20-03-PLAN.md — Own Docker container + compose wiring + README + tenant-B seed for the RLS proof [W2]
-- [x] 20-04-PLAN.md — docs-freshness mcp test family + metrics regen + e2e.sh/e2e-rls.sh scripts [W3]
-- [x] 20-05-PLAN.md — Rebuild all + realm re-import + live E2E (read happy-path + cross-tenant RLS proof) [W4]
+| 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
+| 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
+| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
+| 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

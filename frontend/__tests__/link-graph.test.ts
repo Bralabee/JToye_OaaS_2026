@@ -33,11 +33,15 @@ const WILDCARD = "*"
  *  - "/shop/auth/callback" the customer OIDC callback — reached only via an
  *                          external IdP (Keycloak) redirect, never an in-app
  *                          link; not user-navigable.
+ *  - "/unsubscribe"        the public one-click email opt-out (COMMS-03) —
+ *                          reached ONLY via a token link in an outbound email
+ *                          (List-Unsubscribe / footer link), never an in-app
+ *                          nav link; noindex + sitemap-excluded by design.
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
  */
-const ALLOWLIST = new Set<string>(["/", "/shop/auth/callback"])
+const ALLOWLIST = new Set<string>(["/", "/shop/auth/callback", "/unsubscribe"])
 
 function isTestFile(file: string): boolean {
   return /(^|[/\\])__tests__[/\\]/.test(file) || /\.(test|spec)\.[jt]sx?$/.test(file)

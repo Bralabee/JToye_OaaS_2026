@@ -542,8 +542,8 @@ export default function OnboardingPage() {
   const badgeLabel = inReview ? "In review" : stateMeta.label
   const subtitle = inReview
     ? reviewSlaDays
-      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — you can safely leave this page and check back here for an update.`
-      : `Your checks are with our team for review. A reviewer is looking at these now — you can safely leave this page and check back here for an update.`
+      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — we'll email you when there's an update, so you can safely leave this page.`
+      : `Your checks are with our team for review. A reviewer is looking at these now — we'll email you when there's an update, so you can safely leave this page.`
     : STATE_SUBTITLE[onboarding.status] ?? ""
 
   // ONBD-05: config-injected support channel for REJECTED/SUSPENDED — the email
