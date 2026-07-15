@@ -66,9 +66,21 @@ export function CartProvider({
     setItems(loadCart(shopSlug))
   }, [shopSlug])
 
-  // Persist to localStorage on change
+  // Persist to localStorage on change, then broadcast so same-document
+  // listeners (nav basket badge) update without a context subscription.
+  // Counts are computed inline from `items` to avoid new effect deps.
   useEffect(() => {
     saveCart(shopSlug, items)
+    if (typeof window === "undefined") return
+    window.dispatchEvent(
+      new CustomEvent("jtoye:cart-updated", {
+        detail: {
+          slug: shopSlug,
+          itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+          totalPennies: items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0),
+        },
+      })
+    )
   }, [shopSlug, items])
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {

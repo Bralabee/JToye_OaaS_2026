@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -26,6 +26,7 @@ import {
   TrendingDown,
   Banknote,
   Receipt,
+  ShieldCheck,
 } from "lucide-react"
 import type {
   FinancialTransaction,
@@ -51,10 +52,18 @@ const formatPennies = (pennies: number): string => {
 
 const PAGE_SIZE = 20
 
+function httpStatus(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "response" in err) {
+    return (err as { response?: { status?: number } }).response?.status
+  }
+  return undefined
+}
+
 export default function FinancePage() {
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
@@ -78,14 +87,22 @@ export default function FinancePage() {
       setTransactions(txRes.data.content || [])
       setTotalPages(txRes.data.totalPages || 0)
       setTotalElements(txRes.data.totalElements || 0)
+      setForbidden(false)
     } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to load financial data"
-      toast({
-        variant: "destructive",
-        title: "Error loading data",
-        description: errorMessage,
-      })
+      // QA FE-2: finance is admin-gated. A 403 is an honest "access required" state,
+      // not a data-load failure — surface the same card Approvals uses, and do NOT show
+      // the contradictory empty "No transactions yet" table plus a red error toast.
+      if (httpStatus(error) === 403) {
+        setForbidden(true)
+      } else {
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to load financial data"
+        toast({
+          variant: "destructive",
+          title: "Error loading data",
+          description: errorMessage,
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -99,10 +116,32 @@ export default function FinancePage() {
     )
   }
 
+  // QA FE-2: honest admin-gate state — mirrors the Approvals "Admin access required"
+  // card, instead of an empty "No transactions yet" table plus a red 403 error toast.
+  if (forbidden) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-4xl font-bold text-slate-900">Finance</h1>
+          <p className="mt-2 text-slate-600">Revenue, expenses, and VAT reporting</p>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <ShieldCheck className="mb-4 h-12 w-12 text-slate-300" />
+            <h3 className="mb-2 text-lg font-semibold text-slate-900">Admin access required</h3>
+            <p className="text-sm text-slate-500">
+              Viewing financial transactions needs the admin role. Ask your administrator for access.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
@@ -110,11 +149,11 @@ export default function FinancePage() {
         <p className="mt-2 text-slate-600">
           Revenue, expenses, and VAT reporting
         </p>
-      </motion.div>
+      </m.div>
 
       {/* Summary Cards */}
       {summary && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -176,12 +215,12 @@ export default function FinancePage() {
               </p>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* VAT Breakdown */}
       {summary && summary.vatBreakdown.length > 0 && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -219,11 +258,11 @@ export default function FinancePage() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
       )}
 
       {/* Transactions Table */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
@@ -308,7 +347,7 @@ export default function FinancePage() {
             />
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
     </div>
   )
 }

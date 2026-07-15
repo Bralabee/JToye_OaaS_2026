@@ -61,7 +61,8 @@ describe('Dashboard Page', () => {
 
     const spinner = container.querySelector('.animate-spin')
     expect(spinner).toBeInTheDocument()
-    expect(spinner).toHaveClass('border-blue-600')
+    // Motion-uplift foundation: spinner follows the flame-orange brand primary
+    expect(spinner).toHaveClass('border-orange-600')
   })
 
   it('should render dashboard heading after loading', async () => {

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 003 — Operator Scroll Story</title>
+<link rel="stylesheet" href="../themes/default.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/ScrollTrigger.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--color-text); background: var(--color-bg); padding-top: 46px; -webkit-font-smoothing: antialiased; }
+  h1,h2,h3 { margin: 0; }
+  .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+
+  /* variant scaffolding (shared with 002) */
+  #variant-nav { position: fixed; top:0; left:0; right:0; z-index:9998; background: var(--color-slate-deep); color:#fff; border-bottom:1px solid rgba(255,255,255,.1); padding:8px 14px; display:flex; gap:8px; align-items:center; font-size:13px; }
+  #variant-nav .brand { font-weight:800; margin-right:6px; } #variant-nav .brand .flame { color: var(--color-primary-bright); }
+  .variant-tab { font:inherit; font-weight:700; cursor:pointer; background:rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:5px 13px; transition:all .15s ease; white-space:nowrap; }
+  .variant-tab:hover { background:rgba(255,255,255,.16); } .variant-tab.active { background:var(--color-primary); border-color:var(--color-primary); }
+  .engine-note { margin-left:auto; font-size:11px; opacity:.6; }
+  .variant { display:none; } .variant.active { display:block; }
+
+  /* shared marketing (brutalist operator device) */
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+  .op-header { border-bottom: 4px solid var(--color-slate-deep); background: #ecfdf5; }
+  .op-header .wrap { display:flex; justify-content:space-between; gap:16px; padding:14px 20px; }
+  .op-header .mono { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.16em; color:var(--color-text-muted); }
+
+  .op-hero { border-bottom:4px solid var(--color-slate-deep); background: var(--color-slate-deep); color:#f8fafc; overflow:hidden; }
+  .op-hero .wrap { display:grid; gap:34px; padding:56px 20px 68px; }
+  @media (min-width:900px){ .op-hero .wrap { grid-template-columns:1.2fr .8fr; align-items:end; } }
+  .pill { display:inline-flex; border:1px solid #475569; border-radius:999px; padding:6px 13px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.14em; color:#d1fae5; }
+  h1.op-display { margin-top:20px; font-size:clamp(2.3rem,6.4vw,3.9rem); font-weight:900; line-height:.95; letter-spacing:-.05em; max-width:16ch; }
+  h1.op-display .amber { color:#fcd34d; }
+  .op-sub { margin-top:24px; max-width:40ch; font-size:clamp(1.02rem,2vw,1.24rem); line-height:1.5; color:#cbd5e1; }
+  .op-cta { margin-top:30px; display:flex; flex-wrap:wrap; gap:12px; }
+  .btn { font:inherit; font-weight:800; border:none; cursor:pointer; border-radius:999px; padding:13px 22px; font-size:.98rem; text-decoration:none; display:inline-flex; align-items:center; gap:8px; transition: all .15s ease; }
+  .btn.primary { background: var(--color-primary-bright); color: var(--color-slate-deep); }
+  .btn.primary:hover { background:#fcd34d; transform: translateY(-2px); }
+  .btn.ghost { background:transparent; color:#f8fafc; border:2px solid #a7f3d0; }
+  .btn.ghost:hover { background:#1e293b; }
+
+  /* Service rail card — the offset hard-shadow brand device from the live page */
+  .rail-card { border:2px solid #a7f3d0; background:#1e293b; padding:22px; box-shadow:10px 10px 0 var(--color-primary-bright); }
+  .rail-card .rc-head { display:flex; justify-content:space-between; border-bottom:1px solid #475569; padding-bottom:14px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.15em; color:#d1fae5; }
+  .rail-item { display:flex; gap:12px; align-items:flex-start; padding-top:18px; }
+  .rail-item .ri-ico { width:38px; height:38px; flex:none; border-radius:50%; background:#ecfdf5; color:var(--color-slate-deep); display:flex; align-items:center; justify-content:center; font-size:18px; }
+  .rail-item .ri-t { font-weight:800; } .rail-item .ri-d { font-size:.9rem; color:#cbd5e1; margin-top:2px; }
+
+  .band { border-bottom:2px solid var(--color-border); padding:64px 0; }
+  .kicker { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.16em; color:var(--color-text-muted); }
+  h2.op-h2 { margin-top:14px; font-size:clamp(1.7rem,4.4vw,3rem); font-weight:900; letter-spacing:-.045em; line-height:1; max-width:20ch; }
+  .impacts { margin-top:30px; display:grid; gap:14px; } @media(min-width:720px){ .impacts{ grid-template-columns:repeat(3,1fr);} }
+  .impact { border-left:4px solid var(--color-primary-bright); background:var(--color-surface); padding:16px; box-shadow:var(--shadow-sm); }
+  .impact h3 { font-size:1rem; font-weight:800; } .impact p { margin-top:8px; font-size:.9rem; color:var(--color-text-muted); line-height:1.5; }
+
+  /* pilot steps */
+  .pilot-steps { margin-top:32px; display:grid; gap:14px; } @media(min-width:640px){ .pilot-steps{ grid-template-columns:1fr 1fr; } }
+  .pstep { border:1px solid var(--color-border); background:var(--color-surface); padding:20px; }
+  .pstep .n { font-family:ui-monospace,monospace; font-size:12px; font-weight:800; color:var(--color-primary); }
+  .pstep h3 { margin-top:14px; font-size:1.1rem; font-weight:800; } .pstep p { margin-top:8px; font-size:.9rem; color:var(--color-text-muted); line-height:1.5; }
+
+  /* terms / proof band with counters */
+  .terms { border:2px solid var(--color-slate-deep); background:var(--color-slate-deep); color:#f8fafc; padding:34px; }
+  .terms .kicker { color:#d1fae5; }
+  .proof { margin-top:26px; display:grid; gap:22px; } @media(min-width:640px){ .proof{ grid-template-columns:repeat(4,1fr);} }
+  .proof .pv { font-size:clamp(2rem,5vw,2.8rem); font-weight:900; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .proof .pl { margin-top:4px; font-size:.82rem; color:#cbd5e1; }
+  .proof .unit { color:var(--color-primary-bright); }
+
+  .scroll-hint { text-align:center; color:var(--color-text-muted); font-size:12px; letter-spacing:.08em; text-transform:uppercase; padding:24px 0; }
+
+  /* reveal base (variant A) */
+  .reveal { opacity:0; transform:translateY(26px); transition:opacity .6s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1); }
+  .reveal.in { opacity:1; transform:none; }
+  .reveal.d1{transition-delay:.08s;}.reveal.d2{transition-delay:.16s;}.reveal.d3{transition-delay:.24s;}
+
+  /* ---- GSAP variant B signature scenes ---- */
+  /* Pinned service-rail scene */
+  #b-pin-scene { position:relative; }
+  #b-pin-scene .pin-inner { min-height: 100vh; display:flex; align-items:center; }
+  #variant-b.gsapon .b-rail-item { opacity:0; transform: translateX(24px); }
+  /* Horizontal pilot rail */
+  .pilot-pin { overflow:hidden; }
+  .pilot-track { display:flex; gap:22px; }
+  .pilot-track .pstep { flex:0 0 78%; max-width:420px; }
+  @media(min-width:640px){ .pilot-track .pstep{ flex:0 0 46%; } }
+  @media(min-width:900px){ .pilot-track .pstep{ flex:0 0 32%; } }
+  #variant-b.gsapon .g-hide { opacity:0; }
+  .word { display:inline-block; }
+
+  .cdn-note { display:none; margin:0 auto; max-width:1120px; padding:12px 20px; background:#fff7ed; border-bottom:1px solid var(--color-border); }
+  body.no-gsap #variant-b .cdn-note { display:block; } .cdn-note b { color:var(--color-primary); }
+
+  #tools { position:fixed; bottom:12px; right:12px; z-index:9999; font-family:system-ui; font-size:12px; background:rgba(2,6,23,.82); color:#fff; padding:8px 10px; border-radius:10px; opacity:.5; transition:opacity .2s; display:flex; gap:8px; }
+  #tools:hover{opacity:1;} #tools button{font:inherit;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 8px;cursor:pointer;}
+  @media (prefers-reduced-motion: reduce){ .reveal{transition:none;opacity:1;transform:none;} html{scroll-behavior:auto;} }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="brand">J&apos;<span class="flame">Toye</span></span>
+  <button class="variant-tab active" data-v="a" onclick="showVariant('a')">A: Motion (installed)</button>
+  <button class="variant-tab" data-v="b" onclick="showVariant('b')">B: GSAP full-award ★</button>
+  <span class="engine-note" id="engine-note">/for-operators · scroll to feel it</span>
+</div>
+
+<!-- ==================== VARIANT A: Motion-class sectional reveal ==================== -->
+<div id="variant-a" class="variant active">
+  <div class="op-header"><div class="wrap"><span class="mono">J&apos;Toye / operator pilot</span><span class="mono">Built for the service you already run</span></div></div>
+  <section class="op-hero"><div class="wrap">
+    <div>
+      <span class="pill reveal">One London cluster · owner-led food businesses</span>
+      <h1 class="op-display reveal d1">Keep the order. <span class="amber">Keep the customer.</span> Keep the kitchen moving.</h1>
+      <p class="op-sub reveal d2">An assisted pilot for established Nigerian and West African takeaway and catering operators with recurring order volume — built around your direct customer relationship, not a marketplace.</p>
+      <div class="op-cta reveal d2">
+        <a class="btn primary" href="#">Start your application ↗</a>
+        <a class="btn ghost" href="#">Check your pilot fit ↓</a>
+      </div>
+    </div>
+    <div class="rail-card reveal d3">
+      <div class="rc-head"><span>Service rail</span><span>Online orders</span></div>
+      <div class="rail-item"><span class="ri-ico">🏪</span><div><div class="ri-t">Your direct storefront</div><div class="ri-d">A customer path you control.</div></div></div>
+      <div class="rail-item"><span class="ri-ico">📦</span><div><div class="ri-t">Your browser kitchen display</div><div class="ri-d">For online orders while connected.</div></div></div>
+      <div class="rail-item"><span class="ri-ico">✅</span><div><div class="ri-t">Your service decisions</div><div class="ri-d">You set the menu, hours and handover.</div></div></div>
+    </div>
+  </div></section>
+
+  <section class="band"><div class="wrap">
+    <p class="kicker reveal">The service leak</p>
+    <h2 class="op-h2 reveal d1">One change. Three channels. Two versions of the order.</h2>
+    <div class="impacts">
+      <div class="impact reveal d1"><h3>The counter checks messages</h3><p>Changes sit beside the order instead of becoming the order.</p></div>
+      <div class="impact reveal d2"><h3>The kitchen works from memory</h3><p>Availability, portions and handover details become verbal.</p></div>
+      <div class="impact reveal d3"><h3>The owner carries the risk</h3><p>The customer still expects one accurate promise.</p></div>
+    </div>
+  </div></section>
+
+  <section class="band"><div class="wrap">
+    <p class="kicker reveal">Assisted, not abstract</p>
+    <h2 class="op-h2 reveal d1">A four-step pilot that respects the shift.</h2>
+    <div class="pilot-steps">
+      <div class="pstep reveal d1"><span class="n">01</span><h3>Map your service</h3><p>Work through your menu, trading hours and the customer journey you already run.</p></div>
+      <div class="pstep reveal d1"><span class="n">02</span><h3>Set up the direct path</h3><p>Prepare your storefront and ordering flow together, not a blank dashboard.</p></div>
+      <div class="pstep reveal d2"><span class="n">03</span><h3>Run a real service</h3><p>Use the browser kitchen display for online orders while you own fulfilment.</p></div>
+      <div class="pstep reveal d2"><span class="n">04</span><h3>Review before expanding</h3><p>Look at what worked and agree the next operating step together.</p></div>
+    </div>
+  </div></section>
+
+  <section class="band" style="border-bottom:none"><div class="wrap"><div class="terms reveal">
+    <p class="kicker">Pilot terms, plainly stated</p>
+    <h2 class="op-h2" style="color:#fff;margin-top:8px">No mystery maths at the counter.</h2>
+    <div class="proof">
+      <div><div class="pv"><span class="unit">£</span><span class="count" data-to="39">0</span></div><div class="pl">per location, per month</div></div>
+      <div><div class="pv"><span class="unit">£</span><span class="count" data-to="99">0</span>+</div><div class="pl">assisted setup, scoped</div></div>
+      <div><div class="pv"><span class="count" data-to="1">0</span></div><div class="pl">London cluster to start</div></div>
+      <div><div class="pv"><span class="count" data-to="0">0</span></div><div class="pl">lead-capture forms</div></div>
+    </div>
+  </div></div></section>
+  <div class="scroll-hint">Motion-class: reveal-on-enter per section · counters count up when the band enters. No pinning, no scrub.</div>
+</div>
+
+<!-- ==================== VARIANT B: GSAP full-award ==================== -->
+<div id="variant-b" class="variant">
+  <div class="cdn-note"><b>Offline?</b> The GSAP CDN didn&apos;t load — this variant is showing its resting state (all visible, no pin/scrub). Reconnect and reload to feel the pinned Service-rail scene and horizontal pilot rail.</div>
+  <div class="op-header"><div class="wrap"><span class="mono">J&apos;Toye / operator pilot</span><span class="mono">Built for the service you already run</span></div></div>
+
+  <!-- Signature scene 1: PINNED service rail -->
+  <section class="op-hero" id="b-pin-scene"><div class="pin-inner"><div class="wrap">
+    <div>
+      <span class="pill g-hide" id="b-pill">One London cluster · owner-led food businesses</span>
+      <h1 class="op-display" id="b-headline" data-split>Keep the order. <span class="amber">Keep the customer.</span> Keep the kitchen moving.</h1>
+      <p class="op-sub g-hide" id="b-sub">An assisted pilot for established Nigerian and West African takeaway and catering operators with recurring order volume — built around your direct customer relationship, not a marketplace.</p>
+      <div class="op-cta g-hide" id="b-cta">
+        <a class="btn primary" href="#">Start your application ↗</a>
+        <a class="btn ghost" href="#">Check your pilot fit ↓</a>
+      </div>
+    </div>
+    <div class="rail-card g-hide" id="b-railcard">
+      <div class="rc-head"><span>Service rail</span><span>Online orders</span></div>
+      <div class="rail-item b-rail-item"><span class="ri-ico">🏪</span><div><div class="ri-t">Your direct storefront</div><div class="ri-d">A customer path you control.</div></div></div>
+      <div class="rail-item b-rail-item"><span class="ri-ico">📦</span><div><div class="ri-t">Your browser kitchen display</div><div class="ri-d">For online orders while connected.</div></div></div>
+      <div class="rail-item b-rail-item"><span class="ri-ico">✅</span><div><div class="ri-t">Your service decisions</div><div class="ri-d">You set the menu, hours and handover.</div></div></div>
+    </div>
+  </div></div></section>
+
+  <section class="band"><div class="wrap">
+    <p class="kicker g-hide b-rev">The service leak</p>
+    <h2 class="op-h2 g-hide b-rev">One change. Three channels. Two versions of the order.</h2>
+    <div class="impacts">
+      <div class="impact g-hide b-rev"><h3>The counter checks messages</h3><p>Changes sit beside the order instead of becoming the order.</p></div>
+      <div class="impact g-hide b-rev"><h3>The kitchen works from memory</h3><p>Availability, portions and handover details become verbal.</p></div>
+      <div class="impact g-hide b-rev"><h3>The owner carries the risk</h3><p>The customer still expects one accurate promise.</p></div>
+    </div>
+  </div></section>
+
+  <!-- Signature scene 2: HORIZONTAL pilot rail -->
+  <section class="band pilot-pin" id="b-pilot"><div class="wrap">
+    <p class="kicker g-hide b-rev">Assisted, not abstract</p>
+    <h2 class="op-h2 g-hide b-rev">A four-step pilot — scroll it sideways.</h2>
+  </div>
+  <div class="wrap" style="margin-top:26px; max-width:none; padding-left:max(20px,calc((100vw - 1120px)/2))">
+    <div class="pilot-track" id="b-pilot-track">
+      <div class="pstep"><span class="n">01</span><h3>Map your service</h3><p>Work through your menu, trading hours and the customer journey you already run.</p></div>
+      <div class="pstep"><span class="n">02</span><h3>Set up the direct path</h3><p>Prepare your storefront and ordering flow together, not a blank dashboard.</p></div>
+      <div class="pstep"><span class="n">03</span><h3>Run a real service</h3><p>Use the browser kitchen display for online orders while you own fulfilment.</p></div>
+      <div class="pstep"><span class="n">04</span><h3>Review before expanding</h3><p>Look at what worked and agree the next operating step together.</p></div>
+    </div>
+  </div></section>
+
+  <section class="band" style="border-bottom:none"><div class="wrap"><div class="terms" id="b-terms">
+    <p class="kicker">Pilot terms, plainly stated</p>
+    <h2 class="op-h2" style="color:#fff;margin-top:8px">No mystery maths at the counter.</h2>
+    <div class="proof">
+      <div><div class="pv"><span class="unit">£</span><span class="count" data-to="39">0</span></div><div class="pl">per location, per month</div></div>
+      <div><div class="pv"><span class="unit">£</span><span class="count" data-to="99">0</span>+</div><div class="pl">assisted setup, scoped</div></div>
+      <div><div class="pv"><span class="count" data-to="1">0</span></div><div class="pl">London cluster to start</div></div>
+      <div><div class="pv"><span class="count" data-to="0">0</span></div><div class="pl">lead-capture forms</div></div>
+    </div>
+  </div></div></section>
+  <div class="scroll-hint">GSAP full-award: split-type headline · <b>pinned</b> Service-rail that builds on scrub · <b>horizontal</b> pilot rail · scrubbed counters.</div>
+</div>
+
+<div id="tools">
+  <button onclick="setW(375)">📱</button><button onclick="setW(768)">▭</button><button onclick="setW(0)">🖥️</button><button onclick="location.reload()">↻ replay</button>
+</div>
+
+<script>
+var gsapReady=false, bInit=false;
+function showVariant(v){
+  document.querySelectorAll('.variant').forEach(function(e){e.classList.remove('active');});
+  document.querySelectorAll('.variant-tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('variant-'+v).classList.add('active');
+  document.querySelector('.variant-tab[data-v="'+v+'"]').classList.add('active');
+  document.getElementById('engine-note').textContent = v==='a' ? '/for-operators · Motion-class reveals' : '/for-operators · GSAP pin + horizontal + scrub';
+  window.scrollTo(0,0);
+  if(v==='b'){ initB(); if(gsapReady&&window.ScrollTrigger) ScrollTrigger.refresh(); }
+}
+function setW(px){
+  document.querySelectorAll('.variant').forEach(function(e){ e.style.margin=px?'0 auto':''; e.style.maxWidth=px?px+'px':''; e.style.boxShadow=px?'0 0 0 1px rgba(0,0,0,.12)':''; });
+  if(gsapReady&&window.ScrollTrigger) setTimeout(function(){ScrollTrigger.refresh();},60);
+}
+function countUp(el){
+  var to=parseInt(el.getAttribute('data-to'),10)||0, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce){ el.textContent=to; return; }
+  var start=null, dur=900;
+  requestAnimationFrame(function step(ts){ if(!start)start=ts; var p=Math.min((ts-start)/dur,1); el.textContent=Math.round(to*(1-Math.pow(1-p,3))); if(p<1) requestAnimationFrame(step); });
+}
+
+/* Variant A reveals + counters */
+(function(){
+  var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }); },{threshold:.16});
+  document.querySelectorAll('#variant-a .reveal').forEach(function(el){ io.observe(el); });
+  var termsA=document.querySelector('#variant-a .terms');
+  var io2=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ document.querySelectorAll('#variant-a .count').forEach(countUp); io2.unobserve(e.target);} }); },{threshold:.4});
+  if(termsA) io2.observe(termsA);
+})();
+
+/* Variant B GSAP */
+function splitWords(el){
+  var nodes=Array.prototype.slice.call(el.childNodes); el.innerHTML='';
+  nodes.forEach(function(node){
+    if(node.nodeType===3){ node.textContent.split(/(\s+)/).forEach(function(tok){ if(tok.trim()===''){el.appendChild(document.createTextNode(tok));return;} var s=document.createElement('span'); s.className='word'; s.textContent=tok; el.appendChild(s); }); }
+    else { var inner=node.textContent.split(/(\s+)/); node.textContent=''; inner.forEach(function(tok){ if(tok.trim()===''){node.appendChild(document.createTextNode(tok));return;} var s=document.createElement('span'); s.className='word'; s.textContent=tok; node.appendChild(s); }); el.appendChild(node); }
+  });
+  return el.querySelectorAll('.word');
+}
+function initB(){
+  if(bInit) return; bInit=true;
+  if(!window.gsap){ document.body.classList.add('no-gsap'); return; }
+  gsapReady=true; gsap.registerPlugin(ScrollTrigger);
+  document.getElementById('variant-b').classList.add('gsapon');
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var words=splitWords(document.getElementById('b-headline'));
+  if(reduce){
+    gsap.set(['#variant-b .g-hide', words, '.b-rail-item'], {opacity:1, x:0, y:0, yPercent:0});
+    document.querySelectorAll('#variant-b .count').forEach(countUp);
+    return;
+  }
+
+  /* Hero headline entrance */
+  gsap.set(words,{yPercent:115,opacity:0});
+  var tl=gsap.timeline({defaults:{ease:'power3.out'}});
+  tl.to(words,{yPercent:0,opacity:1,duration:.7,stagger:.04},.1)
+    .to('#b-pill',{opacity:1,y:0,duration:.5},.15)
+    .to('#b-sub',{opacity:1,y:0,duration:.6},.35)
+    .to('#b-cta',{opacity:1,y:0,duration:.5},.5)
+    .to('#b-railcard',{opacity:1,x:0,duration:.6},.4);
+  gsap.set(['#b-pill','#b-sub','#b-cta'],{y:14}); gsap.set('#b-railcard',{x:26});
+
+  /* SIGNATURE 1: pin the hero, build the 3 rail items on scrub */
+  var items=gsap.utils.toArray('#variant-b .b-rail-item');
+  ScrollTrigger.create({
+    trigger:'#b-pin-scene', start:'top top', end:'+=1100', pin:true, scrub:true,
+    onUpdate:function(self){
+      var p=self.progress;
+      items.forEach(function(it,i){
+        var seg=(p - i*0.26)/0.26; seg=Math.max(0,Math.min(1,seg));
+        gsap.set(it,{opacity:seg, x:24*(1-seg)});
+      });
+    }
+  });
+  gsap.set(items,{opacity:0,x:24});
+
+  /* Reveal-on-enter for the leak band + pilot heading */
+  gsap.utils.toArray('#variant-b .b-rev').forEach(function(el){
+    gsap.to(el,{opacity:1,y:0,duration:.6,ease:'power3.out',scrollTrigger:{trigger:el,start:'top 84%'}});
+    gsap.set(el,{y:22});
+  });
+
+  /* SIGNATURE 2: horizontal-scrub pilot rail */
+  var track=document.getElementById('b-pilot-track');
+  var scrollLen=function(){ return Math.max(0, track.scrollWidth - track.parentElement.clientWidth + 40); };
+  gsap.to(track,{ x:function(){ return -scrollLen(); }, ease:'none',
+    scrollTrigger:{ trigger:'#b-pilot', start:'top 10%', end:function(){ return '+=' + scrollLen(); }, pin:true, scrub:1, invalidateOnRefresh:true } });
+
+  /* Scrubbed counters on the terms band */
+  ScrollTrigger.create({ trigger:'#b-terms', start:'top 80%', once:true, onEnter:function(){ document.querySelectorAll('#variant-b .count').forEach(countUp); } });
+
+  ScrollTrigger.refresh();
+}
+
+window.addEventListener('DOMContentLoaded',function(){
+  if(window.gsap) document.body.classList.add('gsap-ready'); else document.body.classList.add('no-gsap');
+});
+</script>
+</body>
+</html>

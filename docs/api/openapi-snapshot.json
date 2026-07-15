@@ -615,14 +615,18 @@
             "type" : "integer"
           },
           "email" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "phone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
             "type" : "string"
           }
         },
@@ -713,6 +717,8 @@
           },
           "description" : {
             "description" : "Customer-facing product description",
+            "maxLength" : 5000,
+            "minLength" : 0,
             "type" : "string"
           },
           "dietaryTags" : {
@@ -948,6 +954,8 @@
             "type" : "string"
           },
           "description" : {
+            "maxLength" : 5000,
+            "minLength" : 0,
             "type" : "string"
           },
           "email" : {
@@ -969,7 +977,8 @@
             "type" : "integer"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "openingHours" : {
@@ -3695,14 +3704,30 @@
             "type" : "integer"
           },
           "email" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "name" : {
-            "minLength" : 1,
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "phone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "UpdateOnboardingRequest" : {
+        "description" : "Company-number correction request",
+        "properties" : {
+          "companyNumber" : {
+            "maxLength" : 32,
+            "minLength" : 0,
+            "pattern" : "^\\s*([A-Za-z0-9]{2,10})?\\s*$",
             "type" : "string"
           }
         },

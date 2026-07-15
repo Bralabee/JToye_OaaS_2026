@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowUpRight, Check, ClipboardCheck, Copy, Download, MessageCircle, Package, Store } from "lucide-react"
+import { useOperatorScrollScene } from "@/components/marketing/operator-scroll-scene"
 
 type BusinessShape = "Takeaway" | "Catering" | "Both"
 
@@ -17,6 +18,8 @@ function reducedMotion() {
 }
 
 export function OperatorPitch() {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useOperatorScrollScene(rootRef)
   const [fitCheckOpen, setFitCheckOpen] = useState(false)
   const [businessShape, setBusinessShape] = useState<BusinessShape>("Takeaway")
   const [location, setLocation] = useState("Yes, in one London cluster")
@@ -52,7 +55,7 @@ export function OperatorPitch() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-300 selection:text-slate-900">
+    <div ref={rootRef} className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-300 selection:text-slate-900">
       <a href="#main-pitch" className="sr-only z-50 rounded-full bg-slate-900 px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to operator pitch</a>
 
       <header className="border-b-4 border-slate-900 bg-emerald-50">
@@ -62,11 +65,11 @@ export function OperatorPitch() {
         </div>
       </header>
 
-      <section id="main-pitch" className="overflow-hidden border-b-4 border-slate-900 bg-slate-900 text-slate-50">
+      <section id="main-pitch" data-op-pin="hero" className="overflow-hidden border-b-4 border-slate-900 bg-slate-900 text-slate-50">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 sm:py-20 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
           <div>
             <p className="mb-5 inline-flex rounded-full border border-slate-600 px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-[0.14em] text-emerald-100">One London cluster · owner-led food businesses</p>
-            <h1 className="max-w-4xl text-5xl font-bold leading-[0.93] tracking-[-0.055em] sm:text-6xl lg:text-6xl">Keep the order. <span className="text-amber-300">Keep the customer.</span> Keep the kitchen moving.</h1>
+            <h1 data-op-headline className="max-w-4xl text-5xl font-bold leading-[0.93] tracking-[-0.055em] sm:text-6xl lg:text-6xl">Keep the order. <span className="text-amber-300">Keep the customer.</span> Keep the kitchen moving.</h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">An assisted pilot for established Nigerian and West African takeaway and catering operators with recurring order volume — built around your direct customer relationship, not a marketplace.</p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a href="/dashboard/onboarding" className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-6 py-3.5 text-base font-bold text-slate-900 transition hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300 motion-reduce:transition-none">Start your application <ArrowUpRight size={18} aria-hidden="true" /></a>
@@ -101,11 +104,11 @@ export function OperatorPitch() {
           </div>
         </section>
 
-        <section aria-labelledby="pilot-heading" className="mt-20 border-t-2 border-slate-200 pt-12">
-          <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr]"><div><p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Assisted, not abstract</p><h2 id="pilot-heading" className="mt-4 text-3xl font-bold tracking-[-0.04em] sm:text-4xl">A four-step pilot that respects the shift.</h2></div><ol className="grid gap-3 sm:grid-cols-2">{pilotSteps.map(([number, title, detail]) => <li key={number} className="border border-slate-300 bg-white p-5"><span className="font-mono text-xs font-bold text-orange-500">{number}</span><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></li>)}</ol></div>
+        <section aria-labelledby="pilot-heading" data-op-pin="pilot" className="mt-20 border-t-2 border-slate-200 pt-12 motion-safe:md:overflow-hidden">
+          <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr]"><div><p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Assisted, not abstract</p><h2 id="pilot-heading" className="mt-4 text-3xl font-bold tracking-[-0.04em] sm:text-4xl">A four-step pilot that respects the shift.</h2></div><ol data-pilot-track className="grid gap-3 sm:grid-cols-2 motion-safe:md:flex motion-safe:md:flex-nowrap motion-safe:md:gap-5">{pilotSteps.map(([number, title, detail]) => <li key={number} data-pilot-step className="border border-slate-300 bg-white p-5 motion-safe:md:w-80 motion-safe:md:flex-none"><span className="font-mono text-xs font-bold text-orange-500">{number}</span><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></li>)}</ol></div>
         </section>
 
-        <section aria-labelledby="terms-heading" className="mt-20 border-2 border-slate-900 bg-slate-900 p-6 text-slate-50 sm:p-9">
+        <section aria-labelledby="terms-heading" data-op-terms className="mt-20 border-2 border-slate-900 bg-slate-900 p-6 text-slate-50 sm:p-9">
           <div className="border-b border-slate-700 pb-5"><p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-emerald-100">Pilot terms, plainly stated</p><h2 id="terms-heading" className="mt-2 text-3xl font-bold tracking-[-0.04em]">No mystery maths at the counter.</h2></div>
           <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><Terms title="Core" detail="£39 per location, per month" /><Terms title="Assisted setup" detail="From £99, scoped to the work agreed" /><Terms title="Pricing test" detail="0.5% of direct sales or £79–£119 fixed" /><Terms title="High volume" detail="£149–£199 option, agreed for higher-volume operations" /></div>
           <p className="mt-6 border-t border-slate-700 pt-5 text-sm leading-6 text-slate-300">Card fees are shown transparently. Payment arrangements must be confirmed before taking payments; the current platform is not production connected-account settlement.</p>
@@ -128,7 +131,7 @@ export function OperatorPitch() {
 }
 
 function RailItem({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
-  return <div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-slate-900">{icon}</span><div><p className="font-bold">{title}</p><p className="text-sm text-slate-300">{detail}</p></div></div>
+  return <div data-rail-item className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-slate-900">{icon}</span><div><p className="font-bold">{title}</p><p className="text-sm text-slate-300">{detail}</p></div></div>
 }
 
 function Impact({ title, detail }: { title: string; detail: string }) {
@@ -144,7 +147,26 @@ function CheckItem({ children }: { children: ReactNode }) {
 }
 
 function Terms({ title, detail }: { title: string; detail: string }) {
-  return <div><p className="font-mono text-xs font-bold uppercase tracking-[0.15em] text-emerald-100">{title}</p><p className="mt-2 text-lg font-bold leading-6">{detail}</p></div>
+  return <div><p className="font-mono text-xs font-bold uppercase tracking-[0.15em] text-emerald-100">{title}</p><p className="mt-2 text-lg font-bold leading-6">{renderCountable(detail)}</p></div>
+}
+
+// Wrap the FIRST integer of a terms value in a count-up hook WITHOUT altering
+// the visible copy (textContent round-trips byte-for-byte). The span keeps the
+// real number as its text, so with the gate off (mobile / reduced-motion /
+// no-JS) the correct value shows; the desktop scene resets it to 0 and counts
+// up on scrub. If there is no integer, the string renders unchanged.
+function renderCountable(detail: string): ReactNode {
+  const match = detail.match(/\d+/)
+  if (!match) return detail
+  const number = match[0]
+  const start = match.index ?? 0
+  return (
+    <>
+      {detail.slice(0, start)}
+      <span data-count-to={number}>{number}</span>
+      {detail.slice(start + number.length)}
+    </>
+  )
 }
 
 function Boundary({ title, items, accent = false }: { title: string; items: string[]; accent?: boolean }) {

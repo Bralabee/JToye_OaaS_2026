@@ -3,6 +3,8 @@
 import { Suspense, use, useEffect, useState, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
+import { m } from "framer-motion"
+import { springPop } from "@/lib/motion"
 import {
   CheckCircle2, Store, Copy, ArrowLeft, Clock,
   ChefHat, Package, CircleDot, XCircle, Loader2
@@ -208,14 +210,21 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               const isActive = i === currentStep
               const isComplete = i < currentStep
               const isPending = i > currentStep
+              const isReached = isComplete || isActive
               const Icon = step.icon
 
               return (
                 <div key={step.key} className="flex gap-3">
                   {/* Vertical line + circle */}
                   <div className="flex flex-col items-center">
-                    <div
-                      className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all ${
+                    {/* Keyed on reach so a newly reached step remounts and
+                        springs in; the active dot pulses finitely. */}
+                    <m.div
+                      key={`${step.key}-${isReached}`}
+                      initial={{ scale: 0.6 }}
+                      animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
+                      transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
+                      className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors ${
                         isComplete
                           ? "bg-emerald-500 text-white"
                           : isActive
@@ -224,13 +233,19 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                       }`}
                     >
                       <Icon className="h-4 w-4" />
-                    </div>
+                    </m.div>
                     {i < STEPS.length - 1 && (
-                      <div
-                        className={`w-0.5 h-8 ${
-                          isComplete ? "bg-emerald-500" : "bg-slate-200"
-                        }`}
-                      />
+                      <div className="w-0.5 h-8 bg-slate-200 overflow-hidden">
+                        {/* Emerald fill grows top-down when this segment's
+                            step is complete */}
+                        <m.div
+                          className="h-full w-full bg-emerald-500"
+                          style={{ transformOrigin: "top" }}
+                          initial={false}
+                          animate={{ scaleY: isComplete ? 1 : 0 }}
+                          transition={{ duration: 0.5, ease: "easeOut" }}
+                        />
+                      </div>
                     )}
                   </div>
 

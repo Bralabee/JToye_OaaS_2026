@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
@@ -218,9 +219,10 @@ export function ProductDetailModal({
             {product.ingredientsText && (
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">Ingredients</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  {product.ingredientsText}
-                </p>
+                <IngredientText
+                  text={product.ingredientsText}
+                  className="block text-sm text-slate-500 leading-relaxed"
+                />
               </div>
             )}
 
@@ -259,7 +261,7 @@ export function ProductDetailModal({
             ) : quantity === 0 ? (
               <button
                 onClick={onAdd}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 transition-all active:scale-[0.98]"
               >
                 <ShoppingBag className="h-5 w-5" />
                 Add to cart &middot; {formatPrice(product.pricePennies)}
@@ -270,14 +272,14 @@ export function ProductDetailModal({
                 <div className="flex items-center gap-3">
                   <button
                     onClick={onDecrement}
-                    className="h-10 w-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                    className="h-10 w-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all active:scale-95"
                   >
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="text-lg font-bold w-8 text-center">{quantity}</span>
                   <button
                     onClick={onIncrement}
-                    className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition-colors"
+                    className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition-all active:scale-95"
                   >
                     <Plus className="h-4 w-4" />
                   </button>

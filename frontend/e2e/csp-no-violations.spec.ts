@@ -67,6 +67,26 @@ test("homepage emits CSP header and triggers no violations", async ({ page }) =>
   expect(violations, `CSP violations: ${violations.join("\n")}`).toEqual([])
 })
 
+test("for-operators route emits CSP header and triggers no violations (GSAP bundled)", async ({ page }) => {
+  // Proves the bundled GSAP marketing scenes (motion-D) fire zero CSP
+  // violations against a prod build — no CDN reference, no 'unsafe-eval' /
+  // 'unsafe-inline' added to script-src under #89 strict-dynamic.
+  const violations = collectCspViolations(page)
+  const response = await page.goto(`${BASE}/for-operators`)
+  expect(response).not.toBeNull()
+  expect(response!.ok()).toBe(true)
+
+  const headers = response!.headers()
+  const csp = headers["content-security-policy"] || headers["content-security-policy-report-only"]
+  expect(csp).toBeDefined()
+  expect(csp).toContain("default-src 'self'")
+  expect(csp).toContain("frame-ancestors 'none'")
+
+  await page.waitForLoadState("networkidle")
+  await page.waitForTimeout(2000)
+  expect(violations, `CSP violations: ${violations.join("\n")}`).toEqual([])
+})
+
 test("storefront /shop/[slug] triggers no CSP violations", async ({ page }) => {
   const violations = collectCspViolations(page)
   const response = await page.goto(`${BASE}/shop/${SHOP_SLUG}`)

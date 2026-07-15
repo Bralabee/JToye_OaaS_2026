@@ -503,6 +503,28 @@
     "requiredActions" : [ ],
     "notBefore" : 0,
     "groups" : [ ]
+  }, {
+    "id" : "ad3f1b02-b0b0-4c37-9d96-000000000b02",
+    "username" : "admin-user-b",
+    "firstName" : "Admin",
+    "lastName" : "B",
+    "email" : "adminb@tenantb.com",
+    "emailVerified" : true,
+    "attributes" : {
+      "tenant_id" : [ "00000000-0000-0000-0000-000000000002" ]
+    },
+    "enabled" : true,
+    "totp" : false,
+    "credentials" : [ {
+      "type" : "password",
+      "value" : "${KC_SEED_USER_PASSWORD}",
+      "temporary" : false
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "admin" ],
+    "notBefore" : 0,
+    "groups" : [ ]
   } ],
   "scopeMappings" : [ {
     "clientScope" : "offline_access",

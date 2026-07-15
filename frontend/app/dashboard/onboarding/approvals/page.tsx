@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -326,7 +326,7 @@ export default function OnboardingApprovalsPage() {
             const summary = gateSummary(app)
             const allGreen = summary.green === summary.total && summary.total > 0
             return (
-              <motion.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <m.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <Card>
                   <CardHeader className="pb-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -387,7 +387,7 @@ export default function OnboardingApprovalsPage() {
                     </div>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </m.div>
             )
           })}
         </section>
@@ -539,7 +539,7 @@ export default function OnboardingApprovalsPage() {
 
 function Header() {
   return (
-    <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+    <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="flex items-center gap-3">
         <h1 className="text-4xl font-semibold text-slate-900">Approvals</h1>
       </div>
@@ -547,7 +547,88 @@ function Header() {
         Onboarding applications whose checks passed and now need a human decision. Marketplace
         vendors always require approval before they can go live.
       </p>
-    </motion.div>
+    </m.div>
+  )
+}
+
+// --- Review-pending card ------------------------------------------------------
+// A VERIFYING application whose gate chain parked on a MANUAL_REVIEW (or FAILED)
+// gate. Reuses the same gate vocabulary as the approve/reject queue and offers a
+// per-gate "Resolve" control that opens the gate-resolve dialog.
+
+function ReviewCard({
+  app,
+  onResolve,
+  disabled,
+}: {
+  app: AdminOnboardingDto
+  onResolve: (gate: GateDto) => void
+  disabled: boolean
+}) {
+  const summary = gateSummary(app)
+  const resolvable = app.gates.filter(
+    (g) => g.status === "MANUAL_REVIEW" || g.status === "FAILED"
+  )
+
+  return (
+    <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <CardTitle className="text-lg">{app.shopName ?? "Unnamed shop"}</CardTitle>
+            <Badge
+              className={`${MODEL_META[app.model]?.badge ?? GATE_STATUS_FALLBACK.badge} pointer-events-none`}
+            >
+              {MODEL_META[app.model]?.label ?? app.model}
+            </Badge>
+          </div>
+          <CardDescription>
+            {app.submittedAt
+              ? `Submitted ${formatDistanceToNow(new Date(app.submittedAt), { addSuffix: true })}`
+              : "Submission date unknown"}
+            {app.companyNumber ? ` · Company no. ${app.companyNumber}` : " · Sole trader"}
+            {" · "}
+            <span className="font-medium text-amber-700">
+              {summary.green}/{summary.total} required checks green
+            </span>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {app.gates.map((gate) => {
+              const typeMeta = GATE_META[gate.gateType] ?? GATE_FALLBACK
+              const statusMeta = GATE_STATUS_META[gate.status] ?? GATE_STATUS_FALLBACK
+              const StatusIcon = statusMeta.icon
+              return (
+                <Badge
+                  key={gate.gateType}
+                  className={`${statusMeta.badge} pointer-events-none`}
+                  title={gate.reason ?? undefined}
+                >
+                  <StatusIcon className="mr-1 h-3 w-3" />
+                  {typeMeta.label}: {statusMeta.label}
+                </Badge>
+              )
+            })}
+          </div>
+          {resolvable.length > 0 && (
+            <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+              {resolvable.map((gate) => (
+                <Button
+                  key={gate.gateType}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onResolve(gate)}
+                  disabled={disabled}
+                >
+                  Resolve {GATE_META[gate.gateType]?.label ?? "check"}
+                </Button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </m.div>
   )
 }
 

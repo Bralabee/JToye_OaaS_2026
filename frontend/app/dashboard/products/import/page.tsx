@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
@@ -34,7 +34,7 @@ export default function ImportProductsPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+      <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4">
         <Link href="/dashboard/products" className="text-slate-400 hover:text-slate-600">
           <ArrowLeft className="h-5 w-5" />
@@ -43,7 +43,7 @@ export default function ImportProductsPage() {
           <h1 className="text-3xl font-bold text-slate-900">Import Products</h1>
           <p className="mt-1 text-slate-600">Add products in bulk — CSV spreadsheet or photo scan</p>
         </div>
-      </motion.div>
+      </m.div>
 
       {/* Tab selector */}
       <div className="flex gap-2 border-b border-slate-200">

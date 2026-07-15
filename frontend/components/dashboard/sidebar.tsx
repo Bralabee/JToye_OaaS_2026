@@ -65,7 +65,7 @@ export function Sidebar() {
     <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2 border-b border-slate-800 px-6">
-        <Store className="h-8 w-8 text-blue-400" />
+        <Store className="h-8 w-8 text-orange-500" />
         <div className="flex flex-col">
           <span className="font-bold text-lg">J&apos;Toye</span>
           <span className="text-xs text-slate-400">OaaS Platform</span>
@@ -76,7 +76,7 @@ export function Sidebar() {
       {session?.user && (
         <div className="border-b border-slate-800 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center font-semibold">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center font-semibold">
               {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
             </div>
             <div className="flex-1 min-w-0">
@@ -98,7 +98,7 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all hover:bg-slate-800",
                 isActive
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-500/50"
+                  ? "bg-orange-600 text-white shadow-lg shadow-orange-500/40"
                   : "text-slate-300 hover:text-white"
               )}
             >

@@ -51,13 +51,17 @@
 
 import { test, expect, type Page } from "@playwright/test"
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100"
+// Canonical full-stack compose serves the frontend on :3000 (RULE 0); override with
+// PLAYWRIGHT_BASE_URL for the alternate 3100 dev mapping.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000"
 // The dev-realm vendor `admin-user` maps to tenant 00000000-…-0001 (curated demo data)
 // AND carries the `admin` realm role — the same session can both drive the vendor
-// journey and resolve gates. The password is deployment-specific: supply via
-// E2E_VENDOR_PASSWORD (never committed).
+// journey and resolve gates. The password is deployment-specific and never committed:
+// supply E2E_VENDOR_PASSWORD, else fall back to the KC_SEED_USER_PASSWORD the compose
+// stack already renders the realm with (source .env before running). The stale
+// `password123` literal was removed — it fails against the re-imported realm.
 const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
+const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? process.env.KC_SEED_USER_PASSWORD ?? ""
 
 // The curated DemoDataSeeder shop we prefer (full allergen data -> ALLERGEN gate PASSES).
 const PREFERRED_SHOP = /Mama Ade/i
@@ -113,6 +117,11 @@ test.describe("Phase 21 — blocked onboarding journey (ONBD-05)", () => {
       testInfo.project.name !== "desktop",
       "single-tenant onboarding journey pinned to the desktop project (UNIQUE(tenant_id) — no cross-worker race)"
     )
+    // QA ONB-7: no committed password default — require a real credential.
+    test.skip(
+      !VENDOR_PASSWORD,
+      "No vendor password — set E2E_VENDOR_PASSWORD or source .env (KC_SEED_USER_PASSWORD)"
+    )
 
     await vendorLogin(page)
 
@@ -125,6 +134,23 @@ test.describe("Phase 21 — blocked onboarding journey (ONBD-05)", () => {
     // Wait until the onboarding surface has resolved to either the create form or the
     // status view (the initial spinner clears once GET /me resolves).
     await expect(createHeading.or(statusHeading).first()).toBeVisible({ timeout: 20_000 })
+
+    // QA ONB-7: this blocked-journey spec needs a tenant whose onboarding can still reach
+    // the in-review state. If the target tenant is already LIVE/terminal (e.g. a used demo
+    // tenant, as can happen locally), skip rather than fail the in-review assertion or
+    // mutate the live demo. CI runs against a fresh DemoDataSeeder where the tenant is not
+    // yet onboarded, so the full journey still executes there.
+    if (await isVisible(page, statusHeading)) {
+      const liveOrTerminal = page.getByText(
+        /Your storefront is live|application has been withdrawn|storefront is suspended|wasn't approved/i
+      )
+      if ((await liveOrTerminal.count()) > 0 && (await isVisible(page, liveOrTerminal))) {
+        test.skip(
+          true,
+          "Target tenant onboarding is already LIVE/terminal — this blocked-journey spec needs a fresh/disposable tenant. Skipping to avoid failing against or mutating the live demo."
+        )
+      }
+    }
 
     // ── Step 1: reach a blocked/DRAFT onboarding carrying a BAD company number. ──────
     // vendor_onboarding is UNIQUE(tenant_id): create only when none exists yet (a

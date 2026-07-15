@@ -1,7 +1,11 @@
 "use client"
 
+// ⚠ MERGE NOTE: the app runs `<LazyMotion strict>` — full `motion.*` components
+// THROW at runtime; only `m.*` (import { m } from "framer-motion") is allowed.
+// jest mocks framer-motion so it won't catch a stray `motion.*` — verify this
+// page in a browser after resolving. Recipe: docs/integration/motion-foundation-integration.md
 import { useCallback, useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
@@ -425,13 +429,13 @@ export default function OnboardingPage() {
   if (!onboarding) {
     return (
       <div className="space-y-6">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+        <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-4xl font-semibold text-slate-900">Take your shop live</h1>
           <p className="mt-2 text-sm text-slate-600">
             Run our free compliance checks — business registration, food hygiene rating, and
             allergen data — then publish your storefront. It takes a couple of minutes.
           </p>
-        </motion.div>
+        </m.div>
 
         {shops.length === 0 ? (
           <Card>
@@ -571,13 +575,13 @@ export default function OnboardingPage() {
   return (
     <div className="space-y-6">
       {/* Header + overall-state badge (a focal point) */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+      <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">
           <h1 className="text-4xl font-semibold text-slate-900">Go live</h1>
           <Badge className={`${stateMeta.badge} pointer-events-none`}>{badgeLabel}</Badge>
         </div>
         <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
-      </motion.div>
+      </m.div>
 
       {/* Rejection / suspension (ONBD-05): the actual recorded reason + a
           config-injected support channel — replaces the bare "Contact support". */}
@@ -740,7 +744,7 @@ export default function OnboardingPage() {
           )}
           {onboarding.status === "WITHDRAWN" && (
             <p className="text-sm text-slate-600">
-              This application has been withdrawn. Starting again begins a fresh application.
+              This application has been withdrawn. Contact support if you&apos;d like to onboard again.
             </p>
           )}
         </div>
@@ -787,7 +791,7 @@ export default function OnboardingPage() {
             <DialogTitle>Withdraw your application?</DialogTitle>
             <DialogDescription>
               This cancels your onboarding and can&apos;t be undone — your storefront won&apos;t go
-              live. You can always start a fresh application later.
+              live. To onboard again afterwards, you&apos;ll need to contact support.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

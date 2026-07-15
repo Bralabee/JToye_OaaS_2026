@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -220,7 +220,7 @@ export default function CustomersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center justify-between"
@@ -235,10 +235,10 @@ export default function CustomersPage() {
           <Plus className="h-4 w-4" />
           Add Customer
         </Button>
-      </motion.div>
+      </m.div>
 
       {/* Customers Table */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -283,7 +283,7 @@ export default function CustomersPage() {
                         customer.allergenRestrictions
                       )
                       return (
-                        <motion.tr
+                        <m.tr
                           key={customer.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -375,7 +375,7 @@ export default function CustomersPage() {
                               </Button>
                             </div>
                           </TableCell>
-                        </motion.tr>
+                        </m.tr>
                       )
                     })}
                   </TableBody>
@@ -391,7 +391,7 @@ export default function CustomersPage() {
             />
           </CardContent>
         </Card>
-      </motion.div>
+      </m.div>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
