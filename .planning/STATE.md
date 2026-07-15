@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 Phase: 23
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-15
+Last activity: 2026-07-15 - Completed quick task 260715-fcq (docs reconciliation to v2.3 / 1401 / V56)
 
 Progress: [██████████] 100%
 
@@ -128,6 +128,12 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
 - **Phase 23 vision provider**: content-relevance gate (IMG-03 stage 6) needs Ollama (host :11434 conflict) or a hosted model — ships behind an advisory-default flag; the pipeline is not blocked on it.
 - **Phase 26 netpol caveat**: minikube's default CNI does NOT enforce NetworkPolicies — local is not proof for netpol behaviour (needs policy-enforcing CNI or AKS).
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260715-fcq | Reconcile stale docs to current state (milestone identity → v2.3; test count 1257→1401; schema V51→V56; incl. AGENTS.md mirror) | 2026-07-15 | aed0929 | [260715-fcq-reconcile-stale-project-docs-to-current-](./quick/260715-fcq-reconcile-stale-project-docs-to-current-/) |
 
 ## Session Continuity
 
