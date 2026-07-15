@@ -57,10 +57,25 @@ test.describe("Public unsubscribe flow (COMMS-03)", () => {
     await expect(page.getByTestId("mobile-tab-bar")).toHaveCount(0)
     await expect(page.getByRole("button", { name: /sign in/i })).toHaveCount(0)
 
-    // The token/email must never be printed into the visible body (PII-safe).
-    const body = (await page.locator("body").textContent()) || ""
-    expect(body).not.toContain("VALID-e2e-token")
-    expect(body).not.toContain(EMAIL)
+    // The token/email must never be printed into the VISIBLE body (PII-safe).
+    // Use innerText (rendered visible text) — NOT textContent, which also
+    // captures the App Router RSC hydration <script> that mirrors the URL for
+    // router state (the token is in the URL the recipient clicked either way;
+    // the contract is that we never RENDER it into the page or its meta).
+    const visible = (await page.locator("main").innerText()) || ""
+    expect(visible).not.toContain("VALID-e2e-token")
+    expect(visible).not.toContain(EMAIL)
+
+    // And the token/email must not be in any meta tag (title/description/robots).
+    const metas = await page.locator("head meta").allTextContents()
+    const headHtml = (await page.locator("head").innerHTML()) + metas.join(" ")
+    expect(headHtml).not.toContain("VALID-e2e-token")
+    expect(headHtml).not.toContain(EMAIL)
+    // Confirm the noindex directive is present (SEO/privacy).
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      /noindex/i
+    )
   })
 
   test("a tampered token shows the invalid state", async ({ page }) => {
