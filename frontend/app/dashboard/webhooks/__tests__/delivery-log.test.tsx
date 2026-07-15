@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { webcrypto } from "node:crypto"
 import WebhookDetailPage from "../[id]/page"
 import apiClient from "@/lib/api-client"
 
@@ -99,8 +100,6 @@ beforeAll(() => {
   window.HTMLElement.prototype.releasePointerCapture = jest.fn()
   // Secure random for makeIdempotencyKey (replay).
   if (!globalThis.crypto || typeof globalThis.crypto.randomUUID !== "function") {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { webcrypto } = require("crypto")
     Object.defineProperty(globalThis, "crypto", {
       value: webcrypto,
       configurable: true,
