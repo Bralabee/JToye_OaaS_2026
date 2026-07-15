@@ -79,6 +79,50 @@ class EmailTemplateRendererTest {
     }
 
     @Test
+    @DisplayName("WR-02 — payment.failed renders failure copy, NOT the 'received/thank you' success copy")
+    void paymentFailedRendersFailureCopy() {
+        Map<String, Object> model = Map.of(
+                "orderNumber", "ORD-77", "amount", "£42.50", "paymentType", "FAILED");
+
+        for (RecipientRole role : RecipientRole.values()) {
+            RenderedEmail email = renderer.render("payment.failed", role, model, UNSUB);
+
+            String html = email.html().toLowerCase();
+            String text = email.text().toLowerCase();
+            assertFalse(html.contains("thank you"),
+                    "failed-payment html must NOT thank the recipient (" + role + ")");
+            assertFalse(html.contains("received"),
+                    "failed-payment html must NOT claim payment was received (" + role + ")");
+            assertFalse(text.contains("thank you"),
+                    "failed-payment text must NOT thank the recipient (" + role + ")");
+            assertFalse(text.contains("received"),
+                    "failed-payment text must NOT claim payment was received (" + role + ")");
+            assertTrue(html.contains("fail"),
+                    "failed-payment html must signal failure (" + role + ")");
+            assertTrue(text.contains("fail"),
+                    "failed-payment text must signal failure (" + role + ")");
+            assertTrue(email.html().contains("ORD-77"), "failed-payment html carries the order number");
+        }
+    }
+
+    @Test
+    @DisplayName("WR-02 — payment.succeeded still renders the 'received / thank you' success copy")
+    void paymentSucceededStillRendersSuccessCopy() {
+        Map<String, Object> model = Map.of(
+                "orderNumber", "ORD-88", "amount", "£42.50", "paymentType", "SUCCEEDED");
+
+        RenderedEmail customer = renderer.render("payment.succeeded", RecipientRole.CUSTOMER, model, UNSUB);
+        assertTrue(customer.html().toLowerCase().contains("received"),
+                "successful-payment customer html confirms receipt");
+        assertTrue(customer.html().contains("Thank you"),
+                "successful-payment customer html thanks the customer");
+
+        RenderedEmail vendor = renderer.render("payment.succeeded", RecipientRole.VENDOR, model, UNSUB);
+        assertTrue(vendor.html().toLowerCase().contains("received"),
+                "successful-payment vendor html confirms receipt");
+    }
+
+    @Test
     @DisplayName("render — a null unsubscribe URL never produces a broken template")
     void nullUnsubscribeIsSafe() {
         RenderedEmail email = assertDoesNotThrow(() ->

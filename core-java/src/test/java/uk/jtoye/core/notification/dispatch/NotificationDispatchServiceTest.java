@@ -108,6 +108,11 @@ class NotificationDispatchServiceTest {
                 PaymentEvent.PaymentEventType.SUCCEEDED, null, OffsetDateTime.now());
     }
 
+    private PaymentEvent paymentFailedEvent() {
+        return new PaymentEvent(ORDER_ID, TENANT, "ORD-1", "pi_1", 1200, "GBP",
+                PaymentEvent.PaymentEventType.FAILED, "card_declined", OffsetDateTime.now());
+    }
+
     @Test
     @DisplayName("order.state.* dispatches to the VENDOR contact_email ONLY (no customer — no duplicate with the legacy path)")
     void orderStateEvent_dispatchesToVendorOnly() {
@@ -159,6 +164,39 @@ class NotificationDispatchServiceTest {
         verify(emailChannel, times(2)).deliver(cap.capture());
         assertThat(cap.getAllValues()).extracting(NotificationMessage::recipient)
                 .containsExactlyInAnyOrder(CUSTOMER_EMAIL, VENDOR_EMAIL);
+    }
+
+    @Test
+    @DisplayName("WR-02 — payment.failed dispatch renders failure copy (modelFor plumbs the payment type through)")
+    void paymentFailed_rendersFailureCopy_notSuccess() {
+        when(consentGate.allows(any(), any(), any())).thenReturn(true);
+
+        service.dispatch("payment.failed", TENANT, paymentFailedEvent());
+
+        ArgumentCaptor<NotificationMessage> cap = ArgumentCaptor.forClass(NotificationMessage.class);
+        verify(emailChannel, times(2)).deliver(cap.capture());
+        assertThat(cap.getAllValues())
+                .as("no failed-payment email may thank the recipient or claim receipt")
+                .allSatisfy(m -> {
+                    String html = m.email().html().toLowerCase();
+                    assertThat(html).doesNotContain("thank you");
+                    assertThat(html).doesNotContain("received");
+                    assertThat(html).contains("fail");
+                });
+    }
+
+    @Test
+    @DisplayName("WR-02 — payment.succeeded dispatch still renders the success copy")
+    void paymentSucceeded_rendersSuccessCopy() {
+        when(consentGate.allows(any(), any(), any())).thenReturn(true);
+
+        service.dispatch("payment.succeeded", TENANT, paymentEvent());
+
+        ArgumentCaptor<NotificationMessage> cap = ArgumentCaptor.forClass(NotificationMessage.class);
+        verify(emailChannel, times(2)).deliver(cap.capture());
+        assertThat(cap.getAllValues())
+                .as("successful-payment emails confirm receipt")
+                .allSatisfy(m -> assertThat(m.email().html().toLowerCase()).contains("received"));
     }
 
     @Test
