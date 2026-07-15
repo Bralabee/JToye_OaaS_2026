@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Completed 22-04-PLAN.md
-last_updated: "2026-07-15T04:14:20.816Z"
+last_updated: "2026-07-15T04:36:12.898Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
   percent: 17
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 22 (notifications-comms) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-07-15
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 92%
 
 ## Milestone v2.3 Phase Map
 
@@ -76,6 +76,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 22 P03 | 50m | 3 tasks | 13 files |
 | Phase 22 P04 | 16min | 3 tasks | 11 files |
 | Phase 22 P05 | 32min | 3 tasks | 15 files |
+| Phase 22 P06 | 12min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 22]: 22-04: order-audience wired additively — the new order.notifications path is VENDOR-ONLY so the untouched legacy customer path is not duplicated (COMMS-02 = customer + vendor, no double-email; Pitfall 5 path A)
 - [Phase 22]: 22-04: bound the Phase-21 dead onboarding.events exchange + a refund.notifications queue on order.refunded + a second payment.notifications queue — each its OWN durable queue (never steals from an incumbent consumer); PaymentEventOutboxFlusher untouched (Pitfall 3, consumers only)
 - [Phase 22]: 22-04: first-deploy onboarding-stall backlog re-delivery ACCEPTED with no cutoff (RESEARCH A5) — genuine unresolved stalls, ConsentGate still applies
+- [Phase ?]: 22-06: webhook management UI in lib/webhooks-api.ts wrapping the default apiClient (api-client.ts untouched); grouped event-type checkboxes map one-per-backend-enum-family; once-only SecretRevealDialog blocks backdrop/Esc/X; cards below sm + Table at sm+ (375px); replay carries a secure Idempotency-Key
 
 ### Pending Todos
 
@@ -125,6 +127,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T04:14:09.672Z
+Last session: 2026-07-15T04:35:20.414Z
 Stopped at: Completed 22-04-PLAN.md
 Resume file: None
