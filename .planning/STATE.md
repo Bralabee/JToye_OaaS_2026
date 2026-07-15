@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 22 UI-SPEC approved
-last_updated: "2026-07-15T01:51:17.594Z"
-last_activity: 2026-07-15 -- Phase 22 planning complete
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-07-15T02:19:15.896Z"
+last_activity: 2026-07-15
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 22 — Notifications & Comms (SPEC written 2026-07-14; ready to discuss)
+**Current focus:** Phase 22 — notifications-comms
 
 ## Current Position
 
-Phase: 22
-Plan: Not started
+Phase: 22 (notifications-comms) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-07-15 -- Phase 22 planning complete
+Last activity: 2026-07-15
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Milestone v2.3 Phase Map
 
@@ -71,6 +71,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 21 P03 | 21min | 3 tasks | 8 files |
 | Phase 21 P04 | 18min | 3 tasks | 7 files |
 | Phase 21 P05 | 45min | 3 tasks | 2 files |
+| Phase 22 P01 | 11min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21]: 21-03: admin review queue is a NEW GET /onboarding/admin/reviews (VERIFYING + MANUAL_REVIEW) — the /pending approve/reject contract is untouched (Incremental Betterment, A4). ONBD-03/05 NOT marked complete: the user-visible vendor-UI halves land in 21-04.
 - [Phase ?]: 21-04: onboarding support channel + review SLA config-injected via frontend NEXT_PUBLIC_* (A1); resolveSupportChannel keeps mailto out of the component (GLOBAL_RULE_6)
 - [Phase ?]: 21-04: admin review-pending queue is a separate section (parallel GET /reviews) with a PASS/WAIVE/FAIL gate-resolve dialog; approve/reject queue preserved (A4)
+- [Phase 22]: 22-01: Order-email path frozen (Pitfall 5 path A) — EmailNotificationService + its SimpleMailMessage test untouched; all NEW events ride the MimeMessageHelper multipart EmailChannel. — Guarantees zero regression to the one working channel (Incremental Betterment).
+- [Phase 22]: 22-01: NotificationChannel seam owns NO consent category (22-02 owns NotificationCategory); RecipientRole {CUSTOMER,VENDOR} is the audience axis. Keeps 22-01/02/03 parallel-safe. — Decoupled contract so Wave-1 plans do not share a type.
+- [Phase 22]: 22-01: Marked only COMMS-07 complete; COMMS-02 left pending (shared with 22-04's dispatch, which delivers its Mailhog/recipient acceptance). — Avoids a false-green — COMMS-02 acceptance is unmet until 22-04.
 
 ### Pending Todos
 
@@ -110,6 +114,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T00:41:05.921Z
-Stopped at: Phase 22 UI-SPEC approved
-Resume file: .planning/phases/22-notifications-comms/22-UI-SPEC.md
+Last session: 2026-07-15T02:19:15.370Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None
