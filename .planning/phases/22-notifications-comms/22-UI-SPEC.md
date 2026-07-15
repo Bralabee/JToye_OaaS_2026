@@ -42,25 +42,23 @@ created: 2026-07-15
 
 ## Spacing Scale
 
-Canonical 4-based scale (matches Tailwind + existing dashboard pages):
+Canonical 4-based scale (matches Tailwind + existing dashboard pages). The declared design-token scale is **exactly `{4, 8, 16, 24, 32, 48, 64}`** — all spacing this contract authors uses only these values:
 
 | Token | Value | Usage (existing precedent) |
 |-------|-------|-----------|
 | xs | 4px | `gap-1` icon gaps, `space-y-1` nav stacks |
-| sm | 8px | `gap-2`, `py-2` compact spacing, button icon gaps |
-| md | 16px | `p-4` card/page padding, `space-y-4` form fields |
-| lg | 24px | `space-y-6` page section stacks, `gap-6` footer |
-| xl | 32px | `sm:p-8` desktop page padding |
-| 2xl | 48px | `py-12` empty-state / public-page vertical rhythm |
+| sm | 8px | `gap-2`, `py-2` compact spacing, button icon gaps, label→input gap (`space-y-2`) |
+| md | 16px | `p-4` card / page / dialog-row padding, `gap-4`, `space-y-4` form fields |
+| lg | 24px | `space-y-6` page section stacks, `p-6` public unsubscribe card, `gap-6` footer |
+| xl | 32px | `sm:p-8` desktop page padding, `py-8` public-page vertical rhythm |
+| 2xl | 48px | `sm:py-12` empty-state / public-page vertical rhythm |
 | 3xl | 64px | `h-16` sidebar logo row / page-level breaks |
 
-**Exceptions (inherited from shadcn `new-york` primitives + Tailwind half-steps — do NOT introduce new off-scale values):**
-- `2px` (`gap-0.5`, `py-0.5`) — badge internals (existing `badge.tsx`).
-- `6px` (`space-y-1.5`) — label→input gap in forms (existing `RefundDialog`, `track`).
-- `10px` / `12px` (`py-2.5`, `p-3`, `gap-3`) — nav item padding, dialog list rows.
-- `20px` (`p-5`) — public card padding (existing `track` page).
-- **Touch target `44px` (`min-h-11`)** — mandatory on ALL mobile controls (existing `mobile-tab-bar`, `More` drawer rows).
-- Control heights: `h-9` (36px, `size="sm"`), `h-10` (40px, default), `h-11` (44px, `lg`) — from `button.tsx`.
+Authored equivalents (so the executor never reaches for an off-scale value): dialog list rows `p-4` / `gap-4`; nav item padding `py-2`; public unsubscribe card `p-6`; auto-pause alert `p-4`; form field gaps `space-y-2`.
+
+**Out-of-contract (fixed internals of already-vendored shadcn primitives — NOT spacing tokens this contract declares, and not editable here):** `badge.tsx` ships `px-2.5 py-0.5`; `button.tsx` height tiers are `h-9` / `h-10` / `h-11`. These are baked into the reused primitives and are excluded from the declared scale above.
+
+**Accessibility note (a hit-area requirement, NOT a spacing token):** all mobile interactive controls meet a **44px minimum touch target** (`min-h-11`), matching `mobile-tab-bar`.
 
 ---
 
@@ -70,12 +68,12 @@ Faithful to the shipping dashboard scale (Inter). Mobile-first: page title scale
 
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
-| Display (page H1) | 24px mobile → 30px `sm:` (`text-2xl sm:text-3xl`) | 700 bold | 1.2 (`leading-tight`) | "Webhooks", "You're unsubscribed" |
+| Display (page H1) | 24px mobile → 30px `sm:` (`text-2xl sm:text-3xl`) | 600 semibold | 1.2 (`leading-tight`) | "Webhooks", "You're unsubscribed" |
 | Heading (card / section / dialog title) | 18px (`text-lg`) | 600 semibold | 1.3 | CardTitle, DialogTitle, section headers |
 | Body | 14px (`text-sm`) | 400 regular | 1.5 | Table cells, dialog body, descriptions, buttons |
-| Label / meta | 12px (`text-xs`) | 500 medium | 1.4 | Field labels, timestamps, HTTP codes, badge text, helper copy |
+| Label / meta | 12px (`text-xs`) | 400 regular | 1.4 | Field labels, timestamps, HTTP codes, badge text, helper copy |
 
-**Weight contract:** primary text weights are **regular 400** (body) + **semibold 600** (headings/emphasis/badges). **Bold 700** is reserved for the page-title Display role only; **medium 500** for labels/meta. No other weights.
+**Weight contract:** exactly two weights — **regular 400** (body, table cells, labels, meta, timestamps, helper copy) and **semibold 600** (page title, section/card/dialog headings, badge text, emphasis). `badge.tsx`'s built-in `font-semibold` maps to the 600 weight, so status badges stay within the two-weight contract.
 
 **Mono:** HTTP status codes, delivery IDs, endpoint URLs, and signing secrets render in `font-mono text-xs` (matches order-number cells in `orders/page.tsx`).
 
@@ -142,7 +140,7 @@ Primary CTA (phase) = **"Add endpoint"** (register a webhook subscription). Voic
 | Auto-pause explanation (inline amber alert) | Auto-paused after {N} consecutive failures. We stopped sending to protect your endpoint. Fix the endpoint, then resume delivery. |
 | Auto-pause last-error line | Last error: {reason} · HTTP {code} · {relative time} |
 | Resume action | Resume delivery |
-| Pause action | Pause |
+| Pause action | Pause delivery |
 | Revoke (title, destructive) | Revoke this endpoint? |
 | Revoke (body) | Revoking permanently stops all deliveries to {url} and can't be undone. Delivery history is kept for {retentionDays} days. |
 | Revoke confirm (destructive) | Revoke endpoint |
@@ -175,6 +173,7 @@ Primary CTA (phase) = **"Add endpoint"** (register a webhook subscription). Voic
 
 ### Surface A — Subscriptions list (`/dashboard/webhooks`)
 
+- **Primary visual anchor:** the header pairing of the page H1 "Webhooks" + the orange **Add endpoint** CTA is the focal point on first load; in a populated list, each row's **status badge** is the eye's second anchor. Everything else stays neutral slate so the accent + status colors carry the hierarchy.
 - Header: `flex-col sm:flex-row items-start sm:items-center justify-between` — H1 "Webhooks" + subtitle "Send signed events to your own systems." + primary **Add endpoint** button (full-width on mobile, auto on `sm+`).
 - Body: `Card` wrapping the list.
   - **`sm+` (≥640px):** shadcn `Table` — columns: Endpoint (URL, `font-mono text-xs` truncated) · Events (family count, e.g. "Orders +2") · Status (badge) · Last delivery (relative time) · Actions (right-aligned: View, Pause/Resume, ⋯ dropdown → Rotate secret / Revoke).
@@ -187,7 +186,7 @@ Primary CTA (phase) = **"Add endpoint"** (register a webhook subscription). Voic
 
 - Back link to `/dashboard/webhooks` (`ArrowLeft`, matches order detail).
 - Summary card: URL, status badge, event types (chips), created date, **Rotate secret** / **Pause·Resume** / **Revoke** actions.
-- If AUTO-PAUSED: an inline **amber alert** (`bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-3`, `role="status"`) with the auto-pause explanation + last-error line + **Resume delivery** button.
+- If AUTO-PAUSED: an inline **amber alert** (`bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-4`, `role="status"`) with the auto-pause explanation + last-error line + **Resume delivery** button.
 - Delivery-log browser card:
   - Filters row: two `Select`s — **Event type** (All + the endpoint's selected types) and **Status** (All / Pending / Delivered / Retrying / Failed). Stack full-width on mobile (`flex-col`), inline `sm:flex-row` `sm:w-[180px]` each — mirrors the `orders` filter Select (`w-[160px]`).
   - **`sm+`:** `Table` — Event type · Status (badge, may show "Delivered" + `font-mono` HTTP code) · Attempts (count) · Replay tag (if a replay) · When (relative) · Action (**Replay**).
@@ -198,7 +197,7 @@ Primary CTA (phase) = **"Add endpoint"** (register a webhook subscription). Voic
 ### Surface C — Public unsubscribe (`/unsubscribe`, NO auth)
 
 - **New public route** `frontend/app/unsubscribe/page.tsx` (Suspense-wrapped client component reading `?tenant=&email=&category=&token=` from `useSearchParams`, exactly like `track/page.tsx`). Uses `publicApiClient` to POST the token to the backend public endpoint; renders the returned state.
-- Layout: single centered column `mx-auto max-w-lg px-4 py-8 sm:py-12` (identical to `track`). Brand row: `bg-orange-500` "J" tile + "J'Toye" wordmark (from `shop/layout.tsx`). One `rounded-xl bg-white border border-slate-100 p-5 shadow-sm` card holding the state.
+- Layout: single centered column `mx-auto max-w-lg px-4 py-8 sm:py-12` (identical to `track`). Brand row: `bg-orange-500` "J" tile + "J'Toye" wordmark (from `shop/layout.tsx`). One `rounded-xl bg-white border border-slate-100 p-6 shadow-sm` card holding the state.
 - Four states (loading / success / already-unsubscribed / invalid token) per Copywriting table — each a single `h1` + body paragraph + a state icon (`BellOff` success, `CheckCircle2` already-done, `AlertTriangle` invalid). No dashboard chrome, no sign-in prompt (there is no session here).
 - Mobile-first at 375px is the native case (max-w-lg, single column, full-width button) — no horizontal overflow possible.
 
@@ -228,7 +227,7 @@ Primary CTA (phase) = **"Add endpoint"** (register a webhook subscription). Voic
 - **Event-type selection (D-06):** grouped checkboxes by family — **Orders**, **Onboarding**, **Payments**, **Refunds** — each family expandable to its individual event types with a family-level "select all". At least one required. On mobile the groups stack; each checkbox row is `min-h-11`.
 - **Secret reveal:** modal, focus-trapped (radix `Dialog`). Secret in a readOnly `font-mono` `Input`; **Copy** button writes to clipboard and fires a `Copied` toast (aria-live). Dialog cannot be dismissed by backdrop click for this one — only the explicit **I've saved it** button — to reduce accidental loss. Secret is never re-fetchable; UI states this.
 - **Rotate secret:** confirm dialog → POST rotate → returns new secret → Secret-Reveal dialog again. Old secret invalid immediately (copy states this).
-- **Pause / Resume:** `Button` toggle (no Switch primitive). Pause is immediate (no confirm). Resume is immediate and resets the consecutive-failure counter server-side; UI reflects the new ACTIVE badge.
+- **Pause / Resume:** `Button` toggle (no Switch primitive). **Pause delivery** is immediate (no confirm). **Resume delivery** is immediate and resets the consecutive-failure counter server-side; UI reflects the new ACTIVE badge.
 - **Revoke:** destructive confirm dialog (`Button variant="destructive"`, red). Terminal — the row shows the Revoked badge and drops its actions afterward.
 - **Replay (agent-readiness / idempotent-safe):** confirm dialog → POST replay with a fresh **`Idempotency-Key`** header generated by `crypto.randomUUID()` — **reuse the exact `makeIdempotencyKey()` pattern from `RefundDialog.tsx`** (secure-random, throws if unavailable). Replay creates a NEW delivery attempt row tagged "Replay"; it never mutates the original row's status history. Success toast per Copywriting table.
 - **Loading spinners:** `animate-spin rounded-full border-b-2 border-t-2 border-orange-500` (orange, per Phase 20 direction — do NOT copy the legacy `border-blue-600` spinner).
