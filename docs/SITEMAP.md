@@ -16,7 +16,12 @@ public routes only). **Keep both in sync when adding pages.**
 | `/business-model-guide` | Authoritative business-model decision guide (companion: `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`) |
 | `/shop` | Storefront discovery / shop directory |
 | `/track` | Order tracking by order number |
+| `/unsubscribe` | Token-based one-click email opt-out (GDPR/PECR, COMMS-03). **`noindex,nofollow` + EXCLUDED from `sitemap.xml`** — a transactional surface, not discovery content; never renders the `email`/`token` query params into meta or body. |
 | `/auth/signin` | Vendor (B2B) sign-in — Keycloak `jtoye-dev` realm |
+
+> **`/unsubscribe` is deliberately absent from `frontend/app/sitemap.ts`.** It is a
+> public route but must stay unindexed (its page metadata sets `robots.index=false`),
+> so it is recorded here for the human inventory but omitted from the machine sitemap.
 
 ## Customer storefront journey (per shop, guest or customer session)
 
