@@ -31,7 +31,7 @@ The platform's first governed delivery of the V46 outbox. **Extend** the already
 
 - [ ] **COMMS-01**: Bind the dead channels; preserve the working one. Bind `onboardingEventsExchange` + add payment/refund consumers; each new event type ships exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch atomically; the existing `OrderStateChangeListener → EmailNotificationService` order path is untouched. Tests: per-event dispatch integration test, existing order-email test still green, no poison dead-letter.
 - [ ] **COMMS-02**: Transactional email to both audiences. Templated emails for order (customer+vendor), onboarding (vendor), payment (customer+vendor), refund (customer+vendor). Tests: per-event correct-recipient assertions; stalled onboarding → vendor email in Mailhog.
-- [ ] **COMMS-03**: Consent + one-click unsubscribe + suppression (GDPR/PECR). Transactional under legitimate interest + unsubscribe→suppression; marketing requires explicit opt-in; suppression/consent tables ENABLE+FORCE RLS. Tests: unsubscribe suppresses next send; marketing-without-opt-in refused; RLS under NOSUPERUSER.
+- [x] **COMMS-03**: Consent + one-click unsubscribe + suppression (GDPR/PECR). Transactional under legitimate interest + unsubscribe→suppression; marketing requires explicit opt-in; suppression/consent tables ENABLE+FORCE RLS. Tests: unsubscribe suppresses next send; marketing-without-opt-in refused; RLS under NOSUPERUSER.
 - [ ] **COMMS-04**: Vendor webhook subscriptions (#205). `webhook_subscription` (ENABLE+FORCE RLS) + event-type selection + signing secret + create/list/rotate/pause/revoke API. Tests: CRUD; cross-tenant empty/403; secret-rotation invalidates old signatures.
 - [ ] **COMMS-05**: Signed, retried, observable delivery (#205). HMAC-SHA256 signed POST + bounded-backoff retry + `webhook_delivery` status rows + no head-of-line block + bounded retention (#107). Tests: signature verify, retry-then-failed, healthy-sibling-still-delivered, retention prune.
 - [ ] **COMMS-06**: Webhook management + delivery-log UI. Create/list/pause/revoke + rotate secret + delivery-log browser (filter by event/status) + manual replay (tagged attempt). Mobile-first at 375px. Tests: Jest/Playwright for create→list, filter, replay, 375px no-overflow.
@@ -114,7 +114,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | ONBD-05 | Phase 21 | 21-03, 21-04, 21-05 | Complete |
 | COMMS-01 | Phase 22 | TBD (plan-phase) | Pending |
 | COMMS-02 | Phase 22 | TBD (plan-phase) | Pending |
-| COMMS-03 | Phase 22 | TBD (plan-phase) | Pending |
+| COMMS-03 | Phase 22 | 22-02 | Complete |
 | COMMS-04 | Phase 22 | TBD (plan-phase) | Pending |
 | COMMS-05 | Phase 22 | TBD (plan-phase) | Pending |
 | COMMS-06 | Phase 22 | TBD (plan-phase) | Pending |
