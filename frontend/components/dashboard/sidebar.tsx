@@ -15,6 +15,7 @@ import {
   UtensilsCrossed,
   Rocket,
   ShieldCheck,
+  Webhook,
   LogOut,
   Moon,
   Sun,
@@ -35,6 +36,9 @@ export const navigation = [
   // Admin-only surface (like Finance): the page itself renders an
   // access-required state on 403 for non-admin users.
   { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck },
+  // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
+  // delivery-log browser. Falls into the mobile "More" sheet automatically.
+  { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
 ]
 
 export function Sidebar() {
