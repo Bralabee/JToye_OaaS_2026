@@ -1,9 +1,9 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**J'Toye OaaS — Milestone 2: Tier 3 Enhancements**
+**J'Toye OaaS — Milestone v2.3: Vendor Ops + AI Interleaved**
 
-J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. This milestone adds vendor marketing tools, real-time kitchen displays, API versioning, and closes remaining test gaps from the previous milestone.
+J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to manage shops, products, orders, and customers through a shared infrastructure. This milestone turns to vendor operational control: unblocking stuck onboarding, scoping access per shop within a tenant, hardening image handling (copy-on-write media_asset model + safe async upload pipeline), and fixing dashboard mobile — plus extending the AI/automation surface (outbound webhooks + mutating MCP tools) on a committed local-k8s overlay.
 
 **Core Value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility.
 
