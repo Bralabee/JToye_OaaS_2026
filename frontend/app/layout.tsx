@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Work_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { MotionProvider } from "@/components/motion-provider";
 
-const inter = Inter({ subsets: ["latin"] });
+// Work Sans — the parent brand typeface (jtoyedigital.co.uk). App-wide for brand
+// coherence; a clean geometric sans, near drop-in for the prior Inter.
+const workSans = Work_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"] });
 
 // Force dynamic rendering app-wide so every page is rendered per-request and
 // receives the CSP nonce set by middleware.ts (issue #89). Statically
@@ -35,7 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={workSans.className}>
         <MotionProvider>
           <Providers>{children}</Providers>
         </MotionProvider>

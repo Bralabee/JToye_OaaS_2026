@@ -51,6 +51,12 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // J'Toye brand thread — matched to the parent site jtoyedigital.co.uk
+        // (oxblood #3A0B0D + Work Sans). amber/orange (Tailwind defaults) stay
+        // the appetite accent (sketch 004 winner D).
+        oxblood: { DEFAULT: "#3A0B0D", deep: "#1F0F28", 700: "#571417", 600: "#6E1D21" },
+        cream: { DEFAULT: "#FBF6F0", 100: "#F4EBE1" },
+        gold: "#E8B04B",
       },
       borderRadius: {
         lg: "var(--radius)",

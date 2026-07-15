@@ -60,7 +60,7 @@ export function PublicHeader() {
             href={homeHref}
             className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
           >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-sm font-bold text-white">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-oxblood text-sm font-bold text-white">
               J
             </span>
             <span>J&apos;Toye</span>
@@ -82,7 +82,7 @@ export function PublicHeader() {
             </Link>
             <Link
               href="/auth/signin"
-              className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-oxblood-700"
             >
               <User className="h-3 w-3" />
               Sign in
@@ -134,7 +134,7 @@ export function PublicHeader() {
                 <SheetClose asChild>
                   <Link
                     href="/auth/signin"
-                    className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-slate-900 px-3 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                    className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-oxblood px-3 text-sm font-medium text-white transition-colors hover:bg-oxblood-700"
                   >
                     <User className="h-4 w-4" />
                     Sign in
