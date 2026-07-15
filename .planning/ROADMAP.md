@@ -84,22 +84,41 @@ Plans:
 ### Phase 22: Notifications & Comms
 
 **Goal**: The platform gains its first **delivery consumer** of the V46 transactional outbox. Order/payment/refund and Phase 21 onboarding state-change events — today emitted to the outbox but delivered nowhere — reach the people and systems that need them. Email first (Mailhog dev → SES prod), with the outbound-webhook machine channel (the delivery seam ONBD-05 / AI-01 left open) and a WhatsApp/SMS seam as further channels on the same consumer.
-**Depends on**: V46 transactional outbox + Phase 21 `onboarding.events` (both shipped). Reuses the RabbitMQ/AMQP infra. **Respects the outbox-flusher dispatch trap**: any new event type ships its exchange bean + producer + `PaymentEventOutboxFlusher.publishRow` dispatch branch in the same change, or it poison-dead-letters. Migration(s) TBD in SPEC — the V52 `shop_staff` (Phase 23) / V53 `media_asset` (Phase 24) ordering is preserved (Comms migrations take later versions under `out-of-order=true`).
-**Requirements**: COMMS-01, COMMS-02, COMMS-03, COMMS-04 (absorbs AI-01 outbound webhooks + #208 WhatsApp) — *finalized by SPEC.md*
-**Success Criteria** (what must be TRUE) — *provisional; locked by `22-SPEC.md`*:
+**Depends on**: V46 transactional outbox + Phase 21 `onboarding.events` (both shipped). Reuses the RabbitMQ/AMQP infra. **Respects the outbox-flusher dispatch trap**: this phase adds consumers (not producers) — all four `publishRow` dispatch branches already exist, so the shared flusher is untouched. Migrations take **V54/V55/V56** under `out-of-order=true` — the V52 `shop_staff` (Phase 23) / V53 `media_asset` (Phase 24) ordering is preserved.
+**Requirements**: COMMS-01, COMMS-02, COMMS-03, COMMS-04, COMMS-05, COMMS-06, COMMS-07 (COMMS-04/05/06 absorb AI-01 outbound webhooks #205; COMMS-07 absorbs #208 WhatsApp) — *finalized by 22-SPEC.md*
+**Success Criteria** (what must be TRUE) — *locked by `22-SPEC.md`*:
 
-  1. A single outbox consumer fans each matching event to its registered delivery channels; a channel/subscription failure is retried with bounded backoff and does not block delivery to other channels or subscriptions (no head-of-line block).
-  2. Transactional email is delivered for a defined event set through a provider abstraction (Mailhog in dev, SES in prod), tenant-scoped, with a working unsubscribe and recorded consent (GDPR) — no email sent to a recipient who has not consented / has opted out.
-  3. A vendor can register tenant-scoped webhook subscriptions (ENABLE+FORCE RLS, isolation-proven) that receive HMAC-signed, retried deliveries of chosen event types (onboarding / order / refund) — the machine channel folded in from #205.
-  4. The WhatsApp/SMS channel is scaffolded behind a provider flag defaulting off until credentials are configured (#208), and its absence never blocks email or webhook delivery.
+  1. A single set of outbox consumers fans each matching event to its channels; a channel/subscription failure is retried with bounded backoff and does not block delivery to other channels or subscriptions (no head-of-line block). The pre-existing order-confirmation email path stays intact (no regression) and no event type poison-dead-letters. (COMMS-01, COMMS-05)
+  2. Transactional email is delivered to the correct audiences (customer and/or vendor) across order/onboarding/payment/refund through a provider-abstracted multipart renderer (Mailhog dev, SES-over-SMTP prod), tenant-scoped, with a working one-click unsubscribe + recorded consent (GDPR/PECR) — no email to a suppressed recipient; marketing requires explicit opt-in. (COMMS-02, COMMS-03)
+  3. A vendor can register tenant-scoped webhook subscriptions (ENABLE+FORCE RLS, isolation-proven) that receive HMAC-SHA256-signed, retried, observable deliveries of chosen event types, self-served through a mobile-first management + delivery-log/replay UI (375px). (COMMS-04, COMMS-05, COMMS-06)
+  4. The WhatsApp/SMS channel is scaffolded behind a provider flag defaulting off until credentials are configured (#208); its absence never blocks email or webhook delivery. (COMMS-07)
 
-**Plans**: TBD (est. 3)
+**Plans**: 7 plans (5 waves)
 
 Plans:
+**Wave 1** *(parallel foundations — no shared-file overlap)*
 
-- [ ] 22-xx: (defined after SPEC + plan-phase)
+- [ ] 22-01-PLAN.md (Wave 1) — Notification channel seam: `NotificationChannel` abstraction + `MimeMessageHelper` multipart `EmailChannel` + `EmailTemplateRenderer` (D-01) + INERT-by-default `WhatsAppSmsChannel` stub (COMMS-07) + notification/whatsapp config keys (GLOBAL_RULE_6). Order-email path untouched (Pitfall 5 path A). [COMMS-02, COMMS-07]
+- [ ] 22-02-PLAN.md (Wave 1, parallel) — Consent backend: V54 `notification_suppression` + `marketing_opt_in` (FORCE RLS helper form) + `NotificationCategory` + `ConsentGate` + stateless HMAC `UnsubscribeTokenService` + no-auth `PublicUnsubscribeController` + NOSUPERUSER RLS proof (COMMS-03)
+- [ ] 22-03-PLAN.md (Wave 1, parallel) — Webhook subscription data + CRUD API: V55 `webhook_subscription` (FORCE RLS, plaintext secret) + `WebhookUrlValidator` (HTTPS + SSRF block) + create/list/rotate/pause/resume/revoke REST (RFC 7807, secret-once) + RLS proof (COMMS-04)
 
-**UI hint**: yes (vendor notification preferences + webhook management + unsubscribe)
+**Wave 2** *(blocked on 22-01 + 22-02)*
+
+- [ ] 22-04-PLAN.md (Wave 2) — Email dispatch + all RabbitMQ topology: bind `onboarding.events` + add payment/refund/webhook-fanout durable queues + `RecipientResolver` (D-04) + `NotificationDispatchService` (consent-gated fan-out) + onboarding/financial `@RabbitListener`s → Mailhog landing proofs; order path un-regressed, no poison (COMMS-01, COMMS-02)
+
+**Wave 3** *(blocked on 22-03 + 22-04)*
+
+- [ ] 22-05-PLAN.md (Wave 3) — Webhook delivery engine: V56 `webhook_delivery` (FORCE RLS) + `WebhookSigner` (HMAC-SHA256 t=,v1=) + versioned envelope + fanout listener + `@Scheduled` SKIP-LOCKED worker (backoff + auto-pause + no head-of-line block) + retention prune + delivery-log/replay API + config tunables (COMMS-05)
+
+**Wave 4** *(blocked on 22-03 + 22-05)*
+
+- [ ] 22-06-PLAN.md (Wave 4) — Webhook management + delivery-log UI (mobile-first 375px): subscriptions list + create/pause/resume/revoke + once-only secret reveal + rotate + delivery-log filter + Idempotency-Key replay + status-badge taxonomy + sidebar nav + Jest 375px coverage (COMMS-06)
+
+**Wave 5** *(blocked on 22-02 + 22-06)*
+
+- [ ] 22-07-PLAN.md (Wave 5) — Public unsubscribe page (noindex, sitemap-excluded, PII-safe) + Playwright E2E (webhook create→list→filter→replay→375px + unsubscribe flow) + `docs/metrics.json` reconcile (schema 51→56) + docs-freshness green + closure (COMMS-03, COMMS-06)
+
+**UI hint**: yes (vendor webhook management + delivery-log/replay + public unsubscribe)
 
 ### Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav
 
@@ -190,12 +209,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 → 23 → 24 → 25 → 26**. Phase 21 is independent (zero migrations) and led because it was the cheapest fix for the highest user pain. **Phase 22 (Notifications & Comms) was inserted ahead of Vendor-Scoped Access** because a delivery consumer of the V46 outbox is the seam onboarding (ONBD-05) and future surfaces depend on, and it folds in the previously-standalone Outbound Webhooks (#205) + WhatsApp (#208). The one hard migration dependency is Phase 23 before Phase 24 (Flyway V52 `shop_staff` must precede V53 `media_asset`); Comms migrations take later versions under `out-of-order=true` so that ordering is undisturbed. Phase 25 (mutating MCP) builds only on shipped infra (#204 idempotency, Phase 20 MCP) and is structurally independent. Phase 26 (infra) lands last so the committed overlay ships all v2.3 schema and services.
+Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 → 23 → 24 → 25 → 26**. Phase 21 is independent (zero migrations) and led because it was the cheapest fix for the highest user pain. **Phase 22 (Notifications & Comms) was inserted ahead of Vendor-Scoped Access** because a delivery consumer of the V46 outbox is the seam onboarding (ONBD-05) and future surfaces depend on, and it folds in the previously-standalone Outbound Webhooks (#205) + WhatsApp (#208). The one hard migration dependency is Phase 23 before Phase 24 (Flyway V52 `shop_staff` must precede V53 `media_asset`); Comms migrations take V54/V55/V56 under `out-of-order=true` so that ordering is undisturbed. Phase 25 (mutating MCP) builds only on shipped infra (#204 idempotency, Phase 20 MCP) and is structurally independent. Phase 26 (infra) lands last so the committed overlay ships all v2.3 schema and services.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
-| 22. Notifications & Comms | v2.3 | 0/3 | Not started | - |
+| 22. Notifications & Comms | v2.3 | 0/7 | Not started | - |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
