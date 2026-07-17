@@ -83,11 +83,11 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("org.testcontainers:testcontainers:1.21.4")
-    testImplementation("org.testcontainers:postgresql:1.21.4")
+    testImplementation("org.testcontainers:testcontainers:2.0.5")
+    testImplementation("org.testcontainers:postgresql:2.0.5")
     // #92: real-broker fan-out proof for the per-instance SSE queues
-    testImplementation("org.testcontainers:rabbitmq:1.21.4")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
+    testImplementation("org.testcontainers:rabbitmq:2.0.5")
+    testImplementation("org.testcontainers:junit-jupiter:2.0.5")
     testImplementation("com.h2database:h2") // for lightweight unit tests
 }
 
