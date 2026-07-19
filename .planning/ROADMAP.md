@@ -133,7 +133,7 @@ Plans:
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
 
-**Plans**: 6 plans (5 waves)
+**Plans**: 7 plans (6 waves)
 
 Plans:
 **Wave 1**
@@ -153,9 +153,13 @@ Plans:
 
 - [ ] 23-05-PLAN.md (Wave 4) — Frontend switcher (VSA-03): persisted shop-context dropdown (localStorage, GA⇒All-shops, apply-to-all GA-only) mounted in sidebar header + mobile top bar; MOBL-01 verify-first (375px Jest/Playwright regression + surface-ledger proof — no new drawer); D-13 stale-selection access-required. [VSA-03, MOBL-01]
 
-**Wave 5** *(blocked on 23-04 + 23-05)*
+**Wave 5** *(blocked on 23-05)*
 
-- [ ] 23-06-PLAN.md (Wave 5) — Staff-management screen (VSA-04): `/dashboard/staff` list/grant/revoke (403→access-required, 409→clear msg) + GROUP_ADMIN-only Staff nav item (D-10) + phase-gate `docs/metrics.json` + CLAUDE.md count reconcile. [VSA-04, MOBL-01]
+- [ ] 23-07-PLAN.md (Wave 5) — Shop-context wiring (VSA-03 consumption): a `useShopContext` hook over `getShopContext()`/`subscribeShopContext` (23-05) threaded into Products/Orders/Marketing/Kitchen — list narrowing (Orders `?shopId=` server param, others client-side over the 23-03 grant-scoped result) + create-form default/constrain to the selected shop (D-08) + Kitchen local-selector reconcile; Jest behaviour proofs. Closes VSA-03's “all shop-scoped screens operate on the selected shop” clause. [VSA-03]
+
+**Wave 6** *(blocked on 23-04 + 23-05 + 23-07)*
+
+- [ ] 23-06-PLAN.md (Wave 6) — Staff-management screen (VSA-04): `/dashboard/staff` list/grant/revoke (403→access-required, 409→clear msg) + GROUP_ADMIN-only Staff nav item (D-10) + phase-gate `docs/metrics.json` + CLAUDE.md count reconcile (all of 23-01..23-07). [VSA-04, MOBL-01]
 
 **UI hint**: yes
 

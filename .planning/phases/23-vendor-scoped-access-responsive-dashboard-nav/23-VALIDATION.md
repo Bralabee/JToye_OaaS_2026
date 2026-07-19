@@ -55,6 +55,7 @@ created: 2026-07-19
 | VSA-02 | Read-scoping: scoped user's list returns only granted shops | integration | same suite | ❌ W0 | ⬜ pending |
 | VSA-02 | 403 body `type` ≠ RLS 404 `type` (provably distinct) | integration | same suite | ❌ W0 | ⬜ pending |
 | VSA-03 | Switcher persists selection (localStorage); non-GA cannot see "apply to all" | unit (Jest) | `cd frontend && npx jest components/dashboard` | ❌ W0 | ⬜ pending |
+| VSA-03 | Shop-scoped screens react to the selected shop: products+orders lists narrow, create-form shop defaults/constrains (D-08) | unit (Jest) | `cd frontend && npx jest hooks/use-shop-context products-orders-shop-scope marketing-kitchen-shop-scope` | ❌ W0 (plan 23-07) | ⬜ pending |
 | VSA-04 | list/grant/revoke; grant→access, revoke→403; last-GROUP_ADMIN→409 | unit (Jest) + integration | `npx jest` + `./gradlew test --tests "*StaffManagementIntegrationTest"` | ❌ W0 | ⬜ pending |
 | MOBL-01 | 375px: sidebar hidden, tab bar visible, no occlusion/overflow | e2e (Playwright) + unit (Jest) | `npx playwright test --project=mobile dashboard-mobile.spec` | ⚠️ 390px exists — add 375px case | ⬜ pending |
 
@@ -69,10 +70,25 @@ created: 2026-07-19
 - [ ] `ShopAccessEnforcementIntegrationTest.java` — VSA-02 cross-shop 403 / STAFF / read-scope / 403≠404
 - [ ] `StaffManagementIntegrationTest.java` — VSA-04 grant/revoke/last-GA-409
 - [ ] Jest: switcher + staff screen specs — VSA-03/04
+- [ ] Jest (plan 23-07): `hooks/use-shop-context.test.tsx`, `products-orders-shop-scope.test.tsx`, `marketing-kitchen-shop-scope.test.tsx` — VSA-03 screens-react-to-selected-shop
 - [ ] Playwright: 375px case added to `dashboard-mobile.spec.ts` — MOBL-01
 - [ ] `docs/metrics.json` + CLAUDE.md prose counts reconciled via `scripts/docs-freshness.sh --write`
 
 *Framework install: none — all frameworks present.*
+
+---
+
+## Cross-Cutting Quality Contracts — Disposition
+
+Per CLAUDE.md "Cross-Cutting Quality Contracts (design-time)", each dimension is dispositioned for this phase:
+
+| Dimension | Disposition | Basis |
+|-----------|-------------|-------|
+| **Security** | **Central (covered)** | Phase introduces a new authZ boundary; each PLAN carries a `<threat_model>` grounded in RESEARCH §Security Domain STRIDE register; every `high` threat maps to a mitigation task/criterion. |
+| **AI agent-readiness** | **Covered** | New mutating staff API (`/api/v1/staff/grant|revoke`) returns typed RFC 7807 errors + is provably idempotent (23-04 `insertGrantIfAbsent` ON CONFLICT). |
+| **Web performance (mobile-first)** | **N/A (recorded, not dropped)** | The only new user-facing surfaces are a small client `ShopSwitcher` component mounted in the existing dashboard header/topbar (23-05) and client-side list-filtering added to already-rendered dashboard pages (23-07). No new route, no new above-the-fold image/font/bundle, no server-render change — negligible measurable LCP/CLS/INP impact on already-authenticated dashboard pages. MOBL-01's 375px Playwright spec already guards layout/overflow. |
+| **SEO / discoverability** | **N/A (exempt)** | All Phase 23 surfaces are inside the authenticated dashboard (not a public/unauthenticated surface); storefront public read path is explicitly out of scope (CONTEXT spec_lock). |
+| **Accessibility** | **Standard (contracted)** | Covered by existing UI standards + QA Phase 4; switcher/staff screen mirror existing accessible dashboard components. |
 
 ---
 

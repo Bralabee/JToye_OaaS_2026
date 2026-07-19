@@ -121,7 +121,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-07 | Phase 22 | 22-01 | Complete |
 | VSA-01 | Phase 23 | 23-01, 23-02 | Pending |
 | VSA-02 | Phase 23 | 23-02, 23-03 | Pending |
-| VSA-03 | Phase 23 | 23-05 | Pending |
+| VSA-03 | Phase 23 | 23-05, 23-07 | Pending |
 | VSA-04 | Phase 23 | 23-04, 23-06 | Pending |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Pending |
 | IMG-01 | Phase 24 | 24-01 | Pending |

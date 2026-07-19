@@ -576,13 +576,15 @@ Docker Compose full-stack was **running during research** — probes below are l
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Bulk import scope (`/products/bulk/*`)** — per-row `require()` vs GROUP_ADMIN-only vs All-shops-context? (§3-FLAG). Recommendation: per-row SHOP_MANAGER check.
-2. **SSE order stream scoping** — grant-set filter in `OrderSseService` fan-out vs per-shop stream? (§3-FLAG). Recommendation: filter the fan-out.
-3. **Where JIT-provision/directory-upsert executes** — in `ShopAccessService` (recommended, has tx+GUC) vs a post-auth interceptor. (§5).
-4. **`user_id` column type** — UUID (A1) vs VARCHAR. Resolve by decoding a live `sub`.
-5. **Does STAFF create orders?** (A4) — confirm the `createOrder` role floor with the vendor's operational model.
+*All five were resolved during planning (Phase 23 plans e21e74b + revision) and each recommendation was implemented — retained here for traceability.*
+
+1. **Bulk import scope (`/products/bulk/*`)** — per-row `require()` vs GROUP_ADMIN-only vs All-shops-context? (§3-FLAG). Recommendation: per-row SHOP_MANAGER check. **RESOLVED:** per-row `require()` at SHOP_MANAGER, planned in 23-03.
+2. **SSE order stream scoping** — grant-set filter in `OrderSseService` fan-out vs per-shop stream? (§3-FLAG). Recommendation: filter the fan-out. **RESOLVED:** grant-set-filtered fan-out, planned in 23-03.
+3. **Where JIT-provision/directory-upsert executes** — in `ShopAccessService` (recommended, has tx+GUC) vs a post-auth interceptor. (§5). **RESOLVED:** in `ShopAccessService` (tx + GUC), NOT `JwtTenantFilter` (Pitfall 4), planned in 23-02.
+4. **`user_id` column type** — UUID (A1) vs VARCHAR. Resolve by decoding a live `sub`. **RESOLVED:** UUID, planned in 23-01.
+5. **Does STAFF create orders?** (A4) — confirm the `createOrder` role floor with the vendor's operational model. **RESOLVED:** `createOrder` gated at SHOP_MANAGER (not STAFF), planned in 23-03.
 
 ---
 
