@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
+import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
 
 export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -70,6 +71,12 @@ export function Sidebar() {
           <span className="font-bold text-lg">J&apos;Toye</span>
           <span className="text-xs text-slate-400">OaaS Platform</span>
         </div>
+      </div>
+
+      {/* Shop-context switcher (VSA-03) — persisted per-device (D-07); a
+          GROUP_ADMIN lands on "All shops" (D-06). */}
+      <div className="border-b border-slate-800 px-3 py-3">
+        <ShopSwitcher variant="sidebar" />
       </div>
 
       {/* User Info */}

@@ -312,3 +312,44 @@ test.describe("Dashboard mobile shell (390px)", () => {
     ).toBeVisible({ timeout: 10_000 })
   })
 })
+
+/**
+ * MOBL-01 375px regression — the requirement literally names a 375px viewport
+ * spec. RESEARCH §7's live browser probe proved there is NO 375px occlusion
+ * (docScrollWidth == 375, horizontalOverflow false, sidebar hidden, tab bar
+ * visible); this locks that in AND proves the newly-mounted VSA-03 shop-context
+ * switcher (top bar) reintroduces no horizontal overflow. NOT a new drawer.
+ */
+test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression", () => {
+  test.use({ viewport: { width: 375, height: 812 }, isMobile: true })
+
+  test.beforeEach(async ({ context, page }) => {
+    await setupStubs(context)
+    await vendorLogin(page)
+  })
+
+  test("no horizontal overflow; sidebar hidden, tab bar + switcher visible at 375px", async ({ page }) => {
+    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" })
+
+    // The fixed bottom tab bar is the 375px nav.
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible()
+    // The 256px desktop sidebar is hidden below md (its "OaaS Platform" subtitle).
+    await expect(page.getByText("OaaS Platform")).toBeHidden()
+    // The shop-context switcher is reachable in the md:hidden mobile top bar
+    // (the sidebar's copy is display:none below md, so scope to <main>).
+    await expect(
+      page.locator("main").getByTestId("shop-switcher").first()
+    ).toBeVisible({ timeout: 10_000 })
+
+    // No horizontal overflow — the whole document fits the 375px viewport
+    // (RESEARCH §7: docScrollWidth == viewportWidth, +1px sub-pixel tolerance).
+    const geom = await page.evaluate(() => ({
+      docScrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      mainWidth: (document.querySelector("main") as HTMLElement | null)?.clientWidth ?? 0,
+    }))
+    expect(geom.docScrollWidth).toBeLessThanOrEqual(geom.viewportWidth + 1)
+    // Content spans (near) full width — the sidebar steals nothing at 375px.
+    expect(geom.mainWidth).toBeGreaterThanOrEqual(300)
+  })
+})
