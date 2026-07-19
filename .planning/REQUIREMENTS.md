@@ -41,7 +41,7 @@ The platform's first governed delivery of the V46 outbox. **Extend** the already
 
 Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (tenant) → Shop** — one vendor owns many shops, and this is the vendor's internal access model spanning vendor-wide grants (GROUP_ADMIN) down to a single shop (SHOP_MANAGER/STAFF). RLS stays the tenant wall; this is a second, application-layer gate. Shop is the finest grain this milestone; an intermediate **department** tier (Vendor → Department → Shop) is noted as a future organizational layer, not modeled in v2.3. Incremental Betterment: every existing tenant user gets a GROUP_ADMIN row at migration time — zero day-one regression.
 
-- [ ] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
+- [x] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
 
 - [ ] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
 
@@ -119,7 +119,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-05 | Phase 22 | 22-05 | Complete |
 | COMMS-06 | Phase 22 | 22-06 | Complete |
 | COMMS-07 | Phase 22 | 22-01 | Complete |
-| VSA-01 | Phase 23 | 23-01, 23-02 | Pending |
+| VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
 | VSA-02 | Phase 23 | 23-02, 23-03 | Pending |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Pending |
 | VSA-04 | Phase 23 | 23-04, 23-06 | Pending |

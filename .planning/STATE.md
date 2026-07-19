@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-07-19T10:27:57.097Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-07-19T10:44:41.461Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 13
+  completed_plans: 14
   percent: 33
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-07-19
 
-Progress: [███████░░░] 68%
+Progress: [███████░░░] 74%
 
 ## Milestone v2.3 Phase Map
 
@@ -79,6 +79,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 22 P06 | 12min | 3 tasks | 10 files |
 | Phase 22 P07 | 13min | 3 tasks | 10 files |
 | Phase 23 P01 | 12min | 3 tasks | 8 files |
+| Phase 23 P02 | 7min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 22-07: Authenticated E2E = real Keycloak login + Playwright route() stubs (dashboard-mobile pattern); unsubscribe-flow 6/6 live green; webhook dashboard specs need E2E_VENDOR_PASSWORD for a live authenticated run (env creds unknown).
 - [Phase 23]: 23-01: V52 ships shop_staff + shop_staff_aud + user_directory (D-09) all ENABLE+FORCE RLS via the safe current_tenant_id() helper (never the raw ::uuid cast); functional unique index over (tenant_id, user_id, COALESCE(shop_id, zero-uuid)); tables ship EMPTY (no migrate-time backfill — JIT is 23-02, RESEARCH §1-FLAG).
 - [Phase 23]: 23-01: VSA-01 left PENDING (anti-false-green, mirrors 22-01) — data layer delivered, but its JIT-provision backfill + realm-admin implicit-GROUP_ADMIN bridge + JIT idempotency test are scoped to 23-02; VSA-01 closes in 23-02.
+- [Phase 23]: 23-02: ShopAccessService is the single in-tenant enforcement seam (require/requireGroupAdmin/isGroupAdmin/grantedShopIds over a per-user shopMembership cache); typed shop-403 (/shop-access-denied) provably distinct from RLS 404 and generic 403; JIT provision + throttled directory upsert live inside the @Transactional service not JwtTenantFilter (Pitfall 4); strict-scoping default OFF preserves day-one auto-provision (D-12)
 
 ### Pending Todos
 
@@ -140,6 +142,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-19T10:27:57.088Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-07-19T10:44:41.451Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None
