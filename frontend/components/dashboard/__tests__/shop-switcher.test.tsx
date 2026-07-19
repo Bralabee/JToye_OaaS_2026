@@ -135,8 +135,9 @@ describe("ShopSwitcher", () => {
     mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A], isGroupAdmin: false })
     render(<ShopSwitcher />)
 
-    const switcher = await screen.findByTestId("shop-switcher")
-    expect(switcher).toHaveTextContent(SHOP_A.name)
+    // Wait for the loaded pinned label (the loading skeleton shares the testid).
+    expect(await screen.findByText(SHOP_A.name)).toBeInTheDocument()
+    expect(screen.getByTestId("shop-switcher")).toHaveTextContent(SHOP_A.name)
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
   })
 
