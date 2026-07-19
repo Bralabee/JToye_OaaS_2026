@@ -9,6 +9,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
@@ -124,12 +125,37 @@ public class ShopAccessService {
         throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
     }
 
-    /** True for a realm-admin (D-03 bridge) or a tenant-wide GROUP_ADMIN grant. */
+    /**
+     * True for a realm-admin (D-03 bridge), a trusted SYSTEM/internal caller (no
+     * authenticated JWT principal), or a tenant-wide GROUP_ADMIN grant.
+     *
+     * <p><strong>System-principal bypass (Phase 23-03):</strong> a caller with no
+     * authenticated JWT principal is never a user request — {@code JwtTenantFilter}
+     * installs the principal on every authenticated API call, and every gated
+     * controller sits behind Spring Security (an unauthenticated request is rejected
+     * with 401 before it can reach a gated service). So a gate call with no JWT
+     * principal is a trusted internal path: a scheduled job, an AMQP/event listener,
+     * or an internal service-to-service call that set {@link TenantContext}
+     * programmatically. Such callers are treated as an unrestricted GROUP_ADMIN so the
+     * shop gate never breaks internal work or narrows a system read. Public /
+     * unauthenticated endpoints are out of scope (never gated).
+     */
     public boolean isGroupAdmin() {
-        if (isRealmAdmin()) {
+        if (isRealmAdmin() || isSystemPrincipal()) {
             return true;
         }
-        return resolveMembership(currentUserId()).isGroupAdmin();
+        Membership membership = resolveMembership(currentUserId());
+        if (membership.isGroupAdmin()) {
+            return true;
+        }
+        // strict-scoping OFF (day-one): a FULLY-ungranted user is an implicit
+        // GROUP_ADMIN, preserving "everyone can do everything" before any scoping
+        // exists. Derived here from the strict-scoping flag + an empty membership so
+        // the READ decision never depends on the JIT row being written — read-only
+        // request paths (which cannot write the JIT row, Phase 23-03) still decide
+        // correctly. Once a user holds ANY explicit grant, they are scoped even under
+        // strict-scoping OFF.
+        return !strictScoping && membership.perShopRole().isEmpty();
     }
 
     /**
@@ -205,6 +231,20 @@ public class ShopAccessService {
         if (sub == null) {
             return;
         }
+
+        // Phase 23-03: NEVER attempt a write in a read-only transaction. A failed
+        // INSERT (Postgres rejects writes in a read-only tx) would poison the whole
+        // transaction ("current transaction is aborted"), breaking the read that
+        // triggered this gate call — even though the directory upsert is wrapped in a
+        // best-effort try/catch, the SQL statement itself still aborts the tx. The
+        // read DECISION does not depend on these writes ({@link #isGroupAdmin()}
+        // derives the day-one implicit GROUP_ADMIN from strict-scoping, not from the
+        // JIT row), so the directory upsert + JIT provision run ONLY on write-capable
+        // request paths. The JIT row is still materialised on the first write request.
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            return;
+        }
+
         UUID tenantId = currentTenantId();
 
         // D-09: throttled login upsert. Best-effort — a directory write must never
@@ -245,6 +285,27 @@ public class ShopAccessService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getAuthorities().stream()
                 .anyMatch(a -> REALM_ADMIN_AUTHORITY.equals(a.getAuthority()));
+    }
+
+    /**
+     * True when there is no authenticated JWT principal on the current thread — a
+     * trusted SYSTEM/internal caller (scheduler, listener, internal service call, or a
+     * test that set only {@link TenantContext}), never a user API request. See
+     * {@link #isGroupAdmin()} for why this is safe (real requests always carry a JWT
+     * principal via {@code JwtTenantFilter}; gated controllers sit behind Spring
+     * Security). Such callers bypass shop-scoping entirely.
+     */
+    private boolean isSystemPrincipal() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            return true;
+        }
+        // A JWT whose subject is not a UUID cannot be a vendor user in the shop-staff
+        // model ({@code user_id} is UUID-keyed) — it is a service/machine account
+        // (client-credentials) or a scope-only test token. Treat it as a trusted
+        // system principal (RLS still tenant-scopes it); per-shop scoping does not
+        // apply, and this keeps the gate from raising a 400 on a non-UUID subject.
+        return parseSub(jwt) == null;
     }
 
     private UUID currentUserId() {
