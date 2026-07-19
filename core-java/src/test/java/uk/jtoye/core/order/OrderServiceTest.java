@@ -22,6 +22,7 @@ import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -77,6 +78,9 @@ class OrderServiceTest {
     @Mock
     private StockService stockService;
 
+    @Mock
+    private ShopAccessService shopAccessService;
+
     @InjectMocks
     private OrderService orderService;
 
@@ -111,6 +115,12 @@ class OrderServiceTest {
 
         // Set up tenant context
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these unit tests assert the pre-scoping behaviour, so run as
+        // a GROUP_ADMIN — require(...) is a no-op and read-scope list methods take the
+        // full-tenant query path (existing assertions unchanged). Lenient: not every test
+        // exercises a gated method.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test shop (using reflection to set auto-generated fields)
         testShop = new Shop();

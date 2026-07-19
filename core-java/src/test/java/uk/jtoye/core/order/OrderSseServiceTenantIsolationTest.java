@@ -1,11 +1,13 @@
 package uk.jtoye.core.order;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
@@ -37,7 +39,17 @@ import static org.mockito.Mockito.verify;
  */
 class OrderSseServiceTenantIsolationTest {
 
-    private final OrderSseService service = new OrderSseService();
+    // Phase 23 (VSA-02 §3-FLAG #2): subscribe() captures the caller's shop scope. This
+    // regression suite asserts per-TENANT routing, so every subscriber is a GROUP_ADMIN
+    // (permits any shopId, incl. the null shopId of the legacy 6-arg test events) —
+    // isolating the tenant-routing behaviour under test from the per-shop filter.
+    private final ShopAccessService shopAccessService = Mockito.mock(ShopAccessService.class);
+    private final OrderSseService service = new OrderSseService(shopAccessService);
+
+    @BeforeEach
+    void stubGroupAdmin() {
+        Mockito.when(shopAccessService.isGroupAdmin()).thenReturn(true);
+    }
 
     @AfterEach
     void clearTenant() {
@@ -115,7 +127,7 @@ class OrderSseServiceTenantIsolationTest {
 
         Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
         f.setAccessible(true);
-        Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) f.get(service);
+        Map<UUID, ?> map = (Map<UUID, ?>) f.get(service);
         assertFalse(map.containsKey(tenantA), "empty tenant bucket should be evicted from outer map");
     }
 
@@ -162,8 +174,8 @@ class OrderSseServiceTenantIsolationTest {
                 // newly subscribed emitter (no orphans).
                 Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
                 f.setAccessible(true);
-                Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) f.get(service);
-                Set<SseEmitter> bucket = map.get(tenant);
+                Map<UUID, Map<SseEmitter, ?>> map = (Map<UUID, Map<SseEmitter, ?>>) f.get(service);
+                Map<SseEmitter, ?> bucket = map.get(tenant);
                 if (bucket != null) {
                     // Reachable bucket invariant: emitter count >= 1 (the new subscribe) and
                     // every emitter is the same identity the bucket itself holds.
@@ -181,22 +193,24 @@ class OrderSseServiceTenantIsolationTest {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<UUID, Set<SseEmitter>> reflectMap() throws Exception {
+    private Map<UUID, ?> reflectMap() throws Exception {
         Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
         f.setAccessible(true);
-        return (Map<UUID, Set<SseEmitter>>) f.get(service);
+        return (Map<UUID, ?>) f.get(service);
     }
 
     // --- helpers ---
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private void replaceEmitterInBucket(UUID tenant, SseEmitter from, SseEmitter to) throws Exception {
         Field f = OrderSseService.class.getDeclaredField("emittersByTenant");
         f.setAccessible(true);
-        Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) f.get(service);
-        Set<SseEmitter> bucket = map.get(tenant);
+        Map<UUID, Map> map = (Map<UUID, Map>) f.get(service);
+        // Phase 23: the bucket is now Map<SseEmitter, ShopScope>. Preserve the swapped
+        // emitter's captured scope so the spy inherits the original's grant scope.
+        Map bucket = map.get(tenant);
         assertNotNull(bucket, "tenant bucket should exist before swap");
-        bucket.remove(from);
-        bucket.add(to);
+        Object scope = bucket.remove(from);
+        bucket.put(to, scope);
     }
 }

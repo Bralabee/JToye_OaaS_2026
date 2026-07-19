@@ -197,9 +197,9 @@ class PaymentServiceTest {
             assertEquals(orderId, tx.orderId());           // keyed for idempotency (BUG 3)
             assertTrue(tx.description().contains("pi_test_123"));
 
-            // Verify event published
+            // Verify event published (Phase 23: 6-arg overload now carries the order's shopId)
             verify(eventPublisher).publishStateChange(
-                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq(orderId), eq(tenantId), any(), eq("ORD-TEST-20260403-ABCD1234"),
                     eq(OrderStatus.DRAFT), eq(OrderStatus.PENDING));
 
             // Verify payment succeeded event published
@@ -244,8 +244,9 @@ class PaymentServiceTest {
 
             // No financial transaction on failure
             verify(financialTransactionService, never()).createTransaction(any());
-            // No order state change published on failure (order stays DRAFT)
-            verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any());
+            // No order state change published on failure (order stays DRAFT).
+            // Phase 23: OrderService/PaymentService now use the 6-arg (shopId-carrying) overload.
+            verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
             // But a payment.failed event IS published for audit/analytics
             verify(paymentEventPublisher).publishFailed(
                     eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),

@@ -180,7 +180,7 @@ class StripeWebhookIdempotencyIntegrationTest {
                 .isEqualTo(1L);
 
         verify(orderEventPublisher, times(1))
-                .publishStateChange(any(), any(), any(), any(), any());
+                .publishStateChange(any(), any(), any(), any(), any(), any());
         verify(paymentEventPublisher, times(1))
                 .publishSucceeded(any(), any(), any(), any(), anyLong(), any());
     }
@@ -233,7 +233,7 @@ class StripeWebhookIdempotencyIntegrationTest {
         assertThat(rows).isEqualTo(2L);
 
         verify(orderEventPublisher, times(2))
-                .publishStateChange(any(), any(), any(), any(), any());
+                .publishStateChange(any(), any(), any(), any(), any(), any());
     }
 
     // --- helpers -------------------------------------------------------
