@@ -62,5 +62,36 @@
     "F-RATE (High, pre-existing #88): public 30-req/min per-IP limiter strands the storefront with an empty marketplace + no retry under normal multi-shop browsing — likely the root of the originally-reported 'landing hit or miss'.",
     "F-DOCS (High, pre-existing): systemic wrong credentials in README/CREDENTIALS/TESTING docs (password123) fail against the re-imported realm; CREDENTIALS.md test-client recipe is structurally dead (aud:null → 401).",
     "OBS-ARCHIVE (Low): 18/25 archived legacy products still available=true (quarantine only flips flag on move); public control holds (archive 404s)."
-  ]
+  ],
+  "dashboard_responsive_shell": {
+    "requirement": "MOBL-01",
+    "status": "satisfied-by-prior-work + switcher-integrated",
+    "recorded_by": "Phase 23 Plan 05 (VSA-03 shop-context switcher)",
+    "recorded_iso": "2026-07-19",
+    "note": "The dashboard sidebar does NOT overlay content at 375px. Phase 19 Surface D already delivered the responsive shell (`hidden md:flex` 256px sidebar occupies zero space below md + a `md:hidden fixed` MobileTabBar). MOBL-01 was VERIFY-FIRST: a live 375px browser probe confirmed no occlusion (evidence below) — NO new sidebar drawer was authored. Phase 23-05 integrated the VSA-03 shop-context switcher into the desktop sidebar logo header and the mobile top bar, width-capped (max-w-[55%] + truncate) so it reintroduces no horizontal overflow at 375px. Regression if any dashboard route at <=375px shows the desktop sidebar overlaying content, hides the MobileTabBar, or introduces horizontal scroll.",
+    "evidence": {
+      "live_375px_dom_probe": {
+        "source": "23-RESEARCH.md §7 — headless Chromium, live admin-user Keycloak account, /dashboard, 2026-07-19",
+        "viewportWidth": 375,
+        "docScrollWidth": 375,
+        "docClientWidth": 375,
+        "horizontalOverflow": false,
+        "mobileTabBar_visible": true,
+        "main_spans_full_width": true,
+        "sidebar_subtitle_OaaS_Platform_visible": false
+      },
+      "automated_guard": {
+        "playwright": "frontend/e2e/dashboard-mobile.spec.ts — new 375px describe ('Dashboard mobile shell (375px) — MOBL-01 + switcher regression'): sidebar hidden, MobileTabBar + shop-switcher visible, docScrollWidth <= viewportWidth (+1px), main clientWidth >= 300 — alongside the existing all-11-routes 390px suite",
+        "jest": "frontend/components/dashboard/__tests__/dashboard-shell.test.tsx — asserts the shop-switcher mounts in the md:hidden mobile top bar (data-testid mobile-topbar) with the fixed md:hidden tab bar"
+      },
+      "switcher_integration": {
+        "component": "frontend/components/dashboard/shop-switcher.tsx",
+        "mounts": [
+          "frontend/components/dashboard/sidebar.tsx — logo header (variant=sidebar)",
+          "frontend/components/dashboard/dashboard-shell.tsx — md:hidden top bar (variant=topbar)"
+        ],
+        "drawer_authored": false
+      }
+    }
+  }
 }
