@@ -133,13 +133,29 @@ Plans:
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
 
-**Plans**: TBD (est. 3)
+**Plans**: 6 plans (5 waves)
 
 Plans:
+**Wave 1**
 
-- [ ] 23-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
-- [ ] 23-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
-- [ ] 23-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
+- [ ] 23-01-PLAN.md (Wave 1) — V52 schema: `shop_staff` (+`_aud`, ENABLE+FORCE RLS via `current_tenant_id()`, functional unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + login-populated `user_directory` (D-09, no `_aud`) + entities/repos (native race-safe JIT-insert + throttled directory upsert) + `ShopStaffRlsPolicyIntegrationTest` (cross-tenant + PII under NOSUPERUSER). No migrate-time backfill (JIT is 23-02). [VSA-01]
+
+**Wave 2** *(blocked on 23-01)*
+
+- [ ] 23-02-PLAN.md (Wave 2) — `ShopAccessService` core: per-user membership cache + realm-admin⇒implicit-GROUP_ADMIN bridge + D-04 JIT lazy-provision + D-09 throttled directory upsert + D-12 strict-scoping switch (default OFF) + typed `ShopAccessDeniedException` (distinct 403) / `LastGroupAdminException` (409) + JIT-idempotency + 403≠404 tests. [VSA-01, VSA-02]
+
+**Wave 3** *(both blocked on 23-02; parallel — no file overlap)*
+
+- [ ] 23-03-PLAN.md (Wave 3) — Enforcement sweep (RESEARCH §3 inventory): `require(shopId, minRole)` + read-scoping across Shop/Product/Order/Promotion/Announcement services; §3-FLAG mitigations (bulk-import per-row, KDS SSE fan-out grant-set filter); `ShopAccessEnforcementIntegrationTest`. [VSA-02]
+- [ ] 23-04-PLAN.md (Wave 3, parallel) — Staff-management backend: GROUP_ADMIN-gated `/api/v1/staff` list/grant/revoke + last-GROUP_ADMIN 409 guard (D-11) + evict-on-write (D-05) + `StaffManagementIntegrationTest`. [VSA-04]
+
+**Wave 4** *(blocked on 23-03)*
+
+- [ ] 23-05-PLAN.md (Wave 4) — Frontend switcher (VSA-03): persisted shop-context dropdown (localStorage, GA⇒All-shops, apply-to-all GA-only) mounted in sidebar header + mobile top bar; MOBL-01 verify-first (375px Jest/Playwright regression + surface-ledger proof — no new drawer); D-13 stale-selection access-required. [VSA-03, MOBL-01]
+
+**Wave 5** *(blocked on 23-04 + 23-05)*
+
+- [ ] 23-06-PLAN.md (Wave 5) — Staff-management screen (VSA-04): `/dashboard/staff` list/grant/revoke (403→access-required, 409→clear msg) + GROUP_ADMIN-only Staff nav item (D-10) + phase-gate `docs/metrics.json` + CLAUDE.md count reconcile. [VSA-04, MOBL-01]
 
 **UI hint**: yes
 
