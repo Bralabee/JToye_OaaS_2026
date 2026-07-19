@@ -94,6 +94,19 @@ spring:
 # NOT used because this project supplies a custom JwtDecoder bean — that
 # property only applies to Spring's auto-configured decoder.
 jtoye:
+  # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
+  # inherits to all profiles, env-overridable with safe defaults.
+  access:
+    # D-12: strict-scoping switch. OFF (default) preserves day-one behaviour —
+    # an ungranted tenant user's first request JIT-auto-provisions a GROUP_ADMIN
+    # grant (D-04). ON makes ungranted non-admins deny-by-default (no
+    # auto-provision) so a vendor can genuinely tighten. Global flag for now;
+    # per-tenant granularity is deferred.
+    strict-scoping: ${ACCESS_STRICT_SCOPING:false}
+    # D-09: throttle window for the login-populated user_directory upsert. A
+    # returning user whose row is younger than this interval is a no-op (never a
+    # write per request). ISO-8601 duration; default one hour.
+    directory-upsert-interval: ${DIRECTORY_UPSERT_INTERVAL:PT1H}
   security:
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}
