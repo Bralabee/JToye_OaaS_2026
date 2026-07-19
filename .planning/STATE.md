@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 23 context gathered
-last_updated: "2026-07-19T09:32:00.247Z"
-last_activity: 2026-07-19 -- Phase 23 planning complete
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-07-19T10:27:57.097Z"
+last_activity: 2026-07-19
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 12
+  completed_plans: 13
   percent: 33
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 23 — vendor scoped access + responsive dashboard nav
+**Current focus:** Phase 23 — vendor-scoped-access-responsive-dashboard-nav
 
 ## Current Position
 
-Phase: 23
-Plan: Not started
+Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-07-19 -- Phase 23 planning complete
+Last activity: 2026-07-19
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 68%
 
 ## Milestone v2.3 Phase Map
 
@@ -78,6 +78,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 22 P05 | 32min | 3 tasks | 15 files |
 | Phase 22 P06 | 12min | 3 tasks | 10 files |
 | Phase 22 P07 | 13min | 3 tasks | 10 files |
+| Phase 23 P01 | 12min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 22-07: Public /unsubscribe is a server page.tsx (exports metadata.robots noindex,nofollow) wrapping a Suspense'd use-client content module; token/email sent to the API but never rendered into meta/body (PII-safe); route sitemap-excluded + link-graph-allowlisted (email-only entry).
 - [Phase ?]: 22-07: Phase-gate docs reconcile = docs-freshness.sh --write (schema 56, total 1388) + gradle updateOpenApiSnapshot (+14 endpoints, 0 removed) -> docs-freshness EXIT=0; whole-repo artifacts reconciled once at the last plan.
 - [Phase ?]: 22-07: Authenticated E2E = real Keycloak login + Playwright route() stubs (dashboard-mobile pattern); unsubscribe-flow 6/6 live green; webhook dashboard specs need E2E_VENDOR_PASSWORD for a live authenticated run (env creds unknown).
+- [Phase 23]: 23-01: V52 ships shop_staff + shop_staff_aud + user_directory (D-09) all ENABLE+FORCE RLS via the safe current_tenant_id() helper (never the raw ::uuid cast); functional unique index over (tenant_id, user_id, COALESCE(shop_id, zero-uuid)); tables ship EMPTY (no migrate-time backfill — JIT is 23-02, RESEARCH §1-FLAG).
+- [Phase 23]: 23-01: VSA-01 left PENDING (anti-false-green, mirrors 22-01) — data layer delivered, but its JIT-provision backfill + realm-admin implicit-GROUP_ADMIN bridge + JIT idempotency test are scoped to 23-02; VSA-01 closes in 23-02.
 
 ### Pending Todos
 
@@ -137,6 +140,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T18:36:29.920Z
-Stopped at: Phase 23 context gathered
-Resume file: .planning/phases/23-vendor-scoped-access-responsive-dashboard-nav/23-CONTEXT.md
+Last session: 2026-07-19T10:27:57.088Z
+Stopped at: Completed 23-01-PLAN.md
+Resume file: None
