@@ -146,7 +146,7 @@ Plans:
 
 **Wave 3** *(both blocked on 23-02; parallel — no file overlap)*
 
-- [ ] 23-03-PLAN.md (Wave 3) — Enforcement sweep (RESEARCH §3 inventory): `require(shopId, minRole)` + read-scoping across Shop/Product/Order/Promotion/Announcement services; §3-FLAG mitigations (bulk-import per-row, KDS SSE fan-out grant-set filter); `ShopAccessEnforcementIntegrationTest`. [VSA-02]
+- [x] 23-03-PLAN.md (Wave 3) — Enforcement sweep (RESEARCH §3 inventory): `require(shopId, minRole)` + read-scoping across Shop/Product/Order/Promotion/Announcement services; §3-FLAG mitigations (bulk-import per-row, KDS SSE fan-out grant-set filter); `ShopAccessEnforcementIntegrationTest`. [VSA-02]
 - [ ] 23-04-PLAN.md (Wave 3, parallel) — Staff-management backend: GROUP_ADMIN-gated `/api/v1/staff` list/grant/revoke + last-GROUP_ADMIN 409 guard (D-11) + evict-on-write (D-05) + `StaffManagementIntegrationTest`. [VSA-04]
 
 **Wave 4** *(blocked on 23-03)*
@@ -235,7 +235,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 2/7 | In Progress|  |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 3/7 | In Progress|  |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
