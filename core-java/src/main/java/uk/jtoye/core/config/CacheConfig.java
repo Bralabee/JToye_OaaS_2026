@@ -87,6 +87,12 @@ public class CacheConfig implements CachingConfigurer {
         // Shops cache: 15 minutes (very stable data, infrequently updated)
         cacheConfigurations.put("shops", defaultConfig.entryTtl(Duration.ofMinutes(15)));
 
+        // Phase 23 VSA-02 (D-05): per-user shop-membership cache. Grant/revoke
+        // evicts the exact entry immediately (TenantCacheEvictor), so this short
+        // TTL is only a backstop should an eviction be missed — an auth boundary
+        // must not carry a stale allow for long.
+        cacheConfigurations.put("shopMembership", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultConfig)
                 .withInitialCacheConfigurations(cacheConfigurations)
