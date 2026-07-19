@@ -15,6 +15,7 @@ import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
 
 import java.lang.reflect.Field;
@@ -48,6 +49,9 @@ class BulkImportServiceTest {
     @Mock
     private StorageService storageService;
 
+    @Mock
+    private ShopAccessService shopAccessService;
+
     @InjectMocks
     private BulkImportService bulkImportService;
 
@@ -67,6 +71,11 @@ class BulkImportServiceTest {
     void setUp() {
         tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these fixtures import CSVs with no shop_id column, so run as
+        // a GROUP_ADMIN — unassigned rows are allowed (legacy behaviour) and the image
+        // path's requireGroupAdmin() passes. Lenient: not every test reaches the gate.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Default: repository saves and returns the product with an ID
         lenient().when(productRepository.save(any(Product.class))).thenAnswer(invocation -> {

@@ -15,6 +15,8 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.IngredientMarkupParser.ParsedIngredients;
 import uk.jtoye.core.product.LabelRenderModel.IngredientRun;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -46,10 +48,13 @@ public class ProductLabelService {
 
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
+    private final ShopAccessService shopAccessService;
 
-    public ProductLabelService(ProductRepository productRepository, ShopRepository shopRepository) {
+    public ProductLabelService(ProductRepository productRepository, ShopRepository shopRepository,
+                               ShopAccessService shopAccessService) {
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
+        this.shopAccessService = shopAccessService;
     }
 
     /**
@@ -65,6 +70,10 @@ public class ProductLabelService {
     public byte[] generateLabel(UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // VSA-02 (D-02): the label endpoint (/products/{id}/label) is a shop-scoped
+        // read — require at least STAFF on the product's owning shop (parent-lookup),
+        // so a cross-shop label pull yields the typed shop 403, not another shop's PDF.
+        shopAccessService.require(product.getShopId(), ShopRole.STAFF);
 
         // Resolve the owning shop tenant-safely. findByIdAndTenantId (NOT plain
         // findById) avoids the shops_public_read RLS cross-tenant leak (T-ovt-01).

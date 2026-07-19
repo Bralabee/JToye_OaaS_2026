@@ -15,6 +15,8 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService.ImageType;
 import uk.jtoye.core.storage.StorageService;
 
@@ -22,6 +24,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -38,15 +41,18 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final StorageService storageService;
     private final TenantCacheEvictor cacheEvictor;
+    private final ShopAccessService shopAccessService;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
                           StorageService storageService,
-                          TenantCacheEvictor cacheEvictor) {
+                          TenantCacheEvictor cacheEvictor,
+                          ShopAccessService shopAccessService) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
+        this.shopAccessService = shopAccessService;
     }
 
     /**
@@ -59,6 +65,11 @@ public class ProductService {
      * {@code @CacheEvict(allEntries=true)} nuked every tenant's cache on every create.)
      */
     public ProductDto createProduct(CreateProductRequest request) {
+        // VSA-02 (D-02): catalogue create requires SHOP_MANAGER on the target shop
+        // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
+        // STAFF is read + order-state only — a STAFF caller is denied here.
+        shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
@@ -97,8 +108,16 @@ public class ProductService {
     @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ProductDto> getProductById(UUID productId) {
         log.debug("Fetching product by ID: {}", productId);
+        // VSA-02 (D-02): a by-id product read requires at least STAFF on the owning
+        // shop. Parent-lookup: the shop gate runs against the loaded product's shopId,
+        // so a cross-shop direct hit yields the typed shop 403 (distinct from the RLS
+        // 404). The `products` read cache is @Profile("!test") — a no-op in the proving
+        // tests (see 23-03-SUMMARY for the strict-scoping cache residual).
         return productRepository.findById(productId)
-                .map(productMapper::toDto);
+                .map(product -> {
+                    shopAccessService.require(product.getShopId(), ShopRole.STAFF);
+                    return productMapper.toDto(product);
+                });
     }
 
     /**
@@ -108,7 +127,18 @@ public class ProductService {
     public Page<ProductDto> getAllProducts(Pageable pageable) {
         log.debug("Fetching all products with pagination: page={}, size={}",
                 pageable.getPageNumber(), pageable.getPageSize());
-        return productRepository.findAll(pageable)
+        // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
+        // sees the whole tenant; a scoped user sees only granted-shop products; a
+        // fully-ungranted user sees nothing (deny-by-default).
+        if (shopAccessService.isGroupAdmin()) {
+            return productRepository.findAll(pageable)
+                    .map(productMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return productRepository.findByShopIdIn(granted, pageable)
                 .map(productMapper::toDto);
     }
 
@@ -136,7 +166,18 @@ public class ProductService {
         }
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
         String skuPrefix = escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%";
-        return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
+        // VSA-02 (D-01): read-scope search to the caller's grant set at the QUERY,
+        // mirroring getAllProducts. GROUP_ADMIN uses the tenant-wide FTS; a scoped
+        // user uses the grant-set-narrowed FTS variant; ungranted → empty.
+        if (shopAccessService.isGroupAdmin()) {
+            return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
+                    .map(productMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return productRepository.searchFullTextInShops(tsQuery, skuPrefix, granted, unsorted)
                 .map(productMapper::toDto);
     }
 
@@ -175,6 +216,9 @@ public class ProductService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // VSA-02 (D-02): parent-lookup — catalogue update requires SHOP_MANAGER on the
+        // product's owning shop.
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
         // Update all fields via mapper (handles both core and storefront fields)
         productMapper.updateEntity(request, product);
@@ -201,6 +245,7 @@ public class ProductService {
     public ProductDto uploadImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         // Delete old image if exists
         storageService.delete(product.getImageUrl());
@@ -223,6 +268,7 @@ public class ProductService {
     public ProductDto removeImage(UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         storageService.delete(product.getImageUrl());
         product.setImageUrl(null);
@@ -239,6 +285,7 @@ public class ProductService {
     public ProductDto addAdditionalImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         if (product.getAdditionalImageUrls().size() >= 5) {
             throw new IllegalStateException("Maximum 5 additional images allowed per product");
@@ -262,6 +309,7 @@ public class ProductService {
     public ProductDto removeAdditionalImage(UUID productId, int index) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         List<String> urls = product.getAdditionalImageUrls();
         if (index < 0 || index >= urls.size()) {
@@ -287,6 +335,8 @@ public class ProductService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // VSA-02 (D-02): parent-lookup — catalogue delete requires SHOP_MANAGER.
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
         // Clean up all images from storage
         storageService.delete(product.getImageUrl());

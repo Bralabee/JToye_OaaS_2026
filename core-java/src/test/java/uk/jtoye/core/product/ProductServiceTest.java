@@ -17,6 +17,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
 
 import java.time.OffsetDateTime;
@@ -49,6 +50,9 @@ class ProductServiceTest {
     @Mock
     private TenantCacheEvictor cacheEvictor;
 
+    @Mock
+    private ShopAccessService shopAccessService;
+
     @InjectMocks
     private ProductService productService;
 
@@ -78,6 +82,12 @@ class ProductServiceTest {
 
         // Set up tenant context
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these unit tests assert the pre-scoping behaviour, so run
+        // them as a GROUP_ADMIN — require(...) is a no-op and read-scope methods take
+        // the full-tenant query path (existing assertions unchanged). Lenient: not every
+        // test exercises a gated method.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test product (using reflection to set auto-generated fields)
         testProduct = new Product();

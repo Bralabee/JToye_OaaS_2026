@@ -14,6 +14,7 @@ import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.LabelRenderModel.IngredientRun;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -43,6 +44,11 @@ class ProductLabelServiceTest {
 
     @Mock
     private ShopRepository shopRepository;
+
+    // Phase 23 (VSA-02): require(...) is a void no-op on the bare mock, so generateLabel
+    // proceeds exactly as before — no stub needed, just satisfy the constructor dependency.
+    @Mock
+    private ShopAccessService shopAccessService;
 
     @InjectMocks
     private ProductLabelService productLabelService;

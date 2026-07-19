@@ -8,10 +8,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.BulkImportResult.RowError;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
 import java.io.BufferedReader;
@@ -28,23 +31,30 @@ public class BulkImportService {
     private final ProductMapper productMapper;
     private final ImageAnalysisService imageAnalysisService;
     private final StorageService storageService;
+    private final ShopAccessService shopAccessService;
 
     public BulkImportService(ProductRepository productRepository, ProductMapper productMapper,
-                              ImageAnalysisService imageAnalysisService, StorageService storageService) {
+                              ImageAnalysisService imageAnalysisService, StorageService storageService,
+                              ShopAccessService shopAccessService) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.imageAnalysisService = imageAnalysisService;
         this.storageService = storageService;
+        this.shopAccessService = shopAccessService;
     }
 
     /**
      * Generate a CSV template with headers and an example row.
      */
     public String generateCsvTemplate() {
+        // shop_id is optional but recommended (Phase 23, VSA-02): each row may target a
+        // specific shop the caller manages. A scoped (non-GROUP_ADMIN) importer MUST
+        // supply a shop_id they hold SHOP_MANAGER on for every row; a GROUP_ADMIN may
+        // omit it (product stays unassigned, legacy behaviour).
         return """
-                title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask
-                Jollof Rice,JOLLOF-001,8.99,"Rice, tomatoes, peppers, onions, vegetable oil, seasoning",Mains,Our signature smoky jollof rice slow-cooked to perfection,"Halal, Gluten-Free",20,0
-                Puff Puff,PUFF-001,2.50,"Flour, sugar, yeast, water, nutmeg",Snacks,Fluffy Nigerian doughnut balls lightly dusted with sugar,Vegetarian,10,1
+                title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask,shop_id
+                Jollof Rice,JOLLOF-001,8.99,"Rice, tomatoes, peppers, onions, vegetable oil, seasoning",Mains,Our signature smoky jollof rice slow-cooked to perfection,"Halal, Gluten-Free",20,0,
+                Puff Puff,PUFF-001,2.50,"Flour, sugar, yeast, water, nutmeg",Snacks,Fluffy Nigerian doughnut balls lightly dusted with sugar,Vegetarian,10,1,
                 """;
     }
 
@@ -79,13 +89,33 @@ public class BulkImportService {
         List<String[]> dataRows = rows.subList(1, rows.size());
         result.setTotalRows(dataRows.size());
 
+        // §3-FLAG #1 (VSA-02): resolve the caller's scope ONCE. A GROUP_ADMIN may import
+        // rows with or without a shop_id; a scoped user must own SHOP_MANAGER on every
+        // row's shop_id. Deny-by-default.
+        boolean groupAdmin = shopAccessService.isGroupAdmin();
+
         for (int i = 0; i < dataRows.size(); i++) {
             int rowNum = i + 2; // 1-indexed, skip header
             String[] row = dataRows.get(i);
 
+            // §3-FLAG #1: per-row shop-access gate, OUTSIDE the per-row try/catch so an
+            // ungranted row fails the WHOLE batch with the typed 403 (deny-by-default,
+            // no partial apply — the surrounding @Transactional rolls back every prior
+            // row's save). A row with a shop_id demands SHOP_MANAGER on it; a row with
+            // no shop_id is allowed only for a GROUP_ADMIN (else denied).
+            UUID rowShopId = parseShopId(row, columnIndex);
+            if (rowShopId != null) {
+                shopAccessService.require(rowShopId, ShopRole.SHOP_MANAGER);
+            } else if (!groupAdmin) {
+                throw new ShopAccessDeniedException(null, ShopRole.SHOP_MANAGER);
+            }
+
             try {
                 Product product = parseRow(row, columnIndex, tenantId, rowNum, result);
                 if (product != null) {
+                    if (rowShopId != null) {
+                        product.setShopId(rowShopId);
+                    }
                     product = productRepository.save(product);
                     result.getCreated().add(productMapper.toDto(product));
                 }
@@ -109,6 +139,12 @@ public class BulkImportService {
      */
     @CacheEvict(value = "products", allEntries = true)
     public BulkImportResult importFromImages(MultipartFile[] files) {
+        // §3-FLAG #1 (VSA-02): the AI image-import path assigns NO shop_id (products are
+        // created as unassigned drafts), so there is no per-row shop to scope against.
+        // Restrict it to GROUP_ADMIN (deny-by-default) rather than let a scoped user
+        // create ungated tenant-wide drafts.
+        shopAccessService.requireGroupAdmin();
+
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
@@ -286,6 +322,27 @@ public class BulkImportService {
         }
 
         return product;
+    }
+
+    /**
+     * Parse the optional {@code shop_id} column for a row into a {@link UUID}, or
+     * {@code null} when the column is absent/blank. A malformed UUID is a row-level
+     * validation failure surfaced from {@code require(...)}'s caller path — we throw a
+     * typed {@link ShopAccessDeniedException} rather than silently import ungated
+     * (§3-FLAG #1, deny-by-default).
+     */
+    private UUID parseShopId(String[] row, Map<String, Integer> cols) {
+        String raw = getField(row, cols, "shop_id");
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.strip());
+        } catch (IllegalArgumentException e) {
+            // A non-UUID shop_id cannot be grant-checked — deny the batch rather than
+            // fall through to an ungated import.
+            throw new ShopAccessDeniedException(null, ShopRole.SHOP_MANAGER);
+        }
     }
 
     private String getField(String[] row, Map<String, Integer> cols, String field) {

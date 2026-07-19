@@ -6,12 +6,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findBySku(String sku);
+
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01): read-scope the product list to
+    // the caller's GRANT SET at the QUERY. A non-GROUP_ADMIN sees only products whose
+    // shop_id is in their grant set — narrowed server-side, never a post-hoc filter.
+    // GROUP_ADMIN keeps the wider findAll path. RLS still scopes every row to the tenant.
+    Page<Product> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
 
     Page<Product> findByAvailableTrue(Pageable pageable);
 
@@ -58,4 +65,22 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
            nativeQuery = true)
     Page<Product> searchFullText(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix, Pageable pageable);
+
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01): grant-set-narrowed variant of
+    // searchFullText for a scoped (non-GROUP_ADMIN) caller. Identical FTS+SKU logic,
+    // with an added outer `p.shop_id IN (:shopIds)` filter so search results never
+    // include products outside the caller's grants. Callers guarantee a non-empty
+    // shopIds set (empty grant → deny-by-default short-circuit before this call).
+    @Query(value = "SELECT p.* FROM products p WHERE p.shop_id IN (:shopIds) AND p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
+            + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.shop_id IN (:shopIds) AND p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
+           nativeQuery = true)
+    Page<Product> searchFullTextInShops(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix,
+                                        @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
 }
