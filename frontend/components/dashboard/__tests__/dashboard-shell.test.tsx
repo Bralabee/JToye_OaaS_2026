@@ -16,6 +16,13 @@ jest.mock("@/components/dashboard/sidebar", () => ({
   Sidebar: () => <aside data-testid="sidebar-stub">sidebar</aside>,
 }))
 
+// The mobile top bar now mounts the shop-context switcher. Keep its network +
+// session off the shell smoke test: a pending fetch leaves the switcher in its
+// loading skeleton (still `data-testid="shop-switcher"`), so no async setState.
+jest.mock("@/lib/shops-api", () => ({
+  fetchMyShops: jest.fn(() => new Promise(() => {})),
+}))
+
 describe("DashboardShell", () => {
   it("renders sidebar chrome and child content", () => {
     render(
@@ -38,6 +45,24 @@ describe("DashboardShell", () => {
     // Mobile bottom bar present and collapsed at md+.
     const tabBar = screen.getByTestId("mobile-tab-bar")
     expect(tabBar).toBeInTheDocument()
+    expect(tabBar).toHaveClass("md:hidden")
+    expect(tabBar).toHaveClass("fixed")
+  })
+
+  it("mounts the shop-context switcher in the md:hidden mobile top bar (375px chrome, MOBL-01)", () => {
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    // The slim top bar is mobile-only: shown at 375px, collapsed at md+ where the
+    // 256px sidebar takes over — this is the responsive contract MOBL-01 guards.
+    const topbar = screen.getByTestId("mobile-topbar")
+    expect(topbar).toHaveClass("md:hidden")
+    // The switcher rides the mobile top bar next to the wordmark (D-06).
+    expect(within(topbar).getByTestId("shop-switcher")).toBeInTheDocument()
+    // At 375px the bottom tab bar is the nav (md:hidden + fixed), not the sidebar.
+    const tabBar = screen.getByTestId("mobile-tab-bar")
     expect(tabBar).toHaveClass("md:hidden")
     expect(tabBar).toHaveClass("fixed")
   })
