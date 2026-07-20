@@ -43,11 +43,11 @@ Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (ten
 
 - [x] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
 
-- [x] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
+- [ ] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
 
 - [x] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
 
-- [x] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
+- [ ] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
 
 ### Image architecture (IMG) — spec `image-architecture-SPEC.md`
 
@@ -120,9 +120,9 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-06 | Phase 22 | 22-06 | Complete |
 | COMMS-07 | Phase 22 | 22-01 | Complete |
 | VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
-| VSA-02 | Phase 23 | 23-02, 23-03 | Complete |
+| VSA-02 | Phase 23 | 23-02, 23-03 | Gaps found (23-VERIFICATION: CR-01 cache bypass, CR-02 STOMP) |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
-| VSA-04 | Phase 23 | 23-04, 23-06 | Complete |
+| VSA-04 | Phase 23 | 23-04, 23-06 | Gaps found (23-VERIFICATION: CR-03 fail-open) |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |
 | IMG-02 | Phase 24 | 24-02 | Pending |
