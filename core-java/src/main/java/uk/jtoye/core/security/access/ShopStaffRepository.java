@@ -46,29 +46,4 @@ public interface ShopStaffRepository extends JpaRepository<ShopStaff, UUID> {
     int insertGroupAdminIfAbsent(@Param("id") UUID id,
                                  @Param("tenantId") UUID tenantId,
                                  @Param("userId") UUID userId);
-
-    /**
-     * Race-safe idempotent grant of an arbitrary {@code (user, shop|null, role)}
-     * (23-04, VSA-04). Mirrors {@link #insertGroupAdminIfAbsent} exactly but takes
-     * a caller-supplied {@code shop_id} + {@code role} + {@code created_by}, so a
-     * retried or concurrent duplicate grant is a no-op against the V52 functional
-     * unique index {@code uq_shop_staff_tenant_user_shop} rather than an untyped
-     * {@code DataIntegrityViolationException} 500 (agent-readiness idempotency
-     * contract). Returns rows affected (1 = a new grant, 0 = the grant already
-     * existed). {@code role} is bound as text ({@code role.name()}); a NULL
-     * {@code shopId} is the tenant-wide (GROUP_ADMIN-shape) grant, cast explicitly
-     * so the untyped bind never trips "could not determine data type of parameter".
-     */
-    @Modifying
-    @Query(value = "INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at, created_by) "
-            + "VALUES (:id, :tenantId, :userId, CAST(:shopId AS uuid), CAST(:role AS varchar), now(), :createdBy) "
-            + "ON CONFLICT (tenant_id, user_id, COALESCE(shop_id, '00000000-0000-0000-0000-000000000000'::uuid)) "
-            + "DO NOTHING",
-            nativeQuery = true)
-    int insertGrantIfAbsent(@Param("id") UUID id,
-                            @Param("tenantId") UUID tenantId,
-                            @Param("userId") UUID userId,
-                            @Param("shopId") UUID shopId,
-                            @Param("role") String role,
-                            @Param("createdBy") UUID createdBy);
 }

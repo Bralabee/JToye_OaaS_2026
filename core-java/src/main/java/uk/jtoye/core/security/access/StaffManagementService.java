@@ -2,10 +2,13 @@ package uk.jtoye.core.security.access;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -29,16 +32,20 @@ import java.util.UUID;
  *
  * <p><strong>Invariants</strong>:
  * <ul>
- *   <li><strong>Idempotent grant (agent-readiness)</strong> — the write is the
- *       race-safe {@link ShopStaffRepository#insertGrantIfAbsent} (ON CONFLICT DO
- *       NOTHING on {@code uq_shop_staff_tenant_user_shop}); a retried/duplicate
- *       grant replays the canonical row as a typed 200, never an untyped
- *       unique-constraint 500.</li>
+ *   <li><strong>Idempotent, audited grant (agent-readiness + WR-02)</strong> — the
+ *       write goes through the Hibernate session so Envers records BOTH the create and
+ *       any role change in {@code shop_staff_aud} (not revokes alone). A fresh grant is
+ *       an ADD revision; re-granting the SAME role is a no-change replay (no write, no
+ *       revision); re-granting a DIFFERENT role APPLIES the change (a downgrade genuinely
+ *       takes effect — CR-05, no longer a silent no-op reported as success). A concurrent
+ *       duplicate insert is caught and replayed as a typed 200, never an untyped
+ *       unique-constraint 500 (T-23-09-04).</li>
  *   <li><strong>Last-GROUP_ADMIN lockout guard (D-11)</strong> — a revoke of the
  *       final tenant-wide GROUP_ADMIN, or a grant that would downgrade the sole
  *       GROUP_ADMIN's tenant-wide slot, is blocked with a
  *       {@link LastGroupAdminException} (RFC 7807 409). The realm-admin bridge is a
- *       recovery backstop, but a non-realm-admin group could otherwise self-lock.</li>
+ *       recovery backstop, but a non-realm-admin group could otherwise self-lock. Now
+ *       that downgrades genuinely apply, this guard is LOAD-BEARING on the grant path.</li>
  *   <li><strong>Immediate effect (D-05)</strong> — after the DB write COMMITS,
  *       {@link ShopAccessService#evictMembership(UUID)} runs so the target's very
  *       next request re-resolves from {@code shop_staff} with no stale window.</li>
@@ -53,16 +60,36 @@ public class StaffManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(StaffManagementService.class);
 
+    /**
+     * IN-03: the 409 message for a revoke of the tenant's last GROUP_ADMIN. Extracted to
+     * a named constant so the wording cannot drift; kept DISTINCT from the downgrade
+     * variant so plan 23-13 can map each precisely to its frontend copy (IN-02).
+     */
+    static final String MSG_REVOKE_LAST_GROUP_ADMIN =
+            "Cannot revoke the last GROUP_ADMIN in this tenant — grant another GROUP_ADMIN first";
+
+    /** IN-03: the 409 message for a downgrade of the tenant's last GROUP_ADMIN (grant path). */
+    static final String MSG_DOWNGRADE_LAST_GROUP_ADMIN =
+            "Cannot downgrade the last GROUP_ADMIN in this tenant — grant another GROUP_ADMIN first";
+
     private final ShopStaffRepository shopStaffRepository;
     private final UserDirectoryRepository userDirectoryRepository;
     private final ShopAccessService shopAccessService;
+    /**
+     * Self-reference (lazy {@link ObjectProvider} to avoid a construction cycle) used to
+     * invoke {@link #persistNewGrant} through the bean proxy so its
+     * {@code REQUIRES_NEW} propagation actually takes effect.
+     */
+    private final ObjectProvider<StaffManagementService> selfProvider;
 
     public StaffManagementService(ShopStaffRepository shopStaffRepository,
                                   UserDirectoryRepository userDirectoryRepository,
-                                  ShopAccessService shopAccessService) {
+                                  ShopAccessService shopAccessService,
+                                  ObjectProvider<StaffManagementService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.shopAccessService = shopAccessService;
+        this.selfProvider = selfProvider;
     }
 
     /** The GET /api/v1/staff body: the grant-target picker + the current grants. */
@@ -71,9 +98,10 @@ public class StaffManagementService {
 
     /**
      * Result of a grant: the canonical {@link StaffMemberDto} plus whether it was a
-     * fresh insert ({@code true} → controller emits 201) or an idempotent replay of
-     * an existing grant ({@code false} → 200). Carrying the flag keeps HTTP-status
-     * selection out of the service while letting a duplicate grant be a typed replay.
+     * fresh insert ({@code true} → controller emits 201) or an idempotent replay /
+     * in-place role change of an existing grant ({@code false} → 200). Carrying the
+     * flag keeps HTTP-status selection out of the service while letting a duplicate
+     * grant be a typed replay.
      */
     public record GrantResult(StaffMemberDto member, boolean created) {
     }
@@ -96,57 +124,65 @@ public class StaffManagementService {
     }
 
     /**
-     * Grant {@code (userId, shopId|null, role)} idempotently. GROUP_ADMIN only.
+     * Grant {@code (userId, shopId|null, role)}. GROUP_ADMIN only.
      *
-     * <p>Guards first (D-11): a tenant-wide grant that would downgrade the sole
-     * GROUP_ADMIN's tenant-wide slot to a lesser role is rejected with 409. Then the
-     * race-safe {@link ShopStaffRepository#insertGrantIfAbsent} runs — a concurrent
-     * or retried duplicate is a no-op (never a 500). The canonical row is re-selected
-     * and returned; on commit the target's membership cache is evicted (D-05).
+     * <p>The write goes through the Hibernate session (not a native
+     * {@code ON CONFLICT DO NOTHING} insert) so Envers observes it (WR-02):
+     * <ul>
+     *   <li>absent → a new grant is inserted (Envers ADD revision), race-safely — a
+     *       concurrent duplicate is caught and replayed as a typed 200; {@code created=true};</li>
+     *   <li>present with the SAME role → an idempotent no-change replay ({@code created=false},
+     *       no write, no revision);</li>
+     *   <li>present with a DIFFERENT role → the role is UPDATED and audited
+     *       ({@code created=false}). This is the CR-05 fix: a downgrade genuinely takes
+     *       effect instead of silently no-opping while the API reports success.</li>
+     * </ul>
+     *
+     * <p>Guards run first, unchanged in order: a shop-scoped GROUP_ADMIN grant is
+     * rejected (400), and the D-11 downgrade guard blocks a change that would strip the
+     * sole tenant-wide GROUP_ADMIN (409). The D-11 guard is now LOAD-BEARING — it
+     * previously fronted a write that could not change a role anyway; now that downgrades
+     * apply, it is the only thing preventing the last GROUP_ADMIN being downgraded.
      *
      * @return {@link GrantResult} with {@code created=true} for a fresh insert,
-     *         {@code false} for an idempotent replay of the existing grant.
+     *         {@code false} for an idempotent replay or an in-place role change.
      */
     public GrantResult grant(UUID userId, UUID shopId, ShopRole role) {
         shopAccessService.requireGroupAdmin();
         UUID tenantId = currentTenantId();
 
-        // GROUP_ADMIN is inherently tenant-wide (a NULL shop). A shop-scoped
-        // GROUP_ADMIN row would not confer tenant-wide admin (resolveMembership only
-        // treats a NULL-shop GROUP_ADMIN row as such) AND would corrupt the
+        // GROUP_ADMIN is inherently tenant-wide (a NULL shop). A shop-scoped GROUP_ADMIN
+        // row would not confer tenant-wide admin (resolveMembership only treats a
+        // NULL-shop GROUP_ADMIN row as such) AND would corrupt the
         // countByTenantIdAndRole(GROUP_ADMIN) last-admin guard. Reject it. (Rule 2)
         if (role == ShopRole.GROUP_ADMIN && shopId != null) {
             throw new IllegalArgumentException(
                     "GROUP_ADMIN is a tenant-wide role; shopId must be null for a GROUP_ADMIN grant");
         }
 
-        // D-11 downgrade guard: refuse to change the sole GROUP_ADMIN's tenant-wide
-        // slot to a lesser role (the insert-only path would in any case no-op via ON
-        // CONFLICT, replaying the GROUP_ADMIN row — surfacing that as a misleading
-        // "granted SHOP_MANAGER" success is worse than a clear 409).
-        if (shopId == null && role != ShopRole.GROUP_ADMIN && wouldDowngradeLastGroupAdmin(tenantId, userId)) {
-            throw new LastGroupAdminException(
-                    "Cannot downgrade the last GROUP_ADMIN in this tenant — grant another GROUP_ADMIN first");
+        ShopStaff existing = findCanonicalGrant(tenantId, userId, shopId);
+
+        if (existing == null) {
+            return insertNewGrantRaceSafe(tenantId, userId, shopId, role);
         }
 
-        int inserted = shopStaffRepository.insertGrantIfAbsent(
-                UUID.randomUUID(), tenantId, userId, shopId, role.name(), currentCallerSub());
-
-        // Re-select the canonical row (a fresh insert OR the pre-existing one on an
-        // idempotent replay) so the response is a stable typed DTO either way.
-        ShopStaff canonical = shopStaffRepository.findByTenantIdAndUserId(tenantId, userId).stream()
-                .filter(r -> Objects.equals(r.getShopId(), shopId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "Grant row not found after insert for user " + userId + " shop " + shopId));
-
-        evictAfterCommit(userId);
-        if (inserted > 0) {
-            log.info("Granted {} to user {} (shop {}) in tenant {}", role, userId, shopId, tenantId);
-        } else {
+        if (existing.getRole() == role) {
+            // No-change replay: do NOT write, do NOT bump an Envers revision.
             log.debug("Idempotent grant replay for user {} (shop {}) in tenant {}", userId, shopId, tenantId);
+            return new GrantResult(StaffMemberDto.from(existing), false);
         }
-        return new GrantResult(StaffMemberDto.from(canonical), inserted > 0);
+
+        // A genuine role change. The D-11 downgrade guard MUST fire before the update
+        // now that a downgrade actually applies (CR-05).
+        if (shopId == null && role != ShopRole.GROUP_ADMIN && wouldDowngradeLastGroupAdmin(tenantId, userId)) {
+            throw new LastGroupAdminException(MSG_DOWNGRADE_LAST_GROUP_ADMIN);
+        }
+
+        existing.setRole(role);
+        shopStaffRepository.saveAndFlush(existing); // session write → Envers MOD revision (WR-02)
+        evictAfterCommit(userId);
+        log.info("Changed role to {} for user {} (shop {}) in tenant {}", role, userId, shopId, tenantId);
+        return new GrantResult(StaffMemberDto.from(existing), false);
     }
 
     /**
@@ -165,8 +201,7 @@ public class StaffManagementService {
 
         if (row.getRole() == ShopRole.GROUP_ADMIN
                 && shopStaffRepository.countByTenantIdAndRole(tenantId, ShopRole.GROUP_ADMIN) <= 1) {
-            throw new LastGroupAdminException(
-                    "Cannot revoke the last GROUP_ADMIN in this tenant — grant another GROUP_ADMIN first");
+            throw new LastGroupAdminException(MSG_REVOKE_LAST_GROUP_ADMIN);
         }
 
         UUID targetUserId = row.getUserId();
@@ -184,6 +219,59 @@ public class StaffManagementService {
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /** The tenant's canonical grant for {@code (userId, shopId)}, or {@code null} if none. */
+    private ShopStaff findCanonicalGrant(UUID tenantId, UUID userId, UUID shopId) {
+        return shopStaffRepository.findByTenantIdAndUserId(tenantId, userId).stream()
+                .filter(r -> Objects.equals(r.getShopId(), shopId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Insert a brand-new grant through the session (so Envers records the ADD revision —
+     * WR-02) inside a {@code REQUIRES_NEW} transaction. A concurrent duplicate insert
+     * surfacing as a unique-index {@link DataIntegrityViolationException} then fails ONLY
+     * the inner transaction (leaving the caller's transaction un-poisoned — Postgres
+     * aborts the whole transaction on any statement error) and is replayed as a typed
+     * idempotent 200 rather than an untyped 500 (agent-readiness contract, T-23-09-04).
+     */
+    private GrantResult insertNewGrantRaceSafe(UUID tenantId, UUID userId, UUID shopId, ShopRole role) {
+        try {
+            ShopStaff created = selfProvider.getObject()
+                    .persistNewGrant(tenantId, userId, shopId, role, currentCallerSub());
+            evictAfterCommit(userId);
+            log.info("Granted {} to user {} (shop {}) in tenant {}", role, userId, shopId, tenantId);
+            return new GrantResult(StaffMemberDto.from(created), true);
+        } catch (DataIntegrityViolationException raced) {
+            ShopStaff canonical = findCanonicalGrant(tenantId, userId, shopId);
+            if (canonical == null) {
+                throw new IllegalStateException(
+                        "Grant row not found after a concurrent insert for user " + userId + " shop " + shopId,
+                        raced);
+            }
+            log.debug("Concurrent duplicate grant replayed for user {} (shop {}) in tenant {}",
+                    userId, shopId, tenantId);
+            return new GrantResult(StaffMemberDto.from(canonical), false);
+        }
+    }
+
+    /**
+     * The session insert, isolated in its OWN transaction ({@code REQUIRES_NEW}) so a
+     * unique-index violation on a concurrent duplicate does not poison the caller's
+     * transaction. MUST be invoked through the bean proxy ({@code selfProvider}) for the
+     * propagation to take effect. Envers observes this session write → ADD revision.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ShopStaff persistNewGrant(UUID tenantId, UUID userId, UUID shopId, ShopRole role, UUID createdBy) {
+        ShopStaff row = new ShopStaff();
+        row.setTenantId(tenantId);
+        row.setUserId(userId);
+        row.setShopId(shopId);
+        row.setRole(role);
+        row.setCreatedBy(createdBy);
+        return shopStaffRepository.saveAndFlush(row);
+    }
 
     /**
      * True when {@code userId} currently holds the tenant's ONLY tenant-wide
