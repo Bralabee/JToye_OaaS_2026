@@ -45,7 +45,7 @@ Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (ten
 
 - [x] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
 
-- [ ] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
+- [x] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
 
 - [ ] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
 
@@ -121,7 +121,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-07 | Phase 22 | 22-01 | Complete |
 | VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
 | VSA-02 | Phase 23 | 23-02, 23-03 | Complete |
-| VSA-03 | Phase 23 | 23-05, 23-07 | Pending |
+| VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
 | VSA-04 | Phase 23 | 23-04, 23-06 | Pending |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |

@@ -155,7 +155,7 @@ Plans:
 
 **Wave 5** *(blocked on 23-05)*
 
-- [ ] 23-07-PLAN.md (Wave 5) — Shop-context wiring (VSA-03 consumption): a `useShopContext` hook over `getShopContext()`/`subscribeShopContext` (23-05) threaded into Products/Orders/Marketing/Kitchen — list narrowing (Orders `?shopId=` server param, others client-side over the 23-03 grant-scoped result) + create-form default/constrain to the selected shop (D-08) + Kitchen local-selector reconcile; Jest behaviour proofs. Closes VSA-03's “all shop-scoped screens operate on the selected shop” clause. [VSA-03]
+- [x] 23-07-PLAN.md (Wave 5) — Shop-context wiring (VSA-03 consumption): a `useShopContext` hook over `getShopContext()`/`subscribeShopContext` (23-05) threaded into Products/Orders/Marketing/Kitchen — list narrowing (Orders `?shopId=` server param, others client-side over the 23-03 grant-scoped result) + create-form default/constrain to the selected shop (D-08) + Kitchen local-selector reconcile; Jest behaviour proofs. Closes VSA-03's “all shop-scoped screens operate on the selected shop” clause. [VSA-03]
 
 **Wave 6** *(blocked on 23-04 + 23-05 + 23-07)*
 
@@ -235,7 +235,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 5/7 | In Progress|  |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 6/7 | In Progress|  |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

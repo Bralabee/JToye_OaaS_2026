@@ -4,13 +4,13 @@ milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
 stopped_at: Completed 23-05-PLAN.md
-last_updated: "2026-07-20T10:34:58.906Z"
+last_updated: "2026-07-20T11:18:35.417Z"
 last_activity: 2026-07-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 33
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING
-Plan: 6 of 7
-Status: Ready to execute
+Plan: 6 of 7 remaining (23-01..05 + 23-07 complete; **23-06 staff screen is the only plan left**, executed out of wave order)
+Status: Ready to execute 23-06 — which also owns the phase-gate `scripts/docs-freshness.sh --write` reconcile (see phase deferred-items.md)
 Last activity: 2026-07-20
 
-Progress: [█████████░] 89%
+Progress: [██████████] 95%
 
 ## Milestone v2.3 Phase Map
 
@@ -61,7 +61,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 |-------|-------|-------|----------|
 | 21 | 5 | - | - |
 | 22 | 7 | - | - |
-| 23 | 0/3 | - | - |
+| 23 | 6/7 | - | - |
 | 24 | 0/3 | - | - |
 | 25 | 0/2 | - | - |
 | 26 | 0/2 | - | - |
@@ -83,6 +83,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P03 | 55min | 3 tasks | 31 files |
 | Phase 23 P4 | 10min | 2 tasks | 7 files |
 | Phase 23 P05 | 35min | 4 tasks | 9 files |
+| Phase 23 P07 | 40m | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 23-03: VSA-02 CLOSED — require(shopId,minRole) gates every shop-scoped write (deny-by-default) + read-scope narrows every list to grantedShopIds at the QUERY across Shop/Product/Order/Promotion/Announcement (+ label + bulk per-row + KDS SSE grant-set fan-out via shopId now on OrderStateChangeEvent); typed shop-403 proven distinct from RLS 404; system-principal bypass + read-only-tx write-skip harden the gate
 - [Phase 23]: 23-05: shop-context switcher persists via localStorage['shopContext'] (theme-toggle idiom, D-07) + broadcasts a same-tab 'shopcontext:change' CustomEvent (browser storage event fires only cross-tab); subscribeShopContext is the seam 23-07's useShopContext consumes to narrow screens live. GA defaults to All-shops; apply-to-all gated on GA+all-context; non-GA single grant pinned; D-13 stale id degrades to 'all' not a crash.
 - [Phase 23]: 23-05: MOBL-01 CLOSED verify-first (satisfied-by-prior-work) — Phase 19 Surface D already shipped the responsive shell; switcher integrated width-capped (max-w-[55%]+truncate), no reintroduced overflow, proven by 375px Jest+Playwright + live human-verify APPROVED + surface-ledger proof (drawer_authored:false). VSA-03 LEFT PENDING — its 'all shop-scoped screens operate on the selected shop' clause closes only in 23-07 (anti-false-green).
+- [Phase 23]: 23-07: VSA-03 CLOSED — useShopContext() (hooks/use-shop-context.ts) is the single consumption point for the switcher; Products/Orders/Marketing/Kitchen narrow to contextShopId and react live to 'shopcontext:change'. Orders narrows SERVER-side via the gated ?shopId=; Products/Promotions/Announcements narrow client-side over the already grant-scoped page (their endpoints take no shop param — cosmetic pagination caveat, never a scope widening). contextShopId===null ("all") is a strict fall-through so the GROUP_ADMIN cross-shop view is byte-for-byte unchanged. Create-forms default AND pin their shop (D-08 single-shop writes); Kitchen's board derives from the global context (fetchShops no longer picks a shop) with the published-first fallback preserved. Hook hydrates in a mount effect (NOT a useState initialiser) to avoid an SSR hydration mismatch.
+- [Phase 23]: 23-07: Closure proven at Jest (58/58 dashboard suites) + npm run build tsc level only — live browser/Playwright verification DEFERRED (low-footprint session after a desktop crash), recorded in 23-07-SUMMARY "Deferred verification"; run before the phase PR.
 
 ### Pending Todos
 
@@ -148,6 +151,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T10:34:58.896Z
+Last session: 2026-07-20T11:18:13.733Z
 Stopped at: Completed 23-05-PLAN.md
 Resume file: None
