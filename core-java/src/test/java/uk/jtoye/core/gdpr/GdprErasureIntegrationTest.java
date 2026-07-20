@@ -214,6 +214,79 @@ class GdprErasureIntegrationTest {
                 .isZero();
     }
 
+    /**
+     * WR-10 (Phase 23): the {@code user_directory} grant-target cache carries staff email
+     * PII introduced by V52 — before it, this data did not exist in the platform, so
+     * {@code GdprService} never touched it. Erasure must now reach it. The table is keyed
+     * {@code (tenant_id, user_id)} — a vendor-staff identity space with no natural
+     * {@code Customer} join — so erasure matches on {@code tenant_id + email} (mirroring the
+     * guest-order email sweep). This test proves the subject's tenant-A directory row is
+     * removed while a same-email row in ANOTHER tenant survives (tenant-scoped, isolation
+     * intact). Pre-fix (RED): the erasure ignored {@code user_directory}, so the row survived.
+     */
+    @Test
+    @DisplayName("Erasure removes the subject's user_directory row for the tenant, leaving other tenants' rows")
+    void erasureRemovesUserDirectoryRowTenantScoped() {
+        final String dirEmail = "directory-subject@example.com";
+        final UUID tenantAUser = UUID.randomUUID();
+        final UUID otherTenant = UUID.fromString("00000000-0000-0000-0000-000000084999");
+        final UUID otherTenantUser = UUID.randomUUID();
+
+        // A customer whose email also appears as a staff user_directory row in tenant A.
+        Customer customer = new Customer("Directory Subject", dirEmail);
+        customer.setTenantId(TENANT_A);
+        UUID customerId = customerRepository.saveAndFlush(customer).getId();
+
+        // Seed the tenant-A directory row (the WR-10 PII) + a same-email row in ANOTHER
+        // tenant that must survive (cross-tenant isolation). SUPERUSER bypasses FORCE RLS.
+        jdbcTemplate.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) "
+                + "ON CONFLICT (id) DO NOTHING", otherTenant, "Other Directory Tenant");
+        jdbcTemplate.update("INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                + "VALUES (?, ?, ?, ?, now())", TENANT_A, tenantAUser, dirEmail, "Directory Subject");
+        jdbcTemplate.update("INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                + "VALUES (?, ?, ?, ?, now())", otherTenant, otherTenantUser, dirEmail, "Same Email Other Tenant");
+
+        assertThat(directoryRows(TENANT_A, dirEmail))
+                .as("the tenant-A directory row exists pre-erasure").isEqualTo(1L);
+
+        // Erase the subject.
+        gdprService.eraseCustomerData(customerId);
+
+        assertThat(directoryRows(TENANT_A, dirEmail))
+                .as("the subject's tenant-A user_directory row is erased")
+                .isZero();
+        assertThat(directoryRows(otherTenant, dirEmail))
+                .as("another tenant's same-email directory row is untouched (isolation intact)")
+                .isEqualTo(1L);
+    }
+
+    /**
+     * WR-10 accounting balance: erasing a subject who has NO {@code user_directory} row is
+     * the normal case (a storefront customer is usually not a staff user) and MUST NOT be
+     * treated as a failure — the erasure completes and returns its durable record as usual.
+     */
+    @Test
+    @DisplayName("Erasure with no matching user_directory row still completes and balances")
+    void erasureWithNoDirectoryRowStillBalances() {
+        final String noDirEmail = "no-directory-subject@example.com";
+        Customer customer = new Customer("No Directory Subject", noDirEmail);
+        customer.setTenantId(TENANT_A);
+        UUID customerId = customerRepository.saveAndFlush(customer).getId();
+
+        assertThat(directoryRows(TENANT_A, noDirEmail)).as("no directory row exists").isZero();
+
+        GdprController.ErasureResponse response = gdprService.eraseCustomerData(customerId);
+        assertThat(response.recordId())
+                .as("erasure completes and persists a durable record even with zero directory matches")
+                .isNotNull();
+    }
+
+    private Long directoryRows(UUID tenant, String email) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM user_directory WHERE tenant_id = ? AND email = ?",
+                Long.class, tenant, email);
+    }
+
     private Long auditRowsWithGuestEmail() {
         return jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM orders_aud WHERE tenant_id = ? AND customer_email = ?",

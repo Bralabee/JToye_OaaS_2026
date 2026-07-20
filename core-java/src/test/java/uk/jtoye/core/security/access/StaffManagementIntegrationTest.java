@@ -26,6 +26,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.StaffManagementService.GrantResult;
+import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
 import uk.jtoye.core.security.access.dto.GrantStaffRequest;
 import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
@@ -778,6 +779,80 @@ class StaffManagementIntegrationTest {
         assertThat(me.grantedShopIds())
                 .as("a scoped caller sees exactly their granted shop ids")
                 .containsExactly(shopId);
+    }
+
+    // ====================================================================
+    // 23-12 Task 3 — WR-10: user_directory email PII is MASKED at the DTO
+    // boundary (the full value stays server-side); grants still key on userId.
+    // ====================================================================
+
+    /**
+     * WR-10: the {@code GET /api/v1/staff} directory payload carries a MASKED email
+     * (e.g. {@code a***@example.com}), never the full address; the full value is kept
+     * server-side. Pre-fix (RED): {@code DirectoryEntryDto.from} returned the raw email.
+     */
+    @Test
+    void directoryPayloadMasksEmail() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID member = UUID.randomUUID();
+        String fullEmail = "alice.member@example.com";
+
+        // Seed a directory row with a known full email (SUPERUSER bypasses FORCE RLS).
+        jdbc.update("INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                        + "VALUES (?, ?, ?, ?, now()) ON CONFLICT (tenant_id, user_id) DO NOTHING",
+                tenant, member, fullEmail, "Alice Member");
+
+        authenticate(admin, true, tenant);
+        StaffManagementService.StaffListResponse listing = staffManagementService.list();
+
+        DirectoryEntryDto entry = listing.directory().stream()
+                .filter(d -> d.userId().equals(member))
+                .findFirst()
+                .orElseThrow();
+        assertThat(entry.email())
+                .as("the directory email is masked, not the full address")
+                .isEqualTo("a***@example.com")
+                .isNotEqualTo(fullEmail);
+        assertThat(listing.directory())
+                .as("no directory entry leaks the full local part")
+                .allSatisfy(d -> assertThat(d.email()).doesNotContain("alice.member"));
+
+        // The full value is still retained server-side — only masked at the DTO boundary.
+        String stored = jdbc.queryForObject(
+                "SELECT email FROM user_directory WHERE tenant_id = ? AND user_id = ?",
+                String.class, tenant, member);
+        assertThat(stored).as("the full email is retained server-side").isEqualTo(fullEmail);
+    }
+
+    /**
+     * WR-10 companion: a grant still succeeds when the operator only ever sees the masked
+     * form — grants key on the {@code userId} carried by the directory entry, never on the
+     * (now masked) email.
+     */
+    @Test
+    void grantSucceedsKeyedOnUserIdDespiteMaskedEmail() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID member = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        jdbc.update("INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                        + "VALUES (?, ?, ?, ?, now()) ON CONFLICT (tenant_id, user_id) DO NOTHING",
+                tenant, member, "bob.member@example.com", "Bob Member");
+
+        authenticate(admin, true, tenant);
+        DirectoryEntryDto picked = staffManagementService.list().directory().stream()
+                .filter(d -> d.userId().equals(member))
+                .findFirst()
+                .orElseThrow();
+        assertThat(picked.email()).as("operator sees only the masked email").contains("***");
+
+        // Grant keyed on the userId carried by the entry, not the (masked) email.
+        ResponseEntity<StaffMemberDto> granted =
+                staffController.grant(new GrantStaffRequest(picked.userId(), shopId, ShopRole.STAFF));
+        assertThat(granted.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(shopStaffRowCount(tenant, member, shopId)).isEqualTo(1);
     }
 
     private Callable<Throwable> revokeWorker(UUID revoker, UUID tenant, UUID grantId, CountDownLatch gate) {
