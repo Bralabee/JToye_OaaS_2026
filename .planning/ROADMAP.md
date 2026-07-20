@@ -168,7 +168,7 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
 **Gap Wave 1**
 
 - [x] 23-08-PLAN.md (Gap Wave 1) — CR-03 fail-closed system principal (a non-UUID-subject JWT was an unrestricted GROUP_ADMIN on `/api/v1/staff`) via an explicit empty-by-default machine-client allowlist, + CR-04 `require(null, role)` NPE→typed 403 and the null-shop write policy. [VSA-02, VSA-04]
-- [ ] 23-09-PLAN.md (Gap Wave 1, parallel) — CR-05 role changes silently no-op while reporting success (grant reshaped to an audited Hibernate upsert, closing WR-02) + CR-06 last-GROUP_ADMIN check-then-act race (`PESSIMISTIC_WRITE` lock) + IN-03. [VSA-04]
+- [x] 23-09-PLAN.md (Gap Wave 1, parallel) — CR-05 role changes silently no-op while reporting success (grant reshaped to an audited session-based write, closing WR-02) + CR-06 last-GROUP_ADMIN check-then-act race (`PESSIMISTIC_WRITE` lock) + IN-03. [VSA-04] (VSA-04 stays PENDING — 23-12/23-13/23-14/23-15 still contribute)
 
 **Gap Wave 2** *(23-10/23-11 blocked on 23-08; 23-12 on 23-09; all three parallel — no file overlap)*
 

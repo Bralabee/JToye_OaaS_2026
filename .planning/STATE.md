@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-08-PLAN.md — gap-closure CR-03 + CR-04 (fail-closed ShopAccessService)
-last_updated: "2026-07-20T21:47:20.000Z"
-last_activity: 2026-07-20 -- Executed gap plan 23-08 (CR-03 fail-open + CR-04 NPE closed)
+stopped_at: Completed 23-09-PLAN.md — gap-closure CR-05 + WR-02 + CR-06 + IN-03
+last_updated: "2026-07-20T21:32:51.427Z"
+last_activity: 2026-07-20 -- Executed gap plan 23-09 (CR-05 role-change/WR-02 audit + CR-06 last-GA race)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 27
-  completed_plans: 20
-  percent: 74
+  completed_plans: 21
+  percent: 78
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING (gap-closure wave 23-08..23-15)
-Plan: gap-closure 23-08 COMPLETE (8 of 15 SUMMARYs on disk; 23-01..23-08)
-Status: Executing Phase 23 gap-closure. 23-08 shipped — CR-03 (system-principal fail-OPEN) + CR-04 (require(null,role) NPE) closed in ShopAccessService, proven by ShopAccessFailClosedIntegrationTest (7 cases, RED demonstrated pre-fix on cases 1-4+7; 24 Phase-23 integration tests green).
+Plan: gap-closure 23-09 COMPLETE (9 of 15 SUMMARYs on disk; 23-01..23-09)
+Status: Executing Phase 23 gap-closure. 23-09 shipped — CR-05 (role changes silently no-op while reporting success) + WR-02 (grants bypass Envers) + CR-06 (last-GROUP_ADMIN check-then-act race) + IN-03 closed in StaffManagementService/ShopStaffRepository. grant() now routes through a session-based write (Envers audits create AND role-change); a DIFFERENT-role re-grant APPLIES the change; concurrent duplicate insert isolated in REQUIRES_NEW + caught (typed replay, no 500); the last-GA guard is serialized by a PESSIMISTIC_WRITE lock (ShopStaffRepository.lockTenantGroupAdmins) in BOTH revoke() and the grant() downgrade path. Proven by StaffManagementIntegrationTest — 6 new cases, RED demonstrated pre-fix on cases 1/3/4/5, 12/12 green post-fix across 3 consecutive runs; :core-java:test green (no unit regression). VSA-04 stays PENDING (23-12/23-13/23-14/23-15 still contribute; anti-false-green). Deferred to 23-14: JIT insertGroupAdminIfAbsent still bypasses Envers (WR-02 JIT half).
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the 3 new `/api/v1/staff` endpoints; `OpenApiSnapshotTest` check-mode runs inside `integrationTest`.
   Run `./gradlew :core-java:updateOpenApiSnapshot` and commit the diff (needs Docker — the 23-06
   session ran in low-footprint mode with Docker/Gradle/Playwright forbidden).
   Also deferred by that constraint: `./gradlew test integrationTest`, `npx playwright test`,
   and a live-browser pass over /dashboard/staff (GROUP_ADMIN vs non-GA sessions).
-Last activity: 2026-07-20 -- Phase 23 execution started
+Last activity: 2026-07-20 -- Executed gap plan 23-09 (CR-05/WR-02/CR-06/IN-03)
 
-Progress: [███████░░░] 74%
+Progress: [████████░░] 78%
 
 ## Milestone v2.3 Phase Map
 
@@ -67,7 +67,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 |-------|-------|-------|----------|
 | 21 | 5 | - | - |
 | 22 | 7 | - | - |
-| 23 | 6/7 | - | - |
+| 23 | 9/15 | - | - |
 | 24 | 0/3 | - | - |
 | 25 | 0/2 | - | - |
 | 26 | 0/2 | - | - |
@@ -92,6 +92,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P07 | 40m | 2 tasks | 9 files |
 | Phase 23 P06 | 12min | 3 tasks | 8 files |
 | Phase 23 P08 | 44min | 3 tasks | 3 files |
+| Phase 23 P09 | 29min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 23]: 23-08: CR-03 fail-OPEN closed — isSystemPrincipal split into isInternalCaller() (auth==null only) + isDeclaredMachineClient() (non-UUID sub AND azp/client_id in an explicit, empty-by-default machine-client-ids allowlist); anonymous/non-Jwt/unparseable-subject request principals now DENIED with typed 403, never escalated to GROUP_ADMIN (D-04 true in code). currentUserId() 500 replaced by requireVendorUserId() typed 403.
 - [Phase ?]: [Phase 23]: 23-08: CR-04 closed — require(null,role) guards the null shop BEFORE the ImmutableCollections.MapN.get(null) NPE; null shopId = tenant-wide/unassigned resource, WRITE is GROUP_ADMIN-only (typed 403), READ half owned by plan 23-09 (pairing written into require() javadoc so halves cannot drift).
 - [Phase ?]: [Phase 23]: 23-08: auth==null internal bypass RETAINED deliberately (measured blast radius 62 no-principal test files; not externally reachable — Spring Security 401 before any gated service). asSystem() ThreadLocal marker + StaffController @PreAuthorize scope backstop DEFERRED with reason. Proven by ShopAccessFailClosedIntegrationTest (7 cases, RED pre-fix on 1-4+7; 24 Phase-23 integration tests green).
+- [Phase ?]: [Phase 23]: 23-09: grant() reshaped to a session-based Hibernate write (not native ON CONFLICT) so Envers audits create AND role-change (WR-02); a DIFFERENT-role re-grant now APPLIES the change instead of silently no-opping while reporting success (CR-05). Concurrent duplicate insert isolated in REQUIRES_NEW + caught -> typed replay, never a 500. Last-GROUP_ADMIN check-then-act serialized by ShopStaffRepository.lockTenantGroupAdmins PESSIMISTIC_WRITE over shop_id IS NULL GROUP_ADMIN rows (== the counted set, since shop-scoped GROUP_ADMIN grants are rejected) in BOTH revoke() and the grant() downgrade path (CR-06). IN-03 two 409 messages extracted to constants, downgrade/revoke variants kept distinct for 23-13/IN-02. VSA-04 stays PENDING (23-12/13/14/15 still contribute). JIT insertGroupAdminIfAbsent still bypasses Envers -> handed to 23-14.
 
 ### Pending Todos
 
@@ -165,6 +167,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T20:49:35.358Z
+Last session: 2026-07-20T21:32:13.501Z
 Stopped at: Completed 23-05-PLAN.md
 Resume file: None
