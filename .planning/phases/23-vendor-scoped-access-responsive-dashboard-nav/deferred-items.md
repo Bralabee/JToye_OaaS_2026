@@ -59,3 +59,21 @@ check mode exits 0. `schema_version` stayed 56 as predicted.
   by Phase 23 — 23-06's own file counts 7 and runs 7), and the gate remains
   self-consistent (manifest == computed), so this is NOT fixed here per SCOPE BOUNDARY.
   Fixing it would shift the committed baseline and is its own change.
+
+## 23-12
+
+- **OpenAPI snapshot regen: the staff surface is now FOUR endpoints, not three
+  (updates the 23-06 entry above).** 23-12 added `GET /api/v1/staff/me` (CR-08), so
+  `docs/api/openapi-snapshot.json` must now pick up **four** `/api/v1/staff` endpoints
+  — `GET /` (list), `GET /me` (new), `POST /grant`, `DELETE /{id}` — when
+  `./gradlew :core-java:updateOpenApiSnapshot` is finally run. Plan **23-15** owns that
+  regeneration + the `docs-freshness --write` phase-gate reconcile. Still the one known
+  red gate; `OpenApiSnapshotTest` runs in check mode inside `integrationTest`, so scoped
+  test runs (`--tests "*StaffManagementIntegrationTest"` etc.) stay green while the full
+  `integrationTest` task remains red until 23-15. Not a code defect; a regeneration step.
+
+- **Test-count drift for the last-plan reconcile (23-15).** 23-12 added integration
+  test methods only (Java): +5 in `StaffManagementIntegrationTest` (3 grant-validation
+  + 2 `/me`), +2 more in `StaffManagementIntegrationTest` (email-mask), +2 in
+  `GdprErasureIntegrationTest`. No new test *files*. Per the 23-01/23-07 precedent the
+  `docs/metrics.json` + CLAUDE.md count bump is deferred to the phase's last plan.

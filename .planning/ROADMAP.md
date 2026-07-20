@@ -174,7 +174,7 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
 
 - [x] 23-10-PLAN.md (Gap Wave 2) — CR-01 `@Cacheable` short-circuits the shop gate on a warm cache, proven by a caching-ENABLED two-scoped-user test that defeats the `@Profile("!test")` blindness; + WR-08 null-shop read policy and WR-07 malformed-CSV 403→400. [VSA-02] — ✓ gate moved onto dedicated cached-loader beans (require() runs on every call, cache key + evictions unchanged); RED demonstrated pre-fix on the two-user cache cases; 4/4 cache-bypass + 6/6 enforcement + full :core-java:test green. VSA-02 stays PENDING (23-11 KDS transport still contributes).
 - [x] 23-11-PLAN.md (Gap Wave 2, parallel) — CR-02 the real KDS transport (STOMP `/topic/kitchen/{tid}/{shopId}`) is not shop-gated; explicit-identity grant check at SUBSCRIBE, with the day-one ungranted user preserved. [VSA-02]
-- [ ] 23-12-PLAN.md (Gap Wave 2, parallel) — WR-05 grant validates neither shop tenancy nor user existence + `GET /api/v1/staff/me` (CR-08 backend half) + WR-10 `user_directory` PII masking and GDPR erasure coverage. [VSA-04]
+- [x] 23-12-PLAN.md (Gap Wave 2, parallel) — WR-05 grant validates neither shop tenancy nor user existence + `GET /api/v1/staff/me` (CR-08 backend half) + WR-10 `user_directory` PII masking and GDPR erasure coverage. [VSA-04]
 
 **Gap Wave 3** *(blocked on 23-12)*
 
@@ -262,7 +262,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 11/15 | In Progress|  |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 12/15 | In Progress|  |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
