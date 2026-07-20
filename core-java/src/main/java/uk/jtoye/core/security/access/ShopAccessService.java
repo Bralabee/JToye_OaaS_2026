@@ -204,18 +204,90 @@ public class ShopAccessService {
         // Beyond this point the caller MUST resolve to a UUID-subject vendor user; an
         // anonymous, non-Jwt, or unparseable-subject request principal is denied with
         // the typed 403 here (never escalated, never a 500 from the old currentUserId()).
-        Membership membership = resolveMembership(requireVendorUserId());
+        // The membership + strict-scoping tail is shared with canAccessShop(...) via
+        // isGroupAdminForUser so the HTTP and STOMP (23-11) boundaries provably cannot
+        // drift — realm-admin is already handled above, so pass false here.
+        return isGroupAdminForUser(requireVendorUserId(), false);
+    }
+
+    /**
+     * The shared group/grant decision ladder, taking a fully-explicit
+     * {@code (userId, realmAdmin)} so the request-context {@link #isGroupAdmin()} and the
+     * explicit-identity {@link #canAccessShop(UUID, UUID, boolean, UUID)} decide identically
+     * and CANNOT drift: both funnel through here for the substantive membership +
+     * strict-scoping decision (the part that would silently diverge if duplicated).
+     *
+     * <p>The ladder, mirroring {@link #isGroupAdmin()} exactly:
+     * <ol>
+     *   <li>{@code realmAdmin} → true (D-03 realm-admin bridge, implicit GROUP_ADMIN).</li>
+     *   <li>a tenant-wide GROUP_ADMIN {@code shop_staff} row → true.</li>
+     *   <li>strict-scoping OFF (day-one) AND a FULLY-ungranted user → true (implicit
+     *       GROUP_ADMIN; once a user holds ANY explicit grant they are scoped even under
+     *       strict-scoping OFF).</li>
+     *   <li>otherwise false.</li>
+     * </ol>
+     *
+     * <p>Reads only {@code shop_staff} (via the cached {@link #resolveMembership}); performs
+     * NO writes and no ambient-context access — {@code userId} and {@code realmAdmin} are
+     * always supplied by the caller.
+     */
+    private boolean isGroupAdminForUser(UUID userId, boolean realmAdmin) {
+        if (realmAdmin) {
+            return true;
+        }
+        Membership membership = resolveMembership(userId);
         if (membership.isGroupAdmin()) {
             return true;
         }
-        // strict-scoping OFF (day-one): a FULLY-ungranted user is an implicit
-        // GROUP_ADMIN, preserving "everyone can do everything" before any scoping
-        // exists. Derived here from the strict-scoping flag + an empty membership so
-        // the READ decision never depends on the JIT row being written — read-only
-        // request paths (which cannot write the JIT row, Phase 23-03) still decide
-        // correctly. Once a user holds ANY explicit grant, they are scoped even under
-        // strict-scoping OFF.
         return !strictScoping && membership.perShopRole().isEmpty();
+    }
+
+    /**
+     * Explicit-identity variant of the shop-read decision for callers OUTSIDE a request
+     * thread — specifically the STOMP inbound channel (23-11 / CR-02), where the subscriber's
+     * identity lives on the WebSocket session principal, NOT in the ambient Spring Security
+     * context. Answers "may this specific {@code userId} READ this specific {@code shopId} in
+     * {@code tenantId}" with NO ambient-state dependency: every input is a parameter.
+     *
+     * <p><strong>Why this cannot reuse {@link #isGroupAdmin()}/{@link #grantedShopIds()}:</strong>
+     * those read the ambient security context, and the STOMP CONNECT path populates only the
+     * WebSocket session principal, never that context. After 23-08 an absent
+     * {@code Authentication} is the retained internal-caller bypass, so the ambient-context
+     * methods would classify a WebSocket subscriber as internal and return {@code true} —
+     * failing OPEN. Identity therefore arrives explicitly here (T-23-11-02).
+     *
+     * <p>The group/grant decision funnels through {@link #isGroupAdminForUser} so it stays
+     * byte-identical to the HTTP boundary. A specific-shop caller is permitted when it holds
+     * ANY per-shop grant (STAFF and above) on {@code shopId} — a SUBSCRIBE is a read. A
+     * {@code null} {@code shopId} (tenant-wide resource) is GROUP_ADMIN-only, mirroring
+     * {@link #require}'s WRITE guard.
+     *
+     * <p>Performs NO writes ({@link #onRequest()} is deliberately NOT called — a subscribe
+     * must never JIT-provision or upsert the directory) and reads NO identity from ambient
+     * thread state. The {@code shop_staff} read is RLS-scoped by the tenant GUC the caller
+     * pinned; this method asserts the pinned tenant equals {@code tenantId} so an UNPINNED
+     * GUC (which RLS would answer with zero rows → "no grants" → a fail-OPEN implicit
+     * GROUP_ADMIN under strict-scoping OFF) cannot pass silently.
+     */
+    public boolean canAccessShop(UUID tenantId, UUID userId, boolean realmAdmin, UUID shopId) {
+        // Fail-closed on an unpinned/mismatched tenant GUC: the RLS-scoped shop_staff read
+        // below is only correct when the caller pinned THIS tenant. currentTenantId() throws
+        // when no tenant is pinned (→ subscription denied upstream); it derives the tenant
+        // from the pinned request tenant, never from a caller identity.
+        UUID pinnedTenant = currentTenantId();
+        if (!pinnedTenant.equals(tenantId)) {
+            throw new IllegalStateException(
+                    "canAccessShop tenant mismatch: pinned=" + pinnedTenant + " requested=" + tenantId);
+        }
+        if (isGroupAdminForUser(userId, realmAdmin)) {
+            return true;
+        }
+        if (shopId == null) {
+            // Tenant-wide resource: GROUP_ADMIN-only (handled above). A scoped caller is denied.
+            return false;
+        }
+        // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed.
+        return resolveMembership(userId).perShopRole().get(shopId) != null;
     }
 
     /**

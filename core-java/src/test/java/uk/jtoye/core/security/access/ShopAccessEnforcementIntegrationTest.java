@@ -283,6 +283,115 @@ class ShopAccessEnforcementIntegrationTest {
         assertThat(rls404.getStatus()).isEqualTo(404);
     }
 
+    // --- canAccessShop: explicit-identity STOMP shop-read gate (23-11 / CR-02) ----------
+
+    @Test
+    void canAccessShop_realmAdminBridgePermitsAnyShopEvenUngranted() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID realmAdmin = UUID.randomUUID();  // NO shop_staff grant at all
+
+        setStrictScoping(true);
+        TenantContext.set(tenant);
+
+        assertThat(shopAccessService.canAccessShop(tenant, realmAdmin, true, shopA))
+                .as("a realm-admin subscriber reads any shop feed (D-03 bridge); grants irrelevant")
+                .isTrue();
+    }
+
+    @Test
+    void canAccessShop_tenantWideGroupAdminPermitsAnyShop() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID ga = UUID.randomUUID();
+        grantGroupAdmin(tenant, ga);
+
+        setStrictScoping(true);
+        TenantContext.set(tenant);
+
+        assertThat(shopAccessService.canAccessShop(tenant, ga, false, shopA))
+                .as("a tenant-wide GROUP_ADMIN row permits any shop")
+                .isTrue();
+    }
+
+    @Test
+    void canAccessShop_scopedUserPermittedOnGrantedShopDeniedOnUngranted() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID shopB = seedShop(tenant, "Shop B");
+        UUID staff = UUID.randomUUID();
+        grantShopStaff(tenant, staff, shopA, "STAFF");
+
+        setStrictScoping(true);
+        TenantContext.set(tenant);
+
+        // Genuine-grant proof (23-11 RLS note): a REAL shop_staff row comes back through the
+        // tenant-pinned read — NOT a fail-open empty result — so shop A is permitted and shop
+        // B (ungranted) is denied. If the read had silently returned zero rows, the strict-ON
+        // deny below would still pass but shop A would ALSO be denied, so asserting the
+        // permitted side is what makes this test falsify a fail-open regression.
+        assertThat(shopAccessService.canAccessShop(tenant, staff, false, shopA))
+                .as("a STAFF grant on shop A permits reading shop A's kitchen feed")
+                .isTrue();
+        assertThat(shopAccessService.canAccessShop(tenant, staff, false, shopB))
+                .as("the same STAFF user is denied an ungranted shop B — CR-02 closed")
+                .isFalse();
+    }
+
+    @Test
+    void canAccessShop_zeroGrantUnderStrictScopingOffIsImplicitGroupAdmin() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID ungranted = UUID.randomUUID();  // NO shop_staff grant
+
+        setStrictScoping(false);  // day-one default
+        TenantContext.set(tenant);
+
+        assertThat(shopAccessService.canAccessShop(tenant, ungranted, false, shopA))
+                .as("day-one preservation: a zero-grant user under strict-scoping OFF still reads any shop")
+                .isTrue();
+    }
+
+    @Test
+    void canAccessShop_zeroGrantUnderStrictScopingOnIsDenied() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID ungranted = UUID.randomUUID();
+
+        setStrictScoping(true);
+        TenantContext.set(tenant);
+
+        assertThat(shopAccessService.canAccessShop(tenant, ungranted, false, shopA))
+                .as("under strict-scoping ON a zero-grant user is denied")
+                .isFalse();
+    }
+
+    @Test
+    void canAccessShop_nullShopIsGroupAdminOnly() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID ga = UUID.randomUUID();
+        grantGroupAdmin(tenant, ga);
+        UUID scoped = UUID.randomUUID();
+        grantShopStaff(tenant, scoped, shopA, "SHOP_MANAGER");
+
+        setStrictScoping(true);
+        TenantContext.set(tenant);
+
+        assertThat(shopAccessService.canAccessShop(tenant, ga, false, null))
+                .as("a GROUP_ADMIN may read a null-shop (tenant-wide) feed")
+                .isTrue();
+        assertThat(shopAccessService.canAccessShop(tenant, scoped, false, null))
+                .as("a scoped (non-GROUP_ADMIN) user is denied a null-shop feed (mirrors require() WRITE)")
+                .isFalse();
+    }
+
     // --- seeding helpers (run as a realm-admin: implicit GROUP_ADMIN, bypasses the gate) ---
 
     private UUID seedShop(UUID tenant, String name) {
@@ -336,6 +445,13 @@ class ShopAccessEnforcementIntegrationTest {
         jdbc.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
                         + "VALUES (?, ?, ?, ?, ?, now())",
                 UUID.randomUUID(), tenant, userId, shopId, role);
+    }
+
+    /** Seed a tenant-wide GROUP_ADMIN grant (shop_id NULL) — the implicit-admin shape. */
+    private void grantGroupAdmin(UUID tenant, UUID userId) {
+        jdbc.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
+                        + "VALUES (?, ?, ?, NULL, 'GROUP_ADMIN', now())",
+                UUID.randomUUID(), tenant, userId);
     }
 
     // --- request builders ------------------------------------------------
