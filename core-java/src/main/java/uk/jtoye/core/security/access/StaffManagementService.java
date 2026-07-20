@@ -16,6 +16,7 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
+import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -128,6 +129,32 @@ public class StaffManagementService {
                 .map(StaffMemberDto::from)
                 .toList();
         return new StaffListResponse(directory, grants);
+    }
+
+    /**
+     * The CALLER'S OWN effective access ({@code GET /api/v1/staff/me}, CR-08 backend) —
+     * the server answering the GROUP_ADMIN question the frontend currently guesses at from
+     * a client-side JWT parse (wrong for the day-one implicit-admin case).
+     *
+     * <p><strong>Deliberately NOT GROUP_ADMIN-gated:</strong> every authenticated caller
+     * may ask what THEY may do, so this does NOT call {@link ShopAccessService#requireGroupAdmin()}.
+     * {@code readOnly} so {@link ShopAccessService}'s {@code onRequest()} returns early — no
+     * JIT provision, no directory upsert — which is correct for a pure self-query.
+     *
+     * <p>The empty-set sentinel is resolved at the DTO boundary (see {@link MyAccessDto}):
+     * a GROUP_ADMIN (realm-admin, tenant-wide GROUP_ADMIN row, or the strict-OFF day-one
+     * implicit admin) gets {@code grantedShopIds = null} (unrestricted); a scoped caller
+     * gets the exact, possibly-empty grant set. {@link ShopAccessService#grantedShopIds()}
+     * is only called for a non-GROUP_ADMIN, so its GROUP_ADMIN "empty = unrestricted"
+     * sentinel is never observed here.
+     */
+    @Transactional(readOnly = true)
+    public MyAccessDto myAccess() {
+        UUID userId = currentCallerSub();
+        if (shopAccessService.isGroupAdmin()) {
+            return new MyAccessDto(userId, true, null);
+        }
+        return new MyAccessDto(userId, false, shopAccessService.grantedShopIds());
     }
 
     /**

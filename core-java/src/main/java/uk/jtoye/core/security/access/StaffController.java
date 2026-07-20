@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uk.jtoye.core.security.access.StaffManagementService.GrantResult;
 import uk.jtoye.core.security.access.StaffManagementService.StaffListResponse;
 import uk.jtoye.core.security.access.dto.GrantStaffRequest;
+import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
 
 import java.util.UUID;
@@ -61,6 +62,22 @@ public class StaffController {
     })
     public ResponseEntity<StaffListResponse> list() {
         return ResponseEntity.ok(staffManagementService.list());
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "My effective access",
+            description = "Returns the CALLER'S OWN effective vendor-scoped access: the groupAdmin flag "
+                    + "plus granted shop ids. NOT GROUP_ADMIN-gated — every authenticated caller may ask "
+                    + "what they themselves may do. The server is authoritative here; clients must NOT "
+                    + "derive GROUP_ADMIN from a client-side realm-role parse (which is wrong for the "
+                    + "day-one implicit-admin case, CR-08). When groupAdmin is true the caller has "
+                    + "unrestricted access and grantedShopIds is null (NOT 'no shops'); when false, "
+                    + "grantedShopIds is the exact, possibly-empty set of accessible shops.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The caller's own effective access")
+    })
+    public ResponseEntity<MyAccessDto> myAccess() {
+        return ResponseEntity.ok(staffManagementService.myAccess());
     }
 
     @PostMapping("/grant")

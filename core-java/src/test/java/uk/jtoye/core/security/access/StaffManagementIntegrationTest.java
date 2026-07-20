@@ -27,6 +27,7 @@ import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.StaffManagementService.GrantResult;
 import uk.jtoye.core.security.access.dto.GrantStaffRequest;
+import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
@@ -715,6 +716,68 @@ class StaffManagementIntegrationTest {
                 .as("a tenant-wide grant to a known directory user succeeds")
                 .isEqualTo(HttpStatus.CREATED);
         assertThat(shopStaffRowCount(tenant, staff, null)).isEqualTo(1);
+    }
+
+    // ====================================================================
+    // 23-12 Task 2 — CR-08 backend: GET /api/v1/staff/me returns the caller's
+    // OWN effective access (server-authoritative), NOT GROUP_ADMIN-gated.
+    // ====================================================================
+
+    /**
+     * CR-08 (the case the client gets wrong): a fully-ungranted user under strict-scoping
+     * OFF is the day-one implicit GROUP_ADMIN. {@code /me} must report {@code groupAdmin=true}
+     * with {@code grantedShopIds=null} (unrestricted) — NOT the empty "no shops" set — and
+     * carry the caller's own {@code sub}. This is exactly what a client-side realm-role
+     * parse (the user holds no {@code admin} realm role) would get WRONG.
+     */
+    @Test
+    void myAccessReportsDayOneImplicitGroupAdmin() {
+        setStrictScoping(false);
+        UUID tenant = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+
+        authenticate(user, false, tenant);   // NOT a realm-admin, holds no grants
+
+        MyAccessDto me = staffController.myAccess().getBody();
+        assertThat(me).isNotNull();
+        assertThat(me.userId())
+                .as("/me carries the caller's own sub")
+                .isEqualTo(user);
+        assertThat(me.groupAdmin())
+                .as("an ungranted user under strict-scoping OFF is the day-one implicit GROUP_ADMIN")
+                .isTrue();
+        assertThat(me.grantedShopIds())
+                .as("a GROUP_ADMIN's grantedShopIds is null (unrestricted), never an empty 'no shops' set")
+                .isNull();
+    }
+
+    /**
+     * CR-08: a SHOP_MANAGER scoped to one shop reports {@code groupAdmin=false} and EXACTLY
+     * their granted shop ids — proving {@code /me} answers for a non-GROUP_ADMIN caller (so
+     * it is provably not group-gated) and resolves the empty-set sentinel correctly.
+     */
+    @Test
+    void myAccessReportsScopedGrantsForNonGroupAdmin() {
+        setStrictScoping(false);
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID manager = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+        seedDirectory(tenant, manager);
+        staffController.grant(new GrantStaffRequest(manager, shopId, ShopRole.SHOP_MANAGER));
+
+        authenticate(manager, false, tenant);
+        MyAccessDto me = staffController.myAccess().getBody();
+        assertThat(me).isNotNull();
+        assertThat(me.userId()).isEqualTo(manager);
+        assertThat(me.groupAdmin())
+                .as("a scoped SHOP_MANAGER is not a GROUP_ADMIN (proves /me is not group-gated)")
+                .isFalse();
+        assertThat(me.grantedShopIds())
+                .as("a scoped caller sees exactly their granted shop ids")
+                .containsExactly(shopId);
     }
 
     private Callable<Throwable> revokeWorker(UUID revoker, UUID tenant, UUID grantId, CountDownLatch gate) {
