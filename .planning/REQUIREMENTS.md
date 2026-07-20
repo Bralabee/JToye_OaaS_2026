@@ -63,7 +63,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 ### Dashboard mobile (MOBL) — HANDOFF #104
 
-- [ ] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the VSA-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
+- [x] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the VSA-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
 
 ### AI / automation (AI) — HANDOFF #205 / #204
 
@@ -123,7 +123,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | VSA-02 | Phase 23 | 23-02, 23-03 | Complete |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Pending |
 | VSA-04 | Phase 23 | 23-04, 23-06 | Pending |
-| MOBL-01 | Phase 23 | 23-05, 23-06 | Pending |
+| MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |
 | IMG-02 | Phase 24 | 24-02 | Pending |
 | IMG-03 | Phase 24 | 24-03 | Pending |

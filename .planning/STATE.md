@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-03-PLAN.md
-last_updated: "2026-07-19T12:03:49.234Z"
-last_activity: 2026-07-19
+stopped_at: Completed 23-05-PLAN.md
+last_updated: "2026-07-20T10:34:58.906Z"
+last_activity: 2026-07-20
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 33
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
-Last activity: 2026-07-19
+Last activity: 2026-07-20
 
-Progress: [████████░░] 84%
+Progress: [█████████░] 89%
 
 ## Milestone v2.3 Phase Map
 
@@ -82,6 +82,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P02 | 7min | 3 tasks | 9 files |
 | Phase 23 P03 | 55min | 3 tasks | 31 files |
 | Phase 23 P4 | 10min | 2 tasks | 7 files |
+| Phase 23 P05 | 35min | 4 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 23]: 23-01: VSA-01 left PENDING (anti-false-green, mirrors 22-01) — data layer delivered, but its JIT-provision backfill + realm-admin implicit-GROUP_ADMIN bridge + JIT idempotency test are scoped to 23-02; VSA-01 closes in 23-02.
 - [Phase 23]: 23-02: ShopAccessService is the single in-tenant enforcement seam (require/requireGroupAdmin/isGroupAdmin/grantedShopIds over a per-user shopMembership cache); typed shop-403 (/shop-access-denied) provably distinct from RLS 404 and generic 403; JIT provision + throttled directory upsert live inside the @Transactional service not JwtTenantFilter (Pitfall 4); strict-scoping default OFF preserves day-one auto-provision (D-12)
 - [Phase ?]: 23-03: VSA-02 CLOSED — require(shopId,minRole) gates every shop-scoped write (deny-by-default) + read-scope narrows every list to grantedShopIds at the QUERY across Shop/Product/Order/Promotion/Announcement (+ label + bulk per-row + KDS SSE grant-set fan-out via shopId now on OrderStateChangeEvent); typed shop-403 proven distinct from RLS 404; system-principal bypass + read-only-tx write-skip harden the gate
+- [Phase 23]: 23-05: shop-context switcher persists via localStorage['shopContext'] (theme-toggle idiom, D-07) + broadcasts a same-tab 'shopcontext:change' CustomEvent (browser storage event fires only cross-tab); subscribeShopContext is the seam 23-07's useShopContext consumes to narrow screens live. GA defaults to All-shops; apply-to-all gated on GA+all-context; non-GA single grant pinned; D-13 stale id degrades to 'all' not a crash.
+- [Phase 23]: 23-05: MOBL-01 CLOSED verify-first (satisfied-by-prior-work) — Phase 19 Surface D already shipped the responsive shell; switcher integrated width-capped (max-w-[55%]+truncate), no reintroduced overflow, proven by 375px Jest+Playwright + live human-verify APPROVED + surface-ledger proof (drawer_authored:false). VSA-03 LEFT PENDING — its 'all shop-scoped screens operate on the selected shop' clause closes only in 23-07 (anti-false-green).
 
 ### Pending Todos
 
@@ -145,6 +148,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-19T12:03:32.438Z
-Stopped at: Completed 23-03-PLAN.md
+Last session: 2026-07-20T10:34:58.896Z
+Stopped at: Completed 23-05-PLAN.md
 Resume file: None
