@@ -178,7 +178,7 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
 
 **Gap Wave 3** *(blocked on 23-12)*
 
-- [ ] 23-13-PLAN.md (Gap Wave 3) — CR-08 frontend GROUP_ADMIN detection disagrees with the backend model, silently pinning every non-realm-admin to one shop; server-sourced via `/me`, + WR-06 divergent switcher instances, WR-12 sub-based identity, IN-02 copy. [VSA-03, VSA-04]
+- [x] 23-13-PLAN.md (Gap Wave 3) — CR-08 frontend GROUP_ADMIN detection disagrees with the backend model, silently pinning every non-realm-admin to one shop; server-sourced via `/me`, + WR-06 divergent switcher instances, WR-12 sub-based identity, IN-02 copy. [VSA-03, VSA-04]
 
 **Gap Wave 4** *(blocked on 23-08 + 23-09 + 23-11 + 23-13)*
 
@@ -262,7 +262,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 12/15 | In Progress|  |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 13/15 | In Progress|  |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
