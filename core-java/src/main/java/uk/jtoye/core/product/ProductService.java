@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -42,17 +43,20 @@ public class ProductService {
     private final StorageService storageService;
     private final TenantCacheEvictor cacheEvictor;
     private final ShopAccessService shopAccessService;
+    private final ProductCacheLoader productCacheLoader;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
                           StorageService storageService,
                           TenantCacheEvictor cacheEvictor,
-                          ShopAccessService shopAccessService) {
+                          ShopAccessService shopAccessService,
+                          ProductCacheLoader productCacheLoader) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
         this.shopAccessService = shopAccessService;
+        this.productCacheLoader = productCacheLoader;
     }
 
     /**
@@ -102,22 +106,24 @@ public class ProductService {
 
     /**
      * Get product by ID (tenant-scoped).
-     * Results are cached with tenant-aware key generation (TTL: 10 minutes).
+     *
+     * <p>CR-01 (Phase 23-10): the cached data load ({@link ProductCacheLoader}) runs
+     * FIRST, then the shop-access gate runs on the returned DTO's {@code shopId} — on
+     * EVERY call, cache hit or miss. Because the {@code products} cache key is keyed by
+     * tenant only (no user component), a product cached by one authorized user must NOT
+     * be served to a different, out-of-grant user in the same tenant; running the gate
+     * outside the {@code @Cacheable} boundary guarantees that. Reading a cached DTO and
+     * THEN denying is correct — the authorization decision is what must run every time,
+     * not the database round-trip.
      */
     @Transactional(readOnly = true)
-    @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ProductDto> getProductById(UUID productId) {
-        log.debug("Fetching product by ID: {}", productId);
         // VSA-02 (D-02): a by-id product read requires at least STAFF on the owning
-        // shop. Parent-lookup: the shop gate runs against the loaded product's shopId,
-        // so a cross-shop direct hit yields the typed shop 403 (distinct from the RLS
-        // 404). The `products` read cache is @Profile("!test") — a no-op in the proving
-        // tests (see 23-03-SUMMARY for the strict-scoping cache residual).
-        return productRepository.findById(productId)
-                .map(product -> {
-                    shopAccessService.require(product.getShopId(), ShopRole.STAFF);
-                    return productMapper.toDto(product);
-                });
+        // shop. Parent-lookup: the gate runs against the loaded product's shopId, so a
+        // cross-shop direct hit yields the typed shop 403 (distinct from the RLS 404).
+        Optional<ProductDto> dto = productCacheLoader.getProductById(productId);
+        dto.ifPresent(product -> shopAccessService.require(product.getShopId(), ShopRole.STAFF));
+        return dto;
     }
 
     /**
@@ -346,6 +352,43 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
+    }
+
+    /**
+     * Cached by-id product loader (Phase 23-10, CR-01). Extracted onto its OWN Spring
+     * bean so the {@code @Cacheable} boundary is separated from the authorization gate:
+     * {@link ProductService#getProductById} delegates here for the (cached) load and
+     * then runs {@code shopAccessService.require(...)} on the result, on every call.
+     * Being a distinct bean, the call from {@code ProductService} crosses the Spring
+     * proxy so the caching interceptor actually fires — deliberately NOT a
+     * self-invocation (which would bypass the proxy and silently disable caching,
+     * WR-01). The cached method keeps the name {@code getProductById} so the
+     * tenant-aware cache key ({@code tenant:{tid}:getProductById:{productId}}) and every
+     * existing {@code TenantCacheEvictor.evictEntity("products", "getProductById", id)}
+     * eviction stay byte-for-byte unchanged (caching relocated, never deleted).
+     *
+     * <p>This loader holds NO authorization: callers MUST gate on the returned DTO's
+     * {@code shopId} so a cache hit can never short-circuit the shop-access decision.
+     */
+    @Component
+    public static class ProductCacheLoader {
+        private static final Logger loaderLog = LoggerFactory.getLogger(ProductCacheLoader.class);
+
+        private final ProductRepository productRepository;
+        private final ProductMapper productMapper;
+
+        public ProductCacheLoader(ProductRepository productRepository, ProductMapper productMapper) {
+            this.productRepository = productRepository;
+            this.productMapper = productMapper;
+        }
+
+        @Transactional(readOnly = true)
+        @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
+        public Optional<ProductDto> getProductById(UUID productId) {
+            loaderLog.debug("Fetching product by ID: {}", productId);
+            return productRepository.findById(productId)
+                    .map(productMapper::toDto);
+        }
     }
 
 }

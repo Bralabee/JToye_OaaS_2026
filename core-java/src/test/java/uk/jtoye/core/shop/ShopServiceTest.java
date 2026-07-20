@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -53,7 +52,11 @@ class ShopServiceTest {
     @Mock
     private ShopAccessService shopAccessService;
 
-    @InjectMocks
+    // Phase 23-10 (CR-01): getShopById now delegates its cached data-load to the
+    // ShopCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
+    // repository + mapper) in setUp() so the existing by-id tests keep exercising
+    // findByIdAndTenantId through the loader unchanged; the shop-access gate runs on
+    // the mocked ShopAccessService before the delegation.
     private ShopService shopService;
 
     private UUID tenantId;
@@ -79,6 +82,10 @@ class ShopServiceTest {
     void setUp() {
         tenantId = UUID.randomUUID();
         shopId = UUID.randomUUID();
+
+        // Construct with a REAL ShopCacheLoader over the mocked repo+mapper (Phase 23-10).
+        shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
+                shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper));
 
         // Set up tenant context
         TenantContext.set(tenantId);

@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,17 +33,20 @@ public class ShopService {
     private final StorageService storageService;
     private final TenantCacheEvictor cacheEvictor;
     private final ShopAccessService shopAccessService;
+    private final ShopCacheLoader shopCacheLoader;
 
     public ShopService(ShopRepository shopRepository,
                        ShopMapper shopMapper,
                        StorageService storageService,
                        TenantCacheEvictor cacheEvictor,
-                       ShopAccessService shopAccessService) {
+                       ShopAccessService shopAccessService,
+                       ShopCacheLoader shopCacheLoader) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
         this.shopAccessService = shopAccessService;
+        this.shopCacheLoader = shopCacheLoader;
     }
 
     // createShop inserts a brand-new entity; no existing cache key could match it,
@@ -88,22 +92,22 @@ public class ShopService {
     // BE-03 completion: scope the authenticated by-id read to the caller's tenant.
     // findById is RLS-only and shops_public_read permits published shops, so a
     // tenant could otherwise fetch another tenant's PUBLISHED shop by direct id.
+    //
+    // CR-01 (Phase 23-10): the shop-access gate runs HERE, on EVERY call, OUTSIDE
+    // the @Cacheable boundary. Caching now lives on the separate ShopCacheLoader bean
+    // (below), so the authorization decision is re-evaluated even on a cache HIT — a
+    // shop cached by one authorized user is NOT served to a different, out-of-grant
+    // user in the same tenant (TenantAwareCacheKeyGenerator keys by tenant only, with
+    // no user component). Previously the gate lived inside the @Cacheable method body,
+    // so a cache hit short-circuited it and poisoned the entry for every tenant user.
+    // Do NOT re-inline @Cacheable onto this method: it reintroduces the bypass.
     @Transactional(readOnly = true)
-    @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ShopDto> getShopById(UUID shopId) {
         // VSA-02 (D-02 / D-13): a direct-hit by-id read requires at least STAFF on
-        // the shop. Placed first so a cross-shop direct hit yields the typed shop 403
-        // (distinct from the RLS 404). The gate runs on the method PARAM (no entity
-        // load needed), so a DENY always throws before any lookup and nothing is
-        // cached for an unauthorized caller. (Residual: the `shops` read cache is
-        // per-tenant, not per-shop; see 23-03-SUMMARY for the strict-scoping note.)
+        // the shop. A cross-shop direct hit yields the typed shop 403 (distinct from
+        // the RLS 404). Runs before the cached load on every invocation.
         shopAccessService.require(shopId, ShopRole.STAFF);
-
-        UUID tenantId = TenantContext.get()
-                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-        log.debug("Fetching shop {} for tenant {}", shopId, tenantId);
-        return shopRepository.findByIdAndTenantId(shopId, tenantId)
-                .map(shopMapper::toDto);
+        return shopCacheLoader.getShopById(shopId);
     }
 
     // QA-council BE-03: scope the authenticated "my shops" list to the caller's
@@ -322,5 +326,45 @@ public class ShopService {
         // Append short random suffix for uniqueness
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         return base + "-" + suffix;
+    }
+
+    /**
+     * Cached by-id shop loader (Phase 23-10, CR-01). Extracted onto its OWN Spring
+     * bean so the {@code @Cacheable} boundary is separated from the authorization
+     * gate: {@link ShopService#getShopById} runs {@code shopAccessService.require(...)}
+     * on every call and only THEN delegates here for the (cached) data load. Because
+     * this is a distinct bean, the call from {@code ShopService} crosses the Spring
+     * proxy and the caching interceptor actually fires — this is deliberately NOT a
+     * self-invocation (which would silently bypass the proxy and disable caching,
+     * WR-01). The cached method keeps the name {@code getShopById} so the tenant-aware
+     * cache key ({@code tenant:{tid}:getShopById:{shopId}}) and every existing
+     * {@code TenantCacheEvictor.evictEntity("shops", "getShopById", id)} eviction stay
+     * byte-for-byte unchanged (caching is relocated, never deleted — the performance
+     * good is preserved).
+     *
+     * <p>This loader holds NO authorization: callers MUST gate BEFORE delegating here,
+     * so a cache hit can never short-circuit the shop-access decision (CR-01).
+     */
+    @Component
+    public static class ShopCacheLoader {
+        private static final Logger loaderLog = LoggerFactory.getLogger(ShopCacheLoader.class);
+
+        private final ShopRepository shopRepository;
+        private final ShopMapper shopMapper;
+
+        public ShopCacheLoader(ShopRepository shopRepository, ShopMapper shopMapper) {
+            this.shopRepository = shopRepository;
+            this.shopMapper = shopMapper;
+        }
+
+        @Transactional(readOnly = true)
+        @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
+        public Optional<ShopDto> getShopById(UUID shopId) {
+            UUID tenantId = TenantContext.get()
+                    .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+            loaderLog.debug("Fetching shop {} for tenant {}", shopId, tenantId);
+            return shopRepository.findByIdAndTenantId(shopId, tenantId)
+                    .map(shopMapper::toDto);
+        }
     }
 }
