@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useSession } from "next-auth/react"
 import { formatDistanceToNow } from "date-fns"
 import { ShieldCheck, UserPlus, Users, AlertTriangle } from "lucide-react"
 import {
@@ -70,12 +69,14 @@ function lastSeenLabel(lastSeen: string | null): string {
 }
 
 export default function StaffPage() {
-  const { data: session } = useSession()
   const { toast } = useToast()
 
   const [directory, setDirectory] = useState<DirectoryEntry[]>([])
   const [grants, setGrants] = useState<StaffMember[]>([])
   const [shops, setShops] = useState<Shop[]>([])
+  /** The caller's own Keycloak `sub` (from GET /api/v1/staff/me via fetchMyShops),
+   *  the server-authoritative identity for the self-revoke warning (WR-12). */
+  const [myUserId, setMyUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -97,6 +98,7 @@ export default function StaffPage() {
       setDirectory(staff.directory)
       setGrants(staff.grants)
       setShops(myShops.shops)
+      setMyUserId(myShops.userId)
       setForbidden(false)
     } catch (error: unknown) {
       // A 403 here is an honest "you are not a group admin" state (D-10/D-13),
@@ -134,13 +136,13 @@ export default function StaffPage() {
     return map
   }, [shops])
 
-  const sessionEmail = session?.user?.email ?? null
+  // WR-12: self-identification is on the Keycloak `sub` (the `userId` carried by
+  // both the grant rows and MyAccessDto), NOT an email round-trip. The old
+  // email compare failed whenever the session email was absent or differently
+  // cased — and 23-12 now masks directory emails, so it could never match.
   const isSelf = useCallback(
-    (userId: string) => {
-      const email = emailByUserId.get(userId)
-      return !!email && !!sessionEmail && email === sessionEmail
-    },
-    [emailByUserId, sessionEmail]
+    (userId: string) => !!myUserId && userId === myUserId,
+    [myUserId]
   )
 
   const holdsSelfGrant = grants.some((g) => isSelf(g.userId))
@@ -163,8 +165,10 @@ export default function StaffPage() {
     } catch (error: unknown) {
       const status = httpStatus(error)
       if (status === 409) {
+        // IN-02: a 409 on the GRANT path is a DOWNGRADE refusal (D-11), not a
+        // removal — the copy must match the action the operator just took.
         setNotice(
-          "You cannot remove the last group admin. Grant someone else group-admin access first, then retry."
+          "You cannot change the last group admin's role — the tenant would be left without one. Grant someone else group-admin access first, then retry."
         )
       } else if (status === 400) {
         // 23-04 rejects a shop-scoped GROUP_ADMIN so the last-admin count stays exact.
@@ -393,15 +397,18 @@ export default function StaffPage() {
         <CardHeader>
           <CardTitle>Current access</CardTitle>
           <CardDescription>
-            Changes take effect immediately on the person&apos;s next request.
+            Changes apply to the person&apos;s next request. An already-open live
+            view (a kitchen or order stream) can keep updating for up to 5 minutes
+            until it reconnects.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {holdsSelfGrant && (
             <p className="mb-4 flex items-start gap-2 rounded-md bg-slate-50 p-3 text-xs text-slate-600">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              Removing your own access takes effect immediately and will reduce what
-              you can see and do.
+              Removing your own access will reduce what you can see and do on your
+              next request; an already-open live view can persist for up to 5
+              minutes until it reconnects.
             </p>
           )}
           {grants.length === 0 ? (
@@ -420,7 +427,10 @@ export default function StaffPage() {
               </TableHeader>
               <TableBody>
                 {grants.map((g) => {
-                  const email = emailByUserId.get(g.userId) ?? g.userId
+                  // A grant with no directory entry is a JIT / service-account row.
+                  // Render a labelled identity, never a bare UUID (plan 23-14 owns
+                  // the richer "auto-granted on first sign-in" treatment).
+                  const email = emailByUserId.get(g.userId) ?? "Unlisted member"
                   const shopName = g.shopId
                     ? shopNameById.get(g.shopId) ?? "Unknown shop"
                     : "All shops"

@@ -26,10 +26,11 @@ jest.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: jest.fn() }),
 }))
 
-// The self-downgrade warning (D-11) keys off the signed-in user's email matched
-// against the directory — no other session surface is used by this screen.
+// WR-12: the screen no longer reads the session email — self-identification is on
+// the Keycloak `sub` (the userId carried by MyAccessDto via fetchMyShops). We give
+// the session NO email to prove the self-revoke warning no longer depends on it.
 jest.mock("next-auth/react", () => ({
-  useSession: () => ({ data: { user: { email: "ga@vendor.co.uk" } } }),
+  useSession: () => ({ data: { user: {} } }),
 }))
 
 const SHOP_A = "aaaaaaaa-1111-1111-1111-111111111111"
@@ -254,7 +255,62 @@ describe("Staff management screen (VSA-04)", () => {
     render(<StaffPage />)
     await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
 
-    // The GROUP_ADMIN row is the signed-in user (ga@vendor.co.uk).
+    // The GROUP_ADMIN row is the caller — identified by userId (USER_GA), not email.
     expect(screen.getByText(/this is you/i)).toBeInTheDocument()
+  })
+
+  // WR-12: this case FAILS against the pre-fix screen, whose email-based isSelf
+  // could never match once the session email was absent (and 23-12 now masks
+  // directory emails anyway). Identity is the Keycloak `sub`.
+  it("renders the self-revoke warning by userId even with no session email (WR-12)", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    // No session email is provided (see the useSession mock) — the warning and the
+    // "This is you" badge still render because the caller's userId matches a grant.
+    expect(screen.getByText(/removing your own access/i)).toBeInTheDocument()
+    expect(screen.getByText(/this is you/i)).toBeInTheDocument()
+  })
+
+  // IN-02: a 409 on the GRANT path is a downgrade refusal, not a removal — its
+  // copy must differ from the revoke path's copy.
+  it("shows downgrade-specific 409 copy on the grant path, distinct from the revoke path (IN-02)", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    // Grant path 409 → downgrade wording.
+    mockedApiClient.post.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
+    fireEvent.change(screen.getByLabelText(/team member/i), {
+      target: { value: USER_SAM },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /grant access/i }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(/change the last group admin's role/i)
+      ).toBeInTheDocument()
+    )
+    const grantCopy = screen.getByRole("alert").textContent
+
+    // Revoke path 409 → removal wording (distinct).
+    mockedApiClient.delete.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
+    fireEvent.click(screen.getByRole("button", { name: /revoke ga@vendor.co.uk/i }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(/remove the last group admin/i)
+      ).toBeInTheDocument()
+    )
+    const revokeCopy = screen.getByRole("alert").textContent
+
+    expect(grantCopy).not.toEqual(revokeCopy)
+  })
+
+  // 23-11: revocation is NOT unconditionally immediate — an already-open live
+  // stream persists up to the 5-minute SSE timeout.
+  it("states the real revocation-timing bound, not unqualified immediacy (23-11)", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    expect(screen.getAllByText(/up to 5 minutes/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/take effect immediately/i)).not.toBeInTheDocument()
   })
 })
