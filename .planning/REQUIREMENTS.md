@@ -120,7 +120,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-06 | Phase 22 | 22-06 | Complete |
 | COMMS-07 | Phase 22 | 22-01 | Complete |
 | VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
-| VSA-02 | Phase 23 | 23-02, 23-03 | Gaps found (23-VERIFICATION: CR-01 cache bypass, CR-02 STOMP) |
+| VSA-02 | Phase 23 | 23-02, 23-03, 23-10, 23-11 | Gaps closing (CR-01 cache bypass fixed 23-10; CR-02 STOMP shop-gate fixed 23-11; gap wave 23-12..15 continues) |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
 | VSA-04 | Phase 23 | 23-04, 23-06 | Gaps found (23-VERIFICATION: CR-03 fail-open) |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |

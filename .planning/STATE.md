@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-10-PLAN.md — gap-closure CR-01 cache-bypass + WR-08 null-shop reads + WR-07 CSV validation
-last_updated: "2026-07-20T23:10:00.000Z"
-last_activity: 2026-07-20 -- Executed gap plan 23-10 (CR-01 @Cacheable gate bypass + WR-08 + WR-07)
+stopped_at: Completed 23-11-PLAN.md — gap-closure CR-02 KDS STOMP shop-gate
+last_updated: "2026-07-20T22:42:04.090Z"
+last_activity: 2026-07-20 -- Executed gap plan 23-11 (CR-02 KDS STOMP transport shop-gate)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 27
-  completed_plans: 22
-  percent: 81
+  completed_plans: 23
+  percent: 85
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING (gap-closure wave 23-08..23-15)
-Plan: gap-closure 23-10 COMPLETE (10 of 15 SUMMARYs on disk; 23-01..23-10)
-Status: Executing Phase 23 gap-closure. 23-10 shipped — CR-01 (@Cacheable short-circuits the shop-access gate on a warm cache) + WR-08 (scoped users lose all shop-less products) + WR-07 (malformed CSV shop_id returns 403 not 400) closed. getShopById/getProductById now run shopAccessService.require(...) on EVERY call OUTSIDE the @Cacheable boundary — the cached load was extracted onto dedicated ShopCacheLoader/ProductCacheLoader beans (nested @Component reached through the Spring proxy, cache method-name + key + all 13 evictions unchanged), so a warm per-tenant cache entry can no longer be served to a different out-of-grant user. Proven by ShopAccessCacheBypassIntegrationTest which supplies its OWN CacheManager + tenantAwareCacheKeyGenerator via a nested @EnableCaching @TestConfiguration (defeating the @Profile("!test") blindness) and uses TWO different scoped users; RED demonstrated pre-fix (userY received the DTO instead of a denial), 4/4 green post-fix, cache-population asserted before each denial. WR-08 null-shop READ half (pairs with 23-08's GROUP_ADMIN-only WRITE half): scoped users now see legacy shop_id IS NULL products in lists/search/by-id/label via EXPLICITLY tenant-scoped finders (tenant_id AND (shop_id IN (:ids) OR shop_id IS NULL)); zero-grant users still see nothing. WR-07: malformed CSV shop_id → per-row 400, batch continues. 6/6 enforcement (2 new WR-08 cases) + full :core-java:test green. VSA-02 stays PENDING (23-11 KDS-transport gate still contributes; anti-false-green).
+Plan: gap-closure 23-11 COMPLETE (11 of 15 SUMMARYs on disk; 23-01..23-11)
+Status: Executing Phase 23 gap-closure. 23-11 shipped — CR-02 closed: the REAL KDS live channel is STOMP (`/topic/kitchen/{tenant}/{shopId}`), and TenantChannelInterceptor.validateSubscription checked only the tenant segment, so a STAFF user granted shop A could SUBSCRIBE to shop B's kitchen feed within its own tenant. The interceptor now grant-checks the `parts[4]` shop segment AFTER the existing tenant-wall check, via new ShopAccessService.canAccessShop(tenantId,userId,realmAdmin,shopId) — an EXPLICIT-identity, no-ambient-state, no-write decision (SecurityContextHolder on the STOMP thread would take 23-08's retained internal-caller bypass and fail OPEN). Subject resolved from accessor.getUser(); realm_access.roles re-parsed locally (CONNECT applies no authority conversion). isGroupAdmin() and canAccessShop() share ONE private isGroupAdminForUser ladder so the HTTP and STOMP boundaries cannot drift. Tenant-pin fail-closed guard blocks an unpinned RLS GUC from reading as implicit-GROUP_ADMIN under strict-OFF; TenantContext cleared in a finally on the pooled inbound thread; absent/non-UUID identity DENIED (CR-03 class). kitchen is the ONLY /topic/ carrying a shop segment (grep-confirmed). Proven: TenantChannelInterceptorTest 28/28 (7 CR-02 cases + falsifiability RED on 1/4/7 vs a gate-disabled build), ShopAccessEnforcementIntegrationTest 12/12 (6 new canAccessShop cases incl. genuine-grant proof), TenantChannelInterceptorShopGateIntegrationTest 2/2 (day-one preservation + end-to-end deny vs real Postgres); FailClosed 7/7 + Jit 4/4 + CacheBypass 4/4 (refactor no-regression) + full :core-java:test green. WR-03 (post-revocation SSE 5-min window) accepted → 23-14; staff-page copy fix → 23-13. VSA-02 stays PENDING (23-12/13/14/15 still contribute; anti-false-green).
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the 3 new `/api/v1/staff` endpoints; `OpenApiSnapshotTest` check-mode runs inside `integrationTest`.
   Run `./gradlew :core-java:updateOpenApiSnapshot` and commit the diff (needs Docker — the 23-06
   session ran in low-footprint mode with Docker/Gradle/Playwright forbidden).
   Also deferred by that constraint: `./gradlew test integrationTest`, `npx playwright test`,
   and a live-browser pass over /dashboard/staff (GROUP_ADMIN vs non-GA sessions).
-Last activity: 2026-07-20 -- Executed gap plan 23-10 (CR-01 cache-bypass + WR-08 + WR-07)
+Last activity: 2026-07-20 -- Executed gap plan 23-11 (CR-02 KDS STOMP transport shop-gate)
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 85%
 
 ## Milestone v2.3 Phase Map
 
@@ -57,7 +57,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 13 / ~16 estimated
+- Total plans completed: 14 / ~16 estimated
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -67,7 +67,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 |-------|-------|-------|----------|
 | 21 | 5 | - | - |
 | 22 | 7 | - | - |
-| 23 | 10/15 | - | - |
+| 23 | 11/15 | - | - |
 | 24 | 0/3 | - | - |
 | 25 | 0/2 | - | - |
 | 26 | 0/2 | - | - |
@@ -94,6 +94,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P08 | 44min | 3 tasks | 3 files |
 | Phase 23 P09 | 29min | 3 tasks | 3 files |
 | Phase 23 P10 | 45min | 3 tasks | 10 files |
+| Phase 23 P11 | 20min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [Phase 23]: 23-08: auth==null internal bypass RETAINED deliberately (measured blast radius 62 no-principal test files; not externally reachable — Spring Security 401 before any gated service). asSystem() ThreadLocal marker + StaffController @PreAuthorize scope backstop DEFERRED with reason. Proven by ShopAccessFailClosedIntegrationTest (7 cases, RED pre-fix on 1-4+7; 24 Phase-23 integration tests green).
 - [Phase 23]: 23-10: CR-01 closed — the shop-access gate was structurally INSIDE the @Cacheable getShopById/getProductById body, so a warm per-tenant (user-agnostic) cache entry served data to any other tenant user without re-running require(). Fix: extract the cached load onto dedicated ShopCacheLoader/ProductCacheLoader beans (nested public static @Component reached through the Spring proxy, NOT a self-invocation — WR-01) and run require() in the public method on EVERY call, outside the cache boundary. Cached method NAMES kept (getShopById/getProductById) so the cache key + all 13 TenantCacheEvictor call sites are byte-for-byte unchanged; @Cacheable stays textually in the service files. Proven by a caching-ENABLED, two-different-scoped-user Testcontainers test that supplies its own CacheManager + tenantAwareCacheKeyGenerator via a nested @EnableCaching @TestConfiguration (defeating the @Profile("!test") blindness) and asserts cache population before denial; RED demonstrated pre-fix (userY got the DTO). WR-08 null-shop READ policy (pairs with 23-08 GROUP_ADMIN-only WRITE half — surfaced for user acceptance): scoped users see legacy shop_id IS NULL products via EXPLICITLY tenant-scoped finders with load-bearing parentheses (tenant_id AND (shop_id IN (:ids) OR shop_id IS NULL)) — RLS-bypass (table-owner) would otherwise leak cross-tenant null-shop rows; zero-grant users still see nothing. WR-07: malformed CSV shop_id → per-row 400, not a 403.
 - [Phase ?]: [Phase 23]: 23-09: grant() reshaped to a session-based Hibernate write (not native ON CONFLICT) so Envers audits create AND role-change (WR-02); a DIFFERENT-role re-grant now APPLIES the change instead of silently no-opping while reporting success (CR-05). Concurrent duplicate insert isolated in REQUIRES_NEW + caught -> typed replay, never a 500. Last-GROUP_ADMIN check-then-act serialized by ShopStaffRepository.lockTenantGroupAdmins PESSIMISTIC_WRITE over shop_id IS NULL GROUP_ADMIN rows (== the counted set, since shop-scoped GROUP_ADMIN grants are rejected) in BOTH revoke() and the grant() downgrade path (CR-06). IN-03 two 409 messages extracted to constants, downgrade/revoke variants kept distinct for 23-13/IN-02. VSA-04 stays PENDING (23-12/13/14/15 still contribute). JIT insertGroupAdminIfAbsent still bypasses Envers -> handed to 23-14.
+- [Phase ?]: [Phase 23]: 23-11: CR-02 closed — the KDS STOMP transport (/topic/kitchen/{tenant}/{shopId}) is now shop-gated at SUBSCRIBE. New ShopAccessService.canAccessShop(tenantId,userId,realmAdmin,shopId) decides shop-read from EXPLICIT params (never SecurityContextHolder, which on the STOMP thread takes 23-08's retained internal-caller bypass and fails OPEN); identity from accessor.getUser() + a local realm_access.roles re-parse (CONNECT applies no authority conversion). isGroupAdmin() and canAccessShop() share one private isGroupAdminForUser ladder so HTTP and STOMP cannot drift. No writes on subscribe (no onRequest/JIT); tenant-pin fail-closed guard blocks an unpinned RLS GUC reading as implicit-GROUP_ADMIN under strict-OFF; TenantContext cleared in a finally on the pooled inbound thread. Day-one preservation proven end-to-end vs real Postgres; falsifiability RED shown pre-fix. WR-03 (post-revocation SSE 5-min window) accepted→23-14; staff-page copy correction→23-13.
 
 ### Pending Todos
 
@@ -169,6 +171,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T22:10:06.377Z
-Stopped at: Completed 23-05-PLAN.md
+Last session: 2026-07-20T22:39:31Z
+Stopped at: Completed 23-11-PLAN.md — gap-closure CR-02 KDS STOMP shop-gate
 Resume file: None
