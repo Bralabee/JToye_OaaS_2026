@@ -133,7 +133,7 @@ Plans:
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
 
-**Plans**: 7 plans (6 waves)
+**Plans**: 15 plans (6 waves shipped + 5 gap-closure waves)
 
 Plans:
 **Wave 1**
@@ -160,6 +160,33 @@ Plans:
 **Wave 6** *(blocked on 23-04 + 23-05 + 23-07)*
 
 - [x] 23-06-PLAN.md (Wave 6) — Staff-management screen (VSA-04): `/dashboard/staff` list/grant/revoke (403→access-required, 409→clear msg) + GROUP_ADMIN-only Staff nav item (D-10) + phase-gate `docs/metrics.json` + CLAUDE.md count reconcile (all of 23-01..23-07). [VSA-04, MOBL-01]
+
+**Gap closure** *(`/gsd:execute-phase 23 --gaps-only`; VSA-01/03 + MOBL-01 already PASS and are NOT re-planned)*
+
+Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization bypasses) + `23-REVIEW.md` (8 Critical / 12 Warning / 3 Info). Waves below are scoped to the gap-closure run.
+
+**Gap Wave 1**
+
+- [ ] 23-08-PLAN.md (Gap Wave 1) — CR-03 fail-closed system principal (a non-UUID-subject JWT was an unrestricted GROUP_ADMIN on `/api/v1/staff`) via an explicit empty-by-default machine-client allowlist, + CR-04 `require(null, role)` NPE→typed 403 and the null-shop write policy. [VSA-02, VSA-04]
+- [ ] 23-09-PLAN.md (Gap Wave 1, parallel) — CR-05 role changes silently no-op while reporting success (grant reshaped to an audited Hibernate upsert, closing WR-02) + CR-06 last-GROUP_ADMIN check-then-act race (`PESSIMISTIC_WRITE` lock) + IN-03. [VSA-04]
+
+**Gap Wave 2** *(23-10/23-11 blocked on 23-08; 23-12 on 23-09; all three parallel — no file overlap)*
+
+- [ ] 23-10-PLAN.md (Gap Wave 2) — CR-01 `@Cacheable` short-circuits the shop gate on a warm cache, proven by a caching-ENABLED two-scoped-user test that defeats the `@Profile("!test")` blindness; + WR-08 null-shop read policy and WR-07 malformed-CSV 403→400. [VSA-02]
+- [ ] 23-11-PLAN.md (Gap Wave 2, parallel) — CR-02 the real KDS transport (STOMP `/topic/kitchen/{tid}/{shopId}`) is not shop-gated; explicit-identity grant check at SUBSCRIBE, with the day-one ungranted user preserved. [VSA-02]
+- [ ] 23-12-PLAN.md (Gap Wave 2, parallel) — WR-05 grant validates neither shop tenancy nor user existence + `GET /api/v1/staff/me` (CR-08 backend half) + WR-10 `user_directory` PII masking and GDPR erasure coverage. [VSA-04]
+
+**Gap Wave 3** *(blocked on 23-12)*
+
+- [ ] 23-13-PLAN.md (Gap Wave 3) — CR-08 frontend GROUP_ADMIN detection disagrees with the backend model, silently pinning every non-realm-admin to one shop; server-sourced via `/me`, + WR-06 divergent switcher instances, WR-12 sub-based identity, IN-02 copy. [VSA-03, VSA-04]
+
+**Gap Wave 4** *(blocked on 23-08 + 23-09 + 23-11 + 23-13)*
+
+- [ ] 23-14-PLAN.md (Gap Wave 4) — **CR-07 design correction, revises locked D-04/D-12/D-05** (blocking decision checkpoint): enabling `strict-scoping` currently tightens nothing because JIT already wrote permanent GROUP_ADMIN rows for everyone. V57 grant provenance + strict-ON de-honours JIT rows with a deterministic bootstrap admin; + WR-09 machine accounts, WR-01/WR-11 membership cache made real with proven post-commit eviction. [VSA-02, VSA-04]
+
+**Gap Wave 5** *(blocked on all)*
+
+- [ ] 23-15-PLAN.md (Gap Wave 5) — Phase gate: OpenAPI snapshot regen (CI-blocking, needs Docker) + `docs-freshness --write` reconcile over a green full suite + 23-VALIDATION/REQUIREMENTS/23-CONTEXT/deferred-items reconcile. [VSA-02, VSA-04]
 
 **UI hint**: yes
 
