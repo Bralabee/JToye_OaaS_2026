@@ -111,13 +111,39 @@ public class ShopAccessService {
      * tenant-wide GROUP_ADMIN passes unconditionally. Otherwise the caller's role
      * on {@code shopId} must {@link ShopRole#satisfies(ShopRole)} the floor.
      *
+     * <p><strong>Null-shop policy (CR-04) — this is the WRITE half of a pair:</strong>
+     * a {@code null} {@code shopId} denotes a tenant-wide / unassigned resource (e.g. a
+     * legacy {@code Product} whose {@code shop_id} is NULL, "available on all tenant
+     * shops"). <em>Writes</em> to a null-shop resource are GROUP_ADMIN-only: a scoped
+     * non-GROUP_ADMIN caller receives the typed 403
+     * ({@code new ShopAccessDeniedException(null, GROUP_ADMIN)}), never a 500. The
+     * paired <em>READ</em> half — legacy {@code shop_id IS NULL} products staying
+     * visible to any granted scoped user — is implemented by plan <strong>23-09</strong>
+     * in {@code ProductService}/{@code ProductRepository} (which depends on this plan).
+     * The two halves are stated together so they cannot drift: <em>writes to a null-shop
+     * resource are GROUP_ADMIN-only; reads of a null-shop resource are tenant-wide-visible
+     * to any granted user</em>. This pairing is additive — it preserves the pre-phase
+     * visibility of legacy catalogue data rather than silently removing it (Incremental
+     * Betterment).
+     *
      * @throws ShopAccessDeniedException (distinct RFC 7807 403) if the caller
-     *         lacks {@code minRole} on {@code shopId}.
+     *         lacks {@code minRole} on {@code shopId}, or if {@code shopId} is null and
+     *         the caller is not a GROUP_ADMIN.
      */
     public void require(UUID shopId, ShopRole minRole) {
         onRequest();
         if (isGroupAdmin()) {
             return;
+        }
+        // CR-04: a null shopId is a tenant-wide / unassigned resource; only a
+        // GROUP_ADMIN (handled above) may write it. Deny a scoped caller with the typed
+        // 403 HERE — BEFORE the perShopRole().get(shopId) lookup below. That map is
+        // built with Map.copyOf(...), whose ImmutableCollections.MapN.get(null) throws
+        // NullPointerException (→ HTTP 500) in BOTH the populated and empty cases.
+        // Guarding in require() (not at map construction) makes the outcome independent
+        // of the membership map's concrete type, e.g. a future deserialized LinkedHashMap.
+        if (shopId == null) {
+            throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
         }
         Membership membership = resolveMembership(requireVendorUserId());
         ShopRole role = membership.perShopRole().get(shopId);
