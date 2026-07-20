@@ -4,6 +4,7 @@ import { Store } from "lucide-react"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
 import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
+import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
 import type { ReactNode } from "react"
 
@@ -21,6 +22,10 @@ import type { ReactNode } from "react"
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
+    // One provider above BOTH switchers (sidebar + mobile top bar): a single
+    // fetch and a single hydration writer (WR-06). Renders no DOM of its own, so
+    // the MOBL-01-verified 375px shell markup below is unchanged.
+    <ShopSwitcherProvider>
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
@@ -47,5 +52,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </main>
       <MobileTabBar className="md:hidden" />
     </div>
+    </ShopSwitcherProvider>
   )
 }

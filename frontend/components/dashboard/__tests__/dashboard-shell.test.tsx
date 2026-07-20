@@ -7,6 +7,7 @@
 
 import { render, screen, within } from "@testing-library/react"
 import { DashboardShell } from "../dashboard-shell"
+import { ShopSwitcherProvider } from "../shop-switcher-provider"
 
 // The real Sidebar pulls in next-auth, next/navigation etc. We stub the Sidebar
 // COMPONENT but keep the real module's `navigation` export — MobileTabBar imports
@@ -108,7 +109,12 @@ describe("Sidebar navigation", () => {
     const { Sidebar } = jest.requireActual("@/components/dashboard/sidebar") as {
       Sidebar: () => JSX.Element
     }
-    render(<Sidebar />)
+    // The sidebar mounts a ShopSwitcher, which now reads the shared provider.
+    render(
+      <ShopSwitcherProvider>
+        <Sidebar />
+      </ShopSwitcherProvider>
+    )
     const link = screen.getByRole("link", { name: /go live/i })
     expect(link).toHaveAttribute("href", "/dashboard/onboarding")
   })

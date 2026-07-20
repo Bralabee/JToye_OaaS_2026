@@ -14,7 +14,9 @@
  */
 
 import { render, screen, fireEvent, act } from "@testing-library/react"
+import type { ReactElement } from "react"
 import { ShopSwitcher } from "../shop-switcher"
+import { ShopSwitcherProvider } from "../shop-switcher-provider"
 import {
   getShopContext,
   setShopContext,
@@ -22,6 +24,11 @@ import {
 } from "@/lib/shop-context"
 import apiClient from "@/lib/api-client"
 import type { Shop } from "@/types/api"
+
+/** Every switcher must sit under the shared provider (its single data source). */
+function renderSwitcher(ui: ReactElement) {
+  return render(ui, { wrapper: ShopSwitcherProvider })
+}
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -122,7 +129,7 @@ describe("shop-context helper (lib/shop-context)", () => {
 describe("ShopSwitcher", () => {
   it("defaults a GROUP_ADMIN to the 'All shops' context (D-06)", async () => {
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
     expect(screen.getByRole("option", { name: "All shops" })).toBeInTheDocument()
@@ -135,7 +142,7 @@ describe("ShopSwitcher", () => {
   // switcher must land them on "All shops" and offer the option to re-select it.
   it("lands a server-side GROUP_ADMIN who is NOT a realm admin on 'All shops' and never pins them to the first shop (CR-08)", async () => {
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true, grantedShopIds: null })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
     expect(screen.getByRole("option", { name: "All shops" })).toBeInTheDocument()
@@ -153,7 +160,7 @@ describe("ShopSwitcher", () => {
       groupAdmin: false,
       grantedShopIds: [SHOP_A.id, SHOP_B.id],
     })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     await screen.findByRole("combobox")
     expect(
@@ -165,7 +172,7 @@ describe("ShopSwitcher", () => {
 
   it("persists a new selection to localStorage when a shop is chosen", async () => {
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
     fireEvent.change(select, { target: { value: SHOP_B.id } })
@@ -176,7 +183,7 @@ describe("ShopSwitcher", () => {
 
   it("shows the 'apply to all shops' action ONLY for a GROUP_ADMIN in the 'All shops' context (D-08)", async () => {
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     // GA + All-shops → affordance visible.
     expect(await screen.findByTestId("apply-to-all")).toHaveTextContent(/apply to all/i)
@@ -188,7 +195,7 @@ describe("ShopSwitcher", () => {
 
   it("never offers 'apply to all shops' to a non-GROUP_ADMIN", async () => {
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: false })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     // Wait for load to settle (the granted-shop dropdown renders).
     await screen.findByRole("combobox")
@@ -199,7 +206,7 @@ describe("ShopSwitcher", () => {
 
   it("pins the sole grant of a single-shop non-GROUP_ADMIN (no dropdown)", async () => {
     mockAccess({ shops: [SHOP_A], groupAdmin: false })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     // Wait for the loaded pinned label (the loading skeleton shares the testid).
     expect(await screen.findByText(SHOP_A.name)).toBeInTheDocument()
@@ -210,7 +217,7 @@ describe("ShopSwitcher", () => {
   it("degrades a stale/revoked saved selection to an access-required state and resets it (D-13)", async () => {
     window.localStorage.setItem("shopContext", "revoked-shop-id")
     mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
-    render(<ShopSwitcher />)
+    renderSwitcher(<ShopSwitcher />)
 
     // Access-required notice surfaces instead of crashing.
     expect(await screen.findByTestId("shop-switcher-stale")).toBeInTheDocument()
@@ -218,5 +225,53 @@ describe("ShopSwitcher", () => {
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
     expect(select.value).toBe("all")
     expect(getShopContext()).toBe("all")
+  })
+})
+
+// WR-06: two switcher instances (sidebar + mobile top bar) are ONE control —
+// one shared data source, one selection state, one fetch.
+describe("ShopSwitcher — two instances are one control (WR-06)", () => {
+  it("keeps both switchers in sync — changing one updates the other without a remount", async () => {
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    render(
+      <ShopSwitcherProvider>
+        <ShopSwitcher variant="sidebar" />
+        <ShopSwitcher variant="topbar" />
+      </ShopSwitcherProvider>
+    )
+
+    const selects = (await screen.findAllByRole("combobox")) as HTMLSelectElement[]
+    expect(selects).toHaveLength(2)
+    expect(selects[0].value).toBe("all")
+    expect(selects[1].value).toBe("all")
+
+    // Change the selection in the FIRST switcher…
+    fireEvent.change(selects[0], { target: { value: SHOP_B.id } })
+
+    // …and the SECOND reflects it live (shared context, no remount).
+    expect(selects[0].value).toBe(SHOP_B.id)
+    expect(selects[1].value).toBe(SHOP_B.id)
+    expect(getShopContext()).toBe(SHOP_B.id)
+  })
+
+  it("issues ONE GET /api/v1/shops and ONE GET /api/v1/staff/me for both mounted switchers", async () => {
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    render(
+      <ShopSwitcherProvider>
+        <ShopSwitcher variant="sidebar" />
+        <ShopSwitcher variant="topbar" />
+      </ShopSwitcherProvider>
+    )
+
+    await screen.findAllByRole("combobox")
+
+    const shopCalls = mockedApiClient.get.mock.calls.filter(([u]) =>
+      String(u).startsWith("/api/v1/shops")
+    )
+    const meCalls = mockedApiClient.get.mock.calls.filter(
+      ([u]) => u === "/api/v1/staff/me"
+    )
+    expect(shopCalls).toHaveLength(1)
+    expect(meCalls).toHaveLength(1)
   })
 })

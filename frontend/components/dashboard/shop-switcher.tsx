@@ -1,19 +1,23 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Store, ChevronsUpDown } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { fetchMyShops } from "@/lib/shops-api"
-import { getShopContext, setShopContext, ALL_SHOPS_CONTEXT } from "@/lib/shop-context"
-import type { Shop } from "@/types/api"
+import { setShopContext, ALL_SHOPS_CONTEXT } from "@/lib/shop-context"
+import { useShopContext } from "@/hooks/use-shop-context"
+import { useShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
 
 /**
- * Persisted shop-context switcher (VSA-03). Reads the caller's read-scoped shop
- * list (23-03), lands a GROUP_ADMIN on "All shops" (D-06), persists the selection
- * in localStorage (D-07), and offers the group-wide "apply to all shops" affordance
- * only to a GROUP_ADMIN in the "All shops" context (D-08). A non-GROUP_ADMIN sees
- * only their granted shops; a single grant is pinned. A stale/revoked saved
- * selection degrades to an access-required notice rather than crashing (D-13).
+ * Persisted shop-context switcher (VSA-03). Mounted twice — the desktop sidebar
+ * and the mobile top bar — but it is ONE control: the switcher reads its data from
+ * the shared `ShopSwitcherProvider` (one fetch for both, WR-06) and its SELECTED
+ * value from `useShopContext()` (the shared localStorage-backed seam that already
+ * subscribes to both the storage and same-tab 'shopcontext:change' events), so the
+ * two instances always agree without a remount.
+ *
+ * A GROUP_ADMIN lands on "All shops" (D-06) and gets the group-wide "apply to all
+ * shops" affordance in that context (D-08). A non-GROUP_ADMIN sees only their
+ * granted shops; a single grant is pinned. A stale/revoked saved selection
+ * degrades to an access-required notice rather than crashing (D-13).
  *
  * `variant="sidebar"` styles it for the always-dark desktop sidebar chrome;
  * `variant="topbar"` (default) is theme-adaptive for the mobile top bar.
@@ -25,54 +29,23 @@ export function ShopSwitcher({
   variant?: "sidebar" | "topbar"
   className?: string
 }) {
-  const [shops, setShops] = useState<Shop[]>([])
-  const [isGroupAdmin, setIsGroupAdmin] = useState(false)
-  const [selected, setSelected] = useState<string>(ALL_SHOPS_CONTEXT)
-  const [loading, setLoading] = useState(true)
-  const [stale, setStale] = useState(false)
+  const { shops, isGroupAdmin, loading, stale, dismissStale } = useShopSwitcherData()
+  const { contextShopId, isAllShops } = useShopContext()
 
-  useEffect(() => {
-    let active = true
-    fetchMyShops()
-      .then(({ shops: fetched, isGroupAdmin: ga }) => {
-        if (!active) return
-        const saved = getShopContext()
-        const grantedIds = fetched.map((s) => s.id)
-        // "all" is a real context only for a GROUP_ADMIN; a non-GA has no "all"
-        // entry, so the DISPLAY default falls back to their first granted shop.
-        // The default landing (no saved value) is "All shops" for a GA (D-06),
-        // else the first grant.
-        const fallback =
-          ga || fetched.length === 0 ? ALL_SHOPS_CONTEXT : fetched[0].id
-        // D-13: a saved *specific shop* no longer in the granted set was revoked —
-        // surface an access-required notice and reset, never crash.
-        const savedIsStale = saved !== ALL_SHOPS_CONTEXT && !grantedIds.includes(saved)
-        const next =
-          savedIsStale || saved === ALL_SHOPS_CONTEXT ? fallback : saved
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; mirrors the sidebar.tsx theme idiom
-        setShops(fetched)
-        setIsGroupAdmin(ga)
-        setSelected(next)
-        setStale(savedIsStale)
-        setLoading(false)
-        // CR-08/T-23-13-02: persist ONLY a stale-selection correction (D-13).
-        // A fresh first load must NOT write a pin — doing so silently narrowed
-        // the cross-shop view from "all shops" to one shop with no user action.
-        if (savedIsStale) setShopContext(next)
-      })
-      .catch(() => {
-        if (!active) return
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- error settles the loading state
-        setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  // Raw context value ("all" or a shopId). A non-GROUP_ADMIN has no "All shops"
+  // entry, so an "all" context DISPLAYS as their first granted shop without ever
+  // being persisted — the cross-shop default is preserved for a GROUP_ADMIN, and
+  // a non-GA never sees a value with no matching option.
+  const rawContext = isAllShops ? ALL_SHOPS_CONTEXT : contextShopId ?? ALL_SHOPS_CONTEXT
+  const selected =
+    rawContext !== ALL_SHOPS_CONTEXT
+      ? rawContext
+      : isGroupAdmin || shops.length === 0
+        ? ALL_SHOPS_CONTEXT
+        : shops[0].id
 
   const onSelect = (id: string) => {
-    setSelected(id)
-    setStale(false)
+    dismissStale()
     setShopContext(id) // persists + broadcasts 'shopcontext:change'
   }
 
