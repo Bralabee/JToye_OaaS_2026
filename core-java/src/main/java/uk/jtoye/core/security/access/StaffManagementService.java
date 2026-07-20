@@ -40,10 +40,13 @@ import java.util.UUID;
  *       takes effect — CR-05, no longer a silent no-op reported as success). A concurrent
  *       duplicate insert is caught and replayed as a typed 200, never an untyped
  *       unique-constraint 500 (T-23-09-04).</li>
- *   <li><strong>Last-GROUP_ADMIN lockout guard (D-11)</strong> — a revoke of the
- *       final tenant-wide GROUP_ADMIN, or a grant that would downgrade the sole
+ *   <li><strong>Last-GROUP_ADMIN lockout guard (D-11, race-safe)</strong> — a revoke of
+ *       the final tenant-wide GROUP_ADMIN, or a grant that would downgrade the sole
  *       GROUP_ADMIN's tenant-wide slot, is blocked with a
- *       {@link LastGroupAdminException} (RFC 7807 409). The realm-admin bridge is a
+ *       {@link LastGroupAdminException} (RFC 7807 409). The check-then-act is serialized
+ *       by a {@code PESSIMISTIC_WRITE} lock over the tenant's GROUP_ADMIN rows
+ *       ({@link ShopStaffRepository#lockTenantGroupAdmins}) so two concurrent writes
+ *       cannot race the tenant to zero GROUP_ADMINs (CR-06). The realm-admin bridge is a
  *       recovery backstop, but a non-realm-admin group could otherwise self-lock. Now
  *       that downgrades genuinely apply, this guard is LOAD-BEARING on the grant path.</li>
  *   <li><strong>Immediate effect (D-05)</strong> — after the DB write COMMITS,
@@ -173,9 +176,14 @@ public class StaffManagementService {
         }
 
         // A genuine role change. The D-11 downgrade guard MUST fire before the update
-        // now that a downgrade actually applies (CR-05).
-        if (shopId == null && role != ShopRole.GROUP_ADMIN && wouldDowngradeLastGroupAdmin(tenantId, userId)) {
-            throw new LastGroupAdminException(MSG_DOWNGRADE_LAST_GROUP_ADMIN);
+        // now that a downgrade actually applies (CR-05). Serialize the check-then-act
+        // with a row lock over the tenant's GROUP_ADMIN rows (CR-06) so a concurrent
+        // downgrade cannot race the sole GROUP_ADMIN to a lesser role.
+        if (shopId == null && role != ShopRole.GROUP_ADMIN) {
+            shopStaffRepository.lockTenantGroupAdmins(tenantId);
+            if (wouldDowngradeLastGroupAdmin(tenantId, userId)) {
+                throw new LastGroupAdminException(MSG_DOWNGRADE_LAST_GROUP_ADMIN);
+            }
         }
 
         existing.setRole(role);
@@ -199,9 +207,14 @@ public class StaffManagementService {
         ShopStaff row = shopStaffRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Staff grant not found: " + id));
 
-        if (row.getRole() == ShopRole.GROUP_ADMIN
-                && shopStaffRepository.countByTenantIdAndRole(tenantId, ShopRole.GROUP_ADMIN) <= 1) {
-            throw new LastGroupAdminException(MSG_REVOKE_LAST_GROUP_ADMIN);
+        if (row.getRole() == ShopRole.GROUP_ADMIN) {
+            // Serialize the check-then-act (CR-06): lock the tenant's GROUP_ADMIN rows
+            // BEFORE counting so a concurrent revoke blocks, then re-reads the true
+            // post-commit count and 409s rather than racing the tenant to zero admins.
+            shopStaffRepository.lockTenantGroupAdmins(tenantId);
+            if (shopStaffRepository.countByTenantIdAndRole(tenantId, ShopRole.GROUP_ADMIN) <= 1) {
+                throw new LastGroupAdminException(MSG_REVOKE_LAST_GROUP_ADMIN);
+            }
         }
 
         UUID targetUserId = row.getUserId();

@@ -1,6 +1,8 @@
 package uk.jtoye.core.security.access;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,6 +28,28 @@ public interface ShopStaffRepository extends JpaRepository<ShopStaff, UUID> {
 
     /** Count of grants with a given role in a tenant — last-GROUP_ADMIN guard (D-11, 23-04). */
     long countByTenantIdAndRole(UUID tenantId, ShopRole role);
+
+    /**
+     * Pessimistically lock ALL of a tenant's tenant-wide ({@code shop_id IS NULL})
+     * GROUP_ADMIN rows for the duration of the current transaction (CR-06, 23-09).
+     * Called at the TOP of the last-GROUP_ADMIN guard in both {@code revoke()} and the
+     * {@code grant()} downgrade path — BEFORE the {@code countByTenantIdAndRole} — so the
+     * whole check-then-act is serialized: a concurrent revoke/downgrade blocks on this
+     * {@code SELECT ... FOR UPDATE} until the first transaction commits, then re-reads the
+     * true post-commit count and correctly 409s. This prevents two concurrent writes from
+     * racing the tenant to ZERO GROUP_ADMINs (a permanent lockout under strict-scoping ON).
+     *
+     * <p>The row set is exactly the invariant's set: {@code grant()} rejects shop-scoped
+     * GROUP_ADMIN grants, so these {@code shop_id IS NULL} rows and
+     * {@code countByTenantIdAndRole(tenantId, GROUP_ADMIN)} agree. {@code ORDER BY s.id}
+     * gives both racing transactions a deterministic lock-acquisition order (no deadlock).
+     * The predicate stays tenant-scoped (explicit {@code tenantId} + the FORCE-RLS wall),
+     * so a lock taken by tenant A cannot be observed or blocked by tenant B.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM ShopStaff s WHERE s.tenantId = :tenantId AND s.shopId IS NULL "
+            + "AND s.role = uk.jtoye.core.security.access.ShopRole.GROUP_ADMIN ORDER BY s.id")
+    List<ShopStaff> lockTenantGroupAdmins(@Param("tenantId") UUID tenantId);
 
     /** Has this sub already been provisioned in this tenant? — JIT short-circuit (23-02). */
     boolean existsByTenantIdAndUserId(UUID tenantId, UUID userId);
