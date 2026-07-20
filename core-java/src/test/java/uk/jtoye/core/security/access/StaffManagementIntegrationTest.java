@@ -22,6 +22,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.exception.LastGroupAdminException;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.StaffManagementService.GrantResult;
@@ -180,6 +181,18 @@ class StaffManagementIntegrationTest {
     }
 
     /**
+     * Seed a login-populated {@code user_directory} row so a grant may target this user
+     * (WR-05 / 23-12 Task 1: {@code grant()} now requires the target to appear in the
+     * tenant's directory — the login-populated picker, D-09). The Testcontainers bootstrap
+     * role is a SUPERUSER, so this direct INSERT bypasses FORCE RLS and needs no tenant GUC.
+     */
+    private void seedDirectory(UUID tenant, UUID userId) {
+        jdbc.update("INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                        + "VALUES (?, ?, ?, ?, now()) ON CONFLICT (tenant_id, user_id) DO NOTHING",
+                tenant, userId, "user-" + userId + "@example.com", "Directory User " + userId);
+    }
+
+    /**
      * Truth 1 + 2: a GROUP_ADMIN grants a shop-scoped role (201) → the target gains
      * access; the GROUP_ADMIN revokes it (204) → the target immediately gets the typed
      * shop-access 403. Run under strict-scoping ON so the revoked (now ungranted)
@@ -195,6 +208,7 @@ class StaffManagementIntegrationTest {
 
         // GROUP_ADMIN (realm-admin) grants the staff member SHOP_MANAGER on one shop.
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         ResponseEntity<StaffMemberDto> granted =
                 staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER));
         assertThat(granted.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -234,6 +248,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
 
         ResponseEntity<StaffMemberDto> first =
                 staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF));
@@ -266,6 +281,7 @@ class StaffManagementIntegrationTest {
         UUID soleGroupAdmin = UUID.randomUUID();
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, soleGroupAdmin);
         // Grant the sole tenant-wide GROUP_ADMIN (the realm-admin caller holds no row).
         ResponseEntity<StaffMemberDto> granted =
                 staffController.grant(new GrantStaffRequest(soleGroupAdmin, null, ShopRole.GROUP_ADMIN));
@@ -294,6 +310,8 @@ class StaffManagementIntegrationTest {
         UUID gaTwo = UUID.randomUUID();
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, gaOne);
+        seedDirectory(tenant, gaTwo);
         UUID gaOneGrant = staffController.grant(new GrantStaffRequest(gaOne, null, ShopRole.GROUP_ADMIN))
                 .getBody().id();
         staffController.grant(new GrantStaffRequest(gaTwo, null, ShopRole.GROUP_ADMIN));
@@ -340,6 +358,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         GrantResult r = staffManagementService.grant(staff, shopId, ShopRole.SHOP_MANAGER);
         assertThat(r.created()).isTrue();
 
@@ -374,6 +393,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
                 .getBody().id();
 
@@ -407,6 +427,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
                 .getBody().id();
 
@@ -433,6 +454,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF))
                 .getBody().id();
 
@@ -460,6 +482,7 @@ class StaffManagementIntegrationTest {
         UUID shopId = seedShop(tenant);
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
         UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
                 .getBody().id();
         assertThat(auditRevisions(grantId, 0))
@@ -484,6 +507,7 @@ class StaffManagementIntegrationTest {
         UUID tenant = UUID.randomUUID();
         UUID staff = UUID.randomUUID();
         UUID shopId = seedShop(tenant);
+        seedDirectory(tenant, staff);
 
         CountDownLatch gate = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -553,6 +577,8 @@ class StaffManagementIntegrationTest {
         UUID gaTwo = UUID.randomUUID();
 
         authenticate(admin, true, tenant);
+        seedDirectory(tenant, gaOne);
+        seedDirectory(tenant, gaTwo);
         UUID grantOne = staffController.grant(new GrantStaffRequest(gaOne, null, ShopRole.GROUP_ADMIN))
                 .getBody().id();
         UUID grantTwo = staffController.grant(new GrantStaffRequest(gaTwo, null, ShopRole.GROUP_ADMIN))
@@ -606,6 +632,89 @@ class StaffManagementIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    // ====================================================================
+    // 23-12 Task 1 — WR-05: grant() validates its inputs (shop tenancy +
+    // user existence) with a typed 404, BEFORE the D-11 guard and any write.
+    // ====================================================================
+
+    /**
+     * WR-05 (the core case): a grant naming a shop that belongs to ANOTHER tenant is
+     * rejected with a typed 404 ({@link ResourceNotFoundException}) and writes NO
+     * {@code shop_staff} row. A FK cannot catch this — PostgreSQL referential-integrity
+     * checks BYPASS RLS, so {@code shop_staff_shop_id_fkey} happily accepts the foreign
+     * shop id; only the tenant-scoped existence check does. The foreign-tenant and the
+     * non-existent cases return the SAME 404 by design, so the response is not an
+     * existence oracle for another tenant's shops (T-23-12-03).
+     */
+    @Test
+    void grantForeignTenantShopIsRejectedAndWritesNoRow() {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID foreignShop = seedShop(tenantB);   // a real shop, but committed in tenant B
+
+        authenticate(admin, true, tenantA);
+        seedDirectory(tenantA, staff);           // the user IS a known tenant-A directory member
+
+        assertThatThrownBy(() ->
+                staffController.grant(new GrantStaffRequest(staff, foreignShop, ShopRole.SHOP_MANAGER)))
+                .as("a grant naming another tenant's shop is rejected as a typed 404")
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        assertThat(shopStaffRowCount(tenantA, staff, foreignShop))
+                .as("no shop_staff row is written for the foreign-tenant shop (not a silent success)")
+                .isZero();
+    }
+
+    /**
+     * WR-05: a grant naming a {@code userId} absent from the tenant's {@code user_directory}
+     * is rejected with a typed 404 and writes no row — enforcing the contract the
+     * {@code GrantStaffRequest} javadoc already claimed. Grants can only target users who
+     * have logged in at least once (D-09 login-populated directory).
+     */
+    @Test
+    void grantUnknownUserIsRejected() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID unknownUser = UUID.randomUUID();     // never seeded into user_directory
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+
+        assertThatThrownBy(() ->
+                staffController.grant(new GrantStaffRequest(unknownUser, shopId, ShopRole.STAFF)))
+                .as("a grant naming an unknown user is rejected as a typed 404")
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        assertThat(shopStaffRowCount(tenant, unknownUser, shopId))
+                .as("no shop_staff row is written for the unknown user")
+                .isZero();
+    }
+
+    /**
+     * WR-05 (skip-path / regression guard): a tenant-wide grant ({@code shopId == null})
+     * to a KNOWN directory user still succeeds — the shop tenancy check is skipped for a
+     * null shop and the user check passes. Proves the new validations do not regress the
+     * valid path.
+     */
+    @Test
+    void tenantWideGrantToKnownUserSucceeds() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+
+        authenticate(admin, true, tenant);
+        seedDirectory(tenant, staff);
+
+        ResponseEntity<StaffMemberDto> granted =
+                staffController.grant(new GrantStaffRequest(staff, null, ShopRole.GROUP_ADMIN));
+        assertThat(granted.getStatusCode())
+                .as("a tenant-wide grant to a known directory user succeeds")
+                .isEqualTo(HttpStatus.CREATED);
+        assertThat(shopStaffRowCount(tenant, staff, null)).isEqualTo(1);
     }
 
     private Callable<Throwable> revokeWorker(UUID revoker, UUID tenant, UUID grantId, CountDownLatch gate) {
