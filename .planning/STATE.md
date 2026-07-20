@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-06-PLAN.md — Phase 23 code-complete (7/7)
-last_updated: "2026-07-20T11:31:50.018Z"
-last_activity: 2026-07-20
+stopped_at: Completed 23-08-PLAN.md — gap-closure CR-03 + CR-04 (fail-closed ShopAccessService)
+last_updated: "2026-07-20T21:47:20.000Z"
+last_activity: 2026-07-20 -- Executed gap plan 23-08 (CR-03 fail-open + CR-04 NPE closed)
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 19
-  completed_plans: 19
-  percent: 50
+  completed_phases: 2
+  total_plans: 27
+  completed_plans: 20
+  percent: 74
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — CODE-COMPLETE (7/7 plans)
-Plan: 7 of 7 complete (23-01..23-07; 23-06 executed last, out of wave order, and owned the phase-gate reconcile)
-Status: All 7 SUMMARYs on disk. VSA-01..04 + MOBL-01 closed. docs-freshness green at **1511**.
+Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING (gap-closure wave 23-08..23-15)
+Plan: gap-closure 23-08 COMPLETE (8 of 15 SUMMARYs on disk; 23-01..23-08)
+Status: Executing Phase 23 gap-closure. 23-08 shipped — CR-03 (system-principal fail-OPEN) + CR-04 (require(null,role) NPE) closed in ShopAccessService, proven by ShopAccessFailClosedIntegrationTest (7 cases, RED demonstrated pre-fix on cases 1-4+7; 24 Phase-23 integration tests green).
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the 3 new `/api/v1/staff` endpoints; `OpenApiSnapshotTest` check-mode runs inside `integrationTest`.
   Run `./gradlew :core-java:updateOpenApiSnapshot` and commit the diff (needs Docker — the 23-06
   session ran in low-footprint mode with Docker/Gradle/Playwright forbidden).
   Also deferred by that constraint: `./gradlew test integrationTest`, `npx playwright test`,
   and a live-browser pass over /dashboard/staff (GROUP_ADMIN vs non-GA sessions).
-Last activity: 2026-07-20
+Last activity: 2026-07-20 -- Phase 23 execution started
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 74%
 
 ## Milestone v2.3 Phase Map
 
@@ -91,6 +91,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P05 | 35min | 4 tasks | 9 files |
 | Phase 23 P07 | 40m | 2 tasks | 9 files |
 | Phase 23 P06 | 12min | 3 tasks | 8 files |
+| Phase 23 P08 | 44min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 23]: 23-07: Closure proven at Jest (58/58 dashboard suites) + npm run build tsc level only — live browser/Playwright verification DEFERRED (low-footprint session after a desktop crash), recorded in 23-07-SUMMARY "Deferred verification"; run before the phase PR.
 - [Phase ?]: 23-06: /dashboard/staff renders the server's typed 403 as the shared access-required card (finance idiom) and the last-GA 409 as a persistent inline notice — no confirm-gate on self-revoke, so the server guard stays reachable (D-10/D-11/D-13)
 - [Phase ?]: 23-06 phase-gate reconcile: docs/metrics.json + CLAUDE.md + AGENTS.md counts moved 1456 -> 1511 (java 1010 / jest 357 / pw 40 / go 77 / mcp 27); docs-freshness check-mode exit 0. PROJECT.md's 1456 left intact — it describes unmerged main, not this branch
+- [Phase ?]: [Phase 23]: 23-08: CR-03 fail-OPEN closed — isSystemPrincipal split into isInternalCaller() (auth==null only) + isDeclaredMachineClient() (non-UUID sub AND azp/client_id in an explicit, empty-by-default machine-client-ids allowlist); anonymous/non-Jwt/unparseable-subject request principals now DENIED with typed 403, never escalated to GROUP_ADMIN (D-04 true in code). currentUserId() 500 replaced by requireVendorUserId() typed 403.
+- [Phase ?]: [Phase 23]: 23-08: CR-04 closed — require(null,role) guards the null shop BEFORE the ImmutableCollections.MapN.get(null) NPE; null shopId = tenant-wide/unassigned resource, WRITE is GROUP_ADMIN-only (typed 403), READ half owned by plan 23-09 (pairing written into require() javadoc so halves cannot drift).
+- [Phase ?]: [Phase 23]: 23-08: auth==null internal bypass RETAINED deliberately (measured blast radius 62 no-principal test files; not externally reachable — Spring Security 401 before any gated service). asSystem() ThreadLocal marker + StaffController @PreAuthorize scope backstop DEFERRED with reason. Proven by ShopAccessFailClosedIntegrationTest (7 cases, RED pre-fix on 1-4+7; 24 Phase-23 integration tests green).
 
 ### Pending Todos
 
@@ -161,6 +165,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T11:31:31.740Z
+Last session: 2026-07-20T20:49:35.358Z
 Stopped at: Completed 23-05-PLAN.md
 Resume file: None
