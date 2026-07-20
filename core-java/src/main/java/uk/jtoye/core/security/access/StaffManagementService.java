@@ -17,6 +17,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
+import uk.jtoye.core.shop.ShopRepository;
 
 import java.util.List;
 import java.util.Objects;
@@ -77,6 +78,7 @@ public class StaffManagementService {
 
     private final ShopStaffRepository shopStaffRepository;
     private final UserDirectoryRepository userDirectoryRepository;
+    private final ShopRepository shopRepository;
     private final ShopAccessService shopAccessService;
     /**
      * Self-reference (lazy {@link ObjectProvider} to avoid a construction cycle) used to
@@ -87,10 +89,12 @@ public class StaffManagementService {
 
     public StaffManagementService(ShopStaffRepository shopStaffRepository,
                                   UserDirectoryRepository userDirectoryRepository,
+                                  ShopRepository shopRepository,
                                   ShopAccessService shopAccessService,
                                   ObjectProvider<StaffManagementService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
+        this.shopRepository = shopRepository;
         this.shopAccessService = shopAccessService;
         this.selfProvider = selfProvider;
     }
@@ -142,7 +146,11 @@ public class StaffManagementService {
      * </ul>
      *
      * <p>Guards run first, unchanged in order: a shop-scoped GROUP_ADMIN grant is
-     * rejected (400), and the D-11 downgrade guard blocks a change that would strip the
+     * rejected (400); then (WR-05, Task 1) the inputs are validated — a {@code shopId}
+     * that is not a shop in the caller's tenant is a 404 ({@link ResourceNotFoundException};
+     * the FK cannot enforce this because Postgres RI bypasses RLS), and a {@code userId}
+     * absent from the tenant's {@code user_directory} is a 404 — BEFORE the D-11 guard and
+     * any write. Finally the D-11 downgrade guard blocks a change that would strip the
      * sole tenant-wide GROUP_ADMIN (409). The D-11 guard is now LOAD-BEARING — it
      * previously fronted a write that could not change a role anyway; now that downgrades
      * apply, it is the only thing preventing the last GROUP_ADMIN being downgraded.
@@ -161,6 +169,34 @@ public class StaffManagementService {
         if (role == ShopRole.GROUP_ADMIN && shopId != null) {
             throw new IllegalArgumentException(
                     "GROUP_ADMIN is a tenant-wide role; shopId must be null for a GROUP_ADMIN grant");
+        }
+
+        // WR-05 (Task 1): validate the grant's inputs HERE — after requireGroupAdmin() and
+        // the tenant-wide-GROUP_ADMIN rule, but BEFORE the D-11 downgrade guard and any
+        // write — so an invalid request never reaches the row lock or the insert. Both
+        // failures are a typed 404 (ResourceNotFoundException → GlobalExceptionHandler),
+        // machine-parseable per the agent-readiness contract, not an untyped 500 or a
+        // misleading 403.
+        //
+        // Shop tenancy: a FK (shop_staff.shop_id REFERENCES shops(id)) does NOT enforce
+        // this — PostgreSQL referential-integrity checks BYPASS RLS, so the FK happily
+        // accepts another tenant's shop id; the grant would be "written", land in the
+        // user's grantedShopIds(), then be filtered out by RLS downstream — a silent
+        // success that confers nothing. The tenant-scoped finder is the real check. The
+        // foreign-tenant and non-existent cases return an IDENTICAL 404 by design, so the
+        // response is not an existence oracle for another tenant's shops (T-23-12-03).
+        if (shopId != null && shopRepository.findByIdAndTenantId(shopId, tenantId).isEmpty()) {
+            throw new ResourceNotFoundException("Shop not found in this tenant: " + shopId);
+        }
+
+        // User existence: the GrantStaffRequest javadoc already REQUIRES the sub to appear
+        // in the tenant's user_directory (the login-populated picker, D-09); nothing
+        // enforced it, so arbitrary UUIDs could be granted roles. Enforcing it means a
+        // grant can only target a user who has logged in at least once — the intended
+        // design ("grant to never-logged-in users" is a deferred idea in 23-CONTEXT, not a
+        // scope change). Distinct message from the shop 404 for operator diagnosis.
+        if (!userDirectoryRepository.existsByTenantIdAndUserId(tenantId, userId)) {
+            throw new ResourceNotFoundException("User not found in tenant directory: " + userId);
         }
 
         ShopStaff existing = findCanonicalGrant(tenantId, userId, shopId);

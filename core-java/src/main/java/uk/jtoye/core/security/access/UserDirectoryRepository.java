@@ -24,6 +24,15 @@ public interface UserDirectoryRepository extends JpaRepository<UserDirectory, Us
     List<UserDirectory> findByTenantId(UUID tenantId);
 
     /**
+     * WR-05 (23-12 Task 1): does {@code userId} appear in this tenant's directory? A
+     * grant may only target a user who has logged in at least once (D-09 login-populated
+     * picker); this enforces the precondition the {@code GrantStaffRequest} javadoc
+     * already claimed. Tenant-scoped by RLS AND the explicit {@code tenantId} predicate
+     * (mirrors {@code ShopStaffRepository.existsByTenantIdAndUserId}).
+     */
+    boolean existsByTenantIdAndUserId(UUID tenantId, UUID userId);
+
+    /**
      * Throttled login upsert (D-09): records/refreshes a directory row from the
      * authenticated JWT. On first sight it INSERTs; on a returning user it only
      * DOES the UPDATE when the existing row is stale
