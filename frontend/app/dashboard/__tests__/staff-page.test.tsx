@@ -86,7 +86,11 @@ const httpError = (status: number, type?: string) =>
 
 beforeEach(() => {
   jest.clearAllMocks()
-  mockedFetchMyShops.mockResolvedValue({ shops: shops as never, isGroupAdmin: true })
+  mockedFetchMyShops.mockResolvedValue({
+    shops: shops as never,
+    isGroupAdmin: true,
+    userId: USER_GA,
+  })
   mockedApiClient.get.mockResolvedValue({ data: { directory, grants } } as never)
   mockedApiClient.post.mockResolvedValue({ data: {} } as never)
   mockedApiClient.delete.mockResolvedValue({ data: undefined } as never)

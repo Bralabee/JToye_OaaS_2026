@@ -1,19 +1,16 @@
 /**
  * Unit spec for the VSA-03 shop-context switcher and its localStorage-backed
- * context helper. Covers the seven behaviours the switcher must guarantee:
- *   1. persistence  — selecting a shop writes localStorage 'shopContext'
- *   2. broadcast    — setShopContext dispatches 'shopcontext:change' and
- *                     subscribeShopContext lets 23-07's screens react live
- *   3. GA default   — a GROUP_ADMIN with no saved value lands on "All shops"
- *   4. apply-to-all — the group-wide affordance renders ONLY for a GROUP_ADMIN
- *                     AND only in the "All shops" context; never for a non-GA
- *   5. single pin   — a non-GA with exactly one grant shows a pinned label
- *   6. stale (D-13) — a revoked saved shop id degrades to an access-required
- *                     notice + resets the selection instead of crashing
+ * context helper.
  *
- * `@/lib/shops-api` is mocked (no network/session); the REAL `@/lib/shop-context`
- * runs against jsdom localStorage so the persistence + broadcast contract is
- * proven end-to-end.
+ * CR-08 falsifiability note: these cases mock the HTTP seam (`@/lib/api-client`)
+ * and `next-auth/react`, NOT `fetchMyShops`. That is deliberate — the previous
+ * spec mocked `fetchMyShops` directly and therefore COULD NOT observe that the
+ * old `fetchMyShops` derived GROUP_ADMIN from a browser-side JWT parse instead of
+ * the server. Driving the real `fetchMyShops` over a mocked `apiClient` is what
+ * lets these cases fail against the pre-fix code (see 23-13-SUMMARY RED evidence).
+ *
+ * The REAL `@/lib/shop-context` runs against jsdom localStorage so the
+ * persistence + broadcast contract is proven end-to-end.
  */
 
 import { render, screen, fireEvent, act } from "@testing-library/react"
@@ -23,14 +20,20 @@ import {
   setShopContext,
   subscribeShopContext,
 } from "@/lib/shop-context"
-import { fetchMyShops } from "@/lib/shops-api"
+import apiClient from "@/lib/api-client"
 import type { Shop } from "@/types/api"
 
-jest.mock("@/lib/shops-api", () => ({
-  fetchMyShops: jest.fn(),
+jest.mock("@/lib/api-client")
+const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
+
+// Present so the PRE-FIX `fetchMyShops` (which parsed the session JWT) resolves
+// to a non-realm-admin under the falsifiability stash. The POST-FIX code never
+// calls this — GROUP_ADMIN comes from GET /api/v1/staff/me.
+jest.mock("next-auth/react", () => ({
+  getSession: jest.fn().mockResolvedValue(null),
 }))
 
-const mockFetchMyShops = fetchMyShops as jest.MockedFunction<typeof fetchMyShops>
+const USER = "user-0000-0000-0000-000000000000"
 
 function makeShop(id: string, name: string): Shop {
   return {
@@ -59,9 +62,38 @@ function makeShop(id: string, name: string): Shop {
 const SHOP_A = makeShop("shop-a", "Brixton Grill")
 const SHOP_B = makeShop("shop-b", "Peckham Jollof")
 
+/**
+ * Route the two GETs `fetchMyShops` issues: the read-scoped shop list and the
+ * server-authoritative access answer (GET /api/v1/staff/me → MyAccessDto).
+ */
+function mockAccess(opts: {
+  shops: Shop[]
+  groupAdmin: boolean
+  grantedShopIds?: string[] | null
+  userId?: string
+}) {
+  mockedApiClient.get.mockImplementation(((url: string) => {
+    if (url === "/api/v1/staff/me") {
+      return Promise.resolve({
+        data: {
+          userId: opts.userId ?? USER,
+          groupAdmin: opts.groupAdmin,
+          grantedShopIds:
+            opts.grantedShopIds ??
+            (opts.groupAdmin ? null : opts.shops.map((s) => s.id)),
+        },
+      })
+    }
+    if (url.startsWith("/api/v1/shops")) {
+      return Promise.resolve({ data: { content: opts.shops } })
+    }
+    return Promise.reject(new Error(`unexpected GET ${url}`))
+  }) as never)
+}
+
 beforeEach(() => {
   window.localStorage.clear()
-  mockFetchMyShops.mockReset()
+  mockedApiClient.get.mockReset()
 })
 
 describe("shop-context helper (lib/shop-context)", () => {
@@ -89,7 +121,7 @@ describe("shop-context helper (lib/shop-context)", () => {
 
 describe("ShopSwitcher", () => {
   it("defaults a GROUP_ADMIN to the 'All shops' context (D-06)", async () => {
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A, SHOP_B], isGroupAdmin: true })
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
     render(<ShopSwitcher />)
 
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
@@ -97,8 +129,42 @@ describe("ShopSwitcher", () => {
     expect(select.value).toBe("all")
   })
 
+  // CR-08: the day-one implicit GROUP_ADMIN is NOT a Keycloak realm admin, so the
+  // old JWT-parse reported them as non-GA and pinned them to their first shop with
+  // no way back. The server (GET /api/v1/staff/me) answers groupAdmin:true; the
+  // switcher must land them on "All shops" and offer the option to re-select it.
+  it("lands a server-side GROUP_ADMIN who is NOT a realm admin on 'All shops' and never pins them to the first shop (CR-08)", async () => {
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true, grantedShopIds: null })
+    render(<ShopSwitcher />)
+
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement
+    expect(screen.getByRole("option", { name: "All shops" })).toBeInTheDocument()
+    expect(select.value).toBe("all")
+    expect(select.value).not.toBe(SHOP_A.id)
+  })
+
+  // The silent-narrowing regression: a clean first load must not WRITE a shop
+  // pin to localStorage. Only an actively-chosen shop or a stale-selection
+  // correction (D-13) may persist.
+  it("does not silently persist a shop pin on a clean first load (no setShopContext write)", async () => {
+    const setItemSpy = jest.spyOn(Storage.prototype, "setItem")
+    mockAccess({
+      shops: [SHOP_A, SHOP_B],
+      groupAdmin: false,
+      grantedShopIds: [SHOP_A.id, SHOP_B.id],
+    })
+    render(<ShopSwitcher />)
+
+    await screen.findByRole("combobox")
+    expect(
+      setItemSpy.mock.calls.some(([key]) => key === "shopContext")
+    ).toBe(false)
+    expect(window.localStorage.getItem("shopContext")).toBeNull()
+    setItemSpy.mockRestore()
+  })
+
   it("persists a new selection to localStorage when a shop is chosen", async () => {
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A, SHOP_B], isGroupAdmin: true })
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
     render(<ShopSwitcher />)
 
     const select = (await screen.findByRole("combobox")) as HTMLSelectElement
@@ -109,7 +175,7 @@ describe("ShopSwitcher", () => {
   })
 
   it("shows the 'apply to all shops' action ONLY for a GROUP_ADMIN in the 'All shops' context (D-08)", async () => {
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A, SHOP_B], isGroupAdmin: true })
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
     render(<ShopSwitcher />)
 
     // GA + All-shops → affordance visible.
@@ -121,7 +187,7 @@ describe("ShopSwitcher", () => {
   })
 
   it("never offers 'apply to all shops' to a non-GROUP_ADMIN", async () => {
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A, SHOP_B], isGroupAdmin: false })
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: false })
     render(<ShopSwitcher />)
 
     // Wait for load to settle (the granted-shop dropdown renders).
@@ -132,7 +198,7 @@ describe("ShopSwitcher", () => {
   })
 
   it("pins the sole grant of a single-shop non-GROUP_ADMIN (no dropdown)", async () => {
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A], isGroupAdmin: false })
+    mockAccess({ shops: [SHOP_A], groupAdmin: false })
     render(<ShopSwitcher />)
 
     // Wait for the loaded pinned label (the loading skeleton shares the testid).
@@ -143,7 +209,7 @@ describe("ShopSwitcher", () => {
 
   it("degrades a stale/revoked saved selection to an access-required state and resets it (D-13)", async () => {
     window.localStorage.setItem("shopContext", "revoked-shop-id")
-    mockFetchMyShops.mockResolvedValue({ shops: [SHOP_A, SHOP_B], isGroupAdmin: true })
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
     render(<ShopSwitcher />)
 
     // Access-required notice surfaces instead of crashing.

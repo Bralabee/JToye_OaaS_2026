@@ -38,9 +38,10 @@ export function ShopSwitcher({
         if (!active) return
         const saved = getShopContext()
         const grantedIds = fetched.map((s) => s.id)
-        // "all" is a real context only for a GROUP_ADMIN; a non-GA falls back to
-        // their first granted shop. The default landing (no saved value) is
-        // "All shops" for a GA (D-06), else the first grant.
+        // "all" is a real context only for a GROUP_ADMIN; a non-GA has no "all"
+        // entry, so the DISPLAY default falls back to their first granted shop.
+        // The default landing (no saved value) is "All shops" for a GA (D-06),
+        // else the first grant.
         const fallback =
           ga || fetched.length === 0 ? ALL_SHOPS_CONTEXT : fetched[0].id
         // D-13: a saved *specific shop* no longer in the granted set was revoked —
@@ -54,7 +55,10 @@ export function ShopSwitcher({
         setSelected(next)
         setStale(savedIsStale)
         setLoading(false)
-        if (next !== saved) setShopContext(next)
+        // CR-08/T-23-13-02: persist ONLY a stale-selection correction (D-13).
+        // A fresh first load must NOT write a pin — doing so silently narrowed
+        // the cross-shop view from "all shops" to one shop with no user action.
+        if (savedIsStale) setShopContext(next)
       })
       .catch(() => {
         if (!active) return
