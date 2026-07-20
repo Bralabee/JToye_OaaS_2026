@@ -31,9 +31,20 @@ import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -340,5 +351,289 @@ class StaffManagementIntegrationTest {
                     assertThat(g.shopId()).isEqualTo(shopId);
                     assertThat(g.role()).isEqualTo(ShopRole.SHOP_MANAGER);
                 });
+    }
+
+    // ====================================================================
+    // 23-09 gap-closure — CR-05 (role changes must APPLY, not silently
+    // no-op while reporting success) + WR-02 (grants/changes must be audited)
+    // + CR-06 (last-GROUP_ADMIN guard serialized under concurrency).
+    // ====================================================================
+
+    /**
+     * CR-05 (the security-relevant case): re-granting a DIFFERENT role on an existing
+     * (user, shop) MUST change the role — a downgrade takes effect instead of silently
+     * no-opping while the API reports success. Asserts on the DB RE-READ, not just the
+     * return value: the pre-fix bug is precisely that the return value looked right
+     * (the service re-selected the stale row carrying the OLD role).
+     */
+    @Test
+    void grantWithDifferentRoleAppliesTheChange() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+        UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
+                .getBody().id();
+
+        ResponseEntity<StaffMemberDto> changed =
+                staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF));
+        assertThat(changed.getStatusCode())
+                .as("a role change is an update of the existing grant, not a fresh 201 insert")
+                .isEqualTo(HttpStatus.OK);
+        assertThat(changed.getBody()).isNotNull();
+        assertThat(changed.getBody().role())
+                .as("the returned DTO carries the NEW (downgraded) role")
+                .isEqualTo(ShopRole.STAFF);
+        assertThat(changed.getBody().id())
+                .as("the role change keeps the same canonical row id")
+                .isEqualTo(grantId);
+
+        assertThat(persistedRole(grantId))
+                .as("the PERSISTED role is downgraded to STAFF (CR-05 — the fix)")
+                .isEqualTo("STAFF");
+        assertThat(shopStaffRowCount(tenant, staff, shopId))
+                .as("still exactly one row — a change in place, not a second grant")
+                .isEqualTo(1);
+    }
+
+    /** CR-05 companion: a same-role re-grant is an idempotent no-change replay (one row, 200). */
+    @Test
+    void grantWithSameRoleIsIdempotentReplay() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+        UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
+                .getBody().id();
+
+        ResponseEntity<StaffMemberDto> replay =
+                staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER));
+        assertThat(replay.getStatusCode())
+                .as("an identical re-grant is a typed 200 replay")
+                .isEqualTo(HttpStatus.OK);
+        assertThat(replay.getBody().id())
+                .as("the replay returns the SAME canonical grant id")
+                .isEqualTo(grantId);
+        assertThat(persistedRole(grantId)).isEqualTo("SHOP_MANAGER");
+        assertThat(shopStaffRowCount(tenant, staff, shopId))
+                .as("no duplicate row written for an identical re-grant")
+                .isEqualTo(1);
+    }
+
+    /** CR-05: an UPGRADE (STAFF -> SHOP_MANAGER) applies exactly as a downgrade does. */
+    @Test
+    void grantUpgradeAppliesTheChange() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+        UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF))
+                .getBody().id();
+
+        ResponseEntity<StaffMemberDto> upgraded =
+                staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER));
+        assertThat(upgraded.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(upgraded.getBody().role()).isEqualTo(ShopRole.SHOP_MANAGER);
+        assertThat(persistedRole(grantId))
+                .as("the PERSISTED role is upgraded to SHOP_MANAGER")
+                .isEqualTo("SHOP_MANAGER");
+    }
+
+    /**
+     * WR-02 proof: a grant and a subsequent role change each write a
+     * {@code shop_staff_aud} Envers revision — proving the write now goes through the
+     * Hibernate session, not the native {@code ON CONFLICT} insert that Envers never
+     * observed (so "who granted whom GROUP_ADMIN, and when" is now answerable). ADD
+     * (revtype 0) for the create, MOD (revtype 1) for the change.
+     */
+    @Test
+    void grantWritesAnAuditRevision() {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        authenticate(admin, true, tenant);
+        UUID grantId = staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.SHOP_MANAGER))
+                .getBody().id();
+        assertThat(auditRevisions(grantId, 0))
+                .as("the grant CREATE is audited (Envers ADD revision) — WR-02")
+                .isGreaterThanOrEqualTo(1);
+
+        staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF));
+        assertThat(auditRevisions(grantId, 1))
+                .as("the role CHANGE is audited (Envers MOD revision) — WR-02")
+                .isGreaterThanOrEqualTo(1);
+    }
+
+    /**
+     * Agent-readiness (WR-02 companion): a CONCURRENT duplicate grant of the identical
+     * (user, shop, role) must not surface an untyped {@code DataIntegrityViolationException}
+     * 500 now the write is session-based — exactly one insert wins and the other is a
+     * typed replay, leaving exactly one row. Proves the REQUIRES_NEW-isolated insert +
+     * catch preserves the idempotency contract the native {@code ON CONFLICT} used to give.
+     */
+    @Test
+    void concurrentDuplicateGrantIsIdempotentNotA500() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID staff = UUID.randomUUID();
+        UUID shopId = seedShop(tenant);
+
+        CountDownLatch gate = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // Distinct realm-admin subs per worker so the user_directory upsert in
+            // onRequest() does not serialise them (see the revoke race note) — the two
+            // grants then genuinely contend on the shop_staff unique index.
+            java.util.function.Function<UUID, Callable<Throwable>> grantWorker = admin -> () -> {
+                authenticate(admin, true, tenant);
+                try {
+                    gate.await();
+                    staffController.grant(new GrantStaffRequest(staff, shopId, ShopRole.STAFF));
+                    return null;
+                } catch (Throwable t) {
+                    return t;
+                } finally {
+                    SecurityContextHolder.clearContext();
+                    TenantContext.clear();
+                }
+            };
+            Future<Throwable> a = pool.submit(grantWorker.apply(UUID.randomUUID()));
+            Future<Throwable> b = pool.submit(grantWorker.apply(UUID.randomUUID()));
+            gate.countDown();
+
+            List<Throwable> results = new ArrayList<>(2);
+            results.add(a.get(30, SECONDS));
+            results.add(b.get(30, SECONDS));
+
+            assertThat(results.stream().filter(Objects::nonNull).toList())
+                    .as("no concurrent duplicate grant surfaces an exception (no untyped 500)")
+                    .isEmpty();
+            assertThat(shopStaffRowCount(tenant, staff, shopId))
+                    .as("exactly one row despite the concurrent duplicate grant")
+                    .isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * CR-06 (the race): two concurrent revokes of two DIFFERENT tenant-wide GROUP_ADMIN
+     * rows in a two-admin tenant cannot empty the tenant of GROUP_ADMINs.
+     *
+     * <p>The count→delete window in {@code revoke()} is microseconds wide, so a bare
+     * {@link CountDownLatch} does NOT reliably interleave the two transactions — a
+     * pre-fix run frequently serialises by luck and passes (green-by-construction). To
+     * make the race DETERMINISTIC in both directions, a control connection holds a
+     * {@code SELECT ... FOR UPDATE} over BOTH tenant-wide GROUP_ADMIN rows and releases
+     * it only once both workers are parked on it:
+     * <ul>
+     *   <li><b>pre-fix</b> both workers pass the (lock-free) count guard — each reads
+     *       {@code count == 2} — and then block on their {@code DELETE}; on release both
+     *       delete → the tenant reaches ZERO GROUP_ADMINs (the assertion below FAILS,
+     *       proving the race is real);</li>
+     *   <li><b>post-fix</b> both workers block earlier, on {@code lockTenantGroupAdmins}
+     *       (which is itself {@code FOR UPDATE}); on release exactly one acquires it,
+     *       deletes and commits, the other re-reads {@code count == 1} and 409s — the
+     *       tenant retains exactly one GROUP_ADMIN.</li>
+     * </ul>
+     * Bounded {@code get(30, SECONDS)} so a lock-ordering mistake fails loudly.
+     */
+    @Test
+    void concurrentRevokesCannotEmptyTheTenantOfGroupAdmins() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID admin = UUID.randomUUID();
+        UUID gaOne = UUID.randomUUID();
+        UUID gaTwo = UUID.randomUUID();
+
+        authenticate(admin, true, tenant);
+        UUID grantOne = staffController.grant(new GrantStaffRequest(gaOne, null, ShopRole.GROUP_ADMIN))
+                .getBody().id();
+        UUID grantTwo = staffController.grant(new GrantStaffRequest(gaTwo, null, ShopRole.GROUP_ADMIN))
+                .getBody().id();
+        assertThat(tenantWideGroupAdminCount(tenant)).isEqualTo(2);
+        SecurityContextHolder.clearContext();
+        TenantContext.clear();
+
+        CountDownLatch gate = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        // Control connection: lock BOTH GROUP_ADMIN rows so the workers park at the exact
+        // point that makes the race deterministic (the bootstrap role is a SUPERUSER, so
+        // this plain FOR UPDATE bypasses RLS and needs no tenant GUC).
+        try (Connection ctrl = jdbc.getDataSource().getConnection()) {
+            ctrl.setAutoCommit(false);
+            try (PreparedStatement ps = ctrl.prepareStatement(
+                    "SELECT id FROM shop_staff WHERE tenant_id = ? AND role = 'GROUP_ADMIN' "
+                            + "AND shop_id IS NULL FOR UPDATE")) {
+                ps.setObject(1, tenant);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) { /* fetch all → both rows locked */ }
+                }
+            }
+
+            // Two DISTINCT realm-admin revokers: onRequest() upserts a user_directory
+            // row keyed (tenant, sub); a shared sub would serialise the workers on that
+            // row lock (masking the race). Distinct subs keep the ONLY contention the
+            // shop_staff GROUP_ADMIN rows themselves.
+            Future<Throwable> a = pool.submit(revokeWorker(UUID.randomUUID(), tenant, grantOne, gate));
+            Future<Throwable> b = pool.submit(revokeWorker(UUID.randomUUID(), tenant, grantTwo, gate));
+            gate.countDown();
+            // Give both workers time to reach (and block on) their DB lock point.
+            Thread.sleep(1000);
+            // Release the barrier — both workers now proceed against the real fix (or lack of it).
+            ctrl.commit();
+
+            List<Throwable> results = new ArrayList<>(2);
+            results.add(a.get(30, SECONDS));
+            results.add(b.get(30, SECONDS));
+
+            long successes = results.stream().filter(Objects::isNull).count();
+            List<Throwable> failures = results.stream().filter(Objects::nonNull).toList();
+            assertThat(successes).as("exactly one concurrent revoke succeeds").isEqualTo(1);
+            assertThat(failures).as("exactly one concurrent revoke is blocked").hasSize(1);
+            assertThat(failures.get(0))
+                    .as("the blocked revoke is the typed last-GROUP_ADMIN 409")
+                    .isInstanceOf(LastGroupAdminException.class);
+            assertThat(tenantWideGroupAdminCount(tenant))
+                    .as("the tenant is never raced to zero GROUP_ADMINs")
+                    .isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Callable<Throwable> revokeWorker(UUID revoker, UUID tenant, UUID grantId, CountDownLatch gate) {
+        return () -> {
+            authenticate(revoker, true, tenant);
+            try {
+                gate.await();
+                staffManagementService.revoke(grantId);
+                return null;
+            } catch (Throwable t) {
+                return t;
+            } finally {
+                SecurityContextHolder.clearContext();
+                TenantContext.clear();
+            }
+        };
+    }
+
+    /** The role persisted for a grant id (DB re-read — the return value is not trusted). */
+    private String persistedRole(UUID grantId) {
+        return jdbc.queryForObject("SELECT role FROM shop_staff WHERE id = ?", String.class, grantId);
+    }
+
+    /** Count of Envers {@code shop_staff_aud} revisions of a given revtype (0=ADD, 1=MOD). */
+    private long auditRevisions(UUID grantId, int revtype) {
+        Long n = jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff_aud WHERE id = ? AND revtype = ?",
+                Long.class, grantId, revtype);
+        return n == null ? 0 : n;
     }
 }
