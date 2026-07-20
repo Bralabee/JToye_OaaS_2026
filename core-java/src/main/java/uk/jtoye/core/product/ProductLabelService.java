@@ -73,7 +73,15 @@ public class ProductLabelService {
         // VSA-02 (D-02): the label endpoint (/products/{id}/label) is a shop-scoped
         // read — require at least STAFF on the product's owning shop (parent-lookup),
         // so a cross-shop label pull yields the typed shop 403, not another shop's PDF.
-        shopAccessService.require(product.getShopId(), ShopRole.STAFF);
+        //
+        // WR-08 null-shop READ half (plan 23-10): a shop_id IS NULL product is a
+        // tenant-wide / legacy resource readable by any granted scoped user, so skip the
+        // gate here to match the getProductById read route. Such a product still fails PPDS
+        // validation below with a 422 (no business identity — it has no shop to source a
+        // name/address from), NEVER a 403; a null-shop product simply cannot be labelled.
+        if (product.getShopId() != null) {
+            shopAccessService.require(product.getShopId(), ShopRole.STAFF);
+        }
 
         // Resolve the owning shop tenant-safely. findByIdAndTenantId (NOT plain
         // findById) avoids the shops_public_read RLS cross-tenant leak (T-ovt-01).

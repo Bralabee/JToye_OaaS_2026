@@ -122,7 +122,17 @@ public class ProductService {
         // shop. Parent-lookup: the gate runs against the loaded product's shopId, so a
         // cross-shop direct hit yields the typed shop 403 (distinct from the RLS 404).
         Optional<ProductDto> dto = productCacheLoader.getProductById(productId);
-        dto.ifPresent(product -> shopAccessService.require(product.getShopId(), ShopRole.STAFF));
+        dto.ifPresent(product -> {
+            // WR-08 null-shop READ half (plan 23-10, pairs with 23-08's GROUP_ADMIN-only
+            // WRITE half): a shop_id IS NULL product is a tenant-wide / legacy resource,
+            // readable by ANY granted scoped user — skip the gate (RLS still confines it to
+            // the tenant). Previously require(null, STAFF) 403'd (or 500'd) a scoped caller,
+            // making legacy catalogue rows simultaneously invisible in lists (WR-08) and
+            // crash-inducing to open (CR-04). A non-null shopId is gated exactly as before.
+            if (product.getShopId() != null) {
+                shopAccessService.require(product.getShopId(), ShopRole.STAFF);
+            }
+        });
         return dto;
     }
 
@@ -134,8 +144,11 @@ public class ProductService {
         log.debug("Fetching all products with pagination: page={}, size={}",
                 pageable.getPageNumber(), pageable.getPageSize());
         // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
-        // sees the whole tenant; a scoped user sees only granted-shop products; a
-        // fully-ungranted user sees nothing (deny-by-default).
+        // sees the whole tenant; a scoped user sees granted-shop products PLUS legacy
+        // tenant-wide (shop_id IS NULL) products (WR-08 read half, plan 23-10); a
+        // fully-ungranted user sees nothing (deny-by-default — the short-circuit below
+        // is deliberately kept so the null-shop policy did NOT widen to "everyone sees
+        // tenant-wide products").
         if (shopAccessService.isGroupAdmin()) {
             return productRepository.findAll(pageable)
                     .map(productMapper::toDto);
@@ -144,7 +157,9 @@ public class ProductService {
         if (granted.isEmpty()) {
             return Page.empty(pageable);
         }
-        return productRepository.findByShopIdIn(granted, pageable)
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        return productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
                 .map(productMapper::toDto);
     }
 
@@ -173,8 +188,9 @@ public class ProductService {
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
         String skuPrefix = escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%";
         // VSA-02 (D-01): read-scope search to the caller's grant set at the QUERY,
-        // mirroring getAllProducts. GROUP_ADMIN uses the tenant-wide FTS; a scoped
-        // user uses the grant-set-narrowed FTS variant; ungranted → empty.
+        // mirroring getAllProducts. GROUP_ADMIN uses the tenant-wide FTS; a scoped user
+        // uses the grant-set + tenant-wide (shop_id IS NULL) FTS variant (WR-08 read half,
+        // plan 23-10); a zero-grant user → empty (deny-by-default preserved).
         if (shopAccessService.isGroupAdmin()) {
             return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
                     .map(productMapper::toDto);
@@ -183,7 +199,9 @@ public class ProductService {
         if (granted.isEmpty()) {
             return Page.empty(pageable);
         }
-        return productRepository.searchFullTextInShops(tsQuery, skuPrefix, granted, unsorted)
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        return productRepository.searchFullTextInGrantSetOrTenantWide(tenantId, tsQuery, skuPrefix, granted, unsorted)
                 .map(productMapper::toDto);
     }
 

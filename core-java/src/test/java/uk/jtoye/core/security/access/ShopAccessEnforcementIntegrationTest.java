@@ -22,6 +22,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.common.GlobalExceptionHandler;
+import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.order.OrderService;
@@ -29,6 +30,7 @@ import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemRequest;
+import uk.jtoye.core.product.ProductLabelService;
 import uk.jtoye.core.product.ProductService;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -93,6 +95,7 @@ class ShopAccessEnforcementIntegrationTest {
     @Autowired private ShopAccessService shopAccessService;
     @Autowired private ShopService shopService;
     @Autowired private ProductService productService;
+    @Autowired private ProductLabelService productLabelService;
     @Autowired private OrderService orderService;
     @Autowired private GlobalExceptionHandler exceptionHandler;
     @Autowired private JdbcTemplate jdbc;
@@ -206,6 +209,65 @@ class ShopAccessEnforcementIntegrationTest {
     }
 
     @Test
+    void nullShopLegacyProducts_remainVisibleAndOpenableToScopedUser() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID shopB = seedShop(tenant, "Shop B");
+        UUID aProduct = seedProduct(tenant, shopA, "A-SKU-1");
+        UUID bProduct = seedProduct(tenant, shopB, "B-SKU-1");
+        UUID legacyProduct = seedNullShopProduct(tenant, "LEGACY-1");
+
+        UUID sm = UUID.randomUUID();
+        grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
+
+        setStrictScoping(true);
+        authenticate(sm, false);
+        TenantContext.set(tenant);
+
+        // WR-08 list: a scoped user sees their granted-shop product AND the legacy
+        // shop_id IS NULL product (tenant-wide), but NOT another shop's product.
+        var products = productService.getAllProducts(PageRequest.of(0, 50));
+        assertThat(products.getContent()).extracting(ProductDto::getId)
+                .as("scoped user sees granted-shop + tenant-wide null-shop products, not shop B's")
+                .contains(aProduct, legacyProduct)
+                .doesNotContain(bProduct);
+        assertThat(products.getTotalElements()).isEqualTo(2);
+
+        // WR-08 / CR-04 by-id: the null-shop product is READABLE — no 403, no 500.
+        assertThatCode(() -> productService.getProductById(legacyProduct))
+                .as("a null-shop product is openable by a granted scoped user (no 403, no 500)")
+                .doesNotThrowAnyException();
+        assertThat(productService.getProductById(legacyProduct)).isPresent();
+
+        // The label route matches the read route: the gate no longer 403s a null-shop
+        // product; it fails PPDS validation (422) instead, because it has no business identity.
+        assertThatThrownBy(() -> productLabelService.generateLabel(legacyProduct))
+                .as("null-shop label is a 422 data problem, never a shop-access 403")
+                .isInstanceOf(IncompleteLabelDataException.class);
+    }
+
+    @Test
+    void zeroGrantUser_seesEmpty_evenWhenTenantWideProductsExist() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        seedNullShopProduct(tenant, "LEGACY-1");
+
+        UUID ungranted = UUID.randomUUID();  // NO shop_staff grant at all
+
+        setStrictScoping(true);
+        authenticate(ungranted, false);
+        TenantContext.set(tenant);
+
+        // The null-shop read policy must NOT widen deny-by-default: a user with zero
+        // grants still sees nothing, even though tenant-wide products exist.
+        var products = productService.getAllProducts(PageRequest.of(0, 50));
+        assertThat(products.getTotalElements())
+                .as("a zero-grant user sees NOTHING, not tenant-wide products")
+                .isZero();
+    }
+
+    @Test
     void errorTypeDistinctFrom404_shop403TypeIsNotTheRls404Type() {
         ProblemDetail shop403 = exceptionHandler.handleShopAccessDenied(
                 new ShopAccessDeniedException(UUID.randomUUID(), ShopRole.SHOP_MANAGER));
@@ -229,6 +291,11 @@ class ShopAccessEnforcementIntegrationTest {
 
     private UUID seedProduct(UUID tenant, UUID shopId, String sku) {
         return asRealmAdmin(tenant, () -> productService.createProduct(productRequest(shopId, sku)).getId());
+    }
+
+    /** Seed a legacy tenant-wide product (shop_id IS NULL) as a realm-admin (WR-08 fixtures). */
+    private UUID seedNullShopProduct(UUID tenant, String sku) {
+        return asRealmAdmin(tenant, () -> productService.createProduct(productRequest(null, sku)).getId());
     }
 
     private UUID seedDraftOrder(UUID tenant, UUID shopId, UUID productId) {

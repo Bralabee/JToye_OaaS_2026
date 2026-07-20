@@ -14,11 +14,27 @@ import java.util.UUID;
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findBySku(String sku);
 
-    // Vendor-scoped access (Phase 23, VSA-02 / D-01): read-scope the product list to
-    // the caller's GRANT SET at the QUERY. A non-GROUP_ADMIN sees only products whose
-    // shop_id is in their grant set — narrowed server-side, never a post-hoc filter.
-    // GROUP_ADMIN keeps the wider findAll path. RLS still scopes every row to the tenant.
-    Page<Product> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01; WR-08 read half, plan 23-10): read-scope
+    // the product list to the caller's GRANT SET at the QUERY, ALSO admitting legacy
+    // tenant-wide rows whose shop_id IS NULL (an `IN (:ids)` list never matches NULL, which is
+    // exactly why a scoped user's catalogue previously showed ZERO of them — WR-08). This is the
+    // READ half of the null-shop policy: reads of a null-shop resource are tenant-wide-visible to
+    // any GRANTED scoped user, pairing with 23-08's WRITE half which keeps null-shop writes
+    // GROUP_ADMIN-only. It restores the pre-phase visibility of legacy catalogue data (Incremental
+    // Betterment) rather than silently hiding it. A non-GROUP_ADMIN sees their granted shops PLUS
+    // tenant-wide rows; GROUP_ADMIN keeps the wider findAll path; a ZERO-grant user is
+    // short-circuited to an empty page BEFORE this call (deny-by-default preserved).
+    //
+    // The tenant_id filter is EXPLICIT (not RLS-only), mirroring ShopRepository.findByTenantIdAndIdIn:
+    // the OR-null branch is NOT implicitly tenant-local the way `shop_id IN (grant set)` is (grant
+    // ids belong to the caller's tenant), so a null-shop row of ANOTHER tenant would match `shop_id
+    // IS NULL` if RLS were ever bypassed (e.g. a table-owner connection). The parentheses are
+    // load-bearing: `tenant_id = :tid AND (shop_id IN (:ids) OR shop_id IS NULL)`, never
+    // `... AND shop_id IN (:ids) OR shop_id IS NULL` which would leak cross-tenant null-shop rows.
+    @Query("SELECT p FROM Product p WHERE p.tenantId = :tenantId "
+            + "AND (p.shopId IN :shopIds OR p.shopId IS NULL)")
+    Page<Product> findTenantScopedInGrantSetOrTenantWide(@Param("tenantId") UUID tenantId,
+            @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
 
     Page<Product> findByAvailableTrue(Pageable pageable);
 
@@ -66,21 +82,28 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
            nativeQuery = true)
     Page<Product> searchFullText(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix, Pageable pageable);
 
-    // Vendor-scoped access (Phase 23, VSA-02 / D-01): grant-set-narrowed variant of
-    // searchFullText for a scoped (non-GROUP_ADMIN) caller. Identical FTS+SKU logic,
-    // with an added outer `p.shop_id IN (:shopIds)` filter so search results never
-    // include products outside the caller's grants. Callers guarantee a non-empty
-    // shopIds set (empty grant → deny-by-default short-circuit before this call).
-    @Query(value = "SELECT p.* FROM products p WHERE p.shop_id IN (:shopIds) AND p.id IN ("
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01; WR-08 read half, plan 23-10):
+    // grant-set-narrowed variant of searchFullText for a scoped (non-GROUP_ADMIN) caller.
+    // Identical FTS+SKU logic, with an EXPLICIT tenant filter plus a parenthesised
+    // `(p.shop_id IN (:shopIds) OR p.shop_id IS NULL)` so search results include the caller's
+    // granted shops PLUS legacy tenant-wide rows (shop_id IS NULL) of THIS tenant, matching the
+    // getAllProducts null-shop read policy — never products of other shops OR other tenants. The
+    // tenant_id predicate is explicit (not RLS-only) for the same reason as
+    // findTenantScopedInGrantSetOrTenantWide: the OR-null branch is not implicitly tenant-local.
+    // Callers guarantee a non-empty shopIds set (a zero-grant user is short-circuited before this).
+    @Query(value = "SELECT p.* FROM products p WHERE p.tenant_id = :tenantId "
+            + "AND (p.shop_id IN (:shopIds) OR p.shop_id IS NULL) AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
             + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
-           countQuery = "SELECT COUNT(*) FROM products p WHERE p.shop_id IN (:shopIds) AND p.id IN ("
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.tenant_id = :tenantId "
+            + "AND (p.shop_id IN (:shopIds) OR p.shop_id IS NULL) AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
            nativeQuery = true)
-    Page<Product> searchFullTextInShops(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix,
+    Page<Product> searchFullTextInGrantSetOrTenantWide(@Param("tenantId") UUID tenantId,
+                                        @Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix,
                                         @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
 }

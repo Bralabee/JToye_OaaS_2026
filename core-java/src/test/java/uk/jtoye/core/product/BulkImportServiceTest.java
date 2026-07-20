@@ -177,6 +177,31 @@ class BulkImportServiceTest {
     }
 
     @Test
+    @DisplayName("importFromCsv - Malformed shop_id is a per-row error, not a 403, and the batch continues (WR-07)")
+    void testImportFromCsv_MalformedShopId_RowErrorNot403() {
+        String csv = "title,price_pounds,shop_id\n" +
+                "Bad Row,5.00,not-a-uuid\n" +
+                "Good Row,6.00,\n";  // blank shop_id -> null -> allowed for GROUP_ADMIN
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
+
+        BulkImportResult result = bulkImportService.importFromCsv(file);
+
+        assertEquals(2, result.getTotalRows());
+        // The good row still imports — a bad cell does not abort the whole batch.
+        assertEquals(1, result.getSuccessCount());
+        // The malformed shop_id is reported as a row-level validation error...
+        assertEquals(1, result.getErrorCount());
+        BulkImportResult.RowError err = result.getErrors().get(0);
+        assertEquals("shop_id", err.getField());
+        assertTrue(err.getMessage().contains("Invalid shop_id"),
+                "malformed shop_id must be a validation error, got: " + err.getMessage());
+        // ...and it was NEVER surfaced as an authorization denial (no require() on the bad row).
+        verify(shopAccessService, never()).require(any(), any());
+    }
+
+    @Test
     @DisplayName("importFromCsv - Handles empty CSV gracefully")
     void testImportFromCsv_EmptyFile() {
         MockMultipartFile file = new MockMultipartFile(

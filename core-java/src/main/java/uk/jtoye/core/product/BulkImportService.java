@@ -98,12 +98,25 @@ public class BulkImportService {
             int rowNum = i + 2; // 1-indexed, skip header
             String[] row = dataRows.get(i);
 
+            // WR-07 (plan 23-10): a malformed shop_id CELL is bad DATA, not an
+            // authorization denial. Parse it defensively — a non-UUID value becomes a
+            // per-row validation error and the row is SKIPPED while the rest of the batch
+            // still imports, NOT a ShopAccessDeniedException (which would tell a legitimate
+            // importer they lack access they actually hold, and break the RFC 7807
+            // machine-parseable-error contract a client keys on for /shop-access-denied).
+            UUID rowShopId;
+            try {
+                rowShopId = parseShopId(row, columnIndex);
+            } catch (IllegalArgumentException badId) {
+                result.getErrors().add(new RowError(rowNum, "shop_id", badId.getMessage()));
+                continue;
+            }
+
             // §3-FLAG #1: per-row shop-access gate, OUTSIDE the per-row try/catch so an
             // ungranted row fails the WHOLE batch with the typed 403 (deny-by-default,
             // no partial apply — the surrounding @Transactional rolls back every prior
             // row's save). A row with a shop_id demands SHOP_MANAGER on it; a row with
             // no shop_id is allowed only for a GROUP_ADMIN (else denied).
-            UUID rowShopId = parseShopId(row, columnIndex);
             if (rowShopId != null) {
                 shopAccessService.require(rowShopId, ShopRole.SHOP_MANAGER);
             } else if (!groupAdmin) {
@@ -326,10 +339,15 @@ public class BulkImportService {
 
     /**
      * Parse the optional {@code shop_id} column for a row into a {@link UUID}, or
-     * {@code null} when the column is absent/blank. A malformed UUID is a row-level
-     * validation failure surfaced from {@code require(...)}'s caller path — we throw a
-     * typed {@link ShopAccessDeniedException} rather than silently import ungated
-     * (§3-FLAG #1, deny-by-default).
+     * {@code null} when the column is absent/blank.
+     *
+     * <p>WR-07 (plan 23-10): a malformed (non-UUID) {@code shop_id} is BAD DATA, not an
+     * authorization problem, so this throws {@link IllegalArgumentException} — which
+     * {@code importFromCsv} catches and records as a per-row validation error (the row is
+     * skipped, the batch continues). It deliberately does NOT throw
+     * {@link ShopAccessDeniedException}: reporting a data typo as a 403 tells the importer
+     * they lack access they actually hold and breaks the machine-parseable-error contract
+     * (a client keying on {@code /shop-access-denied} would prompt for access it already has).
      */
     private UUID parseShopId(String[] row, Map<String, Integer> cols) {
         String raw = getField(row, cols, "shop_id");
@@ -339,9 +357,7 @@ public class BulkImportService {
         try {
             return UUID.fromString(raw.strip());
         } catch (IllegalArgumentException e) {
-            // A non-UUID shop_id cannot be grant-checked — deny the batch rather than
-            // fall through to an ungated import.
-            throw new ShopAccessDeniedException(null, ShopRole.SHOP_MANAGER);
+            throw new IllegalArgumentException("Invalid shop_id: " + raw.strip());
         }
     }
 
