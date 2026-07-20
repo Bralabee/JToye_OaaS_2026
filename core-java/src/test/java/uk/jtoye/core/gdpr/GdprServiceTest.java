@@ -16,6 +16,7 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.review.Review;
 import uk.jtoye.core.review.ReviewRepository;
+import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
 
 import java.lang.reflect.Field;
@@ -42,6 +43,8 @@ class GdprServiceTest {
     private StorageService storageService;
     @Mock
     private ErasureRecordRepository erasureRecordRepository;
+    @Mock
+    private UserDirectoryRepository userDirectoryRepository;
 
     @InjectMocks
     private GdprService gdprService;

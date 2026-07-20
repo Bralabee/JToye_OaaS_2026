@@ -52,4 +52,21 @@ public interface UserDirectoryRepository extends JpaRepository<UserDirectory, Us
                    @Param("email") String email,
                    @Param("displayName") String displayName,
                    @Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * WR-10 / UK-GDPR Article-17: erase a subject's directory rows for a tenant by email.
+     * {@code user_directory} is keyed {@code (tenant_id, user_id)} — a vendor-staff identity
+     * space with NO natural {@code Customer} join — so erasure matches on
+     * {@code tenant_id + email}, mirroring {@code GdprService}'s guest-order email sweep.
+     * There is NO {@code _aud} mirror (D-09 — a derived cache, audit lives on
+     * {@code shop_staff}), so a straight tenant-scoped DELETE is the COMPLETE erasure. Zero
+     * matches is the NORMAL case (a storefront customer is usually not a staff user) — the
+     * caller MUST treat 0 as success, not a failure. The explicit {@code tenant_id}
+     * predicate (not RLS alone) keeps it correct even under the SUPERUSER bootstrap role
+     * that bypasses FORCE RLS. Returns the number of rows deleted.
+     */
+    @Modifying
+    @Query(value = "DELETE FROM user_directory WHERE tenant_id = :tenantId AND email = :email",
+            nativeQuery = true)
+    int deleteByTenantIdAndEmail(@Param("tenantId") UUID tenantId, @Param("email") String email);
 }

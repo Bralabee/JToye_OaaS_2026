@@ -13,6 +13,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.review.Review;
 import uk.jtoye.core.review.ReviewRepository;
+import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
 
 import java.nio.charset.StandardCharsets;
@@ -46,17 +47,20 @@ public class GdprService {
     private final ReviewRepository reviewRepository;
     private final StorageService storageService;
     private final ErasureRecordRepository erasureRecordRepository;
+    private final UserDirectoryRepository userDirectoryRepository;
 
     public GdprService(CustomerRepository customerRepository,
                        OrderRepository orderRepository,
                        ReviewRepository reviewRepository,
                        StorageService storageService,
-                       ErasureRecordRepository erasureRecordRepository) {
+                       ErasureRecordRepository erasureRecordRepository,
+                       UserDirectoryRepository userDirectoryRepository) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
         this.reviewRepository = reviewRepository;
         this.storageService = storageService;
         this.erasureRecordRepository = erasureRecordRepository;
+        this.userDirectoryRepository = userDirectoryRepository;
     }
 
     /**
@@ -132,6 +136,11 @@ public class GdprService {
      *   <li><b>Audit scrub</b> — scrubs pre-erasure PII from the append-only Envers
      *       {@code orders_aud}/{@code customers_aud} history via tenant-scoped native
      *       UPDATEs (deliberate Article-17 exception; Envers stays enabled).</li>
+     *   <li><b>Staff directory (WR-10, Phase 23)</b> — removes the subject's
+     *       {@code user_directory} rows for the tenant, matched by {@code tenant_id + email}
+     *       (that table is keyed by vendor-staff {@code user_id}, with no {@code Customer}
+     *       join). Zero matches is the normal case and never a failure; there is no
+     *       {@code _aud} mirror to scrub (D-09).</li>
      *   <li><b>Durable record</b> — persists exactly one PII-free {@link ErasureRecord}
      *       (SHA-256 email hash, never plaintext) as proof the erasure occurred.</li>
      * </ol>
@@ -207,6 +216,16 @@ public class GdprService {
         int audRowsScrubbed = orderRepository.scrubOrdersAudit(tenantId, customerId, originalEmail, ANONYMISED)
                 + customerRepository.scrubCustomerAudit(tenantId, customerId, ANONYMISED);
 
+        // WR-10 (Phase 23): the user_directory grant-target cache carries staff email PII
+        // introduced by V52 — before it, this data did not exist in the platform. It is keyed
+        // (tenant_id, user_id), a vendor-staff identity space with no natural Customer join,
+        // so match on tenant_id + email (mirroring the guest-order email sweep above). Zero
+        // matches is the NORMAL case (a storefront customer is usually not a staff user) and
+        // is NOT an erasure failure — the ErasureRecord accounting (orders/reviews/aud/photos)
+        // is unaffected. No _aud mirror exists (D-09), so a straight tenant-scoped DELETE is
+        // the complete erasure — there is no audit history to scrub.
+        int directoryRowsErased = userDirectoryRepository.deleteByTenantIdAndEmail(tenantId, originalEmail);
+
         // Durable, PII-free proof of erasure — SHA-256 hex of the email, never plaintext.
         String subjectEmailSha256 = sha256Hex(originalEmail);
         String erasedBy = resolveErasedBy();
@@ -217,9 +236,9 @@ public class GdprService {
                 erasedBy, erasedAt));
 
         log.info("GDPR erasure for customer {} — {} orders, {} reviews anonymised, "
-                        + "{} audit rows scrubbed, {} photos deleted; record {}",
+                        + "{} audit rows scrubbed, {} photos deleted, {} directory rows erased; record {}",
                 customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photosDeleted,
-                record.getId());
+                directoryRowsErased, record.getId());
 
         return new GdprController.ErasureResponse(
                 customerId,
