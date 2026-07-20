@@ -15,6 +15,7 @@ import {
   UtensilsCrossed,
   Rocket,
   ShieldCheck,
+  UserCog,
   Webhook,
   LogOut,
   Moon,
@@ -37,6 +38,10 @@ export const navigation = [
   // Admin-only surface (like Finance): the page itself renders an
   // access-required state on 403 for non-admin users.
   { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck },
+  // GROUP_ADMIN-only surface (VSA-04, D-10) — same convention as Approvals: the
+  // item is always listed and the /dashboard/staff PAGE renders the
+  // access-required state on the server's typed 403 for a non-group-admin.
+  { name: "Staff", href: "/dashboard/staff", icon: UserCog },
   // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
   // delivery-log browser. Falls into the mobile "More" sheet automatically.
   { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
