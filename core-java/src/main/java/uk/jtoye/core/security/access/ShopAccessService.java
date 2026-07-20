@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The single in-tenant authorization seam for vendor-scoped access (Phase 23,
@@ -78,6 +79,21 @@ public class ShopAccessService {
     @Value("${jtoye.access.directory-upsert-interval:PT1H}")
     private Duration directoryUpsertInterval;
 
+    /**
+     * CR-03 (D-04) fail-closed machine-client allowlist. A bearer token whose
+     * {@code sub} is NOT a UUID (a client-credentials / service account, not a vendor
+     * user in the UUID-keyed shop-staff model) may bypass shop-scoping ONLY when its
+     * {@code azp}/{@code client_id} claim is declared here — trust is NEVER inferred
+     * from an unparseable subject. EMPTY by default (the property is unset), so the
+     * default posture DENIES every non-UUID-subject token. RLS still tenant-scopes any
+     * allowlisted machine caller. Spring binds a comma-separated list to this set.
+     */
+    @Value("${jtoye.access.machine-client-ids:}")
+    private Set<String> machineClientIds;
+
+    /** INFO-log a declared machine client at most once per distinct client id (not per request). */
+    private final Set<String> loggedMachineClients = ConcurrentHashMap.newKeySet();
+
     public ShopAccessService(ShopStaffRepository shopStaffRepository,
                              UserDirectoryRepository userDirectoryRepository,
                              TenantCacheEvictor cacheEvictor) {
@@ -103,7 +119,7 @@ public class ShopAccessService {
         if (isGroupAdmin()) {
             return;
         }
-        Membership membership = resolveMembership(currentUserId());
+        Membership membership = resolveMembership(requireVendorUserId());
         ShopRole role = membership.perShopRole().get(shopId);
         if (role == null || !role.satisfies(minRole)) {
             throw new ShopAccessDeniedException(shopId, minRole);
@@ -126,25 +142,43 @@ public class ShopAccessService {
     }
 
     /**
-     * True for a realm-admin (D-03 bridge), a trusted SYSTEM/internal caller (no
-     * authenticated JWT principal), or a tenant-wide GROUP_ADMIN grant.
+     * True for a realm-admin (D-03 bridge), a genuinely internal caller (no
+     * {@code Authentication} on the thread at all), a declared machine client (CR-03
+     * allowlist), or a tenant-wide GROUP_ADMIN grant. Every OTHER request-scoped
+     * principal — anonymous, non-{@code Jwt}, or a JWT whose {@code sub} is not a
+     * UUID and is not an allowlisted machine client — is DENIED (fail-closed, typed
+     * {@link ShopAccessDeniedException} 403), never escalated to GROUP_ADMIN and never
+     * a 500.
      *
-     * <p><strong>System-principal bypass (Phase 23-03):</strong> a caller with no
-     * authenticated JWT principal is never a user request — {@code JwtTenantFilter}
-     * installs the principal on every authenticated API call, and every gated
-     * controller sits behind Spring Security (an unauthenticated request is rejected
-     * with 401 before it can reach a gated service). So a gate call with no JWT
-     * principal is a trusted internal path: a scheduled job, an AMQP/event listener,
-     * or an internal service-to-service call that set {@link TenantContext}
-     * programmatically. Such callers are treated as an unrestricted GROUP_ADMIN so the
-     * shop gate never breaks internal work or narrows a system read. Public /
-     * unauthenticated endpoints are out of scope (never gated).
+     * <p><strong>Retained internal bypass ({@code Authentication == null}):</strong>
+     * a gate call with NO {@code Authentication} on the thread is treated as a trusted
+     * internal path — a scheduled job, an AMQP/event listener, or an internal
+     * service-to-service call that set {@link TenantContext} programmatically (plus the
+     * 62 no-principal tests that depend on it). This is a deliberately narrow, RETAINED
+     * bypass — it is not enforced as a proven-safe property of every no-JWT call, but
+     * its external reachability is prevented by Spring Security rejecting
+     * unauthenticated requests with 401 BEFORE any gated service is entered.
+     *
+     * <p><strong>CR-03 / D-04:</strong> the former, wider rule ("any call with no JWT
+     * principal is trusted, and any unparseable subject is trusted") mapped "I cannot
+     * parse this identity" to "unrestricted GROUP_ADMIN" — fail-OPEN, explicitly
+     * rejected by locked decision D-04 as unacceptable for an auth boundary. It is
+     * removed: an unparseable or unexpected identity SHAPE now fails closed, and a
+     * machine caller is trusted only through the explicit, empty-by-default
+     * {@link #machineClientIds} allowlist.
      */
     public boolean isGroupAdmin() {
-        if (isRealmAdmin() || isSystemPrincipal()) {
+        if (isRealmAdmin() || isInternalCaller()) {
             return true;
         }
-        Membership membership = resolveMembership(currentUserId());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Jwt jwt && isDeclaredMachineClient(jwt)) {
+            return true;
+        }
+        // Beyond this point the caller MUST resolve to a UUID-subject vendor user; an
+        // anonymous, non-Jwt, or unparseable-subject request principal is denied with
+        // the typed 403 here (never escalated, never a 500 from the old currentUserId()).
+        Membership membership = resolveMembership(requireVendorUserId());
         if (membership.isGroupAdmin()) {
             return true;
         }
@@ -171,7 +205,7 @@ public class ShopAccessService {
         if (isGroupAdmin()) {
             return Set.of();
         }
-        return Set.copyOf(resolveMembership(currentUserId()).perShopRole().keySet());
+        return Set.copyOf(resolveMembership(requireVendorUserId()).perShopRole().keySet());
     }
 
     /**
@@ -288,27 +322,65 @@ public class ShopAccessService {
     }
 
     /**
-     * True when there is no authenticated JWT principal on the current thread — a
-     * trusted SYSTEM/internal caller (scheduler, listener, internal service call, or a
-     * test that set only {@link TenantContext}), never a user API request. See
-     * {@link #isGroupAdmin()} for why this is safe (real requests always carry a JWT
-     * principal via {@code JwtTenantFilter}; gated controllers sit behind Spring
-     * Security). Such callers bypass shop-scoping entirely.
+     * True ONLY when there is no {@code Authentication} on the current thread — the
+     * retained internal-caller bypass (scheduler, listener, internal service call, or a
+     * test that set only {@link TenantContext}). An anonymous or otherwise
+     * non-authenticated request principal is NOT internal and is denied; see
+     * {@link #isGroupAdmin()} for why this narrow rule is fail-closed (CR-03 / D-04).
      */
-    private boolean isSystemPrincipal() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-            return true;
-        }
-        // A JWT whose subject is not a UUID cannot be a vendor user in the shop-staff
-        // model ({@code user_id} is UUID-keyed) — it is a service/machine account
-        // (client-credentials) or a scope-only test token. Treat it as a trusted
-        // system principal (RLS still tenant-scopes it); per-shop scoping does not
-        // apply, and this keeps the gate from raising a 400 on a non-UUID subject.
-        return parseSub(jwt) == null;
+    private boolean isInternalCaller() {
+        return SecurityContextHolder.getContext().getAuthentication() == null;
     }
 
-    private UUID currentUserId() {
+    /**
+     * True when {@code jwt} is a declared machine/service client: its {@code sub} is
+     * NOT a UUID (so it cannot be a vendor user in the UUID-keyed shop-staff model)
+     * AND its {@code azp}/{@code client_id} claim is present in the configured,
+     * empty-by-default {@link #machineClientIds} allowlist. Trust is granted ONLY by
+     * this explicit declaration — never inferred from the unparseable subject alone
+     * (CR-03 / D-04). RLS still tenant-scopes an allowlisted machine caller. The INFO
+     * line is emitted at most once per distinct client id.
+     */
+    private boolean isDeclaredMachineClient(Jwt jwt) {
+        if (parseSub(jwt) != null) {
+            return false; // a UUID subject is a vendor user, resolved via shop_staff
+        }
+        String clientId = resolveClientId(jwt);
+        if (clientId == null || clientId.isBlank()) {
+            return false; // no declared client identity → not a machine caller → denied
+        }
+        boolean declared = machineClientIds != null && machineClientIds.contains(clientId);
+        if (declared && loggedMachineClients.add(clientId)) {
+            log.info("Machine client '{}' bypasses shop-scoping via jtoye.access.machine-client-ids "
+                    + "(RLS still tenant-scopes it)", clientId);
+        }
+        return declared;
+    }
+
+    /**
+     * The caller's declared client id — Keycloak's {@code azp} (authorized party),
+     * falling back to {@code client_id}. Returns {@code null} when neither claim is
+     * present, so an unparseable-subject token with no declared client identity is
+     * denied by default.
+     */
+    private static String resolveClientId(Jwt jwt) {
+        String azp = jwt.getClaimAsString("azp");
+        if (azp != null && !azp.isBlank()) {
+            return azp;
+        }
+        return jwt.getClaimAsString("client_id");
+    }
+
+    /**
+     * The authenticated vendor user's UUID subject. Fail-closed: a request-scoped
+     * principal that is anonymous, non-{@code Jwt}, or carries a non-UUID {@code sub}
+     * (and is not a declared machine client — that case short-circuits in
+     * {@link #isGroupAdmin()} before this is reached) is DENIED with the typed
+     * {@link ShopAccessDeniedException} 403, NOT the {@code IllegalStateException} 500
+     * the old {@code currentUserId()} threw (CR-03). An auth failure is a typed 403,
+     * never an untyped 500.
+     */
+    private UUID requireVendorUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
             UUID sub = parseSub(jwt);
@@ -316,7 +388,7 @@ public class ShopAccessService {
                 return sub;
             }
         }
-        throw new IllegalStateException("No authenticated JWT principal with a UUID subject");
+        throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
     }
 
     private UUID currentTenantId() {

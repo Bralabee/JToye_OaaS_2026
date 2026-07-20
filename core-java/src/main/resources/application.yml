@@ -107,6 +107,13 @@ jtoye:
     # returning user whose row is younger than this interval is a no-op (never a
     # write per request). ISO-8601 duration; default one hour.
     directory-upsert-interval: ${DIRECTORY_UPSERT_INTERVAL:PT1H}
+    # CR-03 (D-04): explicit machine/service-client allowlist. A bearer token whose
+    # 'sub' is NOT a UUID (a client-credentials / service account, not a vendor user)
+    # may bypass shop-scoping ONLY when its azp/client_id claim is listed here — trust
+    # is NEVER inferred from an unparseable subject. Config KEY, not a secret.
+    # EMPTY default = fail-closed: every non-UUID-subject token is denied by default.
+    # Comma-separated list, e.g. ACCESS_MACHINE_CLIENT_IDS=mcp-server,batch-worker.
+    machine-client-ids: ${ACCESS_MACHINE_CLIENT_IDS:}
   security:
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}
