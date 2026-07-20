@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-05-PLAN.md
-last_updated: "2026-07-20T11:18:35.417Z"
+stopped_at: Completed 23-06-PLAN.md — Phase 23 code-complete (7/7)
+last_updated: "2026-07-20T11:31:50.018Z"
 last_activity: 2026-07-20
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 19
-  completed_plans: 18
-  percent: 33
+  completed_plans: 19
+  percent: 50
 ---
 
 # Project State
@@ -25,12 +25,18 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING
-Plan: 6 of 7 remaining (23-01..05 + 23-07 complete; **23-06 staff screen is the only plan left**, executed out of wave order)
-Status: Ready to execute 23-06 — which also owns the phase-gate `scripts/docs-freshness.sh --write` reconcile (see phase deferred-items.md)
+Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — CODE-COMPLETE (7/7 plans)
+Plan: 7 of 7 complete (23-01..23-07; 23-06 executed last, out of wave order, and owned the phase-gate reconcile)
+Status: All 7 SUMMARYs on disk. VSA-01..04 + MOBL-01 closed. docs-freshness green at **1511**.
+  ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
+  the 3 new `/api/v1/staff` endpoints; `OpenApiSnapshotTest` check-mode runs inside `integrationTest`.
+  Run `./gradlew :core-java:updateOpenApiSnapshot` and commit the diff (needs Docker — the 23-06
+  session ran in low-footprint mode with Docker/Gradle/Playwright forbidden).
+  Also deferred by that constraint: `./gradlew test integrationTest`, `npx playwright test`,
+  and a live-browser pass over /dashboard/staff (GROUP_ADMIN vs non-GA sessions).
 Last activity: 2026-07-20
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Milestone v2.3 Phase Map
 
@@ -84,6 +90,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P4 | 10min | 2 tasks | 7 files |
 | Phase 23 P05 | 35min | 4 tasks | 9 files |
 | Phase 23 P07 | 40m | 2 tasks | 9 files |
+| Phase 23 P06 | 12min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -130,6 +137,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 23]: 23-05: MOBL-01 CLOSED verify-first (satisfied-by-prior-work) — Phase 19 Surface D already shipped the responsive shell; switcher integrated width-capped (max-w-[55%]+truncate), no reintroduced overflow, proven by 375px Jest+Playwright + live human-verify APPROVED + surface-ledger proof (drawer_authored:false). VSA-03 LEFT PENDING — its 'all shop-scoped screens operate on the selected shop' clause closes only in 23-07 (anti-false-green).
 - [Phase 23]: 23-07: VSA-03 CLOSED — useShopContext() (hooks/use-shop-context.ts) is the single consumption point for the switcher; Products/Orders/Marketing/Kitchen narrow to contextShopId and react live to 'shopcontext:change'. Orders narrows SERVER-side via the gated ?shopId=; Products/Promotions/Announcements narrow client-side over the already grant-scoped page (their endpoints take no shop param — cosmetic pagination caveat, never a scope widening). contextShopId===null ("all") is a strict fall-through so the GROUP_ADMIN cross-shop view is byte-for-byte unchanged. Create-forms default AND pin their shop (D-08 single-shop writes); Kitchen's board derives from the global context (fetchShops no longer picks a shop) with the published-first fallback preserved. Hook hydrates in a mount effect (NOT a useState initialiser) to avoid an SSR hydration mismatch.
 - [Phase 23]: 23-07: Closure proven at Jest (58/58 dashboard suites) + npm run build tsc level only — live browser/Playwright verification DEFERRED (low-footprint session after a desktop crash), recorded in 23-07-SUMMARY "Deferred verification"; run before the phase PR.
+- [Phase ?]: 23-06: /dashboard/staff renders the server's typed 403 as the shared access-required card (finance idiom) and the last-GA 409 as a persistent inline notice — no confirm-gate on self-revoke, so the server guard stays reachable (D-10/D-11/D-13)
+- [Phase ?]: 23-06 phase-gate reconcile: docs/metrics.json + CLAUDE.md + AGENTS.md counts moved 1456 -> 1511 (java 1010 / jest 357 / pw 40 / go 77 / mcp 27); docs-freshness check-mode exit 0. PROJECT.md's 1456 left intact — it describes unmerged main, not this branch
 
 ### Pending Todos
 
@@ -142,6 +151,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
 - **Phase 23 vision provider**: content-relevance gate (IMG-03 stage 6) needs Ollama (host :11434 conflict) or a hosted model — ships behind an advisory-default flag; the pipeline is not blocked on it.
 - **Phase 26 netpol caveat**: minikube's default CNI does NOT enforce NetworkPolicies — local is not proof for netpol behaviour (needs policy-enforcing CNI or AKS).
+- Phase 23 PR will fail CI: docs/api/openapi-snapshot.json lacks the 3 /api/v1/staff endpoints. Run ./gradlew :core-java:updateOpenApiSnapshot and commit the diff (needs Docker/Testcontainers; forbidden in the low-footprint session that executed 23-06)
 
 ### Quick Tasks Completed
 
@@ -151,6 +161,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T11:18:13.733Z
+Last session: 2026-07-20T11:31:31.740Z
 Stopped at: Completed 23-05-PLAN.md
 Resume file: None

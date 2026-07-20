@@ -14,6 +14,13 @@ Out-of-scope discoveries logged during execution (per executor SCOPE BOUNDARY). 
   so the count is bumped once instead of drifting every plan. `schema_version` stays
   56 (V52 < HEAD V56; out-of-order slot).
 
+## 23-01 — RESOLVED in 23-06
+
+The deferred count bump below was **executed at the phase gate by 23-06**:
+`scripts/docs-freshness.sh --write` reconciled `docs/metrics.json` to
+**1511** total logical invocations and the CLAUDE.md prose was updated to match;
+check mode exits 0. `schema_version` stayed 56 as predicted.
+
 ## 23-07
 
 - **docs-freshness count bump (same phase-gate reconcile).** 23-07 added 3 Jest files
@@ -27,3 +34,28 @@ Out-of-scope discoveries logged during execution (per executor SCOPE BOUNDARY). 
   written here: **23-06 is still pending** and will move the numbers again, so
   `--write` stays at the last plan of the phase per the 23-01 entry. `schema_version`
   unchanged at 56.
+
+  **RESOLVED in 23-06** — final reconciled figures (23-06 added 7 more Jest blocks
+  in 1 file): `java_test_methods` 1010 / `java_test_files` 175 / `java_controllers` 21
+  / `jest_blocks` 357 / `jest_files` 56 / `playwright_blocks` 40 / total **1511**.
+
+## 23-06
+
+- **OpenAPI snapshot regen is STILL OPEN and will fail CI (inherited from 23-04).**
+  `docs/api/openapi-snapshot.json` does not yet contain the three `/api/v1/staff`
+  endpoints (`grep -c "api/v1/staff"` → 0). `OpenApiSnapshotTest` runs in *check*
+  mode inside `integrationTest`, so the phase PR fails until someone runs
+  `./gradlew :core-java:updateOpenApiSnapshot` and commits the diff. 23-04 deferred
+  this to "the phase-gate reconcile"; 23-06 owns that gate but **could not execute
+  it** — the task boots the full Spring context against a throwaway Testcontainers
+  Postgres, which the low-footprint execution constraint forbids (no Docker). This
+  is the one known red gate left in Phase 23. Not a code defect; a regeneration step.
+
+- **docs-freshness counts ~5 blocks more than Jest executes (pre-existing, script
+  methodology).** The manifest records `jest_blocks` 357 while `npx jest` runs 352.
+  The script counts textual `\b(it|test)\(` occurrences, which also matches
+  `RegExp.prototype.test(` calls — e.g. `frontend/__tests__/link-graph.test.ts:47,117,119`
+  and `app/dashboard/kitchen/__tests__/page.test.tsx:210`. Pre-existing (not introduced
+  by Phase 23 — 23-06's own file counts 7 and runs 7), and the gate remains
+  self-consistent (manifest == computed), so this is NOT fixed here per SCOPE BOUNDARY.
+  Fixing it would shift the committed baseline and is its own change.

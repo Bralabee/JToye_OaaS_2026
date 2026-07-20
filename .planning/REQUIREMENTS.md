@@ -47,7 +47,7 @@ Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (ten
 
 - [x] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
 
-- [ ] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
+- [x] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
 
 ### Image architecture (IMG) — spec `image-architecture-SPEC.md`
 
@@ -122,7 +122,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
 | VSA-02 | Phase 23 | 23-02, 23-03 | Complete |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
-| VSA-04 | Phase 23 | 23-04, 23-06 | Pending |
+| VSA-04 | Phase 23 | 23-04, 23-06 | Complete |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |
 | IMG-02 | Phase 24 | 24-02 | Pending |
