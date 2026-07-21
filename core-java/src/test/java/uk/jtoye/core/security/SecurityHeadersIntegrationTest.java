@@ -4,15 +4,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,13 +71,27 @@ class SecurityHeadersIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /**
+     * Production-shaped auth: a UUID-subject Keycloak JWT with the realm-admin authority
+     * (implicit GROUP_ADMIN), mirroring {@code ShopAccessEnforcementIntegrationTest}.
+     * Replaces the pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the
+     * fail-closed {@code ShopAccessService} (23-08) now correctly denies on the shop
+     * read gate — the reason {@code shopsEndpointHasSecurityHeaders} regressed to 403.
+     */
+    private static RequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j
+                        .subject(java.util.UUID.randomUUID().toString())
+                        .claim("email", "operator@example.com"))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+    }
+
     @Test
-    @WithMockUser
     void shopsEndpointHasSecurityHeaders() throws Exception {
         // X-Tenant-Id: a tenant-less request is now rejected 400 before the
         // controller (QA-council error-code hardening); this test asserts the
         // security HEADERS on the happy path, so supply a tenant credential.
         mockMvc.perform(get("/api/v1/shops")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", java.util.UUID.randomUUID().toString()))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Frame-Options", "DENY"))
@@ -96,23 +112,21 @@ class SecurityHeadersIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void hstsAbsentByDefaultProfile() throws Exception {
         // .secure(true) rules out the HTTPS-gate as the reason for HSTS absence —
         // under the default (non-prod) profile, SecurityConfig explicitly disables
         // HSTS, so even a simulated HTTPS request returns no Strict-Transport-Security.
-        mockMvc.perform(get("/api/v1/shops").secure(true))
+        mockMvc.perform(get("/api/v1/shops").secure(true).with(adminJwt()))
                 .andExpect(header().doesNotExist("Strict-Transport-Security"));
     }
 
     @Test
-    @WithMockUser
     void headerSnapshotMatchesGolden() throws Exception {
         // Regression guard: the curated list of SEC-03-scoped headers must exactly
         // match the committed golden snapshot. Any add / remove / rename of one of
         // these three headers in SecurityConfig's .headers(...) DSL fails this test,
         // forcing a deliberate snapshot update rather than a silent regression.
-        var result = mockMvc.perform(get("/api/v1/shops")).andReturn();
+        var result = mockMvc.perform(get("/api/v1/shops").with(adminJwt())).andReturn();
         var response = result.getResponse();
 
         // Curate to SEC-03-scoped headers only — ignore noise like Cache-Control,

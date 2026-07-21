@@ -9,7 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -17,6 +17,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -45,6 +46,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -118,6 +120,25 @@ class LocationHeaderContractTest {
     }
 
     /**
+     * Production-shaped auth for every create-and-dereference happy path in this class:
+     * a UUID-subject Keycloak JWT that is BOTH a realm admin (implicit GROUP_ADMIN — the
+     * 23-08 fail-closed shop gate the shop/promotion/announcement creates cross, and the
+     * {@code hasRole('admin')} gate the finance/refund creates require) AND carries
+     * {@code SCOPE_catalog:write} (the product-create scope gate, #206). Replaces the
+     * pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the fail-closed
+     * {@code ShopAccessService} now correctly denies. None of these methods asserts a
+     * denial, so a single admin+write-scope operator token preserves each one's original
+     * access intent (create succeeds, its Location dereferences).
+     */
+    private static RequestPostProcessor operatorJwt() {
+        return jwt().jwt(j -> j
+                        .subject(UUID.randomUUID().toString())
+                        .claim("email", "operator@example.com"))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"),
+                        new SimpleGrantedAuthority("SCOPE_catalog:write"));
+    }
+
+    /**
      * POSTs the body to the given path, asserts 201 + Location containing the
      * expected versioned prefix, then GETs the Location and asserts 200 with
      * the same entity id — i.e. the Location actually dereferences.
@@ -125,6 +146,7 @@ class LocationHeaderContractTest {
     private void assertLocationDereferences(String postPath, Object body, String expectedPathFragment)
             throws Exception {
         MvcResult created = mockMvc.perform(withTenant(post(postPath))
+                        .with(operatorJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())
@@ -140,7 +162,7 @@ class LocationHeaderContractTest {
                 .get("id").asText();
         assertThat(location).endsWith("/" + createdId);
 
-        mockMvc.perform(withTenant(get(URI.create(location))))
+        mockMvc.perform(withTenant(get(URI.create(location))).with(operatorJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(createdId));
     }
@@ -155,6 +177,7 @@ class LocationHeaderContractTest {
         request.setName("Location Contract Shop " + UUID.randomUUID());
         request.setAddress("1 Contract Way");
         MvcResult result = mockMvc.perform(withTenant(post("/api/v1/shops"))
+                        .with(operatorJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -164,7 +187,6 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser
     void shopCreateLocationDereferences() throws Exception {
         CreateShopRequest request = new CreateShopRequest();
         request.setName("Deref Shop " + UUID.randomUUID());
@@ -174,11 +196,10 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    // issue #206 [AI-4]: product create is now gated on SCOPE_catalog:write. The mock user
-    // keeps ROLE_USER (authenticated read of the dereferenced Location) and gains the write
-    // scope so the POST reaches the handler (mirrors an operator token, which core-api
-    // default-grants catalog:write).
-    @WithMockUser(authorities = {"ROLE_USER", "SCOPE_catalog:write"})
+    // issue #206 [AI-4]: product create is gated on SCOPE_catalog:write. The operator JWT
+    // carries that write scope AND the realm-admin authority (implicit GROUP_ADMIN) so the
+    // POST clears both the scope gate and the 23-08 shop-access gate, then dereferences the
+    // created Location (mirrors an operator token, which core-api default-grants catalog:write).
     void productCreateLocationDereferences() throws Exception {
         CreateProductRequest request = new CreateProductRequest();
         request.setSku("DEREF-" + UUID.randomUUID());
@@ -191,7 +212,6 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser
     void customerCreateLocationDereferences() throws Exception {
         var request = new uk.jtoye.core.customer.CustomerController.CreateCustomerRequest(
                 "Deref Customer",
@@ -204,7 +224,7 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser(roles = "admin")  // issue #83 P1-1: finance endpoints require the admin realm role
+    // issue #83 P1-1: finance endpoints require the admin realm role — operatorJwt carries it.
     void financialTransactionCreateLocationDereferences() throws Exception {
         CreateTransactionRequest request = new CreateTransactionRequest(
                 10000L,
@@ -216,7 +236,6 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser
     void promotionCreateLocationDereferences() throws Exception {
         CreatePromotionRequest request = new CreatePromotionRequest();
         request.setLabel("Deref Promo");
@@ -229,7 +248,6 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser
     void announcementCreateLocationDereferences() throws Exception {
         CreateAnnouncementRequest request = new CreateAnnouncementRequest();
         request.setTitle("Deref Announcement");
@@ -240,7 +258,7 @@ class LocationHeaderContractTest {
     }
 
     @Test
-    @WithMockUser(roles = "admin")  // issue #83 P1-1: refunds require the admin realm role
+    // issue #83 P1-1: refunds require the admin realm role — operatorJwt carries it.
     void refundCreateLocationDereferences() throws Exception {
         UUID orderId = seedRefundableOrder();
 

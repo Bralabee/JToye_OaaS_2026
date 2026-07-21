@@ -8,11 +8,12 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -21,6 +22,7 @@ import uk.jtoye.core.shop.dto.CreateShopRequest;
 
 import java.util.UUID;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -66,6 +68,22 @@ class ShopControllerIntegrationTest {
         jdbcTemplate.update("DELETE FROM shops");
     }
 
+    /**
+     * Production-shaped auth: a UUID-subject Keycloak JWT carrying the realm-admin
+     * authority — an implicit GROUP_ADMIN (day-one "everyone can do everything"),
+     * mirroring {@code ShopAccessEnforcementIntegrationTest.authenticate(sub, realmAdmin=true)}.
+     * Replaces the pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the
+     * fail-closed {@code ShopAccessService} (23-08) now correctly denies. Every method
+     * migrated here was a general authenticated operator (shop create/list), so admin =
+     * the same effective access they were written to assert.
+     */
+    private static RequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j
+                        .subject(UUID.randomUUID().toString())
+                        .claim("email", "operator@example.com"))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+    }
+
     @Test
     void healthEndpointShouldBePublic() throws Exception {
         mockMvc.perform(get("/health"))
@@ -79,20 +97,19 @@ class ShopControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createShopWithoutTenantHeaderShouldReturn400() throws Exception {
         CreateShopRequest request = new CreateShopRequest();
         request.setName("Test Shop");
         request.setAddress("123 Test St");
 
         mockMvc.perform(post("/api/v1/shops")
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @WithMockUser
     void createShopWithValidTenantShouldSucceed() throws Exception {
         String uniqueShopName = "Test Shop " + UUID.randomUUID();
         CreateShopRequest request = new CreateShopRequest();
@@ -100,6 +117,7 @@ class ShopControllerIntegrationTest {
         request.setAddress("123 Test St");
 
         mockMvc.perform(post("/api/v1/shops")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -111,7 +129,6 @@ class ShopControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void listShopsShouldReturnPaginatedResults() throws Exception {
         // Create test shops
         for (int i = 1; i <= 5; i++) {
@@ -120,6 +137,7 @@ class ShopControllerIntegrationTest {
             request.setAddress("Address " + i);
 
             mockMvc.perform(post("/api/v1/shops")
+                    .with(adminJwt())
                     .header("X-Tenant-Id", testTenantId.toString())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)));
@@ -127,6 +145,7 @@ class ShopControllerIntegrationTest {
 
         // Verify pagination
         mockMvc.perform(get("/api/v1/shops")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", testTenantId.toString())
                         .param("page", "0")
                         .param("size", "3"))
@@ -139,12 +158,12 @@ class ShopControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createShopWithInvalidDataShouldReturnValidationError() throws Exception {
         CreateShopRequest request = new CreateShopRequest();
         // Missing required name field
 
         mockMvc.perform(post("/api/v1/shops")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", testTenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))

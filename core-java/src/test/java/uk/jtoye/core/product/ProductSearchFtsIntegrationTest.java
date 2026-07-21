@@ -11,11 +11,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -292,8 +294,23 @@ class ProductSearchFtsIntegrationTest {
                 .doesNotContainAnyElementsOf(page0.getContent().stream().map(ProductDto::getId).toList());
     }
 
+    /**
+     * Production-shaped auth for the HTTP search assertion: a UUID-subject Keycloak JWT
+     * with the realm-admin authority (implicit GROUP_ADMIN), mirroring
+     * {@code ShopAccessEnforcementIntegrationTest}. Replaces the pre-Phase-23
+     * {@code WithMockUser}, whose non-JWT principal the fail-closed {@code ShopAccessService}
+     * (23-08) now denies on the product read-scope gate — the reason this method regressed
+     * to 403. A realm admin reads the tenant-wide set unrestricted, so the 100-item cap and
+     * bare-array contract are asserted exactly as before.
+     */
+    private static RequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j
+                        .subject(UUID.randomUUID().toString())
+                        .claim("email", "operator@example.com"))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+    }
+
     @Test
-    @WithMockUser
     void searchEndpointCapsPageSizeAtGlobalMaximumAndKeepsArrayContract() throws Exception {
         enforceRls();
         for (int i = 0; i < 101; i++) {
@@ -302,6 +319,7 @@ class ProductSearchFtsIntegrationTest {
 
         // Default page size on the search path is the global cap (100)
         mockMvc.perform(get("/api/v1/products/search")
+                        .with(adminJwt())
                         .param("q", "muffin")
                         .header("X-Tenant-Id", TENANT_A.toString()))
                 .andExpect(status().isOk())
@@ -313,6 +331,7 @@ class ProductSearchFtsIntegrationTest {
 
         // An oversized size request is clamped by spring.data.web.pageable.max-page-size
         mockMvc.perform(get("/api/v1/products/search")
+                        .with(adminJwt())
                         .param("q", "muffin").param("size", "500")
                         .header("X-Tenant-Id", TENANT_A.toString()))
                 .andExpect(status().isOk())
@@ -320,12 +339,14 @@ class ProductSearchFtsIntegrationTest {
 
         // Explicit paging works and stays a bare array
         mockMvc.perform(get("/api/v1/products/search")
+                        .with(adminJwt())
                         .param("q", "muffin").param("page", "1").param("size", "100")
                         .header("X-Tenant-Id", TENANT_A.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
 
         mockMvc.perform(get("/api/v1/products/search")
+                        .with(adminJwt())
                         .param("q", "muffin").param("size", "5")
                         .header("X-Tenant-Id", TENANT_A.toString()))
                 .andExpect(status().isOk())
