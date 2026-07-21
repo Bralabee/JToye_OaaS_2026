@@ -28,7 +28,7 @@
 ALTER TABLE shop_staff ADD COLUMN IF NOT EXISTS grant_source VARCHAR(16);
 
 -- ============================================================
--- 2. Backfill pre-V57 rows deterministically.
+-- 2. Backfill pre-V57 rows deterministically, UNDER RLS.
 --
 --    created_by IS NULL distinguishes a JIT row in practice: the JIT insert
 --    (insertGroupAdminIfAbsent) never sets created_by, while the operator grant
@@ -42,10 +42,55 @@ ALTER TABLE shop_staff ADD COLUMN IF NOT EXISTS grant_source VARCHAR(16);
 --    operator grant made by a non-UUID service principal would carry created_by NULL
 --    and be mis-read as JIT. From V57 on, provenance is written explicitly at each
 --    write site and never inferred from created_by again.
+--
+--    RLS SAFETY — why this is a tenant loop, not a bare `UPDATE shop_staff ...`:
+--    shop_staff carries ENABLE + FORCE ROW LEVEL SECURITY (V52) with policy
+--    shop_staff_tenant_policy USING (tenant_id = current_tenant_id()). Flyway runs as
+--    the RLS-bound app role (jtoye_app — there is NO spring.flyway.user override), so
+--    during migration current_tenant_id() returns NULL and the policy hides EVERY row.
+--    A bare UPDATE with no GUC would therefore see zero rows and silently no-op — after
+--    which step 3's `SET NOT NULL` FAILS on any database that already holds pre-V57
+--    shop_staff rows (D-04's JIT lazy-provision writes a persistent tenant-wide
+--    GROUP_ADMIN row on a user's first write request, so every non-fresh Compose/
+--    staging/prod DB has them; the DEFAULT 'JIT' on step 3 only affects FUTURE inserts,
+--    never existing rows). This is the exact defect class V44's header documents —
+--    "V25's own backfill UPDATE ran as the RLS-bound migration role with NO tenant GUC
+--    set, so under FORCE RLS it saw zero rows and silently no-opped ... must not be
+--    repeated." The remedy is V44's: walk the tenants registry (no RLS on tenants) and
+--    set the standard app GUC transaction-locally per tenant — exactly as
+--    TenantSetLocalAspect does at runtime — so every row is reached WITH the policy
+--    enforced, no policy is altered or bypassed, and the statement works for any role
+--    with UPDATE privilege. Re-running is a no-op (WHERE grant_source IS NULL).
+--    Testcontainers never caught the bare-UPDATE bug: fresh test DBs run V52 then V57
+--    back-to-back on an empty table, so there is nothing to backfill and step 3's
+--    SET NOT NULL passes trivially (regression covered by
+--    V57GrantSourceBackfillIntegrationTest).
 -- ============================================================
-UPDATE shop_staff
-   SET grant_source = CASE WHEN created_by IS NULL THEN 'JIT' ELSE 'OPERATOR' END
- WHERE grant_source IS NULL;
+DO $$
+DECLARE
+    t          RECORD;
+    n          BIGINT;
+    backfilled BIGINT := 0;
+BEGIN
+    FOR t IN SELECT id FROM tenants LOOP
+        -- Same GUC the app sets (TenantSetLocalAspect); transaction-local, so it
+        -- vanishes when Flyway commits this migration.
+        PERFORM set_config('app.current_tenant_id', t.id::text, true);
+
+        UPDATE shop_staff
+           SET grant_source = CASE WHEN created_by IS NULL THEN 'JIT' ELSE 'OPERATOR' END
+         WHERE tenant_id = t.id
+           AND grant_source IS NULL;
+        GET DIAGNOSTICS n = ROW_COUNT;
+        backfilled := backfilled + n;
+    END LOOP;
+
+    -- Defensive reset so no later statement in this transaction inherits the last
+    -- tenant's GUC (mirrors V44).
+    PERFORM set_config('app.current_tenant_id', '', true);
+
+    RAISE NOTICE 'V57: backfilled grant_source on % pre-V57 shop_staff row(s).', backfilled;
+END $$;
 
 -- ============================================================
 -- 3. Constrain + default + NOT NULL — only AFTER the backfill, so no existing row is
