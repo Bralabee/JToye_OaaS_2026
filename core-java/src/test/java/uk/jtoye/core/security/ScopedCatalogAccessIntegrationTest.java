@@ -82,10 +82,19 @@ class ScopedCatalogAccessIntegrationTest {
                 TENANT_A, "Tenant A");
     }
 
+    // Each token carries a UUID subject — the 23-08 fail-closed ShopAccessService gate denies
+    // any authenticated principal whose sub is not a UUID (parseSub -> null -> typed 403). The
+    // pre-Phase-23 default MockMvc subject ("user") tripped that gate BEFORE the scope contract
+    // under test could be exercised. The scope-gate semantics are unchanged: the write gate is
+    // driven by the `scope` claim via JwtRolesAndScopesConverter, and under strict-scoping OFF a
+    // UUID-subject caller is a day-one implicit GROUP_ADMIN, so the shop gate never masks the
+    // scope assertion.
+
     /** Read-only machine token: scope=catalog:read, no realm role. */
     private static RequestPostProcessor readOnlyJwt() {
         return jwt()
-                .jwt(j -> j.claim("tenant_id", TENANT_A.toString())
+                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "catalog:read"))
                 .authorities(new JwtRolesAndScopesConverter());
     }
@@ -93,7 +102,8 @@ class ScopedCatalogAccessIntegrationTest {
     /** Operator-shaped token: scope=catalog:read catalog:write (as core-api grants by default). */
     private static RequestPostProcessor operatorJwt() {
         return jwt()
-                .jwt(j -> j.claim("tenant_id", TENANT_A.toString())
+                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());
     }
@@ -101,7 +111,8 @@ class ScopedCatalogAccessIntegrationTest {
     /** Legacy/stale token shape: authenticated + tenant but carries NO scope claim at all. */
     private static RequestPostProcessor noScopeJwt() {
         return jwt()
-                .jwt(j -> j.claim("tenant_id", TENANT_A.toString()))
+                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", TENANT_A.toString()))
                 .authorities(new JwtRolesAndScopesConverter());
     }
 
