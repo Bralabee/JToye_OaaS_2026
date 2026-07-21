@@ -55,6 +55,31 @@ public interface ShopStaffRepository extends JpaRepository<ShopStaff, UUID> {
     boolean existsByTenantIdAndUserId(UUID tenantId, UUID userId);
 
     /**
+     * Does the tenant hold ANY tenant-wide ({@code shop_id IS NULL}) GROUP_ADMIN grant of the
+     * given provenance? Used by the strict-scoping bootstrap rule (CR-07, 23-14): if an
+     * {@link GrantSource#OPERATOR} tenant-wide GROUP_ADMIN exists, the tenant is not at risk of
+     * lockout when JIT grants are de-honoured, so no JIT bootstrap admin is retained. Tenant-scoped
+     * by the RLS wall AND the explicit {@code tenantId} predicate.
+     */
+    @Query("SELECT (count(s) > 0) FROM ShopStaff s WHERE s.tenantId = :tenantId AND s.shopId IS NULL "
+            + "AND s.role = uk.jtoye.core.security.access.ShopRole.GROUP_ADMIN AND s.grantSource = :source")
+    boolean existsTenantWideGroupAdminBySource(@Param("tenantId") UUID tenantId,
+                                               @Param("source") GrantSource source);
+
+    /**
+     * The tenant's JIT-sourced tenant-wide ({@code shop_id IS NULL}) GROUP_ADMIN grants, OLDEST
+     * FIRST ({@code created_at} ascending, tie-broken by {@code id}). The head is the deterministic
+     * bootstrap admin retained under strict-scoping ON so de-honouring JIT grants can never leave a
+     * tenant with zero GROUP_ADMINs (CR-07 lockout safety, 23-14). Tenant-scoped by the RLS wall AND
+     * the explicit {@code tenantId} predicate.
+     */
+    @Query("SELECT s FROM ShopStaff s WHERE s.tenantId = :tenantId AND s.shopId IS NULL "
+            + "AND s.role = uk.jtoye.core.security.access.ShopRole.GROUP_ADMIN "
+            + "AND s.grantSource = uk.jtoye.core.security.access.GrantSource.JIT "
+            + "ORDER BY s.createdAt ASC, s.id ASC")
+    List<ShopStaff> findTenantWideJitGroupAdminsOldestFirst(@Param("tenantId") UUID tenantId);
+
+    /**
      * Race-safe JIT provision of a tenant-wide GROUP_ADMIN grant (D-04): reserves
      * the row with {@code ON CONFLICT DO NOTHING} against the V52 functional unique
      * index (house reserve idiom, V47/V50), so two concurrent first-requests from

@@ -17,6 +17,7 @@ import uk.jtoye.core.security.TenantContext;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -47,8 +48,12 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><strong>Throttled directory upsert (D-09)</strong> — records/refreshes
  *       the {@code user_directory} grant-target row, gated on a stale
  *       {@code last_seen} so it is never a write per request.</li>
- *   <li><strong>Strict-scoping switch (D-12)</strong> — OFF (default) = D-04
- *       auto-provision; ON = ungranted non-admins deny-by-default.</li>
+ *   <li><strong>Strict-scoping switch (D-12, revised CR-07)</strong> — OFF (default)
+ *       = D-04 auto-provision, everything honoured (day-one unchanged). ON = stops new
+ *       auto-provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN rows (a day-one
+ *       user genuinely becomes scoped); deliberate {@link GrantSource#OPERATOR} grants and
+ *       realm admins are honoured unchanged; the tenant's oldest JIT admin is retained as a
+ *       WARN-logged bootstrap so no tenant can lock itself out on the flip.</li>
  * </ul>
  *
  * <p><strong>Pitfall 4 (RESEARCH §5):</strong> the JIT provision + directory
@@ -71,7 +76,11 @@ public class ShopAccessService {
     private final UserDirectoryRepository userDirectoryRepository;
     private final TenantCacheEvictor cacheEvictor;
 
-    /** D-12: OFF preserves the day-one JIT auto-provision; ON denies ungranted non-admins. */
+    /**
+     * D-12 (revised, CR-07): OFF (default) preserves the day-one JIT auto-provision and honours
+     * every grant; ON stops new provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN
+     * rows (operator grants + realm admins unchanged, oldest JIT admin kept as bootstrap).
+     */
     @Value("${jtoye.access.strict-scoping:false}")
     private boolean strictScoping;
 
@@ -220,16 +229,30 @@ public class ShopAccessService {
      * <p>The ladder, mirroring {@link #isGroupAdmin()} exactly:
      * <ol>
      *   <li>{@code realmAdmin} → true (D-03 realm-admin bridge, implicit GROUP_ADMIN).</li>
-     *   <li>a tenant-wide GROUP_ADMIN {@code shop_staff} row → true.</li>
+     *   <li>a tenant-wide GROUP_ADMIN {@code shop_staff} row:
+     *     <ul>
+     *       <li>strict-scoping OFF (day-one) → true (honour every grant, unchanged);</li>
+     *       <li>strict-scoping ON + an {@link GrantSource#OPERATOR} row → true (deliberate
+     *           operator grant, always honoured);</li>
+     *       <li>strict-scoping ON + a {@link GrantSource#JIT} row → DE-HONOURED (CR-07),
+     *           EXCEPT the tenant's deterministic bootstrap admin ({@link #isBootstrapAdmin}),
+     *           kept so the flip can never leave a tenant with zero GROUP_ADMINs.</li>
+     *     </ul></li>
      *   <li>strict-scoping OFF (day-one) AND a FULLY-ungranted user → true (implicit
      *       GROUP_ADMIN; once a user holds ANY explicit grant they are scoped even under
      *       strict-scoping OFF).</li>
      *   <li>otherwise false.</li>
      * </ol>
      *
-     * <p>Reads only {@code shop_staff} (via the cached {@link #resolveMembership}); performs
-     * NO writes and no ambient-context access — {@code userId} and {@code realmAdmin} are
-     * always supplied by the caller.
+     * <p>The strict-scoping policy is applied HERE — in the decision helper, outside the
+     * cached {@link #resolveMembership} snapshot — so a change to the {@code strictScoping}
+     * flag (which is not part of the cache key) is never served from a stale cached decision
+     * (WR-01 corollary). The cached snapshot carries only the raw provenance fact.
+     *
+     * <p>Reads only {@code shop_staff} (via the cached {@link #resolveMembership}, plus the
+     * bootstrap-rule finders under strict-scoping ON); performs NO writes and no
+     * ambient-context access — {@code userId} and {@code realmAdmin} are always supplied by
+     * the caller.
      */
     private boolean isGroupAdminForUser(UUID userId, boolean realmAdmin) {
         if (realmAdmin) {
@@ -237,9 +260,55 @@ public class ShopAccessService {
         }
         Membership membership = resolveMembership(userId);
         if (membership.isGroupAdmin()) {
-            return true;
+            if (!strictScoping) {
+                return true;                         // day-one: honour every grant
+            }
+            if (!membership.groupAdminFromJit()) {
+                return true;                         // operator grant: honoured under strict ON
+            }
+            // JIT-sourced under strict ON: de-honoured, UNLESS this user is the tenant's
+            // deterministic bootstrap admin (kept to avoid a zero-admin lockout).
+            return isBootstrapAdmin(userId);
         }
         return !strictScoping && membership.perShopRole().isEmpty();
+    }
+
+    /**
+     * Lockout-safety rule for the strict-scoping tightening (CR-07): when de-honouring a
+     * tenant's JIT-sourced tenant-wide GROUP_ADMIN rows, the OLDEST such row (by
+     * {@code created_at}, tie-broken by {@code id}) continues to be honoured as the bootstrap
+     * admin so the tenant is never left with zero GROUP_ADMINs. Consulted ONLY when the caller
+     * holds a JIT tenant-wide GROUP_ADMIN and strict-scoping is ON.
+     *
+     * <ul>
+     *   <li>if the tenant has ANY {@link GrantSource#OPERATOR} tenant-wide GROUP_ADMIN, no JIT
+     *       bootstrap is needed — that operator admin covers the tenant, so every JIT admin is
+     *       fully de-honoured (returns false);</li>
+     *   <li>otherwise the oldest JIT tenant-wide GROUP_ADMIN is the bootstrap admin; only that
+     *       user is honoured, logged at WARN so the operator has a signal that the tightening
+     *       is partial and who still holds admin.</li>
+     * </ul>
+     *
+     * <p>The realm-{@code admin} bridge remains an independent recovery backstop, but a tenant
+     * with no realm admin must not be able to lock itself out on a config flip — and CR-06's
+     * revoke guard cannot help here because the flip is a config change, not a revoke.
+     */
+    private boolean isBootstrapAdmin(UUID userId) {
+        UUID tenantId = currentTenantId();
+        if (shopStaffRepository.existsTenantWideGroupAdminBySource(tenantId, GrantSource.OPERATOR)) {
+            return false;   // an operator admin covers the tenant → JIT users fully de-honoured
+        }
+        List<ShopStaff> jitAdmins = shopStaffRepository.findTenantWideJitGroupAdminsOldestFirst(tenantId);
+        if (jitAdmins.isEmpty()) {
+            return false;   // defensive: the caller holds a JIT row, so this should be non-empty
+        }
+        boolean bootstrap = jitAdmins.get(0).getUserId().equals(userId);
+        if (bootstrap) {
+            log.warn("Strict-scoping bootstrap admin retained for tenant {}: user {} is the oldest "
+                    + "JIT-provisioned GROUP_ADMIN and is kept to avoid a zero-admin lockout. Grant an "
+                    + "explicit operator GROUP_ADMIN to fully tighten day-one access.", tenantId, userId);
+        }
+        return bootstrap;
     }
 
     /**
@@ -319,18 +388,23 @@ public class ShopAccessService {
         UUID tenantId = currentTenantId();
         Map<UUID, ShopRole> perShop = new HashMap<>();
         boolean groupAdmin = false;
+        boolean groupAdminFromJit = false;
         for (ShopStaff row : shopStaffRepository.findByTenantIdAndUserId(tenantId, userId)) {
             if (row.getShopId() == null) {
-                // Tenant-wide grant → GROUP_ADMIN shape (D-03).
+                // Tenant-wide grant → GROUP_ADMIN shape (D-03). Record its provenance so the
+                // strict-scoping DECISION (isGroupAdminForUser) can de-honour a JIT row while
+                // honouring an operator one (CR-07). The V52 unique index guarantees at most
+                // one tenant-wide row per user, so this single row settles the flag.
                 if (row.getRole() == ShopRole.GROUP_ADMIN) {
                     groupAdmin = true;
+                    groupAdminFromJit = (row.getGrantSource() == GrantSource.JIT);
                 }
             } else {
                 perShop.merge(row.getShopId(), row.getRole(),
                         (a, b) -> a.rank() >= b.rank() ? a : b);
             }
         }
-        return new Membership(groupAdmin, Map.copyOf(perShop));
+        return new Membership(groupAdmin, groupAdminFromJit, Map.copyOf(perShop));
     }
 
     /**
@@ -361,6 +435,18 @@ public class ShopAccessService {
         }
         UUID sub = parseSub(jwt);
         if (sub == null) {
+            return;
+        }
+
+        // WR-09 (CR-07): a DECLARED machine/service client must never accumulate a persistent
+        // tenant-wide GROUP_ADMIN row — even when Keycloak issues its service account a UUID
+        // subject (so parseSub above succeeds). Those JIT rows survived the strict-scoping flip
+        // and appeared in the staff list as opaque UUIDs with no directory entry. A machine
+        // client's access already runs through the 23-08 allowlist (the isGroupAdmin()
+        // short-circuit), so skip BOTH the directory upsert (it is a human grant-target picker)
+        // AND the JIT provision entirely — nothing breaks, it just stops acquiring grants by
+        // accident. Classified purely by the allowlisted azp/client_id, independent of sub shape.
+        if (isAllowlistedMachineClient(jwt)) {
             return;
         }
 
@@ -453,6 +539,21 @@ public class ShopAccessService {
                     + "(RLS still tenant-scopes it)", clientId);
         }
         return declared;
+    }
+
+    /**
+     * True when {@code jwt}'s declared client id ({@code azp}/{@code client_id}) is on the
+     * empty-by-default {@link #machineClientIds} allowlist — regardless of whether its
+     * {@code sub} is a UUID. This is the WR-09 gate: {@link #isDeclaredMachineClient} only
+     * recognises a NON-UUID-subject token (its purpose is the {@link #isGroupAdmin()} bypass),
+     * but a Keycloak service account carries a UUID subject, so {@link #onRequest} needs this
+     * subject-shape-independent check to stop provisioning it a GROUP_ADMIN row (CR-07). Trust
+     * is still granted ONLY by the explicit allowlist, never inferred.
+     */
+    private boolean isAllowlistedMachineClient(Jwt jwt) {
+        String clientId = resolveClientId(jwt);
+        return clientId != null && !clientId.isBlank()
+                && machineClientIds != null && machineClientIds.contains(clientId);
     }
 
     /**

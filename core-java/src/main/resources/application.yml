@@ -97,11 +97,18 @@ jtoye:
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
-    # D-12: strict-scoping switch. OFF (default) preserves day-one behaviour —
-    # an ungranted tenant user's first request JIT-auto-provisions a GROUP_ADMIN
-    # grant (D-04). ON makes ungranted non-admins deny-by-default (no
-    # auto-provision) so a vendor can genuinely tighten. Global flag for now;
-    # per-tenant granularity is deferred.
+    # D-12 (revised, CR-07): strict-scoping switch. OFF (default) preserves day-one
+    # behaviour exactly — an ungranted tenant user's first write request
+    # JIT-auto-provisions a tenant-wide GROUP_ADMIN grant (D-04) and every grant is
+    # honoured. ON does TWO things so the off-ramp is actually reachable for a tenant
+    # with existing usage: (1) stops new JIT auto-provisioning, and (2) STOPS HONOURING
+    # the JIT-sourced tenant-wide GROUP_ADMIN rows already written for day-one users —
+    # those users genuinely become scoped (deny-by-default on shop-scoped calls).
+    # Deliberate operator grants (grant_source = 'OPERATOR', via /api/v1/staff/grant)
+    # and realm admins are honoured unchanged. Lockout safety: if de-honouring JIT rows
+    # would leave a tenant with zero GROUP_ADMINs, the OLDEST JIT admin is retained as a
+    # WARN-logged bootstrap admin — so flipping this flag can never lock a tenant out.
+    # Global flag for now; per-tenant granularity is deferred.
     strict-scoping: ${ACCESS_STRICT_SCOPING:false}
     # D-09: throttle window for the login-populated user_directory upsert. A
     # returning user whose row is younger than this interval is a no-op (never a
