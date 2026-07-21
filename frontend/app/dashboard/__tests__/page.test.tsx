@@ -153,8 +153,11 @@ describe('Dashboard Page', () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/shops?size=1')
+      // shops?size=100 (not size=1): the overview needs the shop NAMES to label the
+      // active shop-context, and totalElements still gives the group shop count.
+      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/shops?size=100')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/products?size=1')
+      // No shop selected in jsdom (empty localStorage) → order calls carry no ?shopId=.
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/customers?size=1')
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=10&sort=createdAt,desc')
