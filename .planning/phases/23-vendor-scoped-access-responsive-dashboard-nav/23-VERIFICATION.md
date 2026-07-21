@@ -1,212 +1,130 @@
 ---
 phase: 23-vendor-scoped-access-responsive-dashboard-nav
-verified: 2026-07-20T00:00:00Z
-status: gaps_found
-score: 3/5 roadmap success criteria verified (VSA-01, VSA-03, MOBL-01 pass; VSA-02, VSA-04 fail)
+verified: 2026-07-21T13:05:00Z
+status: human_needed
+score: 5/5 roadmap success criteria verified (automated proof); 1 human-verification item outstanding (live 375px/vendor-authenticated Playwright run)
 overrides_applied: 0
-gaps:
-  - truth: "VSA-02: application-layer enforcement denies-by-default for shop-scoped reads/writes without a valid grant (single-entity reads)"
-    status: failed
-    reason: >
-      @Cacheable on ShopService.getShopById / ProductService.getProductById wraps
-      the method with a cache key that has NO user component
-      (TenantAwareCacheKeyGenerator: "tenant:{tenantId}:{method}:{params}"), and
-      Spring's cache interceptor runs BEFORE the method body — so require() at
-      ShopService.java:100 / inside ProductService.getProductById:118 never
-      executes on a cache hit. Once ANY user in a tenant holds an explicit
-      per-shop grant (SHOP_MANAGER/STAFF on shop A), ShopAccessService's own
-      isGroupAdmin() logic (line 156-158: "Once a user holds ANY explicit grant,
-      they are scoped even under strict-scoping OFF") makes that user NOT an
-      implicit admin — so a legitimate require(shopB, STAFF) call for them
-      should deny. But if shop B was already cached (fetched earlier by any
-      other authorized caller, TTL 15min for shops / 10min for products), the
-      scoped user's request is served from cache with no gate check at all. This
-      is a LIVE bypass under the default (non-test) configuration, not a future
-      strict-scoping-ON concern — the executor SUMMARY's "no-op in the operative
-      default" framing is incorrect. Compounding: CacheConfig is
-      `@Profile("!test")`, and ShopAccessEnforcementIntegrationTest runs under
-      `@ActiveProfiles("test")` — the proving test cannot observe this bug class
-      by construction (green-by-construction blind spot). List/search paths
-      (getAllProducts, getAllShops, search) are NOT affected — they filter via
-      `findByShopIdIn(granted, ...)` at query time and are never cached.
-    artifacts:
-      - path: "core-java/src/main/java/uk/jtoye/core/shop/ShopService.java"
-        issue: "Line 92 @Cacheable(\"shops\") wraps getShopById; require() at line 100 runs only on cache miss"
-      - path: "core-java/src/main/java/uk/jtoye/core/product/ProductService.java"
-        issue: "Line 108 @Cacheable(\"products\") wraps getProductById; internal require() call runs only on cache miss"
-      - path: "core-java/src/main/java/uk/jtoye/core/config/TenantAwareCacheKeyGenerator.java"
-        issue: "Key format tenant:{tenantId}:{method}:{params} has no caller/user component — one authorized fetch poisons the cache for every other user in the tenant"
-      - path: "core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java"
-        issue: "@Profile(\"!test\") means the bug is live in dev/staging/prod but structurally invisible to the Testcontainers proof suite"
-    missing:
-      - "Move require()/grant check outside the @Cacheable boundary for getShopById/getProductById (gate in a non-cached wrapper, or cache only post-authorization per-caller), or fold caller scope into the cache key"
-      - "A Testcontainers proof with TWO DIFFERENT scoped users (not just a strict-scoping toggle) hitting the same already-cached shopId/productId, asserting the second (unauthorized) caller is denied"
-  - truth: "VSA-02: shop-scoped access enforcement covers all shop-scoped read surfaces, including realtime channels"
-    status: failed
-    reason: >
-      The STOMP kitchen topic /topic/kitchen/{tenantId}/{shopId} is validated by
-      TenantChannelInterceptor.validateSubscription, which checks ONLY the
-      tenantId path segment; the shopId segment is never checked against
-      ShopAccessService/grantedShopIds (zero references in that file). KDS
-      publishes to this topic (OrderStateChangeListener). 23-03 gated the SSE
-      fan-out for the same order/kitchen data, but STOMP is the real KDS
-      transport in production — any authenticated tenant user (any role, any
-      grant, or none) can subscribe to ANY shop's kitchen feed within their own
-      tenant, defeating the shop-scoping boundary for this channel entirely.
-    artifacts:
-      - path: "core-java/src/main/java/uk/jtoye/core/websocket/TenantChannelInterceptor.java"
-        issue: "validateSubscription checks only the tenantId segment of /topic/kitchen/{tenantId}/{shopId}; no shop-grant check"
-    missing:
-      - "Extend validateSubscription to parse the shopId segment and call ShopAccessService.require(shopId, ShopRole.STAFF) (or check membership in grantedShopIds()) before permitting the STOMP SUBSCRIBE frame"
-  - truth: "VSA-04: staff management screen and its /api/v1/staff backend are GROUP_ADMIN-only"
-    status: failed
-    reason: >
-      ShopAccessService.isSystemPrincipal() (lines 298-309) returns true — and
-      isGroupAdmin() (line 144) unconditionally trusts it as an implicit
-      GROUP_ADMIN — whenever the caller has no authenticated JWT principal OR
-      the JWT subject is not a UUID (a service/client-credentials token or a
-      scope-only test token). StaffController carries no @PreAuthorize or other
-      role restriction as a backstop; requireGroupAdmin() is the ONLY gate. A
-      bearer token with a non-UUID `sub` therefore gets unrestricted GROUP_ADMIN
-      on /api/v1/staff — full user_directory PII read plus the ability to
-      self-grant any role on any shop. This directly contradicts locked decision
-      D-04, which explicitly rejected fail-open behaviour as "unacceptable for
-      an auth boundary." The design comment on isSystemPrincipal() assumes such
-      callers are only trusted internal paths (schedulers/listeners with no JWT
-      at all); it does not distinguish that case from an externally-presented,
-      authenticated-but-non-UUID-subject JWT, which IS a real external caller on
-      a real HTTP endpoint.
-    artifacts:
-      - path: "core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java"
-        issue: "isSystemPrincipal() (lines 298-309) fail-opens any non-UUID-subject JWT to full GROUP_ADMIN via isGroupAdmin() (line 144)"
-      - path: "core-java/src/main/java/uk/jtoye/core/security/access/StaffController.java"
-        issue: "No @PreAuthorize/role check independent of ShopAccessService — entirely dependent on the flawed system-principal bypass for its authorization guarantee"
-    missing:
-      - "Distinguish 'no JWT principal at all' (true internal/scheduler caller) from 'authenticated JWT with a non-UUID subject' (external service/client-credentials token) — only the former should bypass shop-scoping; the latter must be denied by default on user-facing endpoints such as /api/v1/staff"
-      - "Add a test asserting a non-UUID-subject bearer token receives 403 on GET/POST/DELETE /api/v1/staff"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 3/5 roadmap success criteria verified (VSA-01, VSA-03, MOBL-01 pass; VSA-02, VSA-04 fail)
+  gaps_closed:
+    - "VSA-02: @Cacheable cache-hit bypass on ShopService.getShopById / ProductService.getProductById — require() ran only on cache miss (23-10)"
+    - "VSA-02: STOMP kitchen-topic subscription checked only the tenant segment, not the shop segment — any tenant user could subscribe to any shop's KDS feed (23-11)"
+    - "VSA-04: isSystemPrincipal() fail-opened any non-UUID-subject authenticated JWT to unrestricted GROUP_ADMIN on /api/v1/staff, with no independent backstop on StaffController (23-08)"
+  gaps_remaining: []
+  regressions: []
 human_verification:
-  - test: "23-06 and 23-07 screens (staff management, products/orders/marketing/kitchen shop-context narrowing) in a real browser at desktop and 375px"
-    expected: "No visual regression, narrowing behaves as coded, no occlusion"
-    why_human: "Only 23-05 (switcher + MOBL-01) was live browser-verified per the phase record; 23-06/23-07 were not — already-accepted per phase notes, restated here for completeness"
-    status: "already-accepted (not re-litigated); does not affect gaps_found status which is driven by the three bypasses above"
+  - test: "Live vendor-authenticated Playwright run of frontend/e2e/dashboard-mobile.spec.ts, both the 390px full-route sweep and the '375px — MOBL-01 + switcher regression' describe block, plus a manual /dashboard/staff grant/revoke click-through at 375px and desktop widths"
+    expected: "No horizontal overflow at 375px, sidebar hidden, tab bar + shop-context switcher visible and reachable (docScrollWidth <= viewportWidth+1, mainWidth >= 300); staff screen renders the directory/grant/revoke UI correctly and a grant/revoke round-trip behaves as coded (immediate unlock / immediate 403 on next request)"
+    why_human: "The Playwright spec requires a real Keycloak SSO login (E2E_VENDOR_PASSWORD); that credential and a rebuilt frontend container serving the current code were not available in this verification session. The Jest-level 375px assertion (dashboard-shell.test.tsx) passes but only checks Tailwind responsive classes (md:hidden, fixed) in jsdom — it does not measure actual viewport geometry (scrollWidth/overflow), which only the Playwright spec does. Per explicit instruction for this verification: an unexecuted Playwright spec is a human_verification item, not an automated pass, even though its Jest proxy is green."
 ---
 
 # Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav Verification Report
 
-**Phase Goal:** Establish a second authorization boundary INSIDE a tenant (Vendor→Shop), layered UNDER the untouched RLS tenant wall — VSA-01..04 + MOBL-01.
-**Verified:** 2026-07-20
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Phase Goal:** A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
+**Verified:** 2026-07-21
+**Status:** human_needed
+**Re-verification:** Yes — after gap-closure wave (plans 23-08..23-16), following a prior `gaps_found` verification dated 2026-07-20
+
+## Re-Verification Summary
+
+The prior verification (2026-07-20) found three concrete authorization bypasses that defeated VSA-02 and VSA-04 despite all surrounding artifacts being present and wired at the source level. This re-verification re-read every one of those exact code locations against the current HEAD (clean working tree, all gap-closure plans 23-08..23-16 committed) and **independently executed the proof suites fresh in this session** (not relying on SUMMARY.md claims or stale/cached Gradle results). All three gaps are closed with sound fixes; no regressions were found in the previously-passing criteria (VSA-01, VSA-03, MOBL-01).
 
 ## Goal Achievement
-
-### Observable Truths — 8 Concrete Code Claims
-
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | V52 migration: ENABLE+FORCE RLS on shop_staff/shop_staff_aud/user_directory, routed via `current_tenant_id()`, no raw `::uuid` cast | VERIFIED | `core-java/src/main/resources/db/migration/V52__shop_staff.sql` — all 3 tables ENABLE+FORCE RLS, all policies use `current_tenant_id()` (V51 safe helper), zero raw casts |
-| 2 | ShopAccessService exposes require()/isGroupAdmin()/grantedShopIds()/evictMembership(); strict-scoping config-injected default OFF | VERIFIED (with caveat) | `ShopAccessService.java` — all 4 methods present; `@Value("${jtoye.access.strict-scoping:false}")` at line 74-75, config-injected not hardcoded. Caveat: `isSystemPrincipal()` design flaw — see VSA-04 gap |
-| 3 | require()/grant-set gate present in ShopService, ProductService, OrderService, OrderSseService, PromotionService, AnnouncementService, BulkImportService | VERIFIED | Confirmed via grep in all 7 files — 12/12/14/2/6/6/3 call sites respectively, covering create/update/delete/list/transition paths |
-| 4 | ShopAccessDeniedException→403, LastGroupAdminException→409 registered, 403 `type` distinct from RLS/not-found type | VERIFIED | `GlobalExceptionHandler.java`: `.../errors/shop-access-denied` (403) vs `.../errors/not-found` (404) vs `.../errors/forbidden` (generic 403) vs `.../errors/last-group-admin` (409) — all 4 types distinct |
-| 5 | StaffManagementService enforces GROUP_ADMIN, guards last GROUP_ADMIN (409), calls evictMembership after grant/revoke | VERIFIED (artifact); FAILS as a security boundary — see VSA-04 gap | `StaffManagementService.java` — `requireGroupAdmin()` at top of list/grant/revoke; `wouldDowngradeLastGroupAdmin` + `countByTenantIdAndRole` guard; `evictAfterCommit` registers post-commit eviction. The *code* does what it says; the gate it relies on (`isGroupAdmin()`/`isSystemPrincipal()`) fail-opens for non-UUID-subject tokens |
-| 6 | shop-context.ts exports get/set/subscribe, dispatches 'shopcontext:change'; shop-switcher.tsx gates "apply to all" on GROUP_ADMIN AND "all" context in same guard | VERIFIED | `frontend/lib/shop-context.ts` — all 3 exports present, `dispatchEvent(new Event("shopcontext:change"))`. `shop-switcher.tsx:149` — single guard `isGroupAdmin && selected === ALL_SHOPS_CONTEXT` |
-| 7 | use-shop-context.ts exists, consumed by products/orders/marketing/kitchen page.tsx | VERIFIED | All four `page.tsx` files import and call `useShopContext()` |
-| 8 | /dashboard/staff page + Staff nav item in sidebar.tsx | VERIFIED | `frontend/app/dashboard/staff/page.tsx` exists; `sidebar.tsx:44` — `{ name: "Staff", href: "/dashboard/staff", icon: UserCog }` |
-
-**Score:** 8/8 concrete artifact-level claims verified as EXISTING and WIRED at the code-shape level. However, three of these artifacts (2, 3/list-vs-single-read split, 5) do not deliver the security *behaviour* they're wired to provide — see Gaps below.
 
 ### Roadmap Success Criteria
 
 | # | Truth (roadmap SC) | Status | Evidence |
 |---|------|--------|----------|
-| 1 | VSA-01: shop_staff mapping table, RLS-proven | VERIFIED | V52 migration sound (see claim 1); backfill correctly deferred to JIT provision per D-04 (documented, not a gap) |
-| 2 | VSA-02: application-layer enforcement, deny-by-default for shop-scoped reads/writes | **FAILED** | Gate code exists at every write path and every list/search path (sound), BUT three concrete bypasses defeat "deny-by-default": (a) `@Cacheable` short-circuits `require()` on getShopById/getProductById cache hits, live in default config; (b) STOMP kitchen topic subscription checks tenant only, not shop — any tenant user reads any shop's KDS feed; (c) see VSA-04 — the same gate underpins VSA-02's `requireGroupAdmin()` path used elsewhere too |
-| 3 | VSA-03: shop-context switcher, all shop-scoped screens operate on it, "apply to all" GROUP_ADMIN-gated | VERIFIED | Switcher + `useShopContext()` wired into all 4 shop-scoped screens; single-guard "apply to all"; **live-verified in browser** (23-05 SUMMARY: desktop + 375px screenshots, passing Playwright 375px case) |
-| 4 | VSA-04: staff management screen — list/grant/revoke, GROUP_ADMIN only | **FAILED** | `StaffManagementService` code is internally correct (idempotent grant, last-admin guard, cache eviction), but its sole gate (`requireGroupAdmin()` → `isGroupAdmin()` → `isSystemPrincipal()`) fail-opens to full GROUP_ADMIN for any JWT with a non-UUID subject, with no `@PreAuthorize` backstop on `StaffController`. Contradicts locked decision D-04 (fail-open explicitly rejected) |
-| 5 | MOBL-01: sidebar no longer overlays at 375px | VERIFIED | `frontend/e2e/dashboard-mobile.spec.ts` — 375px viewport test asserts no horizontal overflow, sidebar hidden, tab bar + switcher visible; **live-verified in browser** (23-05) |
+| 1 | VSA-01: shop_staff mapping table, RLS-proven under NOSUPERUSER, realm-admin implicit GROUP_ADMIN, zero day-one regression | ✓ VERIFIED (regression check — unchanged since prior pass) | `V52__shop_staff.sql` — ENABLE+FORCE RLS on all 3 tables, routed through the safe `current_tenant_id()` helper, zero raw `::uuid` casts (confirmed by re-reading the file). `RlsContractTest` is a generic `pg_policy`/`pg_class` sweep (not table-enumerated), so it auto-covers `shop_staff`/`shop_staff_aud`/`user_directory`. Fresh execution this session: `ShopStaffRlsPolicyIntegrationTest` 3/3 green (13:00:38), `ShopAccessJitProvisionTest` 4/4 green (13:00:32) — includes `jitProvisionIsIdempotentUnderConcurrentFirstRequests` and `realmAdminIsImplicitGroupAdminWithoutAnyRow`. |
+| 2 | VSA-02: application-layer enforcement, deny-by-default for shop-scoped reads/writes, distinct 403 | ✓ VERIFIED (previously FAILED — now closed) | **Cache-bypass fix (CR-01, plan 23-10):** `ShopService.getShopById`/`ProductService.getProductById` now call `shopAccessService.require(...)` directly in the service method, on *every* invocation, and only then delegate to a separate `@Component` cache-loader bean (`ShopCacheLoader`/`ProductCacheLoader`) for the actual cached fetch — confirmed by reading the current source (ShopService.java:104-111, 348-369; ProductService.java:118-135, 377-405). The gate can no longer be short-circuited by a cache hit. `ShopAccessCacheBypassIntegrationTest` proves this with two genuinely different scoped users (userX on shop A populates the cache; userY on shop B is denied reading the same warm cache entry) — fresh run this session: 5/5 green (13:57:38), including `warmCacheDoesNotBypassShopGate`, `warmCacheDoesNotBypassProductGate`, and `authorizedCallerStillServedFromCache` (proves the fix didn't break the caching performance good). **STOMP fix (CR-02, plan 23-11):** `TenantChannelInterceptor.validateSubscription` now parses the kitchen topic's shop segment (`parts[4]`) and calls the new explicit-identity `ShopAccessService.canAccessShop(tenantId, userId, realmAdmin, shopId)` before permitting a kitchen SUBSCRIBE — confirmed by reading the current source (lines 147-216). `TenantChannelInterceptorTest` fresh run: 28/28 green, including `shouldRejectSubscriptionToUngrantedShop`/`shouldAllowSubscriptionToGrantedShop`/`shouldRejectMalformedShopSegment`. `ShopAccessEnforcementIntegrationTest` (cross-shop 403, STAFF read-only, read-scope narrowing, 403≠404 type) fresh run: 12/12 green (13:00:13). |
+| 3 | VSA-03: persisted shop-context switcher, all shop-scoped screens operate on selected shop, "apply to all" GROUP_ADMIN-only | ✓ VERIFIED (regression check — unchanged since prior pass) | `shop-context.ts`/`use-shop-context.ts`/`shop-switcher.tsx`/`shop-switcher-provider.tsx` re-read: single-guard `isGroupAdmin && selected === ALL_SHOPS_CONTEXT` for "apply to all" (shop-switcher.tsx:126), server-authoritative `isGroupAdmin` sourced from `GET /api/v1/staff/me` (CR-08 fix, 23-12/23-13) rather than a client-side realm-role guess. Products/orders/marketing/kitchen `page.tsx` all consume `useShopContext()`. Fresh Jest run this session: 157/157 green across `components/dashboard app/dashboard hooks` (one transient cross-suite flake on `marketing-kitchen-shop-scope.test.tsx` reproduced as a false-red under concurrent CPU load from a parallel Gradle run — reran clean twice, isolated run also clean; not a code defect). **Known, disclosed, non-blocking caveat (WR-04, unchanged since 23-07/23-15):** products/marketing screens narrow the already server-scoped list *client-side* over a single server-paginated page — a genuine pagination-correctness limitation (not a security bypass; the underlying set is already grant-scoped server-side) — tracked in `deferred-items.md`, not re-litigated here. |
+| 4 | VSA-04: GROUP_ADMIN can list/grant/revoke staff roles per shop; grant unlocks immediately, revoke 403s immediately | ✓ VERIFIED (previously FAILED — now closed) | **System-principal fail-open fix (CR-03, plan 23-08):** the old `isSystemPrincipal()` (which fail-opened any non-UUID-subject JWT to unrestricted GROUP_ADMIN) is **removed**. `ShopAccessService.isGroupAdmin()` (lines 229-244) now composes `isRealmAdmin() \|\| isInternalCaller()` (true ONLY when `Authentication == null` on the thread — the narrow, non-externally-reachable internal bypass) `\|\| isDeclaredMachineClient(jwt)` (explicit, empty-by-default allowlist keyed on `azp`/`client_id`) — every other authenticated-but-unparseable-identity request is denied via `requireVendorUserId()` throwing the typed `ShopAccessDeniedException` (403), confirmed by reading the current source end-to-end. `StaffController` still has no independent `@PreAuthorize` (deferred to #206 per `deferred-items.md`, and D-10 explicitly forbids the `hasRole('admin')` form since it would exclude a non-realm-admin tenant GROUP_ADMIN) — this is now an accepted, disclosed design choice resting on a genuinely fail-closed `ShopAccessService`, not a live bypass. `ShopAccessFailClosedIntegrationTest` fresh run: 7/7 green (12:58:36), including `nonUuidSubjectIsDeniedOnStaffList` and the CR-04 null-shop 403-not-500 cases. `StaffManagementIntegrationTest` fresh run: 19/19 green (12:58:43), including `revokingLastGroupAdminIsBlockedWith409`, `concurrentRevokesCannotEmptyTheTenantOfGroupAdmins` (real `ExecutorService`/`CountDownLatch` concurrency proof), `grantGivesAccess_thenRevokeProduces403`, and the CR-08 `/me` + WR-05 grant-validation cases. `StrictScopingTighteningIntegrationTest` fresh run: 5/5 green (13:01:28) — proves the strict-scoping tightening genuinely de-honours JIT-sourced tenant-wide admin while honouring operator grants and the oldest-JIT bootstrap. |
+| 5 | MOBL-01: sidebar no longer overlays content at 375px, verified by a 375px Jest/Playwright viewport spec | ⚠️ AUTOMATED PROOF GREEN, LIVE-BROWSER PROOF NOT EXECUTED | `frontend/e2e/dashboard-mobile.spec.ts` contains a dedicated `describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression")` block asserting `docScrollWidth <= viewportWidth + 1`, sidebar hidden, tab bar + switcher visible. This spec requires a REAL Keycloak vendor login (`E2E_VENDOR_PASSWORD`), which is not available in this session, and a frontend rebuild to serve current code on port 3000/3100 — the spec was NOT run live. The Jest-level proxy (`dashboard-shell.test.tsx` — "mounts the shop-context switcher in the md:hidden mobile top bar (375px chrome, MOBL-01)") passes (verified fresh this session, 157/157), but jsdom has no real viewport geometry: it only asserts the `md:hidden`/`fixed` Tailwind classes are present on the right elements, not that the document actually fits 375px without overflow. Per the phase's own `23-VALIDATION.md` and `deferred-items.md`, this exact gap (live Playwright run env-deferred) has been carried and disclosed since 23-05/23-07/23-13/23-15 — it is not new. **Escalated here as a human_verification item rather than silently accepted as PASSED**, per the honesty standard for this re-verification. |
 
-**Score:** 3/5 roadmap success criteria verified.
+**Score:** 5/5 roadmap success criteria have sound, independently-re-executed automated proof at the code and Testcontainers/Jest level. One (MOBL-01) additionally requires a live-browser confirmation that could not be run in this session — hence `human_needed`, not `passed`.
 
-### Required Artifacts
+### Fresh Test Execution (this verification session, NOT prior-session cache)
+
+All of the following were re-run from a clean state (`--rerun` where noted, or a first invocation with no prior same-session cache) against the current, clean HEAD (`0f01b32`) during this verification:
+
+| Suite | Command | Result | Timestamp (fresh) |
+|---|---|---|---|
+| `TenantChannelInterceptorTest` | `./gradlew :core-java:test --tests "*TenantChannelInterceptorTest" --rerun` | 28/28 green | this session |
+| `ShopAccessErrorTypeTest` | same invocation | green | this session |
+| `ShopAccessCacheBypassIntegrationTest` | `./gradlew :core-java:integrationTest --tests "*ShopAccessCacheBypassIntegrationTest" --rerun` | 5/5 green | 2026-07-21T12:57:38 |
+| `ShopAccessFailClosedIntegrationTest` | `./gradlew :core-java:integrationTest --tests "*ShopAccessFailClosedIntegrationTest" --tests "*StaffManagementIntegrationTest" --rerun` | 7/7 green | 2026-07-21T12:58:36 |
+| `StaffManagementIntegrationTest` | same invocation | 19/19 green | 2026-07-21T12:58:43 |
+| `StrictScopingTighteningIntegrationTest` | `./gradlew :core-java:integrationTest --tests "*StrictScopingTighteningIntegrationTest" --tests "*ShopAccessEnforcementIntegrationTest" --tests "*ShopStaffRlsPolicyIntegrationTest" --tests "*ShopAccessJitProvisionTest" --rerun` | 5/5 green | 2026-07-21T13:01:28 |
+| `ShopAccessEnforcementIntegrationTest` | same invocation | 12/12 green | 2026-07-21T13:00:13 |
+| `ShopStaffRlsPolicyIntegrationTest` | same invocation | 3/3 green | 2026-07-21T13:00:38 |
+| `ShopAccessJitProvisionTest` | same invocation | 4/4 green | 2026-07-21T13:00:32 |
+| Frontend Jest (`components/dashboard app/dashboard hooks`) | `npx jest components/dashboard app/dashboard hooks` | 157/157 green (2 consecutive runs; 1 transient cross-suite flake under concurrent Gradle CPU load, reproduced-clean on isolation and on rerun) | this session |
+| Frontend TypeScript build | `npm run build` | Compiled + typechecked clean, `/dashboard/staff` route present | this session |
+
+A full 7-class `--rerun` invocation was also attempted but exceeded a 590s timeout (fresh Testcontainers + full Spring context boot per class, ~7 classes, no incremental caching) and was killed (exit 143) partway through — superseded by the smaller, complete, fresh sub-runs above, which cover every one of the same 8 proof classes individually with 0 failures. This is disclosed for transparency, not hidden.
+
+**Not independently re-run this session (regression risk judged low, unchanged code path):** the full `:core-java:integrationTest` task (331 tests) and the remaining ~320 non-Phase-23 test classes — the 23-16 SUMMARY's "331 tests, 0 failed" claim was **not** re-executed in full here; the fresh, scoped runs above cover every Phase-23-specific proof class directly. `docs/api/openapi-snapshot.json` / `docs-freshness` counts were not independently re-verified numerically (no code-behaviour risk).
+
+### Required Artifacts (regression + gap-closure re-check)
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `core-java/.../db/migration/V52__shop_staff.sql` | shop_staff/_aud/user_directory, RLS | VERIFIED | Sound RLS shape, safe helper, no raw cast |
-| `core-java/.../security/access/ShopAccessService.java` | require/isGroupAdmin/grantedShopIds/evictMembership | VERIFIED, WIRED | Design flaw in `isSystemPrincipal()` (see gap 3) |
-| `core-java/.../security/access/StaffManagementService.java` | GROUP_ADMIN-gated staff CRUD | VERIFIED, WIRED | Gate itself is compromised by ShopAccessService flaw |
-| `core-java/.../exception/{ShopAccessDeniedException,LastGroupAdminException}.java` + handler | 403/409 distinct types | VERIFIED, WIRED | Confirmed distinct `type` URIs |
-| `core-java/.../shop/ShopService.java`, `.../product/ProductService.java` (single-read paths) | deny-by-default getShopById/getProductById | ⚠️ HOLLOW | `require()` present in source but bypassed by `@Cacheable` on cache hit (gap 1) |
-| `core-java/.../websocket/TenantChannelInterceptor.java` | shop-scoped STOMP subscription | ⚠️ MISSING SHOP CHECK | Tenant-only check; shopId segment unchecked (gap 2) |
-| `frontend/lib/shop-context.ts`, `hooks/use-shop-context.ts`, `components/dashboard/shop-switcher.tsx` | switcher + persistence + hook | VERIFIED, WIRED, DATA-FLOWING | Live-verified 23-05 |
-| `frontend/app/dashboard/staff/page.tsx` + sidebar nav | staff management UI | VERIFIED, WIRED | Not browser-verified (23-06, already-accepted gap) |
+| `core-java/.../db/migration/V52__shop_staff.sql`, `V57__shop_staff_grant_source.sql` | shop_staff/_aud/user_directory RLS + provenance column | VERIFIED | Unchanged sound RLS shape; V57 adds `grant_source` (JIT/OPERATOR) for CR-07 |
+| `core-java/.../security/access/ShopAccessService.java` | require/isGroupAdmin/grantedShopIds/evictMembership, fail-closed | VERIFIED, WIRED | `isSystemPrincipal()` removed; replaced with the fail-closed `isRealmAdmin() \|\| isInternalCaller() \|\| isDeclaredMachineClient()` ladder feeding `requireVendorUserId()`'s typed-403 default-deny |
+| `core-java/.../security/access/StaffManagementService.java` + `StaffController.java` | GROUP_ADMIN-gated staff CRUD | VERIFIED, WIRED | Gate (`requireGroupAdmin()`) is now backed by a genuinely fail-closed `ShopAccessService`; no `@PreAuthorize` backstop (disclosed, deferred to #206, not a live gap) |
+| `core-java/.../shop/ShopService.java` + `ShopCacheLoader`, `.../product/ProductService.java` + `ProductCacheLoader` | deny-by-default single-read paths, cache-hit-safe | VERIFIED, WIRED | `require()` runs on every call, outside the `@Cacheable` boundary (relocated to a separate loader bean) |
+| `core-java/.../websocket/TenantChannelInterceptor.java` | shop-scoped STOMP subscription | VERIFIED, WIRED | `validateShopSubscription` now grant-checks the kitchen topic's shop segment via the explicit-identity `canAccessShop` |
+| `frontend/lib/shop-context.ts`, `hooks/use-shop-context.ts`, `components/dashboard/shop-switcher.tsx`, `shop-switcher-provider.tsx` | switcher + persistence + server-authoritative hook | VERIFIED, WIRED, DATA-FLOWING | Unchanged from prior pass; `isGroupAdmin` now server-sourced (CR-08) |
+| `frontend/app/dashboard/staff/page.tsx` + sidebar nav | staff management UI | VERIFIED, WIRED | `npm run build` confirms the route compiles; self-identification via server `sub` (WR-12), not an email guess |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| ShopService/ProductService/OrderService/etc. | ShopAccessService | `require()`/`grantedShopIds()` calls | WIRED (source-level) | Present at every mutating and list/search call site |
-| ShopService.getShopById / ProductService.getProductById | ShopAccessService.require() | `@Cacheable` method body | **NOT ENFORCED on cache hit** | Cache interceptor runs before body; gap 1 |
-| STOMP SUBSCRIBE /topic/kitchen/{tenantId}/{shopId} | ShopAccessService | TenantChannelInterceptor | **NOT WIRED (shopId unchecked)** | gap 2 |
-| StaffController | ShopAccessService.requireGroupAdmin() | direct call, no @PreAuthorize backstop | **PARTIAL — fails open for non-UUID JWT subjects** | gap 3 |
-| shop-switcher.tsx / page.tsx x4 | use-shop-context.ts / shop-context.ts | import + hook call | WIRED, DATA-FLOWING | Live-verified |
-| sidebar.tsx | /dashboard/staff | nav item | WIRED | Confirmed |
+| ShopService/ProductService single-read paths | ShopAccessService.require() | direct call, outside `@Cacheable` | WIRED, cache-hit-safe | Fresh `ShopAccessCacheBypassIntegrationTest` proof with two different users |
+| STOMP SUBSCRIBE `/topic/kitchen/{tenantId}/{shopId}` | ShopAccessService.canAccessShop() | explicit-identity call from `TenantChannelInterceptor` | WIRED | Fresh `TenantChannelInterceptorTest` + `StrictScopingTighteningIntegrationTest.stompLadder_tightensToo` |
+| StaffController | ShopAccessService.requireGroupAdmin() → isGroupAdmin() | direct call, no `@PreAuthorize` backstop | WIRED, fail-closed | `isGroupAdmin()` no longer trusts unparseable identity; fresh `ShopAccessFailClosedIntegrationTest` |
+| shop-switcher.tsx / page.tsx x4 | use-shop-context.ts / shop-context.ts | import + hook call | WIRED, DATA-FLOWING | Unchanged, regression-checked |
+| ShopSwitcherProvider | `GET /api/v1/staff/me` (MyAccessDto) | `fetchMyShops()` | WIRED, DATA-FLOWING | Server-authoritative `isGroupAdmin`/`grantedShopIds`, resolves the CR-08 empty-set-sentinel ambiguity explicitly (null=unrestricted vs empty=no-access) |
 
 ### Requirements Coverage
 
-| Requirement | Source Plan | Description | Status | Evidence |
-|---|---|---|---|---|
-| VSA-01 | 23-01, 23-02 | shop_staff mapping table (V52) | SATISFIED | V52 migration sound |
-| VSA-02 | 23-02, 23-03 | Application-layer enforcement, deny-by-default | **BLOCKED** | Cache bypass + STOMP bypass defeat deny-by-default guarantee |
-| VSA-03 | 23-05, 23-07 | Dashboard shop-context switcher | SATISFIED | Live-verified, correctly gated |
-| VSA-04 | 23-04, 23-06 | Staff management screen, GROUP_ADMIN only | **BLOCKED** | System-principal fail-open (gap 3) defeats the GROUP_ADMIN-only guarantee |
-| MOBL-01 | 23-05, 23-06 | Sidebar no occlusion at 375px | SATISFIED | Live-verified Playwright 375px test |
+| Requirement | Source Plans (all declared, cross-checked against REQUIREMENTS.md) | Status | Evidence |
+|---|---|---|---|
+| VSA-01 | 23-01, 23-02 | SATISFIED | Fresh RLS + JIT proofs green |
+| VSA-02 | 23-02, 23-03, 23-08, 23-10, 23-11, 23-14, 23-16 | SATISFIED (previously BLOCKED) | Cache-bypass + STOMP fixes confirmed by direct code read + fresh two-user/mocked proofs |
+| VSA-03 | 23-05, 23-07 | SATISFIED | Unchanged; WR-04 pagination caveat disclosed, non-blocking |
+| VSA-04 | 23-04, 23-06, 23-08, 23-09, 23-12, 23-13, 23-14 | SATISFIED (previously BLOCKED) | System-principal fail-open fixed and fresh-proven; last-GROUP_ADMIN + concurrency guard fresh-proven |
+| MOBL-01 | 23-05, 23-06 | AUTOMATED-SATISFIED / LIVE-VERIFICATION OUTSTANDING | Jest proxy green; Playwright 375px live run env-deferred (human_verification) |
 
-**REQUIREMENTS.md currently marks VSA-02 and VSA-04 as "Complete."** This is **not supported by the evidence** above and should be corrected to reflect the open gaps (e.g. "In Progress — bypasses found in verification") until the three findings are closed.
-
-### Data-Flow Trace (Level 4) — relevant slice
-
-| Artifact | Data Variable | Source | Produces Real Data | Status |
-|---|---|---|---|---|
-| `useShopContext()` consumers (products/orders/marketing/kitchen) | `contextShopId` | `localStorage` via `shop-context.ts`, hydrated post-mount | Yes, real user selection | ✓ FLOWING |
-| `getAllProducts`/`getAllShops` list paths | `granted` (Set<UUID>) | `ShopAccessService.grantedShopIds()` → DB query `findByShopIdIn` | Yes, real query-time scoping | ✓ FLOWING |
-| `getShopById`/`getProductById` single reads | cached `ShopDto`/`ProductDto` | Redis cache keyed without caller identity | Real data, but **wrong caller** can receive it | ⚠️ HOLLOW GATE (data is real, but authorization decision is skipped) |
+No orphaned requirements: every plan's `requirements:` frontmatter field (16 plans checked) maps to one of VSA-01..04/MOBL-01, and REQUIREMENTS.md's Phase 23 row set (VSA-01..04, MOBL-01) has no entries missing plan coverage.
 
 ### Anti-Patterns Found
 
-No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` debt markers found in the phase's core new files (`ShopAccessService.java`, `StaffManagementService.java`, `shop-context.ts`, `use-shop-context.ts`, `shop-switcher.tsx`, `staff/page.tsx`). The three findings below are **logic/authorization defects**, not code-smell markers, and are treated as gaps rather than anti-pattern findings:
+Swept all core gap-closure files (`ShopAccessService.java`, `StaffManagementService.java`, `StaffController.java`, `TenantChannelInterceptor.java`, `ShopService.java`, `ProductService.java`, `staff/page.tsx`, `shop-switcher.tsx`, `shop-switcher-provider.tsx`, `dashboard-shell.tsx`, `shop-context.ts`, `staff-api.ts`) for `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` — **zero matches**. No blocker-level anti-patterns found.
 
-| File | Line | Pattern | Severity | Impact |
-|---|---|---|---|---|
-| `core-java/.../shop/ShopService.java` | 92-100 | `@Cacheable` ahead of `require()` | 🛑 Blocker | Cache-hit bypass of shop-scope gate |
-| `core-java/.../product/ProductService.java` | 108-118 | Same pattern | 🛑 Blocker | Same |
-| `core-java/.../websocket/TenantChannelInterceptor.java` | validateSubscription | Tenant-only check, shopId segment unchecked | 🛑 Blocker | Cross-shop KDS feed leak within tenant |
-| `core-java/.../security/access/ShopAccessService.java` | 298-309 | `isSystemPrincipal()` fail-open on non-UUID JWT subject | 🛑 Blocker | Unrestricted GROUP_ADMIN for non-UUID-subject tokens on `/api/v1/staff` |
+### Known, Already-Accepted / Disclosed Items (not re-litigated as gaps)
 
-### Known, Already-Accepted Items (not re-litigated, recorded for completeness)
+- **WR-04** — products/marketing screens narrow client-side over a single server-paginated page (pagination correctness, not a security bypass). Disclosed in `deferred-items.md`, tracked for its own future plan.
+- **`@PreAuthorize` backstop on `StaffController`** — deferred to issue #206 (scoped credentials); D-10 explicitly forbids the naive `hasRole('admin')` form. No longer load-bearing for the fail-closed guarantee now that `ShopAccessService.isGroupAdmin()` itself is fail-closed.
+- **`asSystem()` marker for the retained `auth == null` internal bypass** — narrow, non-externally-reachable (Spring Security 401s before any gated service on an unauthenticated request); deferred as a larger refactor.
+- **IN-01** — `fetchMyShops` hard-codes `size=200`; no known tenant exceeds this. Confirmed present in `frontend/lib/shops-api.ts:65`.
+- **OpenAPI snapshot / docs-freshness counts** — reported RESOLVED in `deferred-items.md` (23-15, commit `adc1c58`); not independently re-verified numerically in this session (no behavioural risk).
 
-- **CI blocker (pre-existing, not new):** `docs/api/openapi-snapshot.json` lacks the 3 `/api/v1/staff` endpoints (confirmed: `grep -c "staff"` on the snapshot returns 0). `OpenApiSnapshotTest` will fail in `integrationTest` until `./gradlew :core-java:updateOpenApiSnapshot` is run and the diff committed. Documented as a known open item in `deferred-items.md` (23-06 entry) — could not be executed under the low-footprint/no-Docker execution constraint.
-- **No SECURITY.md yet** — `security_enforcement=true` on this phase means `/gsd:secure-phase 23` is still pending. Given the three findings in this report, that step is now load-bearing, not optional.
-- **23-06/23-07 screens not browser-verified** — only 23-05 (switcher + MOBL-01) had live desktop/375px screenshots and a passing Playwright 375px case. This was already recorded as an accepted gap in the phase's own SUMMARYs and is not escalated further here.
+## Human Verification Required
 
-### What Is Genuinely Sound (do not re-litigate in gap-closure)
+### 1. Live vendor-authenticated Playwright 375px + staff-screen click-through
 
-- **V52 RLS shape** — ENABLE+FORCE RLS, routed through the safe `current_tenant_id()` helper, zero raw `::uuid` casts, correct Envers `_aud` mirror shape, `user_directory` FORCE RLS load-bearing for PII. Solid.
-- **Typed-error distinctness** — `shop-access-denied` (403) / `not-found` (404) / `forbidden` (403 generic) / `last-group-admin` (409) are four genuinely distinct RFC 7807 `type` URIs; the tenant-boundary signal is not blurred with the in-tenant shop gate.
-- **Query-level read-scoping on list/search paths** — `getAllProducts`, `getAllShops`, `search` all filter via `findByShopIdIn(granted, ...)` at the SQL layer, not client-side. This is real, unaffected by the cache bypass (lists are never `@Cacheable`), and the 23-07 client-side re-narrowing on top of it is genuinely cosmetic (cannot widen the already-authorized set) — that specific claim in the 23-07 SUMMARY is accurate.
-- **Frontend switcher + hook wiring** — `shop-context.ts`, `use-shop-context.ts`, `shop-switcher.tsx`, and all four consuming `page.tsx` files are correctly wired, with the "apply to all" affordance correctly single-guarded on `isGroupAdmin && selected === ALL_SHOPS_CONTEXT`.
-- **MOBL-01** — the 375px responsive nav is real, live-tested, and does not occlude content; this was the one surface in the phase that received full live-browser verification.
+**Test:** Set `E2E_VENDOR_PASSWORD`, rebuild the frontend container to serve current code, then run `cd frontend && npx playwright test dashboard-mobile.spec` (both the 390px sweep and the 375px MOBL-01 describe block) and manually click through `/dashboard/staff` grant → revoke on a real vendor session at both desktop and 375px widths.
+**Expected:** No horizontal overflow at 375px (`docScrollWidth <= viewportWidth + 1`), sidebar hidden, tab bar + shop switcher visible and reachable; staff screen renders correctly and a grant/revoke round-trip behaves as coded (immediate unlock, immediate 403 on next request after revoke).
+**Why human:** Requires a real Keycloak SSO login not available in this session; the Jest-level 375px assertion is a Tailwind-class proxy in jsdom, not an actual viewport-geometry measurement.
 
 ## Gaps Summary
 
-Three concrete authorization bypasses were found in code that a parallel review flagged and this verification independently confirmed by reading the exact lines cited:
-
-1. **Cache-hit bypass (VSA-02).** `@Cacheable` on `getShopById`/`getProductById` runs before `require()` can execute; the cache key has no user component, so one user's authorized read poisons the cache for every other user in the tenant for up to 10-15 minutes. This is live in the default (non-test) profile — not a "future strict-scoping-ON" concern as the phase's own SUMMARY claimed. The proving Testcontainers suite runs under the `test` profile, where caching is disabled by `@Profile("!test")`, so it structurally cannot catch this bug class.
-2. **STOMP kitchen-topic bypass (VSA-02).** `TenantChannelInterceptor` checks only the tenant segment of the KDS topic path; any tenant user can subscribe to any shop's kitchen feed regardless of shop_staff grants, even though the equivalent SSE path was correctly gated in 23-03.
-3. **System-principal fail-open (VSA-04).** `isSystemPrincipal()` treats any JWT with a non-UUID subject as a trusted internal caller and grants it unconditional GROUP_ADMIN, with `StaffController` carrying no independent `@PreAuthorize` backstop — contradicting the phase's own locked decision D-04 that fail-open is unacceptable for this boundary.
-
-All three are BLOCKER-level: they defeat the core promise of VSA-02 (deny-by-default enforcement) and VSA-04 (GROUP_ADMIN-only staff management) respectively, even though the surrounding artifacts (services, DTOs, migration, exception types) are all present, substantive, and correctly wired at the source level. REQUIREMENTS.md's "Complete" marking for VSA-02 and VSA-04 should be corrected pending fixes. VSA-01, VSA-03, and MOBL-01 are genuinely achieved and should not be re-opened by the gap-closure plan.
+None outstanding. All three concrete bypasses identified in the 2026-07-20 verification (`@Cacheable` cache-hit bypass on shop/product single-reads; STOMP kitchen-topic shop-segment omission; `isSystemPrincipal()` fail-open on non-UUID JWT subjects) are closed with sound, narrowly-targeted fixes, each independently re-confirmed in this session by (a) direct re-reading of the exact previously-cited code locations against current HEAD, and (b) fresh (not cached, not SUMMARY-trusted) execution of the named proof test suites, all green. VSA-01, VSA-03 show no regression. MOBL-01's automated (Jest) proof is green but its Playwright live-browser proof remains environmentally deferred — surfaced here as a human-verification item per the explicit anti-false-green standard for this phase, not silently accepted as a pass.
 
 ---
 
-_Verified: 2026-07-20_
+_Verified: 2026-07-21_
 _Verifier: Claude (gsd-verifier)_
