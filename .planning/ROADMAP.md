@@ -182,7 +182,7 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
 
 **Gap Wave 4** *(blocked on 23-08 + 23-09 + 23-11 + 23-13)*
 
-- [ ] 23-14-PLAN.md (Gap Wave 4) — **CR-07 design correction, revises locked D-04/D-12/D-05** (blocking decision checkpoint): enabling `strict-scoping` currently tightens nothing because JIT already wrote permanent GROUP_ADMIN rows for everyone. V57 grant provenance + strict-ON de-honours JIT rows with a deterministic bootstrap admin; + WR-09 machine accounts, WR-01/WR-11 membership cache made real with proven post-commit eviction. [VSA-02, VSA-04]
+- [x] 23-14-PLAN.md (Gap Wave 4) — **CR-07 design correction, revises locked D-04/D-12/D-05** (blocking decision checkpoint): enabling `strict-scoping` currently tightens nothing because JIT already wrote permanent GROUP_ADMIN rows for everyone. V57 grant provenance + strict-ON de-honours JIT rows with a deterministic bootstrap admin; + WR-09 machine accounts, WR-01/WR-11 membership cache made real with proven post-commit eviction. [VSA-02, VSA-04]
 
 **Gap Wave 5** *(blocked on all)*
 
@@ -262,7 +262,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 13/15 | In Progress|  |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 14/15 | In Progress|  |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
