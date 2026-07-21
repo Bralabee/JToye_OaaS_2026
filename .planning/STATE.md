@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 23-16-PLAN.md — gap-closure legacy integration auth migration; full :core-java:integrationTest now GREEN (331 tests, 0 failed)
-last_updated: "2026-07-21T12:16:42Z"
-last_activity: 2026-07-21 -- Executed gap plan 23-16 (migrated 7 legacy @WithMockUser/non-UUID-.jwt() classes → integrationTest 0 failures; 23-15 reconcile unblocked)
+stopped_at: Completed 23-15-PLAN.md (Tasks 2-3) — phase-gate docs/OpenAPI + count reconcile over a green suite + planning-record reconcile; VSA-02/VSA-04 marked complete. Phase 23 gap-closure wave DONE; awaits /gsd:secure-phase 23 + /gsd:verify-work.
+last_updated: "2026-07-21T13:40:00Z"
+last_activity: 2026-07-21 -- Executed 23-15 Tasks 2-3 (metrics 1511→1573 / schema 56→57, CLAUDE.md+AGENTS.md counts, docs-freshness EXIT 0; REQUIREMENTS/23-VALIDATION/23-CONTEXT/deferred-items reconciled; VSA-02+VSA-04 → Complete)
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 27
-  completed_plans: 26
-  percent: 96
+  total_plans: 35
+  completed_plans: 28
+  percent: 80
 ---
 
 # Project State
@@ -25,8 +25,9 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — EXECUTING (gap-closure wave 23-08..23-16)
-Plan: gap-closure 23-16 COMPLETE (23-01..23-14 + 23-16 SUMMARYs on disk) — 23-15's phase-gate docs/OpenAPI + count reconcile (Tasks 2-3) is the only remaining step, now UNBLOCKED on a green suite.
+Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — gap-closure wave 23-08..23-16 COMPLETE; awaits final /gsd:secure-phase 23 + /gsd:verify-work sign-off.
+Plan: 23-15 COMPLETE (all Phase 23 SUMMARYs 23-01..23-16 on disk). Tasks 2-3 executed on the now-green suite: Task 2 reconciled docs/metrics.json 1511→1573 + schema 56→57 + CLAUDE.md/AGENTS.md count prose (docs-freshness EXIT 0); Task 3 reconciled REQUIREMENTS.md (VSA-02 + VSA-04 → Complete, each with named green proofs), 23-VALIDATION.md (gap-closure proof table + nyquist_compliant true), 23-CONTEXT.md (D-04/D-05/D-12 dated revision notes appended) + deferred-items.md (9 conscious deferrals recorded). Task 1 (OpenAPI snapshot regen, `adc1c58`) shipped earlier; all four /api/v1/staff endpoints incl. /me present.
+Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApiSnapshotTest (check mode, 4 staff endpoints) + docs-freshness check (total 1573/schema 57). Suite basis: :core-java:test rerun BUILD SUCCESSFUL 0-fail; :core-java:integrationTest 331/0 (23-16, tree unchanged since); frontend npm run build clean + jest 360/360. Playwright vendor-authenticated E2E remains env-deferred (no E2E_VENDOR_PASSWORD) — the Java+Jest green suite is the load-bearing anti-false-green proof. VSA-02/VSA-04 marked Complete only now (anti-false-green held them PENDING across 23-08..23-16 until every sub-gap closed + the full suite went green). NEXT: /gsd:secure-phase 23 (8 criticals addressed → SECURITY.md) then /gsd:verify-work to re-verify VSA-02/VSA-04.
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
@@ -41,9 +42,9 @@ Status: Executing Phase 23 gap-closure. 23-13 shipped — the FRONTEND now consu
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-07-21 -- Executed gap plan 23-16 (legacy integration auth migration → full integrationTest GREEN, 0 failures; 23-15 reconcile unblocked)
+Last activity: 2026-07-21 -- Executed 23-15 Tasks 2-3 (phase-gate docs/metrics + OpenAPI + planning-record reconcile; VSA-02/VSA-04 → Complete; both CI gates green)
 
-Progress: [██████████] 96%
+Progress: [████████░░] 80% (phases 21-23 all planned plans executed = 28; phases 24-26 est. 7 plans not yet planned → denominator 35)
 
 ## Milestone v2.3 Phase Map
 
@@ -106,6 +107,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 23 P13 | 17min | 3 tasks | 8 files |
 | Phase 23 P14 | 24min | 3 tasks | 12 files |
 | Phase 23 P16 | ~59min | 2 tasks | 7 files |
+| Phase 23 P15 | ~30min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -176,7 +178,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
 - **Phase 23 vision provider**: content-relevance gate (IMG-03 stage 6) needs Ollama (host :11434 conflict) or a hosted model — ships behind an advisory-default flag; the pipeline is not blocked on it.
 - **Phase 26 netpol caveat**: minikube's default CNI does NOT enforce NetworkPolicies — local is not proof for netpol behaviour (needs policy-enforcing CNI or AKS).
-- Phase 23 PR will fail CI: docs/api/openapi-snapshot.json lacks the /api/v1/staff endpoints — now FOUR after 23-12 (list, /me, /grant, /{id}). Run ./gradlew :core-java:updateOpenApiSnapshot and commit the diff (needs Docker/Testcontainers). Owned by 23-15's phase-gate reconcile. Scoped `--tests` runs stay green; only the full `integrationTest` task is red on OpenApiSnapshotTest until regen.
+- **✅ RESOLVED by 23-15 (2026-07-21):** docs/api/openapi-snapshot.json now carries all FOUR /api/v1/staff endpoints (list, /me, /grant, /{id}) — regenerated in `adc1c58` (Task 1); `OpenApiSnapshotTest` passes in check mode inside the now-green `integrationTest` (331/0). The docs-freshness count gate is also green (total 1573 / schema 57, `49bed3c`). Both known-red Phase 23 CI gates are closed. Remaining before phase sign-off: /gsd:secure-phase 23 (SECURITY.md) + /gsd:verify-work re-verification of VSA-02/VSA-04, and — at the phase PR — the live vendor-authenticated Playwright run (needs E2E_VENDOR_PASSWORD + frontend rebuild).
 
 ### Quick Tasks Completed
 
@@ -186,6 +188,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T12:16:42Z
-Stopped at: Completed 23-16-PLAN.md — legacy integration auth migration; full :core-java:integrationTest GREEN (0 failures). Next: 23-15 Tasks 2-3 (metrics/OpenAPI + planning reconcile + VSA-02/VSA-04 closure) on the now-green suite.
+Last session: 2026-07-21T13:40:00Z
+Stopped at: Completed 23-15-PLAN.md (Tasks 2-3) — phase-gate docs/metrics + OpenAPI + planning-record reconcile over a green suite; VSA-02/VSA-04 → Complete. Phase 23 gap-closure wave (23-08..23-16) DONE. Next: /gsd:secure-phase 23 then /gsd:verify-work (re-verify VSA-02/VSA-04); live vendor-auth Playwright at the phase PR.
 Resume file: None
