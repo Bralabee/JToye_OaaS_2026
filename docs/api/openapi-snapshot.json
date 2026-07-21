@@ -1190,6 +1190,25 @@
           }
         ]
       },
+      "DirectoryEntryDto" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "lastSeen" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "Environment" : {
         "properties" : {
           "activeProfiles" : {
@@ -1373,6 +1392,31 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "GrantStaffRequest" : {
+        "properties" : {
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "shopId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "role",
+          "userId"
+        ],
         "type" : "object"
       },
       "GuestOrderConfirmation" : {
@@ -1739,6 +1783,30 @@
           "usersDisabled" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "MyAccessDto" : {
+        "description" : "The caller's own effective vendor-scoped access. groupAdmin=true means unrestricted access to all shops and grantedShopIds is null (NOT 'no shops'); groupAdmin=false means grantedShopIds is the exact, possibly-empty set of accessible shops.",
+        "properties" : {
+          "grantedShopIds" : {
+            "description" : "For a non-GROUP_ADMIN caller, the exact set of shop ids they may access (empty = no access). Null for a GROUP_ADMIN — unrestricted; do NOT read as 'no shops'.",
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array",
+            "uniqueItems" : true
+          },
+          "groupAdmin" : {
+            "description" : "True if the caller has unrestricted (tenant-wide GROUP_ADMIN) access.",
+            "type" : "boolean"
+          },
+          "userId" : {
+            "description" : "The caller's own Keycloak subject (user id).",
+            "format" : "uuid",
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -3608,6 +3676,63 @@
           "timeout" : {
             "format" : "int64",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "StaffListResponse" : {
+        "properties" : {
+          "directory" : {
+            "items" : {
+              "$ref" : "#/components/schemas/DirectoryEntryDto"
+            },
+            "type" : "array"
+          },
+          "grants" : {
+            "items" : {
+              "$ref" : "#/components/schemas/StaffMemberDto"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "StaffMemberDto" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "grantSource" : {
+            "enum" : [
+              "JIT",
+              "OPERATOR"
+            ],
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "shopId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -8818,6 +8943,187 @@
         ]
       }
     },
+    "/api/v1/staff" : {
+      "get" : {
+        "description" : "Returns the login-populated user_directory (grant-target picker) plus the tenant's current shop_staff grants. GROUP_ADMIN only.",
+        "operationId" : "list_8",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffListResponse"
+                }
+              }
+            },
+            "description" : "Directory + grants"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffListResponse"
+                }
+              }
+            },
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List staff directory + grants",
+        "tags" : [
+          "Staff"
+        ]
+      }
+    },
+    "/api/v1/staff/grant" : {
+      "post" : {
+        "description" : "Grants (userId, shopId|null, role). Idempotent: a retried/duplicate grant of the same (userId, shopId, role) replays the existing grant with 200 instead of a unique-constraint 500. A null shopId is a tenant-wide GROUP_ADMIN-shape grant.",
+        "operationId" : "grant",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GrantStaffRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffMemberDto"
+                }
+              }
+            },
+            "description" : "Idempotent replay of an existing grant"
+          },
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffMemberDto"
+                }
+              }
+            },
+            "description" : "New grant created"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffMemberDto"
+                }
+              }
+            },
+            "description" : "Invalid request (e.g. shop-scoped GROUP_ADMIN)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffMemberDto"
+                }
+              }
+            },
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StaffMemberDto"
+                }
+              }
+            },
+            "description" : "Would downgrade the last GROUP_ADMIN (last-group-admin)"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Grant staff access",
+        "tags" : [
+          "Staff"
+        ]
+      }
+    },
+    "/api/v1/staff/me" : {
+      "get" : {
+        "description" : "Returns the CALLER'S OWN effective vendor-scoped access: the groupAdmin flag plus granted shop ids. NOT GROUP_ADMIN-gated — every authenticated caller may ask what they themselves may do. The server is authoritative here; clients must NOT derive GROUP_ADMIN from a client-side realm-role parse (which is wrong for the day-one implicit-admin case, CR-08). When groupAdmin is true the caller has unrestricted access and grantedShopIds is null (NOT 'no shops'); when false, grantedShopIds is the exact, possibly-empty set of accessible shops.",
+        "operationId" : "myAccess",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MyAccessDto"
+                }
+              }
+            },
+            "description" : "The caller's own effective access"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "My effective access",
+        "tags" : [
+          "Staff"
+        ]
+      }
+    },
+    "/api/v1/staff/{id}" : {
+      "delete" : {
+        "description" : "Deletes a shop_staff grant by id; the target loses access on their next request (membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409).",
+        "operationId" : "revoke_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "204" : {
+            "description" : "Grant revoked"
+          },
+          "403" : {
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+          },
+          "404" : {
+            "description" : "Grant not found (or another tenant's)"
+          },
+          "409" : {
+            "description" : "Would remove the last GROUP_ADMIN (last-group-admin)"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Revoke a grant",
+        "tags" : [
+          "Staff"
+        ]
+      }
+    },
     "/api/v1/sync/batch" : {
       "post" : {
         "description" : "Receives a batch of data for synchronization from an Edge service",
@@ -10004,6 +10310,10 @@
     {
       "description" : "Shop management endpoints",
       "name" : "Shops"
+    },
+    {
+      "description" : "Vendor shop-staff management: list / grant / revoke (GROUP_ADMIN only)",
+      "name" : "Staff"
     },
     {
       "description" : "Data synchronization endpoints for Edge services",
