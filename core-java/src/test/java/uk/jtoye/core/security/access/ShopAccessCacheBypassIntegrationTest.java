@@ -227,6 +227,59 @@ class ShopAccessCacheBypassIntegrationTest {
                 .isNotNull();
     }
 
+    /**
+     * WR-01 / D-05 (plan 23-14): the per-user membership cache genuinely ENGAGES (the internal
+     * gate calls now reach {@code @Cacheable resolveMembership} through the bean proxy, not by
+     * self-invocation) AND a revoke EVICTS it so the target's very next call re-resolves — no
+     * stale-allow window. Both halves are proven in one case:
+     * <ol>
+     *   <li>a gate call POPULATES the {@code shopMembership} entry (RED pre-fix: self-invocation
+     *       never triggers the interceptor, so the entry stays null);</li>
+     *   <li>deleting the grant WITHOUT evicting still serves the stale set (proving it was cached,
+     *       not re-queried);</li>
+     *   <li>an evict makes the next call re-resolve and deny — D-05's guarantee, now on a
+     *       mechanism that actually runs.</li>
+     * </ol>
+     */
+    @Test
+    void membershipCacheEngagesThroughProxy_andRevokeEvictsSoNextCallReResolves() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID userX = UUID.randomUUID();
+        grantShopStaff(tenant, userX, shopA, "SHOP_MANAGER");
+
+        setStrictScoping(true);
+        authenticateAs(userX, tenant);
+
+        // (1) First gate call → internal resolveMembership reached THROUGH the proxy → cached.
+        assertThat(shopAccessService.grantedShopIds())
+                .as("scoped user's initial grant set is exactly their granted shop")
+                .containsExactly(shopA);
+
+        String membershipKey = "tenant:" + tenant + ":resolveMembership:" + userX;
+        assertThat(cacheManager.getCache("shopMembership").get(membershipKey))
+                .as("membership cache POPULATED after the gate call — proves the proxy is engaged "
+                        + "(a self-invocation would leave this null: the WR-01 regression)")
+                .isNotNull();
+
+        // (2) Delete the grant directly, WITHOUT evicting: the stale cached set is still served,
+        // proving the second call did NOT re-query shop_staff.
+        deleteShopStaff(tenant, userX);
+        assertThat(shopAccessService.grantedShopIds())
+                .as("a stale cache entry is served (not re-queried) until it is evicted")
+                .containsExactly(shopA);
+
+        // (3) Evict → the next call re-resolves from shop_staff and denies (D-05, genuinely proven).
+        shopAccessService.evictMembership(userX);
+        assertThat(cacheManager.getCache("shopMembership").get(membershipKey))
+                .as("eviction removed the entry")
+                .isNull();
+        assertThat(shopAccessService.grantedShopIds())
+                .as("after eviction the next call re-resolves and sees the revoked grant — no stale allow")
+                .isEmpty();
+    }
+
     @Test
     void cachingIsActuallyEnabledInThisContext() {
         assertThat(cacheManager)
@@ -273,6 +326,11 @@ class ShopAccessCacheBypassIntegrationTest {
         jdbc.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
                         + "VALUES (?, ?, ?, ?, ?, now())",
                 UUID.randomUUID(), tenant, userId, shopId, role);
+    }
+
+    /** Directly remove a user's grants (a revoke's DB effect) to prove cache staleness/eviction. */
+    private void deleteShopStaff(UUID tenant, UUID userId) {
+        jdbc.update("DELETE FROM shop_staff WHERE tenant_id = ? AND user_id = ?", tenant, userId);
     }
 
     // --- request builders -----------------------------------------------------

@@ -10,8 +10,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
@@ -372,20 +370,13 @@ public class StaffManagementService {
     /**
      * Evict the target's membership cache AFTER the current transaction commits
      * (D-05 / RESEARCH §4 caveat) so a re-resolve cannot race the just-written row.
-     * Falls back to an inline evict when no transaction synchronization is active
-     * (the eviction is a no-op in the test profile — no cache manager).
+     * Delegates to {@link ShopAccessService#evictMembershipAfterCommit(UUID)} — the SINGLE
+     * shared post-commit idiom used by both this grant/revoke path and {@code onRequest}'s JIT
+     * provision (WR-11), so the two cannot drift apart. The eviction is a no-op in the test
+     * profile (no cache manager).
      */
     private void evictAfterCommit(UUID userId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    shopAccessService.evictMembership(userId);
-                }
-            });
-        } else {
-            shopAccessService.evictMembership(userId);
-        }
+        shopAccessService.evictMembershipAfterCommit(userId);
     }
 
     private UUID currentTenantId() {

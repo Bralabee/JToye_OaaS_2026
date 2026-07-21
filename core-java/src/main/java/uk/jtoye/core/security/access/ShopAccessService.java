@@ -2,6 +2,7 @@ package uk.jtoye.core.security.access;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.Authentication;
@@ -9,6 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
@@ -75,6 +77,17 @@ public class ShopAccessService {
     private final ShopStaffRepository shopStaffRepository;
     private final UserDirectoryRepository userDirectoryRepository;
     private final TenantCacheEvictor cacheEvictor;
+    /**
+     * Lazy self-reference (WR-01): {@link #resolveMembership} is {@code @Cacheable}, but
+     * {@code @EnableCaching} runs in default proxy mode, so a SELF-invocation
+     * ({@code this.resolveMembership(...)}) never passes through the caching interceptor — the
+     * cache would never populate, its TTL would be dead config, and every eviction would target
+     * keys that never exist. The internal gate methods therefore reach {@code resolveMembership}
+     * through this bean proxy ({@code self().resolveMembership(...)}) so the interceptor actually
+     * runs. An {@link ObjectProvider} avoids a construction cycle. Mirrors the pattern plan 23-10
+     * used for the cache-bypass fix (a proxy-reached cached loader, not self-invocation).
+     */
+    private final ObjectProvider<ShopAccessService> selfProvider;
 
     /**
      * D-12 (revised, CR-07): OFF (default) preserves the day-one JIT auto-provision and honours
@@ -105,10 +118,21 @@ public class ShopAccessService {
 
     public ShopAccessService(ShopStaffRepository shopStaffRepository,
                              UserDirectoryRepository userDirectoryRepository,
-                             TenantCacheEvictor cacheEvictor) {
+                             TenantCacheEvictor cacheEvictor,
+                             ObjectProvider<ShopAccessService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.cacheEvictor = cacheEvictor;
+        this.selfProvider = selfProvider;
+    }
+
+    /**
+     * The Spring-proxied instance of this bean, so a call to the {@code @Cacheable}
+     * {@link #resolveMembership} passes through the caching interceptor (WR-01). Only used for
+     * that method — every other internal call is a plain method invocation.
+     */
+    private ShopAccessService self() {
+        return selfProvider.getObject();
     }
 
     // ---------------------------------------------------------------------
@@ -154,7 +178,7 @@ public class ShopAccessService {
         if (shopId == null) {
             throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
         }
-        Membership membership = resolveMembership(requireVendorUserId());
+        Membership membership = self().resolveMembership(requireVendorUserId());
         ShopRole role = membership.perShopRole().get(shopId);
         if (role == null || !role.satisfies(minRole)) {
             throw new ShopAccessDeniedException(shopId, minRole);
@@ -258,7 +282,7 @@ public class ShopAccessService {
         if (realmAdmin) {
             return true;
         }
-        Membership membership = resolveMembership(userId);
+        Membership membership = self().resolveMembership(userId);
         if (membership.isGroupAdmin()) {
             if (!strictScoping) {
                 return true;                         // day-one: honour every grant
@@ -356,7 +380,7 @@ public class ShopAccessService {
             return false;
         }
         // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed.
-        return resolveMembership(userId).perShopRole().get(shopId) != null;
+        return self().resolveMembership(userId).perShopRole().get(shopId) != null;
     }
 
     /**
@@ -372,7 +396,7 @@ public class ShopAccessService {
         if (isGroupAdmin()) {
             return Set.of();
         }
-        return Set.copyOf(resolveMembership(requireVendorUserId()).perShopRole().keySet());
+        return Set.copyOf(self().resolveMembership(requireVendorUserId()).perShopRole().keySet());
     }
 
     /**
@@ -415,6 +439,31 @@ public class ShopAccessService {
      */
     public void evictMembership(UUID userId) {
         cacheEvictor.evictEntity("shopMembership", "resolveMembership", userId);
+    }
+
+    /**
+     * Evict {@code userId}'s membership cache entry AFTER the current transaction commits
+     * (WR-11 / D-05). The single shared idiom used by BOTH {@link #onRequest}'s JIT provision
+     * AND {@link StaffManagementService}'s grant/revoke, so the two can never drift again.
+     *
+     * <p>Post-commit is load-bearing the moment the cache genuinely engages (Task 3): an inline
+     * evict inside the transaction leaves a window in which a concurrent request can call
+     * {@link #resolveMembership}, read the not-yet-committed (empty) state, and repopulate the
+     * cache with it — stale for the full TTL. Registering an {@code afterCommit} synchronization
+     * closes that window. Falls back to an inline evict when no synchronization is active (a no-op
+     * in the {@code test} profile — no cache manager).
+     */
+    public void evictMembershipAfterCommit(UUID userId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictMembership(userId);
+                }
+            });
+        } else {
+            evictMembership(userId);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -488,9 +537,10 @@ public class ShopAccessService {
             if (inserted > 0) {
                 log.info("JIT-provisioned tenant-wide GROUP_ADMIN for sub {} in tenant {}", sub, tenantId);
             }
-            // Clear any pre-provision (empty) membership cached earlier this
-            // request so the fresh grant is seen immediately (D-05).
-            evictMembership(sub);
+            // WR-11: evict AFTER commit, via the shared helper, so a concurrent request cannot
+            // cache the pre-insert (empty) membership and pin it for the full TTL. (Pre-Task-3
+            // this fired inline inside the tx — latent only because the cache never engaged.)
+            evictMembershipAfterCommit(sub);
         }
     }
 
