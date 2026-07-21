@@ -1,7 +1,7 @@
 # HANDOFF — Phase 23 (Vendor-Scoped Access) gap closure EXECUTED; 3 follow-ups remain
 
 **Updated:** 2026-07-21
-**Branch:** `feature/phase-23-vendor-scoped-access` (tree clean) — **46 commits unpushed** (remote is at the old `b1b1bfe`), no PR
+**Branch:** `feature/phase-23-vendor-scoped-access` (tree clean, fully pushed @ `b3fcc9c`) — **PR #255 OPEN, CI green, `mergeStateStatus: CLEAN`** (not yet merged)
 **Milestone:** v2.3 Vendor Ops + AI Interleaved
 
 ---
@@ -40,10 +40,14 @@ cd frontend && npx playwright test e2e/dashboard-mobile.spec.ts   # 375px viewpo
 # 2. Security gate (load-bearing — 8 criticals were addressed):
 /gsd:secure-phase 23                            # produces 23-SECURITY.md
 
-# 3. Back up + PR the 46 unpushed commits (secret-path scan already clean):
-git push -u origin feature/phase-23-vendor-scoped-access
-gh pr create --base main
+# 3. DONE — pushed + PR #255 open + CI green. Merge when the 2 gates above are closed:
+#    gh pr merge 255 --squash --delete-branch     (your call, not automatic)
 ```
+
+PR: https://github.com/Bralabee/JToye_OaaS_2026/pull/255 — all 11 required checks green on `b3fcc9c`
+(incl. Integration Tests / Testcontainers RLS 36m, Run Tests 360/360 jest). CI once caught a stale
+`shops?size=1` Jest assertion from the home-overview fix — fixed in `b3fcc9c` (jest doesn't run under
+`tsc`/`next build`; run `npx jest` locally after touching a dashboard page).
 
 ## Key decisions made this session (with rationale)
 
@@ -60,7 +64,7 @@ gh pr create --base main
 
 ## Environment state
 
-- Branch `feature/phase-23-vendor-scoped-access`, tree clean. 46 commits unpushed, no PR, secret-path scan clean.
+- Branch `feature/phase-23-vendor-scoped-access`, tree clean, fully pushed @ `b3fcc9c`. PR #255 open, CI green, secret-path scan clean.
 - Compose full stack UP; `core-java` @ V57 healthy on `:9090`, `frontend` on `:3000` (project `jtoye_oaas_2026`, file `docker-compose.full-stack.yml`). Rebuild recipe: `docker compose -p jtoye_oaas_2026 -f docker-compose.full-stack.yml build core-java frontend && ... up -d`.
 - **Dev DB has 0 orders in every tenant** (tenant A `…0001` has 3 shops, no orders; `shop_staff` empty until first login JITs). Limits any visual scoping demo — seed orders for a vivid before/after.
 - Gradle wrapper at repo **root** (`./gradlew`); `buildDir` is `build-local`; Testcontainers tests are `@Tag("testcontainers")`, run via `./gradlew :core-java:integrationTest` (the `test` task excludes them). Full integrationTest ≈ 34 min.
