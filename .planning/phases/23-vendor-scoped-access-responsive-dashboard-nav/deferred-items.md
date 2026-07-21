@@ -77,3 +77,63 @@ check mode exits 0. `schema_version` stayed 56 as predicted.
   + 2 `/me`), +2 more in `StaffManagementIntegrationTest` (email-mask), +2 in
   `GdprErasureIntegrationTest`. No new test *files*. Per the 23-01/23-07 precedent the
   `docs/metrics.json` + CLAUDE.md count bump is deferred to the phase's last plan.
+
+## 23-15 (phase gate) — RESOLVED items
+
+- **OpenAPI snapshot regen — RESOLVED.** 23-15 Task 1 ran `./gradlew :core-java:updateOpenApiSnapshot`
+  (commit `adc1c58`); `docs/api/openapi-snapshot.json` now carries all four `/api/v1/staff` endpoints
+  (`grep -c "api/v1/staff"` → 4, incl. `/me`); `OpenApiSnapshotTest` passes in check mode inside a
+  now-green `integrationTest` (331/0 after 23-16). The one known red CI gate is closed.
+- **docs-freshness count bump — RESOLVED.** 23-15 Task 2 ran `scripts/docs-freshness.sh --write`:
+  `docs/metrics.json` moved 1511 → **1573** (`java_test_methods` 1010 → 1064, `java_test_files`
+  175 → 180, `jest_blocks` 357 → 365, `schema_version` 56 → **57** [V57 shipped in 23-14]); CLAUDE.md +
+  AGENTS.md line-15 count prose reconciled to match; check mode exits 0. The pre-existing `RegExp.test(`
+  counting quirk (manifest reads ~5 blocks above `npx jest` — 365 vs 360) was deliberately NOT "fixed"
+  (would shift the committed baseline; see the 23-06 entry above).
+- **CSV whole-batch abort — NOT a deferral (RESOLVED in 23-10).** 23-10 (WR-07) delivered per-row
+  handling: a malformed CSV `shop_id` is now a per-row 400 and the batch continues, not a
+  `ShopAccessDeniedException` that aborts the whole batch. No inconsistency remains to defer.
+
+## 23-15 (phase gate) — conscious deferrals (tracked, not dropped)
+
+- **WR-04 — products/marketing screens narrow client-side over a single server-paginated page.**
+  Highest-priority deferral: a genuine user-visible correctness defect (wrong counts, a possible false
+  empty state, unreachable rows past the first page). It is NOT a security bypass — the underlying set
+  is already grant-scoped server-side (23-03); the defect is cosmetic pagination correctness. Closing it
+  needs new `?shopId=` API surface on the products + marketing list endpoints plus gating and two screen
+  reworks — its own plan, out of the phase-gate scope. (Disclosed as an accepted caveat when VSA-03 was
+  marked complete at 23-07.)
+- **WR-03 — post-revocation SSE window.** A revoked user's open KDS SSE stream can linger until the
+  connection turns over; bounded at 5 minutes by `SSE_TIMEOUT` (accepted at 23-11). Immediate for the
+  HTTP gate + STOMP subscribe; the residual is only the already-open SSE stream.
+- **IN-01 — `fetchMyShops` hard-codes `size=200`.** The switcher's shop list is fetched with a fixed
+  page size (23-13); a tenant with >200 shops would not see the tail. No known tenant approaches this;
+  a paged fetch is the follow-up.
+- **`asSystem()` ThreadLocal marker for the retained `auth == null` bypass.** 23-08 fails closed on
+  identity *shape* but retains the narrow, non-externally-reachable `auth == null` internal bypass
+  (measured blast radius: 62 no-principal test files; Spring Security 401s before any gated service).
+  Replacing it with an explicit `asSystem()` system-principal marker is a larger, separate change than a
+  gap-closure fix warrants.
+- **`@PreAuthorize` scope backstop on `StaffController` (issue #206).** Deferred to the #206
+  scoped-credentials work — adding an undefined scope here would break the live frontend, and D-10
+  already forbids the `hasRole('admin')` form (23-08).
+- **T-23-08-06 — `@Async` / `@Scheduled` / `@RabbitListener` without SecurityContext propagation.**
+  An internal async call inherits no `Authentication` and would take the retained `auth == null` bypass.
+  No gated service is currently reached from such a path (measured), so this is a tracked residual, not
+  an open hole (23-08).
+- **Bulk-revoke of JIT rows in the staff screen.** A convenience affordance to revoke many JIT-provisioned
+  rows at once (23-14). Not an authorization boundary — single grant/revoke is fully functional; this is
+  UX polish.
+- **Vendor-authenticated Playwright E2E (live run).** `dashboard-mobile.spec` 375px live run +
+  `/dashboard/staff` click-through require a real Keycloak login; `E2E_VENDOR_PASSWORD` is not available
+  in the execution session (a documented limitation carried since 23-05 / 23-07 / 23-13) and port-3000
+  needs a frontend rebuild to serve the post-change image. `docs-freshness` counts static `test()` blocks
+  by grep (it never runs Playwright), so the count reconcile is unaffected. The Java + Jest suites
+  (integrationTest 331/0, jest 360/360) are the load-bearing anti-false-green proof; run the live spec at
+  the phase PR after a rebuild + creds.
+- **AGENTS.md schema-version prose is stale at V37 (pre-existing, out of scope).** `AGENTS.md` line ~107
+  reads "Current schema version: V37 …" — frozen long before Phase 23 and never maintained past V37
+  (unlike the CLAUDE.md schema narrative, updated here to V57). This is unrelated to Phase 23 and out of
+  the count-sync scope the 260715-fcq quick task established (which syncs the line-15 test-count prose,
+  reconciled here). Not fixed per SCOPE BOUNDARY; logged so it is not silently dropped. Reconstructing the
+  full V38→V57 narrative in AGENTS.md is its own doc task.

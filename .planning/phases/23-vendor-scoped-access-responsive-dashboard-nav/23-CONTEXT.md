@@ -82,10 +82,28 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
   Preserves today's "everyone can do everything" behaviour exactly on day one; vendors tighten
   explicitly afterwards. *Rejected:* Keycloak admin-API migration sweep (KC coupling + KC24 trap);
   implicit-only/no-rows (fail-OPEN — unacceptable for an auth boundary).
+  - **[Revised 2026-07-21 — plans 23-08 + 23-14; user ACCEPTED at the 23-14 Task-0 checkpoint]**
+    The original text left two gaps the REVIEW gate caught. (1) **23-08 made fail-closed true in
+    code (CR-03):** an anonymous / non-`Jwt` / non-UUID-subject principal is now DENIED with a typed
+    403, never escalated to GROUP_ADMIN — the realm-`admin` fail-safe stands, but an *unparseable*
+    identity no longer inherits it (machine callers only via an empty-by-default allowlist, D-04's
+    "fail-open is unacceptable" is now enforced, not just asserted). (2) **23-14 stamped provenance:**
+    JIT-provisioned rows now carry `shop_staff.grant_source = JIT` (V57), distinguishable from a
+    deliberate `OPERATOR` grant — the precondition D-12's strict-scoping needs to de-honour day-one
+    auto-grants without disturbing operator grants.
 - **D-05 — Revocation is immediate: evict membership cache on write.** grant/revoke evicts that
   user's membership-cache entry (reuse the `TenantCacheEvictor` pattern); the next request
   re-resolves from `shop_staff`. No stale-access window — correct for an auth boundary. A short
   TTL stays as a backstop. Membership is cached per-user via the tenant-aware key generator.
+  - **[Revised 2026-07-21 — plan 23-14 (WR-01 / WR-11)]** As originally built the membership cache
+    was not actually engaging: internal gate calls invoked `resolveMembership` via self-invocation,
+    so the `@Cacheable` interceptor never fired and eviction was a no-op (the correctness was carried
+    entirely by re-reading `shop_staff` each call — safe, but the "cache" was inert). 23-14 routes
+    internal calls through the bean proxy (`ObjectProvider self()`) so the cache genuinely populates,
+    serves until evicted, then re-resolves + denies — proven by a caching-enabled test. Eviction now
+    fires **AFTER commit** via a single shared `evictMembershipAfterCommit` helper used by BOTH
+    `onRequest` (JIT provision) and `StaffManagementService` (grant/revoke), so the two call sites
+    cannot drift. Immediate-revocation semantics are unchanged; the mechanism is now real.
 
 ### Switcher UX
 - **D-06 — Switcher in the sidebar header; GROUP_ADMIN defaults to "All shops".** Dropdown under
@@ -129,6 +147,18 @@ HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the s
   ON makes ungranted users **deny-by-default** (no more auto-provision) so a vendor can genuinely
   tighten. Global flag now (GLOBAL_RULE_6); **per-tenant granularity deferred**. This reconciles the
   user's "lazy grandfather *with a strict switch*" choice with the committed JIT decision.
+  - **[Revised 2026-07-21 — plan 23-14 (CR-07); user ACCEPTED at the 23-14 Task-0 checkpoint]**
+    The REVIEW gate found that turning strict-scoping ON did **not** actually tighten anything — an
+    already-JIT-provisioned tenant-wide GROUP_ADMIN row kept its grant. 23-14 closes this: under
+    strict ON a **JIT-sourced** tenant-wide GROUP_ADMIN is now DE-HONOURED (a day-one auto-provisioned
+    user genuinely becomes scoped) while **OPERATOR** grants and realm admins are honoured unchanged
+    (this is what `grant_source` in the D-04 revision is for). The policy is applied in the shared
+    `isGroupAdminForUser` decision helper **OUTSIDE** the cached Membership snapshot (which now carries
+    only the raw `groupAdminFromJit` fact), so flipping the flag is never served stale — and BOTH the
+    HTTP gate and the STOMP `canAccessShop` ladder tighten at once. **Lockout safety:** the oldest JIT
+    admin (by `created_at,id`) is retained as a WARN-logged bootstrap when no OPERATOR tenant-wide
+    GROUP_ADMIN exists, so no tenant can lock itself out on the flip. Default stays OFF (day-one JIT
+    auto-provision preserved); global-flag / per-tenant-granularity deferral unchanged.
 - **D-13 — Out-of-scope-shop UX = in-page access-required state.** Refines D-01/D-02's typed-403: a
   direct-URL/bookmark hit on a non-granted shop renders the **existing** access-required state the
   Approvals/Finance pages already show on 403 (not a redirect, not a blank) — the switcher already

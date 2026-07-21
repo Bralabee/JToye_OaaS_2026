@@ -120,9 +120,9 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-06 | Phase 22 | 22-06 | Complete |
 | COMMS-07 | Phase 22 | 22-01 | Complete |
 | VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
-| VSA-02 | Phase 23 | 23-02, 23-03, 23-10, 23-11 | Gaps closing (CR-01 cache bypass fixed 23-10; CR-02 STOMP shop-gate fixed 23-11; gap wave 23-12..15 continues) |
+| VSA-02 | Phase 23 | 23-02, 23-03, 23-08, 23-10, 23-11, 23-14, 23-16 | Complete — CR-03/CR-04 fail-closed (23-08), CR-01 cache-bypass (23-10), CR-02 STOMP gate (23-11), CR-07 strict-scoping genuinely tightens (23-14); proven by ShopAccessFailClosed/CacheBypass/Enforcement/StrictScopingTightening + TenantChannelInterceptor over a green full `integrationTest` (331/0 after 23-16) |
 | VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
-| VSA-04 | Phase 23 | 23-04, 23-06 | Gaps found (23-VERIFICATION: CR-03 fail-open) |
+| VSA-04 | Phase 23 | 23-04, 23-06, 23-08, 23-09, 23-12, 23-13, 23-14 | Complete — grant/revoke reshape + last-GA-409 (23-09), grant validation + `/me` + GDPR directory-erase (23-12), frontend server-authority (23-13), JIT provenance (23-14); proven by StaffManagementIntegrationTest 19/19 + GdprErasureIntegrationTest + dashboard jest. Deferred (non-boundary): WR-04 products/marketing UI narrowing, bulk-revoke-JIT affordance |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |
 | IMG-02 | Phase 24 | 24-02 | Pending |
