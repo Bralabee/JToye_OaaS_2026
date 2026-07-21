@@ -66,6 +66,7 @@ const grants = [
     userId: USER_GA,
     shopId: null,
     role: "GROUP_ADMIN",
+    grantSource: "OPERATOR",
     createdAt: "2026-07-01T10:00:00Z",
     createdBy: USER_GA,
   },
@@ -74,6 +75,7 @@ const grants = [
     userId: USER_SAM,
     shopId: SHOP_A,
     role: "STAFF",
+    grantSource: "OPERATOR",
     createdAt: "2026-07-02T10:00:00Z",
     createdBy: USER_GA,
   },
@@ -302,6 +304,31 @@ describe("Staff management screen (VSA-04)", () => {
     const revokeCopy = screen.getByRole("alert").textContent
 
     expect(grantCopy).not.toEqual(revokeCopy)
+  })
+
+  // 23-14 (V57 / CR-07): a JIT grant (auto-provisioned on first sign-in) is labelled so
+  // a group admin can distinguish it from a deliberate operator grant before enabling
+  // strict-scoping — operator grants carry no such label.
+  it("labels an auto-granted (JIT) row and leaves operator grants unlabelled (CR-07)", async () => {
+    const jitGrant = {
+      id: "66666666-6666-6666-6666-666666666666",
+      userId: USER_SAM,
+      shopId: null,
+      role: "GROUP_ADMIN",
+      grantSource: "JIT",
+      createdAt: "2026-07-03T10:00:00Z",
+      createdBy: null,
+    }
+    // grants[0] is an OPERATOR group-admin; the second row here is the JIT one.
+    mockedApiClient.get.mockResolvedValue({
+      data: { directory, grants: [grants[0], jitGrant] },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    // Exactly one row is auto-granted — the JIT one, not the operator GROUP_ADMIN.
+    expect(screen.getAllByText(/auto-granted on first sign-in/i)).toHaveLength(1)
   })
 
   // 23-11: revocation is NOT unconditionally immediate — an already-open live

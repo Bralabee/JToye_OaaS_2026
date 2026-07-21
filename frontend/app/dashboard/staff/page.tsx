@@ -437,11 +437,24 @@ export default function StaffPage() {
                   return (
                     <TableRow key={g.id}>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm text-slate-900">{email}</span>
                           {isSelf(g.userId) && (
                             <Badge variant="secondary" className="text-xs">
                               This is you
+                            </Badge>
+                          )}
+                          {/* V57: JIT rows were auto-granted on first sign-in, not by an
+                              operator. Flag them so a group admin knows which grants are
+                              deliberate before enabling strict-scoping (which de-honours
+                              JIT tenant-wide admin — CR-07). */}
+                          {g.grantSource === "JIT" && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs text-slate-500"
+                              title="Automatically granted on first sign-in — not a deliberate operator grant"
+                            >
+                              Auto-granted on first sign-in
                             </Badge>
                           )}
                         </div>

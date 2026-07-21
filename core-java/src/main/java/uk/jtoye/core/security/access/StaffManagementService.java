@@ -250,6 +250,10 @@ public class StaffManagementService {
         }
 
         existing.setRole(role);
+        // A deliberate operator role change makes the grant operator-managed (V57): if it
+        // was a JIT day-one row, the operator has now taken explicit ownership, so it is
+        // honoured under strict-scoping ON like any other operator grant.
+        existing.setGrantSource(GrantSource.OPERATOR);
         shopStaffRepository.saveAndFlush(existing); // session write → Envers MOD revision (WR-02)
         evictAfterCommit(userId);
         log.info("Changed role to {} for user {} (shop {}) in tenant {}", role, userId, shopId, tenantId);
@@ -345,6 +349,9 @@ public class StaffManagementService {
         row.setUserId(userId);
         row.setShopId(shopId);
         row.setRole(role);
+        // V57: a deliberate operator grant, distinct from a JIT day-one row so the
+        // strict-scoping switch honours it while de-honouring auto-provisioned rows (CR-07).
+        row.setGrantSource(GrantSource.OPERATOR);
         row.setCreatedBy(createdBy);
         return shopStaffRepository.saveAndFlush(row);
     }

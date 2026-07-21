@@ -59,11 +59,13 @@ public interface ShopStaffRepository extends JpaRepository<ShopStaff, UUID> {
      * the row with {@code ON CONFLICT DO NOTHING} against the V52 functional unique
      * index (house reserve idiom, V47/V50), so two concurrent first-requests from
      * the same {@code sub} produce exactly one row. Returns rows affected
-     * (1 = provisioned, 0 = already present). {@code shop_id} is NULL (tenant-wide).
+     * (1 = provisioned, 0 = already present). {@code shop_id} is NULL (tenant-wide)
+     * and {@code grant_source} is {@code 'JIT'} (V57) — so the strict-scoping switch
+     * can distinguish this auto-provisioned row from a deliberate operator grant (CR-07).
      */
     @Modifying
-    @Query(value = "INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
-            + "VALUES (:id, :tenantId, :userId, NULL, 'GROUP_ADMIN', now()) "
+    @Query(value = "INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, grant_source, created_at) "
+            + "VALUES (:id, :tenantId, :userId, NULL, 'GROUP_ADMIN', 'JIT', now()) "
             + "ON CONFLICT (tenant_id, user_id, COALESCE(shop_id, '00000000-0000-0000-0000-000000000000'::uuid)) "
             + "DO NOTHING",
             nativeQuery = true)

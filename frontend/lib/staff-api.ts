@@ -13,6 +13,14 @@ import apiClient from "@/lib/api-client"
 /** In-tenant shop-role tier (mirrors the Java `ShopRole` enum, D-03). */
 export type ShopRole = "STAFF" | "SHOP_MANAGER" | "GROUP_ADMIN"
 
+/**
+ * A grant's provenance (mirrors the Java `GrantSource` enum, V57). `JIT` = auto-granted
+ * on the user's first sign-in (D-04); `OPERATOR` = deliberately granted by a group admin.
+ * A group admin can see this before flipping strict-scoping, which de-honours JIT
+ * tenant-wide grants (CR-07).
+ */
+export type GrantSource = "JIT" | "OPERATOR"
+
 /** Human-readable role labels — GROUP_ADMIN is inherently tenant-wide. */
 export const ROLE_LABELS: Record<ShopRole, string> = {
   STAFF: "Staff",
@@ -34,6 +42,8 @@ export interface StaffMember {
   userId: string
   shopId: string | null
   role: ShopRole
+  /** Provenance (V57) — `JIT` rows are auto-granted on first sign-in (CR-07). */
+  grantSource: GrantSource
   createdAt: string | null
   createdBy: string | null
 }

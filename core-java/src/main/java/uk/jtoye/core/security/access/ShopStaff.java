@@ -53,6 +53,16 @@ public class ShopStaff {
     @Column(nullable = false, length = 16)
     private ShopRole role;
 
+    /**
+     * Provenance of this grant (V57): {@link GrantSource#JIT} for an auto-provisioned
+     * day-one GROUP_ADMIN row, {@link GrantSource#OPERATOR} for a deliberate operator
+     * grant. Load-bearing for the strict-scoping switch (CR-07) — a JIT tenant-wide
+     * GROUP_ADMIN is de-honoured under strict-scoping ON while an OPERATOR one is not.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "grant_source", nullable = false, length = 16)
+    private GrantSource grantSource;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -74,6 +84,9 @@ public class ShopStaff {
 
     public ShopRole getRole() { return role; }
     public void setRole(ShopRole role) { this.role = role; }
+
+    public GrantSource getGrantSource() { return grantSource; }
+    public void setGrantSource(GrantSource grantSource) { this.grantSource = grantSource; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
 
