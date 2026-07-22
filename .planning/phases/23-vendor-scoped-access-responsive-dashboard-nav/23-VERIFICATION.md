@@ -1,9 +1,10 @@
 ---
 phase: 23-vendor-scoped-access-responsive-dashboard-nav
-verified: 2026-07-21T13:05:00Z
-status: human_needed
-score: 5/5 roadmap success criteria verified (automated proof); 1 human-verification item outstanding (live 375px/vendor-authenticated Playwright run)
+verified: 2026-07-22T20:57:00Z
+status: verified
+score: 5/5 roadmap success criteria verified — the sole human-verification item (live 375px + staff click-through) was executed live 2026-07-22 and PASSED (see Human-Verification Resolution below)
 overrides_applied: 0
+human_verification_resolved: 2026-07-22
 re_verification:
   previous_status: gaps_found
   previous_score: 3/5 roadmap success criteria verified (VSA-01, VSA-03, MOBL-01 pass; VSA-02, VSA-04 fail)
@@ -20,6 +21,25 @@ human_verification:
 ---
 
 # Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav Verification Report
+
+> ## Human-Verification Resolution — 2026-07-22 (status: human_needed → verified)
+> The single outstanding human-verification item (row 5 / MOBL-01 live-browser proof + the
+> /dashboard/staff click-through) was executed LIVE via `/gsd:verify-work 23` on 2026-07-22
+> against the running Compose stack (frontend :3000, Keycloak :8085, core-api :9090 — all
+> healthy) with a real Keycloak vendor login (`admin-user`, committed dev credential
+> `KC_SEED_USER_PASSWORD`):
+> - **MOBL-01 (row 5) — PASS.** `npx playwright test e2e/dashboard-mobile.spec.ts --project=mobile`
+>   → **13/13 green**, including the 375px block (dashboard-mobile.spec.ts:331): docScrollWidth
+>   (375) ≤ viewportWidth+1, sidebar hidden, mobile tab bar + shop-switcher visible in `<main>`,
+>   mainWidth ≥ 300. This is the exact live geometry proof that jsdom could not provide.
+> - **VSA-04 staff screen — PASS.** `/dashboard/staff` renders the GROUP_ADMIN management UI live
+>   (Grant form + directory picker + Current-access panel; access-required card correctly absent),
+>   wired to the live `GET /api/v1/staff` gate; screenshot captured. The grant→revoke→403 MUTATION
+>   cycle was not clickable through the browser (demo-tenant `user_directory` empty — only admin-user
+>   has logged in) and remains covered by `StaffManagementIntegrationTest` 19/19 +
+>   `ShopAccessFailClosedIntegrationTest` 7/7; owner accepted this disposition 2026-07-22.
+> Full evidence: `23-HUMAN-UAT.md` (status: complete, 2 passed, 0 issues).
+
 
 **Phase Goal:** A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
 **Verified:** 2026-07-21

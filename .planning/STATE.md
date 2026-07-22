@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: executing
-stopped_at: Completed 23-17-PLAN.md — RLS-safe V57 grant_source backfill (gap-closure code-review blocker fixed). Full :core-java:integrationTest 332/0 (was 331/0). Phase 23 gap-closure wave (23-08..23-17) DONE; awaits /gsd:secure-phase 23 + /gsd:verify-work.
-last_updated: "2026-07-21T14:50:00Z"
-last_activity: 2026-07-21 -- Executed 23-17 (V57 backfill made RLS-safe via per-tenant set_config loop mirroring V44 + V57GrantSourceBackfillIntegrationTest two-tenant stepwise-Flyway proof, RED against bare UPDATE / GREEN after; full integrationTest 332/0, RlsContractTest green)
+status: ready_to_plan
+stopped_at: Phase 23 complete (17/17) — ready to discuss Phase 24
+last_updated: 2026-07-22T08:22:01.785Z
+last_activity: 2026-07-22 -- Phase 23 phase-gates CLEARED + phase marked COMPLETE. secure-phase 23 (SECURITY.md, 97/97 threats closed, threats_open 0) + validate-phase 23 (0 gaps, VALIDATION nyquist_compliant) + verify-work 23 (HUMAN-UAT 2/2 PASS — live 375px Playwright 13/13 + /dashboard/staff GROUP_ADMIN screen against the running stack w/ real Keycloak login; VERIFICATION human_needed → verified). ROADMAP phase 23 [x]; PROJECT VSA-01..04 + MOBL-01 → Validated.
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 35
-  completed_plans: 29
-  percent: 83
+  completed_plans: 30
+  percent: 50
 ---
 
 # Project State
@@ -21,19 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 23 — vendor-scoped-access-responsive-dashboard-nav
+**Current focus:** Phase 24 — image architecture — cow assets + safe upload pipeline
 
 ## Current Position
 
-Phase: 23 (vendor-scoped-access-responsive-dashboard-nav) — gap-closure wave 23-08..23-17 COMPLETE; awaits final /gsd:secure-phase 23 + /gsd:verify-work sign-off.
-Plan: 23-17 COMPLETE (all Phase 23 SUMMARYs 23-01..23-17 on disk).
+Phase: 24
+Plan: Not started
 Status (23-17): CONFIRMED deployment blocker in V57 (shipped by 23-14) FIXED. V57's grant_source backfill was a bare no-GUC `UPDATE shop_staff ... WHERE grant_source IS NULL` against the FORCE-RLS shop_staff table; under the RLS-bound migration role (jtoye_app, no spring.flyway.user override) `current_tenant_id()` is NULL → policy hides every row → 0 rows updated → step-3 `SET NOT NULL` bricks boot on any non-fresh DB (Compose dev, staging, prod). Testcontainers missed it (fresh DBs run V52→V57 on an empty table) AND its bootstrap role is a superuser that bypasses RLS. FIX (Task 1, `eb56871`): step 2 rewritten as V44's per-tenant `set_config('app.current_tenant_id', t.id, true)` loop over the RLS-free `tenants` registry, defensive `set_config('', true)` reset after; the `created_by IS NULL → 'JIT' ELSE 'OPERATOR'` inference + idempotent guard preserved verbatim; steps 1/3/4 byte-for-byte unchanged, NO RLS policy added/altered (RlsContractTest green). PROOF (Task 2, `099f624`): V57GrantSourceBackfillIntegrationTest applies V57 under a dedicated NOSUPERUSER NOBYPASSRLS `rls_migrator` role that OWNS shop_staff/_aud (mirrors jtoye_app), seeding pre-V57 rows across TWO tenants via the superuser (bypasses RLS); asserts every row backfilled JIT/OPERATOR for both tenants. Falsifiability: RED against the pre-fix bare UPDATE — SQLSTATE 23502 'column "grant_source" of relation "shop_staff" contains null values' at SET NOT NULL; GREEN after. Task 3: full `:core-java:integrationTest` = 81 classes / 332 tests / 0 failed / 0 error / 1 skipped, BUILD SUCCESSFUL 34m2s (was 331/0 at 23-16 → 332/0 with the new test). git diff (this plan) = only the V57 migration + the new test. CHECKSUM NOTE: editing V57 changes its Flyway checksum — safe here (V57 new on this branch, only ran in ephemeral Testcontainers); a dev who already booted a local DB on this branch needs a one-time `flyway repair`.
 Prior — 23-15 COMPLETE (all Phase 23 SUMMARYs 23-01..23-16 on disk). Tasks 2-3 executed on the now-green suite: Task 2 reconciled docs/metrics.json 1511→1573 + schema 56→57 + CLAUDE.md/AGENTS.md count prose (docs-freshness EXIT 0); Task 3 reconciled REQUIREMENTS.md (VSA-02 + VSA-04 → Complete, each with named green proofs), 23-VALIDATION.md (gap-closure proof table + nyquist_compliant true), 23-CONTEXT.md (D-04/D-05/D-12 dated revision notes appended) + deferred-items.md (9 conscious deferrals recorded). Task 1 (OpenAPI snapshot regen, `adc1c58`) shipped earlier; all four /api/v1/staff endpoints incl. /me present.
 Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApiSnapshotTest (check mode, 4 staff endpoints) + docs-freshness check (total 1573/schema 57). Suite basis: :core-java:test rerun BUILD SUCCESSFUL 0-fail; :core-java:integrationTest 331/0 (23-16, tree unchanged since); frontend npm run build clean + jest 360/360. Playwright vendor-authenticated E2E remains env-deferred (no E2E_VENDOR_PASSWORD) — the Java+Jest green suite is the load-bearing anti-false-green proof. VSA-02/VSA-04 marked Complete only now (anti-false-green held them PENDING across 23-08..23-16 until every sub-gap closed + the full suite went green). NEXT: /gsd:secure-phase 23 (8 criticals addressed → SECURITY.md) then /gsd:verify-work to re-verify VSA-02/VSA-04.
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Executing Phase 23 gap-closure. 23-13 shipped — the FRONTEND now consumes the server's authority (CR-08 closed). fetchMyShops sources isGroupAdmin + userId from GET /api/v1/staff/me (23-12's MyAccessDto); decodeJwtPayload + isGroupAdminFromSession DELETED — a browser JWT parse was the wrong shape even for a UI hint. The silent-pinning regression is gone: the switcher persists ONLY a stale-selection correction (D-13), so the day-one implicit GROUP_ADMIN (not a realm admin) lands on All-shops and can re-select it instead of being narrowed to one shop with no way back. WR-06: new ShopSwitcherProvider (mounted once in dashboard-shell above both switchers) is the single fetch + single hydration writer; the two switcher instances read selection from useShopContext() and converge live — chosen over a cached promise because the provider also owns the single hydration writer (renders no DOM, so the MOBL-01 375px shell markup is unchanged). WR-12: staff-screen isSelf now compares the Keycloak sub (userId), not a session email (which 23-12's masking broke); useSession removed from the page. IN-02: grant-path 409 shows downgrade-specific copy distinct from the revoke path. Revocation-timing copy corrected to the real 5-minute SSE bound (23-11). Raw-UUID grant fallback → labelled 'Unlisted member' (23-14 owns the richer JIT treatment). Proven: 156/156 dashboard+hooks Jest (falsifiability RED shown pre-fix: 5/11 switcher + 4/10 staff), npm run build (tsc) green after every task. VSA-03/VSA-04 stay NOT-marked-complete (anti-false-green — 23-14 + 23-15 still contribute). 23-12 shipped earlier — three staff-backend findings closed together against real Postgres (Testcontainers). WR-05: StaffManagementService.grant() now validates its inputs BEFORE the D-11 guard and any write — a shopId not in the caller's tenant is a typed 404 via ShopRepository.findByIdAndTenantId (the FK cannot enforce tenancy because Postgres RI BYPASSES RLS, which is exactly why a foreign-tenant shop id was silently accepted), and a userId absent from user_directory is a distinct 404 (enforcing the GrantStaffRequest javadoc's already-claimed precondition → grants target only logged-in users, D-09). Foreign-tenant and non-existent shop return an IDENTICAL 404 (no existence oracle). CR-08 backend: new GET /api/v1/staff/me + MyAccessDto(userId, groupAdmin, grantedShopIds) — server-authoritative effective access, NOT requireGroupAdmin-gated (every caller may ask about itself), @Transactional(readOnly) so onRequest() JIT/upsert is skipped. The empty-set sentinel is RESOLVED at the DTO boundary: groupAdmin=true → grantedShopIds=null (unrestricted, NOT 'no shops'); groupAdmin=false → exact possibly-empty set (empty = no access). Proves the day-one implicit-GROUP_ADMIN case the client-side realm parse gets wrong. WR-10: DirectoryEntryDto masks email at the boundary (a***@example.com; full value retained server-side only), and GdprService now erases user_directory by tenant_id+email (a no-_aud derived cache, D-09 → straight tenant-scoped DELETE; zero matches is normal, ErasureRecord accounting unchanged). Proven: StaffManagementIntegrationTest 19/19 (RED-first on foreign-shop/unknown-user grant + masking), GdprErasureIntegrationTest incl. tenant-scoped directory erasure + zero-match balance (RED: row survived pre-fix, expected 0L but was 1L), :core-java:test green, FailClosed + RlsPolicy regression green. Grants still key on userId not email. VSA-04 stays PENDING (23-13/14/15 still contribute; anti-false-green).
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -44,9 +44,9 @@ Status: Executing Phase 23 gap-closure. 23-13 shipped — the FRONTEND now consu
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-07-21 -- Executed 23-15 Tasks 2-3 (phase-gate docs/metrics + OpenAPI + planning-record reconcile; VSA-02/VSA-04 → Complete; both CI gates green)
+Last activity: 2026-07-22
 
-Progress: [████████░░] 83% (phases 21-23 all planned plans executed = 29 incl. gap-closure 23-17; phases 24-26 est. 6 plans not yet planned → denominator 35)
+Progress: [██████████░░░░░░░░░░] 50% by phase (3/6 — phases 21, 22, 23 COMPLETE + gate-verified; 24-26 remain). All planned plans on disk executed (30/30, 100%); phases 24-26 (~6 plans) not yet planned.
 
 ## Milestone v2.3 Phase Map
 
@@ -67,7 +67,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 17 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 34 (phase 23) + 12 (phases 21-22) = 29
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -77,7 +77,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 |-------|-------|-------|----------|
 | 21 | 5 | - | - |
 | 22 | 7 | - | - |
-| 23 | 17/17 | - | - |
+| 23 | 17 | - | - |
 | 24 | 0/3 | - | - |
 | 25 | 0/2 | - | - |
 | 26 | 0/2 | - | - |
@@ -172,7 +172,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Pending Todos
 
-- **Before the Phase 23 PR: run `scripts/docs-freshness.sh --write`** — 23-17 added one Java @Test in one new file (V57GrantSourceBackfillIntegrationTest) but, per plan scope (git diff = only V57 + the test), did NOT touch docs/metrics.json. Counts drift +1: java_test_methods 1064→1065, java_test_files 180→181, total_logical_invocations 1573→1574. The CI `docs-freshness` gate is expected-RED by exactly this +1 until reconciled (same defer pattern as 23-14→23-15).
+- **✅ RESOLVED (2026-07-22): docs-freshness reconciled to 1574.** The 23-17 +1 drift (java_test_methods 1064→1065, java_test_files 180→181, total 1573→1574, schema 57) is reconciled — `docs/metrics.json` reads total 1574 and `scripts/docs-freshness.sh` check mode exits 0 (`docs-freshness OK: metrics match source (total logical invocations: 1574)`, confirmed during validate-phase 23). The CI gate is green.
 - After v2.3 work pauses/completes: re-count the remediation backlog (`gh issue list --label remediation --state all`) — HANDOFF Step 2.
 - Then (LAST): run the comprehensive QA audit with the upgraded charter (lifecycle dead-end sweep + role-spanning journey matrix) — HANDOFF Step 3. Rebuild ALL containers first.
 
@@ -193,6 +193,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T14:50:00Z
-Stopped at: Completed 23-17-PLAN.md — RLS-safe V57 grant_source backfill (gap-closure code-review deployment blocker fixed). Full :core-java:integrationTest 332/0 (was 331/0), RlsContractTest green. Phase 23 gap-closure wave (23-08..23-17) DONE. Next: /gsd:secure-phase 23 then /gsd:verify-work (re-verify VSA-02/VSA-04); live vendor-auth Playwright at the phase PR. DEPLOYER NOTE: editing V57 changed its Flyway checksum — a dev who already booted a local DB on this branch needs a one-time `flyway repair`.
+Last session: 2026-07-22
+Stopped at: Phase 23 COMPLETE + all three phase-gates cleared (secure 97/97 threats closed · validate 0 gaps · verify-work 2/2 UAT PASS incl. live 375px Playwright 13/13 + /dashboard/staff screen against the running stack). ROADMAP phase 23 [x], PROJECT VSA-01..04+MOBL-01 Validated, VERIFICATION verified. Milestone v2.3 now 3/6 phases done. NEXT: Phase 24 (Image Architecture — CoW assets + safe upload pipeline, V53 media_asset) — has no CONTEXT.md yet → `/gsd:discuss-phase 24` first. BEFORE any k8s: rebuild-all still applies. DEPLOYER NOTE: editing V57 changed its Flyway checksum — a dev who already booted a local DB on this branch needs a one-time `flyway repair`. Phase 23 branch feature/phase-23-vendor-scoped-access not yet PR'd/merged (open item).
 Resume file: None
