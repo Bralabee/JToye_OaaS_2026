@@ -59,7 +59,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 - [x] **IMG-03**: Gate strictness. Normalization/decode/allowlist failure → status=FAILED, upload rejected (vendor sees rejection + reason). Content-relevance below threshold → asset goes ACTIVE but lands in a vendor-visible review queue (a hard reject would wrongly block legitimate rare dishes the vision model returns 0.0/"Unknown" for). Vision stage behind a flag defaulting to advisory until the provider is reliably up (Ollama :11434 conflict). Tests: compress-fail→FAILED, low-confidence→ACTIVE+queued, flag-off→advisory-only. Source: spec D3 + Q2 stage 6.
 
-- [ ] **IMG-04**: Product UI asset states. "Processing" state while asset PENDING; vendor-visible review/rejection queue surfaces FAILED (reason) and content-flagged (ACTIVE) assets. Tests: Jest for processing/failed/flagged states. Source: spec D2 ("Product UI shows a processing state while PENDING") + D3 review queue.
+- [x] **IMG-04**: Product UI asset states. "Processing" state while asset PENDING; vendor-visible review/rejection queue surfaces FAILED (reason) and content-flagged (ACTIVE) assets. Tests: Jest for processing/failed/flagged states. Source: spec D2 ("Product UI shows a processing state while PENDING") + D3 review queue.
 
 ### Dashboard mobile (MOBL) — HANDOFF #104
 

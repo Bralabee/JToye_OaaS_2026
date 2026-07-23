@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: executing
-stopped_at: Completed 24-01-PLAN.md (WebP toolchain + MediaNormalizer)
-last_updated: "2026-07-23T18:40:03.620Z"
+status: verifying
+stopped_at: Completed 24-06-PLAN.md (vendor UI IMG-04 + phase-gate reconcile) — Phase 24 all 6 plans done
+last_updated: "2026-07-23T19:07:30.725Z"
 last_activity: 2026-07-23
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 35
-  completed_plans: 33
-  percent: 50
+  completed_plans: 35
+  percent: 67
 ---
 
 # Project State
@@ -37,7 +37,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to execute
+Status: Phase complete — ready for verification
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -50,7 +50,7 @@ Status: Ready to execute
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-07-23
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Milestone v2.3 Phase Map
 
@@ -119,6 +119,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 24 P24-03 | ~40min | 3 tasks | 19 files |
 | Phase 24 P24-04 | 55m | 3 tasks | 12 files |
 | Phase 24 P24-05 | ~40min | 3 tasks | 13 files |
+| Phase 24 P24-06 | ~45min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 24]: 24-01: IMG-02 left PENDING (anti-false-green, mirrors 22-01/23-01) — the transform layer + toolchain are delivered, but IMG-02's async-pipeline acceptance (reject-early + quarantine + PENDING row + outbox + 202 + tenant-GUC-pinned worker + BulkImportService one path) is met by 24-02..24-06; traceability already maps IMG-02 → 24-02.
 - [Phase 23]: 23-14: CR-07 CLOSED (Task 0 = user ACCEPT of the D-04/D-12/D-05 revision; full path incl. bootstrap rule). Enabling strict-scoping now GENUINELY tightens: V57 records shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', NO RLS policy → RlsContractTest green). Under strict ON a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged. The policy lives in the shared isGroupAdminForUser decision helper, applied OUTSIDE the cached Membership snapshot (which carries only the raw groupAdminFromJit fact) so a strict-scoping flag change is never served stale — and BOTH the HTTP gate and the STOMP canAccessShop ladder tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap ONLY when no OPERATOR tenant-wide GROUP_ADMIN exists. WR-09: onRequest skips the JIT provision + directory upsert for an allowlisted machine client via isAllowlistedMachineClient (azp/client_id, subject-shape-INDEPENDENT — so a UUID-sub Keycloak service account is caught, unlike isDeclaredMachineClient). WR-01: the D-05 membership cache is now real — internal gate calls reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED post gate-call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (grep registerSynchronization==1, no drift). Membership + Task-2 fields round-trip through the exact CacheConfig JSON serializer (unit-proven). Operator provenance stamped at persistNewGrant + role-change; same-role replay is a documented no-op. Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift, 23-13 preserved). Proven vs real Postgres: StrictScopingTightening 5/5 (RED pre-fix 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; frontend jest 93/93 + build green. VSA-02/VSA-04 stay PENDING (anti-false-green — 23-15 phase-gate docs/OpenAPI reconcile still contributes). DEFERRED to 23-15: docs/metrics.json (schema 56→57; +9 Java @Test, +1 Jest) + updateOpenApiSnapshot; bulk-revoke-JIT staff affordance (convenience, not a boundary).
 - [Phase ?]: [Phase 23]: 23-11: CR-02 closed — the KDS STOMP transport (/topic/kitchen/{tenant}/{shopId}) is now shop-gated at SUBSCRIBE. New ShopAccessService.canAccessShop(tenantId,userId,realmAdmin,shopId) decides shop-read from EXPLICIT params (never SecurityContextHolder, which on the STOMP thread takes 23-08's retained internal-caller bypass and fails OPEN); identity from accessor.getUser() + a local realm_access.roles re-parse (CONNECT applies no authority conversion). isGroupAdmin() and canAccessShop() share one private isGroupAdminForUser ladder so HTTP and STOMP cannot drift. No writes on subscribe (no onRequest/JIT); tenant-pin fail-closed guard blocks an unpinned RLS GUC reading as implicit-GROUP_ADMIN under strict-OFF; TenantContext cleared in a finally on the pooled inbound thread. Day-one preservation proven end-to-end vs real Postgres; falsifiability RED shown pre-fix. WR-03 (post-revocation SSE 5-min window) accepted→23-14; staff-page copy correction→23-13.
+- [Phase 24]: 24-06: Replace/Re-upload routes to /dashboard/products (the merged 24-05 review-queue MediaAssetDto has no productId); Keep fully wired to keepAsset; follow-up = add productId for an inline uploader
+- [Phase 24]: 24-06: AssetImage wraps SafeImage with a status switch (PENDING / ACTIVE webp + width/height for CLS-D-07 / FAILED reason+Re-upload / flagged badge); SafeImage gains optional width/height; alt preserved (only SEO surface)
+- [Phase 24]: 24-06: uploader consumes the 202 {assetId,status:PENDING} accept + sends a secure-random Idempotency-Key (D-06/T-24-24); legacy synchronous imageUrl path preserved
+- [Phase 24]: 24-06 phase-gate reconcile: docs/metrics.json total 1574->1636 + schema 57->58; OpenAPI snapshot regen (media endpoints + 202); docs-freshness + OpenApiSnapshotTest green
 
 ### Pending Todos
 
@@ -205,6 +210,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-23T18:39:11.982Z
-Stopped at: Completed 24-01-PLAN.md (WebP toolchain + MediaNormalizer)
+Last session: 2026-07-23T19:07:30.714Z
+Stopped at: Completed 24-06-PLAN.md (vendor UI IMG-04 + phase-gate reconcile) — Phase 24 all 6 plans done
 Resume file: None
