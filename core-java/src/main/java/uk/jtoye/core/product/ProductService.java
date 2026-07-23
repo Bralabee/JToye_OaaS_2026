@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.media.MediaAssetService;
+import uk.jtoye.core.media.ProductMedia;
 import uk.jtoye.core.media.ProductMediaRepository;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -322,19 +323,31 @@ public class ProductService {
 
     /**
      * Remove the image from a product.
+     *
+     * <p>IMG-01 delete surface (24-05): the one place a human triggers primary-image
+     * deletion. It now drops the {@code is_primary} {@code product_media} row and
+     * ref-count-releases its asset (a physical MinIO delete happens ONLY at ref-count 0
+     * — a still-referenced shared asset is preserved) BEFORE the legacy flat cleanup, so a
+     * vendor deletion never orphans the join row + {@code media_asset}. The flat
+     * {@code image_url} cleanup + {@code setImageUrl(null)} are retained for the dual-read
+     * window (an un-migrated / backfilled product still cleans up its flat column).
      */
     public ProductDto removeImage(UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
+        // Asset-model delete (IMG-01): drop the primary join row + ref-count-release the asset.
+        releasePrimaryAsset(productId);
+
+        // Dual-read flat cleanup (D-03a): still delete the flat object + null the column.
         storageService.delete(product.getImageUrl());
         product.setImageUrl(null);
         product = productRepository.saveAndFlush(product);
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed image for product {} (SKU: {})", productId, product.getSku());
-        return resolveAssetFirst(productMapper.toDto(product));
+        return resolveDetail(productMapper.toDto(product));
     }
 
     /**
@@ -363,6 +376,14 @@ public class ProductService {
 
     /**
      * Remove an additional image by index.
+     *
+     * <p>IMG-01 delete surface (24-05): the gallery-image counterpart of
+     * {@link #removeImage}. The {@code index} is the 0-based position in the flat
+     * {@code additional_image_urls[]} list, which aligns positionally with the product's
+     * non-primary {@code product_media} rows in {@code sort_order} (the V53 backfill mapped
+     * the array to gallery rows preserving order). So the row for the removed gallery entry
+     * is dropped and its asset ref-count-released (physical MinIO delete only at ref-count 0;
+     * remaining gallery rows untouched), alongside the retained flat-array cleanup.
      */
     public ProductDto removeAdditionalImage(UUID productId, int index) {
         Product product = productRepository.findById(productId)
@@ -374,13 +395,54 @@ public class ProductService {
             throw new ResourceNotFoundException("Image index out of range: " + index);
         }
 
+        // Asset-model delete (IMG-01): drop the matching gallery join row + release its asset.
+        releaseGalleryAssetAt(productId, index);
+
+        // Dual-read flat cleanup (D-03a): still remove the flat-array entry + delete the object.
         String removedUrl = urls.remove(index);
         storageService.delete(removedUrl);
         product = productRepository.saveAndFlush(product);
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed additional image {} for product {}", index, productId);
-        return resolveAssetFirst(productMapper.toDto(product));
+        return resolveDetail(productMapper.toDto(product));
+    }
+
+    /**
+     * Drop the product's {@code is_primary} {@code product_media} row (if any) and
+     * ref-count-release its asset (IMG-01): the physical MinIO delete + {@code media_asset}
+     * removal happen only when no other {@code product_media} row still references the asset
+     * (a shared asset is preserved). Tenant-scoped by RLS + the caller's SHOP_MANAGER gate.
+     */
+    private void releasePrimaryAsset(UUID productId) {
+        productMediaRepository.findByProductIdAndPrimaryTrue(productId).ifPresent(pm -> {
+            UUID assetId = pm.getAssetId();
+            productMediaRepository.delete(pm);
+            productMediaRepository.flush();          // make the drop visible to the ref-count query
+            mediaAssetService.releaseAsset(assetId);
+        });
+    }
+
+    /**
+     * Drop the gallery {@code product_media} row at the 0-based {@code index} (over the
+     * product's non-primary rows ordered by {@code sort_order}) and ref-count-release its
+     * asset (IMG-01). Positional over {@code sort_order} — robust to 0- vs 1-based ordinality
+     * and gaps — so the Nth flat-array entry maps to the Nth gallery row. If no join row
+     * exists at that position (e.g. a gallery image added via the still-flat path during the
+     * dual-read window), the flat cleanup alone runs — nothing to release.
+     */
+    private void releaseGalleryAssetAt(UUID productId, int index) {
+        List<ProductMedia> gallery = productMediaRepository
+                .findByProductIdOrderByPrimaryDescSortOrderAsc(productId).stream()
+                .filter(pm -> !pm.isPrimary())
+                .toList();
+        if (index >= 0 && index < gallery.size()) {
+            ProductMedia row = gallery.get(index);
+            UUID assetId = row.getAssetId();
+            productMediaRepository.delete(row);
+            productMediaRepository.flush();
+            mediaAssetService.releaseAsset(assetId);
+        }
     }
 
     /**
