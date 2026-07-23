@@ -486,20 +486,24 @@ public void reapOrphans() {
 | A3 | libvips FFM bindings are heavier/Alpine-hostile relative to cwebp | Alternatives | LOW — informational only; not the recommended path |
 | A4 | A dedicated `media_event_outbox` is lower-risk than extending `PaymentEventOutboxFlusher` | Outbox wiring | LOW — both are viable; recommendation is a judgment call the planner may override, documented either way |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the musl `cwebp` path actually work in-container?** (A1)
+   - **RESOLVED:** 24-01 Task 2's in-container musl smoke test GATES the choice (Scrimage+libwebp-tools), with the glibc `eclipse-temurin:21-jre` base as the recorded fallback.
    - What we know: `libwebp-tools` exists as an Alpine package (musl cwebp) `[VERIFIED]`; scrimage supports a system-binary override `[CITED]`.
    - What's unclear: the exact scrimage-4.6.6 ↔ system-binary invocation on musl (does it still try to extract the bundled binary first?).
    - Recommendation: **Wave-0 spike** — a single Testcontainers-or-compose smoke test that boots the Alpine image, encodes one image, asserts valid WebP output. Only then lock the library choice. If it fails, switch runtime base to `eclipse-temurin:21-jre` (glibc) and use scrimage's bundled cwebp.
 
 2. **`_aud` mirror for `media_asset` and/or `product_media`?**
+   - **RESOLVED:** `media_asset` is `@Audited` (`media_asset_aud`, nullable-tenant _aud RLS); `product_media` stays un-audited — the split applied in 24-02.
    - What we know: `Product` is `@Audited`; `shop_staff` has `_aud`; dedup stores (`idempotency_keys` V50, `processed_order_events` V47) skip `_aud`.
    - Recommendation: **`media_asset` gets `@Audited`/`media_asset_aud`** (durable domain data with a status lifecycle + `uploaded_by` — audit is valuable; use the nullable-tenant_id `_aud` RLS policy from `shop_staff_aud`). **`product_media` un-audited** (Envers on a pure join adds complexity; CoW history is captured by `media_asset` lifecycle). Planner may override — it's a discretion area.
 
 3. **object_key: content-addressed vs asset-id-addressed?** — see next section; recommend asset-id-addressed derivative + sha256(raw) dedup column. Planner decides.
+   - **RESOLVED:** recommendation followed — asset-id-addressed derivative (`<tenant>/media/<assetId>.webp`) + `sha256(raw)` dedup column (24-02).
 
 4. **Content-relevance threshold value** for the advisory flag (IMG-03)?
+   - **RESOLVED:** config default OFF — `jtoye.media.vision.enabled=false`, `jtoye.media.vision.min-confidence=0.35` (key introduced in 24-01, gated in 24-04).
    - Recommendation: config-declared under `jtoye.media.vision.*` (e.g. `min-confidence: 0.35`), flag `jtoye.media.vision.enabled=false` (advisory-only default, since Ollama :11434 is unreliable). Reuse `ImageAnalysisService.isEnabled()` (already flag-guarded).
 
 ## media_asset object_key scheme (Claude's Discretion — recommendation)
