@@ -80,10 +80,18 @@ class TenantLifecycleAdminIntegrationTest {
                 ADMIN_TENANT, "Tenant A");
     }
 
+    // Both tokens carry a UUID subject — the 23-08 fail-closed ShopAccessService gate denies any
+    // authenticated principal whose sub is not a UUID, so the pre-Phase-23 default MockMvc subject
+    // ("user") 403'd on the tenant-scoped shop/order traffic these tests exercise (the admin
+    // lifecycle endpoints themselves are role-gated, not shop-gated, and were unaffected). The
+    // realm-role / RBAC semantics are unchanged: authorities still come from the real
+    // KeycloakRealmRoleConverter against the realm_access claim.
+
     /** admin realm role + a tenant claim; authorities via the REAL converter. */
     private static org.springframework.test.web.servlet.request.RequestPostProcessor adminJwt(UUID tenantId) {
         return jwt()
-                .jwt(j -> j.claim("tenant_id", tenantId.toString())
+                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", tenantId.toString())
                         .claim("realm_access", Map.of("roles", List.of("admin"))))
                 .authorities(new KeycloakRealmRoleConverter());
     }
@@ -91,7 +99,8 @@ class TenantLifecycleAdminIntegrationTest {
     /** low-privilege (user-only) token for the negative RBAC control. */
     private static org.springframework.test.web.servlet.request.RequestPostProcessor userJwt(UUID tenantId) {
         return jwt()
-                .jwt(j -> j.claim("tenant_id", tenantId.toString())
+                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", tenantId.toString())
                         .claim("realm_access", Map.of("roles", List.of("user"))))
                 .authorities(new KeycloakRealmRoleConverter());
     }

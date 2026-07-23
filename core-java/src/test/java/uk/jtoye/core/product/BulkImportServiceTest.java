@@ -15,6 +15,7 @@ import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
 
 import java.lang.reflect.Field;
@@ -48,6 +49,9 @@ class BulkImportServiceTest {
     @Mock
     private StorageService storageService;
 
+    @Mock
+    private ShopAccessService shopAccessService;
+
     @InjectMocks
     private BulkImportService bulkImportService;
 
@@ -67,6 +71,11 @@ class BulkImportServiceTest {
     void setUp() {
         tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these fixtures import CSVs with no shop_id column, so run as
+        // a GROUP_ADMIN — unassigned rows are allowed (legacy behaviour) and the image
+        // path's requireGroupAdmin() passes. Lenient: not every test reaches the gate.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Default: repository saves and returns the product with an ID
         lenient().when(productRepository.save(any(Product.class))).thenAnswer(invocation -> {
@@ -165,6 +174,31 @@ class BulkImportServiceTest {
         assertEquals(0, result.getTotalRows());
         assertEquals(1, result.getErrorCount());
         assertTrue(result.getErrors().get(0).getMessage().contains("title"));
+    }
+
+    @Test
+    @DisplayName("importFromCsv - Malformed shop_id is a per-row error, not a 403, and the batch continues (WR-07)")
+    void testImportFromCsv_MalformedShopId_RowErrorNot403() {
+        String csv = "title,price_pounds,shop_id\n" +
+                "Bad Row,5.00,not-a-uuid\n" +
+                "Good Row,6.00,\n";  // blank shop_id -> null -> allowed for GROUP_ADMIN
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
+
+        BulkImportResult result = bulkImportService.importFromCsv(file);
+
+        assertEquals(2, result.getTotalRows());
+        // The good row still imports — a bad cell does not abort the whole batch.
+        assertEquals(1, result.getSuccessCount());
+        // The malformed shop_id is reported as a row-level validation error...
+        assertEquals(1, result.getErrorCount());
+        BulkImportResult.RowError err = result.getErrors().get(0);
+        assertEquals("shop_id", err.getField());
+        assertTrue(err.getMessage().contains("Invalid shop_id"),
+                "malformed shop_id must be a validation error, got: " + err.getMessage());
+        // ...and it was NEVER surfaced as an authorization denial (no require() on the bad row).
+        verify(shopAccessService, never()).require(any(), any());
     }
 
     @Test

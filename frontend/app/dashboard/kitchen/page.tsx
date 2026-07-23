@@ -5,6 +5,7 @@ import { m, AnimatePresence } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useStomp } from "@/hooks/use-stomp"
 import { useToast } from "@/hooks/use-toast"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   Card,
   CardContent,
@@ -119,6 +120,11 @@ export default function KitchenPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null)
 
+  // VSA-03: the global switcher is the single source of truth for which shop the
+  // board shows. The local <Select> below stays for on-board convenience, but it
+  // no longer owns an independent default. `null` = All shops.
+  const { contextShopId } = useShopContext()
+
   // Orders map: orderId -> OrderDetail
   const [ordersMap, setOrdersMap] = useState<Map<string, OrderDetail>>(new Map())
 
@@ -175,10 +181,10 @@ export default function KitchenPage() {
         // only drafts still gets a working (never selector-empty) KDS.
         const publishedShops = shopList.filter((s) => s.published)
         const selectable = publishedShops.length > 0 ? publishedShops : shopList
+        // 23-07 (VSA-03): the board's shop is no longer chosen here. Selection is
+        // reconciled below against the GLOBAL switcher context so there is one
+        // source of truth rather than two competing defaults.
         setShops(selectable)
-        if (selectable.length > 0) {
-          setSelectedShopId(selectable[0].id)
-        }
       } catch {
         toast({
           variant: "destructive",
@@ -192,6 +198,27 @@ export default function KitchenPage() {
     fetchShops()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // --- Reconcile the board's shop with the global switcher context (VSA-03) ---
+  //
+  // A specific switcher context always wins — switching shop in the sidebar moves
+  // the KDS board with no reload. In the All-shops context the board keeps any
+  // on-board manual selection and falls back to the published-first default
+  // (today's behaviour, QA-council FIX-4). A context shop that isn't selectable
+  // (revoked/unpublished) degrades to that same fallback rather than crashing (D-13).
+  useEffect(() => {
+    if (shops.length === 0) return
+    const inList = (id: string | null) => !!id && shops.some((s) => s.id === id)
+    const next = inList(contextShopId)
+      ? (contextShopId as string)
+      : inList(selectedShopId)
+        ? (selectedShopId as string)
+        : shops[0].id
+    if (next !== selectedShopId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- derives the board shop from the fetched list + the hydrated switcher context
+      setSelectedShopId(next)
+    }
+  }, [shops, contextShopId, selectedShopId])
 
   // --- Fetch all active orders for selected shop ---
 

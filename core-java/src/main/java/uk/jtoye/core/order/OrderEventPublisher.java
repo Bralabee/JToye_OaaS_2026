@@ -70,8 +70,20 @@ public class OrderEventPublisher {
      */
     public void publishStateChange(UUID orderId, UUID tenantId, String orderNumber,
                                    OrderStatus previousStatus, OrderStatus newStatus) {
+        publishStateChange(orderId, tenantId, null, orderNumber, previousStatus, newStatus);
+    }
+
+    /**
+     * As {@link #publishStateChange(UUID, UUID, String, OrderStatus, OrderStatus)}
+     * but carries the order's {@code shopId} (Phase 23, VSA-02 §3-FLAG #2) so the
+     * KDS SSE fan-out can filter live events to each subscriber's granted shops.
+     * The order-state path passes the real shopId; the legacy 5-arg overload passes
+     * null (treated as GROUP_ADMIN-only by the fan-out filter).
+     */
+    public void publishStateChange(UUID orderId, UUID tenantId, UUID shopId, String orderNumber,
+                                   OrderStatus previousStatus, OrderStatus newStatus) {
         OrderStateChangeEvent event = new OrderStateChangeEvent(
-                orderId, tenantId, orderNumber, previousStatus, newStatus, OffsetDateTime.now()
+                orderId, tenantId, orderNumber, previousStatus, newStatus, OffsetDateTime.now(), shopId
         );
 
         String routingKey = ORDER_STATE_ROUTING_PREFIX + newStatus.name().toLowerCase();

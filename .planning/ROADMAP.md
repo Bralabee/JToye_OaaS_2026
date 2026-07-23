@@ -39,7 +39,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 
 - [x] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations) (completed 2026-07-14)
 - [x] **Phase 22: Notifications & Comms** — First delivery consumer of the V46 transactional outbox: email-first transactional notifications (Mailhog dev → SES prod) + vendor-registered outbound webhooks (HMAC-signed, retried; absorbs #205) + a WhatsApp/SMS seam behind a provider flag (absorbs #208), with GDPR consent + unsubscribe (completed 2026-07-15)
-- [ ] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px
+- [x] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px (code-complete 2026-07-20; **gap-closure wave 23-08..23-17 CLOSED 2026-07-21** — the 3 confirmed authZ bypasses fixed [CR-01 cache-bypass 23-10, CR-02 STOMP gate 23-11, CR-03/CR-04 fail-closed 23-08] + CR-05..CR-08 staff/frontend + CR-07 strict-scoping 23-14 + the V57 grant_source-backfill deploy blocker fixed [23-17: bare no-GUC UPDATE → V44 per-tenant `set_config` loop, so `SET NOT NULL` no longer bricks boot on a non-fresh DB]; VSA-02/VSA-04 Complete with named green proofs over a green full `integrationTest` (332/0); both known-red CI gates green [OpenAPI snapshot + docs-freshness]. Checkbox stays open pending final `/gsd:secure-phase 23` + `/gsd:verify-work` sign-off; live vendor-auth Playwright deferred to the phase PR) (completed 2026-07-22)
 - [ ] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
 - [ ] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential
 - [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
@@ -133,13 +133,62 @@ Plans:
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
 
-**Plans**: TBD (est. 3)
+**Plans**: 15 plans (6 waves shipped + 5 gap-closure waves)
 
 Plans:
+**Wave 1**
 
-- [ ] 23-01: V52 `shop_staff` (+`_aud`, ENABLE+FORCE RLS, unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + GROUP_ADMIN backfill (idempotent) + realm-admin implicit GROUP_ADMIN + RLS-under-NOSUPERUSER proof
-- [ ] 23-02: `ShopAccessService.require(shopId, minRole)` enforcement sweep across shop-scoped endpoints (shops/products/orders/KDS/marketing) — deny-by-default writes, 403 RFC 7807 vs RLS 404, tenant-aware membership cache, Testcontainers cross-shop 403 proofs (seed inventory from `qa/surface-ledger.json`)
-- [ ] 23-03: Dashboard shop-context switcher (persisted) + GROUP_ADMIN-only "apply to all shops" + staff-management screen (list/grant/revoke) + responsive drawer/bottom-nav at 375px (MOBL-01) + Jest/Playwright
+- [x] 23-01-PLAN.md (Wave 1) — V52 schema: `shop_staff` (+`_aud`, ENABLE+FORCE RLS via `current_tenant_id()`, functional unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`) + login-populated `user_directory` (D-09, no `_aud`) + entities/repos (native race-safe JIT-insert + throttled directory upsert) + `ShopStaffRlsPolicyIntegrationTest` (cross-tenant + PII under NOSUPERUSER). No migrate-time backfill (JIT is 23-02). [VSA-01]
+
+**Wave 2** *(blocked on 23-01)*
+
+- [x] 23-02-PLAN.md (Wave 2) — `ShopAccessService` core: per-user membership cache + realm-admin⇒implicit-GROUP_ADMIN bridge + D-04 JIT lazy-provision + D-09 throttled directory upsert + D-12 strict-scoping switch (default OFF) + typed `ShopAccessDeniedException` (distinct 403) / `LastGroupAdminException` (409) + JIT-idempotency + 403≠404 tests. [VSA-01, VSA-02]
+
+**Wave 3** *(both blocked on 23-02; parallel — no file overlap)*
+
+- [x] 23-03-PLAN.md (Wave 3) — Enforcement sweep (RESEARCH §3 inventory): `require(shopId, minRole)` + read-scoping across Shop/Product/Order/Promotion/Announcement services; §3-FLAG mitigations (bulk-import per-row, KDS SSE fan-out grant-set filter); `ShopAccessEnforcementIntegrationTest`. [VSA-02]
+- [x] 23-04-PLAN.md (Wave 3, parallel) — Staff-management backend: GROUP_ADMIN-gated `/api/v1/staff` list/grant/revoke + last-GROUP_ADMIN 409 guard (D-11) + evict-on-write (D-05) + `StaffManagementIntegrationTest`. [VSA-04]
+
+**Wave 4** *(blocked on 23-03)*
+
+- [x] 23-05-PLAN.md (Wave 4) — Frontend switcher (VSA-03): persisted shop-context dropdown (localStorage, GA⇒All-shops, apply-to-all GA-only) mounted in sidebar header + mobile top bar; MOBL-01 verify-first (375px Jest/Playwright regression + surface-ledger proof — no new drawer); D-13 stale-selection access-required. [VSA-03, MOBL-01]
+
+**Wave 5** *(blocked on 23-05)*
+
+- [x] 23-07-PLAN.md (Wave 5) — Shop-context wiring (VSA-03 consumption): a `useShopContext` hook over `getShopContext()`/`subscribeShopContext` (23-05) threaded into Products/Orders/Marketing/Kitchen — list narrowing (Orders `?shopId=` server param, others client-side over the 23-03 grant-scoped result) + create-form default/constrain to the selected shop (D-08) + Kitchen local-selector reconcile; Jest behaviour proofs. Closes VSA-03's “all shop-scoped screens operate on the selected shop” clause. [VSA-03]
+
+**Wave 6** *(blocked on 23-04 + 23-05 + 23-07)*
+
+- [x] 23-06-PLAN.md (Wave 6) — Staff-management screen (VSA-04): `/dashboard/staff` list/grant/revoke (403→access-required, 409→clear msg) + GROUP_ADMIN-only Staff nav item (D-10) + phase-gate `docs/metrics.json` + CLAUDE.md count reconcile (all of 23-01..23-07). [VSA-04, MOBL-01]
+
+**Gap closure** *(`/gsd:execute-phase 23 --gaps-only`; VSA-01/03 + MOBL-01 already PASS and are NOT re-planned)*
+
+Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization bypasses) + `23-REVIEW.md` (8 Critical / 12 Warning / 3 Info). Waves below are scoped to the gap-closure run.
+
+**Gap Wave 1**
+
+- [x] 23-08-PLAN.md (Gap Wave 1) — CR-03 fail-closed system principal (a non-UUID-subject JWT was an unrestricted GROUP_ADMIN on `/api/v1/staff`) via an explicit empty-by-default machine-client allowlist, + CR-04 `require(null, role)` NPE→typed 403 and the null-shop write policy. [VSA-02, VSA-04]
+- [x] 23-09-PLAN.md (Gap Wave 1, parallel) — CR-05 role changes silently no-op while reporting success (grant reshaped to an audited session-based write, closing WR-02) + CR-06 last-GROUP_ADMIN check-then-act race (`PESSIMISTIC_WRITE` lock) + IN-03. [VSA-04] (VSA-04 stays PENDING — 23-12/23-13/23-14/23-15 still contribute)
+
+**Gap Wave 2** *(23-10/23-11 blocked on 23-08; 23-12 on 23-09; all three parallel — no file overlap)*
+
+- [x] 23-10-PLAN.md (Gap Wave 2) — CR-01 `@Cacheable` short-circuits the shop gate on a warm cache, proven by a caching-ENABLED two-scoped-user test that defeats the `@Profile("!test")` blindness; + WR-08 null-shop read policy and WR-07 malformed-CSV 403→400. [VSA-02] — ✓ gate moved onto dedicated cached-loader beans (require() runs on every call, cache key + evictions unchanged); RED demonstrated pre-fix on the two-user cache cases; 4/4 cache-bypass + 6/6 enforcement + full :core-java:test green. VSA-02 stays PENDING (23-11 KDS transport still contributes).
+- [x] 23-11-PLAN.md (Gap Wave 2, parallel) — CR-02 the real KDS transport (STOMP `/topic/kitchen/{tid}/{shopId}`) is not shop-gated; explicit-identity grant check at SUBSCRIBE, with the day-one ungranted user preserved. [VSA-02]
+- [x] 23-12-PLAN.md (Gap Wave 2, parallel) — WR-05 grant validates neither shop tenancy nor user existence + `GET /api/v1/staff/me` (CR-08 backend half) + WR-10 `user_directory` PII masking and GDPR erasure coverage. [VSA-04]
+
+**Gap Wave 3** *(blocked on 23-12)*
+
+- [x] 23-13-PLAN.md (Gap Wave 3) — CR-08 frontend GROUP_ADMIN detection disagrees with the backend model, silently pinning every non-realm-admin to one shop; server-sourced via `/me`, + WR-06 divergent switcher instances, WR-12 sub-based identity, IN-02 copy. [VSA-03, VSA-04]
+
+**Gap Wave 4** *(blocked on 23-08 + 23-09 + 23-11 + 23-13)*
+
+- [x] 23-14-PLAN.md (Gap Wave 4) — **CR-07 design correction, revises locked D-04/D-12/D-05** (blocking decision checkpoint): enabling `strict-scoping` currently tightens nothing because JIT already wrote permanent GROUP_ADMIN rows for everyone. V57 grant provenance + strict-ON de-honours JIT rows with a deterministic bootstrap admin; + WR-09 machine accounts, WR-01/WR-11 membership cache made real with proven post-commit eviction. [VSA-02, VSA-04]
+
+**Gap Wave 5** *(blocked on all)*
+
+- [x] 23-15-PLAN.md (Gap Wave 5) — Phase gate: OpenAPI snapshot regen (`adc1c58`, 4 staff endpoints incl. /me) + `docs-freshness --write` reconcile (1511→1573 / schema 56→57, CLAUDE.md+AGENTS.md, EXIT 0) over a green suite (integrationTest 331/0, jest 360/360) + 23-VALIDATION/REQUIREMENTS/23-CONTEXT/deferred-items reconcile; VSA-02+VSA-04 → Complete. Both known-red CI gates now green. (completed 2026-07-21) [VSA-02, VSA-04]
+- [x] 23-16-PLAN.md (Gap Wave 5, test-only) — migrated 7 legacy integration classes from `@WithMockUser` / non-UUID `.jwt()` to the production UUID-subject JWT auth shape, turning the full `:core-java:integrationTest` from 13 failures (23-08's fail-closed `requireVendorUserId()` denials) to **331/0** with zero main-source change; the fail-closed boundary is preserved, not relaxed. (completed 2026-07-21)
+- [x] 23-17-PLAN.md (Gap Wave 6, code-review blocker) — **CONFIRMED V57 deployment blocker fixed**: the grant_source backfill (shipped by 23-14) was a bare no-GUC `UPDATE` invisible under the FORCE-RLS shop_staff table to the RLS-bound migration role (jtoye_app) → 0 rows → `SET NOT NULL` bricks boot on any non-fresh DB. Rewritten as V44's per-tenant `set_config` loop; steps 1/3/4 unchanged, no RLS policy touched (RlsContractTest green). New `V57GrantSourceBackfillIntegrationTest` proves it on a non-fresh two-tenant DB under a NOSUPERUSER `rls_migrator` role (RED against the bare UPDATE — SQLSTATE 23502 at SET NOT NULL; GREEN after). Full `integrationTest` **332/0**. (completed 2026-07-21) [VSA-02]
 
 **UI hint**: yes
 
@@ -215,7 +264,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 0/3 | Not started | - |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

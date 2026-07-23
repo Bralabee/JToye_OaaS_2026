@@ -66,6 +66,7 @@ Infrastructure:
 - ✓ **[v2.2 AI]** Read-only MCP server slice with live RLS proof (Phase 20); uniform Idempotency-Key contract (#204, V50); scoped machine credentials (#206)
 - ✓ **[v2.2 P1/P2 security backlog]** RBAC method security (#83), GDPR erasure completeness (#84), guest-checkout stock convergence (#85), Redis resilience (#86), JWT audience validation (#87), public-path rate limiting (#88), supply-chain CI gate (#91), Keycloak deprovisioning on offboard (#102, V49), RLS uuid-cast safety (#113, V51)
 - ✓ **[v2.3 COMMS]** Notifications & Comms — first delivery consumer of the V46 outbox: multipart branded email + INERT WhatsApp/SMS seam (COMMS-02/07), GDPR consent/suppression + one-click unsubscribe (COMMS-03, V54), vendor-registered HMAC-signed outbound webhooks with retry/auto-pause/replay + delivery-log UI (COMMS-04/05/06, V55/V56, absorbs AI-01/#205 + #208), the previously-dead onboarding.events exchange now bound to a vendor email, all new tables ENABLE+FORCE RLS — Phase 22 (7 plans, verified 34/34; 5 code-review fixes; CR-01 SSRF DNS-rebinding hardening deferred to a tracked security follow-up)
+- ✓ **[v2.3 VSA/MOBL]** Vendor-Scoped Access + Responsive Dashboard Nav — the vendor→shop application-layer authorization boundary UNDER the RLS tenant wall: `shop_staff`/`user_directory` + `_aud` ENABLE+FORCE RLS via `current_tenant_id()` (V52), JIT day-one GROUP_ADMIN auto-provision with realm-admin bridge, `ShopAccessService` single decision funnel (HTTP + STOMP share it) with deny-by-default writes + query-level read-scope + typed shop-403≠RLS-404, staff list/grant/revoke API + screen (last-admin 409 lock, idempotent grant, Envers audit, email-masked directory, GDPR sweep), persisted shop-context switcher + all shop-scoped screens narrow live, config-gated strict-scoping that de-honours JIT admins with a bootstrap-safe flip (V57 `grant_source`), and MOBL-01 375px responsive nav carrying the switcher (VSA-01..04, MOBL-01) — Phase 23 (17 plans incl. a 10-plan gap-closure wave; security 97/97 threats closed; validation 0 gaps; UAT 2/2 live-verified incl. real 375px Playwright). Conscious deferrals (AR-23-01..08) tracked in `deferred-items.md`.
 
 ### Active
 
@@ -76,20 +77,11 @@ Infrastructure:
 - [ ] ONBD-04: Per-gate remediation blocks (why → what to do → deep link to the fix surface) for FAILED/MANUAL_REVIEW gates
 - [ ] ONBD-05: Rejection reason surfaced on the vendor DTO + a configurable real support channel on terminal states
 
-**Vendor-scoped access (VSA):**
-- [ ] VSA-01: `shop_staff` mapping table (user ↔ shop ↔ role), ENABLE+FORCE RLS tenant-scoped, GROUP_ADMIN backfill for existing users (V52)
-- [ ] VSA-02: Application-layer `ShopAccessService.require(shopId, minRole)` gate on shop-scoped endpoints (shops/products/orders/KDS/marketing), deny-by-default writes, 403 RFC 7807 distinct from the RLS 404
-- [ ] VSA-03: Dashboard shop-context switcher (persisted) with explicit GROUP_ADMIN-only "apply to all shops" action
-- [ ] VSA-04: Staff management screen — list + grant + revoke roles per shop
-
 **Image architecture (IMG):**
 - [ ] IMG-01: `media_asset` model (tenant-scoped RLS, sha256 dedup) — products reference assets, copy-on-write on edit, reference-counted physical delete (V53)
 - [ ] IMG-02: Safe async upload pipeline — early size/streaming reject, quarantine + PENDING row + AMQP publish; worker does magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode (stored artifact is always the normalized derivative)
 - [ ] IMG-03: Gate strictness — compress failure = hard veto (FAILED), content-relevance below threshold = review queue (asset stays ACTIVE), vision stage behind advisory flag
 - [ ] IMG-04: Product UI "processing" state while asset PENDING; vendor-visible review/rejection queue
-
-**Dashboard mobile (MOBL):**
-- [ ] MOBL-01: Dashboard sidebar no longer overlays content at 375px — responsive nav (drawer/collapse) pairing with the shop switcher
 
 **AI / automation (AI):**
 - [x] AI-01: Vendor-registered outbound webhook subscriptions delivered from the V46 transactional outbox with retry/signing (#205) — ✓ delivered as Phase 22 COMMS-04/05/06 (V55/V56)
@@ -169,4 +161,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-15 — Phase 22 (Notifications & Comms, COMMS-01..07) complete: first V46-outbox delivery consumer (email + HMAC webhooks + WhatsApp seam + consent/unsubscribe), AI-01/#205 delivered. Milestone v2.3 (Vendor Ops + AI interleaved); v2.2 archived to `.planning/milestones/v2.2-*`. Next: Phase 23 (Vendor-Scoped Access + Responsive Nav).*
+*Last updated: 2026-07-22 — Phase 23 (Vendor-Scoped Access + Responsive Dashboard Nav, VSA-01..04 + MOBL-01) complete: vendor→shop authorization boundary under RLS (V52 shop_staff / V57 grant_source), ShopAccessService HTTP+STOMP funnel, staff API+screen, persisted shop switcher, live-verified 375px nav. 17 plans (10-plan gap-closure wave); security 97/97 threats closed, validation 0 gaps, UAT 2/2 live. Milestone v2.3 43%/6 phases (21-23 done). Next: Phase 24 (Image Architecture — CoW assets + safe upload pipeline, V53 media_asset).*

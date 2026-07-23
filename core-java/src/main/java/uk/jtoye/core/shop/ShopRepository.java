@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +24,15 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
 
     @Query("SELECT s FROM Shop s WHERE s.tenantId = :tenantId AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%')))")
     List<Shop> searchByTenant(@Param("tenantId") UUID tenantId, @Param("q") String query);
+
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01): read-scope the authenticated
+    // "my shops" list to the caller's GRANT SET, not just the tenant. A non-GROUP_ADMIN
+    // sees only the shops they hold a shop_staff grant on — narrowed at the QUERY, never
+    // a post-hoc in-memory filter (D-01). GROUP_ADMIN keeps the wider findByTenantId path.
+    Page<Shop> findByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids, Pageable pageable);
+
+    @Query("SELECT s FROM Shop s WHERE s.tenantId = :tenantId AND s.id IN :ids AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%')))")
+    List<Shop> searchByTenantAndIdIn(@Param("tenantId") UUID tenantId, @Param("ids") Collection<UUID> ids, @Param("q") String query);
 
     // Tenant-scoped by-id read for the authenticated management endpoint (BE-03
     // completion): the plain findById is RLS-only and shops_public_read permits

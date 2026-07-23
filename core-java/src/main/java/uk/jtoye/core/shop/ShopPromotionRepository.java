@@ -6,10 +6,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public interface ShopPromotionRepository extends JpaRepository<ShopPromotion, UUID> {
+
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01): grant-set read-scope for the
+    // promotions list — a non-GROUP_ADMIN sees only promotions whose shop_id is in
+    // their grant set, narrowed at the QUERY. Callers guarantee a non-empty set.
+    Page<ShopPromotion> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
 
     @Query("SELECT p FROM ShopPromotion p WHERE p.shopId = :shopId AND p.active = true AND p.validFrom <= CURRENT_TIMESTAMP AND p.validUntil > CURRENT_TIMESTAMP ORDER BY p.createdAt DESC")
     List<ShopPromotion> findActiveByShopId(@Param("shopId") UUID shopId);

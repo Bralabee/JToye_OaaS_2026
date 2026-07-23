@@ -87,6 +87,15 @@ public class CacheConfig implements CachingConfigurer {
         // Shops cache: 15 minutes (very stable data, infrequently updated)
         cacheConfigurations.put("shops", defaultConfig.entryTtl(Duration.ofMinutes(15)));
 
+        // Phase 23 VSA-02 (D-05): per-user shop-membership cache. This cache genuinely
+        // engages as of plan 23-14 (WR-01): ShopAccessService reaches the @Cacheable
+        // resolveMembership through its own bean proxy, so the interceptor actually runs,
+        // Membership round-trips through the JSON serializer below, and grant/revoke +
+        // JIT-provision evict the exact entry AFTER commit (TenantCacheEvictor). This short
+        // TTL is only a backstop should an eviction be missed — an auth boundary must not
+        // carry a stale allow for long.
+        cacheConfigurations.put("shopMembership", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultConfig)
                 .withInitialCacheConfigurations(cacheConfigurations)

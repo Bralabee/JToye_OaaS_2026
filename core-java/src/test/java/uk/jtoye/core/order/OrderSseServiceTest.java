@@ -4,15 +4,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,7 +34,13 @@ class OrderSseServiceTest {
 
     @BeforeEach
     void setUp() {
-        orderSseService = new OrderSseService();
+        // Phase 23 (VSA-02 §3-FLAG #2): subscribe() now captures the caller's shop scope.
+        // These lifecycle tests run as a GROUP_ADMIN so every emitter sees all events
+        // (permits any shopId incl. the null shopId of the legacy 6-arg test events),
+        // preserving the pre-scoping broadcast/prune behaviour.
+        ShopAccessService shopAccessService = Mockito.mock(ShopAccessService.class);
+        Mockito.when(shopAccessService.isGroupAdmin()).thenReturn(true);
+        orderSseService = new OrderSseService(shopAccessService);
         // Required so subscribe() does not fail-closed on a missing TenantContext.
         TenantContext.set(UUID.randomUUID());
     }
@@ -207,7 +214,8 @@ class OrderSseServiceTest {
     private int totalRegisteredEmitters() throws Exception {
         Field field = OrderSseService.class.getDeclaredField("emittersByTenant");
         field.setAccessible(true);
-        Map<UUID, Set<SseEmitter>> map = (Map<UUID, Set<SseEmitter>>) field.get(orderSseService);
-        return map.values().stream().mapToInt(Set::size).sum();
+        // Phase 23: each tenant bucket is now a Map<SseEmitter, ShopScope>, so count keys.
+        Map<UUID, Map<SseEmitter, ?>> map = (Map<UUID, Map<SseEmitter, ?>>) field.get(orderSseService);
+        return map.values().stream().mapToInt(Map::size).sum();
     }
 }

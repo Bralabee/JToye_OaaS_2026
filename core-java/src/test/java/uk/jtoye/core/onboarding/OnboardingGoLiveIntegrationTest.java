@@ -7,11 +7,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -20,9 +24,11 @@ import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -82,8 +88,39 @@ class OnboardingGoLiveIntegrationTest {
                 shopId, tenantId, "shop-" + shopId, "slug-" + shopId.toString().substring(0, 8), "1 Test Street");
     }
 
+    /**
+     * Production-shaped auth: a UUID-subject Keycloak JWT with the realm-admin authority
+     * (implicit GROUP_ADMIN). Replaces the pre-Phase-23 {@code WithMockUser}, whose non-JWT
+     * principal the fail-closed {@code ShopAccessService} (23-08) now denies. Go-live itself
+     * is not shop-gated (it drives the state machine + the sole-writer {@code setPublished}),
+     * so these methods pass on any authenticated principal; the JWT is simply the production
+     * auth shape.
+     */
+    private static RequestPostProcessor adminJwt() {
+        return jwt().jwt(j -> j
+                        .subject(UUID.randomUUID().toString())
+                        .claim("email", "operator@example.com"))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+    }
+
+    /**
+     * Set a UUID-subject realm-admin (implicit GROUP_ADMIN) directly on the SecurityContext,
+     * mirroring {@code ShopAccessEnforcementIntegrationTest.authenticate(sub, realmAdmin=true)}.
+     * Used by the non-MockMvc {@code updateShopCannotPublish} test, which calls
+     * {@code ShopService.updateShop} directly and so must cross the fail-closed shop gate as a
+     * genuine UUID-subject principal rather than the old {@code WithMockUser}.
+     */
+    private static void authenticateAsAdmin() {
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(UUID.randomUUID().toString())
+                .claim("email", "operator@example.com")
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_admin"))));
+    }
+
     @Test
-    @WithMockUser
     void goLiveBlockedWhileAllergenGateNotPassed_returns400AndShopStaysUnpublished() throws Exception {
         UUID onboardingId = seedApprovedOnboarding();
         // Mandatory gate present but the allergen gate has NOT passed.
@@ -91,6 +128,7 @@ class OnboardingGoLiveIntegrationTest {
         seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PENDING, true);
 
         mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest());
 
@@ -99,7 +137,6 @@ class OnboardingGoLiveIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void goLiveWithAllGatesPassed_publishesShopAndReachesLive() throws Exception {
         UUID onboardingId = seedApprovedOnboarding();
         seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true);
@@ -109,6 +146,7 @@ class OnboardingGoLiveIntegrationTest {
         seedCompliantProduct();
 
         mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("LIVE"));
@@ -118,7 +156,6 @@ class OnboardingGoLiveIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void goLiveReEvaluatesAllergenGate_blockedWhenProductNowIncompleteDespiteStalePassedRow() throws Exception {
         // WR-03 TOCTOU: the stored allergen row is stale PASSED, but a product added
         // after the gate ran is missing its PPDS data. Go-live must re-evaluate the
@@ -129,6 +166,7 @@ class OnboardingGoLiveIntegrationTest {
         seedIncompleteProduct();
 
         mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .with(adminJwt())
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest());
 
@@ -137,7 +175,6 @@ class OnboardingGoLiveIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void updateShopCannotPublish_soleWriterInvariantHolds() {
         // A direct updateShop with published=true must NOT flip the shop live:
         // ShopService.setPublished (reached only from the GO_LIVE side effect) is the
@@ -147,11 +184,17 @@ class OnboardingGoLiveIntegrationTest {
         req.setAddress("1 Test Street");
         req.setPublished(true);
 
+        // A UUID-subject realm-admin (implicit GROUP_ADMIN) so updateShop CLEARS the 23-08
+        // fail-closed shop gate and actually executes — proving the sole-writer invariant holds
+        // on a SUCCESSFUL update, not merely because access was denied. (The old WithMockUser
+        // non-JWT principal is now denied at the gate, which would prove nothing.)
+        authenticateAsAdmin();
         TenantContext.set(tenantId);
         try {
             shopService.updateShop(shopId, req);
         } finally {
             TenantContext.clear();
+            SecurityContextHolder.clearContext();
         }
 
         assertThat(publishedFlagOf(shopId)).isNotEqualTo(Boolean.TRUE);

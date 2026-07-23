@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -15,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.storage.StorageService;
@@ -49,7 +49,14 @@ class ShopServiceTest {
     @Mock
     private TenantCacheEvictor cacheEvictor;
 
-    @InjectMocks
+    @Mock
+    private ShopAccessService shopAccessService;
+
+    // Phase 23-10 (CR-01): getShopById now delegates its cached data-load to the
+    // ShopCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
+    // repository + mapper) in setUp() so the existing by-id tests keep exercising
+    // findByIdAndTenantId through the loader unchanged; the shop-access gate runs on
+    // the mocked ShopAccessService before the delegation.
     private ShopService shopService;
 
     private UUID tenantId;
@@ -76,8 +83,18 @@ class ShopServiceTest {
         tenantId = UUID.randomUUID();
         shopId = UUID.randomUUID();
 
+        // Construct with a REAL ShopCacheLoader over the mocked repo+mapper (Phase 23-10).
+        shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
+                shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper));
+
         // Set up tenant context
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these unit tests assert the pre-scoping behaviour, so run
+        // them as a GROUP_ADMIN — require(...) is a no-op and read-scope methods take
+        // the full-tenant query path (existing assertions unchanged). Lenient: not every
+        // test exercises a gated method.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test shop (using reflection to set auto-generated fields)
         testShop = new Shop();

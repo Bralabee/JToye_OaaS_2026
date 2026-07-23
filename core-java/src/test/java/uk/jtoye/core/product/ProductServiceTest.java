@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -17,6 +16,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
 
 import java.time.OffsetDateTime;
@@ -49,7 +49,14 @@ class ProductServiceTest {
     @Mock
     private TenantCacheEvictor cacheEvictor;
 
-    @InjectMocks
+    @Mock
+    private ShopAccessService shopAccessService;
+
+    // Phase 23-10 (CR-01): getProductById now delegates its cached data-load to the
+    // ProductCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
+    // repository + mapper) in setUp() so the existing by-id tests keep exercising
+    // findById through the loader unchanged; the shop-access gate runs on the mocked
+    // ShopAccessService against the returned DTO after the delegation.
     private ProductService productService;
 
     private UUID tenantId;
@@ -76,8 +83,19 @@ class ProductServiceTest {
         tenantId = UUID.randomUUID();
         productId = UUID.randomUUID();
 
+        // Construct with a REAL ProductCacheLoader over the mocked repo+mapper (Phase 23-10).
+        productService = new ProductService(productRepository, productMapper, storageService,
+                cacheEvictor, shopAccessService,
+                new ProductService.ProductCacheLoader(productRepository, productMapper));
+
         // Set up tenant context
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): these unit tests assert the pre-scoping behaviour, so run
+        // them as a GROUP_ADMIN — require(...) is a no-op and read-scope methods take
+        // the full-tenant query path (existing assertions unchanged). Lenient: not every
+        // test exercises a gated method.
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test product (using reflection to set auto-generated fields)
         testProduct = new Product();

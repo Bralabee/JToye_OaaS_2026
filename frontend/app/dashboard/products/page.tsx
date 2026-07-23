@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   Card,
   CardContent,
@@ -105,6 +106,21 @@ export default function ProductsPage() {
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
   const { toast } = useToast()
+  // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
+  const { contextShopId } = useShopContext()
+
+  // The products list endpoint takes no shop param, so narrow the already
+  // grant-scoped (23-03) page client-side. This is presentation only — the
+  // authoritative scope is the server's grant set.
+  const visibleProducts = contextShopId
+    ? products.filter((p) => p.shopId === contextShopId)
+    : products
+  // The count label follows what is actually on screen; in the All-shops context
+  // it stays the server's total (today's behaviour, unchanged).
+  const visibleCount = contextShopId ? visibleProducts.length : totalElements
+  const contextShopName = contextShopId
+    ? shops.find((s) => s.id === contextShopId)?.name
+    : undefined
 
   const {
     register,
@@ -179,7 +195,9 @@ export default function ProductsPage() {
     setAllergenMask(0)
     setAvailable(true)
     setFeatured(false)
-    setSelectedShopId("")
+    // D-08: outside the All-shops context a create is a single-shop write —
+    // default the assignment to the selected shop (the select is pinned below).
+    setSelectedShopId(contextShopId ?? "")
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
@@ -348,7 +366,10 @@ export default function ProductsPage() {
             <div>
               <CardTitle>All Products</CardTitle>
               <CardDescription>
-                {totalElements} product{totalElements !== 1 ? "s" : ""} in total
+                {visibleCount} product{visibleCount !== 1 ? "s" : ""}
+                {contextShopId
+                  ? ` in ${contextShopName || "the selected shop"}`
+                  : " in total"}
               </CardDescription>
             </div>
             <div className="relative w-[220px]">
@@ -362,14 +383,16 @@ export default function ProductsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {products.length === 0 ? (
+            {visibleProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Package className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
-                  No products yet
+                  {contextShopId ? "No products in this shop" : "No products yet"}
                 </h3>
                 <p className="mb-4 text-sm text-slate-500">
-                  Get started by creating your first product
+                  {contextShopId
+                    ? `Add a product to ${contextShopName || "this shop"}, or switch shop context to see others`
+                    : "Get started by creating your first product"}
                 </p>
                 <Button onClick={openCreateDialog} variant="outline">
                   <Plus className="mr-2 h-4 w-4" />
@@ -391,7 +414,7 @@ export default function ProductsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {products.map((product) => {
+                    {visibleProducts.map((product) => {
                       const allergenNames = getAllergenNames(product.allergenMask)
                       return (
                         <m.tr
@@ -745,17 +768,34 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="shopId">Shop Assignment</Label>
+                {/* D-08: a single-shop context does single-shop writes only — the
+                    assignment is pinned to the selected shop (no cross-shop swap,
+                    no "All Shops"). The All-shops context keeps the full list. */}
                 <select
                   id="shopId"
                   value={selectedShopId}
                   onChange={(e) => setSelectedShopId(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  disabled={!!contextShopId}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  <option value="">All Shops</option>
-                  {shops.map((shop) => (
-                    <option key={shop.id} value={shop.id}>{shop.name}</option>
-                  ))}
+                  {contextShopId ? (
+                    <option value={contextShopId}>
+                      {contextShopName || "Selected shop"}
+                    </option>
+                  ) : (
+                    <>
+                      <option value="">All Shops</option>
+                      {shops.map((shop) => (
+                        <option key={shop.id} value={shop.id}>{shop.name}</option>
+                      ))}
+                    </>
+                  )}
                 </select>
+                {contextShopId && (
+                  <p className="text-xs text-slate-500">
+                    Creating in your selected shop context. Switch to “All shops” to choose a different shop.
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="flex items-center gap-2 cursor-pointer">

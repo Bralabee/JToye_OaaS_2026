@@ -1,0 +1,318 @@
+# Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav - Context
+
+**Gathered:** 2026-07-15
+**Status:** Ready for planning
+
+<domain>
+## Phase Boundary
+
+Add a second, finer authorization boundary **inside** a tenant — the Vendor → Shop
+hierarchy — layered *under* the existing RLS tenant wall (which stays the tenant
+boundary, untouched). Ships:
+
+1. **`shop_staff`** mapping table (Flyway **V52**) — user ↔ shop ↔ role, ENABLE+FORCE RLS.
+2. **App-layer role gate** — a second, finer gate below RLS on shop-scoped endpoints.
+3. **Dashboard shop-context switcher** with an explicit "apply to all shops" group action.
+4. **Minimal staff-management screen** — list / grant / revoke roles per shop.
+5. **MOBL-01** — dashboard nav does not occlude content at 375px (verify-first; see Discretion).
+
+Shop is the finest grain this milestone. An intermediate **department** tier
+(Vendor → Department → Shop) is explicitly a future organizational layer, not modeled here.
+
+</domain>
+
+<spec_lock>
+## Requirements (locked via SPEC.md)
+
+**Requirements are locked** — do NOT re-litigate WHAT to build. Downstream agents
+MUST read the SPEC and the REQUIREMENTS entries before planning/implementing:
+- `.planning/specs/shop-scoped-access-SPEC.md` — the DECIDED spec (schema, roles, semantics, enforcement, UI, deferred, constraints).
+- `.planning/REQUIREMENTS.md` §"Vendor-scoped access (VSA)" — VSA-01..04 + §MOBL-01.
+
+**Locked requirements:** VSA-01 (`shop_staff` V52), VSA-02 (app-layer enforcement),
+VSA-03 (shop-context switcher), VSA-04 (staff-management screen), MOBL-01 (375px nav).
+
+**In scope (from SPEC):** `shop_staff` table + `_aud`; roles GROUP_ADMIN / SHOP_MANAGER / STAFF;
+application-layer enforcement on shop-scoped endpoints; dashboard shop-context switcher;
+minimal staff management (list/grant/revoke); a lightweight login-populated user-directory
+table (RLS, no `_aud`) backing the staff grant-target picker (D-09).
+
+**Out of scope (from SPEC — do NOT build):** cross-tenant / platform-operator roles;
+per-shop Keycloak clients or shop claims in the token; self-serve user-invitation flows
+(Keycloak admin stays the account source); fine-grained per-capability permissions beyond
+the three roles; the department tier; changes to the storefront public read path (`/public/*`,
+`/shop/*` unauthenticated — out of scope).
+
+</spec_lock>
+
+<decisions>
+## Implementation Decisions
+
+*(Requirements were locked by the SPEC; these are the "defaults to confirm at discuss-phase"
+HOW decisions, resolved with the user 2026-07-15. Each confirms or refines the spec's default.)*
+
+### Access model
+- **D-01 — Read visibility is SCOPED to grants (not writes-only).** For a non-GROUP_ADMIN
+  (SHOP_MANAGER / STAFF), the shop switcher **and** the shop-scoped list/read endpoints
+  (shops, products, orders, and any per-shop list) surface **only the shops the user has a
+  grant on**. GROUP_ADMIN sees all shops plus an **"All shops"** context. This *refines* the
+  spec, which wrote "deny-by-default for shop-scoped **writes**"; the user chose to scope reads
+  too — defense-in-depth, and the switcher then structurally cannot select a shop the user
+  can't act on. Enforcement remains a 403 (typed, RFC 7807) distinct from the RLS 404, and the
+  storefront public read path is untouched.
+- **D-02 — Enforcement is an explicit service-layer call**, not an annotation.
+  `shopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods
+  (shops, products, orders, KDS, marketing). Chosen over a custom `@RequireShopRole` SpEL
+  annotation because `shopId` frequently comes from a request body or a parent-entity lookup
+  (e.g. product → shop), which annotations handle awkwardly. Read-scoping (D-01) is enforced by
+  filtering list queries by the caller's grant set (a companion `shopAccessService` read helper),
+  not by a post-hoc filter.
+- **D-03 — Roles + admin bridge (from spec, unchanged):** GROUP_ADMIN (all shops incl.
+  shop create/delete + staff mgmt) / SHOP_MANAGER (full CRUD on granted shop, no staff mgmt,
+  no shop create/delete) / STAFF (operational read + order state transitions on granted shop,
+  no catalogue writes). Realm `admin` role ⇒ **implicit GROUP_ADMIN** (keeps admin-user working).
+
+### Grant lifecycle
+- **D-04 — Backfill via JIT lazy-provision (no Keycloak enumeration).** There is no local
+  users table (identities live in Keycloak; the backend only sees a `sub` when a request
+  arrives). So the **first authenticated request from a tenant user with no `shop_staff` row
+  auto-creates a GROUP_ADMIN row** for that user; realm `admin` ⇒ implicit GROUP_ADMIN acts as a
+  fail-safe if provisioning hasn't happened yet. This is **fail-closed** (explicit rows exist),
+  needs no live-Keycloak coupling at migrate time, and dodges the KC24 unmanaged-attribute trap.
+  Preserves today's "everyone can do everything" behaviour exactly on day one; vendors tighten
+  explicitly afterwards. *Rejected:* Keycloak admin-API migration sweep (KC coupling + KC24 trap);
+  implicit-only/no-rows (fail-OPEN — unacceptable for an auth boundary).
+  - **[Revised 2026-07-21 — plans 23-08 + 23-14; user ACCEPTED at the 23-14 Task-0 checkpoint]**
+    The original text left two gaps the REVIEW gate caught. (1) **23-08 made fail-closed true in
+    code (CR-03):** an anonymous / non-`Jwt` / non-UUID-subject principal is now DENIED with a typed
+    403, never escalated to GROUP_ADMIN — the realm-`admin` fail-safe stands, but an *unparseable*
+    identity no longer inherits it (machine callers only via an empty-by-default allowlist, D-04's
+    "fail-open is unacceptable" is now enforced, not just asserted). (2) **23-14 stamped provenance:**
+    JIT-provisioned rows now carry `shop_staff.grant_source = JIT` (V57), distinguishable from a
+    deliberate `OPERATOR` grant — the precondition D-12's strict-scoping needs to de-honour day-one
+    auto-grants without disturbing operator grants.
+- **D-05 — Revocation is immediate: evict membership cache on write.** grant/revoke evicts that
+  user's membership-cache entry (reuse the `TenantCacheEvictor` pattern); the next request
+  re-resolves from `shop_staff`. No stale-access window — correct for an auth boundary. A short
+  TTL stays as a backstop. Membership is cached per-user via the tenant-aware key generator.
+  - **[Revised 2026-07-21 — plan 23-14 (WR-01 / WR-11)]** As originally built the membership cache
+    was not actually engaging: internal gate calls invoked `resolveMembership` via self-invocation,
+    so the `@Cacheable` interceptor never fired and eviction was a no-op (the correctness was carried
+    entirely by re-reading `shop_staff` each call — safe, but the "cache" was inert). 23-14 routes
+    internal calls through the bean proxy (`ObjectProvider self()`) so the cache genuinely populates,
+    serves until evicted, then re-resolves + denies — proven by a caching-enabled test. Eviction now
+    fires **AFTER commit** via a single shared `evictMembershipAfterCommit` helper used by BOTH
+    `onRequest` (JIT provision) and `StaffManagementService` (grant/revoke), so the two call sites
+    cannot drift. Immediate-revocation semantics are unchanged; the mechanism is now real.
+
+### Switcher UX
+- **D-06 — Switcher in the sidebar header; GROUP_ADMIN defaults to "All shops".** Dropdown under
+  the J'Toye logo in `frontend/components/dashboard/sidebar.tsx`; GROUP_ADMIN lands on "All shops"
+  (preserves the whole-group view = zero behaviour change day one). A non-GROUP_ADMIN with a single
+  grant shows that shop pinned (no dropdown needed). On mobile it rides the existing mobile nav /
+  "More" sheet (see MOBL-01 discretion).
+- **D-07 — Selection persisted in `localStorage`.** Client-only, instant, no new API — mirrors the
+  existing theme-toggle persistence already in `sidebar.tsx`. Per-device is acceptable for a context
+  preference; the server re-validates every grant on every request, so persistence is NOT a trust
+  boundary. *Rejected:* server-side preference store (new surface, over-scoped); URL `?shop=` param
+  (URL clutter, easily lost, complicates All-shops routing).
+- **D-08 — Group-wide mutations only via the "All shops" context.** A GROUP_ADMIN triggers a
+  group-wide write only when the switcher is on "All shops"; the action is explicit and
+  GROUP_ADMIN-gated; any single-shop context does single-shop writes only. One rule, minimal footgun,
+  no per-form toggle state. *Rejected:* per-mutation "apply to all" toggle; hybrid context+override
+  (both over-scoped for this minimal slice).
+
+### Staff management (VSA-04) — added 2026-07-15 (reconciled from a parallel discuss session; D-01..D-08 above stand unchanged)
+- **D-09 — Login-populated user directory as the grant-target picker.** No local users table exists
+  and the V49 Keycloak admin client is inert by default (`jtoye.keycloak.admin.enabled=false`); so
+  **upsert a lightweight tenant-scoped directory row `(tenant_id, user_id sub, email, display_name,
+  last_seen)` from the authenticated JWT** (email/name are token claims) — the same request point that
+  drives D-04 JIT provisioning. The grant screen picks from "seen" users. **ENABLE+FORCE RLS
+  tenant-scoped, but NO `_aud`** (it's a derived cache, high-churn; audit lives on `shop_staff`). New
+  staff appear after their first login. The upsert MUST be **throttled** (gate on stale `last_seen`
+  via a config-injected interval / `ON CONFLICT DO UPDATE … WHERE` — never a write per request).
+  *Rejected:* Keycloak-admin email search (fragile infra + KC24 trap); raw-sub entry (hostile UX).
+- **D-10 — GROUP_ADMIN-only staff nav item, mirroring Approvals.** A standalone "Staff"/"Team"
+  entry in the `sidebar.tsx` `navigation` array that renders the existing access-required state for
+  non-GROUP_ADMIN (same convention as Approvals/Finance); overflow falls into the mobile "More" sheet
+  automatically. *Rejected:* a new "Settings" grouping (no settings IA exists today).
+- **D-11 — Guard the last GROUP_ADMIN.** Block revoking/downgrading the final GROUP_ADMIN row with an
+  RFC 7807 **409**, and warn on self-downgrade. (Realm-`admin` implicit-GROUP_ADMIN is a recovery
+  backstop, but a non-realm-admin group admin could otherwise lock themselves out of staff mgmt.)
+
+### Access-model refinements — added 2026-07-15
+- **D-12 — Strict-scoping switch on top of D-04 JIT provisioning.** Adds the off-ramp D-04 lacked: a
+  **config-injected `strict-scoping` switch (default OFF)**. While OFF, behaviour is exactly D-04
+  (first-request ungranted users auto-provision GROUP_ADMIN — day-one behaviour preserved). Turning it
+  ON makes ungranted users **deny-by-default** (no more auto-provision) so a vendor can genuinely
+  tighten. Global flag now (GLOBAL_RULE_6); **per-tenant granularity deferred**. This reconciles the
+  user's "lazy grandfather *with a strict switch*" choice with the committed JIT decision.
+  - **[Revised 2026-07-21 — plan 23-14 (CR-07); user ACCEPTED at the 23-14 Task-0 checkpoint]**
+    The REVIEW gate found that turning strict-scoping ON did **not** actually tighten anything — an
+    already-JIT-provisioned tenant-wide GROUP_ADMIN row kept its grant. 23-14 closes this: under
+    strict ON a **JIT-sourced** tenant-wide GROUP_ADMIN is now DE-HONOURED (a day-one auto-provisioned
+    user genuinely becomes scoped) while **OPERATOR** grants and realm admins are honoured unchanged
+    (this is what `grant_source` in the D-04 revision is for). The policy is applied in the shared
+    `isGroupAdminForUser` decision helper **OUTSIDE** the cached Membership snapshot (which now carries
+    only the raw `groupAdminFromJit` fact), so flipping the flag is never served stale — and BOTH the
+    HTTP gate and the STOMP `canAccessShop` ladder tighten at once. **Lockout safety:** the oldest JIT
+    admin (by `created_at,id`) is retained as a WARN-logged bootstrap when no OPERATOR tenant-wide
+    GROUP_ADMIN exists, so no tenant can lock itself out on the flip. Default stays OFF (day-one JIT
+    auto-provision preserved); global-flag / per-tenant-granularity deferral unchanged.
+- **D-13 — Out-of-scope-shop UX = in-page access-required state.** Refines D-01/D-02's typed-403: a
+  direct-URL/bookmark hit on a non-granted shop renders the **existing** access-required state the
+  Approvals/Finance pages already show on 403 (not a redirect, not a blank) — the switcher already
+  prevents *choosing* a forbidden shop (D-01/D-06), so this is the direct-hit fallback. Still a
+  distinct RFC 7807 403 (never the RLS 404).
+
+### Claude's Discretion
+- **MOBL-01 is verify-first, not build-from-scratch.** The dashboard sidebar is already
+  `hidden md:flex ... w-64` (`sidebar.tsx:65`) — it is **hidden below `md`**, not overlaying — and
+  the `navigation` array already feeds a mobile "More" sheet (`sidebar.tsx:41` comment; the
+  `qa/surface-ledger.json` seed branch `feature/ux-mobile-nav-rsc-fixes`). The requirement's stated
+  source (HANDOFF #104) predates that mobile-nav work. **Research MUST first verify the actual 375px
+  state** (drive it in the browser, not just read code). Likely task = confirm no 375px occlusion +
+  integrate the D-06 switcher into the existing mobile nav — NOT author a new drawer. If a real 375px
+  occlusion is found, fix it; if not, record MOBL-01 as satisfied-by-prior-work + switcher-integrated
+  (update `qa/surface-ledger.json` only with proof, never silently).
+- Exact `shop_staff` column types/index names, the cache key shape, and the `ShopAccessService` API
+  surface are planner/executor discretion within D-01..D-08 and the spec's schema.
+
+</decisions>
+
+<canonical_refs>
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### Locked requirements (read FIRST)
+- `.planning/specs/shop-scoped-access-SPEC.md` — the DECIDED spec: schema, role semantics,
+  enforcement model, UI, explicitly-deferred items, constraints. **Source of truth for WHAT.**
+- `.planning/REQUIREMENTS.md` §"Vendor-scoped access (VSA)" (lines ~40–50) + §MOBL-01 (line ~66) —
+  VSA-01..04 acceptance criteria + test expectations; migration-numbering note (shop_staff = V52,
+  must precede V53 media_asset in Phase 24; `out-of-order=true` in all profiles).
+- `.planning/ROADMAP.md` §"Phase 23" — phase boundary + dependency notes.
+
+### RLS + migration pattern to mirror
+- `core-java/src/main/resources/db/migration/` — mirror the **V47** (`processed_order_events`)
+  and **V50** (`idempotency_keys`) ENABLE+FORCE RLS tenant-scoped policy pattern for `shop_staff`.
+- RLS must be proven under the **NOSUPERUSER role-downgrade** — see the existing `RlsContractTest`
+  pattern (test dir under `core-java/src/test/java/...`); add a `shop_staff` policy proof.
+
+### Enforcement + auth wiring
+- `core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java` — `@EnableMethodSecurity`
+  is already active (issue #83).
+- `core-java/src/main/java/uk/jtoye/core/security/JwtRolesAndScopesConverter.java`,
+  `KeycloakRealmRoleConverter.java` — how realm roles reach `hasRole('admin')`; the D-03 admin
+  bridge reads realm role here.
+- `core-java/src/main/java/uk/jtoye/core/security/TenantContext.java` — thread-local tenant id;
+  the membership resolver reads tenant + `sub` here.
+- Existing `@PreAuthorize("hasRole('admin')")` gates as the reference for typed 403 behaviour:
+  `gdpr/GdprController.java`, `payment/RefundController.java`, `finance/FinancialTransactionController.java`,
+  `onboarding/OnboardingAdminController.java`, `tenant/TenantAdminController.java`.
+
+### Cache (membership resolution + eviction)
+- `core-java/src/main/java/uk/jtoye/core/config/TenantAwareCacheKeyGenerator.java`,
+  `config/CacheConfig.java`, `config/TenantCacheEvictor.java` — reuse for the per-user membership
+  cache (D-05 evict-on-write).
+
+### Frontend surfaces
+- `frontend/components/dashboard/sidebar.tsx` — switcher home (D-06); `navigation` array feeds
+  the mobile "More" sheet; existing `localStorage` theme persistence to mirror for D-07.
+- `qa/surface-ledger.json` — the surface-parity baseline + endpoint-inventory seed for VSA-02;
+  update ONLY with proof (never silently) if MOBL-01 state changes.
+- `frontend/components/dashboard/dashboard-shell.tsx` — the responsive shell: desktop `<Sidebar/>`
+  + mobile slim top bar (wordmark-only) + fixed `<MobileTabBar/>`. Proves MOBL-01 already responsive;
+  the mobile switcher slot for D-06 lives in the top bar.
+- `frontend/components/dashboard/mobile-tab-bar.tsx` — 4 primary tabs + "More" sheet; overflow
+  absorbs the D-10 Staff nav item automatically. Do NOT rebuild (MOBL-01 verify-first).
+- `frontend/components/dashboard/__tests__/dashboard-shell.test.tsx` — existing 375px test surface
+  to extend for the MOBL-01 regression proof.
+
+### Staff-management + user directory (added 2026-07-15)
+- `core-java/src/main/java/uk/jtoye/core/security/JwtTenantFilter.java` — where `TenantContext` is set
+  per request; the throttled D-09 directory upsert + D-04 JIT provision hang off here. `jwt.getSubject()`
+  is the Keycloak `sub` → `shop_staff.user_id` + the directory `user_id`.
+- `core-java/src/main/java/uk/jtoye/core/tenant/TenantLifecycleService.java` — the V49 Keycloak admin
+  client, **inert by default** (`jtoye.keycloak.admin.enabled=false`) — the reason D-09 avoids Keycloak
+  enumeration and D-04 avoids a migrate-time sweep.
+- `frontend/components/dashboard/sidebar.tsx` §24-41 `navigation` array + Approvals "access-required
+  on 403" convention — the model for the D-10 GROUP_ADMIN-only Staff item and the D-13 out-of-scope 403.
+- Memory: `arch_no_platform_operator` (GROUP_ADMIN is tenant-scoped, NOT a platform operator),
+  `reference_keycloak24_user_profile_trap` (KC24 strips unmanaged attributes — relevant to any future
+  Keycloak read), `project_vendor_ops_specs`, `project_v23_sequencing`.
+
+</canonical_refs>
+
+<code_context>
+## Existing Code Insights
+
+### Reusable Assets
+- **`TenantAwareCacheKeyGenerator` + `TenantCacheEvictor` + `CacheConfig`** — drop-in for the
+  per-user membership cache with immediate eviction (D-05).
+- **`@EnableMethodSecurity` + `@PreAuthorize("hasRole('admin')")`** — the admin realm-role gate is
+  already wired; the D-03 admin⇒GROUP_ADMIN bridge builds on the same role plumbing.
+- **`sidebar.tsx` `navigation` array + `localStorage` theme toggle** — the switcher reuses this
+  component + persistence idiom (D-06/D-07); the array already flows into the mobile nav.
+- **V47 / V50 migrations + `RlsContractTest`** — the exact ENABLE+FORCE RLS + NOSUPERUSER proof
+  template for `shop_staff`.
+
+### Established Patterns
+- **RLS is the tenant wall; app-layer gate is additive** — never widen or bypass RLS; the 403 gate
+  sits *inside* the tenant boundary and its error body must stay distinct from the RLS 404 (D-01).
+- **Typed RFC 7807 errors** — the shop-scope 403 follows the existing Problem Detail convention.
+- **`_aud` Envers mirror** — `shop_staff` gets an `_aud` table per project convention.
+
+### Integration Points
+- New `shop_staff` table + repository + `ShopAccessService` (resolve membership, `require(shopId, role)`,
+  read-scope helper) in a new `security`/`access` area under `uk.jtoye.core`.
+- `shopAccessService.require(...)` calls inserted at the top of shop-scoped service methods
+  (ShopService, ProductService, OrderService, KDS, marketing) — enumerate the full endpoint
+  inventory during planning from `qa/surface-ledger.json` + the controller list.
+- Staff-management UI + switcher wire into the dashboard shell (`sidebar.tsx`) and a new
+  `/dashboard/staff` (or similar) screen; grant/revoke calls a new authenticated staff endpoint.
+- New login-populated **user-directory** table (RLS, no `_aud`) + a throttled upsert wired after
+  `JwtTenantFilter` (D-09); the staff GROUP_ADMIN-gated REST (list/grant/revoke) enforces the
+  **last-GROUP_ADMIN 409 guard** (D-11). Directory version = part of V52 or the next free slot
+  (planner assigns; must land before Phase 24 V53).
+- Strict-scoping switch = a config flag (default OFF) read by `ShopAccessService` (D-12).
+
+</code_context>
+
+<specifics>
+## Specific Ideas
+
+- The switcher's "All shops" is a first-class context, not a null selection — it is what a
+  GROUP_ADMIN lands on and the only context in which group-wide writes are offered (D-08).
+- Read-scoping (D-01) should be implemented as **query-level filtering by the caller's grant set**,
+  so a scoped user's lists are genuinely narrowed server-side (not just UI-hidden) — the switcher
+  reflecting only granted shops is a consequence, not the enforcement.
+
+</specifics>
+
+<deferred>
+## Deferred Ideas
+
+- **Department tier (Vendor → Department → Shop)** — noted in the spec + REQUIREMENTS as a future
+  organizational layer; not modeled in v2.3.
+- **Self-serve user invitation / account creation** — stays in Keycloak admin this milestone
+  (KC24 unmanaged-attribute trap applies to any future programmatic creation).
+- **Server-side (cross-device) switcher preference** — considered for D-07, deferred as a new
+  surface out of proportion to this slice; revisit if users report per-device drift.
+- **Fine-grained per-capability permissions beyond the three roles** — explicitly out of scope.
+- **Per-tenant strict-scoping switch** — D-12's switch is a global config flag now; letting each vendor
+  flip their own strict mode (a `tenants` column / settings table) is a follow-up.
+- **Keycloak-admin user search / grant to never-logged-in users** — grant targets come from the
+  login-populated directory (D-09); searching Keycloak users who haven't authenticated stays out
+  (admin client inert; KC24 traps).
+- **Multi-shop grant in one action** — the minimal slice grants one `(user, shop, role)` at a time;
+  a multi-shop-select convenience is polish for later.
+
+None of the above were in-scope creep — discussion stayed within the phase boundary.
+
+</deferred>
+
+---
+
+*Phase: 23-Vendor-Scoped Access + Responsive Dashboard Nav*
+*Context gathered: 2026-07-15*

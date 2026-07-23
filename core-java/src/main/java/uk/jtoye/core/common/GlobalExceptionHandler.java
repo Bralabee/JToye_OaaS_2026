@@ -23,8 +23,10 @@ import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
+import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -223,6 +225,48 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
         problem.setTitle("Forbidden");
         problem.setType(URI.create("https://jtoye.uk/errors/forbidden"));
+        return problem;
+    }
+
+    /**
+     * Phase 23 VSA-02 (D-01/D-13) — the in-tenant shop-role gate
+     * ({@code ShopAccessService.require}) denial. Returns 403 with a type URI
+     * that is DELIBERATELY DISTINCT from BOTH the RLS 404
+     * ({@code handleResourceNotFound}, {@code .../not-found}) AND the generic
+     * admin 403 ({@code handleAccessDenied}, {@code .../forbidden}). Blurring the
+     * shop-403 with the RLS-404 would leak the tenant-boundary signal (SPEC
+     * §D-01); a distinct type also lets the frontend key its access-required
+     * state on the shop gate specifically. {@code ShopAccessDeniedException}
+     * intentionally does NOT extend {@code AccessDeniedException}, so this
+     * more-specific handler (not {@code handleAccessDenied}) is what fires.
+     *
+     * <p>Carries machine-parseable {@code shopId} + {@code requiredRole}
+     * properties (agent-readiness contract: typed/stable codes).
+     */
+    @ExceptionHandler(ShopAccessDeniedException.class)
+    public ProblemDetail handleShopAccessDenied(ShopAccessDeniedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Shop access denied");
+        problem.setTitle("Shop Access Denied");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-access-denied"));
+        if (ex.getShopId() != null) {
+            problem.setProperty("shopId", ex.getShopId());
+        }
+        if (ex.getRequiredRole() != null) {
+            problem.setProperty("requiredRole", ex.getRequiredRole());
+        }
+        return problem;
+    }
+
+    /**
+     * Phase 23 VSA-04 (D-11) — a staff revoke/downgrade that would remove the
+     * last GROUP_ADMIN in a tenant. 409 Conflict with a stable, distinct type
+     * (mirrors {@code handleIdempotencyConflict}).
+     */
+    @ExceptionHandler(LastGroupAdminException.class)
+    public ProblemDetail handleLastGroupAdmin(LastGroupAdminException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Last Group Admin");
+        problem.setType(URI.create("https://jtoye.uk/errors/last-group-admin"));
         return problem;
     }
 

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   Card,
   CardContent,
@@ -173,6 +174,9 @@ export default function MarketingPage() {
   // Shops (shared for dropdowns)
   const [shops, setShops] = useState<Shop[]>([])
 
+  // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
+  const { contextShopId } = useShopContext()
+
   // Promotions state
   const [promotions, setPromotions] = useState<Promotion[]>([])
   const [promoLoading, setPromoLoading] = useState(true)
@@ -288,7 +292,8 @@ export default function MarketingPage() {
       validFrom: "",
       validUntil: "",
       active: true,
-      shopId: "",
+      // D-08: a single-shop context does single-shop writes only.
+      shopId: contextShopId ?? "",
     })
     setPromoDialogOpen(true)
   }
@@ -388,7 +393,8 @@ export default function MarketingPage() {
       validFrom: "",
       validUntil: "",
       active: true,
-      shopId: "",
+      // D-08: a single-shop context does single-shop writes only.
+      shopId: contextShopId ?? "",
     })
     setAnnouncementDialogOpen(true)
   }
@@ -480,15 +486,27 @@ export default function MarketingPage() {
 
   // --- Filtering ---
 
-  const filteredPromotions =
-    statusFilter === "all"
-      ? promotions
-      : promotions.filter((p) => getPromotionStatus(p) === statusFilter)
+  // VSA-03: outside the All-shops context both lists narrow to the selected
+  // shop. Client-side because these endpoints take no shop param — the rows are
+  // already grant-scoped server-side by 23-03, so this only hides within the
+  // authorised set, never widens it.
+  const inShopContext = (shopId: string) => !contextShopId || shopId === contextShopId
+  const contextShopName = contextShopId
+    ? shops.find((s) => s.id === contextShopId)?.name || "Selected shop"
+    : undefined
 
-  const filteredAnnouncements =
-    announcementStatusFilter === "all"
-      ? announcements
-      : announcements.filter((a) => getAnnouncementStatus(a) === announcementStatusFilter)
+  const filteredPromotions = promotions.filter(
+    (p) =>
+      inShopContext(p.shopId) &&
+      (statusFilter === "all" || getPromotionStatus(p) === statusFilter)
+  )
+
+  const filteredAnnouncements = announcements.filter(
+    (a) =>
+      inShopContext(a.shopId) &&
+      (announcementStatusFilter === "all" ||
+        getAnnouncementStatus(a) === announcementStatusFilter)
+  )
 
   // --- Shared filter bar ---
 
@@ -579,7 +597,9 @@ export default function MarketingPage() {
             <CardHeader>
               <CardTitle>Promotions</CardTitle>
               <CardDescription>
-                {promoTotalElements} promotion{promoTotalElements !== 1 ? "s" : ""} in total
+                {contextShopId ? filteredPromotions.length : promoTotalElements} promotion
+                {(contextShopId ? filteredPromotions.length : promoTotalElements) !== 1 ? "s" : ""}
+                {contextShopId ? ` in ${contextShopName}` : " in total"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -725,8 +745,11 @@ export default function MarketingPage() {
             <CardHeader>
               <CardTitle>Announcements</CardTitle>
               <CardDescription>
-                {announcementsTotalElements} announcement
-                {announcementsTotalElements !== 1 ? "s" : ""} in total
+                {contextShopId ? filteredAnnouncements.length : announcementsTotalElements} announcement
+                {(contextShopId ? filteredAnnouncements.length : announcementsTotalElements) !== 1
+                  ? "s"
+                  : ""}
+                {contextShopId ? ` in ${contextShopName}` : " in total"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -886,17 +909,25 @@ export default function MarketingPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="promo-shop">Shop *</Label>
+                {/* D-08: pinned to the selected shop outside the All-shops context. */}
                 <select
                   id="promo-shop"
                   {...promoForm.register("shopId")}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={!!contextShopId}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  <option value="">Select a shop</option>
-                  {shops.map((shop) => (
-                    <option key={shop.id} value={shop.id}>
-                      {shop.name}
-                    </option>
-                  ))}
+                  {contextShopId ? (
+                    <option value={contextShopId}>{contextShopName}</option>
+                  ) : (
+                    <>
+                      <option value="">Select a shop</option>
+                      {shops.map((shop) => (
+                        <option key={shop.id} value={shop.id}>
+                          {shop.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
                 {promoForm.formState.errors.shopId && (
                   <p className="text-xs text-red-600">
@@ -1105,17 +1136,25 @@ export default function MarketingPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ann-shop">Shop *</Label>
+                {/* D-08: pinned to the selected shop outside the All-shops context. */}
                 <select
                   id="ann-shop"
                   {...annForm.register("shopId")}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={!!contextShopId}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  <option value="">Select a shop</option>
-                  {shops.map((shop) => (
-                    <option key={shop.id} value={shop.id}>
-                      {shop.name}
-                    </option>
-                  ))}
+                  {contextShopId ? (
+                    <option value={contextShopId}>{contextShopName}</option>
+                  ) : (
+                    <>
+                      <option value="">Select a shop</option>
+                      {shops.map((shop) => (
+                        <option key={shop.id} value={shop.id}>
+                          {shop.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
                 {annForm.formState.errors.shopId && (
                   <p className="text-xs text-red-600">

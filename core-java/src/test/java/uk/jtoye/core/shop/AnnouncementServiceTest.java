@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.dto.AnnouncementDto;
 import uk.jtoye.core.shop.dto.CreateAnnouncementRequest;
 
@@ -39,6 +40,9 @@ class AnnouncementServiceTest {
 
     @Mock
     private AnnouncementMapper announcementMapper;
+
+    @Mock
+    private ShopAccessService shopAccessService;
 
     @InjectMocks
     private AnnouncementService announcementService;
@@ -68,6 +72,10 @@ class AnnouncementServiceTest {
         shopId = UUID.randomUUID();
 
         TenantContext.set(tenantId);
+
+        // Phase 23 (VSA-02): run as a GROUP_ADMIN so require(...) is a no-op and the
+        // read-scope list takes the full-tenant path (existing assertions unchanged).
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test announcement entity
         testAnnouncement = new ShopAnnouncement();

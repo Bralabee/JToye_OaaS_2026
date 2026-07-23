@@ -15,6 +15,7 @@ import {
   UtensilsCrossed,
   Rocket,
   ShieldCheck,
+  UserCog,
   Webhook,
   LogOut,
   Moon,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
+import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
 
 export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -36,6 +38,10 @@ export const navigation = [
   // Admin-only surface (like Finance): the page itself renders an
   // access-required state on 403 for non-admin users.
   { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck },
+  // GROUP_ADMIN-only surface (VSA-04, D-10) — same convention as Approvals: the
+  // item is always listed and the /dashboard/staff PAGE renders the
+  // access-required state on the server's typed 403 for a non-group-admin.
+  { name: "Staff", href: "/dashboard/staff", icon: UserCog },
   // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
   // delivery-log browser. Falls into the mobile "More" sheet automatically.
   { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
@@ -70,6 +76,12 @@ export function Sidebar() {
           <span className="font-bold text-lg">J&apos;Toye</span>
           <span className="text-xs text-slate-400">OaaS Platform</span>
         </div>
+      </div>
+
+      {/* Shop-context switcher (VSA-03) — persisted per-device (D-07); a
+          GROUP_ADMIN lands on "All shops" (D-06). */}
+      <div className="border-b border-slate-800 px-3 py-3">
+        <ShopSwitcher variant="sidebar" />
       </div>
 
       {/* User Info */}

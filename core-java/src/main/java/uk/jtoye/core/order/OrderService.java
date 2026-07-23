@@ -22,6 +22,8 @@ import uk.jtoye.core.payment.RefundService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
@@ -31,6 +33,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -52,6 +55,7 @@ public class OrderService {
     private final FinancialTransactionService financialTransactionService;
     private final StockService stockService;
     private final RefundService refundService;
+    private final ShopAccessService shopAccessService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -62,7 +66,8 @@ public class OrderService {
                        OrderEventPublisher eventPublisher,
                        FinancialTransactionService financialTransactionService,
                        StockService stockService,
-                       RefundService refundService) {
+                       RefundService refundService,
+                       ShopAccessService shopAccessService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -73,6 +78,7 @@ public class OrderService {
         this.financialTransactionService = financialTransactionService;
         this.stockService = stockService;
         this.refundService = refundService;
+        this.shopAccessService = shopAccessService;
     }
 
     /**
@@ -81,6 +87,10 @@ public class OrderService {
      * Validates that the shop belongs to the current tenant.
      */
     public OrderDto createOrder(CreateOrderRequest request) {
+        // VSA-02 (D-02): a vendor-created order requires SHOP_MANAGER on the target shop
+        // (body shopId). The public storefront order path is separate and out of scope.
+        shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
@@ -172,7 +182,12 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Optional<OrderDto> getOrderById(UUID orderId) {
         return orderRepository.findById(orderId)
-                .map(orderMapper::toDto);
+                .map(order -> {
+                    // VSA-02 (D-02): a by-id order read requires at least STAFF on the
+                    // order's shop (parent-lookup) — cross-shop hit → typed shop 403.
+                    shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+                    return orderMapper.toDto(order);
+                });
     }
 
     /**
@@ -183,6 +198,8 @@ public class OrderService {
     public Optional<OrderDetailDto> getOrderDetailById(UUID orderId) {
         return orderRepository.findById(orderId)
                 .map(order -> {
+                    // VSA-02 (D-02): detail read requires at least STAFF on the shop.
+                    shopAccessService.require(order.getShopId(), ShopRole.STAFF);
                     OrderDetailDto dto = orderMapper.toDetailDto(order);
                     dto.setRefunds(refundService.findByOrderId(orderId));
                     return dto;
@@ -196,6 +213,8 @@ public class OrderService {
     public OrderDto updateOrder(UUID orderId, UpdateOrderRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        // VSA-02 (D-02): order update requires SHOP_MANAGER on the order's shop (parent-lookup).
+        shopAccessService.require(order.getShopId(), ShopRole.SHOP_MANAGER);
 
         if (order.getStatus() != OrderStatus.DRAFT && order.getStatus() != OrderStatus.PENDING) {
             throw new InvalidStateTransitionException(
@@ -230,7 +249,11 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Optional<OrderDto> getOrderByNumber(String orderNumber) {
         return orderRepository.findByOrderNumber(orderNumber)
-                .map(orderMapper::toDto);
+                .map(order -> {
+                    // VSA-02 (D-02): by-number read requires at least STAFF on the shop.
+                    shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+                    return orderMapper.toDto(order);
+                });
     }
 
     /**
@@ -238,7 +261,17 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public Page<OrderDto> getAllOrders(Pageable pageable) {
-        return orderRepository.findAll(pageable)
+        // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
+        // sees the whole tenant; a scoped user only granted-shop orders; ungranted → none.
+        if (shopAccessService.isGroupAdmin()) {
+            return orderRepository.findAll(pageable)
+                    .map(orderMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return orderRepository.findByShopIdIn(granted, pageable)
                 .map(orderMapper::toDto);
     }
 
@@ -247,7 +280,16 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public Page<OrderDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
-        return orderRepository.findByStatus(status, pageable)
+        // VSA-02 (D-01): read-scope by grant set, mirroring getAllOrders.
+        if (shopAccessService.isGroupAdmin()) {
+            return orderRepository.findByStatus(status, pageable)
+                    .map(orderMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return orderRepository.findByStatusAndShopIdIn(status, granted, pageable)
                 .map(orderMapper::toDto);
     }
 
@@ -256,6 +298,8 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public Page<OrderDto> getOrdersByShop(UUID shopId, Pageable pageable) {
+        // VSA-02 (D-02): explicit shop-scoped read requires at least STAFF on that shop.
+        shopAccessService.require(shopId, ShopRole.STAFF);
         return orderRepository.findByShopId(shopId, pageable)
                 .map(orderMapper::toDto);
     }
@@ -265,7 +309,16 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public Page<OrderDto> getOrdersByCustomer(UUID customerId, Pageable pageable) {
-        return orderRepository.findByCustomerId(customerId, pageable)
+        // VSA-02 (D-01): read-scope by grant set, mirroring getAllOrders.
+        if (shopAccessService.isGroupAdmin()) {
+            return orderRepository.findByCustomerId(customerId, pageable)
+                    .map(orderMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return orderRepository.findByCustomerIdAndShopIdIn(customerId, granted, pageable)
                 .map(orderMapper::toDto);
     }
 
@@ -324,6 +377,13 @@ public class OrderService {
     private OrderDto transitionOrder(UUID orderId, OrderEvent event) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        // VSA-02 (D-02/D-03): the single chokepoint for all six KDS state transitions
+        // (submit/confirm/start-preparation/mark-ready/complete/cancel) — each requires
+        // at least STAFF on the order's shop. STAFF is the operational floor (read +
+        // order-state), so a scoped STAFF user CAN transition here but is denied
+        // catalogue writes elsewhere. Gating once here (single load) covers all six
+        // public transition entry points, which each delegate to this method.
+        shopAccessService.require(order.getShopId(), ShopRole.STAFF);
 
         OrderStatus oldStatus = order.getStatus();
 
@@ -362,7 +422,7 @@ public class OrderService {
         // the event rolls back with it — nothing is announced for a change
         // that never committed. The flusher publishes it post-commit.
         eventPublisher.publishStateChange(
-                order.getId(), order.getTenantId(), order.getOrderNumber(),
+                order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
                 oldStatus, newStatus);
 
         // Auto-create financial transaction when order is completed. Idempotent
@@ -392,6 +452,8 @@ public class OrderService {
     public void deleteOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        // VSA-02 (D-02): order delete requires SHOP_MANAGER on the order's shop.
+        shopAccessService.require(order.getShopId(), ShopRole.SHOP_MANAGER);
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);

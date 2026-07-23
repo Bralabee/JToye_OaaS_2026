@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -15,6 +16,8 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService.ImageType;
 import uk.jtoye.core.storage.StorageService;
 
@@ -22,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -38,15 +42,21 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final StorageService storageService;
     private final TenantCacheEvictor cacheEvictor;
+    private final ShopAccessService shopAccessService;
+    private final ProductCacheLoader productCacheLoader;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
                           StorageService storageService,
-                          TenantCacheEvictor cacheEvictor) {
+                          TenantCacheEvictor cacheEvictor,
+                          ShopAccessService shopAccessService,
+                          ProductCacheLoader productCacheLoader) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
+        this.shopAccessService = shopAccessService;
+        this.productCacheLoader = productCacheLoader;
     }
 
     /**
@@ -59,6 +69,11 @@ public class ProductService {
      * {@code @CacheEvict(allEntries=true)} nuked every tenant's cache on every create.)
      */
     public ProductDto createProduct(CreateProductRequest request) {
+        // VSA-02 (D-02): catalogue create requires SHOP_MANAGER on the target shop
+        // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
+        // STAFF is read + order-state only — a STAFF caller is denied here.
+        shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
@@ -91,14 +106,34 @@ public class ProductService {
 
     /**
      * Get product by ID (tenant-scoped).
-     * Results are cached with tenant-aware key generation (TTL: 10 minutes).
+     *
+     * <p>CR-01 (Phase 23-10): the cached data load ({@link ProductCacheLoader}) runs
+     * FIRST, then the shop-access gate runs on the returned DTO's {@code shopId} — on
+     * EVERY call, cache hit or miss. Because the {@code products} cache key is keyed by
+     * tenant only (no user component), a product cached by one authorized user must NOT
+     * be served to a different, out-of-grant user in the same tenant; running the gate
+     * outside the {@code @Cacheable} boundary guarantees that. Reading a cached DTO and
+     * THEN denying is correct — the authorization decision is what must run every time,
+     * not the database round-trip.
      */
     @Transactional(readOnly = true)
-    @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
     public Optional<ProductDto> getProductById(UUID productId) {
-        log.debug("Fetching product by ID: {}", productId);
-        return productRepository.findById(productId)
-                .map(productMapper::toDto);
+        // VSA-02 (D-02): a by-id product read requires at least STAFF on the owning
+        // shop. Parent-lookup: the gate runs against the loaded product's shopId, so a
+        // cross-shop direct hit yields the typed shop 403 (distinct from the RLS 404).
+        Optional<ProductDto> dto = productCacheLoader.getProductById(productId);
+        dto.ifPresent(product -> {
+            // WR-08 null-shop READ half (plan 23-10, pairs with 23-08's GROUP_ADMIN-only
+            // WRITE half): a shop_id IS NULL product is a tenant-wide / legacy resource,
+            // readable by ANY granted scoped user — skip the gate (RLS still confines it to
+            // the tenant). Previously require(null, STAFF) 403'd (or 500'd) a scoped caller,
+            // making legacy catalogue rows simultaneously invisible in lists (WR-08) and
+            // crash-inducing to open (CR-04). A non-null shopId is gated exactly as before.
+            if (product.getShopId() != null) {
+                shopAccessService.require(product.getShopId(), ShopRole.STAFF);
+            }
+        });
+        return dto;
     }
 
     /**
@@ -108,7 +143,23 @@ public class ProductService {
     public Page<ProductDto> getAllProducts(Pageable pageable) {
         log.debug("Fetching all products with pagination: page={}, size={}",
                 pageable.getPageNumber(), pageable.getPageSize());
-        return productRepository.findAll(pageable)
+        // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
+        // sees the whole tenant; a scoped user sees granted-shop products PLUS legacy
+        // tenant-wide (shop_id IS NULL) products (WR-08 read half, plan 23-10); a
+        // fully-ungranted user sees nothing (deny-by-default — the short-circuit below
+        // is deliberately kept so the null-shop policy did NOT widen to "everyone sees
+        // tenant-wide products").
+        if (shopAccessService.isGroupAdmin()) {
+            return productRepository.findAll(pageable)
+                    .map(productMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        return productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
                 .map(productMapper::toDto);
     }
 
@@ -136,7 +187,21 @@ public class ProductService {
         }
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
         String skuPrefix = escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%";
-        return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
+        // VSA-02 (D-01): read-scope search to the caller's grant set at the QUERY,
+        // mirroring getAllProducts. GROUP_ADMIN uses the tenant-wide FTS; a scoped user
+        // uses the grant-set + tenant-wide (shop_id IS NULL) FTS variant (WR-08 read half,
+        // plan 23-10); a zero-grant user → empty (deny-by-default preserved).
+        if (shopAccessService.isGroupAdmin()) {
+            return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
+                    .map(productMapper::toDto);
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        return productRepository.searchFullTextInGrantSetOrTenantWide(tenantId, tsQuery, skuPrefix, granted, unsorted)
                 .map(productMapper::toDto);
     }
 
@@ -175,6 +240,9 @@ public class ProductService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // VSA-02 (D-02): parent-lookup — catalogue update requires SHOP_MANAGER on the
+        // product's owning shop.
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
         // Update all fields via mapper (handles both core and storefront fields)
         productMapper.updateEntity(request, product);
@@ -201,6 +269,7 @@ public class ProductService {
     public ProductDto uploadImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         // Delete old image if exists
         storageService.delete(product.getImageUrl());
@@ -223,6 +292,7 @@ public class ProductService {
     public ProductDto removeImage(UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         storageService.delete(product.getImageUrl());
         product.setImageUrl(null);
@@ -239,6 +309,7 @@ public class ProductService {
     public ProductDto addAdditionalImage(UUID productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         if (product.getAdditionalImageUrls().size() >= 5) {
             throw new IllegalStateException("Maximum 5 additional images allowed per product");
@@ -262,6 +333,7 @@ public class ProductService {
     public ProductDto removeAdditionalImage(UUID productId, int index) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
 
         List<String> urls = product.getAdditionalImageUrls();
         if (index < 0 || index >= urls.size()) {
@@ -287,6 +359,8 @@ public class ProductService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // VSA-02 (D-02): parent-lookup — catalogue delete requires SHOP_MANAGER.
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
         // Clean up all images from storage
         storageService.delete(product.getImageUrl());
@@ -296,6 +370,43 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
+    }
+
+    /**
+     * Cached by-id product loader (Phase 23-10, CR-01). Extracted onto its OWN Spring
+     * bean so the {@code @Cacheable} boundary is separated from the authorization gate:
+     * {@link ProductService#getProductById} delegates here for the (cached) load and
+     * then runs {@code shopAccessService.require(...)} on the result, on every call.
+     * Being a distinct bean, the call from {@code ProductService} crosses the Spring
+     * proxy so the caching interceptor actually fires — deliberately NOT a
+     * self-invocation (which would bypass the proxy and silently disable caching,
+     * WR-01). The cached method keeps the name {@code getProductById} so the
+     * tenant-aware cache key ({@code tenant:{tid}:getProductById:{productId}}) and every
+     * existing {@code TenantCacheEvictor.evictEntity("products", "getProductById", id)}
+     * eviction stay byte-for-byte unchanged (caching relocated, never deleted).
+     *
+     * <p>This loader holds NO authorization: callers MUST gate on the returned DTO's
+     * {@code shopId} so a cache hit can never short-circuit the shop-access decision.
+     */
+    @Component
+    public static class ProductCacheLoader {
+        private static final Logger loaderLog = LoggerFactory.getLogger(ProductCacheLoader.class);
+
+        private final ProductRepository productRepository;
+        private final ProductMapper productMapper;
+
+        public ProductCacheLoader(ProductRepository productRepository, ProductMapper productMapper) {
+            this.productRepository = productRepository;
+            this.productMapper = productMapper;
+        }
+
+        @Transactional(readOnly = true)
+        @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
+        public Optional<ProductDto> getProductById(UUID productId) {
+            loaderLog.debug("Fetching product by ID: {}", productId);
+            return productRepository.findById(productId)
+                    .map(productMapper::toDto);
+        }
     }
 
 }

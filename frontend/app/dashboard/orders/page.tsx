@@ -9,6 +9,7 @@ import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 import { useOrderEvents } from "@/hooks/use-order-events"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   Card,
   CardContent,
@@ -262,10 +263,14 @@ function OrdersPageInner() {
 
   const selectedShopId = watch("shopId")
 
+  // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
+  const { contextShopId } = useShopContext()
+
   useEffect(() => {
     fetchData()
+    // A switcher change must refetch so the list narrows live (no reload).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
+  }, [currentPage, contextShopId])
 
   // Real-time updates via SSE (#92): the shared hook owns the auth header,
   // keep-alive-friendly connection, capped exponential-backoff reconnect, and
@@ -277,9 +282,15 @@ function OrdersPageInner() {
       setLoading(true)
       // Issue #95: /orders/customer/{id} is paginated now (Page response, same
       // shape as /orders) — the old bare-array special case is gone.
+      // VSA-03: outside the All-shops context the collection list narrows
+      // SERVER-side via ?shopId= (OrderService.getOrdersByShop, gated by the
+      // 23-03 grant check) — the client never widens the authorised set. The
+      // customer-scoped endpoint takes no shop param, so that branch narrows on
+      // the rendered rows instead (see visibleOrders).
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
       const ordersPromise = customerIdParam
         ? apiClient.get(`/api/v1/orders/customer/${customerIdParam}?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
-        : apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
+        : apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`)
       const [ordersRes, shopsRes, productsRes] = await Promise.all([
         ordersPromise,
         apiClient.get("/api/v1/shops?size=100"),
@@ -307,6 +318,14 @@ function OrdersPageInner() {
   // setters above) are removed; the modal JSX further down is preserved per
   // 17-CONTEXT but is no longer reachable from any row click.
 
+  // The collection list is already narrowed server-side via ?shopId=; the
+  // customer-scoped endpoint takes no shop param, so its rows are narrowed here
+  // so both entry points honour the same switcher context.
+  const visibleOrders =
+    contextShopId && customerIdParam
+      ? orders.filter((o) => o.shopId === contextShopId)
+      : orders
+
   const getProductName = (productId: string): string => {
     const product = products.find(p => p.id === productId)
     return product ? product.title : productId.substring(0, 8) + "..."
@@ -319,7 +338,8 @@ function OrdersPageInner() {
 
   const openCreateDialog = () => {
     reset({
-      shopId: "",
+      // D-08: a single-shop context does single-shop writes only.
+      shopId: contextShopId ?? "",
       customerName: "",
       customerEmail: "",
       customerPhone: "",
@@ -519,7 +539,7 @@ function OrdersPageInner() {
             </Select>
           </CardHeader>
           <CardContent>
-            {orders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
+            {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
@@ -547,7 +567,7 @@ function OrdersPageInner() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {orders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
+                    {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
                       const config = statusConfig[order.status]
                       const StatusIcon = config.icon
                       const transitions = getAvailableTransitions(order.status)
@@ -662,21 +682,31 @@ function OrdersPageInner() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="shopId">Shop</Label>
+              {/* D-08: pinned to the selected shop outside the All-shops context. */}
               <Select
                 value={selectedShopId}
                 onValueChange={(value) => setValue("shopId", value)}
+                disabled={!!contextShopId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a shop" />
                 </SelectTrigger>
                 <SelectContent>
-                  {shops.map((shop) => (
+                  {(contextShopId
+                    ? shops.filter((s) => s.id === contextShopId)
+                    : shops
+                  ).map((shop) => (
                     <SelectItem key={shop.id} value={shop.id}>
                       {shop.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {contextShopId && (
+                <p className="text-xs text-slate-500">
+                  Creating in your selected shop context. Switch to “All shops” to choose a different shop.
+                </p>
+              )}
               {errors.shopId && (
                 <p className="text-sm text-red-600">{errors.shopId.message}</p>
               )}

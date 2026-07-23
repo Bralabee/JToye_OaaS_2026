@@ -280,7 +280,7 @@ public class PaymentService {
             // Record the state change in the transactional outbox (#93) —
             // joins the webhook transaction, published post-commit by the flusher.
             eventPublisher.publishStateChange(
-                    order.getId(), order.getTenantId(), order.getOrderNumber(),
+                    order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
                     OrderStatus.DRAFT, OrderStatus.PENDING);
 
             // Publish payment succeeded event (for audit, analytics, reconciliation)

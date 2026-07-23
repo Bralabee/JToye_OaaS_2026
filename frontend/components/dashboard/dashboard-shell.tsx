@@ -3,6 +3,8 @@
 import { Store } from "lucide-react"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
+import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
+import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
 import type { ReactNode } from "react"
 
@@ -20,13 +22,26 @@ import type { ReactNode } from "react"
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
+    // One provider above BOTH switchers (sidebar + mobile top bar): a single
+    // fetch and a single hydration writer (WR-06). Renders no DOM of its own, so
+    // the MOBL-01-verified 375px shell markup below is unchanged.
+    <ShopSwitcherProvider>
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
-        {/* Mobile-only top bar — brand chrome once the sidebar is gone. */}
-        <div className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-slate-200 bg-white px-4 md:hidden dark:border-slate-800 dark:bg-slate-900">
-          <Store className="h-6 w-6 text-blue-500" aria-hidden="true" />
-          <span className="font-bold text-slate-900 dark:text-slate-100">J&apos;Toye</span>
+        {/* Mobile-only top bar — brand chrome once the sidebar is gone. The
+            shop-context switcher (VSA-03) rides here next to the wordmark; it is
+            width-capped + truncating so it adds no horizontal overflow at 375px
+            (MOBL-01, RESEARCH §7). */}
+        <div
+          data-testid="mobile-topbar"
+          className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-slate-200 bg-white px-4 md:hidden dark:border-slate-800 dark:bg-slate-900"
+        >
+          <Store className="h-6 w-6 shrink-0 text-blue-500" aria-hidden="true" />
+          <span className="shrink-0 font-bold text-slate-900 dark:text-slate-100">J&apos;Toye</span>
+          <div className="ml-auto min-w-0 max-w-[55%]">
+            <ShopSwitcher variant="topbar" />
+          </div>
         </div>
         <div className="container mx-auto p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100">
           {children}
@@ -37,5 +52,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </main>
       <MobileTabBar className="md:hidden" />
     </div>
+    </ShopSwitcherProvider>
   )
 }

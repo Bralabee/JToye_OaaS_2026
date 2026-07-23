@@ -41,13 +41,13 @@ The platform's first governed delivery of the V46 outbox. **Extend** the already
 
 Add a finer authorization boundary *inside* a vendor. Hierarchy is **Vendor (tenant) → Shop** — one vendor owns many shops, and this is the vendor's internal access model spanning vendor-wide grants (GROUP_ADMIN) down to a single shop (SHOP_MANAGER/STAFF). RLS stays the tenant wall; this is a second, application-layer gate. Shop is the finest grain this milestone; an intermediate **department** tier (Vendor → Department → Shop) is noted as a future organizational layer, not modeled in v2.3. Incremental Betterment: every existing tenant user gets a GROUP_ADMIN row at migration time — zero day-one regression.
 
-- [ ] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
+- [x] **VSA-01**: `shop_staff` mapping table (V52). Columns `id, tenant_id, user_id (Keycloak sub UUID), shop_id (FK shops, NULLable = tenant-wide grant), role (CHECK GROUP_ADMIN|SHOP_MANAGER|STAFF), created_at, created_by`; ENABLE+FORCE RLS tenant-scoped (mirror V47/V50 policy pattern); unique `(tenant_id, user_id, COALESCE(shop_id, zero-uuid))`; `_aud` mirror per Envers. Backfill: every existing tenant user → GROUP_ADMIN row; realm `admin` role ⇒ implicit GROUP_ADMIN. Tests: RLS proven under NOSUPERUSER role-downgrade (RlsContractTest pattern), backfill idempotency test. Source: no `shop_staff`/membership table exists (spec Problem, verified live).
 
-- [ ] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
+- [x] **VSA-02**: Application-layer enforcement. `ShopAccessService.require(shopId, minRole)` at the top of shop-scoped service methods (shops, products, orders, KDS, marketing); deny-by-default for shop-scoped writes without a grant; membership resolved server-side from `shop_staff` per request (tenant-aware cache). 403 with RFC 7807 body distinct from the RLS 404 (do not blur the tenant boundary signal). Enumerate the endpoint inventory during planning (seed from `qa/surface-ledger.json`). Tests: Testcontainers cross-shop 403 proofs, SHOP_MANAGER-scoped-to-one-shop test, STAFF read-only test, JWT-unchanged assertion. Source: ordinary shop/product/order CRUD open to any authenticated tenant user on every shop (spec Problem).
 
-- [ ] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
+- [x] **VSA-03**: Dashboard shop-context switcher. Persisted shop selection in the dashboard nav; all shop-scoped screens operate on the selected shop; group-wide mutations require an explicit "apply to all shops" action available only to GROUP_ADMIN. Tests: Jest for the switcher (selection persists, non-GROUP_ADMIN cannot see "apply to all"). Source: spec UI section.
 
-- [ ] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
+- [x] **VSA-04**: Staff management screen. Minimal slice: list staff + grant + revoke roles per shop; invitations / user-creation stay in Keycloak (note the KC24 unmanaged-attribute trap). Tests: Jest for list/grant/revoke, integration test for grant→access-gained / revoke→403. Source: spec UI section.
 
 ### Image architecture (IMG) — spec `image-architecture-SPEC.md`
 
@@ -63,7 +63,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 ### Dashboard mobile (MOBL) — HANDOFF #104
 
-- [ ] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the VSA-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
+- [x] **MOBL-01**: Dashboard sidebar no longer overlays content at 375px. The fixed `w-64` sidebar currently overlays the dashboard at mobile width; replace with a responsive nav (drawer/collapse) that pairs with the VSA-03 shop-context switcher. Tests: Jest/Playwright at 375px viewport — content not occluded, nav toggles. Source: HANDOFF Step 1 phase 4 (#104).
 
 ### AI / automation (AI) — HANDOFF #205 / #204
 
@@ -119,11 +119,11 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | COMMS-05 | Phase 22 | 22-05 | Complete |
 | COMMS-06 | Phase 22 | 22-06 | Complete |
 | COMMS-07 | Phase 22 | 22-01 | Complete |
-| VSA-01 | Phase 23 | 23-01 | Pending |
-| VSA-02 | Phase 23 | 23-02 | Pending |
-| VSA-03 | Phase 23 | 23-03 | Pending |
-| VSA-04 | Phase 23 | 23-03 | Pending |
-| MOBL-01 | Phase 23 | 23-03 | Pending |
+| VSA-01 | Phase 23 | 23-01, 23-02 | Complete |
+| VSA-02 | Phase 23 | 23-02, 23-03, 23-08, 23-10, 23-11, 23-14, 23-16, 23-17 | Complete — CR-03/CR-04 fail-closed (23-08), CR-01 cache-bypass (23-10), CR-02 STOMP gate (23-11), CR-07 strict-scoping genuinely tightens (23-14); V57 grant_source-backfill deploy blocker fixed (23-17: bare no-GUC UPDATE → V44 per-tenant `set_config` loop, so the shipped enforcement is actually deployable on a non-fresh DB); proven by ShopAccessFailClosed/CacheBypass/Enforcement/StrictScopingTightening + TenantChannelInterceptor + V57GrantSourceBackfillIntegrationTest over a green full `integrationTest` (332/0 after 23-17) |
+| VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
+| VSA-04 | Phase 23 | 23-04, 23-06, 23-08, 23-09, 23-12, 23-13, 23-14 | Complete — grant/revoke reshape + last-GA-409 (23-09), grant validation + `/me` + GDPR directory-erase (23-12), frontend server-authority (23-13), JIT provenance (23-14); proven by StaffManagementIntegrationTest 19/19 + GdprErasureIntegrationTest + dashboard jest. Deferred (non-boundary): WR-04 products/marketing UI narrowing, bulk-revoke-JIT affordance |
+| MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
 | IMG-01 | Phase 24 | 24-01 | Pending |
 | IMG-02 | Phase 24 | 24-02 | Pending |
 | IMG-03 | Phase 24 | 24-03 | Pending |

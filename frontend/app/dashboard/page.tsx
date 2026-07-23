@@ -10,6 +10,7 @@ import apiClient from "@/lib/api-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   Store,
   Package,
@@ -121,13 +122,27 @@ export default function DashboardPage() {
   const [onboardingBanner, setOnboardingBanner] = useState<OnboardingBanner>("HIDDEN")
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [shopsList, setShopsList] = useState<{ id: string; name: string }[]>([])
   const { toast } = useToast()
 
+  // 23-07's persisted shop-context switcher. When a shop is selected, the
+  // order-derived views (Orders stat, status chart, recent-activity feed)
+  // narrow to that shop server-side via ?shopId=. Catalogue/CRM/finance totals
+  // stay group-wide (products has no server-side shop filter yet — WR-04).
+  const { contextShopId } = useShopContext()
+
+  // Onboarding banner is shop-independent — fetch once on mount.
   useEffect(() => {
-    fetchDashboardData()
     fetchOnboardingStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Re-fetch dashboard data whenever the selected shop changes so the order
+  // activity always reflects the switcher (VSA-03).
+  useEffect(() => {
+    fetchDashboardData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextShopId])
 
   // Non-critical: a failed /me fetch must never break the dashboard render.
   const fetchOnboardingStatus = async () => {
@@ -144,19 +159,31 @@ export default function DashboardPage() {
     try {
       setLoading(true)
 
+      // Order-derived views narrow to the selected shop server-side
+      // (OrderController accepts ?shopId= and scopes to one shop of the tenant).
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
+
       const [shopsRes, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
         await Promise.all([
-          apiClient.get("/api/v1/shops?size=1"),
+          // size=100 gives both the group shop count (totalElements) and the
+          // shop names used to label the active shop-context.
+          apiClient.get("/api/v1/shops?size=100"),
           apiClient.get("/api/v1/products?size=1"),
-          apiClient.get("/api/v1/orders?size=1"),
+          apiClient.get(`/api/v1/orders?size=1${shopScope}`),
           apiClient.get("/api/v1/customers?size=1"),
-          apiClient.get("/api/v1/orders?size=10&sort=createdAt,desc"),
+          apiClient.get(`/api/v1/orders?size=10&sort=createdAt,desc${shopScope}`),
           // Server enforces a max page size of 100 (Issue #95) — the previous
           // size=200 was silently over-asking. Chart the 100 most recent orders.
-          apiClient.get("/api/v1/orders?size=100&sort=createdAt,desc"),
+          apiClient.get(`/api/v1/orders?size=100&sort=createdAt,desc${shopScope}`),
           apiClient.get("/api/v1/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 
+      setShopsList(
+        (shopsRes.data.content || []).map((s: { id: string; name: string }) => ({
+          id: s.id,
+          name: s.name,
+        }))
+      )
       setStats({
         shops: shopsRes.data.totalElements || 0,
         products: productsRes.data.totalElements || 0,
@@ -198,6 +225,11 @@ export default function DashboardPage() {
     color: vatRateLabels[vat.vatRate]?.color || "#6b7280",
   })) || []
 
+  // Name of the shop the switcher is scoped to (null = All shops).
+  const contextShopName = contextShopId
+    ? shopsList.find((s) => s.id === contextShopId)?.name ?? "the selected shop"
+    : null
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -225,6 +257,12 @@ export default function DashboardPage() {
         <p className="mt-2 text-slate-600">
           Welcome to your J&apos;Toye OaaS management dashboard
         </p>
+        {contextShopName && (
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-sm font-medium text-orange-800">
+            <Store className="h-4 w-4" />
+            Viewing {contextShopName} — order activity below is scoped to this shop
+          </div>
+        )}
       </m.div>
 
       {/* Incomplete-onboarding banner (hidden once LIVE) */}
@@ -375,14 +413,16 @@ export default function DashboardPage() {
       >
         <Card>
           <CardHeader>
-            <CardTitle className="text-xl">Recent Orders</CardTitle>
+            <CardTitle className="text-xl">
+              Recent Orders{contextShopName ? ` — ${contextShopName}` : ""}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {recentOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
-                  No orders yet
+                  {contextShopName ? `No orders in ${contextShopName} yet` : "No orders yet"}
                 </h3>
                 <p className="text-sm text-slate-500">
                   Orders will appear here once they are created

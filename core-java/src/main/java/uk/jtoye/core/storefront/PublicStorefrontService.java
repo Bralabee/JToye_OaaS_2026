@@ -547,7 +547,7 @@ public class PublicStorefrontService {
             // outside the transaction it must join).
             if (clientSecret == null) {
                 eventPublisher.publishStateChange(
-                        order.getId(), order.getTenantId(), order.getOrderNumber(),
+                        order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
                         OrderStatus.DRAFT, OrderStatus.PENDING);
             }
 

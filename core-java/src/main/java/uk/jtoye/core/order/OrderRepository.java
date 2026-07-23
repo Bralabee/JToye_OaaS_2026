@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +41,17 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * Find order by order number (tenant-scoped automatically).
      */
     Optional<Order> findByOrderNumber(String orderNumber);
+
+    // Vendor-scoped access (Phase 23, VSA-02 / D-01): grant-set-narrowed read-scope
+    // finders for the authenticated order lists. A non-GROUP_ADMIN sees only orders
+    // whose shop_id is in their grant set — narrowed at the QUERY, never a post-hoc
+    // filter. Callers guarantee a non-empty shopIds set (empty grant → deny-by-default
+    // short-circuit). RLS still scopes every row to the tenant.
+    Page<Order> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
+
+    Page<Order> findByStatusAndShopIdIn(OrderStatus status, Collection<UUID> shopIds, Pageable pageable);
+
+    Page<Order> findByCustomerIdAndShopIdIn(UUID customerId, Collection<UUID> shopIds, Pageable pageable);
 
     /**
      * Find orders by customer ID, unpaged (tenant-scoped automatically).
