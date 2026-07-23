@@ -214,7 +214,7 @@ Plans:
 
 **Wave 2** *(blocked on 24-01 + 24-02)*
 
-- [ ] 24-03-PLAN.md (Wave 2) — Reject-early accept side: Content-Length 413 (RFC 7807) before buffering + quarantine store + PENDING row + Idempotency-Key contract (D-06) + 202 accept + **dedicated `media_event_outbox` (V58) + `media.events` topology** (sidesteps `outbox_flusher_dispatch_trap`) [IMG-02]
+- [x] 24-03-PLAN.md (Wave 2) — Reject-early accept side: Content-Length 413 (RFC 7807) before buffering + quarantine store + PENDING row + Idempotency-Key contract (D-06) + 202 accept + **dedicated `media_event_outbox` (V58) + `media.events` topology** (sidesteps `outbox_flusher_dispatch_trap`) [IMG-02]
 
 **Wave 3** *(blocked on 24-01 + 24-02 + 24-03)*
 
@@ -281,6 +281,6 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
-| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 2/6 | In Progress|  |
+| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 3/6 | In Progress|  |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
