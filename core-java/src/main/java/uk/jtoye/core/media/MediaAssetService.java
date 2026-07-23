@@ -137,9 +137,10 @@ public class MediaAssetService {
                             productId, a.getId());
                 }
                 case FAILED -> {
-                    // WR-01 reprocess is wired in a follow-up; for now reuse the existing asset.
-                    log.info("Dedup (FAILED) on accept: product {} reuses FAILED asset {}",
-                            productId, a.getId());
+                    // WR-01: a FAILED row must NOT permanently poison these bytes tenant-wide. The
+                    // raw bytes are available on THIS accept, so reset the same (tenant, sha256) row
+                    // to PENDING, re-quarantine + re-enqueue, and let the worker re-run.
+                    return reprocessFailed(a, productId, rawBytes, sha256, uploadedBy, placement, tenantId);
                 }
             }
             return new MediaAcceptDto(a.getId(), a.getStatus().name());
@@ -174,6 +175,47 @@ public class MediaAssetService {
 
         log.info("Accepted upload for product {}: PENDING asset {} quarantined at {} + outbox row (tenant {})",
                 productId, asset.getId(), objectKey, tenantId);
+        return new MediaAcceptDto(asset.getId(), asset.getStatus().name());
+    }
+
+    /**
+     * WR-01 FAILED-reprocess: a FAILED dedup match no longer permanently poisons its
+     * {@code (tenant_id, sha256)} slot (the worker deletes the quarantine object on failure, so
+     * without this a re-upload of identical bytes hit the FAILED row forever with the raw gone).
+     * The raw bytes ARE available on THIS accept, so the SAME asset row (the unique index requires
+     * one per tenant+content) is reset to {@code PENDING} with this upload's placement intent, the
+     * raw bytes are re-quarantined, and a fresh {@code media_event_outbox} event is enqueued in the
+     * SAME tx — so the worker re-runs and attaches the asset on success, exactly like a fresh upload.
+     */
+    private MediaAcceptDto reprocessFailed(MediaAsset asset, UUID productId, byte[] rawBytes,
+                                           String sha256, UUID uploadedBy, MediaPlacement placement,
+                                           UUID tenantId) {
+        String contentType = storageService.detectContentType(rawBytes);
+        if (contentType == null) {
+            contentType = "application/octet-stream";
+        }
+        String objectKey = tenantId + "/quarantine/" + sha256 + extensionFor(contentType);
+        storageService.putBytes(objectKey, rawBytes, contentType);   // re-quarantine the RAW bytes
+
+        asset.setObjectKey(objectKey);
+        asset.setContentType(contentType);
+        asset.setBytes((long) rawBytes.length);
+        asset.setWidth(null);
+        asset.setHeight(null);
+        asset.setStatus(MediaAsset.Status.PENDING);
+        asset.setFailureReason(null);
+        asset.setFlagged(false);
+        asset.setUploadedBy(uploadedBy);
+        asset.setProductId(productId);
+        asset.setIsPrimary(placement.isPrimary());
+        asset.setSortOrder(placement.sortOrder());
+        asset = mediaAssetRepository.saveAndFlush(asset);
+
+        MediaProcessingEvent event = new MediaProcessingEvent(tenantId, asset.getId());
+        mediaEventOutboxRepository.save(new MediaEventOutbox(tenantId, asset.getId(), serialize(event)));
+
+        log.info("Dedup (FAILED) reprocess on accept: asset {} reset to PENDING + re-quarantined at {} "
+                + "+ outbox row (product {}, tenant {})", asset.getId(), objectKey, productId, tenantId);
         return new MediaAcceptDto(asset.getId(), asset.getStatus().name());
     }
 

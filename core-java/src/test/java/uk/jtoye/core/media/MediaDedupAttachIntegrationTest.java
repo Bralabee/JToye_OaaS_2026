@@ -167,6 +167,45 @@ class MediaDedupAttachIntegrationTest {
         assertThat(countAssetsWithSha(sha)).as("no duplicate asset minted").isEqualTo(1);
     }
 
+    // ---- WR-01: FAILED dedup reprocesses instead of poisoning the bytes ------------------
+
+    @Test
+    void failedDedupReprocessesTheAssetToPendingAndReEnqueues() {
+        String sha = pad("shared-failed");
+        UUID product = seedProduct();
+        // A previously-FAILED asset for these bytes (its quarantine was purged; reason set).
+        MediaAsset failed = seedAsset(sha, MediaAsset.Status.FAILED, null);
+        failed.setFailureReason("Image could not be processed");
+        mediaAssetRepository.saveAndFlush(failed);
+        long outboxBefore = countOutbox();
+
+        MediaAcceptDto r = accept(product, sha);
+        em.flush();
+        em.clear();
+
+        assertThat(r.assetId()).as("the SAME (tenant, sha) row is reused, not a duplicate")
+                .isEqualTo(failed.getId());
+        assertThat(r.status()).isEqualTo("PENDING");
+
+        MediaAsset reread = mediaAssetRepository.findById(failed.getId()).orElseThrow();
+        assertThat(reread.getStatus()).as("the FAILED asset is reset to PENDING for reprocessing")
+                .isEqualTo(MediaAsset.Status.PENDING);
+        assertThat(reread.getFailureReason()).as("the stale failure reason is cleared").isNull();
+        assertThat(reread.getProductId()).as("the placement intent is this re-upload's product")
+                .isEqualTo(product);
+        assertThat(countAssetsWithSha(sha)).as("no duplicate asset minted (same row reprocessed)").isEqualTo(1);
+        assertThat(countOutbox()).as("a fresh outbox event is enqueued for reprocessing")
+                .isEqualTo(outboxBefore + 1);
+        // The raw bytes are re-quarantined (available on this accept even though the old quarantine was purged).
+        Mockito.verify(storageService).putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
+    }
+
+    private long countOutbox() {
+        Long c = jdbc.queryForObject(
+                "SELECT count(*) FROM media_event_outbox WHERE tenant_id = ?", Long.class, tenant);
+        return c == null ? 0 : c;
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private MediaAcceptDto accept(UUID productId, String sha) {
