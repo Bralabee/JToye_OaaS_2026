@@ -3,6 +3,9 @@
 import { useState, useRef, useCallback } from "react"
 import { X, ImageIcon, Loader2 } from "lucide-react"
 import apiClient from "@/lib/api-client"
+import { AssetImage } from "@/components/ui/asset-image"
+import { makeIdempotencyKey } from "@/lib/webhooks-api"
+import type { MediaUploadAccepted } from "@/types/api"
 
 const DIMENSION_REQUIREMENTS = {
   square: { minWidth: 400, minHeight: 400, label: "400x400px" },
@@ -55,11 +58,31 @@ interface ImageUploaderProps {
   currentImageUrl?: string | null
   uploadUrl: string
   onUploadComplete: (imageUrl: string) => void
+  // Phase 24 (IMG-04): the product image endpoint is now an async accept — it
+  // returns 202 { assetId, status:"PENDING" } and the worker validates +
+  // normalizes off-thread. Callers that target that endpoint receive the
+  // accepted asset here (the uploader shows the "Processing…" state meanwhile).
+  // Optional so legacy synchronous callers (shop logo/banner) are unaffected.
+  onUploadAccepted?: (asset: MediaUploadAccepted) => void
   onAiSuggestions?: (suggestions: AiSuggestions) => void
   onRemove?: () => void
   aspectRatio?: "square" | "banner" | "logo"
   label?: string
   disabled?: boolean
+}
+
+/**
+ * Type-guard for the Phase 24 async accept shape. The upload endpoint returns
+ * 202 { assetId, status:"PENDING" } (NO servable image URL yet); a legacy
+ * synchronous endpoint returns a DTO carrying imageUrl/logoUrl/bannerUrl.
+ */
+function isAsyncAccept(data: unknown): data is MediaUploadAccepted {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof (data as { assetId?: unknown }).assetId === "string" &&
+    typeof (data as { status?: unknown }).status === "string"
+  )
 }
 
 /**
@@ -249,6 +272,7 @@ export function ImageUploader({
   currentImageUrl,
   uploadUrl,
   onUploadComplete,
+  onUploadAccepted,
   onAiSuggestions,
   onRemove,
   aspectRatio = "square",
@@ -261,6 +285,10 @@ export function ImageUploader({
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [imgBroken, setImgBroken] = useState(false)
+  // Phase 24 (IMG-04): true once the async accept (202/PENDING) has come back —
+  // the worker is normalizing off-thread, so we show a "Processing…" state
+  // instead of a stale preview or a not-yet-servable derivative URL.
+  const [processing, setProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const aspectClass =
@@ -277,6 +305,7 @@ export function ImageUploader({
     async (file: File) => {
       setError(null)
       setImgBroken(false)
+      setProcessing(false)
 
       // 1. Type gate.
       const typeError = validateFileType(file.type)
@@ -329,12 +358,17 @@ export function ImageUploader({
           return
         }
 
-        // 7. Upload the compressed file.
+        // 7. Upload the compressed file. Send an Idempotency-Key so a
+        // double-submit against the async accept never mints a duplicate asset
+        // (D-06 / T-24-24). The key is a secure-random UUID (never Math.random).
         const formData = new FormData()
         formData.append("file", compressed)
 
         const response = await apiClient.post(uploadUrl, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
+          headers: {
+            "Content-Type": "multipart/form-data",
+            "Idempotency-Key": makeIdempotencyKey(),
+          },
           onUploadProgress: (e) => {
             if (e.total) {
               setProgress(Math.round((e.loaded * 100) / e.total))
@@ -342,9 +376,24 @@ export function ImageUploader({
           },
         })
 
-        const data = response.data
+        const data = response.data ?? {}
 
-        // Handle both wrapped response (ImageUploadResponse) and direct DTO
+        // Phase 24 async accept: the endpoint returned 202 { assetId, status:
+        // "PENDING" } — the worker is validating + normalizing off-thread and
+        // there is NO servable image URL yet. Surface the processing state and
+        // hand the accepted asset to the parent; drop the local preview since we
+        // show the "Processing…" indicator instead.
+        if (isAsyncAccept(data)) {
+          setProcessing(true)
+          setPreview(null)
+          onUploadAccepted?.({ assetId: data.assetId, status: data.status })
+          // AI suggestions come from the advisory vision stage the worker runs
+          // off-thread — they are not part of the synchronous 202 accept body.
+          return
+        }
+
+        // Legacy synchronous path (shop logo/banner endpoints not migrated to
+        // the async pipeline): the response carries a ready image URL.
         const product = data.product || data
         const newUrl =
           product.imageUrl || product.logoUrl || product.bannerUrl || displayUrl
@@ -405,14 +454,14 @@ export function ImageUploader({
             : displayUrl
               ? "border-slate-200 bg-slate-50"
               : "border-slate-300 bg-slate-50 hover:border-slate-400"
-        } ${disabled || uploading ? "pointer-events-none opacity-60" : "cursor-pointer"}`}
+        } ${disabled || uploading || processing ? "pointer-events-none opacity-60" : "cursor-pointer"}`}
         onDragOver={(e) => {
           e.preventDefault()
           setDragOver(true)
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => !uploading && fileInputRef.current?.click()}
+        onClick={() => !uploading && !processing && fileInputRef.current?.click()}
       >
         {/* Current or preview image */}
         {displayUrl ? (
@@ -443,6 +492,17 @@ export function ImageUploader({
               JPEG, PNG, WebP, GIF &middot; min {dimReq.label}
             </span>
           </div>
+        )}
+
+        {/* Async processing overlay (Phase 24): the accept came back 202/PENDING
+            and the worker is normalizing the upload to WebP off-thread. */}
+        {processing && (
+          <AssetImage
+            status="PENDING"
+            url={null}
+            alt="Processing uploaded image"
+            className="absolute inset-0"
+          />
         )}
 
         {/* Upload progress overlay */}

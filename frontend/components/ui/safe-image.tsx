@@ -10,6 +10,11 @@ interface SafeImageProps {
   fallbackClassName?: string
   fallbackIcon?: React.ReactNode
   loading?: "lazy" | "eager"
+  // Intrinsic pixel dimensions of the source. Forwarded to the <img> so the
+  // browser can reserve layout space and avoid CLS (Phase 24 D-07: the WebP
+  // derivative carries media_asset.width/height). Optional + backward-compatible.
+  width?: number
+  height?: number
 }
 
 /**
@@ -23,6 +28,8 @@ export function SafeImage({
   fallbackClassName,
   fallbackIcon,
   loading = "lazy",
+  width,
+  height,
 }: SafeImageProps) {
   const [failed, setFailed] = useState(false)
 
@@ -40,6 +47,8 @@ export function SafeImage({
       alt={alt}
       className={className}
       loading={loading}
+      width={width}
+      height={height}
       onError={() => setFailed(true)}
     />
   )

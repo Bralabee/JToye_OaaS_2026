@@ -21,12 +21,20 @@ export interface PublicShop {
   acceptsCardPayments?: boolean
 }
 
+import type { MediaAsset } from "@/types/api"
+
+export type { MediaAsset, MediaAssetStatus } from "@/types/api"
+
 export interface PublicProduct {
   id: string
   title: string
   description: string | null
   imageUrl: string | null
   imageUrls: string[]
+  // Phase 24 (IMG-04) asset-first media list. Optional for old-backend
+  // tolerance + the dual-read window (D-03a): when absent the storefront falls
+  // back to the flat imageUrl/imageUrls above (asset-first, image_url fallback).
+  media?: MediaAsset[] | null
   ingredientsText: string
   allergenMask: number
   pricePennies: number
