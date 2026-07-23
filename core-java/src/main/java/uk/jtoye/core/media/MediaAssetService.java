@@ -110,13 +110,38 @@ public class MediaAssetService {
         // Preserve the VSA-02 shop-scoped write boundary the retired sync handler enforced.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
-        // Dedup short-circuit: (tenant_id, sha256) is unique, so at most one asset can exist
-        // for these bytes — return it rather than attempting a duplicate insert.
+        // Dedup on accept: (tenant_id, sha256) is unique, so at most one asset can exist for
+        // these bytes. A dedup hit must still PLACE the reused asset against THIS product — the
+        // worker's placeOnActive path is NEVER reached on a dedup hit, so returning here without
+        // attaching leaves the target product imageless (CR-01 regression by omission).
         Optional<MediaAsset> existing = findDedup(tenantId, sha256);
         if (existing.isPresent()) {
             MediaAsset a = existing.get();
-            log.info("Dedup short-circuit on accept: product {} reuses existing asset {} (status {})",
-                    productId, a.getId(), a.getStatus());
+            switch (a.getStatus()) {
+                case ACTIVE -> {
+                    // Genuine CoW dedup share: attach/repoint this product's slot to the shared
+                    // ACTIVE asset directly (two products with identical bytes each keep a
+                    // product_media row -> ref-count grows).
+                    placeAsset(tenantId, productId, a.getId(), placement.isPrimary(), placement.sortOrder());
+                    log.info("Dedup (ACTIVE) on accept: product {} shares asset {}", productId, a.getId());
+                }
+                case PENDING -> {
+                    // A worker is already in flight for these bytes (the asset's placement intent
+                    // points at the FIRST product). Share the in-flight asset with THIS product
+                    // now — its slot resolves to the derivative when the shared worker flips
+                    // E->ACTIVE. The asset's OWN placement intent is left untouched (the worker
+                    // still places the first product; different products never collide, a
+                    // same-product re-slot is idempotent).
+                    placeAsset(tenantId, productId, a.getId(), placement.isPrimary(), placement.sortOrder());
+                    log.info("Dedup (PENDING) on accept: product {} shares in-flight asset {}",
+                            productId, a.getId());
+                }
+                case FAILED -> {
+                    // WR-01 reprocess is wired in a follow-up; for now reuse the existing asset.
+                    log.info("Dedup (FAILED) on accept: product {} reuses FAILED asset {}",
+                            productId, a.getId());
+                }
+            }
             return new MediaAcceptDto(a.getId(), a.getStatus().name());
         }
 
@@ -198,6 +223,31 @@ public class MediaAssetService {
         productMediaRepository.save(pm);
         log.debug("Attached product_media {} -> asset {} (product {}, primary={}, sortOrder={})",
                 pm.getId(), assetId, productId, primary, sortOrder);
+    }
+
+    /**
+     * Attach-or-repoint a product's placement slot to {@code assetId} — the shared CoW placement
+     * logic behind BOTH the worker's on-success placement (D-04a) AND the accept-time dedup share
+     * (CR-01). If the product has no row at the target slot (the primary slot, or a gallery slot
+     * matched by {@code sortOrder}), create it ({@link #attachPlacement}); otherwise repoint the
+     * existing slot to {@code assetId} and release the displaced asset (physical delete at
+     * ref-count 0). Idempotent when the slot already points at {@code assetId} (redelivery / dedup).
+     */
+    public void placeAsset(UUID tenantId, UUID productId, UUID assetId, boolean primary, int sortOrder) {
+        Optional<ProductMedia> slot = primary
+                ? productMediaRepository.findByProductIdAndPrimaryTrue(productId)
+                : productMediaRepository.findFirstByProductIdAndPrimaryFalseAndSortOrder(productId, sortOrder);
+        if (slot.isEmpty()) {
+            attachPlacement(tenantId, productId, assetId, primary, sortOrder);
+            return;
+        }
+        ProductMedia row = slot.get();
+        UUID displaced = row.getAssetId();
+        if (displaced.equals(assetId)) {
+            return;   // already points at this asset (idempotent redelivery / dedup) — nothing to do.
+        }
+        repoint(row.getId(), assetId);
+        releaseAsset(displaced);
     }
 
     /**

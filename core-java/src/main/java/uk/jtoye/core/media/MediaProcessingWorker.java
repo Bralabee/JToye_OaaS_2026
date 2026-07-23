@@ -63,7 +63,6 @@ public class MediaProcessingWorker {
     private static final int FAILURE_REASON_MAX = 500;
 
     private final MediaAssetRepository mediaAssetRepository;
-    private final ProductMediaRepository productMediaRepository;
     private final MediaAssetService mediaAssetService;
     private final MediaNormalizer mediaNormalizer;
     private final StorageService storageService;
@@ -72,7 +71,6 @@ public class MediaProcessingWorker {
     private final EntityManager entityManager;
 
     public MediaProcessingWorker(MediaAssetRepository mediaAssetRepository,
-                                 ProductMediaRepository productMediaRepository,
                                  MediaAssetService mediaAssetService,
                                  MediaNormalizer mediaNormalizer,
                                  StorageService storageService,
@@ -80,7 +78,6 @@ public class MediaProcessingWorker {
                                  MediaProperties mediaProperties,
                                  EntityManager entityManager) {
         this.mediaAssetRepository = mediaAssetRepository;
-        this.productMediaRepository = productMediaRepository;
         this.mediaAssetService = mediaAssetService;
         this.mediaNormalizer = mediaNormalizer;
         this.storageService = storageService;
@@ -190,6 +187,10 @@ public class MediaProcessingWorker {
      * create the slot's first {@code product_media} row or repoint the existing slot to the
      * new asset — releasing the displaced asset (physical delete at ref-count 0). Because it
      * is invoked ONLY once the asset is ACTIVE, a FAILED upload never reaches here.
+     *
+     * <p>Delegates to the shared {@link MediaAssetService#placeAsset} attach-or-repoint logic
+     * (the SAME logic the accept-time dedup share reuses — CR-01), so the worker and the accept
+     * path can never drift on how a placement slot is created vs repointed.
      */
     private void placeOnActive(MediaAsset asset) {
         UUID productId = asset.getProductId();
@@ -198,24 +199,7 @@ public class MediaProcessingWorker {
         }
         boolean primary = Boolean.TRUE.equals(asset.getIsPrimary());
         int sortOrder = asset.getSortOrder() == null ? 0 : asset.getSortOrder();
-
-        Optional<ProductMedia> slot = primary
-                ? productMediaRepository.findByProductIdAndPrimaryTrue(productId)
-                : productMediaRepository.findFirstByProductIdAndPrimaryFalseAndSortOrder(productId, sortOrder);
-
-        if (slot.isEmpty()) {
-            // First image at this slot — no displaced asset.
-            mediaAssetService.attachPlacement(asset.getTenantId(), productId, asset.getId(), primary, sortOrder);
-            return;
-        }
-        ProductMedia row = slot.get();
-        UUID displaced = row.getAssetId();
-        if (displaced.equals(asset.getId())) {
-            return;   // already points at this asset (idempotent redelivery / dedup) — nothing to do.
-        }
-        // Repoint the live slot to the new derivative, then reclaim the displaced asset.
-        mediaAssetService.repoint(row.getId(), asset.getId());
-        mediaAssetService.releaseAsset(displaced);
+        mediaAssetService.placeAsset(asset.getTenantId(), productId, asset.getId(), primary, sortOrder);
     }
 
     /**
