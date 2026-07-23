@@ -124,10 +124,10 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | VSA-03 | Phase 23 | 23-05, 23-07 | Complete |
 | VSA-04 | Phase 23 | 23-04, 23-06, 23-08, 23-09, 23-12, 23-13, 23-14 | Complete — grant/revoke reshape + last-GA-409 (23-09), grant validation + `/me` + GDPR directory-erase (23-12), frontend server-authority (23-13), JIT provenance (23-14); proven by StaffManagementIntegrationTest 19/19 + GdprErasureIntegrationTest + dashboard jest. Deferred (non-boundary): WR-04 products/marketing UI narrowing, bulk-revoke-JIT affordance |
 | MOBL-01 | Phase 23 | 23-05, 23-06 | Complete |
-| IMG-01 | Phase 24 | 24-01 | Pending |
-| IMG-02 | Phase 24 | 24-04 | Complete |
-| IMG-03 | Phase 24 | 24-03 | Pending |
-| IMG-04 | Phase 24 | 24-03 | Pending |
+| IMG-01 | Phase 24 | 24-02, 24-05 | Complete |
+| IMG-02 | Phase 24 | 24-01, 24-03, 24-04 | Complete |
+| IMG-03 | Phase 24 | 24-04, 24-05 | Complete |
+| IMG-04 | Phase 24 | 24-05, 24-06 | Complete |
 | AI-01 | Phase 22 | absorbed → COMMS-04/05/06 | Absorbed |
 | AI-02 | Phase 25 | 25-01, 25-02 | Pending |
 | INFRA-01 | Phase 26 | 26-01 | Pending |
