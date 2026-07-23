@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.4.2, Next.js 16, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 1574 logical invocations passing (1065 Java `@Test` methods across 181 files + 365 Jest `it/test` blocks across 56 files + 77 top-level Go `Test*` funcs across 9 files + 40 Playwright `test()` blocks across 11 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
+- **Testing**: All new code requires tests — project standard is 1636 logical invocations passing (1116 Java `@Test` methods across 196 files + 376 Jest `it/test` blocks across 58 files + 77 top-level Go `Test*` funcs across 9 files + 40 Playwright `test()` blocks across 11 specs + 27 MCP-server vitest `it/test` blocks across 6 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json` and are enforced by the `docs-freshness` CI gate (`.github/workflows/docs-freshness.yml`, script `scripts/docs-freshness.sh`), which fails the build on drift.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -104,7 +104,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `prod` (hardened security and performance)
 - Flyway migrations: `core-java/src/main/resources/db/migration/`
 - Migration strategy: Versioned SQL files (V1__, V2__, etc.)
-- Current schema version: V37 (refunds table + refunds_aud audit version column; V35 force-enabled RLS on marketing/audit tables)
+- Current schema version: V58 (Phase 24 Image Architecture: V53 media_asset copy-on-write model + product_media join — ENABLE+FORCE RLS tenant-scoped, (tenant_id, sha256) dedup, ref-counted delete-at-0, per-tenant set_config backfill of the flat image_url/additional_image_urls[] as ACTIVE assets; V58 dedicated media_event_outbox (media.events exchange) driving the safe async upload→validate→WebP-derivative pipeline. Full per-migration history + RLS notes in CLAUDE.md — this AGENTS.md line is an abbreviated pointer, not the canonical ledger.)
 - Next.js config: `frontend/next.config.mjs` (standalone output, image remotePatterns)
 - TypeScript config: `frontend/tsconfig.json`
 - ESLint: `frontend/.eslintrc.json`

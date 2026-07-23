@@ -1686,17 +1686,6 @@
         },
         "type" : "object"
       },
-      "ImageUploadResponse" : {
-        "properties" : {
-          "aiSuggestions" : {
-            "$ref" : "#/components/schemas/ImageAnalysisResult"
-          },
-          "product" : {
-            "$ref" : "#/components/schemas/ProductDto"
-          }
-        },
-        "type" : "object"
-      },
       "JspConfigDescriptor" : {
         "properties" : {
           "jspPropertyGroups" : {
@@ -1781,6 +1770,55 @@
             "type" : "string"
           },
           "usersDisabled" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "MediaAcceptDto" : {
+        "properties" : {
+          "assetId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "MediaAssetDto" : {
+        "properties" : {
+          "assetId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "failureReason" : {
+            "type" : "string"
+          },
+          "flagged" : {
+            "type" : "boolean"
+          },
+          "height" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "status" : {
+            "enum" : [
+              "PENDING",
+              "ACTIVE",
+              "FAILED"
+            ],
+            "type" : "string"
+          },
+          "thumbnailUrl" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          },
+          "width" : {
             "format" : "int32",
             "type" : "integer"
           }
@@ -2775,6 +2813,12 @@
           },
           "ingredientsText" : {
             "type" : "string"
+          },
+          "media" : {
+            "items" : {
+              "$ref" : "#/components/schemas/MediaAssetDto"
+            },
+            "type" : "array"
           },
           "preparationTimeMinutes" : {
             "format" : "int32",
@@ -5296,6 +5340,114 @@
         ]
       }
     },
+    "/api/v1/media/review-queue" : {
+      "get" : {
+        "description" : "Returns the tenant's media assets that need vendor attention: FAILED uploads (each carries a vendor-visible failureReason; the vendor re-uploads) and flagged-ACTIVE assets (content-relevance review — the vendor Keeps or Replaces). Clean ACTIVE and in-flight PENDING assets are excluded. Authenticated read surface (mirrors the ProductController read endpoints); tenant-isolated by RLS.",
+        "operationId" : "reviewQueue",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/MediaAssetDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The review queue (possibly empty)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/MediaAssetDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Unauthorized - missing or invalid JWT"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List the media review/rejection queue",
+        "tags" : [
+          "Media Review"
+        ]
+      }
+    },
+    "/api/v1/media/{assetId}/keep" : {
+      "post" : {
+        "description" : "Dismisses the content-relevance flag on a flagged ACTIVE asset (Keep, D-04): the asset stays ACTIVE, flagged clears, and it drops out of the review queue. Replace is NOT this endpoint — a replacement is a re-upload through POST /api/v1/products/{id}/image. Tenant-scoped: a foreign assetId returns 404.",
+        "operationId" : "keep",
+        "parameters" : [
+          {
+            "description" : "Media asset ID",
+            "in" : "path",
+            "name" : "assetId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAssetDto"
+                }
+              }
+            },
+            "description" : "Flag dismissed; the updated asset is returned"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAssetDto"
+                }
+              }
+            },
+            "description" : "Missing catalog:write scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAssetDto"
+                }
+              }
+            },
+            "description" : "Asset not found in the caller's tenant"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Keep a flagged asset (dismiss the content flag)",
+        "tags" : [
+          "Media Review"
+        ]
+      }
+    },
     "/api/v1/onboarding" : {
       "post" : {
         "description" : "Creates a DRAFT onboarding for the authenticated tenant",
@@ -7267,8 +7419,8 @@
         ]
       },
       "post" : {
-        "description" : "Uploads an image and runs AI analysis to suggest name, ingredients, category, and dietary info.",
-        "operationId" : "uploadImage",
+        "description" : "Quarantines the raw upload and queues it for magic-byte sniffing, decode-verify, EXIF strip and WebP normalization. Returns 202 with the media_asset id; the client polls the product to observe PENDING -> ACTIVE/FAILED. Carries the uniform Idempotency-Key contract; oversize/replay errors are RFC 7807 typed.",
+        "operationId" : "accept",
         "parameters" : [
           {
             "description" : "Product ID",
@@ -7278,6 +7430,42 @@
             "schema" : {
               "format" : "uuid",
               "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "Content-Length",
+            "required" : false,
+            "schema" : {
+              "format" : "int64",
+              "type" : "integer"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "is_primary",
+            "required" : false,
+            "schema" : {
+              "default" : true,
+              "type" : "boolean"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "sort_order",
+            "required" : false,
+            "schema" : {
+              "default" : 0,
+              "format" : "int32",
+              "type" : "integer"
             }
           }
         ],
@@ -7300,35 +7488,75 @@
           }
         },
         "responses" : {
-          "200" : {
+          "202" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ImageUploadResponse"
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
                 }
               }
             },
-            "description" : "Image uploaded with AI suggestions"
+            "description" : "Accepted — upload quarantined, normalization queued"
           },
           "400" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ImageUploadResponse"
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
                 }
               }
             },
-            "description" : "Invalid file type or size"
+            "description" : "Missing Idempotency-Key or malformed request"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Missing catalog:write scope or shop-role access"
           },
           "404" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ImageUploadResponse"
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
                 }
               }
             },
             "description" : "Product not found"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Idempotency-Key request already in progress"
+          },
+          "413" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Upload exceeds the maximum permitted size"
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different body"
           }
         },
         "security" : [
@@ -7339,9 +7567,9 @@
             "bearer-jwt" : [ ]
           }
         ],
-        "summary" : "Upload product image",
+        "summary" : "Upload a product image (async accept)",
         "tags" : [
-          "Products"
+          "Product Media"
         ]
       }
     },
@@ -10272,6 +10500,10 @@
       "name" : "GDPR"
     },
     {
+      "description" : "Vendor review/rejection queue for processed image assets (IMG-03/IMG-04)",
+      "name" : "Media Review"
+    },
+    {
       "description" : "Vendor onboarding lifecycle endpoints",
       "name" : "Onboarding"
     },
@@ -10286,6 +10518,10 @@
     {
       "description" : "Stripe payment processing endpoints (public, no auth required). Canonical prefix /api/v1/public/payments; bare /public/payments is a deprecated legacy alias kept for the configured Stripe webhook.",
       "name" : "Payments"
+    },
+    {
+      "description" : "Safe async product image upload (quarantine + normalize pipeline)",
+      "name" : "Product Media"
     },
     {
       "description" : "Product catalog management endpoints (Natasha's Law compliant)",
