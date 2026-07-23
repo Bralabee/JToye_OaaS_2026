@@ -61,6 +61,22 @@ public class RabbitMQConfig {
     public static final String WEBHOOK_DELIVERIES_DLX = "webhook.deliveries.dlx";
     public static final String WEBHOOK_DELIVERIES_DLQ = "webhook.deliveries.dlq";
 
+    /**
+     * Phase 24 (24-03 / IMG-02) — DEDICATED media-pipeline topology. The accept
+     * writes a {@code media_event_outbox} row in the same tx; {@code MediaEventOutboxFlusher}
+     * publishes it here after commit, and the async worker (24-04) consumes
+     * {@link #MEDIA_EVENTS_QUEUE} to normalize the quarantined upload. A DEDICATED
+     * exchange (not payment.events / order.events) means the flusher has exactly one
+     * destination and NO closed-set dispatch — sidestepping the
+     * {@code outbox_flusher_dispatch_trap} entirely.
+     */
+    public static final String MEDIA_EVENTS_EXCHANGE = "media.events";
+    public static final String MEDIA_EVENTS_QUEUE = "media.process";
+    public static final String MEDIA_EVENTS_ROUTING_KEY = "media.process";
+    public static final String MEDIA_EVENTS_ROUTING_PATTERN = "media.*";
+    public static final String MEDIA_EVENTS_DLX = "media.events.dlx";
+    public static final String MEDIA_EVENTS_DLQ = "media.process.dlq";
+
     @Bean
     public TopicExchange orderEventsExchange() {
         return new TopicExchange(ORDER_EVENTS_EXCHANGE);
@@ -319,6 +335,50 @@ public class RabbitMQConfig {
     @Bean
     public Binding webhookDeliveriesPaymentBinding(Queue webhookDeliveriesQueue, TopicExchange paymentEventsExchange) {
         return BindingBuilder.bind(webhookDeliveriesQueue).to(paymentEventsExchange).with(PAYMENT_EVENTS_ROUTING_PATTERN);
+    }
+
+    // ===================================================================
+    // Phase 24 (24-03 / IMG-02) — dedicated media.events pipeline topology
+    // ===================================================================
+    //
+    // Mirrors the payment topology (durable queue with its own DLX). The worker
+    // (24-04) binds a @RabbitListener to MEDIA_EVENTS_QUEUE; the flusher publishes
+    // to MEDIA_EVENTS_EXCHANGE with MEDIA_EVENTS_ROUTING_KEY. One exchange, one
+    // queue, one payload type (MediaProcessingEvent) — no dispatch coupling.
+
+    @Bean
+    public TopicExchange mediaEventsExchange() {
+        return new TopicExchange(MEDIA_EVENTS_EXCHANGE);
+    }
+
+    @Bean
+    public FanoutExchange mediaDeadLetterExchange() {
+        return new FanoutExchange(MEDIA_EVENTS_DLX);
+    }
+
+    @Bean
+    public Queue mediaEventsQueue() {
+        return QueueBuilder.durable(MEDIA_EVENTS_QUEUE)
+                .withArgument("x-dead-letter-exchange", MEDIA_EVENTS_DLX)
+                .build();
+    }
+
+    @Bean
+    public Queue mediaDeadLetterQueue() {
+        return QueueBuilder.durable(MEDIA_EVENTS_DLQ).build();
+    }
+
+    @Bean
+    public Binding mediaEventsBinding(Queue mediaEventsQueue, TopicExchange mediaEventsExchange) {
+        return BindingBuilder.bind(mediaEventsQueue)
+                .to(mediaEventsExchange)
+                .with(MEDIA_EVENTS_ROUTING_PATTERN);
+    }
+
+    @Bean
+    public Binding mediaDeadLetterBinding(Queue mediaDeadLetterQueue, FanoutExchange mediaDeadLetterExchange) {
+        return BindingBuilder.bind(mediaDeadLetterQueue)
+                .to(mediaDeadLetterExchange);
     }
 
     @Bean
