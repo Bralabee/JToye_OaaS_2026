@@ -14,6 +14,7 @@ import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -225,5 +226,68 @@ public class MediaAssetService {
     @Transactional(readOnly = true)
     public Optional<MediaAsset> findDedup(UUID tenantId, String sha256) {
         return mediaAssetRepository.findByTenantIdAndSha256(tenantId, sha256);
+    }
+
+    /**
+     * The vendor review/rejection queue (IMG-03 vendor-visible half): every
+     * {@code media_asset} that needs vendor attention — a {@code FAILED} upload
+     * (rejection reason + re-upload) OR a {@code flagged} {@code ACTIVE} asset
+     * (content-relevance review: Keep or Replace, D-04) — newest first. Tenant-scoped
+     * by the RLS wall (the request thread pins the tenant GUC), so another tenant's
+     * assets are invisible. Replace is NOT an action here — it is a re-upload through
+     * the 24-03 accept endpoint ({@code POST /api/v1/products/{id}/image}).
+     */
+    @Transactional(readOnly = true)
+    public List<MediaAssetDto> reviewQueue() {
+        return mediaAssetRepository.findReviewQueue().stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    /**
+     * Keep (dismiss the content flag, D-04): clears {@code flagged} on a flagged
+     * {@code ACTIVE} asset so it drops out of the review queue and stays the product's
+     * live image ({@code status} is untouched — the vendor keeps the flagged image).
+     * Tenant-scoped — a foreign {@code assetId} is invisible under RLS, so
+     * {@code findById} is empty and the caller gets a 404 (no cross-tenant oracle,
+     * T-24-20).
+     */
+    public MediaAssetDto dismissFlag(UUID assetId) {
+        MediaAsset asset = mediaAssetRepository.findById(assetId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + assetId));
+        asset.setFlagged(false);
+        asset = mediaAssetRepository.saveAndFlush(asset);
+        log.info("Dismissed content flag on asset {} (Keep) — stays {}", assetId, asset.getStatus());
+        return toDto(asset);
+    }
+
+    /**
+     * Map a {@link MediaAsset} to the vendor {@link MediaAssetDto}, resolving the
+     * derivative + thumbnail URLs ONLY for an {@code ACTIVE} asset (a PENDING/FAILED
+     * asset has no servable object — its quarantine bytes are gone or not yet produced).
+     */
+    private MediaAssetDto toDto(MediaAsset asset) {
+        String url = null;
+        String thumbnailUrl = null;
+        if (asset.getStatus() == MediaAsset.Status.ACTIVE && asset.getObjectKey() != null) {
+            url = storageService.urlForKey(asset.getObjectKey());
+            thumbnailUrl = thumbnailUrlFor(asset.getObjectKey());
+        }
+        return MediaAssetDto.from(asset, url, thumbnailUrl);
+    }
+
+    /**
+     * The thumbnail URL for a pipeline-produced derivative
+     * ({@code <tenant>/media/<id>.webp} -&gt; {@code <tenant>/media/<id>_thumb.webp} — the
+     * 24-04 worker convention). A backfilled ACTIVE asset (its {@code object_key} is the
+     * original flat key, not a {@code .webp} derivative) has no separate thumbnail, so this
+     * returns {@code null} and the caller falls back to the full {@code url}.
+     */
+    private String thumbnailUrlFor(String objectKey) {
+        if (objectKey.endsWith(".webp")) {
+            String base = objectKey.substring(0, objectKey.length() - ".webp".length());
+            return storageService.urlForKey(base + "_thumb.webp");
+        }
+        return null;
     }
 }

@@ -33,4 +33,18 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     @Query("SELECT a FROM MediaAsset a WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.PENDING "
             + "AND a.createdAt < :cutoff")
     List<MediaAsset> findStalePending(@Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * The vendor review/rejection queue selection (IMG-03, 24-05): the assets that need
+     * vendor attention — a {@code FAILED} upload (rejection reason + re-upload) OR a
+     * {@code flagged} {@code ACTIVE} asset (content-relevance review: Keep/Replace) —
+     * newest first. In-flight {@code PENDING} and clean {@code ACTIVE} assets are
+     * excluded (nothing to review). Tenant-scoped by the RLS wall (the request thread
+     * pins the tenant GUC), so another tenant's rows are invisible.
+     */
+    @Query("SELECT a FROM MediaAsset a "
+            + "WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.FAILED "
+            + "OR (a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE AND a.flagged = true) "
+            + "ORDER BY a.createdAt DESC")
+    List<MediaAsset> findReviewQueue();
 }
