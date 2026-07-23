@@ -59,6 +59,13 @@ class ProductServiceTest {
     @Mock
     private uk.jtoye.core.media.ProductMediaRepository productMediaRepository;
 
+    // Phase 24 (24-05, IMG-04): single-DTO reads/writes enrich the product with its media
+    // list via MediaAssetService.mediaForProduct. Unstubbed it returns null under Mockito,
+    // so the existing assertions (which don't inspect media) are unchanged; the enrichment
+    // is proven separately by MediaAssetDtoMappingTest + MediaReviewQueueIntegrationTest.
+    @Mock
+    private uk.jtoye.core.media.MediaAssetService mediaAssetService;
+
     // Phase 23-10 (CR-01): getProductById now delegates its cached data-load to the
     // ProductCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
     // repository + mapper) in setUp() so the existing by-id tests keep exercising
@@ -94,7 +101,7 @@ class ProductServiceTest {
         productService = new ProductService(productRepository, productMapper, storageService,
                 cacheEvictor, shopAccessService,
                 new ProductService.ProductCacheLoader(productRepository, productMapper),
-                productMediaRepository);
+                productMediaRepository, mediaAssetService);
 
         // Set up tenant context
         TenantContext.set(tenantId);

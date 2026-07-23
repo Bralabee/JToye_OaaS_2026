@@ -1,6 +1,7 @@
 package uk.jtoye.core.product.dto;
 
 import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.media.MediaAssetDto;
 import uk.jtoye.core.product.AllergenSpan;
 
 import java.time.OffsetDateTime;
@@ -30,6 +31,18 @@ public class ProductDto {
     private Integer shelfLifeDays;
     private String durabilityType;
     private List<AllergenSpan> allergenSpans;
+
+    /**
+     * IMG-04 (24-05): the product's media assets, asset-first — the {@code is_primary}
+     * {@code product_media} row's asset then the {@code sort_order} gallery rows, each
+     * carrying {@code status}/{@code flagged}/{@code failureReason} so the 24-06 UI can
+     * render PENDING (processing) / ACTIVE (derivative) / FAILED (reason) / flagged
+     * (needs-review) per entry. Populated by {@code ProductService} (not the MapStruct
+     * mapper — DB lookups stay out of the mapper, 24-02 convention). Coexists with the
+     * flat {@code imageUrl}/{@code additionalImageUrls} during the dual-read window (D-03a);
+     * empty for an un-migrated product (which still renders via the flat fields).
+     */
+    private List<MediaAssetDto> media;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -75,4 +88,6 @@ public class ProductDto {
     public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
     public List<AllergenSpan> getAllergenSpans() { return allergenSpans; }
     public void setAllergenSpans(List<AllergenSpan> allergenSpans) { this.allergenSpans = allergenSpans; }
+    public List<MediaAssetDto> getMedia() { return media; }
+    public void setMedia(List<MediaAssetDto> media) { this.media = media; }
 }

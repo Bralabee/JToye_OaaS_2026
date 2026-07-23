@@ -262,6 +262,22 @@ public class MediaAssetService {
     }
 
     /**
+     * The product's media assets as DTOs in render order (IMG-04, 24-05): the
+     * {@code is_primary} asset first, then the gallery by {@code sort_order}, each
+     * carrying {@code status}/{@code flagged}/{@code failureReason} (+ resolved derivative
+     * URLs for ACTIVE entries). Backs the product DTO {@code media} enrichment that
+     * {@code ProductService} wires post-mapping. Tenant-scoped by the RLS wall. An
+     * un-migrated product (no {@code product_media} rows) returns an empty list — the
+     * caller still renders via the flat {@code imageUrl} (dual-read, D-03a).
+     */
+    @Transactional(readOnly = true)
+    public List<MediaAssetDto> mediaForProduct(UUID productId) {
+        return productMediaRepository.findAssetsForProduct(productId).stream()
+                .map(this::toDto)
+                .toList();
+    }
+
+    /**
      * Map a {@link MediaAsset} to the vendor {@link MediaAssetDto}, resolving the
      * derivative + thumbnail URLs ONLY for an {@code ACTIVE} asset (a PENDING/FAILED
      * asset has no servable object — its quarantine bytes are gone or not yet produced).

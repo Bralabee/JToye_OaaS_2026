@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.media.ProductMediaRepository;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -46,6 +47,7 @@ public class ProductService {
     private final ShopAccessService shopAccessService;
     private final ProductCacheLoader productCacheLoader;
     private final ProductMediaRepository productMediaRepository;
+    private final MediaAssetService mediaAssetService;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
@@ -53,7 +55,8 @@ public class ProductService {
                           TenantCacheEvictor cacheEvictor,
                           ShopAccessService shopAccessService,
                           ProductCacheLoader productCacheLoader,
-                          ProductMediaRepository productMediaRepository) {
+                          ProductMediaRepository productMediaRepository,
+                          MediaAssetService mediaAssetService) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
@@ -61,6 +64,7 @@ public class ProductService {
         this.shopAccessService = shopAccessService;
         this.productCacheLoader = productCacheLoader;
         this.productMediaRepository = productMediaRepository;
+        this.mediaAssetService = mediaAssetService;
     }
 
     /**
@@ -76,6 +80,24 @@ public class ProductService {
             productMediaRepository.findPrimaryActiveObjectKey(dto.getId())
                     .map(storageService::urlForKey)
                     .ifPresent(dto::setImageUrl);
+        }
+        return dto;
+    }
+
+    /**
+     * Single-DTO detail enrichment (IMG-04, 24-05): the asset-first primary URL
+     * ({@link #resolveAssetFirst}, D-03a) PLUS the per-entry {@code media} list carrying
+     * {@code status}/{@code flagged}/{@code failureReason} the 24-06 UI renders. Applied
+     * ONLY at the single-product read/write sites (by-id, create, update, the image
+     * mutations) — NOT on the list/search paths, where a per-row media query would be an
+     * N+1 the web-perf contract forbids (grid cards need only the primary {@code imageUrl},
+     * already resolved by {@code resolveAssetFirst}). Resolved OUTSIDE the {@code @Cacheable}
+     * loader so an async {@code PENDING->ACTIVE} flip is never served stale.
+     */
+    private ProductDto resolveDetail(ProductDto dto) {
+        resolveAssetFirst(dto);
+        if (dto != null && dto.getId() != null) {
+            dto.setMedia(mediaAssetService.mediaForProduct(dto.getId()));
         }
         return dto;
     }
@@ -122,7 +144,7 @@ public class ProductService {
         log.info("Created product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
 
-        return resolveAssetFirst(productMapper.toDto(product));
+        return resolveDetail(productMapper.toDto(product));
     }
 
     /**
@@ -154,10 +176,11 @@ public class ProductService {
                 shopAccessService.require(product.getShopId(), ShopRole.STAFF);
             }
         });
-        // Asset-first dual-read (D-03a) applied OUTSIDE the @Cacheable loader so a
-        // resolved derivative URL is never cached: an asset flips PENDING->ACTIVE
-        // asynchronously, so this must be resolved fresh on every read.
-        return dto.map(this::resolveAssetFirst);
+        // Asset-first dual-read (D-03a) + the per-entry media list (IMG-04) applied
+        // OUTSIDE the @Cacheable loader so a resolved derivative URL / status is never
+        // cached: an asset flips PENDING->ACTIVE asynchronously, so this must be resolved
+        // fresh on every read.
+        return dto.map(this::resolveDetail);
     }
 
     /**
@@ -288,7 +311,7 @@ public class ProductService {
         log.info("Updated product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
 
-        return resolveAssetFirst(productMapper.toDto(product));
+        return resolveDetail(productMapper.toDto(product));
     }
 
     // NOTE (Phase 24 / 24-03): `uploadImage(...)` (the synchronous store-image + return-DTO
@@ -335,7 +358,7 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Added additional image for product {} ({} total)", productId, product.getAdditionalImageUrls().size());
-        return resolveAssetFirst(productMapper.toDto(product));
+        return resolveDetail(productMapper.toDto(product));
     }
 
     /**

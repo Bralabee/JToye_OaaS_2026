@@ -67,4 +67,16 @@ public interface ProductMediaRepository extends JpaRepository<ProductMedia, UUID
             + "WHERE a.id = pm.assetId AND pm.productId = :productId AND pm.primary = true "
             + "AND a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE")
     Optional<String> findPrimaryActiveObjectKey(@Param("productId") UUID productId);
+
+    /**
+     * The product's media assets in render order (IMG-04, 24-05): the {@code is_primary}
+     * asset first, then the gallery assets by {@code sort_order}. Backs the product DTO
+     * {@code media} enrichment — each returned {@link MediaAsset} is mapped to a
+     * {@code MediaAssetDto} carrying its {@code status}/{@code flagged}/{@code failureReason}.
+     * Tenant-scoped by the RLS wall (the join carries its own tenant_id).
+     */
+    @Query("SELECT a FROM ProductMedia pm, MediaAsset a "
+            + "WHERE a.id = pm.assetId AND pm.productId = :productId "
+            + "ORDER BY pm.primary DESC, pm.sortOrder ASC")
+    java.util.List<MediaAsset> findAssetsForProduct(@Param("productId") UUID productId);
 }
