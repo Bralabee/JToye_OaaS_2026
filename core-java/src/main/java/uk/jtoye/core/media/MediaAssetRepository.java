@@ -1,7 +1,11 @@
 package uk.jtoye.core.media;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,4 +22,15 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 
     /** Dedup short-circuit: the existing asset for an identical raw sha256 within a tenant. */
     Optional<MediaAsset> findByTenantIdAndSha256(UUID tenantId, String sha256);
+
+    /**
+     * Orphan-reaper query (24-04): {@code PENDING} assets created before
+     * {@code cutoff} — quarantined uploads a worker never carried to a terminal
+     * state (crashed mid-process). {@link MediaPendingReaper} flips these to
+     * {@code FAILED} and deletes their quarantine object. Tenant-scoped by the RLS
+     * wall (the reaper pins the tenant GUC per tenant before calling this).
+     */
+    @Query("SELECT a FROM MediaAsset a WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.PENDING "
+            + "AND a.createdAt < :cutoff")
+    List<MediaAsset> findStalePending(@Param("cutoff") OffsetDateTime cutoff);
 }

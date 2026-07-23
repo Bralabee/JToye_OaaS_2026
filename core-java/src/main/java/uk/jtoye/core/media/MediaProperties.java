@@ -42,9 +42,17 @@ public class MediaProperties {
 
     /**
      * How often the PENDING-row reaper sweeps for orphaned quarantine uploads
-     * from crashed workers, in milliseconds. Consumed by a later plan's reaper.
+     * from crashed workers, in milliseconds. Consumed by {@link MediaPendingReaper}.
      */
     private long reaperIntervalMs = 600_000;
+
+    /**
+     * How old a {@code PENDING} {@code media_asset} must be before the reaper
+     * treats it as a crashed-worker orphan (in milliseconds). Must comfortably
+     * exceed the worker's normal processing time so a legitimately in-flight
+     * upload is never reaped. Defaults to 15 minutes.
+     */
+    private long reaperGraceMs = 900_000;
 
     /**
      * Advisory vision (content-relevance) stage config (IMG-03). Disabled by
@@ -70,6 +78,9 @@ public class MediaProperties {
 
     public long getReaperIntervalMs() { return reaperIntervalMs; }
     public void setReaperIntervalMs(long reaperIntervalMs) { this.reaperIntervalMs = reaperIntervalMs; }
+
+    public long getReaperGraceMs() { return reaperGraceMs; }
+    public void setReaperGraceMs(long reaperGraceMs) { this.reaperGraceMs = reaperGraceMs; }
 
     public Vision getVision() { return vision; }
     public void setVision(Vision vision) { this.vision = vision; }
