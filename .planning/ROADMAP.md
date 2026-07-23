@@ -222,7 +222,7 @@ Plans:
 
 **Wave 4** *(blocked on 24-02 + 24-04)*
 
-- [ ] 24-05-PLAN.md (Wave 4) — Review-queue backend: tenant-scoped GET review-queue (FAILED + flagged) + Keep (dismiss-flag) + `MediaAssetDto`/`MediaAssetStatus` on the product DTO (dual-read retained) [IMG-03, IMG-04]
+- [x] 24-05-PLAN.md (Wave 4) — Review-queue backend: tenant-scoped GET review-queue (FAILED + flagged) + Keep (dismiss-flag) + `MediaAssetDto`/`MediaAssetStatus` on the product DTO (dual-read retained) [IMG-03, IMG-04]
 
 **Wave 5** *(blocked on 24-05)*
 
