@@ -30,6 +30,22 @@ public interface ProductMediaRepository extends JpaRepository<ProductMedia, UUID
     java.util.List<ProductMedia> findByProductIdOrderByPrimaryDescSortOrderAsc(UUID productId);
 
     /**
+     * The product's primary slot ({@code is_primary=true}), if any (24-04 worker
+     * CoW-on-success placement, D-04a). The V53 partial-unique index
+     * {@code uq_product_media_primary} guarantees at most one primary row per
+     * product, so the result is single-valued.
+     */
+    Optional<ProductMedia> findByProductIdAndPrimaryTrue(UUID productId);
+
+    /**
+     * A gallery slot for a product identified by its {@code sort_order} (24-04
+     * worker CoW-on-success placement for a non-primary image). No unique
+     * constraint covers a non-primary {@code (product_id, sort_order)}, so the
+     * first matching row is used.
+     */
+    Optional<ProductMedia> findFirstByProductIdAndPrimaryFalseAndSortOrder(UUID productId, int sortOrder);
+
+    /**
      * Copy-on-write repoint (D-01): the one-row UPDATE that swaps the asset a single
      * {@code product_media} row points at, leaving every other row untouched.
      * {@code clearAutomatically} so a subsequent read in the same persistence

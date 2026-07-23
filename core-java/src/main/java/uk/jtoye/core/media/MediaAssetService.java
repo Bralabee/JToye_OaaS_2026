@@ -181,6 +181,25 @@ public class MediaAssetService {
     }
 
     /**
+     * Create the FIRST {@code product_media} join row for a placement slot (24-04
+     * worker CoW-on-success, D-04a): used when a product has no existing row at the
+     * target slot, so the freshly-ACTIVE asset becomes the product's image with no
+     * displaced asset to release. Called ONLY once the worker has flipped the asset
+     * to {@code ACTIVE}, so a FAILED upload never creates a live link.
+     */
+    public void attachPlacement(UUID tenantId, UUID productId, UUID assetId, boolean primary, int sortOrder) {
+        ProductMedia pm = new ProductMedia();
+        pm.setTenantId(tenantId);
+        pm.setProductId(productId);
+        pm.setAssetId(assetId);
+        pm.setPrimary(primary);
+        pm.setSortOrder(sortOrder);
+        productMediaRepository.save(pm);
+        log.debug("Attached product_media {} -> asset {} (product {}, primary={}, sortOrder={})",
+                pm.getId(), assetId, productId, primary, sortOrder);
+    }
+
+    /**
      * Reference-counted delete (IMG-01): if no {@code product_media} row references
      * {@code oldAssetId}, physically delete its MinIO object AND remove the row.
      * A still-referenced asset is a no-op (neither the object nor the row is touched).
