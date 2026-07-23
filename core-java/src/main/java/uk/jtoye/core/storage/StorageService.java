@@ -9,6 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -238,6 +239,68 @@ public class StorageService {
         } catch (Exception e) {
             log.warn("Failed to delete image {}: {}", key, e.getMessage());
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Key-addressed I/O for the Phase 24 async media pipeline. StorageService
+    // stays the single owner of MinIO I/O; the worker/service layer never talks
+    // to S3Client directly. Content-Type is always the DETECTED/produced type
+    // (image/webp for a derivative) — NEVER the client-supplied file.getContentType(),
+    // closing the content-type-spoof anti-pattern (T-24-02 / RESEARCH).
+    // ------------------------------------------------------------------
+
+    /**
+     * Store {@code bytes} at a server-generated {@code objectKey} (e.g. quarantine
+     * key on accept, or {@code <tenant>/media/<id>.webp} for an ACTIVE derivative)
+     * and return its browser-reachable public URL.
+     */
+    public String putBytes(String objectKey, byte[] bytes, String contentType) {
+        s3Client.putObject(
+                PutObjectRequest.builder()
+                        .bucket(properties.getS3().getBucket())
+                        .key(objectKey)
+                        .contentType(contentType)   // detected/produced type — never the client header
+                        .cacheControl("public, max-age=31536000, immutable")
+                        .build(),
+                RequestBody.fromBytes(bytes));
+        log.info("Stored object by key: {} ({} bytes, {})", objectKey, bytes.length, contentType);
+        return urlForKey(objectKey);
+    }
+
+    /**
+     * Read the raw bytes of an object by key (the worker reads a quarantined upload
+     * before normalising it).
+     */
+    public byte[] getBytes(String objectKey) {
+        return s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                        .bucket(properties.getS3().getBucket())
+                        .key(objectKey)
+                        .build())
+                .asByteArray();
+    }
+
+    /**
+     * Delete an object by its raw key (quarantine cleanup and the reference-count-0
+     * physical delete — IMG-01). Best-effort: a missing object / transient S3 error
+     * is logged, never thrown, so a cleanup failure cannot abort the caller's
+     * transaction.
+     */
+    public void deleteByKey(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) return;
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(properties.getS3().getBucket())
+                    .key(objectKey)
+                    .build());
+            log.info("Deleted object from storage by key: {}", objectKey);
+        } catch (Exception e) {
+            log.warn("Failed to delete object {}: {}", objectKey, e.getMessage());
+        }
+    }
+
+    /** The browser-reachable public URL for a stored object key. */
+    public String urlForKey(String objectKey) {
+        return properties.getS3().getPublicUrl() + "/" + objectKey;
     }
 
     /**

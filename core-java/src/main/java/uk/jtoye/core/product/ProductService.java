@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.ProductMediaRepository;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
@@ -44,19 +45,39 @@ public class ProductService {
     private final TenantCacheEvictor cacheEvictor;
     private final ShopAccessService shopAccessService;
     private final ProductCacheLoader productCacheLoader;
+    private final ProductMediaRepository productMediaRepository;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
                           StorageService storageService,
                           TenantCacheEvictor cacheEvictor,
                           ShopAccessService shopAccessService,
-                          ProductCacheLoader productCacheLoader) {
+                          ProductCacheLoader productCacheLoader,
+                          ProductMediaRepository productMediaRepository) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
         this.shopAccessService = shopAccessService;
         this.productCacheLoader = productCacheLoader;
+        this.productMediaRepository = productMediaRepository;
+    }
+
+    /**
+     * Asset-first dual-read resolver (D-03a): during the migration window a product's
+     * image is served from its primary ACTIVE {@code media_asset} derivative if one
+     * exists, otherwise from the flat {@code products.image_url} column (kept this
+     * phase, dropped later). Mutates the DTO's {@code imageUrl} in place and returns
+     * it so it composes cleanly at every {@code toDto} site (list, search, by-id).
+     * A missing/PENDING/FAILED primary leaves the flat URL untouched.
+     */
+    private ProductDto resolveAssetFirst(ProductDto dto) {
+        if (dto != null && dto.getId() != null) {
+            productMediaRepository.findPrimaryActiveObjectKey(dto.getId())
+                    .map(storageService::urlForKey)
+                    .ifPresent(dto::setImageUrl);
+        }
+        return dto;
     }
 
     /**
@@ -101,7 +122,7 @@ public class ProductService {
         log.info("Created product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
 
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**
@@ -133,7 +154,10 @@ public class ProductService {
                 shopAccessService.require(product.getShopId(), ShopRole.STAFF);
             }
         });
-        return dto;
+        // Asset-first dual-read (D-03a) applied OUTSIDE the @Cacheable loader so a
+        // resolved derivative URL is never cached: an asset flips PENDING->ACTIVE
+        // asynchronously, so this must be resolved fresh on every read.
+        return dto.map(this::resolveAssetFirst);
     }
 
     /**
@@ -151,7 +175,8 @@ public class ProductService {
         // tenant-wide products").
         if (shopAccessService.isGroupAdmin()) {
             return productRepository.findAll(pageable)
-                    .map(productMapper::toDto);
+                    .map(productMapper::toDto)
+                    .map(this::resolveAssetFirst);
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         if (granted.isEmpty()) {
@@ -160,7 +185,8 @@ public class ProductService {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         return productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
-                .map(productMapper::toDto);
+                .map(productMapper::toDto)
+                .map(this::resolveAssetFirst);
     }
 
     /**
@@ -193,7 +219,8 @@ public class ProductService {
         // plan 23-10); a zero-grant user → empty (deny-by-default preserved).
         if (shopAccessService.isGroupAdmin()) {
             return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
-                    .map(productMapper::toDto);
+                    .map(productMapper::toDto)
+                    .map(this::resolveAssetFirst);
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         if (granted.isEmpty()) {
@@ -202,7 +229,8 @@ public class ProductService {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         return productRepository.searchFullTextInGrantSetOrTenantWide(tenantId, tsQuery, skuPrefix, granted, unsorted)
-                .map(productMapper::toDto);
+                .map(productMapper::toDto)
+                .map(this::resolveAssetFirst);
     }
 
     /**
@@ -260,7 +288,7 @@ public class ProductService {
         log.info("Updated product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
 
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**
@@ -283,7 +311,7 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Uploaded image for product {} (SKU: {})", productId, product.getSku());
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**
@@ -300,7 +328,7 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed image for product {} (SKU: {})", productId, product.getSku());
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**
@@ -324,7 +352,7 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Added additional image for product {} ({} total)", productId, product.getAdditionalImageUrls().size());
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**
@@ -346,7 +374,7 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Removed additional image {} for product {}", index, productId);
-        return productMapper.toDto(product);
+        return resolveAssetFirst(productMapper.toDto(product));
     }
 
     /**

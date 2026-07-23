@@ -52,6 +52,13 @@ class ProductServiceTest {
     @Mock
     private ShopAccessService shopAccessService;
 
+    // Phase 24 (24-02, D-03a): the asset-first dual-read resolver queries product_media
+    // after mapping. Unstubbed Optional-returning methods return Optional.empty() under
+    // Mockito, so every existing assertion keeps the flat image_url fallback unchanged;
+    // resolveAssetFirst_* below stubs it to prove the asset-first override.
+    @Mock
+    private uk.jtoye.core.media.ProductMediaRepository productMediaRepository;
+
     // Phase 23-10 (CR-01): getProductById now delegates its cached data-load to the
     // ProductCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
     // repository + mapper) in setUp() so the existing by-id tests keep exercising
@@ -86,7 +93,8 @@ class ProductServiceTest {
         // Construct with a REAL ProductCacheLoader over the mocked repo+mapper (Phase 23-10).
         productService = new ProductService(productRepository, productMapper, storageService,
                 cacheEvictor, shopAccessService,
-                new ProductService.ProductCacheLoader(productRepository, productMapper));
+                new ProductService.ProductCacheLoader(productRepository, productMapper),
+                productMediaRepository);
 
         // Set up tenant context
         TenantContext.set(tenantId);
@@ -476,5 +484,39 @@ class ProductServiceTest {
 
         // Then
         assertEquals(originalTenantId, testProduct.getTenantId()); // Tenant ID should not change
+    }
+
+    // ---- Phase 24 (24-02, D-03a): asset-first dual-read resolver ----
+
+    @Test
+    @DisplayName("dual-read (D-03a) - getProductById serves the primary ACTIVE derivative, else the flat image_url")
+    void testGetProductById_resolvesAssetFirstElseFlatImageUrl() {
+        UUID pid = UUID.randomUUID();
+        Product product = new Product();
+        setField(product, "id", pid);
+        product.setTenantId(tenantId);
+        product.setShopId(null);                 // WR-08 null-shop: the access gate is skipped
+        product.setImageUrl("https://cdn/flat.jpg");
+
+        ProductDto dto = new ProductDto();
+        dto.setId(pid);
+        dto.setShopId(null);
+        dto.setImageUrl("https://cdn/flat.jpg");
+
+        when(productRepository.findById(pid)).thenReturn(Optional.of(product));
+        when(productMapper.toDto(product)).thenReturn(dto);
+
+        // Case 1: no ACTIVE primary derivative -> falls back to the flat image_url column.
+        when(productMediaRepository.findPrimaryActiveObjectKey(pid)).thenReturn(Optional.empty());
+        assertEquals("https://cdn/flat.jpg",
+                productService.getProductById(pid).orElseThrow().getImageUrl(),
+                "with no ACTIVE derivative the flat image_url is served");
+
+        // Case 2: an ACTIVE primary derivative -> asset-first override to the derivative URL.
+        when(productMediaRepository.findPrimaryActiveObjectKey(pid)).thenReturn(Optional.of("t/media/x.webp"));
+        when(storageService.urlForKey("t/media/x.webp")).thenReturn("https://cdn/t/media/x.webp");
+        assertEquals("https://cdn/t/media/x.webp",
+                productService.getProductById(pid).orElseThrow().getImageUrl(),
+                "an ACTIVE derivative is served asset-first");
     }
 }
