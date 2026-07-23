@@ -101,4 +101,33 @@ class MediaAssetDtoMappingTest {
         assertThat(product.getMedia()).isEmpty();
         assertThat(product.getImageUrl()).isEqualTo("http://minio/.../legacy.jpg");
     }
+
+    // --- WR-05: thumbnail key is derived ONLY for pipeline-convention keys ------------------
+
+    @Test
+    void thumbnailKeyForPipelineDerivativeReturnsThumbSibling() {
+        // A 24-04 worker derivative (<tenant>/media/<id>.webp) has a real _thumb.webp sibling.
+        assertThat(MediaAssetService.thumbnailKeyFor(
+                "00000000-0000-0000-0000-000000000001/media/abc123.webp"))
+                .isEqualTo("00000000-0000-0000-0000-000000000001/media/abc123_thumb.webp");
+    }
+
+    @Test
+    void thumbnailKeyForBackfilledWebpOutsideMediaPathReturnsNull() {
+        // WR-05: a V53-backfilled ACTIVE asset whose key is a .webp ORIGINAL under the
+        // products path (not the pipeline /media/ path) has NO thumbnail sibling — advertising
+        // one returns a URL that 404s. thumbnailKeyFor must return null so the caller falls
+        // back to the full url.
+        assertThat(MediaAssetService.thumbnailKeyFor(
+                "00000000-0000-0000-0000-000000000001/products/pid-9/original.webp"))
+                .as("a backfilled .webp original outside /media/ has no thumbnail sibling")
+                .isNull();
+    }
+
+    @Test
+    void thumbnailKeyForNonWebpReturnsNull() {
+        assertThat(MediaAssetService.thumbnailKeyFor(
+                "00000000-0000-0000-0000-000000000001/media/abc123.jpg")).isNull();
+        assertThat(MediaAssetService.thumbnailKeyFor(null)).isNull();
+    }
 }

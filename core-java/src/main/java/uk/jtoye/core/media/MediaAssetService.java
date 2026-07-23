@@ -296,13 +296,29 @@ public class MediaAssetService {
      * The thumbnail URL for a pipeline-produced derivative
      * ({@code <tenant>/media/<id>.webp} -&gt; {@code <tenant>/media/<id>_thumb.webp} — the
      * 24-04 worker convention). A backfilled ACTIVE asset (its {@code object_key} is the
-     * original flat key, not a {@code .webp} derivative) has no separate thumbnail, so this
-     * returns {@code null} and the caller falls back to the full {@code url}.
+     * original flat key, not a pipeline {@code .webp} derivative) has no separate thumbnail,
+     * so this returns {@code null} and the caller falls back to the full {@code url}.
      */
     private String thumbnailUrlFor(String objectKey) {
-        if (objectKey.endsWith(".webp")) {
-            String base = objectKey.substring(0, objectKey.length() - ".webp".length());
-            return storageService.urlForKey(base + "_thumb.webp");
+        String thumbKey = thumbnailKeyFor(objectKey);
+        return thumbKey == null ? null : storageService.urlForKey(thumbKey);
+    }
+
+    /**
+     * The sibling thumbnail object key for a pipeline-produced derivative, else {@code null}
+     * (WR-05). Only a key under the 24-04 worker convention
+     * ({@code <tenant>/media/<id>.webp}) has a paired {@code <id>_thumb.webp} sibling — a
+     * backfilled ACTIVE asset (V53 wraps existing object keys as-is, e.g.
+     * {@code <tenant>/products/<pid>/<uuid>.webp}) does NOT, even when its own key happens to
+     * end in {@code .webp}. Advertising a {@code _thumb.webp} for such a key returns a URL that
+     * 404s, so this returns {@code null} and the DTO mapping falls back to the full url.
+     * Package-private + static so the convention is unit-tested directly.
+     */
+    static String thumbnailKeyFor(String objectKey) {
+        // Require the pipeline's /media/ path segment — a bare .webp SUFFIX is not enough,
+        // because a V53-backfilled original can be a .webp outside /media/ with no sibling.
+        if (objectKey != null && objectKey.contains("/media/") && objectKey.endsWith(".webp")) {
+            return objectKey.substring(0, objectKey.length() - ".webp".length()) + "_thumb.webp";
         }
         return null;
     }
