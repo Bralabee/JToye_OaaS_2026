@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: "Phase 23 shipped — PR #255 (updated, all gates cleared)"
-stopped_at: "Phase 23 COMPLETE + all three phase-gates cleared (secure 97/97 threats closed · validate 0 gaps · verify-work 2/2 UAT PASS incl. live 375px Playwright 13/13 + /dashboard/staff screen against the running stack). ROADMAP phase 23 [x], PROJECT VSA-01..04+MOBL-01 Validated, VERIFICATION verified. Milestone v2.3 now 3/6 phases done. NEXT: Phase 24 (Image Architecture — CoW assets + safe upload pipeline, V53 media_asset) — has no CONTEXT.md yet → `/gsd:discuss-phase 24` first. BEFORE any k8s: rebuild-all still applies. DEPLOYER NOTE: editing V57 changed its Flyway checksum — a dev who already booted a local DB on this branch needs a one-time `flyway repair`. Phase 23 branch feature/phase-23-vendor-scoped-access not yet PR'd/merged (open item)."
-last_updated: "2026-07-22T16:42:35.948Z"
+stopped_at: Phase 24 context gathered
+last_updated: "2026-07-23T14:34:51.112Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 35
-  completed_plans: 30
+  total_plans: 29
+  completed_plans: 29
   percent: 50
 ---
 
@@ -194,6 +194,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-22
-Stopped at: Phase 23 COMPLETE + all three phase-gates cleared (secure 97/97 threats closed · validate 0 gaps · verify-work 2/2 UAT PASS incl. live 375px Playwright 13/13 + /dashboard/staff screen against the running stack). ROADMAP phase 23 [x], PROJECT VSA-01..04+MOBL-01 Validated, VERIFICATION verified. Milestone v2.3 now 3/6 phases done. NEXT: Phase 24 (Image Architecture — CoW assets + safe upload pipeline, V53 media_asset) — has no CONTEXT.md yet → `/gsd:discuss-phase 24` first. BEFORE any k8s: rebuild-all still applies. DEPLOYER NOTE: editing V57 changed its Flyway checksum — a dev who already booted a local DB on this branch needs a one-time `flyway repair`. Phase 23 branch feature/phase-23-vendor-scoped-access not yet PR'd/merged (open item).
-Resume file: None
+Last session: 2026-07-23T14:34:51.101Z
+Stopped at: Phase 24 context gathered
+Resume file: .planning/phases/24-image-architecture-cow-assets-safe-upload-pipeline/24-CONTEXT.md
