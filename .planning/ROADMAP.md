@@ -210,7 +210,7 @@ Plans:
 **Wave 1** *(parallel foundations — no shared-file overlap)*
 
 - [x] 24-01-PLAN.md (Wave 1) — WebP toolchain + **musl-cwebp Wave-0 smoke spike (A1, the phase's #1 risk — gates the library choice; fallback = glibc base image)** + `MediaNormalizer` (magic-byte sniff + decompression-bomb header guard + decode-verify + Scrimage/cwebp WebP encode + thumbnail) + `jtoye.media.*` config budget + multipart reject-early config [IMG-02]
-- [ ] 24-02-PLAN.md (Wave 1, parallel) — V53 `media_asset` (+`_aud`) + `product_media` join (D-01) + ENABLE+FORCE RLS via `current_tenant_id()` + sha256 tenant-unique dedup + copy-on-write repoint + reference-counted physical delete + per-tenant `set_config` backfill loop (D-03b) + asset-first dual-read resolver + key-addressed `StorageService` helpers + RLS-under-NOSUPERUSER / CoW / non-fresh-DB-backfill proofs [IMG-01]
+- [x] 24-02-PLAN.md (Wave 1, parallel) — V53 `media_asset` (+`_aud`) + `product_media` join (D-01) + ENABLE+FORCE RLS via `current_tenant_id()` + sha256 tenant-unique dedup + copy-on-write repoint + reference-counted physical delete + per-tenant `set_config` backfill loop (D-03b) + asset-first dual-read resolver + key-addressed `StorageService` helpers + RLS-under-NOSUPERUSER / CoW / non-fresh-DB-backfill proofs [IMG-01]
 
 **Wave 2** *(blocked on 24-01 + 24-02)*
 
@@ -281,6 +281,6 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
-| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 1/6 | In Progress|  |
+| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 2/6 | In Progress|  |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
