@@ -37,7 +37,26 @@ Diff verified: only sharp/fast-uri-related nodes moved — no unrelated bump (ne
   `ignore-unfixed: true`, `exit-code: 1`). The npm-audit highs (next/brace-expansion/js-yaml) were already present
   at the flagged run and Trivy did NOT gate them → fixing sharp + fast-uri clears exactly the two it caught.
 
+## Round 2 (same task) — Trivy DB ticked again 2026-07-23
+
+After the sharp+fast-uri fix pushed (`af196dc`/`beb6666`), the Security Scan **still failed** — but on a
+*different, newly-published* finding: the Trivy DB advanced within the day and now flagged **`next` 16.2.10
+with 4 HIGH CVEs** (the sharp/fast-uri findings were confirmed cleared). Genuine + important, so fixed:
+
+| CVE | Title | Fixed in |
+|---|---|---|
+| CVE-2026-64641 | Next.js DoS in App Router Server Actions | 16.2.11 |
+| CVE-2026-64642 | Next.js middleware/proxy **bypass** in App Router (this app uses Next middleware for NextAuth) | 16.2.11 |
+| CVE-2026-64645 | Next.js SSRF in rewrites | 16.2.11 |
+| CVE-2026-64649 | Next.js SSRF in Server Actions | 16.2.11 |
+
+Fix: `frontend/package.json` next `^16.2.2` → **`^16.2.11`** (explicit security floor); lockfile → next 16.2.11.
+Re-verified: `next build` exit 0, jest **360/360**. Diff next-scoped only. Remaining npm-audit highs
+(brace-expansion, js-yaml) are NOT gated by Trivy in any run and were left untouched.
+
 ## Outcome
 
 - Committed atomically on `feature/phase-23-vendor-scoped-access` (PR #255 branch — no new branch, main untouched).
-- Pushed; Security Scan expected to flip green on next CI run.
+- Round 1 `af196dc` (sharp+fast-uri) + STATE `beb6666`; Round 2 next bump follows.
+- NOTE: the Trivy fs gate scans against a daily-updating DB, so a previously-green PR can go red with no code
+  change. This is a standing risk on any long-lived PR, not a Phase 23 defect.
