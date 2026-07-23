@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
 
@@ -98,6 +99,16 @@ public class MediaAsset {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    /**
+     * Optimistic-lock version (WR-02, V59). Guards the reaper/worker race so a stale reaper
+     * write (PENDING -> FAILED) against a row the worker already advanced to ACTIVE fails fast
+     * with an optimistic-lock exception instead of silently clobbering the live image. JPA-managed;
+     * never mutated by callers. Legitimately NOT audited (Envers do-not-audit-optimistic-locking).
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -144,4 +155,7 @@ public class MediaAsset {
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
+
+    /** JPA-managed optimistic lock version (WR-02). Null until the entity is first flushed. */
+    public Long getVersion() { return version; }
 }
