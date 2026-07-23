@@ -154,6 +154,25 @@ class MediaUploadControllerTest {
         assertThat(countAssets()).as("no media_asset row for a rejected oversize upload").isZero();
     }
 
+    // --- WR-04: the reject-early gate uses the REQUEST budget, not the file cap ----
+
+    @Test
+    void nearLimitFileWithinRequestBudgetIsNotRejected() throws Exception {
+        // A legitimate near-limit upload whose multipart envelope pushes the whole-request
+        // Content-Length between the 5MB file cap and the 6MB max-request-size must NOT be
+        // spuriously 413'd. The reject-early gate compares Content-Length against the REQUEST
+        // budget (max-request-size), so a declared 5.5MB envelope is accepted (the tiny actual
+        // file is well within the file cap). Pre-fix this compared against the 5MB file cap and
+        // returned 413.
+        mockMvc.perform(multipart("/api/v1/products/{id}/image", productId)
+                        .file(jpegPart())
+                        .header("Content-Length", "5500000")   // between max-file-size (5MB) and max-request-size (6MB)
+                        .header("Idempotency-Key", "near-limit-" + UUID.randomUUID())
+                        .with(operatorJwt()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
     // --- Valid accept: 202 + PENDING asset + same-tx outbox row -------------
 
     @Test

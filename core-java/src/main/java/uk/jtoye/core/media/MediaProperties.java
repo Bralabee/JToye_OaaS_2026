@@ -41,6 +41,17 @@ public class MediaProperties {
     private long maxUploadBytes = 5_242_880;
 
     /**
+     * Whole-request byte budget for the reject-early Content-Length gate (WR-04). The
+     * declared {@code Content-Length} covers the ENTIRE multipart envelope (boundaries +
+     * form fields + the file), which legitimately exceeds {@link #maxUploadBytes} for a
+     * near-limit file — so the reject-early gate must compare against THIS request budget,
+     * NOT the per-file cap, or a valid near-limit upload is spuriously 413'd. Kept in sync
+     * with {@code spring.servlet.multipart.max-request-size} (6MB), the authoritative
+     * post-parse backstop that maps to 413 via {@code handleMaxUploadSizeExceeded}.
+     */
+    private long maxRequestBytes = 6_291_456;
+
+    /**
      * How often the PENDING-row reaper sweeps for orphaned quarantine uploads
      * from crashed workers, in milliseconds. Consumed by {@link MediaPendingReaper}.
      */
@@ -75,6 +86,9 @@ public class MediaProperties {
 
     public long getMaxUploadBytes() { return maxUploadBytes; }
     public void setMaxUploadBytes(long maxUploadBytes) { this.maxUploadBytes = maxUploadBytes; }
+
+    public long getMaxRequestBytes() { return maxRequestBytes; }
+    public void setMaxRequestBytes(long maxRequestBytes) { this.maxRequestBytes = maxRequestBytes; }
 
     public long getReaperIntervalMs() { return reaperIntervalMs; }
     public void setReaperIntervalMs(long reaperIntervalMs) { this.reaperIntervalMs = reaperIntervalMs; }

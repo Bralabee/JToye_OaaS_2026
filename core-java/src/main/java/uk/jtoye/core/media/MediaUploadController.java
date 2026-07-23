@@ -43,11 +43,16 @@ import java.util.UUID;
  * {@code ProductController.uploadImage} handler was retired in this same change, or the
  * ApplicationContext would fail to refresh with an "Ambiguous mapping" IllegalStateException.
  *
- * <p>The accept: (1) refuses an oversize body via the declared {@code Content-Length}
- * BEFORE buffering any {@code MultipartFile} byte (T-24-09 — a 2GB in-memory upload is
- * itself a DoS); (2) carries the uniform {@code Idempotency-Key} contract (D-06 / #204) so
- * a replay never duplicates an asset; (3) returns {@code 202 Accepted} with the asset id
- * and hands normalization to the async worker. Typed errors are RFC 7807 (413/409/422).
+ * <p>The accept: (1) cheaply short-circuits a grossly-oversize body on the declared
+ * {@code Content-Length} against the whole-request budget ({@code max-request-bytes}) —
+ * this is a courtesy fast-fail that returns a clean typed 413 without reading the stream,
+ * NOT the authoritative DoS backstop (Spring resolves the {@code MultipartFile} argument,
+ * so the body is already parsed before this method body runs; the real pre-buffer limits are
+ * {@code spring.servlet.multipart.max-file-size}/{@code max-request-size}, which abort an
+ * oversize body and map to 413 via {@code handleMaxUploadSizeExceeded}); (2) carries the
+ * uniform {@code Idempotency-Key} contract (D-06 / #204) so a replay never duplicates an
+ * asset; (3) returns {@code 202 Accepted} with the asset id and hands normalization to the
+ * async worker. Typed errors are RFC 7807 (413/409/422).
  */
 @RestController
 @RequestMapping("/api/v1/products")
@@ -95,15 +100,22 @@ public class MediaUploadController {
             @RequestParam(value = "sort_order", required = false, defaultValue = "0") int sortOrder,
             @AuthenticationPrincipal Jwt principal) {
 
-        // Reject-early (T-24-09): refuse an oversize body BEFORE touching a single file byte.
-        long maxBytes = mediaProperties.getMaxUploadBytes();
-        if (contentLength != null && contentLength > maxBytes) {
+        // Courtesy fast-fail (WR-04): the declared Content-Length covers the WHOLE multipart
+        // envelope (boundaries + fields + file), so it is compared against the REQUEST budget
+        // (max-request-bytes, 6MB) — NOT the per-file cap (max-upload-bytes, 5MB), which would
+        // spuriously 413 a legitimate near-limit file. This is a clean early 413 for a grossly
+        // oversize declared body; the authoritative pre-buffer limit is the multipart config
+        // (max-file-size/max-request-size), which aborts a genuinely oversize body below.
+        long maxRequestBytes = mediaProperties.getMaxRequestBytes();
+        if (contentLength != null && contentLength > maxRequestBytes) {
             throw new PayloadTooLargeException(
-                    "Upload exceeds the " + maxBytes + "-byte limit (declared Content-Length " + contentLength + ")");
+                    "Upload exceeds the " + maxRequestBytes + "-byte request limit (declared Content-Length "
+                            + contentLength + ")");
         }
 
-        // Size gate passed — now read the bounded bytes (also the second gate: Spring/Tomcat
-        // multipart max-file-size aborts a genuinely oversize body with MaxUploadSizeExceededException).
+        // Now read the bounded bytes — the authoritative gate: Spring/Tomcat multipart
+        // max-file-size/max-request-size aborts a genuinely oversize body with
+        // MaxUploadSizeExceededException (mapped to 413 by handleMaxUploadSizeExceeded).
         byte[] raw = readBytes(file);
         String sha256 = sha256Hex(raw);
         UUID uploadedBy = subjectAsUuid(principal);

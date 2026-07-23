@@ -207,6 +207,10 @@ jtoye:
     thumbnail: ${MEDIA_THUMBNAIL:400}
     max-megapixels: ${MEDIA_MAX_MEGAPIXELS:40}
     max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:5242880}
+    # WR-04: whole-request budget for the reject-early Content-Length gate — in sync with
+    # spring.servlet.multipart.max-request-size (6MB). Compared against the multipart envelope's
+    # Content-Length (NOT the per-file max-upload-bytes cap, which would 413 a near-limit file).
+    max-request-bytes: ${MEDIA_MAX_REQUEST_BYTES:6291456}
     reaper-interval-ms: ${MEDIA_REAPER_INTERVAL_MS:600000}
     vision:
       # IMG-03 advisory content-relevance stage — OFF by default (Ollama
