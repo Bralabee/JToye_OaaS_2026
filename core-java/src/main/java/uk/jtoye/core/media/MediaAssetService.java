@@ -251,14 +251,46 @@ public class MediaAssetService {
      * Tenant-scoped — a foreign {@code assetId} is invisible under RLS, so
      * {@code findById} is empty and the caller gets a 404 (no cross-tenant oracle,
      * T-24-20).
+     *
+     * <p>WR-03: Keep MUTATES asset state, so it enforces the SAME VSA-02 shop-scoped write
+     * gate ({@code SHOP_MANAGER}) as upload-accept and image-delete — otherwise a SHOP_MANAGER
+     * of shop A could clear the content flag on shop B's image. The owning shop is resolved
+     * from the asset's placement {@code product_id} (or, for a placed asset whose intent column
+     * was never set, the {@code product_media -> product} join); a shared/legacy asset with no
+     * resolvable shop falls back to the null-shop GROUP_ADMIN-only rule that {@link ShopAccessService#require}
+     * already applies. The gate runs AFTER the RLS {@code findById} so a cross-tenant asset is
+     * still a 404 (never a 403 oracle).
      */
     public MediaAssetDto dismissFlag(UUID assetId) {
         MediaAsset asset = mediaAssetRepository.findById(assetId)
                 .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + assetId));
+        shopAccessService.require(resolveOwningShopId(asset), ShopRole.SHOP_MANAGER);
         asset.setFlagged(false);
         asset = mediaAssetRepository.saveAndFlush(asset);
         log.info("Dismissed content flag on asset {} (Keep) — stays {}", assetId, asset.getStatus());
         return toDto(asset);
+    }
+
+    /**
+     * The shop that owns {@code asset}, for the VSA-02 shop-scoped write gate (WR-03), or
+     * {@code null} for a shared/legacy asset with no resolvable product (the caller then
+     * enforces the null-shop GROUP_ADMIN-only rule). Resolution order: the asset's placement
+     * {@code product_id} intent first, then the {@code product_media -> product} join.
+     */
+    private UUID resolveOwningShopId(MediaAsset asset) {
+        UUID productId = asset.getProductId();
+        if (productId == null) {
+            productId = productMediaRepository.findByAssetId(asset.getId()).stream()
+                    .map(ProductMedia::getProductId)
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (productId == null) {
+            return null;   // shared/legacy asset -> require() applies the null-shop GROUP_ADMIN rule
+        }
+        return productRepository.findById(productId)
+                .map(Product::getShopId)
+                .orElse(null);
     }
 
     /**
