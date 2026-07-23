@@ -16,6 +16,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
@@ -27,6 +28,7 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.media.exception.PayloadTooLargeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -381,6 +383,35 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Idempotency Key Reused");
         problem.setType(URI.create("https://jtoye.uk/errors/idempotency-payload-mismatch"));
+        return problem;
+    }
+
+    /**
+     * Phase 24 (IMG-02 / T-24-09) — the reject-early oversize guard on the media accept.
+     * {@code MediaUploadController.accept} throws this when the declared {@code Content-Length}
+     * exceeds {@code jtoye.media.max-upload-bytes} BEFORE buffering the body. 413 with a stable
+     * {@code .../errors/payload-too-large} type (D-06 machine-parseable errors).
+     */
+    @ExceptionHandler(PayloadTooLargeException.class)
+    public ProblemDetail handlePayloadTooLarge(PayloadTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE, ex.getMessage());
+        problem.setTitle("Payload Too Large");
+        problem.setType(URI.create("https://jtoye.uk/errors/payload-too-large"));
+        return problem;
+    }
+
+    /**
+     * Phase 24 (IMG-02) — the SECOND size gate: Spring/Tomcat aborts a genuinely oversize
+     * multipart body (past {@code spring.servlet.multipart.max-file-size}) with this. Map it
+     * to the SAME RFC 7807 413 as the Content-Length guard so the client sees one stable
+     * oversize contract regardless of which gate fired.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ProblemDetail handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE, "Upload exceeds the maximum permitted size");
+        problem.setTitle("Payload Too Large");
+        problem.setType(URI.create("https://jtoye.uk/errors/payload-too-large"));
         return problem;
     }
 

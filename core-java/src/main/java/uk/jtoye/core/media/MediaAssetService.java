@@ -1,9 +1,17 @@
 package uk.jtoye.core.media;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.product.Product;
+import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
 import java.util.Optional;
@@ -37,14 +45,128 @@ public class MediaAssetService {
 
     private final MediaAssetRepository mediaAssetRepository;
     private final ProductMediaRepository productMediaRepository;
+    private final MediaEventOutboxRepository mediaEventOutboxRepository;
+    private final ProductRepository productRepository;
+    private final ShopAccessService shopAccessService;
     private final StorageService storageService;
+    private final ObjectMapper objectMapper;
 
     public MediaAssetService(MediaAssetRepository mediaAssetRepository,
                              ProductMediaRepository productMediaRepository,
-                             StorageService storageService) {
+                             MediaEventOutboxRepository mediaEventOutboxRepository,
+                             ProductRepository productRepository,
+                             ShopAccessService shopAccessService,
+                             StorageService storageService,
+                             ObjectMapper objectMapper) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMediaRepository = productMediaRepository;
+        this.mediaEventOutboxRepository = mediaEventOutboxRepository;
+        this.productRepository = productRepository;
+        this.shopAccessService = shopAccessService;
         this.storageService = storageService;
+        this.objectMapper = objectMapper;
+    }
+
+    /** Pending-placement intent captured at accept, consumed by the worker on ACTIVE (D-04a). */
+    public record MediaPlacement(boolean isPrimary, int sortOrder) {
+    }
+
+    /**
+     * The accept side of the safe async pipeline (IMG-02). Runs on the request thread
+     * after the reject-early size gate; wrapped by
+     * {@code IdempotencyService.execute("media.upload", ...)} so a replayed
+     * {@code Idempotency-Key} never re-quarantines. In ONE transaction it:
+     * <ol>
+     *   <li>loads the product (RLS/tenant-scoped) — 404 if absent — and re-checks the
+     *       VSA-02 shop-scoped write gate (image write = {@code SHOP_MANAGER}), preserving
+     *       the boundary the retired synchronous handler enforced;</li>
+     *   <li>short-circuits on sha256 dedup (the {@code uq_media_asset_tenant_sha} unique
+     *       index guarantees at most one asset per tenant+content, so an identical raw
+     *       upload returns the existing asset instead of storing duplicate bytes);</li>
+     *   <li>PUTs the RAW bytes to a content-addressed quarantine key with the DETECTED
+     *       content type (never the client header — the worker re-validates);</li>
+     *   <li>INSERTs a {@code PENDING} {@code media_asset} carrying the pending-placement
+     *       intent;</li>
+     *   <li>INSERTs a {@code media_event_outbox} PENDING row in the SAME tx (transactional
+     *       outbox) — the flusher publishes to {@code media.events} after commit.</li>
+     * </ol>
+     * The PENDING asset + the outbox row commit atomically or neither does.
+     *
+     * @param sha256 the caller-computed SHA-256 hex of {@code rawBytes} (also the
+     *               idempotency request fingerprint) — reused here for dedup + the
+     *               content-addressed quarantine key + the {@code media_asset.sha256} column
+     */
+    public MediaAcceptDto acceptQuarantineAndQueue(UUID productId,
+                                                   byte[] rawBytes,
+                                                   String sha256,
+                                                   UUID uploadedBy,
+                                                   MediaPlacement placement) {
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set for media accept"));
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        // Preserve the VSA-02 shop-scoped write boundary the retired sync handler enforced.
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+
+        // Dedup short-circuit: (tenant_id, sha256) is unique, so at most one asset can exist
+        // for these bytes — return it rather than attempting a duplicate insert.
+        Optional<MediaAsset> existing = findDedup(tenantId, sha256);
+        if (existing.isPresent()) {
+            MediaAsset a = existing.get();
+            log.info("Dedup short-circuit on accept: product {} reuses existing asset {} (status {})",
+                    productId, a.getId(), a.getStatus());
+            return new MediaAcceptDto(a.getId(), a.getStatus().name());
+        }
+
+        String contentType = storageService.detectContentType(rawBytes);
+        if (contentType == null) {
+            // Not a recognised image — quarantine anyway; the worker fails it authoritatively.
+            contentType = "application/octet-stream";
+        }
+        String objectKey = tenantId + "/quarantine/" + sha256 + extensionFor(contentType);
+
+        storageService.putBytes(objectKey, rawBytes, contentType);   // quarantine the RAW bytes
+
+        MediaAsset asset = new MediaAsset();
+        asset.setTenantId(tenantId);
+        asset.setObjectKey(objectKey);
+        asset.setSha256(sha256);
+        asset.setContentType(contentType);
+        asset.setBytes((long) rawBytes.length);
+        asset.setStatus(MediaAsset.Status.PENDING);
+        asset.setUploadedBy(uploadedBy);
+        asset.setProductId(productId);
+        asset.setIsPrimary(placement.isPrimary());
+        asset.setSortOrder(placement.sortOrder());
+        asset = mediaAssetRepository.saveAndFlush(asset);
+
+        // Same-tx transactional outbox insert -> MediaEventOutboxFlusher publishes to
+        // media.events after commit (dedicated path, no dispatch trap).
+        MediaProcessingEvent event = new MediaProcessingEvent(tenantId, asset.getId());
+        mediaEventOutboxRepository.save(new MediaEventOutbox(tenantId, asset.getId(), serialize(event)));
+
+        log.info("Accepted upload for product {}: PENDING asset {} quarantined at {} + outbox row (tenant {})",
+                productId, asset.getId(), objectKey, tenantId);
+        return new MediaAcceptDto(asset.getId(), asset.getStatus().name());
+    }
+
+    private String serialize(MediaProcessingEvent event) {
+        try {
+            return objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize media processing event", e);
+        }
+    }
+
+    private static String extensionFor(String contentType) {
+        return switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> ".bin";
+        };
     }
 
     /**

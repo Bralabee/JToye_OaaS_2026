@@ -342,9 +342,13 @@ public class StorageService {
     }
 
     /**
-     * Detect actual content type from file magic bytes.
+     * Detect actual content type from file magic bytes (jpeg/png/gif/webp allowlist),
+     * or {@code null} if unrecognised. Public so the Phase 24 media accept
+     * ({@code MediaAssetService.acceptQuarantineAndQueue}) reuses the SINGLE magic-byte
+     * owner for the quarantine object's Content-Type rather than trusting the client
+     * header (the async worker re-sniffs + decode-verifies authoritatively).
      */
-    private String detectContentType(byte[] data) {
+    public String detectContentType(byte[] data) {
         if (data.length < 12) return null;
 
         if (startsWith(data, JPEG_MAGIC)) return "image/jpeg";

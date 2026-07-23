@@ -291,28 +291,11 @@ public class ProductService {
         return resolveAssetFirst(productMapper.toDto(product));
     }
 
-    /**
-     * Upload an image for a product. Replaces any existing image.
-     */
-    public ProductDto uploadImage(UUID productId, MultipartFile file) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
-        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);  // VSA-02 (D-02): image write = SHOP_MANAGER
-
-        // Delete old image if exists
-        storageService.delete(product.getImageUrl());
-
-        UUID tenantId = TenantContext.get()
-                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-
-        String url = storageService.upload(tenantId, "products", productId, file);
-        product.setImageUrl(url);
-        product = productRepository.saveAndFlush(product);
-        cacheEvictor.evictEntity("products", "getProductById", productId);
-
-        log.info("Uploaded image for product {} (SKU: {})", productId, product.getSku());
-        return resolveAssetFirst(productMapper.toDto(product));
-    }
+    // NOTE (Phase 24 / 24-03): `uploadImage(...)` (the synchronous store-image + return-DTO
+    // path behind the retired ProductController.uploadImage handler) was removed. The single
+    // safe upload path is now MediaUploadController.accept -> MediaAssetService
+    // .acceptQuarantineAndQueue (reject-early + quarantine + PENDING media_asset + outbox 202).
+    // The SHOP_MANAGER shop-scoped write gate (VSA-02) is preserved there.
 
     /**
      * Remove the image from a product.
