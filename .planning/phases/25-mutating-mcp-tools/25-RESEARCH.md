@@ -517,7 +517,7 @@ export const createCustomerInputSchema = {
 | A3 | Setting `ACCESS_MACHINE_CLIENT_IDS=integration-orders-rw` is sufficient to prevent JIT `shop_staff` pollution while `create_order` still passes VSA-02 (implicit GA under strict-OFF). | §3 | Low — verified against `ShopAccessService.java:281-297,498,603-606`; the only residual is a future strict-scoping flip (out of scope, recorded). |
 | A4 | `docs/api/openapi-snapshot.json` gains no new *path* (both create endpoints already exist), only metadata/security changes; `updateOpenApiSnapshot` may still be needed if security scheme docs shift. | Runtime State Inventory | Low — snapshot regen is a mechanical phase-gate step already used in Phases 22–24. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the planner want a *positive* 201 order-create CI test (seed shop+product) or the minimal `not403()` assertion?**
    - What we know: `ScopedCatalogAccessIntegrationTest` uses `not403()`; seeding gives a stronger proof.

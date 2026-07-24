@@ -1,8 +1,8 @@
 ---
 phase: 25
 slug: mutating-mcp-tools
-status: draft
-nyquist_compliant: false
+status: final
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-24
 ---
@@ -36,7 +36,7 @@ created: 2026-07-24
 
 ## Per-Task Verification Map
 
-> Populated by gsd-planner from the PLAN.md tasks. Each write-tool / scope-gate / realm task maps to a vitest or JUnit assertion below.
+> **Authoritative per-task map lives in the 4 PLAN.md files** (`25-01`..`25-04`) — each task's `<verify><automated>` block is the source of truth; plan-checker (2026-07-24) independently confirmed every `auto`/`tdd` task carries a concrete, syntactically-valid automated command with no watch-mode flags and no 3-consecutive-task gap. The rows below are representative anchors, not the full 9-task enumeration.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
@@ -70,11 +70,11 @@ created: 2026-07-24
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s (mcp) / documented for Java integration
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (plan-checker confirmed across 25-01..04)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (test-first tasks in 25-01/25-03)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s (mcp vitest) / documented for Java `integrationTest`
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-24 (plan-checker VERIFICATION PASSED; live-Keycloak E2E remains the one legitimate `checkpoint:human-verify` manual gate, 25-04)
