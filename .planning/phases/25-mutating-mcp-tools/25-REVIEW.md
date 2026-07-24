@@ -28,7 +28,18 @@ findings:
   warning: 2
   info: 4
   total: 7
-status: issues_found
+status: remediated
+remediation:
+  date: 2026-07-24
+  resolved: [CR-01, WR-01, WR-02]
+  deferred: [IN-01, IN-02, IN-03, IN-04]
+  note: >
+    CR-01 fixed by gating all 8 order mutations + 2 customer mutations with the write-scope
+    @PreAuthorize taxonomy (create was already gated). WR-01 fixed by applying the fixed
+    security headers LAST in corePost so an extra-headers entry cannot override the Bearer.
+    WR-02 kept and tightened: the not403() blanket matcher was removed and every positive
+    scope-gate assertion now pins the EXACT expected status (404 for random-id mutations,
+    201 for the dependency-free customer create). INFO findings recorded, not fixed.
 ---
 
 # Phase 25: Code Review Report
@@ -226,6 +237,35 @@ or derive the Swagger `tokenUrl` from the browser-facing public issuer rather th
 
 ---
 
+## Resolution (2026-07-24)
+
+Remediation is recorded in full in `25-REVIEW-REMEDIATION.md`. Summary:
+
+- **CR-01 — RESOLVED.** All eight mutating `OrderController` endpoints (`PUT /{id}`, `DELETE /{id}`,
+  `/submit`, `/confirm`, `/start-preparation`, `/mark-ready`, `/complete`, `/cancel`) and both
+  mutating `CustomerController` endpoints (`PUT /{id}`, `DELETE /{id}`) now carry
+  `@PreAuthorize("hasAuthority('SCOPE_orders:write')")` / `...customers:write` — matching the
+  create gates. The read-only `integration-catalog-ro` credential (`catalog:read` only) can no
+  longer `DELETE`/`PUT` orders or customers. New MockMvc coverage in
+  `ScopedWriteAccessIntegrationTest` proves 403-without-scope + exact-status-with-scope on a
+  representative delete + state-transition (orders) and update + delete (customers). Runtime is
+  unaffected: every real caller (dashboard orders/KDS/customers) uses the `core-api` token, which
+  default-grants both write scopes; the storefront guest path uses `/public/**` + the service
+  layer; edge-go calls none of these endpoints — so no frontend/edge/realm change was required.
+
+- **WR-01 — RESOLVED.** `corePost` now spreads caller extra-headers **first** and applies
+  `authorization` / `accept` / `content-type` **last**, so an extra-headers entry can never
+  override the verbatim Bearer. A new `core-client.test.ts` case asserts a forged
+  `authorization`/`content-type` in the extra-headers map loses to the real token.
+
+- **WR-02 — RESOLVED (finding kept).** The blanket `not403()` matcher was removed;
+  every positive scope-gate assertion now pins the EXACT expected status (`404` for the random-id
+  create/mutation cases, `201` for the dependency-free customer create), so an auth-mapping
+  regression that 401s/500s can no longer false-green.
+
+- **IN-01/02/03/04 — recorded, deferred** (not in scope for this remediation).
+
 _Reviewed: 2026-07-24_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Remediation: 2026-07-24 (CR-01, WR-01, WR-02 resolved)_

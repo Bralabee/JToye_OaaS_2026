@@ -16,8 +16,8 @@ consume.
 |-------|---------------|---------|
 | `catalog:read`  | **Yes** | Read the product catalog — `GET /api/v1/products`, `GET /api/v1/products/{id}`, search, template, label. Authenticated-only (any valid tenant token can read). |
 | `catalog:write` | **Yes** | Mutate the product catalog — create/update/delete products and product images, bulk CSV/image import. Gates all **nine** `ProductController` mutations via `@PreAuthorize("hasAuthority('SCOPE_catalog:write')")`. |
-| `orders:write`  | **Yes** (Phase 25 [AI-02]) | Create orders — gates `POST /api/v1/orders` via `@PreAuthorize("hasAuthority('SCOPE_orders:write')")`. The [AI-2]/#204 `create_order` MCP tool rides this scope. |
-| `customers:write` | **Yes** (Phase 25 [AI-02]) | Create customers — gates `POST /api/v1/customers` via `@PreAuthorize("hasAuthority('SCOPE_customers:write')")`. The [AI-2]/#204 `create_customer` MCP tool rides this scope. |
+| `orders:write`  | **Yes** (Phase 25 [AI-02]; CR-01 extended) | Mutate orders — gates **every** mutating `OrderController` endpoint via `@PreAuthorize("hasAuthority('SCOPE_orders:write')")`: `POST /api/v1/orders` (create), `PUT /api/v1/orders/{id}` (update), `DELETE /api/v1/orders/{id}`, and the six state transitions (`/submit`, `/confirm`, `/start-preparation`, `/mark-ready`, `/complete`, `/cancel`). The [AI-2]/#204 `create_order` MCP tool rides this scope. |
+| `customers:write` | **Yes** (Phase 25 [AI-02]; CR-01 extended) | Mutate customers — gates **every** mutating `CustomerController` endpoint via `@PreAuthorize("hasAuthority('SCOPE_customers:write')")`: `POST /api/v1/customers` (create), `PUT /api/v1/customers/{id}` (update), `DELETE /api/v1/customers/{id}`. The [AI-2]/#204 `create_customer` MCP tool rides this scope. |
 | `orders:read`   | No (reserved) | **Defined only** to seed the [AI-1]/#203 MCP capability taxonomy. Reads stay authenticated-only; not enforced. |
 | `customers:read`  | No (reserved) | **Defined only** for taxonomy symmetry with `orders:read`. Not enforced this phase. |
 
@@ -34,14 +34,21 @@ authorities via `JwtRolesAndScopesConverter` (which also preserves the #83 `real
 - **Writes require `SCOPE_catalog:write`.** The nine mutating handlers are gated positively.
   A `catalog:read`-only token gets **403**; an operator token (which carries `catalog:write`
   by default — see §2) is not rejected by the gate.
-- **Order/customer creates require `SCOPE_orders:write` / `SCOPE_customers:write`** (Phase 25
-  [AI-02]). `POST /api/v1/orders` and `POST /api/v1/customers` are each gated positively — the
+- **All order/customer mutations require `SCOPE_orders:write` / `SCOPE_customers:write`** (Phase 25
+  [AI-02]; **CR-01** extended the gate from create-only to the full mutating surface). Every
+  mutating `OrderController` endpoint (create, update, delete, and the six state transitions) and
+  every mutating `CustomerController` endpoint (create, update, delete) is gated positively — the
   same `@PreAuthorize` + operator-default-grant model as `catalog:write`. A token missing the
   scope gets **403**; the `create_order` / `create_customer` MCP tools (#204) forward a
   write-scoped token and so pass. These gates run **before** the shop-access (VSA-02) check
   and the `Idempotency-Key` reservation. The RW machine credential `integration-orders-rw`
   (§2) carries both write scopes plus `catalog:read` for discovery, but pointedly **not**
   `catalog:write`.
+  - **Why the full surface (CR-01):** before this, only the two creates were gated while
+    `SecurityConfig` ended with `anyRequest().authenticated()`, so a *documented read-only*
+    credential (`integration-catalog-ro`, `catalog:read` only) could still `DELETE`/`PUT` orders
+    and customers within its tenant (RLS-scoped) — an authorization gap with a data-loss outcome.
+    Gating every mutation closes it; reads stay authenticated-only.
 
 Operators are **unchanged** because their `core-api` client default-grants the catalog **and**
 the two write scopes (`orders:write`, `customers:write`), so every dashboard token
@@ -205,8 +212,10 @@ This scope taxonomy is the auth substrate for the [AI-1] Model Context Protocol 
 to `catalog:read`/`orders:read`, a mutating tool to `catalog:write`/`orders:write`/
 `customers:write` — and mints per-agent client-credentials tokens carrying exactly the
 scopes that agent's granted capabilities require. **Phase 25 [AI-02] (#204) discharges the
-write half of this mandate:** `orders:write` and `customers:write` are now enforced on the
-create surfaces, the `integration-orders-rw` write credential is shipped, and the
+write half of this mandate:** `orders:write` and `customers:write` are now enforced across the
+**entire** order/customer mutating surface (create + update + delete + the six order state
+transitions — CR-01), the `integration-orders-rw` write credential is shipped, and the
 `create_order` / `create_customer` MCP write tools ride these scopes (mirroring the
 `catalog:write` gate). Still deferred: enforcing the reserved `orders:read`/`customers:read`
-on the read surface, and order state-transition tools.
+on the read surface, and the MCP *tools* for order state-transitions (the transition **API
+endpoints** are already scope-gated; only the agent-facing tools are not yet built).
