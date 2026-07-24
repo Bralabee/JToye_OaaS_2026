@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -48,6 +49,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// Phase 25 [CR-01]: POST /customers is now gated by @PreAuthorize("hasAuthority('SCOPE_customers:write')").
+// This test drives the proxied controller bean directly on the main thread, so @EnableMethodSecurity
+// requires a SecurityContext carrying that authority.
+@WithMockUser(authorities = "SCOPE_customers:write")
 class CustomerIdempotencyIntegrationTest {
 
     @Container

@@ -20,17 +20,21 @@ import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Scoped write-access integration tests (Phase 25 [AI-02]; threats T-25-01/02/03).
  *
- * <p>The mutating create surfaces are least-privilege: {@code POST /api/v1/orders} is gated by
- * {@code @PreAuthorize("hasAuthority('SCOPE_orders:write')")} (D-01, activating the reserved
+ * <p>Every mutating order/customer surface is least-privilege: {@code POST /api/v1/orders} is gated
+ * by {@code @PreAuthorize("hasAuthority('SCOPE_orders:write')")} (D-01, activating the reserved
  * {@code orders:write} scope) and {@code POST /api/v1/customers} by
- * {@code @PreAuthorize("hasAuthority('SCOPE_customers:write')")} (D-02, a new scope). This test
- * exercises the REAL {@link JwtRolesAndScopesConverter} end-to-end: the MockMvc {@code jwt()}
+ * {@code @PreAuthorize("hasAuthority('SCOPE_customers:write')")} (D-02, a new scope). CR-01 extends
+ * the SAME gate to the surrounding mutations — order PUT/DELETE + the six state transitions, and
+ * customer PUT/DELETE — so a read-only credential can no longer destroy data within its tenant.
+ * This test exercises the REAL {@link JwtRolesAndScopesConverter} end-to-end: the MockMvc {@code jwt()}
  * post-processor bypasses the app's resource-server converter, so authorities are supplied via
  * {@code .authorities(new JwtRolesAndScopesConverter())} against a {@code scope} claim — the same
  * mapping production uses. This proves the gates fire against the real {@code OrderController} /
@@ -140,40 +144,99 @@ class ScopedWriteAccessIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
-    // --- D-01 boundary: an orders:write token is NOT rejected by the order-create gate ---
+    // --- D-01 boundary: an orders:write token CLEARS the order-create gate and reaches the controller ---
 
     @Test
-    void writeScopedTokenNot403OnOrderCreate() throws Exception {
-        // The gate must pass; downstream status (a non-existent shopId 404s) is irrelevant — assert only != 403.
+    void writeScopedTokenReaches404OnOrderCreate() throws Exception {
+        // WR-02: assert the EXACT downstream status, not merely "!= 403". The write scope clears the
+        // @PreAuthorize gate; the random (non-existent) shopId then 404s in OrderService. Pinning 404
+        // means a broken scope→SCOPE_* mapping that 401s, or a 500 that never reaches the controller,
+        // can no longer false-green as "the write-scoped token passed".
         mockMvc.perform(post("/api/v1/orders")
                         .with(ordersWriteJwt())
                         .contentType("application/json")
                         .content(VALID_ORDER_JSON))
-                .andExpect(not403());
+                .andExpect(status().isNotFound());
     }
 
-    // --- D-02 boundary: a customers:write token is NOT rejected by the customer-create gate ---
+    // --- D-02 boundary: a customers:write token clears the gate AND creates the customer (201) ---
 
     @Test
-    void writeScopedTokenNot403OnCustomerCreate() throws Exception {
+    void writeScopedTokenCreates201OnCustomerCreate() throws Exception {
+        // WR-02: the customer create has no shop dependency, so a write-scoped token drives it all the
+        // way to a real 201 Created. Asserting the exact 201 proves the gate passed end-to-end, not
+        // merely that the request avoided a 403.
         mockMvc.perform(post("/api/v1/customers")
                         .with(customersWriteJwt())
                         .contentType("application/json")
                         .content(VALID_CUSTOMER_JSON))
-                .andExpect(not403());
+                .andExpect(status().isCreated());
     }
 
-    /**
-     * Matcher for "any status except 403" — asserts the write-scoped token passed the gate without
-     * pinning the downstream status (a successful create is 201; a non-existent shop 404s; anything
-     * non-403 proves the authorization interceptor did not reject the request).
-     */
-    private static org.springframework.test.web.servlet.ResultMatcher not403() {
-        return result -> {
-            int status = result.getResponse().getStatus();
-            if (status == 403) {
-                throw new AssertionError("Expected the write-scoped token to pass the write gate, but got 403");
-            }
-        };
+    // ========== CR-01: gate coverage on the surrounding order/customer mutations ==========
+    // Phase 25 originally gated only the two creates; CR-01 extends the write-scope gate to every
+    // mutating order/customer endpoint. These prove the delete + a state transition (orders) and
+    // update + delete (customers) enforce the same taxonomy. A missing-scope token 403s; a
+    // write-scoped token clears the gate and 404s on the random id (exact status per WR-02). The
+    // bodies (where present) are fully valid so a 400 can never mask the 403 (D-04 ordering).
+
+    @Test
+    void noScopeTokenForbiddenOnOrderDelete() throws Exception {
+        mockMvc.perform(delete("/api/v1/orders/" + UUID.randomUUID())
+                        .with(noWriteScopeJwt()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void writeScopedTokenReaches404OnOrderDelete() throws Exception {
+        mockMvc.perform(delete("/api/v1/orders/" + UUID.randomUUID())
+                        .with(ordersWriteJwt()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void noScopeTokenForbiddenOnOrderCancel() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/" + UUID.randomUUID() + "/cancel")
+                        .with(noWriteScopeJwt()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void writeScopedTokenReaches404OnOrderCancel() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/" + UUID.randomUUID() + "/cancel")
+                        .with(ordersWriteJwt()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void noScopeTokenForbiddenOnCustomerUpdate() throws Exception {
+        mockMvc.perform(put("/api/v1/customers/" + UUID.randomUUID())
+                        .with(noWriteScopeJwt())
+                        .contentType("application/json")
+                        .content(VALID_CUSTOMER_JSON))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void writeScopedTokenReaches404OnCustomerUpdate() throws Exception {
+        mockMvc.perform(put("/api/v1/customers/" + UUID.randomUUID())
+                        .with(customersWriteJwt())
+                        .contentType("application/json")
+                        .content(VALID_CUSTOMER_JSON))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void noScopeTokenForbiddenOnCustomerDelete() throws Exception {
+        mockMvc.perform(delete("/api/v1/customers/" + UUID.randomUUID())
+                        .with(noWriteScopeJwt()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void writeScopedTokenReaches404OnCustomerDelete() throws Exception {
+        mockMvc.perform(delete("/api/v1/customers/" + UUID.randomUUID())
+                        .with(customersWriteJwt()))
+                .andExpect(status().isNotFound());
     }
 }
