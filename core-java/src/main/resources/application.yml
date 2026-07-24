@@ -3,8 +3,13 @@ spring:
     name: core-java
   servlet:
     multipart:
+      # Phase 24 IMG-02 reject-early oversize guard (RESEARCH Pitfall 5). Keep
+      # max-file-size in sync with jtoye.media.max-upload-bytes and the client
+      # SERVER_MAX_BYTES; max-request-size carries a little headroom over it so a
+      # single-file multipart body is rejected on the FILE limit (clear 413) not
+      # a whole-request limit.
       max-file-size: 5MB
-      max-request-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}
     username: ${DB_USER:jtoye_app}
@@ -189,6 +194,30 @@ jtoye:
     account-sid: ${WHATSAPP_ACCOUNT_SID:}
     auth-token: ${WHATSAPP_AUTH_TOKEN:}
     from-number: ${WHATSAPP_FROM_NUMBER:}
+  # Phase 24 IMG-02 image pipeline budget (decision D-02a). Every value is a
+  # config KEY, not a code literal (GLOBAL_RULE_6): MediaNormalizer reads the
+  # WebP derivative budget (max-dimension / quality / thumbnail), the
+  # decompression-bomb megapixel cap and the reject-early upload byte cap from
+  # this bean. Defaults are the D-02a starting budget; env-overridable per
+  # environment. max-upload-bytes stays in sync with
+  # spring.servlet.multipart.max-file-size above and the client SERVER_MAX_BYTES.
+  media:
+    max-dimension: ${MEDIA_MAX_DIMENSION:1600}
+    quality: ${MEDIA_QUALITY:80}
+    thumbnail: ${MEDIA_THUMBNAIL:400}
+    max-megapixels: ${MEDIA_MAX_MEGAPIXELS:40}
+    max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:5242880}
+    # WR-04: whole-request budget for the reject-early Content-Length gate — in sync with
+    # spring.servlet.multipart.max-request-size (6MB). Compared against the multipart envelope's
+    # Content-Length (NOT the per-file max-upload-bytes cap, which would 413 a near-limit file).
+    max-request-bytes: ${MEDIA_MAX_REQUEST_BYTES:6291456}
+    reaper-interval-ms: ${MEDIA_REAPER_INTERVAL_MS:600000}
+    vision:
+      # IMG-03 advisory content-relevance stage — OFF by default (Ollama
+      # unreliable; the pipeline ships behind this flag). Below min-confidence
+      # FLAGS an ACTIVE asset for the vendor review queue (never a hard reject).
+      enabled: ${MEDIA_VISION_ENABLED:false}
+      min-confidence: ${MEDIA_VISION_MIN_CONFIDENCE:0.35}
 
 stomp:
   broker:
@@ -208,6 +237,11 @@ server:
   error:
     include-message: always
     include-binding-errors: always
+  tomcat:
+    # Phase 24 IMG-02 (RESEARCH Pitfall 5): cap how many bytes Tomcat will
+    # swallow from a body it has already decided to reject, so an oversize
+    # upload is NOT fully drained before the 413 — bounds the reject-early cost.
+    max-swallow-size: 2MB
 
 management:
   endpoints:

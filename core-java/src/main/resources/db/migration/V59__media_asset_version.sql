@@ -1,0 +1,30 @@
+-- V59: Phase 24 gap-closure WR-02 — optimistic-lock `version` column on media_asset.
+--
+-- The crashed-worker reaper (MediaPendingReaper) flips a grace-exceeded PENDING row to
+-- FAILED (+ deletes its quarantine object) in its own transaction, while a
+-- MediaProcessingWorker that is legitimately still processing the SAME grace-exceeded
+-- asset runs in a separate transaction. With no version guard this was last-write-wins:
+-- the reaper could overwrite the worker's ACTIVE flip back to FAILED AFTER the worker
+-- had already stored the derivative and repointed the product_media slot — leaving a
+-- FAILED asset that is simultaneously a product's live primary image (the exact
+-- "FAILED reprocess must never clobber a live ACTIVE image" invariant this phase promises).
+--
+-- Adding @Version to the MediaAsset entity makes a concurrent reaper/worker write fail
+-- fast with an optimistic-lock exception (StaleObjectStateException) instead of silently
+-- clobbering; both the worker (findById + saveAndFlush) and the reaper (findStalePending +
+-- entity dirty-check flush) go through entity load/save, so the version guard fires on
+-- every write (neither uses a bulk @Modifying UPDATE that would bypass it).
+--
+-- NOT audited: the @Version column is legitimately excluded from Envers history in this
+-- project (V38 states it; products_aud/shops_aud/orders_aud carry no version column and
+-- their audited entities all declare @Version), so media_asset_aud needs no version column.
+--
+-- ADD COLUMN with a constant DEFAULT is a metadata-only change in Postgres (no table
+-- rewrite, no per-row UPDATE), so the trap_rls_migration_backfill (a bare UPDATE against a
+-- FORCE-RLS table seeing zero rows under the migration role) does NOT apply here — existing
+-- rows (backfilled ACTIVE assets, in-flight PENDING) all get version 0 without a data scan.
+--
+-- HEAD is V58; V59 is the next strict version (fresh DBs apply it in order, deployed DBs
+-- append it). spring.flyway.out-of-order stays as set for the V44/V53 reserved slots.
+
+ALTER TABLE media_asset ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0;

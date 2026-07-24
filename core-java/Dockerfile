@@ -26,8 +26,12 @@ RUN ./gradlew :core-java:bootJar -x test --no-daemon
 # Stage 2: Runtime stage
 FROM eclipse-temurin:21-jre-alpine
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks, plus musl-native cwebp/dwebp/gif2webp for the
+# Phase 24 WebP transcode step (IMG-02). scrimage-webp's BUNDLED cwebp binaries
+# are glibc-linked and will NOT exec on this Alpine (musl) image — the apk
+# package is musl-native. The JVM is pointed at it via the
+# -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin flag in JAVA_OPTS below.
+RUN apk add --no-cache curl libwebp-tools
 
 WORKDIR /app
 
@@ -64,6 +68,11 @@ HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
 # Spring), silently defeating the profile set by compose/k8s. Spring Boot reads
 # the SPRING_PROFILES_ACTIVE environment variable natively, so the profile flows
 # from the runtime environment with no -D needed.
+#
+# Phase 24 (IMG-02): -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin makes
+# scrimage-webp delegate WebP encode/decode to the musl-native system
+# cwebp/dwebp installed by `apk add libwebp-tools` above, instead of the
+# glibc-linked binaries scrimage bundles (which cannot exec on Alpine/musl).
 ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -XX:MaxRAMPercentage=75.0 \
                -XX:InitialRAMPercentage=50.0 \
@@ -71,6 +80,7 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -XX:MaxGCPauseMillis=200 \
                -XX:+UnlockExperimentalVMOptions \
                -XX:+UseStringDeduplication \
+               -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin \
                -Djava.security.egd=file:/dev/./urandom"
 
 # Start the application

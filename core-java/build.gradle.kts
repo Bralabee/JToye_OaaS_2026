@@ -46,6 +46,18 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:2.47.6"))
     implementation("software.amazon.awssdk:s3")
 
+    // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
+    // scrimage-core decodes (via ImageIO) + resizes; scrimage-webp encodes the
+    // WebP derivative/thumbnail by delegating to a `cwebp` binary (bundled on
+    // glibc hosts; the musl runtime image overrides to the system cwebp via
+    // -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin — see Dockerfile).
+    implementation("com.sksamuel.scrimage:scrimage-core:4.6.6")
+    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.6")
+    // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
+    // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
+    implementation("com.twelvemonkeys.imageio:imageio-webp:3.14.0")
+    implementation("com.twelvemonkeys.imageio:imageio-core:3.14.0")
+
     // Spring WebFlux for non-blocking HTTP client (Claude API calls)
     implementation("org.springframework.boot:spring-boot-starter-webflux")
 

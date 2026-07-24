@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UserCog,
   Webhook,
+  Images,
   LogOut,
   Moon,
   Sun,
@@ -45,6 +46,10 @@ export const navigation = [
   // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
   // delivery-log browser. Falls into the mobile "More" sheet automatically.
   { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
+  // Image review (IMG-04, Phase 24): rejected uploads + content-flagged images
+  // for Keep/Replace. Like the other secondary surfaces, it flows into the
+  // mobile "More" sheet automatically (not one of the 4 primary thumb tabs).
+  { name: "Image review", href: "/dashboard/media/review", icon: Images },
 ]
 
 export function Sidebar() {

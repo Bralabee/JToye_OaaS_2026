@@ -9,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.BulkImportResult.RowError;
 import uk.jtoye.core.product.dto.ProductDto;
@@ -20,6 +21,8 @@ import uk.jtoye.core.storage.StorageService;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 @Service
@@ -32,15 +35,17 @@ public class BulkImportService {
     private final ImageAnalysisService imageAnalysisService;
     private final StorageService storageService;
     private final ShopAccessService shopAccessService;
+    private final MediaAssetService mediaAssetService;
 
     public BulkImportService(ProductRepository productRepository, ProductMapper productMapper,
                               ImageAnalysisService imageAnalysisService, StorageService storageService,
-                              ShopAccessService shopAccessService) {
+                              ShopAccessService shopAccessService, MediaAssetService mediaAssetService) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.imageAnalysisService = imageAnalysisService;
         this.storageService = storageService;
         this.shopAccessService = shopAccessService;
+        this.mediaAssetService = mediaAssetService;
     }
 
     /**
@@ -206,14 +211,18 @@ public class BulkImportService {
 
                 product = productRepository.save(product);
 
-                // Upload the image to storage
-                String imageUrl = storageService.upload(tenantId, "products", product.getId(), file);
-                product.setImageUrl(imageUrl);
-                product = productRepository.saveAndFlush(product);
+                // IMG-02 "one pipeline": route the image through the SAME safe async path as a
+                // single upload — quarantine + PENDING media_asset + media_event_outbox — instead
+                // of a second synchronous storageService.upload route. The worker normalizes it to
+                // a WebP derivative and repoints the product_media primary slot on ACTIVE (D-04a).
+                // (AI product-suggestion analysis above is preserved — only the STORAGE path is unified.)
+                String sha256 = sha256Hex(imageBytes);
+                mediaAssetService.acceptQuarantineAndQueue(product.getId(), imageBytes, sha256, null,
+                        new MediaAssetService.MediaPlacement(true, 0));
 
                 result.getCreated().add(productMapper.toDto(product));
 
-                log.info("AI import: created '{}' from image {} (confidence: {})",
+                log.info("AI import: created '{}' from image {} (confidence: {}) — image queued for normalization",
                         ai.getIdentifiedName(), file.getOriginalFilename(), ai.getConfidence());
 
             } catch (Exception e) {
@@ -371,6 +380,21 @@ public class BulkImportService {
     private String getFieldOrDefault(String[] row, Map<String, Integer> cols, String field, String defaultValue) {
         String val = getField(row, cols, field);
         return val != null ? val : defaultValue;
+    }
+
+    /** SHA-256 hex of the raw bytes — the media pipeline's dedup key + idempotency fingerprint. */
+    private static String sha256Hex(byte[] data) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(data);
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+                hex.append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     private String generateSku(String title) {

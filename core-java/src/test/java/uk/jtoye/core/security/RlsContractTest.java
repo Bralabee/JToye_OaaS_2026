@@ -178,6 +178,30 @@ class RlsContractTest {
     }
 
     /**
+     * IMG-01 (Phase 24, V53) sentinel: the copy-on-write media layer tables must all
+     * carry FORCE ROW LEVEL SECURITY. Redundant with
+     * {@link #everyPublicTableHasRlsAndForce} (the dynamic pg_class sweep already
+     * covers them) but names the specific table when a future edit drops FORCE on the
+     * asset/link/audit tables — the tenant wall behind safe vendor image sharing.
+     */
+    @Test
+    void img01_mediaTablesAreForced() {
+        List<String> mediaTargets = List.of("media_asset", "product_media", "media_asset_aud");
+
+        for (String t : mediaTargets) {
+            Boolean forced = jdbc.queryForObject(
+                    "SELECT relforcerowsecurity FROM pg_class " +
+                            "WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace " +
+                            "  AND relname = ?",
+                    Boolean.class, t);
+            assertThat(forced)
+                    .as("IMG-01 media table %s missing FORCE ROW LEVEL SECURITY — V53 must add it", t)
+                    .isNotNull()
+                    .isEqualTo(true);
+        }
+    }
+
+    /**
      * AUDIT-W0-04 sentinel: ensure no policy in the database still references
      * the buggy GUC name {@code app.tenant_id} (replaced by V35 with the
      * canonical {@code app.current_tenant_id}). This guards against a future

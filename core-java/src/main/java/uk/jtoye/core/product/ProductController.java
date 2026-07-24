@@ -19,7 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
-import uk.jtoye.core.ai.ImageUploadResponse;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
@@ -170,30 +169,14 @@ public class ProductController {
         }
     }
 
-    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
-    @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Upload product image", description = "Uploads an image and runs AI analysis to suggest name, ingredients, category, and dietary info.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Image uploaded with AI suggestions"),
-            @ApiResponse(responseCode = "400", description = "Invalid file type or size"),
-            @ApiResponse(responseCode = "404", description = "Product not found")
-    })
-    public ResponseEntity<ImageUploadResponse> uploadImage(
-            @Parameter(description = "Product ID") @PathVariable UUID id,
-            @RequestParam("file") MultipartFile file) {
-        ProductDto dto = productService.uploadImage(id, file);
-
-        // Run AI analysis on the uploaded image (non-blocking — returns null if disabled/fails)
-        ImageAnalysisResult analysis = null;
-        try {
-            byte[] imageBytes = file.getBytes();
-            analysis = imageAnalysisService.analyze(imageBytes, file.getContentType()).orElse(null);
-        } catch (Exception e) {
-            // AI analysis is best-effort — don't fail the upload
-        }
-
-        return ResponseEntity.ok(new ImageUploadResponse(dto, analysis));
-    }
+    // NOTE (Phase 24 / 24-03): the synchronous `POST /{id}/image` upload+AI-suggest handler
+    // that used to live here has been RETIRED. That route (auto-prefixed to
+    // POST /api/v1/products/{id}/image) is now the SOLE property of the async
+    // MediaUploadController.accept (reject-early 413 + Idempotency-Key + 202) — leaving both
+    // handlers on the identical {method,path,consumes} tuple would fail context refresh with
+    // an "Ambiguous mapping" IllegalStateException. The non-saving AI helper below
+    // (POST /{id}/image/analyze) is a DIFFERENT route and is preserved so the uploader can
+    // still fetch AI suggestions (Incremental Betterment).
 
     @PostMapping(value = "/{id}/image/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Analyze product image with AI", description = "Identifies the food item, suggests ingredients, category, and dietary info without saving the image.")

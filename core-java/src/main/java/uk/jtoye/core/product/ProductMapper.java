@@ -9,6 +9,11 @@ import uk.jtoye.core.product.dto.ProductDto;
 @Mapper(componentModel = "spring")
 public interface ProductMapper {
 
+    // `media` (IMG-04, 24-05) is NOT client/entity-mapped: ProductService populates it
+    // post-mapping from the product_media join (a MapStruct mapper must not do DB lookups —
+    // 24-02 convention). Ignored here so the asset-first media list is a deliberate,
+    // service-owned enrichment, not an accidental unmapped null.
+    @Mapping(target = "media", ignore = true)
     ProductDto toDto(Product product);
 
     // allergenSpans is not client-supplied: ProductService parses ingredientsText

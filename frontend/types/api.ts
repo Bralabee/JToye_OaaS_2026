@@ -51,6 +51,43 @@ export interface CreateShopRequest {
   tags?: string
 }
 
+// Media asset types (Phase 24 IMG-04) — mirror the backend
+// uk.jtoye.core.media.MediaAssetStatus + MediaAssetDto contract (24-05).
+// The safe async upload pipeline turns every upload into a validated, normalized
+// WebP derivative; a product references assets and never owns raw bytes.
+export type MediaAssetStatus = "PENDING" | "ACTIVE" | "FAILED"
+
+/**
+ * A single processed media asset as the dashboard renders it (per gallery entry
+ * AND in the review/rejection queue). Mirrors backend MediaAssetDto exactly:
+ *   - `url`/`thumbnailUrl` are populated ONLY for an ACTIVE asset (a PENDING or
+ *     FAILED asset has no servable object yet).
+ *   - `failureReason` is set ONLY on FAILED.
+ *   - `flagged` marks an ACTIVE asset awaiting a content-relevance decision
+ *     (Keep / Replace) in the review queue (D-04).
+ */
+export interface MediaAsset {
+  assetId: string
+  status: MediaAssetStatus
+  flagged: boolean
+  failureReason: string | null
+  url: string | null
+  thumbnailUrl: string | null
+  width: number | null
+  height: number | null
+}
+
+/**
+ * The 202 Accepted body returned by POST /api/v1/products/{id}/image (Phase
+ * 24-03): the upload is quarantined + queued, not processed inline, so the
+ * response carries the new asset id + a PENDING status rather than a servable
+ * image URL. The uploader surfaces the "Processing…" state off this shape.
+ */
+export interface MediaUploadAccepted {
+  assetId: string
+  status: MediaAssetStatus
+}
+
 // Product Types
 export interface Product {
   id: string
@@ -63,6 +100,11 @@ export interface Product {
   description: string | null
   imageUrl: string | null
   additionalImageUrls: string[]
+  // Phase 24 (IMG-04) asset-first media list — primary-first then gallery.
+  // Present on single-product responses (by-id/create/update/add-image),
+  // absent on list/search (an N+1-avoiding backend decision, 24-05). The flat
+  // imageUrl/additionalImageUrls above are retained for the dual-read window (D-03a).
+  media?: MediaAsset[] | null
   category: string | null
   displayOrder: number
   available: boolean

@@ -12,6 +12,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
+import uk.jtoye.core.media.MediaAcceptDto;
+import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
@@ -51,6 +53,9 @@ class BulkImportServiceTest {
 
     @Mock
     private ShopAccessService shopAccessService;
+
+    @Mock
+    private MediaAssetService mediaAssetService;
 
     @InjectMocks
     private BulkImportService bulkImportService;
@@ -281,8 +286,9 @@ class BulkImportServiceTest {
 
         when(imageAnalysisService.analyze(any(byte[].class), any(String.class)))
                 .thenReturn(Optional.of(aiResult));
-        when(storageService.upload(any(UUID.class), eq("products"), any(UUID.class), any(MultipartFile.class)))
-                .thenReturn("http://localhost:9000/jtoye-images/test/image.jpg");
+        when(mediaAssetService.acceptQuarantineAndQueue(any(UUID.class), any(byte[].class), any(String.class),
+                any(), any(MediaAssetService.MediaPlacement.class)))
+                .thenReturn(new MediaAcceptDto(UUID.randomUUID(), "PENDING"));
 
         MockMultipartFile image1 = new MockMultipartFile(
                 "files", "jollof.jpg", "image/jpeg", new byte[]{1, 2, 3});
@@ -295,7 +301,44 @@ class BulkImportServiceTest {
         assertEquals(2, result.getSuccessCount());
         assertEquals(0, result.getErrorCount());
         verify(imageAnalysisService, times(2)).analyze(any(byte[].class), any(String.class));
-        verify(storageService, times(2)).upload(any(UUID.class), eq("products"), any(UUID.class), any(MultipartFile.class));
+        // The image STORAGE is routed through the ONE safe pipeline (accept -> quarantine ->
+        // PENDING media_asset + outbox), NOT the legacy synchronous storageService.upload.
+        verify(mediaAssetService, times(2)).acceptQuarantineAndQueue(any(UUID.class), any(byte[].class),
+                any(String.class), any(), any(MediaAssetService.MediaPlacement.class));
+        verify(storageService, never()).upload(any(UUID.class), eq("products"), any(UUID.class), any(MultipartFile.class));
+    }
+
+    @Test
+    @DisplayName("importFromImages - Routes image storage through the ONE pipeline, primary placement, no second upload path")
+    void testImportFromImages_RoutesThroughOnePipeline() throws Exception {
+        when(imageAnalysisService.isEnabled()).thenReturn(true);
+
+        ImageAnalysisResult aiResult = new ImageAnalysisResult();
+        aiResult.setIdentifiedName("Egusi Soup");
+        aiResult.setConfidence(0.92);
+        when(imageAnalysisService.analyze(any(byte[].class), any(String.class)))
+                .thenReturn(Optional.of(aiResult));
+        when(mediaAssetService.acceptQuarantineAndQueue(any(UUID.class), any(byte[].class), any(String.class),
+                any(), any(MediaAssetService.MediaPlacement.class)))
+                .thenReturn(new MediaAcceptDto(UUID.randomUUID(), "PENDING"));
+
+        MockMultipartFile image = new MockMultipartFile(
+                "files", "egusi.jpg", "image/jpeg", new byte[]{9, 8, 7, 6});
+
+        bulkImportService.importFromImages(new MultipartFile[]{image});
+
+        // The bulk image lands via the pipeline as a PRIMARY placement with the raw bytes.
+        ArgumentCaptor<MediaAssetService.MediaPlacement> placement =
+                ArgumentCaptor.forClass(MediaAssetService.MediaPlacement.class);
+        ArgumentCaptor<byte[]> bytes = ArgumentCaptor.forClass(byte[].class);
+        verify(mediaAssetService).acceptQuarantineAndQueue(any(UUID.class), bytes.capture(), any(String.class),
+                any(), placement.capture());
+        assertTrue(placement.getValue().isPrimary(), "bulk image becomes the product's primary");
+        assertEquals(0, placement.getValue().sortOrder());
+        assertArrayEquals(new byte[]{9, 8, 7, 6}, bytes.getValue());
+
+        // No second (legacy synchronous) upload route survives.
+        verify(storageService, never()).upload(any(UUID.class), any(String.class), any(UUID.class), any(MultipartFile.class));
     }
 
     @Test
@@ -352,8 +395,9 @@ class BulkImportServiceTest {
 
         when(imageAnalysisService.analyze(any(byte[].class), any(String.class)))
                 .thenReturn(Optional.of(aiResult));
-        when(storageService.upload(any(UUID.class), eq("products"), any(UUID.class), any(MultipartFile.class)))
-                .thenReturn("http://localhost:9000/jtoye-images/test.jpg");
+        when(mediaAssetService.acceptQuarantineAndQueue(any(UUID.class), any(byte[].class), any(String.class),
+                any(), any(MediaAssetService.MediaPlacement.class)))
+                .thenReturn(new MediaAcceptDto(UUID.randomUUID(), "PENDING"));
 
         MockMultipartFile image = new MockMultipartFile(
                 "files", "suya.jpg", "image/jpeg", new byte[]{1, 2, 3});

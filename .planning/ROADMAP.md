@@ -40,7 +40,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 21: Onboarding Blocker UX** — Visible per-gate blockers, correctable onboarding data, reachable withdraw/support exits, manual-review made visible to vendor + admin (zero migrations) (completed 2026-07-14)
 - [x] **Phase 22: Notifications & Comms** — First delivery consumer of the V46 transactional outbox: email-first transactional notifications (Mailhog dev → SES prod) + vendor-registered outbound webhooks (HMAC-signed, retried; absorbs #205) + a WhatsApp/SMS seam behind a provider flag (absorbs #208), with GDPR consent + unsubscribe (completed 2026-07-15)
 - [x] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px (code-complete 2026-07-20; **gap-closure wave 23-08..23-17 CLOSED 2026-07-21** — the 3 confirmed authZ bypasses fixed [CR-01 cache-bypass 23-10, CR-02 STOMP gate 23-11, CR-03/CR-04 fail-closed 23-08] + CR-05..CR-08 staff/frontend + CR-07 strict-scoping 23-14 + the V57 grant_source-backfill deploy blocker fixed [23-17: bare no-GUC UPDATE → V44 per-tenant `set_config` loop, so `SET NOT NULL` no longer bricks boot on a non-fresh DB]; VSA-02/VSA-04 Complete with named green proofs over a green full `integrationTest` (332/0); both known-red CI gates green [OpenAPI snapshot + docs-freshness]. Checkbox stays open pending final `/gsd:secure-phase 23` + `/gsd:verify-work` sign-off; live vendor-auth Playwright deferred to the phase PR) (completed 2026-07-22)
-- [ ] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative
+- [x] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative (completed 2026-07-23)
 - [ ] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential
 - [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
 
@@ -204,13 +204,29 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
   3. A file that fails normalization/decode/allowlist is marked FAILED and rejected with a vendor-visible reason; an image below the content-relevance threshold still goes ACTIVE but lands in a vendor-visible review queue; the vision stage sits behind a flag defaulting to advisory until the provider is reliably up. (IMG-03)
   4. The product UI shows a "processing" state while an asset is PENDING and surfaces FAILED (with reason) and content-flagged (ACTIVE) assets in a vendor-visible review/rejection queue. (IMG-04)
 
-**Plans**: TBD (est. 3)
+**Plans**: 6 plans (5 waves)
 
 Plans:
+**Wave 1** *(parallel foundations — no shared-file overlap)*
 
-- [ ] 24-01: V53 `media_asset` (+`_aud` if audited, ENABLE+FORCE RLS, sha256 tenant-unique) + product↔asset reference (FK/join) + copy-on-write repoint + reference-counted physical delete + `image_url` backfill dual-read + RLS-under-NOSUPERUSER proof
-- [ ] 24-02: Safe async upload pipeline — reject-early Content-Length/streaming size guard + quarantine store + PENDING row + AMQP outbox publish (202-style) + queue worker (magic-byte sniff, decode-verify, EXIF strip, normalize/resize/re-encode/thumbnail, raw-delete-on-success, tenant-GUC pin) + BulkImportService unification
-- [ ] 24-03: Gate strictness (compress-fail → FAILED reject; low-relevance → ACTIVE + review queue; vision advisory flag) + product UI processing/failed/flagged states + vendor review/rejection queue + `docs/metrics.json` reconcile
+- [x] 24-01-PLAN.md (Wave 1) — WebP toolchain + **musl-cwebp Wave-0 smoke spike (A1, the phase's #1 risk — gates the library choice; fallback = glibc base image)** + `MediaNormalizer` (magic-byte sniff + decompression-bomb header guard + decode-verify + Scrimage/cwebp WebP encode + thumbnail) + `jtoye.media.*` config budget + multipart reject-early config [IMG-02]
+- [x] 24-02-PLAN.md (Wave 1, parallel) — V53 `media_asset` (+`_aud`) + `product_media` join (D-01) + ENABLE+FORCE RLS via `current_tenant_id()` + sha256 tenant-unique dedup + copy-on-write repoint + reference-counted physical delete + per-tenant `set_config` backfill loop (D-03b) + asset-first dual-read resolver + key-addressed `StorageService` helpers + RLS-under-NOSUPERUSER / CoW / non-fresh-DB-backfill proofs [IMG-01]
+
+**Wave 2** *(blocked on 24-01 + 24-02)*
+
+- [x] 24-03-PLAN.md (Wave 2) — Reject-early accept side: Content-Length 413 (RFC 7807) before buffering + quarantine store + PENDING row + Idempotency-Key contract (D-06) + 202 accept + **dedicated `media_event_outbox` (V58) + `media.events` topology** (sidesteps `outbox_flusher_dispatch_trap`) [IMG-02]
+
+**Wave 3** *(blocked on 24-01 + 24-02 + 24-03)*
+
+- [x] 24-04-PLAN.md (Wave 3) — Async worker: `@RabbitListener` GUC-pinned pipeline (sniff → bomb-guard → decode-verify → EXIF-strip → normalize → store WebP derivative only → delete raw → ACTIVE/FAILED) + gate strictness (compress-fail → FAILED; low-relevance → ACTIVE+flagged review queue; vision advisory flag) + CoW-safety (failed replacement never clobbers, D-04a) + PENDING reaper + BulkImportService one-path unification [IMG-02, IMG-03]
+
+**Wave 4** *(blocked on 24-02 + 24-04)*
+
+- [x] 24-05-PLAN.md (Wave 4) — Review-queue backend: tenant-scoped GET review-queue (FAILED + flagged) + Keep (dismiss-flag) + `MediaAssetDto`/`MediaAssetStatus` on the product DTO (dual-read retained) [IMG-03, IMG-04]
+
+**Wave 5** *(blocked on 24-05)*
+
+- [x] 24-06-PLAN.md (Wave 5) — Frontend (IMG-04): status-aware `AssetImage` (processing/active-webp/failed/flagged, alt+dimensions preserved) + review/rejection queue screen (Keep/Replace, 375px) + uploader 202-accept handling + phase-gate reconcile (`docs/metrics.json` schema→58, docs-freshness green, OpenAPI snapshot regen, CLAUDE/AGENTS counts) [IMG-04]
 
 **UI hint**: yes
 
@@ -265,6 +281,6 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
-| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 0/3 | Not started | - |
+| 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

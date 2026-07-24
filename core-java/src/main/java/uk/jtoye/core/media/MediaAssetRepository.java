@@ -1,0 +1,50 @@
+package uk.jtoye.core.media;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Repository for {@link MediaAsset} (V53 {@code media_asset}).
+ *
+ * <p>All reads are tenant-scoped by the RLS wall. {@link #findByTenantIdAndSha256}
+ * additionally carries an explicit {@code tenantId} predicate and backs the sha256
+ * dedup short-circuit (IMG-01): an identical raw upload within a tenant reuses the
+ * existing asset rather than storing duplicate bytes (the V53
+ * {@code uq_media_asset_tenant_sha} unique index enforces it).
+ */
+public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
+
+    /** Dedup short-circuit: the existing asset for an identical raw sha256 within a tenant. */
+    Optional<MediaAsset> findByTenantIdAndSha256(UUID tenantId, String sha256);
+
+    /**
+     * Orphan-reaper query (24-04): {@code PENDING} assets created before
+     * {@code cutoff} — quarantined uploads a worker never carried to a terminal
+     * state (crashed mid-process). {@link MediaPendingReaper} flips these to
+     * {@code FAILED} and deletes their quarantine object. Tenant-scoped by the RLS
+     * wall (the reaper pins the tenant GUC per tenant before calling this).
+     */
+    @Query("SELECT a FROM MediaAsset a WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.PENDING "
+            + "AND a.createdAt < :cutoff")
+    List<MediaAsset> findStalePending(@Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * The vendor review/rejection queue selection (IMG-03, 24-05): the assets that need
+     * vendor attention — a {@code FAILED} upload (rejection reason + re-upload) OR a
+     * {@code flagged} {@code ACTIVE} asset (content-relevance review: Keep/Replace) —
+     * newest first. In-flight {@code PENDING} and clean {@code ACTIVE} assets are
+     * excluded (nothing to review). Tenant-scoped by the RLS wall (the request thread
+     * pins the tenant GUC), so another tenant's rows are invisible.
+     */
+    @Query("SELECT a FROM MediaAsset a "
+            + "WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.FAILED "
+            + "OR (a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE AND a.flagged = true) "
+            + "ORDER BY a.createdAt DESC")
+    List<MediaAsset> findReviewQueue();
+}
