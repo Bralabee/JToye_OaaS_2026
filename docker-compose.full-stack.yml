@@ -52,6 +52,7 @@ services:
       EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
       INTEGRATION_CATALOG_RO_SECRET: ${INTEGRATION_CATALOG_RO_SECRET:?INTEGRATION_CATALOG_RO_SECRET must be set (renders realm integration-catalog-ro client)}
+      INTEGRATION_ORDERS_RW_SECRET: ${INTEGRATION_ORDERS_RW_SECRET:?INTEGRATION_ORDERS_RW_SECRET must be set (renders realm integration-orders-rw client)}
       # Customer realm (jtoye-customers, Phase 18) render inputs — non-secret local-dev config.
       CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
       CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
@@ -64,7 +65,7 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET' \
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
         # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit
@@ -186,6 +187,12 @@ services:
       # JWKS via the internal host, 'iss' validated against the public issuer.
       CUSTOMER_KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-customers
       CUSTOMER_JWT_EXPECTED_ISSUER: http://localhost:8085/realms/jtoye-customers
+      # VSA-02 (Phase 25 [AI-02], RESEARCH §3): allowlist the integration-orders-rw
+      # write service-account so its first create_order skips ShopAccessService JIT
+      # provisioning + directory upsert (application.yml ${ACCESS_MACHINE_CLIENT_IDS:}).
+      # The SA still passes the VSA-02 gate via the strict-scoping-OFF implicit-GA
+      # path, so NO permanent opaque-UUID GROUP_ADMIN row lands in shop_staff (WR-09).
+      ACCESS_MACHINE_CLIENT_IDS: integration-orders-rw
       # Keycloak user deprovisioning on offboard (issue #102 remainder). OFF by
       # default; when enabled the core service disables an offboarded tenant's
       # Keycloak users. base-url is the INTERNAL host (like KC_ISSUER_URI above),
