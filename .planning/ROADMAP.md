@@ -252,7 +252,7 @@ Plans:
 
 **Wave 2** *(blocked on 25-01)*
 
-- [ ] 25-03-PLAN.md (Wave 2) — MCP write tools + proofs: `corePost` sibling + `create_order`/`create_customer` (required `idempotencyKey`→header, D-05/D-07) registered in `buildServer` + vitest (header/body split, PII-never-logged, `toToolError`) + cross-tenant `create_order` RLS proof under the NOSUPERUSER `rls_test_role` (foreign `shopId`→404)
+- [x] 25-03-PLAN.md (Wave 2) — MCP write tools + proofs: `corePost` sibling + `create_order`/`create_customer` (required `idempotencyKey`→header, D-05/D-07) registered in `buildServer` + vitest (header/body split, PII-never-logged, `toToolError`) + cross-tenant `create_order` RLS proof under the NOSUPERUSER `rls_test_role` (foreign `shopId`→404)
 
 **Wave 3** *(blocked on 25-01/25-02/25-03)*
 
@@ -292,5 +292,5 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
-| 25. Mutating MCP Tools | v2.3 | 2/4 | In Progress|  |
+| 25. Mutating MCP Tools | v2.3 | 3/4 | In Progress|  |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
