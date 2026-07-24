@@ -122,6 +122,34 @@ describe("corePost", () => {
     expect(ri.signal).toBeDefined();
   });
 
+  it("WR-01: an extra-headers entry cannot override the verbatim Bearer or content-type", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(jsonResponse(201, { id: "O1" }));
+
+    // A caller (or a compromised tool layer) that tries to smuggle a different
+    // authorization / content-type through the extra-headers map must lose: the
+    // fixed security headers are applied LAST and win on key collision.
+    await corePost(
+      "/api/v1/orders",
+      "real-token",
+      { shopId: "s1" },
+      {
+        authorization: "Bearer FORGED",
+        "content-type": "text/evil",
+        accept: "text/evil",
+        "Idempotency-Key": "key-123",
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer real-token");
+    expect(headers["content-type"]).toBe("application/json");
+    expect(headers.accept).toBe("application/json");
+    // A non-colliding extra header is still forwarded.
+    expect(headers["Idempotency-Key"]).toBe("key-123");
+  });
+
   it("shapes a 201 JSON response into { ok, status, contentType, body } (ok is true for 201)", async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(201, { id: "C1" }));
 

@@ -65,11 +65,14 @@ export async function corePost(
 ): Promise<CoreResponse> {
   const r = await fetch(`${CORE_BASE_URL}${path}`, {
     method: "POST",
+    // WR-01: spread the caller's extra headers FIRST, then apply the fixed
+    // security headers LAST so an extra-headers entry can never override the
+    // verbatim Bearer / accept / content-type invariant this forwarder promises.
     headers: {
+      ...headers,
       authorization: `Bearer ${bearer}`,
       accept: "application/json",
       "content-type": "application/json",
-      ...headers,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(CORE_TIMEOUT_MS),
