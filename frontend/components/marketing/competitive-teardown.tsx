@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { motion, MotionConfig } from "framer-motion"
+import { m, MotionConfig } from "framer-motion"
 import {
   Legend,
   PolarAngleAxis,
@@ -175,7 +175,7 @@ export function CompetitiveTeardown() {
   const [query, setQuery] = useState("")
   const [allowMotion, setAllowMotion] = useState(false)
 
-  // Gate framer-motion strictly behind prefers-reduced-motion. Evaluated after
+  // Gate framer-motion strictly behind prefers-reduced-m. Evaluated after
   // mount so the SSR markup (content always visible) is never hidden and there
   // is no hydration mismatch — motion only ever ADDS a hover micro-interaction.
   useEffect(() => {
@@ -429,14 +429,14 @@ export function CompetitiveTeardown() {
             </h2>
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
               {WINS.map((win) => (
-                <motion.article
+                <m.article
                   key={win.title}
                   {...hover}
                   className="border-t-[5px] border-emerald-600 bg-white p-6 shadow-[5px_5px_0_theme(colors.slate.200)]"
                 >
                   <h3 className="text-xl font-extrabold tracking-[-0.02em]">{win.title}</h3>
                   <p className="mt-3 text-sm leading-6 text-slate-600">{win.detail}</p>
-                </motion.article>
+                </m.article>
               ))}
             </div>
           </section>
@@ -452,7 +452,7 @@ export function CompetitiveTeardown() {
             </p>
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {GAPS.map((gap) => (
-                <motion.div
+                <m.div
                   key={gap}
                   {...hover}
                   className="flex items-center gap-3 border-l-4 border-orange-500 bg-white p-4 text-base font-bold text-slate-800"
@@ -461,7 +461,7 @@ export function CompetitiveTeardown() {
                     ✕
                   </span>
                   {gap}
-                </motion.div>
+                </m.div>
               ))}
             </div>
           </section>
@@ -595,10 +595,10 @@ function StatTile({
     amber: "border-amber-500 text-amber-700",
   }
   return (
-    <motion.div {...motionProps} className={`border-[3px] bg-white p-4 shadow-[5px_5px_0_theme(colors.slate.200)] ${accents[accent]}`}>
+    <m.div {...motionProps} className={`border-[3px] bg-white p-4 shadow-[5px_5px_0_theme(colors.slate.200)] ${accents[accent]}`}>
       <dt className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
       <dd className="mt-2 text-3xl font-bold tracking-[-0.04em]">{value}</dd>
-    </motion.div>
+    </m.div>
   )
 }
 
