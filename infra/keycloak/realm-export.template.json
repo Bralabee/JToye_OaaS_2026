@@ -1031,7 +1031,7 @@
     "id" : "53e8576a-2f26-4be1-b5e4-e97b09cc3c26",
     "clientId" : "integration-orders-rw",
     "name" : "Integration — Orders (read-write)",
-    "description" : "Sample per-tenant machine WRITE client (Phase 25 [AI-02] / #204). Client-credentials grant, service-account only, granted orders:write + customers:write + catalog:read (write + read-for-discovery) — least-privilege agent credential: can create orders/customers and read the catalog, but pointedly NOT catalog:write. RLS walls cross-tenant.",
+    "description" : "Sample per-tenant machine WRITE client (Phase 25 [AI-02] / #204). Client-credentials, service-account only; orders:write + customers:write + catalog:read (write + read-for-discovery), least-privilege — NOT catalog:write. RLS walls cross-tenant.",
     "surrogateAuthRequired" : false,
     "enabled" : true,
     "alwaysDisplayInConsole" : false,
