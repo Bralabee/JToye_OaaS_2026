@@ -256,7 +256,7 @@ Plans:
 
 **Wave 3** *(blocked on 25-01/25-02/25-03)*
 
-- [ ] 25-04-PLAN.md (Wave 3) — Phase-gate closer: `docs/metrics.json` reconcile via `docs-freshness.sh --write` + write-surface docs (`security-scopes.md`/`README.md`/`idempotency.md`) + OpenAPI snapshot + live E2E checkpoint (rebuild ALL + `kc.sh import --override true` → create/idempotent-replay/cross-tenant-403/no-scope-403 + no-rogue-`shop_staff`-row, D-12)
+- [x] 25-04-PLAN.md (Wave 3) — Phase-gate closer: `docs/metrics.json` reconcile via `docs-freshness.sh --write` (total 1648→1675, EXIT 0) + write-surface docs (`security-scopes.md`/`README.md`/`idempotency.md`) + OpenAPI snapshot regenerated GREEN + **human-approved live E2E** (rebuild ALL + `kc.sh import --override true` → create 200 / idempotent-replay-no-dup / cross-tenant 404-RLS / no-scope 403 + no-rogue-`shop_staff`-row, D-12). Rule 1/3 fix: RW-client description trimmed <=255 (kc.sh import 22P01). AI-02 → COMPLETE
 
 **UI hint**: no
 
@@ -292,5 +292,5 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
-| 25. Mutating MCP Tools | v2.3 | 3/4 | In Progress|  |
+| 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
