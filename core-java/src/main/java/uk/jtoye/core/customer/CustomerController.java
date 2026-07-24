@@ -105,6 +105,7 @@ public class CustomerController {
         return ResponseEntity.status(status).location(location).body(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @PutMapping("/{id}")
     @Operation(summary = "Update customer", description = "Updates an existing customer for the authenticated tenant")
     @ApiResponses(value = {
@@ -123,6 +124,7 @@ public class CustomerController {
         }
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete customer", description = "Deletes a customer for the authenticated tenant")
     @ApiResponses(value = {
