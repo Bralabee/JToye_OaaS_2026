@@ -33,6 +33,19 @@ Clients supply an optional `Idempotency-Key` request header (max 64 chars) on a
 mutating endpoint that advertises it. Reusing the same key for the same request
 body replays the original response and never repeats the side effect.
 
+#### MCP write tools mandate the key (Phase 25 [AI-02], D-05)
+
+Core keeps the header **optional** (`required=false`) — the dashboard still passes it
+optionally and edge-go omits it (see *edge-go compatibility* below). But the `create_order`
+and `create_customer` MCP write tools (#204) make `idempotencyKey` a **required tool input**
+(Zod `z.string().min(1).max(64)`, matching the 1..64 store bound) and **always** forward it as
+the `Idempotency-Key` header. The tools therefore have **no non-idempotent path** — an AI agent
+cannot use them to mint a silent duplicate, and the tool description instructs the agent to
+reuse the same key when retrying. This makes AC-1's "a replayed call returns the original
+result, not a duplicate" a structural property of the tool, not a hope. No core change (D-06):
+the 409 (in-flight) / 422 (same-key different-body) RFC 7807 responses core already emits flow
+through the MCP `toToolError` sanitizer unchanged.
+
 ### Store — `idempotency_keys` (V50)
 
 Tenant-scoped dedup store, keyed `(tenant_id, endpoint, idempotency_key)`:
