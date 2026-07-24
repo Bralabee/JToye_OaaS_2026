@@ -34,7 +34,7 @@ function validArgs() {
     customerPhone: "07700900000",
     notes: "leave at door",
     items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 2 }],
-    idempotencyKey: "order-key-abc-123",
+    idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
   };
 }
 
@@ -75,7 +75,7 @@ describe("create_order handler", () => {
     // The tool-only key is NOT in the body...
     expect(body).not.toHaveProperty("idempotencyKey");
     // ...and IS forwarded as the Idempotency-Key header.
-    expect(headers).toEqual({ "Idempotency-Key": "order-key-abc-123" });
+    expect(headers).toEqual({ "Idempotency-Key": "order-key-abc-123" }); // gitleaks:allow (fake test idempotency key, not a credential)
     // The camelCase DTO fields survive verbatim in the body.
     expect(body).toMatchObject({
       shopId: "7f000001-0000-4000-8000-000000000002",
@@ -193,7 +193,7 @@ describe("create_order input schema", () => {
       schema.safeParse({
         shopId: "7f000001-0000-4000-8000-000000000002",
         items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
-        idempotencyKey: "order-key-abc-123",
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
       }).success,
     ).toBe(true);
   });
