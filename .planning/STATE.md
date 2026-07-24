@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: ready_to_plan
-stopped_at: Phase 24 complete (6/6) — ready to discuss Phase 25
-last_updated: 2026-07-23T20:04:02.577Z
+status: planning
+stopped_at: Phase 25 context gathered
+last_updated: "2026-07-24T14:13:48.372Z"
 last_activity: 2026-07-23
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 35
-  completed_plans: 36
+  completed_plans: 35
   percent: 67
 ---
 
@@ -210,6 +210,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-23T19:07:30.714Z
-Stopped at: Completed 24-06-PLAN.md (vendor UI IMG-04 + phase-gate reconcile) — Phase 24 all 6 plans done
-Resume file: None
+Last session: 2026-07-24T14:13:48.359Z
+Stopped at: Phase 25 context gathered
+Resume file: .planning/phases/25-mutating-mcp-tools/25-CONTEXT.md
