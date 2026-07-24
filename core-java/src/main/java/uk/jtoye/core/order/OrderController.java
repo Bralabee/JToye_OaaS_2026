@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.common.idempotency.Idempotent;
@@ -58,6 +59,7 @@ public class OrderController {
      * Create a new order.
      * POST /orders
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [AI-02]: activate reserved orders:write (D-01)
     @PostMapping
     @Idempotent(endpoint = "orders.create")
     @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.")

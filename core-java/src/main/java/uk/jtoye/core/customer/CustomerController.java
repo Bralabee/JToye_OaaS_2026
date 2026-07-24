@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.common.idempotency.Idempotent;
@@ -67,6 +68,7 @@ public class CustomerController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [AI-02]: new customers:write scope (D-02)
     @PostMapping
     @Idempotent(endpoint = "customers.create")
     @Operation(summary = "Create customer", description = "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.")
