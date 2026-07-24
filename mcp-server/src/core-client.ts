@@ -45,3 +45,40 @@ export async function coreGet(path: string, bearer: string): Promise<CoreRespons
 
   return { ok: r.ok, status: r.status, contentType, body };
 }
+
+/**
+ * POST `body` to `path` on the core API, forwarding the caller's Bearer verbatim
+ * and any extra request headers (e.g. `{ "Idempotency-Key": key }`).
+ *
+ * Same security posture as {@link coreGet}: `path` must be an allow-listed
+ * constant supplied by the tool layer (this function never composes the host
+ * from caller input → SSRF guard, T-25-08); the Bearer is forwarded verbatim
+ * (core is the sole validator); and this tier NEVER logs the body or the token
+ * (order/customer DTOs carry PII — T-25-09). `r.ok` is true for 201, so only a
+ * non-2xx response is routed to `toToolError` by the caller.
+ */
+export async function corePost(
+  path: string,
+  bearer: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<CoreResponse> {
+  const r = await fetch(`${CORE_BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${bearer}`,
+      accept: "application/json",
+      "content-type": "application/json",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(CORE_TIMEOUT_MS),
+  });
+
+  const contentType = r.headers.get("content-type") ?? "";
+  const respBody = contentType.includes("json")
+    ? await r.json().catch(() => null)
+    : await r.text();
+
+  return { ok: r.ok, status: r.status, contentType, body: respBody };
+}
