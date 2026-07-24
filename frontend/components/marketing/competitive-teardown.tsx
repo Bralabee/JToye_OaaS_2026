@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { m, MotionConfig } from "framer-motion"
+import { TEARDOWN_CHART } from "@/lib/competitive-teardown-colors"
 import {
   Legend,
   PolarAngleAxis,
@@ -128,14 +129,6 @@ const GAPS = [
   "Marketing automation",
 ] as const
 
-// Chart series colours — mapped to the locked palette (slate-900 / orange-500).
-// Recharts fill/stroke require literal colour strings; these mirror the Tailwind
-// tokens used everywhere else on the page.
-const CHART = {
-  flipdish: "#334155", // slate-700
-  jtoye: "#f97316", // orange-500
-}
-
 const FILTERS: (Tag | "All")[] = ["All", "J'Toye leads", "Flipdish leads", "Hard gap", "Parity"]
 
 const NAV = [
@@ -148,10 +141,6 @@ const NAV = [
   ["wedge", "The wedge"],
   ["sources", "Sources"],
 ] as const
-
-function reducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-}
 
 function scoreOf(status: Status): number {
   return status === "full" ? 100 : status === "partial" ? 50 : 0
@@ -173,14 +162,6 @@ const tagCls: Record<Tag, string> = {
 export function CompetitiveTeardown() {
   const [tagFilter, setTagFilter] = useState<Tag | "All">("All")
   const [query, setQuery] = useState("")
-  const [allowMotion, setAllowMotion] = useState(false)
-
-  // Gate framer-motion strictly behind prefers-reduced-m. Evaluated after
-  // mount so the SSR markup (content always visible) is never hidden and there
-  // is no hydration mismatch — motion only ever ADDS a hover micro-interaction.
-  useEffect(() => {
-    setAllowMotion(!reducedMotion())
-  }, [])
 
   const counts = useMemo(() => {
     const byTag = (t: Tag) => FEATURES.filter((f) => f.tag === t).length
@@ -213,7 +194,10 @@ export function CompetitiveTeardown() {
     })
   }, [tagFilter, query])
 
-  const hover = allowMotion ? { whileHover: { y: -3 }, whileTap: { scale: 0.99 } } : {}
+  // MotionConfig reducedMotion="user" (below) auto-disables these transform
+  // micro-interactions when the visitor prefers reduced motion, so they can
+  // always be applied — no manual gating / mount-effect needed.
+  const hover = { whileHover: { y: -3 }, whileTap: { scale: 0.99 } }
 
   return (
     <MotionConfig reducedMotion="user">
@@ -318,9 +302,9 @@ export function CompetitiveTeardown() {
                   <ResponsiveContainer width="100%" height={360}>
                     <RadarChart data={radarData} outerRadius="72%">
                       <PolarGrid />
-                      <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: "#475569" }} />
-                      <Radar name="Flipdish" dataKey="flipdish" stroke={CHART.flipdish} fill={CHART.flipdish} fillOpacity={0.28} />
-                      <Radar name="J'Toye" dataKey="jtoye" stroke={CHART.jtoye} fill={CHART.jtoye} fillOpacity={0.32} />
+                      <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: TEARDOWN_CHART.axisTick }} />
+                      <Radar name="Flipdish" dataKey="flipdish" stroke={TEARDOWN_CHART.flipdish} fill={TEARDOWN_CHART.flipdish} fillOpacity={0.28} />
+                      <Radar name="J'Toye" dataKey="jtoye" stroke={TEARDOWN_CHART.jtoye} fill={TEARDOWN_CHART.jtoye} fillOpacity={0.32} />
                       <Legend />
                       <Tooltip />
                     </RadarChart>
