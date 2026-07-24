@@ -241,12 +241,22 @@ Plans:
   2. A write attempt targeting another tenant returns empty/403 under the MCP credential — RLS-proven, test included. (AI-02)
   3. Tool errors surface as RFC 7807 problem-detail (consistent with the read-only slice), not raw stack traces, and the flow is proven live against the dev stack. (AI-02)
 
-**Plans**: TBD (est. 2)
+**Plans**: 4 plans (3 waves)
 
 Plans:
 
-- [ ] 25-01: MCP write tools (`orders.create` / `customers.create`) over the core REST API + `Idempotency-Key` header wiring (#204) + write-scope mapping
-- [ ] 25-02: cross-tenant RLS proof under the MCP credential + RFC 7807 tool errors + idempotent-replay integration test + live E2E + `docs/metrics.json` reconcile
+**Wave 1**
+
+- [ ] 25-01-PLAN.md (Wave 1) — Core write-scope gates + CI proof: `@PreAuthorize("SCOPE_orders:write")` on `POST /orders` (D-01) + new `@PreAuthorize("SCOPE_customers:write")` on `POST /customers` (D-02) + `OpenApiConfig` taxonomy update + `ScopedWriteAccessIntegrationTest` (converter-through-MockMvc, 403/not-403, valid bodies)
+- [ ] 25-02-PLAN.md (Wave 1, parallel) — Realm RW credential + secret/config wiring: template-seeded `integration-orders-rw` client (both mappers, `orders:write`+`customers:write`+`catalog:read`, no `catalog:write`, D-09/D-10) + `customers:read/write` scopes + `core-api` default-grant (D-03) + `INTEGRATION_ORDERS_RW_SECRET` across 6 sites (D-11) + `ACCESS_MACHINE_CLIENT_IDS=integration-orders-rw` (VSA-02 mitigation)
+
+**Wave 2** *(blocked on 25-01)*
+
+- [ ] 25-03-PLAN.md (Wave 2) — MCP write tools + proofs: `corePost` sibling + `create_order`/`create_customer` (required `idempotencyKey`→header, D-05/D-07) registered in `buildServer` + vitest (header/body split, PII-never-logged, `toToolError`) + cross-tenant `create_order` RLS proof under the NOSUPERUSER `rls_test_role` (foreign `shopId`→404)
+
+**Wave 3** *(blocked on 25-01/25-02/25-03)*
+
+- [ ] 25-04-PLAN.md (Wave 3) — Phase-gate closer: `docs/metrics.json` reconcile via `docs-freshness.sh --write` + write-surface docs (`security-scopes.md`/`README.md`/`idempotency.md`) + OpenAPI snapshot + live E2E checkpoint (rebuild ALL + `kc.sh import --override true` → create/idempotent-replay/cross-tenant-403/no-scope-403 + no-rogue-`shop_staff`-row, D-12)
 
 **UI hint**: no
 
