@@ -462,6 +462,22 @@
     "notBefore" : 0,
     "groups" : [ ]
   }, {
+    "id" : "5c0c16be-1aa0-4181-b808-2c7575f03b95",
+    "username" : "service-account-integration-orders-rw",
+    "emailVerified" : false,
+    "attributes" : {
+      "tenant_id" : [ "00000000-0000-0000-0000-000000000001" ]
+    },
+    "enabled" : true,
+    "totp" : false,
+    "serviceAccountClientId" : "integration-orders-rw",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-jtoye-dev" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
     "id" : "b24ef5ca-82d6-4cc6-900f-82db92e10ab7",
     "username" : "tenant-a-user",
     "firstName" : "User",
@@ -752,7 +768,7 @@
         "introspection.token.claim" : "true"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write", "orders:write", "customers:write" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "d0c5835f-543c-4b47-a554-4cad011884f9",
@@ -1011,6 +1027,63 @@
     } ],
     "defaultClientScopes" : [ "catalog:read", "web-origins", "acr", "roles", "profile", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+  }, {
+    "id" : "53e8576a-2f26-4be1-b5e4-e97b09cc3c26",
+    "clientId" : "integration-orders-rw",
+    "name" : "Integration — Orders (read-write)",
+    "description" : "Sample per-tenant machine WRITE client (Phase 25 [AI-02] / #204). Client-credentials grant, service-account only, granted orders:write + customers:write + catalog:read (write + read-for-discovery) — least-privilege agent credential: can create orders/customers and read the catalog, but pointedly NOT catalog:write. RLS walls cross-tenant.",
+    "surrogateAuthRequired" : false,
+    "enabled" : true,
+    "alwaysDisplayInConsole" : false,
+    "clientAuthenticatorType" : "client-secret",
+    "secret" : "${INTEGRATION_ORDERS_RW_SECRET}",
+    "redirectUris" : [ ],
+    "webOrigins" : [ ],
+    "notBefore" : 0,
+    "bearerOnly" : false,
+    "consentRequired" : false,
+    "standardFlowEnabled" : false,
+    "implicitFlowEnabled" : false,
+    "directAccessGrantsEnabled" : false,
+    "serviceAccountsEnabled" : true,
+    "publicClient" : false,
+    "frontchannelLogout" : false,
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "post.logout.redirect.uris" : "+"
+    },
+    "authenticationFlowBindingOverrides" : { },
+    "fullScopeAllowed" : true,
+    "nodeReRegistrationTimeout" : -1,
+    "protocolMappers" : [ {
+      "id" : "c3dad47b-9e8b-4de9-a484-1b97c69e190f",
+      "name" : "tenant-id-mapper",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usermodel-attribute-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "userinfo.token.claim" : "true",
+        "user.attribute" : "tenant_id",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "claim.name" : "tenant_id",
+        "jsonType.label" : "String"
+      }
+    }, {
+      "id" : "66d1ea4b-87b4-45cb-ba42-798887dd7503",
+      "name" : "core-api-audience-mapper",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "included.client.audience" : "core-api",
+        "access.token.claim" : "true",
+        "id.token.claim" : "false",
+        "introspection.token.claim" : "true"
+      }
+    } ],
+    "defaultClientScopes" : [ "orders:write", "customers:write", "catalog:read", "web-origins", "acr", "roles", "profile", "email" ],
+    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   } ],
   "clientScopes" : [ {
     "id" : "02dc904b-8484-4df8-8bb1-3e944bffba64",
@@ -1045,7 +1118,27 @@
   }, {
     "id" : "d73e3a39-9cf8-4ef0-bf5e-305a315c4a67",
     "name" : "orders:write",
-    "description" : "Reserved taxonomy scope for the [AI-1] MCP auth model (#203). DEFINED to seed the capability taxonomy; NOT granted to any client and NOT enforced in this slice.",
+    "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/orders via @PreAuthorize(hasAuthority('SCOPE_orders:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_orders:write.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
+    "id" : "d7ec1480-6f11-4819-a38e-a725913224b7",
+    "name" : "customers:read",
+    "description" : "Reserved taxonomy scope for the [AI-02] MCP auth model (Phase 25). DEFINED for taxonomy symmetry with catalog:*/orders:*; NOT granted to any client and NOT enforced in this slice.",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "false"
+    },
+    "protocolMappers" : [ ]
+  }, {
+    "id" : "320e99c2-b6e0-4b53-a6b2-c52a004e1c0f",
+    "name" : "customers:write",
+    "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/customers via @PreAuthorize(hasAuthority('SCOPE_customers:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_customers:write.",
     "protocol" : "openid-connect",
     "attributes" : {
       "include.in.token.scope" : "true",
