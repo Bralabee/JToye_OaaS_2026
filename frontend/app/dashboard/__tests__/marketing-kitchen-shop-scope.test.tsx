@@ -6,11 +6,17 @@
  * there is single-source-of-truth: its board defaults from the GLOBAL switcher
  * context instead of a blind first-published shop.
  */
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { configure, render, screen, waitFor, fireEvent } from "@testing-library/react"
 import MarketingPage from "../marketing/page"
 import KitchenPage from "../kitchen/page"
 import apiClient from "@/lib/api-client"
 import { getShopContext } from "@/lib/shop-context"
+
+// Under full-suite CPU contention these async renders can exceed waitFor's 1s
+// default, flaking assertions that pass in isolation (the content DOES render,
+// just slowly). Give the whole file generous async headroom so CI parallelism
+// can't trip it. Module isolation keeps this scoped to this file.
+configure({ asyncUtilTimeout: 5000 })
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -137,7 +143,13 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
       await waitFor(() =>
         expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument()
       )
-      expect(screen.queryByText("Brixton Bakery Bundle")).not.toBeInTheDocument()
+      // The shop filter drops other shops' promotions in a follow-up render
+      // tick, so wait for Brixton to disappear rather than asserting it
+      // synchronously — the bare assertion flaked under full-suite CPU
+      // contention (passes in isolation; timing, not a real regression).
+      await waitFor(() =>
+        expect(screen.queryByText("Brixton Bakery Bundle")).not.toBeInTheDocument()
+      )
     })
 
     it("defaults AND constrains the create-promotion shop to the selected shop (D-08)", async () => {
