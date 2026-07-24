@@ -248,7 +248,7 @@ Plans:
 **Wave 1**
 
 - [x] 25-01-PLAN.md (Wave 1) — Core write-scope gates + CI proof: `@PreAuthorize("SCOPE_orders:write")` on `POST /orders` (D-01) + new `@PreAuthorize("SCOPE_customers:write")` on `POST /customers` (D-02) + `OpenApiConfig` taxonomy update + `ScopedWriteAccessIntegrationTest` (converter-through-MockMvc, 403/not-403, valid bodies)
-- [ ] 25-02-PLAN.md (Wave 1, parallel) — Realm RW credential + secret/config wiring: template-seeded `integration-orders-rw` client (both mappers, `orders:write`+`customers:write`+`catalog:read`, no `catalog:write`, D-09/D-10) + `customers:read/write` scopes + `core-api` default-grant (D-03) + `INTEGRATION_ORDERS_RW_SECRET` across 6 sites (D-11) + `ACCESS_MACHINE_CLIENT_IDS=integration-orders-rw` (VSA-02 mitigation)
+- [x] 25-02-PLAN.md (Wave 1, parallel) — Realm RW credential + secret/config wiring: template-seeded `integration-orders-rw` client (both mappers, `orders:write`+`customers:write`+`catalog:read`, no `catalog:write`, D-09/D-10) + `customers:read/write` scopes + `core-api` default-grant (D-03) + `INTEGRATION_ORDERS_RW_SECRET` across 6 sites (D-11) + `ACCESS_MACHINE_CLIENT_IDS=integration-orders-rw` (VSA-02 mitigation)
 
 **Wave 2** *(blocked on 25-01)*
 
@@ -292,5 +292,5 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
-| 25. Mutating MCP Tools | v2.3 | 1/4 | In Progress|  |
+| 25. Mutating MCP Tools | v2.3 | 2/4 | In Progress|  |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
