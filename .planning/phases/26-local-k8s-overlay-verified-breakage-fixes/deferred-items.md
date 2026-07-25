@@ -360,7 +360,7 @@ at `docs/metrics.json` — a count in prose next to a gate that does not check i
 
 ---
 
-## 2026-07-25 — The compose⊕k8s XOR guard cannot see a second writer already inside the cluster — **CLOSED `6a2663b`**
+## 2026-07-25 — The compose⊕k8s XOR guard cannot see a second writer already inside the cluster — **CLOSED `6a2663b` + `a4ddc50`**
 
 **Discovered by.** Plan 26-07, live, during the A1 pre-apply inventory. This is the most transferable
 finding the phase produced, so it is recorded here rather than only in the plan summary.
@@ -408,7 +408,7 @@ treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
 **Suggested owner.** A follow-up plan touching `scripts/lib/k8s-local-guards.sh`, or the next phase
 that revisits the local-k8s tooling.
 
-### CLOSED — 2026-07-25, commit `6a2663b`
+### CLOSED — 2026-07-25, commits `6a2663b` (the guard) + `a4ddc50` (`default` removed from the exempt set)
 
 Closed as a scoped out-of-plan hardening attributed to this phase, on the user's explicit instruction,
 against the live `jtoye` profile (so the proceed arm is real, not synthetic).
@@ -419,7 +419,7 @@ failure modes — wired into `scripts/k8s-local-up.sh` as **step 3b**: after `mi
 addon, the bootstrap and any apply. Running it pre-start is exactly what made the 16 connections
 invisible.
 
-**Two deliberate departures from the suggested closure above, both strictly stronger.**
+**Three deliberate departures from the suggested closure above, all strictly stronger.**
 
 1. It counts **pods, not non-zero-replica Deployments**. The 26-07 offender also carried a
    CronJob-spawned `pg-backup` pod, and a Job, StatefulSet, DaemonSet or bare Pod holds a dev-Postgres
@@ -427,14 +427,30 @@ invisible.
    ones nobody has enumerated yet.
 2. "Live" excludes only the terminal phases (`Succeeded`, `Failed`), so **`Pending` counts too** — a pod
    still pulling its image in a stale namespace is the same hazard a few seconds early. Completed pods
-   (the `pg-backup-rehearsal` Job, the ingress-admission Jobs) are correctly ignored.
+   (the `pg-backup-rehearsal` Job, the ingress-admission Jobs) are correctly ignored. Ruled correct on
+   review and explicitly not narrowed: the refusal prints the phases it found, so a `Pending` refusal
+   cannot be misread as a `Running` one.
+3. **`default` is NOT exempt**, although the suggested closure above lists it and `6a2663b` initially
+   honoured that list. It is an ordinary **writable** namespace, not a system one — an unqualified
+   `kubectl run` or `kubectl apply` with no `-n` lands there, which is exactly the accidental-writer
+   class this guard exists to catch. Exempting it bought nothing either: every object this tooling
+   creates goes to the overlay namespace, and step 4b's admission-webhook probe targets `default` under
+   `--dry-run=server`, which creates nothing. Removed in `a4ddc50` after verifying `default` was empty
+   on this cluster (no pods; only the built-in `service/kubernetes`), so there was no false-refusal
+   risk. The constant carries a DO-NOT-TIDY-THIS-BACK note, because the obvious "cleanup" is to re-add
+   it the first time a stray pod trips the guard — the correct response is to delete the stray pod.
+
+   Making `default` refusable also exposed wrong remediation advice in the refusal itself: it printed
+   `kubectl delete namespace <namespace>`, and `default` cannot be deleted. Fixed in the same commit —
+   the block now offers workload-level deletion alongside namespace-level and says which one applies to
+   `default`. Wrong advice is worse than terse advice, given that naming offenders is the whole point.
 
 **Kept from the suggested closure.** A named arm (`REFUSED [cluster-writers-present]`) so it is
 falsifiable like the other four; no auto-deletion of anything; the offenders are NAMED — namespace, live
 pod count, pod phases and **image tags** — because a bare exit code was the thing that taught the
 operator nothing. Exempt: the expected namespace read from `k8s/local/kustomization.yaml` (one source of
-truth, no new literal) plus `kube-system`, `kube-public`, `kube-node-lease`, `ingress-nginx`, `default`,
-which is a named constant beside the existing service inventories.
+truth, no new literal) plus `kube-system`, `kube-public`, `kube-node-lease` and `ingress-nginx`, which is
+a named constant beside the existing service inventories.
 
 **Fails closed on every tooling path** — missing `kubectl`, unreachable API server, unparseable
 response, or an **empty** inventory all exit 2 (VOID). The empty case is explicit because wave 5 had to
@@ -448,6 +464,13 @@ unparseable fixture and with `kubectl` off `PATH`. Plus an end-to-end wiring pro
 `scripts/k8s-local-up.sh` aborted at step 3b before step 4 mutated anything. D-14 re-runnability is
 intact — `jtoye-local` running pods are the normal second-invocation state and pass.
 
+**All three arms re-proven after `a4ddc50`**, because the exempt-set constant is load-bearing for each:
+PROCEED still exit 0 at the same 11 live pods, with the rendered exempt list now correctly omitting
+`default` (which proves the refusal message renders from the constant rather than from a copy of it);
+REFUSE exit 1 on a scratch pause pod placed **in `default`** — the arm that was impossible before that
+commit — then exit 0 again after deleting the pod (pod, not namespace, following the guard's own
+corrected advice); VOID still exit 2 on a nonexistent context and on an empty-inventory fixture.
+
 **One unanticipated defect found while proving the wiring, fixed in the same commit (Rule 1).** Step 3's
 idempotence check compared `minikube profile list -o json`'s `.Status` against `Running`, but a healthy
 profile reports **`OK`** there (`Running` is `minikube status`'s vocabulary). The "already Running
@@ -460,4 +483,8 @@ webhook gate is load-bearing. Recorded as `k8s/LOCAL.md` §7 **A2**.
 
 **Operator-facing record.** `k8s/LOCAL.md` §2 gains the cluster half of the XOR rule and its refusal
 arm; §4's step table gains the 3b row; §7 A1 is flipped from "guard gap, run the inventory by hand" to
-CLOSED with a behaviour table (0 / 1 / 2 arms) and the reasons behind the two departures above.
+CLOSED with a behaviour table (0 / 1 / 2 arms) and the reasons behind the departures above. Both §2 and
+§7 A1 state why `default` is excluded rather than merely omitting it from a list, so the next reader
+cannot mistake the omission for an oversight. The suggested-closure paragraph earlier in THIS entry is
+deliberately left as written, and so is the captured `kubectl get ns` output in `k8s/LOCAL.md` §11 —
+those are records of what was proposed and observed, not documentation of current behaviour.
