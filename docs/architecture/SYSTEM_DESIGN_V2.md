@@ -1,9 +1,16 @@
 # J'Toye OaaS - System Design V2 (Target: 10/10)
 
-**Document Version:** 2.0
-**Date:** 2025-12-30
-**Status:** Design Phase
+**Document Version:** 2.1
+**Date:** 2025-12-30 · **§1 re-verified against the codebase 2026-07-25**
+**Status:** Design Phase (§§2-10) · §1 describes the *as-built* system
 **Target:** Production-ready multi-tenant SaaS platform for UK retail
+
+> **How to read this document.** §1 (Architecture Overview) is **verified fact** — every
+> claim in §1.1, §1.3, §1.4 and §1.5 was checked against the tree on 2026-07-25 and cites
+> the file that proves it. §1.2 (Target Architecture) and §§2-10 remain **design intent**
+> from the original 2025-12-30 draft and have *not* been re-verified; treat them as a plan,
+> not a description. Section 1 is the source the published "Backend Communication Topology"
+> diagram is regenerated from — update it here first.
 
 ---
 
@@ -22,41 +29,70 @@
 
 ## 1. Architecture Overview
 
-### 1.1 Current Architecture (Phase 1)
+### 1.1 Current Architecture (verified 2026-07-25)
+
+The picture below is the **live local/compose topology**, read off
+`docker-compose.full-stack.yml` and the source files listed in §1.4 — not a design
+intention. Host ports are shown; container-internal ports differ where noted. The same
+service graph is deployed by the k8s kustomize overlays (`k8s/base` + `staging|production`),
+which swap host ports for cluster Services and add the ingress.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        INTERNET                                  │
-└─────────────────────────────────────────────────────────────────┘
+   ┌──────────────┐   ┌───────────────────┐   ┌──────────────┐
+   │   Browser    │   │  Edge / POS       │   │  WhatsApp    │   ┌──────────────┐
+   │  (dashboard  │   │  devices          │   │  (inbound)   │   │  MCP client  │
+   │ + storefront)│   │  batch sync       │   │              │   │  (AI agent)  │
+   └──┬────┬───┬──┘   └─────────┬─────────┘   └──────┬───────┘   └──────┬───────┘
+      │    │   │                │                    │                  │
+ SSR  │REST│WS │SSE       REST/JSON+JWT        webhook+HMAC        MCP over
+      │    │   │                │                    │             Streamable HTTP
+ ┌────▼──────┐ │                └─────────┬──────────┘                  │
+ │ frontend  │ │                          │                             │
+ │ Next.js16 │ │                ┌─────────▼─────────┐          ┌────────▼────────┐
+ │  :3000    │ │                │   edge-go (Gin)   │          │   mcp-server    │
+ │ SSR+      │ │                │   :8089 → :8080   │          │     :9100       │
+ │ NextAuth  │ │                │ rate-limit · JWT  │          │ Bearer pass-thru│
+ └───────────┘ │                │ gobreaker "CoreAPI"│         │ fixed base URL  │
+               │                └─────────┬─────────┘          └────────┬────────┘
+               │                          │ REST/JSON                   │ REST/JSON
+               └──────────────┬───────────┴─────────────────────────────┘
+                              │  REST/JSON · STOMP-over-WS (/ws) · SSE
+                   ┌──────────▼───────────┐
+                   │      core-java       │◄──── OIDC/JWT ────┐
+                   │  Spring Boot 3.5.16  │                   │
+                   │  :9090 (mgmt :9091)  │            ┌──────┴───────┐
+                   │  REST · state machine│            │  Keycloak 24 │
+                   │  RLS · outbox→events │            │    :8085     │
+                   │  STOMP broker/relay  │            │ realm:       │
+                   └──┬───┬───┬───┬───┬───┘            │  jtoye-dev   │
+                      │   │   │   │   │                └──────┬───────┘
+      ┌───────────────┘   │   │   │   └──────────┐            │ JDBC
+      │ JDBC              │   │   │ HTTP         │ SMTP       │
+      │            RESP   │   │   │              │            │
+┌─────▼────────┐  ┌───────▼─┐ │ ┌─▼──────────┐ ┌─▼─────────┐  │
+│ PostgreSQL15 │  │ Redis 7 │ │ │  Ollama    │ │  Mailhog  │  │
+│ :5433 → 5432 │  │  :6379  │ │ │  :11434    │ │ :1025 SMTP│  │
+│ RLS+HikariCP │  │ cache · │ │ │ image      │ │ :8025 UI  │  │
+│              │  │ ratelimit│ │ analysis   │ │           │  │
+└──────────────┘  └─────────┘ │ └────────────┘ └───────────┘  │
+        ▲                     │                               │
+        └─────────────────────┼───────────────────────────────┘
                               │
-                    ┌─────────┴─────────┐
-                    │   Load Balancer   │ (Missing in Phase 1)
-                    │   (nginx/ALB)     │
-                    └─────────┬─────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-    ┌────▼─────┐      ┌──────▼──────┐      ┌─────▼──────┐
-    │ frontend │      │  edge-go    │      │ core-java  │
-    │ Next.js  │      │  (Gin)      │      │ (Spring)   │
-    │  :3000   │      │  :8080      │      │  :9090     │
-    └────┬─────┘      └──────┬──────┘      └─────┬──────┘
-         │                   │                    │
-         │                   └────────┬───────────┘
-         │                            │
-         │                   ┌────────▼──────────┐
-         └──────────────────►│   Keycloak OIDC   │
-                             │     :8085         │
-                             └───────────────────┘
-                                      │
-                    ┌─────────────────┴─────────────────┐
-                    │                                   │
-            ┌───────▼────────┐              ┌──────────▼──────────┐
-            │  PostgreSQL 15  │              │  (Future)           │
-            │   + RLS         │              │  Message Queue      │
-            │   :5433         │              │  Redis Cache        │
-            └─────────────────┘              └─────────────────────┘
+              AMQP :5672      │      S3 HTTP
+         ┌────────────────────┴──────┬─────────────────┐
+         │                           │                 │
+   ┌─────▼──────────────┐   ┌────────▼────────┐   ┌────▼─────────────────┐
+   │   RabbitMQ 3.12    │   │  MinIO (S3)     │   │  Tenant webhook      │
+   │ :5672 AMQP         │   │ :9000 API       │   │  endpoints (external)│
+   │ :61613 STOMP relay │   │ :9001 console   │   │  HTTPS + HMAC        │
+   │ :15672 management  │   │ media assets    │   │  SSRF-guarded egress │
+   └────────────────────┘   └─────────────────┘   └──────────────────────┘
 ```
+
+**Reading the diagram.** The browser talks to `core-java` **directly** for data, realtime
+and streaming — `edge-go` is not in the browser path and the frontend contains zero
+references to it. `edge-go` fronts exactly two business routes (§1.4). `mcp-server` is a
+third, independent ingress that forwards an agent's Bearer to the same core REST surface.
 
 ### 1.2 Target Architecture (Phase 2)
 
@@ -113,15 +149,126 @@
 
 | Service | Responsibility | Technology | Scale Strategy |
 |---------|---------------|------------|----------------|
-| **frontend** | UI, client-side routing, SSR | Next.js 14, React 18 | Horizontal (CDN + containers) |
-| **edge-go** | API Gateway, rate limiting, auth proxy | Go 1.22 + Gin | Horizontal (stateless) |
-| **core-java** | Business logic, domain model, auditing | Spring Boot 3, Hibernate | Horizontal (stateless) |
+| **frontend** | UI, client-side routing, SSR | Next.js 16.2.2, React 19 | Horizontal (CDN + containers) |
+| **edge-go** | Batch-sync + WhatsApp ingress, rate limiting, breaker | Go 1.25 + Gin | Horizontal (stateless) |
+| **core-java** | Business logic, domain model, auditing, realtime fan-out | Spring Boot 3.5.16, Hibernate | Horizontal (stateless) |
+| **mcp-server** | MCP tool surface for AI agents over the core REST API | Node 20 + MCP SDK (Streamable HTTP) | Horizontal (stateless) |
 | **keycloak** | Identity provider, SSO, user management | Keycloak 24 | Horizontal (2+ replicas) |
 | **postgresql** | Primary data store, RLS enforcement | PostgreSQL 15 | Vertical + read replicas |
 | **redis** | Cache, session storage, rate limit state | Redis 7 Cluster | Horizontal (cluster mode) |
-| **rabbitmq** | Async jobs, event streaming | RabbitMQ 3.12 | Horizontal (HA queues) |
+| **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 3.12 | Horizontal (HA queues) |
+| **minio / S3** | Media assets — validated WebP derivatives + thumbnails | MinIO (S3 API) | Managed / horizontal |
+| **ollama** | Local LLM image analysis (`AI_PROVIDER=ollama`) | Ollama + `gemma3:12b` | Vertical (GPU-bound) |
+| **smtp** | Transactional email (Mailhog locally, SES/SMTP upstream) | Mailhog v1.0.1 / SES | Managed |
 | **prometheus** | Metrics collection, alerting | Prometheus + Alertmanager | Vertical (single node + federation) |
 | **loki** | Log aggregation, querying | Grafana Loki | Horizontal (distributed mode) |
+
+---
+
+### 1.4 Backend Communication Topology (verified 2026-07-25)
+
+Every hop, the protocol it actually uses, and the file that proves it. **There is no gRPC
+on any hop** — zero `.proto` files across Go, Java and TypeScript; `protobuf` is an
+indirect-only Go dependency and is never called. Every synchronous hop is REST/JSON.
+
+#### 1.4.1 Synchronous hops (REST/JSON over HTTP)
+
+| From → To | What it carries | Auth | Source of truth |
+|---|---|---|---|
+| Browser → **core-java** `:9090` | All dashboard + storefront data | Bearer JWT (NextAuth session) | `frontend/lib/api-client.ts:21` (`NEXT_PUBLIC_API_URL`) |
+| Browser → **frontend** `:3000` | SSR / route rendering | NextAuth cookie | `frontend/app/**` |
+| Edge/POS → **edge-go** `:8089` | `POST /api/v1/sync/batch` | JWT (validated at edge *and* core) | `edge-go/cmd/edge/main.go:216` |
+| WhatsApp → **edge-go** `:8089` | `POST /api/v1/webhooks/whatsapp` | HMAC (public route) | `edge-go/cmd/edge/main.go:211` |
+| **edge-go** → **core-java** | Fans one batch into `/products/search` + `/orders` | Forwarded JWT | `edge-go/internal/core/client.go` |
+| MCP client → **mcp-server** `:9100` | MCP tool calls (Streamable HTTP transport) | Caller Bearer | `mcp-server/src/index.ts:3,34` |
+| **mcp-server** → **core-java** | Read + mutating tool calls | Caller Bearer forwarded verbatim | `mcp-server/src/core-client.ts:13,32` |
+
+`edge-go` fronts **only** those two business routes (plus `/health`, `/ready`, `/metrics`).
+It is not a general gateway and is not in the browser path.
+
+**Resilience on the edge→core hop:** `sony/gobreaker` breaker named `CoreAPI` — never trips
+under 10 requests, opens at ≥60% failures for 60s, 3 half-open probes, 30s HTTP timeout.
+`mcp-server` uses a 10s timeout instead, deliberately tripping *before* core's 30s query
+timeout so a hung upstream surfaces as a sanitised tool error.
+
+**MCP SSRF posture:** `CORE_BASE_URL` is a fixed compose/env value, never caller-controlled,
+and paths are built from allow-listed templates — the caller can never steer the host.
+
+#### 1.4.2 Asynchronous hops
+
+| Channel | Transport | Direction | Source of truth |
+|---|---|---|---|
+| Domain events (outbox) | **AMQP** `:5672` | core → RabbitMQ → core listeners | `config/RabbitMQConfig.java` |
+| Kitchen display (KDS) | **STOMP over WebSocket** `/ws` | core → browser | `websocket/WebSocketConfig.java` |
+| Order updates | **SSE** (`SseEmitter`) | core → browser | `order/OrderSseService.java:53-99` |
+| Outbound webhooks | **HTTPS POST** | core → tenant endpoints | `webhook/WebhookDeliveryWorker.java` |
+| Transactional email | **SMTP** `:1025` | core → Mailhog/SES | `notification/dispatch/EmailChannel.java` |
+
+**AMQP exchange inventory** (all topic exchanges, each with a fanout DLX):
+
+| Exchange | Queue(s) | Consumer |
+|---|---|---|
+| `order.events` | `order.state-changes`, `order.notifications`, SSE fan-out queue | `OrderStateChangeListener`, `OrderNotificationListener`, `OrderSseFanoutListener` |
+| `payment.events` | `payment.events`, `payment.notifications`, `refund.notifications` | `PaymentEventAuditListener`, `FinancialNotificationListener` |
+| `onboarding.events` | `onboarding.notifications` | `OnboardingNotificationListener` |
+| `media.events` | `media.process` | `MediaProcessingWorker` |
+| webhook deliveries | `webhook.deliveries` | `WebhookFanoutListener` → `WebhookDeliveryWorker` |
+
+Two independent transactional outboxes feed these: `PaymentEventOutboxFlusher` (shared
+`payment_event_outbox`) and `MediaEventOutboxFlusher` (dedicated `media_event_outbox`).
+A `@RabbitListener` thread carries no tenant context, so every listener pins the tenant
+GUC before touching RLS-scoped tables.
+
+**Outbound webhook egress** is the only path where core initiates a connection to an
+address a tenant controls. It is hardened accordingly: a dedicated `WebClient` whose Netty
+`HttpClient` resolves through `SsrfGuardAddressResolverGroup` (validated-IP resolver — closes
+the DNS-rebinding hole), and three signed headers on every POST:
+`X-JToye-Event-Id`, `X-JToye-Event-Type`, and
+`X-JToye-Signature: t=<ts>,v1=<hex-hmac-sha256>` (default tolerance 300s).
+
+#### 1.4.3 Authentication plane
+
+All three ingresses (frontend, edge-go, mcp-server) and core validate against the same
+Keycloak realm (`jtoye-dev` locally, `:8085`). The issuer and the JWKS host are
+**deliberately decoupled** (issue #87): JWKS is fetched from the in-network host
+(`keycloak:8080`) while `iss` is validated against the public host — a single coupled value
+caused a total live-auth outage that Testcontainers could not see. Core is the sole
+validator for MCP traffic; `mcp-server` never inspects the token.
+
+---
+
+### 1.5 Known defect in this topology — the STOMP relay (A3)
+
+> **Status: CONFIRMED PRODUCTION DEFECT, unfixed.** Proven on the local k8s cluster on
+> 2026-07-25 (plan 26-08) and human-confirmed at that phase's verification gate. Recorded
+> here rather than fixed because the fix is architectural. Full evidence: `k8s/LOCAL.md`
+> §A3.
+
+`WebSocketConfig` has two broker modes:
+
+- `in-memory` (Spring `SimpleBroker`) — **the compose default**, and the only mode local
+  development ever exercises.
+- `relay` (`StompBrokerRelay` → RabbitMQ STOMP plugin `:61613`) — set by
+  `k8s/base/configmap.yaml`, and **inherited unoverridden by both staging and production**.
+
+RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>`
+as the routing key, so **`<name>` must be a single segment — it may not contain `/`**. The
+application's KDS destination is `/topic/kitchen/{tenantId}/{shopId}` (three segments), which
+the simple broker accepts and the relay rejects outright with `Invalid destination`. Proven
+in both directions: 14 browser SUBSCRIBEs → 14 errors → **0 MESSAGE frames**, and the
+relay's own `_system_` publish session rejected too. A two-arm raw-socket falsification on
+the same broker isolates the fault to destination *shape* alone (dotted single-segment
+control arm subscribes fine).
+
+**Do not "verify" this by eye.** The kitchen board still appears to update live: each
+rejected SUBSCRIBE tears the session down, the client redials every 5s, and the reconnect
+hook re-fetches orders — measured at 14 WebSocket opens and 24 REST calls with zero MESSAGE
+frames in a 30-second window. That is accidental polling wearing realtime's clothes. The
+honest signal is the connection dot on `/dashboard/kitchen`: **green = relay working,
+amber ("Reconnecting…") = this defect.**
+
+Until it is fixed, treat KDS realtime as **working in compose/dev, degraded to polling in
+every k8s environment**.
 
 ---
 
