@@ -184,7 +184,16 @@ mapfile -t INGRESS_HOSTS < <(kubectl kustomize "$OVERLAY" | awk '/^[[:space:]]*-
 
 HOSTS_BAD=""
 for h in "${INGRESS_HOSTS[@]}"; do
-  resolved="$(getent ahostsv4 "$h" 2>/dev/null | awk 'NR==1{print $1}')"
+  # `getent` exits 2 for an unresolvable name. Under this script's `set -o pipefail`
+  # that exit status propagates out of the pipeline, `set -e` then aborts the whole
+  # script — SILENTLY, with exit 2, before any of the diagnostics below can run. The
+  # unresolved branch is the ONLY branch this step exists to serve (it prints the
+  # /etc/hosts line the operator must add), so the failure mode killed exactly the
+  # path that matters, and did it with no message at all. `|| true` contains the
+  # expected non-zero here; an empty `resolved` is the real signal. (Found in plan
+  # 26-07, the first execution of this script — 26-05 authored it but was forbidden
+  # to run it, so no static check could have caught this.)
+  resolved="$( { getent ahostsv4 "$h" 2>/dev/null || true; } | awk 'NR==1{print $1}')"
   if [ "$resolved" = "$NODE_IP" ]; then
     echo "OK: ${h} -> ${NODE_IP}"
   else
