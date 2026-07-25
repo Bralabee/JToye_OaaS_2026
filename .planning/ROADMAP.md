@@ -286,7 +286,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 26-03-PLAN.md (Wave 3) — Recurrence prevention: `check-env-contract.sh` (two-direction core-java env contract + local-only-default rule + reasoned allowlist, D-07/D-08) and `check-render-invariants.sh` (INV-1..INV-5: no hardcoded 5432, `DB_PORT` exactly-one-of `value`/`valueFrom`, kube-dns selector purity, no-localhost renders, DEF-2 docs), both wired into the `k8s-validate` CI job alongside the golden-render check
+- [x] 26-03-PLAN.md (Wave 3) — Recurrence prevention: `check-env-contract.sh` (two-direction core-java env contract + local-only-default rule + reasoned allowlist, D-07/D-08) and `check-render-invariants.sh` (INV-1..INV-5: no hardcoded 5432, `DB_PORT` exactly-one-of `value`/`valueFrom`, kube-dns selector purity, no-localhost renders, DEF-2 docs), both wired into the `k8s-validate` CI job alongside the golden-render check
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -325,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 2/9 | In Progress|  |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 3/9 | In Progress|  |
