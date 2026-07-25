@@ -233,6 +233,194 @@ spec:
             secretKeyRef:
               name: rabbitmq-credentials
               key: stomp-passcode
+        # =====================================================================
+        # DEF-6 / D-13 / D-15 / D-19 (Phase 26 / INFRA-02): the config the
+        # v2.2/v2.3 feature set needs but k8s/base never supplied.
+        #
+        # Appended AFTER the pre-existing 23 entries on purpose: the block order
+        # above is untouched, and in particular the DB_POOL_SIZE
+        # `- name:` / `value:` adjacency that k8s/scripts/check-connection-math.sh
+        # parses with awk is left exactly as it was.
+        #
+        # Every base VALUE is byte-identical to the application.yml default or
+        # derived from a value already committed in this repo — see the sourcing
+        # comments in k8s/base/configmap.yaml. Nothing here invents a hostname.
+        #
+        # DELIBERATE OMISSIONS (reviewed, not forgotten — plan 26-03 allowlists
+        # them with reasons in the env-contract gate): OLLAMA_URL (no in-cluster
+        # Ollama; the AI image-analysis path is advisory and gated off),
+        # ZIPKIN_ENDPOINT (no in-cluster collector), and the CUSTOMER_* customer
+        # -realm issuer envs (the customer storefront realm is explicitly
+        # deferred in 26-CONTEXT.md § Deferred Ideas).
+        # =====================================================================
+
+        # --- D-13 split-horizon: the STAMPED (public) issuer to validate `iss`
+        # against, independent of the JWKS host in KC_ISSUER_URI above. Base
+        # value is byte-identical to keycloak.issuer.uri, so no environment's
+        # validation is loosened by this addition (issue #87 class).
+        - name: JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.public.issuer.uri
+        - name: JWT_EXPECTED_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: jwt.expected-audience
+        # --- CORS: read by BOTH CorsConfig and WebSocketConfig, so this is also
+        # the prerequisite for the KDS WebSocket handshake proof (plan 26-07).
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: cors.allowed-origins
+        - name: LOG_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: log.path
+        # --- Media storage (Phase 24 IMG-01..04) ---
+        - name: S3_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: s3.endpoint
+        - name: S3_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: s3.region
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: s3.bucket
+        - name: S3_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: s3.public-url
+        # OPTIONAL Secret (s3-media-credentials). The secretKeyRef `optional`
+        # flag below is load-bearing: a namespace that has not created it keeps
+        # exactly today's behaviour — the env stays UNSET, application.yml's own
+        # default applies and the media path stays inert — instead of putting
+        # every core-java pod into CreateContainerConfigError. Supplying the
+        # Secret is the deliberate act that activates real S3 writes.
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-media-credentials
+              key: access-key
+              optional: true
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-media-credentials
+              key: secret-key
+              optional: true
+        # --- Email (Phase 22 COMMS-*) ---
+        - name: SMTP_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: smtp.host
+        - name: SMTP_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: smtp.port
+        - name: SMTP_AUTH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: smtp.auth
+        - name: SMTP_STARTTLS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: smtp.starttls
+        # OPTIONAL Secret (smtp-credentials). Absent → env unset → the
+        # application.yml empty default applies. Combined with smtp.auth
+        # staying "false" in the base ConfigMap, no credential is offered to
+        # any relay until an operator deliberately supplies both.
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: username
+              optional: true
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: password
+              optional: true
+        # --- D-19 notification origins: unsubscribe + email tracking links ---
+        - name: NOTIFICATION_EMAIL_TRACKING_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: notification.email.tracking-base-url
+        - name: NOTIFICATION_UNSUBSCRIBE_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: notification.unsubscribe.base-url
+        # OPTIONAL Secret (notification-credentials). The application.yml
+        # default for this signing secret is the EMPTY STRING — i.e. an HMAC
+        # over an empty key, which is forgeable. Wiring it here makes the real
+        # key supplyable; the `optional` flag keeps it inert-by-default rather than
+        # silently weak-by-default, and the recipe in k8s/QUICK_START.md tells
+        # an operator to create it. Do NOT allowlist this away as "accepted".
+        - name: NOTIFICATION_UNSUBSCRIBE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: notification-credentials
+              key: unsubscribe-signing-secret
+              optional: true
+        # --- D-19 Stripe Connect return origins ---
+        - name: STRIPE_CONNECT_RETURN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stripe.connect.return-url
+        - name: STRIPE_CONNECT_REFRESH_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stripe.connect.refresh-url
+        # OPTIONAL Secret (stripe-credentials). Absent → env unset → the
+        # application.yml empty defaults apply and the payment path behaves
+        # exactly as it does today.
+        - name: STRIPE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: stripe-credentials
+              key: api-key
+              optional: true
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: stripe-credentials
+              key: webhook-secret
+              optional: true
+        # --- Webhook delivery knobs (Phase 22) ---
+        - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: webhook.delivery.max-attempts
+        - name: WEBHOOK_DELIVERY_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: webhook.delivery.retention-days
+        - name: WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: webhook.target.block-private-ranges
         resources:
           requests:
             # Issue #94 [P2-3]: memory request == limit (Guaranteed-memory QoS).
