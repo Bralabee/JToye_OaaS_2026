@@ -331,3 +331,29 @@ inventory of "what is deliberately unsupplied" lives in one reviewable place as 
 **Suggested owner.** `OLLAMA_URL` → whichever phase deploys or points at a real inference endpoint.
 `ZIPKIN_ENDPOINT` → the observability phase that adds a collector (which the readiness report's own
 "Long-Term" recommendations already propose).
+
+## 26-06 — `.planning/PROJECT.md` quotes a stale test baseline (found by the staleness sweep)
+
+**Discovered during:** 26-06 Task 2 (the systematic stale-reference sweep, QUALITY_RULE_6).
+**Dated:** 2026-07-25.
+
+**What.** `.planning/PROJECT.md:128` states "baseline is **1257** logical invocations" as a live
+milestone constraint ("Total must grow, not regress"). The real figure is **1698** after this plan's
+reconcile — the line is stale by 441 and has been through several phases.
+`.planning/PROJECT.md:165` (the dated "Last updated" narrative for Phase 25) separately quotes
+**1684**, which was correct when written but is a dated record.
+
+**Why it is only partly a problem.** The same sentence at line 128 already names
+`docs/metrics.json` as the single source of truth and `scripts/docs-freshness.sh --write` as the
+reconciler, so a reader following the pointer gets the right number. The `docs-freshness` CI gate does
+**not** read `PROJECT.md`, so this cannot turn the build red — which is precisely why it drifted.
+
+**Why it is not fixed here.** Plan 26-06's declared file list is
+`docs/metrics.json` + `CLAUDE.md` + `AGENTS.md`; `.planning/PROJECT.md` is the milestone owner's
+document, and line 165 is a dated narrative record of Phase 25 that this repo's convention says to
+append to rather than rewrite. Editing a milestone constraint line mid-phase, from a docs plan, would
+also make the "1257" figure's provenance unrecoverable without git archaeology.
+
+**Suggested owner.** The milestone-close pass (`/gsd:review-backlog` or the v2.3 wrap-up), which
+already updates `PROJECT.md`. The durable fix is to stop quoting a number there at all and point only
+at `docs/metrics.json` — a count in prose next to a gate that does not check it will always drift.
