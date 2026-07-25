@@ -66,6 +66,23 @@ data:
   keycloak.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-dev"
   keycloak.public.issuer.uri: "http://localhost:8085/realms/jtoye-dev"
 
+  # --- The realm's ACTUAL OIDC client (plan 26-08) ---------------------------
+  # Base holds `frontend`, which is byte-identical to the literal that used to be
+  # hardcoded in frontend-deployment.yaml. That client does NOT exist in the
+  # jtoye-dev realm:
+  #   grep -c '"clientId" : "frontend"' infra/keycloak/realm-export.template.json
+  # returns 0. The realm's confidential browser-flow client is `core-api`, which
+  # is also what .env's KEYCLOAK_CLIENT_ID names and whose secret feeds the
+  # keycloak-credentials Secret's `frontend-client-secret` key (see
+  # scripts/k8s-local-secrets.sh). Without this override the ingress login — the
+  # only step that actually proves DEF-5 — fails at the authorize request.
+  #
+  # The matching redirect URI `http://app.jtoye.local/*` was added ADDITIVELY to
+  # that client in infra/keycloak/realm-export.template.json by plan 26-08; every
+  # existing localhost URI is retained, so the compose dev flow on :3000 / :3100
+  # is untouched.
+  keycloak.client-id: "core-api"
+
   # Admin API host is an IN-CLUSTER (pod-side) call, so it is the shimmed host.
   # NOTE: keycloak.admin.enabled stays "false" (inherited from base) — tenant
   # deprovisioning is not part of the local rehearsal, and an enabled admin

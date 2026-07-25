@@ -89,8 +89,30 @@ spec:
             secretKeyRef:
               name: nextauth-secret
               key: secret
+        # ---------------------------------------------------------------------
+        # Phase 26 / plan 26-08: KEYCLOAK_CLIENT_ID was the hardcoded literal
+        # `value: "frontend"` — a config-injection violation of the same class
+        # as DEF-1's DB_PORT hardcode (GLOBAL_RULE_6 / ARCHITECTURE_RULE_8), and
+        # the reason the local ingress login could not work at all.
+        #
+        # The dev realm has NO `frontend` client. Grep it:
+        # `grep -c '"clientId" : "frontend"' infra/keycloak/realm-export.template.json`
+        # returns 0. The client the frontend actually authenticates as is
+        # `core-api` — .env and .env.example both set KEYCLOAK_CLIENT_ID=core-api,
+        # and the keycloak-credentials Secret's `frontend-client-secret` key is
+        # populated from .env's KEYCLOAK_CLIENT_SECRET, i.e. core-api's secret.
+        # So the literal here named a client that does not exist in the realm
+        # whose secret was being presented: an OIDC flow that cannot complete.
+        #
+        # The base VALUE is unchanged (app-config/keycloak.client-id is the
+        # byte-identical string `frontend`), so staging and production resolve
+        # exactly as before; only k8s/local patches it to `core-api`.
+        # ---------------------------------------------------------------------
         - name: KEYCLOAK_CLIENT_ID
-          value: "frontend"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.client-id
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:

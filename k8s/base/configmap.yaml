@@ -78,6 +78,30 @@ data:
   # JWT_EXPECTED_ISSUER and frontend KEYCLOAK_ISSUER.
   keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
 
+  # --- Frontend OIDC client id (Phase 26 / plan 26-08) -----------------------
+  # This key exists because k8s/base/frontend-deployment.yaml hardcoded the
+  # literal `value: "frontend"` for KEYCLOAK_CLIENT_ID. That is the same
+  # config-injection violation as DEF-1's DB_PORT hardcode (GLOBAL_RULE_6 /
+  # ARCHITECTURE_RULE_8): an environment-VARYING value baked into the shared
+  # base, so no overlay could change it without patching the Deployment itself.
+  #
+  # It was not merely a style point — it made the local ingress login
+  # IMPOSSIBLE. The dev realm (infra/keycloak/realm-export.template.json) has
+  # NO client named `frontend`; the client the frontend actually authenticates
+  # as is `core-api` (.env / .env.example both set KEYCLOAK_CLIENT_ID=core-api).
+  # A hardcoded `frontend` therefore started an OIDC flow against a client that
+  # does not exist in that realm, which DEF-5's D-16 ingress login has to pass
+  # through. Only the local overlay patches this key; see
+  # k8s/local/configmap-patch.yaml.
+  #
+  # SOURCE: byte-identical to the literal it replaces, so the staging and
+  # production renders resolve to the SAME string they did before — the render
+  # gains a ConfigMap key and an env SOURCE, never a changed value. Asserted on
+  # the production render (T-26-48: a silently changed OIDC client identity is
+  # an elevation-of-privilege surface, so the value equality is a criterion,
+  # not an assumption).
+  keycloak.client-id: "frontend"
+
   # --- CORS + token audience -------------------------------------------------
   # cors.allowed-origins pins the single platform origin. NOT a wildcard.
   # It is ALSO read by WebSocketConfig (setAllowedOrigins) — the same property

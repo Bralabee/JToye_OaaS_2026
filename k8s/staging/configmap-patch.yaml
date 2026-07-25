@@ -30,6 +30,15 @@ data:
   # diverge without a manifest edit.
   keycloak.public.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
 
+  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
+  # value is the byte-identical string `frontend` that used to be hardcoded in
+  # frontend-deployment.yaml, so staging keeps authenticating as exactly the same
+  # OIDC client it always has — the key exists so it CAN be changed per
+  # environment without patching the Deployment, not because staging needs a
+  # different value. Only k8s/local patches it (to `core-api`, the jtoye-dev
+  # realm's actual client). Adding a redundant `keycloak.client-id: "frontend"`
+  # line here would be noise, not documentation.
+
   # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
   cors.allowed-origins: "https://app-staging.jtoye.co.uk"

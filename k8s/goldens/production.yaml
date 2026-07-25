@@ -17,6 +17,7 @@ data:
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
+  keycloak.client-id: frontend
   keycloak.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
   log.level: INFO
@@ -683,7 +684,10 @@ spec:
               key: secret
               name: nextauth-secret
         - name: KEYCLOAK_CLIENT_ID
-          value: frontend
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.client-id
+              name: app-config
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:

@@ -32,6 +32,17 @@ data:
   # fact rather than an assumption.
   keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
 
+  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08), and this
+  # is the ONE exception to this overlay's state-it-explicitly convention above.
+  # The base value is the byte-identical string `frontend` that used to be
+  # hardcoded in frontend-deployment.yaml, so production continues to authenticate
+  # as exactly the same OIDC client identity it always has. Restating it here
+  # would add a second place a reviewer must keep in sync for a value that is not
+  # environment-varying, and T-26-48 makes the production render's value equality
+  # an asserted criterion rather than a convention — so the assertion, not a
+  # duplicated line, is what protects it. Only k8s/local patches this key (to
+  # `core-api`, the jtoye-dev realm's actual client).
+
   # Single production platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
   cors.allowed-origins: "https://app.jtoye.co.uk"
