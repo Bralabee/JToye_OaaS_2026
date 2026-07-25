@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { AspectFrame } from "@/components/ui/aspect-frame"
 import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
@@ -94,16 +95,18 @@ export function ProductDetailModal({
             <X className="h-5 w-5" />
           </button>
 
-          {/* Image carousel */}
+          {/* Image carousel. The fixed-ratio window comes from AspectFrame —
+              see the note there for why hand-rolling it silently produced a
+              modal that changed shape with every photo. Overlays ride as
+              children and position against the frame. */}
           {images.length > 0 ? (
-            <div className="relative aspect-[4/3] bg-cream flex-shrink-0">
-              <SafeImage
-                src={images[currentImageIndex]}
-                alt={`${product.title} - image ${currentImageIndex + 1}`}
-                className="w-full h-full object-cover"
-                loading="eager"
-              />
-
+            <AspectFrame
+              ratio="4/3"
+              src={images[currentImageIndex]}
+              alt={`${product.title} - image ${currentImageIndex + 1}`}
+              loading="eager"
+              className="bg-cream flex-shrink-0"
+            >
               {/* Navigation arrows */}
               {hasMultipleImages && (
                 <>
@@ -152,16 +155,23 @@ export function ProductDetailModal({
                           : "ring-transparent opacity-70 hover:opacity-100"
                       }`}
                     >
+                      {/* Definite-height box (h-10), so h-full resolves. */}
                       <SafeImage src={url} alt="" className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
               )}
-            </div>
+            </AspectFrame>
           ) : (
-            <div className="aspect-[4/3] bg-gradient-to-br from-cream-100 to-cream flex items-center justify-center flex-shrink-0">
-              <ShoppingBag className="h-16 w-16 text-oxblood/25" />
-            </div>
+            // Same window with no image: AspectFrame renders SafeImage's
+            // fallback, so the placeholder cannot drift from the real frame.
+            <AspectFrame
+              ratio="4/3"
+              src={null}
+              alt=""
+              className="bg-gradient-to-br from-cream-100 to-cream flex-shrink-0"
+              fallbackIcon={<ShoppingBag className="h-16 w-16 text-oxblood/25" />}
+            />
           )}
 
           {/* Content */}
