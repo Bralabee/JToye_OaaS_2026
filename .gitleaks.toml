@@ -19,6 +19,10 @@ paths = [
   # These are code snippets, not actual credentials.
   '''\.planning/phases/.*-PLAN\.md$''',
   '''\.planning/phases/.*-RESEARCH\.md$''',
+  # CONTEXT.md captures dev ports/creds (e.g. the KC_SEED_USER_PASSWORD dev seed
+  # already committed on main in .env/realm) — same planning-prose risk class as
+  # PLAN/RESEARCH above, not a live credential source.
+  '''\.planning/phases/.*-CONTEXT\.md$''',
   '''scripts/smoke-test.*\.sh$''',
 ]
 

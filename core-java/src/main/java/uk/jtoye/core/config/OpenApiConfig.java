@@ -58,7 +58,9 @@ public class OpenApiConfig {
                                                                 scopes (`catalog-scopes` security scheme, client-credentials grant):
                                                                 - `catalog:read` — list/get products (read surface, authenticated-only)
                                                                 - `catalog:write` — create/update/delete products + images (gates all nine product mutations)
-                                                                - `orders:read`, `orders:write` — reserved taxonomy for the [AI-1] MCP model (#203); defined, not yet enforced
+                                                                - `orders:write` — create orders (enforced; gates `POST /orders`, Phase 25 [AI-02])
+                                                                - `customers:write` — create customers (enforced; gates `POST /customers`, Phase 25 [AI-02])
+                                                                - `orders:read`, `customers:read` — reserved taxonomy for the MCP model; defined, not yet enforced
 
                                                                 A `catalog:read`-only token gets **200** on `GET /products` and **403** on
                                                                 any product write. See `docs/security-scopes.md` for the client-credentials
@@ -99,7 +101,8 @@ public class OpenApiConfig {
                                                 // issue #206 [AI-4]: advertise the catalog capability scopes as an
                                                 // OAuth2 client-credentials scheme. tokenUrl derives from issuerUri
                                                 // (never hardcoded); catalog:read/catalog:write are enforced today,
-                                                // orders:* are reserved for the [AI-1] MCP model (#203).
+                                                // and Phase 25 [AI-02] activates orders:write + customers:write as the
+                                                // MCP write gates; orders:read/customers:read stay defined-but-unenforced.
                                                 .addSecuritySchemes("catalog-scopes", new SecurityScheme()
                                                                 .type(SecurityScheme.Type.OAUTH2)
                                                                 .description("Least-privilege machine/integration access via OAuth2 "
@@ -112,7 +115,9 @@ public class OpenApiConfig {
                                                                                                 .scopes(new Scopes()
                                                                                                                 .addString("catalog:read", "Read the product catalog (list/get products)")
                                                                                                                 .addString("catalog:write", "Create, update, and delete products and product images")
-                                                                                                                .addString("orders:read", "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced")
-                                                                                                                .addString("orders:write", "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced"))))));
+                                                                                                                .addString("orders:write", "Enforced; gates POST /orders (Phase 25 [AI-02])")
+                                                                                                                .addString("customers:write", "Enforced; gates POST /customers (Phase 25 [AI-02])")
+                                                                                                                .addString("orders:read", "Reserved for the MCP model — defined, not yet enforced")
+                                                                                                                .addString("customers:read", "Reserved for the MCP model — defined-only, not enforced this phase"))))));
         }
 }

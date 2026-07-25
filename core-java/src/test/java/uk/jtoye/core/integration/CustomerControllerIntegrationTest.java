@@ -31,6 +31,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @ActiveProfiles("test")
 @org.junit.jupiter.api.Tag("testcontainers")
+// Phase 25 [CR-01]: all customer mutations (create/update/delete) are gated on
+// SCOPE_customers:write; the dashboard customers page token carries it by default.
+// A single class-level write-scoped principal restores each test's original intent
+// (create/read/update/delete succeed). The @Valid-400 cases still 400 because bean
+// validation runs BEFORE the @PreAuthorize gate (D-04 ordering), so the scope is inert there.
+@WithMockUser(authorities = "SCOPE_customers:write")
 class CustomerControllerIntegrationTest {
 
     @Container
@@ -67,7 +73,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createCustomerShouldSucceed() throws Exception {
         CreateCustomerRequest request = new CreateCustomerRequest(
                 "John Doe",
@@ -90,7 +95,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void listCustomersShouldReturnPaginatedResults() throws Exception {
         // Create test customers
         for (int i = 1; i <= 3; i++) {
@@ -119,7 +123,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void getCustomerByIdShouldReturnCustomer() throws Exception {
         // Create customer
         CreateCustomerRequest request = new CreateCustomerRequest(
@@ -148,7 +151,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void updateCustomerShouldSucceed() throws Exception {
         // Create customer
         CreateCustomerRequest createRequest = new CreateCustomerRequest(
@@ -188,7 +190,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void deleteCustomerShouldSucceed() throws Exception {
         // Create customer
         CreateCustomerRequest request = new CreateCustomerRequest(
@@ -219,7 +220,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createCustomerWithInvalidEmailShouldReturnBadRequest() throws Exception {
         CreateCustomerRequest request = new CreateCustomerRequest(
                 "John Doe",
@@ -236,7 +236,6 @@ class CustomerControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createCustomerWithOverLengthNameShouldReturn400NotConflict() throws Exception {
         // QA BE-2 regression: an over-length name (> the varchar(255) column) must fail
         // bean validation with a 400 — NOT reach the DB and surface as the misleading

@@ -41,7 +41,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 22: Notifications & Comms** — First delivery consumer of the V46 transactional outbox: email-first transactional notifications (Mailhog dev → SES prod) + vendor-registered outbound webhooks (HMAC-signed, retried; absorbs #205) + a WhatsApp/SMS seam behind a provider flag (absorbs #208), with GDPR consent + unsubscribe (completed 2026-07-15)
 - [x] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px (code-complete 2026-07-20; **gap-closure wave 23-08..23-17 CLOSED 2026-07-21** — the 3 confirmed authZ bypasses fixed [CR-01 cache-bypass 23-10, CR-02 STOMP gate 23-11, CR-03/CR-04 fail-closed 23-08] + CR-05..CR-08 staff/frontend + CR-07 strict-scoping 23-14 + the V57 grant_source-backfill deploy blocker fixed [23-17: bare no-GUC UPDATE → V44 per-tenant `set_config` loop, so `SET NOT NULL` no longer bricks boot on a non-fresh DB]; VSA-02/VSA-04 Complete with named green proofs over a green full `integrationTest` (332/0); both known-red CI gates green [OpenAPI snapshot + docs-freshness]. Checkbox stays open pending final `/gsd:secure-phase 23` + `/gsd:verify-work` sign-off; live vendor-auth Playwright deferred to the phase PR) (completed 2026-07-22)
 - [x] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative (completed 2026-07-23)
-- [ ] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential
+- [x] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential (completed 2026-07-24)
 - [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
 
 ## Phase Details
@@ -241,12 +241,22 @@ Plans:
   2. A write attempt targeting another tenant returns empty/403 under the MCP credential — RLS-proven, test included. (AI-02)
   3. Tool errors surface as RFC 7807 problem-detail (consistent with the read-only slice), not raw stack traces, and the flow is proven live against the dev stack. (AI-02)
 
-**Plans**: TBD (est. 2)
+**Plans**: 4 plans (3 waves)
 
 Plans:
 
-- [ ] 25-01: MCP write tools (`orders.create` / `customers.create`) over the core REST API + `Idempotency-Key` header wiring (#204) + write-scope mapping
-- [ ] 25-02: cross-tenant RLS proof under the MCP credential + RFC 7807 tool errors + idempotent-replay integration test + live E2E + `docs/metrics.json` reconcile
+**Wave 1**
+
+- [x] 25-01-PLAN.md (Wave 1) — Core write-scope gates + CI proof: `@PreAuthorize("SCOPE_orders:write")` on `POST /orders` (D-01) + new `@PreAuthorize("SCOPE_customers:write")` on `POST /customers` (D-02) + `OpenApiConfig` taxonomy update + `ScopedWriteAccessIntegrationTest` (converter-through-MockMvc, 403/not-403, valid bodies)
+- [x] 25-02-PLAN.md (Wave 1, parallel) — Realm RW credential + secret/config wiring: template-seeded `integration-orders-rw` client (both mappers, `orders:write`+`customers:write`+`catalog:read`, no `catalog:write`, D-09/D-10) + `customers:read/write` scopes + `core-api` default-grant (D-03) + `INTEGRATION_ORDERS_RW_SECRET` across 6 sites (D-11) + `ACCESS_MACHINE_CLIENT_IDS=integration-orders-rw` (VSA-02 mitigation)
+
+**Wave 2** *(blocked on 25-01)*
+
+- [x] 25-03-PLAN.md (Wave 2) — MCP write tools + proofs: `corePost` sibling + `create_order`/`create_customer` (required `idempotencyKey`→header, D-05/D-07) registered in `buildServer` + vitest (header/body split, PII-never-logged, `toToolError`) + cross-tenant `create_order` RLS proof under the NOSUPERUSER `rls_test_role` (foreign `shopId`→404)
+
+**Wave 3** *(blocked on 25-01/25-02/25-03)*
+
+- [x] 25-04-PLAN.md (Wave 3) — Phase-gate closer: `docs/metrics.json` reconcile via `docs-freshness.sh --write` (total 1648→1675, EXIT 0) + write-surface docs (`security-scopes.md`/`README.md`/`idempotency.md`) + OpenAPI snapshot regenerated GREEN + **human-approved live E2E** (rebuild ALL + `kc.sh import --override true` → create 200 / idempotent-replay-no-dup / cross-tenant 404-RLS / no-scope 403 + no-rogue-`shop_staff`-row, D-12). Rule 1/3 fix: RW-client description trimmed <=255 (kc.sh import 22P01). AI-02 → COMPLETE
 
 **UI hint**: no
 
@@ -282,5 +292,5 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
-| 25. Mutating MCP Tools | v2.3 | 0/2 | Not started | - |
+| 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |

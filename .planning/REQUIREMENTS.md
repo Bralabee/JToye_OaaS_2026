@@ -69,7 +69,7 @@ Forward-looking hardening before real vendor uploads. Copy-on-write asset model 
 
 - [~] **AI-01**: Outbound webhooks (#205). **ABSORBED into Phase 22 Notifications & Comms on 2026-07-14** (COMMS-04 subscriptions + COMMS-05 signed/retried delivery + COMMS-06 management/delivery-log UI). A delivery consumer of the outbox had to be built as one coherent channel alongside email, not as a standalone later phase. No longer a separate deliverable — see the COMMS category.
 
-- [ ] **AI-02**: Mutating MCP tools (#204 wiring). Extend the Phase 20 read-only MCP server with write tools (e.g. orders.create / customers.create) riding the uniform Idempotency-Key contract already wired via `IdempotencyService.execute` (#204, V50). Tests: MCP write-tool integration test with idempotent replay, RLS-scoped proof under the MCP credential. Source: HANDOFF Step 1 phase 5; #204 idempotency wiring exists.
+- [x] **AI-02**: Mutating MCP tools (#204 wiring). Extend the Phase 20 read-only MCP server with write tools (e.g. orders.create / customers.create) riding the uniform Idempotency-Key contract already wired via `IdempotencyService.execute` (#204, V50). Tests: MCP write-tool integration test with idempotent replay, RLS-scoped proof under the MCP credential. Source: HANDOFF Step 1 phase 5; #204 idempotency wiring exists. **COMPLETE (Phase 25, 2026-07-24):** `create_order`/`create_customer` snake_case write tools (thin SSRF-safe `corePost` forwarders, mandatory `Idempotency-Key`, D-05) over the `orders:write`/`customers:write` `@PreAuthorize` gates; template-seeded `integration-orders-rw` RW credential + `ACCESS_MACHINE_CLIENT_IDS` VSA-02 allowlist; cross-tenant write RLS proof under the NOSUPERUSER `rls_test_role`; docs/OpenAPI reconciled (total 1675); **human-approved live E2E** on the rebuilt stack — create 200 / idempotent-replay-no-dup / no-scope 403 / cross-tenant 404-RLS / no rogue `shop_staff` row.
 
 ### Infrastructure (INFRA) — HANDOFF k8s live-deploy breakage list
 
@@ -129,7 +129,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | IMG-03 | Phase 24 | 24-04, 24-05 | Complete |
 | IMG-04 | Phase 24 | 24-05, 24-06 | Complete |
 | AI-01 | Phase 22 | absorbed → COMMS-04/05/06 | Absorbed |
-| AI-02 | Phase 25 | 25-01, 25-02 | Pending |
+| AI-02 | Phase 25 | 25-01, 25-02, 25-03, 25-04 | Complete — core write-scope gates (25-01), integration-orders-rw realm client + secret/allowlist wiring (25-02), create_order/create_customer MCP write tools + cross-tenant RLS proof under NOSUPERUSER rls_test_role (25-03), docs/OpenAPI reconcile (total 1675) + human-approved live E2E (25-04: create 200 / replay-no-dup / no-scope 403 / cross-tenant 404-RLS / no rogue shop_staff row, D-12) |
 | INFRA-01 | Phase 26 | 26-01 | Pending |
 | INFRA-02 | Phase 26 | 26-02 | Pending |
 

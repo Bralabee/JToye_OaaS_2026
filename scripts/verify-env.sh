@@ -45,6 +45,7 @@ REQUIRED_VARS=(
   EDGE_API_CLIENT_SECRET
   KC_SEED_USER_PASSWORD
   INTEGRATION_CATALOG_RO_SECRET
+  INTEGRATION_ORDERS_RW_SECRET
 )
 
 # Weak values that must never be used. Tokens are stored canonical UPPER-case and
