@@ -62,6 +62,21 @@ readonly K8S_LOCAL_APP_SERVICES="core-java frontend edge-go mcp-server"
 # they must be UP for the overlay to work at all (D-04, other half).
 readonly K8S_LOCAL_BACKING_SERVICES="postgres redis rabbitmq keycloak minio mailhog"
 
+# Namespaces allowed to run workloads on the local profile WITHOUT being treated
+# as a second writer on the shared dev Postgres. Kubernetes' own control-plane
+# namespaces plus the ingress addon's, which carry no application code. The
+# EXPECTED LOCAL NAMESPACE IS DELIBERATELY ABSENT from this list: it is read at
+# call time from k8s_local_namespace(), so the local namespace keeps exactly one
+# source of truth (k8s/local/kustomization.yaml) and cannot drift into a second.
+readonly K8S_LOCAL_SYSTEM_NAMESPACES="kube-system kube-public kube-node-lease ingress-nginx default"
+
+# A pod in any of these phases has stopped for good and can hold no database
+# connection, so the cluster inventory excludes them SERVER-SIDE. Everything else
+# — Running, Pending, Unknown — counts as live: a pod still pulling its image in a
+# stale namespace is the same hazard a few seconds early, and a guard that only
+# looked at Running would wave it through.
+readonly K8S_LOCAL_TERMINAL_PHASE_SELECTOR="status.phase!=Succeeded,status.phase!=Failed"
+
 # The K8S_LOCAL_* contract every caller depends on. Asserted set + non-empty by
 # k8s_local_load_env, by NAME.
 K8S_LOCAL_REQUIRED_KEYS=(
@@ -255,6 +270,12 @@ k8s_local_compose_state() {
 #   container: this checkout can be driven by a second concurrent session, so
 #   shutting the developer's stack down could destroy work that is not ours.
 #   Bringing the app containers down is the HUMAN's decision.
+#
+#   THIS IS ONLY HALF OF D-04. It inspects compose and nothing else, so it cannot
+#   see a second writer that is already inside the cluster. The cluster side is
+#   k8s_local_assert_cluster_xor, at the bottom of this file, and it must run after
+#   the profile start and before any apply. Do not read a green here as "there is
+#   one writer".
 # ---------------------------------------------------------------------------
 k8s_local_assert_compose_xor() {
   if ! command -v docker >/dev/null 2>&1; then
@@ -339,4 +360,150 @@ k8s_local_kubectl() {
     return 2
   fi
   kubectl --context "$K8S_LOCAL_KUBE_CONTEXT" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# k8s_local_cluster_pod_inventory
+#   Echoes `<namespace> <phase> <pod> <image>[ <image>...]` per NON-TERMINATED
+#   pod, cluster-wide. As with k8s_local_compose_state, this is the ONE place the
+#   format is defined, which is what makes the guard above falsifiable by
+#   redefining this function over a fixture that prints the same shape.
+#
+#   stderr is deliberately NOT swallowed: when the API server is unreachable,
+#   kubectl's own message is the most useful diagnostic there is, and the caller
+#   adds the interpretation rather than replacing the evidence.
+# ---------------------------------------------------------------------------
+k8s_local_cluster_pod_inventory() {
+  k8s_local_kubectl get pods --all-namespaces \
+    --field-selector "$K8S_LOCAL_TERMINAL_PHASE_SELECTOR" \
+    -o go-template='{{range .items}}{{.metadata.namespace}} {{.status.phase}} {{.metadata.name}}{{range .spec.containers}} {{.image}}{{end}}{{"\n"}}{{end}}'
+}
+
+# ---------------------------------------------------------------------------
+# k8s_local_assert_cluster_xor
+#   The CLUSTER-SIDE half of D-04, and the reason it exists is measured, not
+#   theoretical. k8s_local_assert_compose_xor inspects COMPOSE ONLY. It never
+#   looks at the cluster it is about to start, so it is asymmetric: it refuses to
+#   start a cluster while compose is up, but it will happily start one that
+#   ALREADY CONTAINS ITS OWN WRITERS.
+#
+#   Measured live on 2026-07-25 (plan 26-07): a Stopped minikube profile preserves
+#   etcd, and starting this profile restored an 11-day-old `jtoye-staging`
+#   namespace with 11 running pods on stale `:2.1.0` images — code predating
+#   Phases 23, 24 and 25 — holding 16 live connections to the shared dev Postgres
+#   as `jtoye_app`. So `minikube start` ALONE re-created the exact
+#   two-writers-on-one-database hazard the human is asked to stop their compose
+#   app containers to avoid, while every guard reported green. Deleting the
+#   namespace dropped those connections 16 -> 0.
+#
+#   WHY PODS AND NOT DEPLOYMENT REPLICAS. The original suggested closure named
+#   non-zero-replica Deployments. Pods are strictly better: the same stale
+#   namespace also carried a `pg-backup` CronJob that fired on start, and a Job-,
+#   CronJob-, StatefulSet-, DaemonSet- or bare-Pod-shaped writer holds a database
+#   connection exactly as well as a Deployment's does. Counting pods catches every
+#   shape, including ones nobody has thought of yet.
+#
+#   READ-ONLY BY CONSTRUCTION, for the same reason as the compose arms: deleting a
+#   namespace is a HUMAN decision. This function never deletes, scales or patches
+#   anything — it names what it found and refuses.
+#
+#   POINT-IN-TIME, and honest about it: this is a snapshot taken between the
+#   profile start and the apply. It cannot stop a workload created after it runs.
+#   Its job is the stale-etcd class, which is present the instant the profile
+#   comes up.
+# ---------------------------------------------------------------------------
+k8s_local_assert_cluster_xor() {
+  if ! command -v kubectl >/dev/null 2>&1; then
+    k8s_local_tooling_fail "kubectl not found on PATH"
+    return 2
+  fi
+
+  # The expected namespace comes from the kustomization, never from a literal.
+  local ns_expected
+  if ! ns_expected="$(k8s_local_namespace)"; then
+    k8s_local_tooling_fail "could not resolve the expected local namespace from ${K8S_LOCAL_KUSTOMIZATION} — refusing to inventory a cluster without knowing which namespace is ours"
+    return 2
+  fi
+
+  local inventory
+  if ! inventory="$(k8s_local_cluster_pod_inventory)"; then
+    k8s_local_tooling_fail "could not read the cluster pod inventory through context '${K8S_LOCAL_KUBE_CONTEXT:-<unset>}' (kubectl's own error is above) — the API server may be unreachable or the minikube profile not started. The assertion is VOID, not passing."
+    return 2
+  fi
+
+  # FAIL CLOSED ON EMPTINESS. Wave 5 had to fix exactly this class in the compose
+  # guard, where empty `docker compose ps` output read as "clean". A reachable
+  # cluster ALWAYS has running kube-system pods, so an empty inventory means the
+  # query did not measure what it claims to measure.
+  if [ -z "$inventory" ]; then
+    k8s_local_tooling_fail "the cluster reported NO non-terminated pods at all — not even kube-system, which is impossible on a reachable cluster. The assertion would pass by finding nothing, which is VOID, not clean."
+    return 2
+  fi
+
+  # FAIL CLOSED ON AN UNPARSEABLE RESPONSE. Every line must carry at least
+  # namespace, phase, pod name and one image. A response we cannot parse must not
+  # be read as an absence of offenders.
+  local malformed total
+  malformed="$(awk 'NF < 4 {c++} END {print c + 0}' <<<"$inventory")"
+  total="$(awk 'END {print NR + 0}' <<<"$inventory")"
+  if [ "$malformed" != "0" ]; then
+    k8s_local_tooling_fail "${malformed} of ${total} cluster-inventory line(s) do not match the expected '<namespace> <phase> <pod> <image>...' shape — the response is unparseable, so the assertion is VOID, not clean."
+    return 2
+  fi
+
+  # One line per OFFENDING namespace: `<ns> <pod-count> <phases> <images>`, both
+  # lists comma-separated and de-duplicated so the refusal can name them.
+  local offenders
+  if ! offenders="$(awk -v expected="$ns_expected" -v allowed="$K8S_LOCAL_SYSTEM_NAMESPACES" '
+      function add(list, item) {
+        if (index("," list ",", "," item ",") > 0) return list
+        return (list == "" ? item : list "," item)
+      }
+      BEGIN {
+        n = split(allowed, a, " ")
+        for (i = 1; i <= n; i++) if (a[i] != "") skip[a[i]] = 1
+        skip[expected] = 1
+      }
+      skip[$1] { next }
+      {
+        if (!($1 in count)) order[++seen] = $1
+        count[$1]++
+        phases[$1] = add(phases[$1], $2)
+        for (i = 4; i <= NF; i++) images[$1] = add(images[$1], $i)
+      }
+      END {
+        for (i = 1; i <= seen; i++) {
+          ns = order[i]
+          printf "%s %d %s %s\n", ns, count[ns], phases[ns], images[ns]
+        }
+      }
+    ' <<<"$inventory")"; then
+    k8s_local_tooling_fail "could not aggregate the cluster pod inventory (${total} line(s)) — the assertion is VOID, not clean."
+    return 2
+  fi
+
+  if [ -n "$offenders" ]; then
+    local ns pod_count phase_list image_list detail=""
+    while read -r ns pod_count phase_list image_list; do
+      [ -n "$ns" ] || continue
+      detail="${detail}
+    - namespace '${ns}': ${pod_count} live pod(s) [${phase_list}] running image(s) ${image_list}"
+    done <<<"$offenders"
+
+    k8s_local_refuse "cluster-writers-present" \
+      "the cluster ALREADY contains workloads outside the expected local namespace '${ns_expected}':${detail}
+
+  These pods can write the same shared dev Postgres as the overlay about to be applied, so proceeding re-creates the TWO-WRITERS-ON-ONE-DATABASE hazard that stopping the compose app containers exists to prevent — and stale images mean stale code against a current schema (a false green). Measured on 2026-07-25: a restored 11-day-old namespace held 16 live 'jtoye_app' connections while every other guard reported green.
+
+  A Stopped minikube profile PRESERVES etcd, so a namespace from an earlier rehearsal comes back the moment the profile starts. Inspect, then delete it yourself — this tooling never deletes a namespace, for the same reason it never stops a compose container:
+
+    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} -n <namespace> get all
+    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} delete namespace <namespace>
+
+  Namespaces exempt by design: '${ns_expected}' (ours) and ${K8S_LOCAL_SYSTEM_NAMESPACES// /, }."
+    return 1
+  fi
+
+  k8s_local_ok "cluster XOR satisfied — ${total} live pod(s) inventoried, all inside '${ns_expected}' or the system set (${K8S_LOCAL_SYSTEM_NAMESPACES// /, })"
+  return 0
 }

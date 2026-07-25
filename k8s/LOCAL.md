@@ -66,6 +66,23 @@ and names the offending services:
 The guard is **read-only by construction** — it never stops, starts or removes a container. Stopping
 the app containers is a human decision, because a second concurrent session may own that stack.
 
+**The rule has a second, cluster-side half — a stopped compose stack is not the same as one writer.**
+The compose guard above inspects compose and nothing else, so it cannot see a writer that is already
+*inside* the cluster. Because a **Stopped** minikube profile preserves etcd, `minikube start` alone can
+restore a whole namespace of pods that are writing the shared dev Postgres (measured — see §7, A1).
+Step **3b** therefore inventories the cluster immediately after the profile starts and before anything
+is applied, and refuses on any namespace outside the expected one holding live pods:
+
+- `REFUSED [cluster-writers-present]: the cluster ALREADY contains workloads outside the expected local namespace 'jtoye-local': …`
+
+It names each offending namespace, its live pod count, the pod phases and the **image tags** — because a
+stale namespace is usually stale *code* too. Exempt: `jtoye-local` (read from
+`k8s/local/kustomization.yaml`, so there is one source of truth) plus `kube-system`, `kube-public`,
+`kube-node-lease`, `ingress-nginx` and `default`. Like the compose arms it is **read-only**: deleting a
+namespace is your decision, and it prints the two commands to inspect and then delete. It **fails
+closed** — a missing `kubectl`, an unreachable API server, an unparseable response or an empty
+inventory all exit **2** (VOID), never 0.
+
 ---
 
 ## 3. Prerequisites
@@ -127,15 +144,17 @@ scripts/k8s-local-up.sh --dry-run-only  # stop after the server-side dry-run; no
 scripts/k8s-local-up.sh --skip-build    # reuse existing local tags (refuses if any is absent)
 ```
 
-It runs twelve steps in this order. The order is load-bearing, and each step is runnable by hand if
-one fails:
+It runs the steps below in this order (the script itself is the authoritative list — it also carries a
+`4b` admission-webhook gate not tabulated here, see §7). The order is load-bearing, and each step is
+runnable by hand if one fails:
 
 | # | Step | What it does / how to run it alone |
 |---|---|---|
 | 0 | flags | Parsed first, so a typo can never fall through into a mutating step (`--nope` → exit 2, zero tool calls). |
 | 1 | preflight | Loads `.env`, asserts the `K8S_LOCAL_*` contract by name, checks `docker/kubectl/minikube/jq`, then runs `scripts/verify-env.sh`. |
-| 2 | compose XOR | §2. **Precedes the profile start** — a mis-invocation cannot start a cluster against a live compose stack. |
-| 3 | profile + context | `minikube start -p <profile> --cpus … --memory …` if not already Running, then asserts the kubectl context (it does not exist in kubeconfig until the profile starts). |
+| 2 | compose XOR | §2. **Precedes the profile start** — a mis-invocation cannot start a cluster against a live compose stack. Only the compose half; see 3b. |
+| 3 | profile + context | `minikube start -p <profile> --cpus … --memory …` **only if the profile is not already up**, then asserts the kubectl context (it does not exist in kubeconfig until the profile starts). A healthy profile reports status `OK`, not `Running` — see §7. |
+| 3b | cluster XOR | §2, second half. Inventories the cluster the instant it exists and refuses on live pods in any unexpected namespace. **This position is the point**: the hazard opens at `minikube start`, which step 2 ran too early to see. |
 | 4 | ingress addon | `minikube addons enable ingress -p <profile>` (idempotent). metrics-server is deliberately **not** enabled — see §6. |
 | 5 | reachability | `minikube ssh -p <profile> -- nc -vz -w 3 host.minikube.internal <port>` for all seven ports. |
 | 6 | hosts file | Checks each rendered ingress hostname resolves to the node IP; prints the fix. |
@@ -291,23 +310,69 @@ kubectl --context <ctx> get ns,secrets -A
 The fresh `jtoye-local` namespace is the recommended clean slate precisely because it cannot inherit
 anything.
 
-> **A1 is a GUARD GAP, not just housekeeping — measured live on 2026-07-25 (plan 26-07).** The stale
+> **A1 was a GUARD GAP, not just housekeeping — measured live on 2026-07-25 (plan 26-07).** The stale
 > namespace on this profile was not dormant. `jtoye-staging`, 11 days old, came back with **11 running
 > pods** on the stale `:2.1.0` images and a `pg-backup` CronJob that fired on start, and those pods
 > held **16 live connections to the shared dev Postgres as `jtoye_app`**.
 >
 > So `minikube start` alone silently re-created the two-writers-on-one-dev-Postgres hazard that §2
-> exists to prevent — and the compose XOR guard cannot see it, because
+> exists to prevent — and the compose XOR guard could not see it, because
 > `k8s_local_assert_compose_xor` inspects **compose only** and never the cluster it is about to start.
-> The guard is asymmetric: it will refuse to start a cluster while compose is up, but it will happily
-> start a cluster that already contains its own writers.
+> The guard was asymmetric: it refused to start a cluster while compose was up, but it would happily
+> start a cluster that already contained its own writers. Deleting the namespace dropped those
+> connections **16 → 0**.
 >
-> Suggested closure (**not implemented** — recorded as a deferred item): after step 3's profile start
-> and before any apply, assert that no namespace outside the expected local one runs workloads that
-> talk to the dev database — e.g. refuse if any namespace other than `jtoye-local`, `kube-*`,
-> `default` or `ingress-nginx` has a non-zero-replica Deployment, naming the offenders the way the
-> compose arms already name theirs. Until that exists, **run the A1 inventory by hand on every first
-> start** and treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
+> **CLOSED — the gap is now covered by a guard, so this is no longer a manual duty.**
+> `k8s_local_assert_cluster_xor` in `scripts/lib/k8s-local-guards.sh` runs as **step 3b** of
+> `scripts/k8s-local-up.sh`: immediately after the profile start (the moment the hazard can open) and
+> before the addon, the bootstrap and any apply. Behaviour, so you can predict it:
+>
+> | Situation | Result |
+> |---|---|
+> | Only `jtoye-local` + system namespaces hold live pods | **exit 0**, prints the live pod count it inventoried |
+> | Any other namespace holds a live pod | **exit 1**, `REFUSED [cluster-writers-present]`, naming each namespace, its live pod count, the pod phases and the **image tags** |
+> | `kubectl` missing, API server unreachable, response unparseable, or inventory **empty** | **exit 2** — the assertion is VOID, never treated as clean |
+>
+> Details that matter when you read its output:
+>
+> - It counts **pods**, not Deployment replicas — the 26-07 offender included a CronJob-spawned
+>   `pg-backup` pod, and a Job, StatefulSet, DaemonSet or bare Pod holds a database connection just as
+>   well as a Deployment's pod does.
+> - "Live" means **not** `Succeeded`/`Failed`, so a `Pending` pod still pulling its image is caught too
+>   — it is the same hazard a few seconds early. Completed pods (the `pg-backup-rehearsal` Job, the
+>   ingress-admission Jobs) are correctly ignored.
+> - Exempt namespaces are `jtoye-local` — read from `k8s/local/kustomization.yaml`, never duplicated
+>   into a script literal — plus `kube-system`, `kube-public`, `kube-node-lease`, `ingress-nginx` and
+>   `default`. So a **legitimate re-run passes**: your own running pods are not offenders (D-14).
+> - It **never deletes anything.** It prints the `get all` and `delete namespace` commands and stops;
+>   deleting a namespace is your decision for exactly the reason stopping a compose container is.
+>
+> The manual `kubectl get ns,secrets -A` inventory above is still worth doing on a first start — a
+> leftover **Secret** can mask a genuinely missing one, and the guard deliberately says nothing about
+> Secrets. What it removes is the need to remember: a surviving `jtoye-*` namespace with live pods now
+> **stops the run** instead of relying on you to notice it.
+
+**A2 — `minikube profile list` says `OK`, not `Running`, and matching the wrong word restarted the whole
+cluster on every re-run (found and fixed 2026-07-25, while proving the 3b guard above).** Step 3 decides
+whether to call `minikube start` from `minikube profile list -o json`'s `.Status`. On minikube v1.36.0 a
+fully-healthy profile reports **`OK`** there; `Running` is what `minikube status` says about
+host/kubelet/apiserver, which is a different command. The check compared against `Running`, so its
+"already Running (idempotent no-op)" branch was **dead** and every invocation called `minikube start` on
+an already-running profile.
+
+That is not inert on the docker driver. It reports `Updating the running docker "jtoye" container` and
+bounces **every pod in the cluster**: measured, all three `jtoye-local` pods dropped to
+`CreateContainerConfigError` on `failed to sync secret cache: timed out waiting for the condition` (a
+warm-up condition, not a missing Secret — all 8 were present), took about two minutes to come back, and
+restart counts went 3/2/2 → 4/3/3 with the ingress-nginx controller rolling 9 → 10. It self-heals, so it
+looked like nothing — but it silently destroys the state of a rehearsal in progress, and it is a large
+part of why step 4b's admission-webhook gate is load-bearing at all (the controller roll it absorbs was
+being triggered by this, not only by `addons enable`).
+
+The status match now accepts both spellings. It cannot mask a dead cluster: step 3b is the first step
+that reads the live API server and it fails **closed**, so a profile that claims `OK` while actually
+being down is caught there loudly rather than assumed healthy. **If you see the app pods bounce at the
+start of a re-run, this is the first thing to check.**
 
 **Expect 1–3 pod restarts on a first bring-up, and know which ones are benign (measured 2026-07-25,
 plan 26-07).** After a successful rehearsal the pods sat at `1/1 Running` with restart counts 3

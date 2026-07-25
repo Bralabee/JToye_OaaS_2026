@@ -21,6 +21,10 @@
 #   3. profile      — start the local minikube profile if it is not Running,
 #                     then assert the kubectl context (it only exists AFTER the
 #                     profile has started)
+#  3b. cluster XOR  — the OTHER half of D-04, and it can only run here: a Stopped
+#                     profile preserves etcd, so `minikube start` can restore a
+#                     stale namespace whose pods are already writing the shared dev
+#                     Postgres. Step 2 cannot see that; it inspects compose only.
 #   4. addon        — the ingress addon, idempotently
 #   5. reachability — probe every backing-service port from INSIDE the cluster
 #   6. hosts file   — check the ingress hostnames resolve to the node IP; PRINT
@@ -113,18 +117,39 @@ OVERLAY="$REPO_ROOT/k8s/local"
 
 # ---------------------------------------------------------------------------
 # STEP 2 — compose XOR k8s. MUST precede the profile start below.
+#
+# This is only HALF of D-04 — the compose half. The cluster half cannot run yet
+# (there is no cluster to inspect until step 3 starts one); it is step 3b.
 # ---------------------------------------------------------------------------
 step "STEP 2: compose XOR k8s guard"
 k8s_local_assert_compose_xor
 
 # ---------------------------------------------------------------------------
 # STEP 3 — profile, then the context assertion
+#
+# WHY THE STATUS MATCH ACCEPTS TWO SPELLINGS. `minikube profile list` reports a
+# fully-healthy profile as **`OK`** on v1.36.0 — it does NOT say `Running` (that
+# word belongs to `minikube status`, which reports host/kubelet/apiserver
+# separately). Matching only `Running` therefore NEVER matched, so this "idempotent
+# no-op" branch was dead and every single re-run called `minikube start` on an
+# already-running profile. That is not inert on the docker driver: it *Updates the
+# running docker container*, which bounces EVERY pod in the cluster (measured
+# 2026-07-25: all three jtoye-local pods to CreateContainerConfigError on
+# `failed to sync secret cache`, ~2 minutes of unavailability, restart counts
+# 3/2/2 -> 4/3/3, and the ingress-nginx controller rolled 9 -> 10). It self-heals,
+# but it silently destroys a running rehearsal's state — and it is a large part of
+# why step 4b's admission-webhook gate is load-bearing at all.
+#
+# The fast-path skip cannot produce a false green: step 3b immediately below is the
+# first step that READS the live API server, and it fails CLOSED (exit 2) if the
+# API server does not answer. So a profile that reports OK while actually being
+# dead is caught there, loudly, rather than being assumed healthy.
 # ---------------------------------------------------------------------------
 step "STEP 3: minikube profile ${PROFILE}"
 PROFILE_STATUS="$(minikube profile list -o json 2>/dev/null \
   | jq -r --arg p "$PROFILE" '.valid[]? | select(.Name == $p) | .Status // empty')"
-if [ "$PROFILE_STATUS" = "Running" ]; then
-  echo "OK: profile ${PROFILE} already Running (idempotent no-op)"
+if [ "$PROFILE_STATUS" = "OK" ] || [ "$PROFILE_STATUS" = "Running" ]; then
+  echo "OK: profile ${PROFILE} already up (status='${PROFILE_STATUS}') — idempotent no-op, NOT restarting it"
 else
   echo "profile ${PROFILE} status='${PROFILE_STATUS:-absent}' — starting with ${K8S_LOCAL_MINIKUBE_CPUS} CPUs / ${K8S_LOCAL_MINIKUBE_MEMORY}"
   minikube start -p "$PROFILE" \
@@ -137,6 +162,34 @@ fi
 # in kubeconfig while the profile is Stopped.
 k8s_local_assert_context
 NODE_IP="$(k8s_local_profile_ip)" || die "could not resolve the node IP of profile ${PROFILE}"
+
+# ---------------------------------------------------------------------------
+# STEP 3b — cluster XOR: is there ALREADY a writer inside the cluster?
+#
+# THIS POSITION IS THE WHOLE POINT. Step 2's compose guard runs before the
+# profile start and inspects compose only, so it cannot see anything inside the
+# cluster — and before the start there is nothing inside the cluster to see.
+# The hazard opens in the window that has just closed above: `minikube start`.
+#
+# A **Stopped** profile PRESERVES etcd. Measured live in plan 26-07: starting this
+# profile restored an 11-day-old `jtoye-staging` namespace with 11 running pods on
+# stale `:2.1.0` images (code predating Phases 23, 24 and 25) plus a `pg-backup`
+# CronJob that fired on start — holding **16 live connections to the shared dev
+# Postgres as `jtoye_app`**. So `minikube start` ALONE re-created the exact
+# two-writers-on-one-database hazard the human is asked to stop their compose app
+# containers to avoid, and every guard in this script reported green while it did.
+# Deleting the namespace dropped those connections 16 -> 0.
+#
+# It runs AFTER k8s_local_assert_context deliberately: that assertion is what
+# proves the context is the local profile and not the employer cluster, and this
+# is the first step that READS a cluster. It never deletes anything — a namespace
+# is a human decision, exactly like stopping a compose container.
+#
+# Re-runnability (D-14) is unaffected: the expected local namespace is exempt, so
+# a healthy second invocation with pods already up passes.
+# ---------------------------------------------------------------------------
+step "STEP 3b: cluster XOR guard (no pre-existing writers inside the cluster)"
+k8s_local_assert_cluster_xor
 
 # ---------------------------------------------------------------------------
 # STEP 4 — ingress addon (idempotent)
