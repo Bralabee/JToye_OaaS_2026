@@ -157,7 +157,43 @@ spec:
             configMapKeyRef:
               name: app-config
               key: rabbitmq.host
-        - name: RABBITMQ_USERNAME
+        # DEF-4 (Phase 26 / INFRA-02d): the env NAME is renamed, the secret KEY is not.
+        # application.yml reads `username: ${RABBITMQ_USER:jtoye}` for
+        # spring.rabbitmq.username. Before Phase 26 this manifest injected the
+        # secret under an env name suffixed `..._USERNAME` — mirroring the secret
+        # KEY instead of the Spring placeholder — which NO application*.yml has
+        # ever read. The injected value therefore reached nothing and the primary
+        # AMQP pool silently fell back to the literal Spring default `jtoye`
+        # while using the secret's real password.
+        # RABBITMQ_PASSWORD *is* correctly named and *is* read, which is exactly
+        # why the defect survived: the pool connected, so nothing looked broken.
+        # Compose already sets RABBITMQ_USER (docker-compose.full-stack.yml), so
+        # compose behaviour is unchanged by this rename.
+        #
+        # ### PRE-ROLLOUT OPERATOR CHECK — REQUIRED, blocking, out-of-band ###
+        # This rename is the FIRST time the deployed rabbitmq-credentials/username
+        # VALUE takes effect in staging and production. Before the next staging or
+        # production rollout, confirm in BOTH namespaces:
+        #
+        #   kubectl -n jtoye-staging    get secret rabbitmq-credentials \
+        #     -o jsonpath='{.data.username}' | base64 -d
+        #   kubectl -n jtoye-production get secret rabbitmq-credentials \
+        #     -o jsonpath='{.data.username}' | base64 -d
+        #
+        # Expected value: `jtoye` (what the pool has actually been authenticating
+        # as all along, via the Spring default).
+        #
+        # If it DIFFERS: change the SECRET so it holds the broker user its stored
+        # password authenticates. Do NOT revert this rename — reverting restores
+        # the silent-default defect and re-hides the mismatch.
+        #
+        # Why NO automated gate covers this: secret VALUES never appear in a
+        # kustomize render (only secretKeyRef NAMES do), and
+        # k8s/scripts/check-no-plaintext-secrets.sh exists precisely to guarantee
+        # they never will. The golden-render diff cannot see it either. The check
+        # is therefore carried here as an operator step, deliberately, and is
+        # unverifiable from this repository.
+        - name: RABBITMQ_USER
           valueFrom:
             secretKeyRef:
               name: rabbitmq-credentials
