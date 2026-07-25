@@ -309,6 +309,31 @@ anything.
 > compose arms already name theirs. Until that exists, **run the A1 inventory by hand on every first
 > start** and treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
 
+**Expect 1–3 pod restarts on a first bring-up, and know which ones are benign (measured 2026-07-25,
+plan 26-07).** After a successful rehearsal the pods sat at `1/1 Running` with restart counts 3
+(core-java), 2 (edge-go), 2 (frontend), stable over a 60s observation. Two distinct causes, and only
+one of them is interesting:
+
+- **`java.net.UnknownHostException: host.minikube.internal` — fatal to core-java, self-healing.** The
+  previous container exited **1** with that exception thrown from Flyway's
+  `JdbcUtils.openConnection` via HikariCP. Pod DNS for the host gateway name is not always resolvable
+  the instant a pod starts — CoreDNS and the host-gateway entry can still be settling, especially
+  while the ingress addon is rolling or the node is busy loading images. Because it happens during
+  Flyway migration, the Spring context fails and the JVM exits; the restart policy then brings it back
+  and the second attempt connects. **Do not "fix" this by replacing the name with an IP** — §5 explains
+  why the name is deliberate (the gateway IP varies by driver). Treat a *stable* restart count with a
+  clean current boot log as success; treat a *climbing* count as a real fault.
+- **Startup-probe `connection refused` on 9091, and HPA `FailedGetResourceMetric` — both benign.** The
+  first is the startup probe polling the management port before Spring has bound it; that is what
+  `startupProbe` `failureThreshold: 30` over `periodSeconds: 10` exists to absorb. The second is
+  metrics-server being deliberately absent (§6), so every HPA logs
+  `unable to fetch metrics from resource metrics API` on a loop. Neither indicates a problem, and
+  neither should be "fixed" locally.
+
+The check that actually matters after a restart is the current container's boot log, not the counter:
+`is NOT a superuser` = 1, `DATABASE SECURITY VALIDATION PASSED` = 1, `... FAILED` = 0,
+`Access refused for user` = 0.
+
 **PIT-4 — the stale-image rule (anti-anecdote).** The `ghcr.io/bralabee/jtoye-*:2.1.0` images sitting
 on this host were built on 2026-07-13/14 and therefore **predate Phases 23, 24 and 25**. Loading them
 would produce READY pods rehearsing three-phase-old code against a current database. Step 7 rebuilds
@@ -711,6 +736,13 @@ poddisruptionbudget.policy/frontend-pdb    1               N/A               0  
 
 NAME                      SCHEDULE    TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
 cronjob.batch/pg-backup   0 2 * * *   <none>     False     0        <none>          5m6s
+
+          RESTARTS is 1 in the listing above and reached 3/2/2 by the end of the session,
+          stable over a 60s observation with a clean current boot log. Cause recorded in
+          §7: the previous core-java container exited 1 on
+          `UnknownHostException: host.minikube.internal` thrown from Flyway at startup —
+          pod DNS for the host-gateway name had not settled. It self-heals via the restart
+          policy. Not papered over, and NOT worked around by replacing the name with an IP.
 
           HPA `TARGETS` reading `<unknown>` is EXPECTED, not a fault: metrics-server is
           deliberately not enabled (§6), so the HPAs sit inert. PDB
