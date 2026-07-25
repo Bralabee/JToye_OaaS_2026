@@ -72,6 +72,79 @@
 #          recipe and each YAML document is attributed to its Secret name, and
 #          only postgres-credentials is asserted on.
 #
+#   INV-6  DANGLING INGRESS BACKEND, RENDER level, EVERY target. Each Ingress
+#          backend `service.name` in a render must match a `kind: Service`
+#          present in that SAME render. k8s/base/ingress.yaml used to publish the
+#          Keycloak hostname and route it to a Service named `keycloak` that
+#          exists in NO render — the complete rendered Service set is core-java,
+#          edge-go and frontend, and neither overlay adds one — so staging and
+#          production each published a host for which nginx answers 503, and no
+#          gate saw it. Worse, that hostname also sat in the single `jtoye-tls`
+#          SAN list, so a cert-manager HTTP-01 challenge for a host this
+#          controller does not serve could fail the whole certificate order and
+#          stall issuance for api and app too. Fixed in plan 26-04 by REMOVING
+#          the rule and the SAN in k8s/base (Keycloak is an external managed IdP,
+#          so there is no Service to add), and pinned here so the class cannot
+#          return through a future overlay or a re-added rule.
+#          This one is deliberately NOT in the k8s/local-only section: the defect
+#          it pins was a PRODUCTION defect. Proven so — with the rule restored,
+#          base/staging/production all FAIL while k8s/local stays OK, because the
+#          local overlay's `rules:` replacement hides it. A local-only assertion
+#          would have missed the real defect entirely.
+#
+# THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
+#   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
+#   valid if the overlay is ever removed. They assert the shape of the committed
+#   local overlay that replaced the imperative in-cluster patches used during the
+#   2026-07-14 live-deploy rehearsal.
+#
+#   LOC-1  Endpoint shims. Each of redis.host, rabbitmq.host,
+#          stomp.broker.relay-host, s3.endpoint, s3.backup.endpoint, smtp.host,
+#          keycloak.issuer.uri and keycloak.admin.base-url must resolve to a
+#          host.minikube.internal value. Asserted PER KEY BY NAME, not by a total
+#          count: a count alone lets a LOST shim hide behind an ADDED one, which
+#          is not hypothetical — it was demonstrated (redis.host -> localhost plus
+#          one extra shimmed value keeps the total at 8 and a count-only
+#          assertion passes).
+#
+#   LOC-2  The D-09 scale triple. Exactly 3 Deployments at `replicas: 1`, 3 HPAs
+#          at `minReplicas: 1`, 3 PDBs at `minAvailable: 1` — an HPA floor of 3
+#          would scale a 1-replica Deployment straight back up, and a PDB
+#          minAvailable of 2 over one replica makes the pod undrainable. AND the
+#          local HPA maxReplicas multiset must equal the one k8s/base renders:
+#          maxReplicas is an input to check-connection-math.sh's Postgres
+#          connection budget, so lowering it locally would silently stop the
+#          local render proving the same arithmetic. Compared AGAINST BASE rather
+#          than against hardcoded numbers, so a legitimate future base change
+#          carries through instead of going stale.
+#
+#   LOC-3  The backup repoint (INFRA-01 / INFRA-02c). s3.backup.endpoint is
+#          exactly http://host.minikube.internal:9000. Base leaves it EMPTY,
+#          which means "real AWS S3" — locally that aims a database dump at real
+#          AWS with no credentials, and makes the #101 restore rehearsal
+#          impossible to run.
+#
+#   LOC-4  Ingress admissibility (PIT-1 / PIT-10). No configuration-snippet, no
+#          cert-manager issuer, no limit-rps/limit-connections/
+#          limit-burst-multiplier and no `tls:` block in any local Ingress.
+#          PIT-1 is the hard one: minikube v1.36.0 bundles ingress-nginx
+#          v1.12.2, where allow-snippet-annotations defaults to FALSE and
+#          annotations-risk-level to High, so its validating admission webhook
+#          REJECTS the base ingress outright. The base annotation is deliberately
+#          PRESERVED for staging/production — the fix belongs in the local
+#          overlay, never on the cluster addon.
+#
+#   LOC-5  Host scoping (D-12) + no dangling Keycloak backend. Local Ingress
+#          hosts are exactly api.jtoye.local and app.jtoye.local, no production
+#          hostname survives into the local render, and no Ingress routes to a
+#          Service named keycloak.
+#
+#   LOC-6  D-01 at the SOURCE level. No authored file under k8s/local/ may use
+#          kustomize secret generation or carry an unsubstituted placeholder
+#          literal. check-no-plaintext-secrets.sh already guards the BUILD
+#          OUTPUT; this guards the input, so the intent is visible where the
+#          mistake would be made.
+#
 # NON-VACUITY
 #   Every render-level invariant also asserts that it FOUND something to check
 #   (a DB_PORT EnvVar, a kube-dns selector block, a postgres-credentials recipe).
@@ -79,12 +152,21 @@
 #   missing subject exits 2 (the parser is blind — fix the parser) rather than 0.
 #
 # EXTENSION POINT
-#   Plan 26-04 EXTENDS this script with the local-overlay assertions
-#   (endpoint-shim count, the D-09 scale triple, the backup endpoint) rather than
-#   adding another gate. Add them as INV-6.. here.
+#   Plan 26-04 took this up: the local-overlay assertions live here as
+#   LOC-1..LOC-6 and the all-target dangling-backend assertion as INV-6, rather
+#   than as a sixth gate script. Keep extending here. An assertion that applies to
+#   EVERY render belongs in the per-target loop as INV-N; one that only makes
+#   sense for the local overlay belongs in the conditional LOCAL section as LOC-N.
+#
+#   RULE FOR ANY NEW ASSERTION (learned the hard way in this phase — six
+#   acceptance criteria across plans 26-01..26-04 were unfalsifiable as written):
+#   before trusting a new assertion, run it against a DELIBERATELY BROKEN input
+#   and confirm it FAILS. An assertion that is already-true on the correct tree,
+#   or still-true on the broken tree, proves nothing.
 #
 # Requires: kubectl (client-side `kubectl kustomize` only — no cluster access),
-#           bash, awk, grep, find, sed.
+#           bash (>= 4 for mapfile and associative arrays), awk, grep, find, sed,
+#           sort.
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
@@ -100,6 +182,8 @@ K8S_DIR="$REPO_ROOT/k8s"
 CORE_DEPLOYMENT="$K8S_DIR/base/core-java-deployment.yaml"
 QUICK_START="$K8S_DIR/QUICK_START.md"
 SECRETS_TEMPLATE="$K8S_DIR/base/secrets-template.yaml.example"
+LOCAL_DIR="$K8S_DIR/local"
+LOCAL_KUSTOMIZATION="$LOCAL_DIR/kustomization.yaml"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
@@ -110,15 +194,40 @@ parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
 # Matched on the EXACT repo-relative target path, never as a substring, so a
 # future `k8s/local-staging` overlay is NOT silently excluded by `k8s/local`.
 #
-# k8s/local does not exist yet — plan 26-04 creates it. It is pre-seeded because
-# the local overlay DELIBERATELY targets host services through
-# host.minikube.internal and a host MinIO, so localhost-family literals are the
-# correct content of that render and asserting against them there would be wrong.
-# Every other target ships to a real cluster where such a literal is a defect.
+# k8s/local exists as of plan 26-04, and the exclusion is load-bearing rather
+# than defensive: that overlay DELIBERATELY carries localhost-family literals.
+# Two of its values must be BROWSER-reachable rather than pod-reachable —
+# `s3.public-url` (http://localhost:9000/jtoye-images: the browser is what loads
+# image URLs) and `keycloak.public.issuer.uri` (http://localhost:8085/...: the
+# issuer Keycloak actually stamps into `iss`) — so INV-4 would be asserting
+# against the CORRECT content there. Every other target ships to a real cluster,
+# where such a literal is the DEF-6 defect.
+#
+# The local overlay is NOT unguarded as a result: LOC-1..LOC-6 below assert its
+# endpoints POSITIVELY, per key by name, which is a stronger statement than
+# INV-4's "no forbidden literal" ever was.
 # ---------------------------------------------------------------------------
 LOCAL_ONLY_TARGETS=(
   "k8s/local"
 )
+
+# ---------------------------------------------------------------------------
+# INV-6 allowlist: an Ingress backend Service name that is knowingly not in the
+# render. Format: '<service-name>|<reason>'.
+#
+# It is EMPTY, and that is the correct state. The one entry it could have had —
+# `keycloak` — was the DEFECT, not an exemption: Keycloak is an external managed
+# IdP, so the right fix was removing the rule that claimed its hostname, not
+# excusing a backend that resolves nowhere. An entry here means "this render
+# intentionally routes to a Service created outside kustomize", which should be
+# rare enough to always need an explanation.
+#
+# Hygiene (same rules as check-env-contract.sh's allowlists): a blank reason
+# FAILS, a duplicate FAILS, and a STALE entry — one whose Service now resolves in
+# every target — FAILS, so the allowlist cannot quietly become a standing excuse
+# for something that is already fixed.
+# ---------------------------------------------------------------------------
+ALLOW_UNRESOLVED_INGRESS_BACKEND=()
 
 # The live-verified Postgres SUPERUSER role name. `jtoye` is a superuser and
 # `jtoye_app` is NOSUPERUSER (both confirmed against the running dev Postgres in
@@ -232,6 +341,117 @@ function endblock() {
 END { endblock() }
 '
 
+# --- awk: per-DOCUMENT walk emitting the Service inventory and every Ingress
+#     backend reference of a render.
+#
+#     DOCUMENT-SCOPED BY CONSTRUCTION, and that is load-bearing: `kubectl
+#     kustomize` emits each document's top-level keys ALPHABETICALLY, so a
+#     ConfigMap's `data:` block precedes its own `kind:` line. A "track the last
+#     kind seen" scan therefore attributes those lines to the PREVIOUS document
+#     (a real mis-attribution hit in plan 26-02). This buffers each
+#     `---`-delimited document and resolves kind + metadata.name from the buffer.
+#
+#     Output records:
+#       SVC <TAB> <service name>
+#       ING <TAB> <ingress name> <TAB> <host|(default)> <TAB> <backend service name>
+INGRESS_BACKEND_AWK='
+function meta_name(  i, v) {
+    # The FIRST 2-space `name:` in a document is metadata.name: in a rendered
+    # document only the metadata block has a key at that indent, while backend
+    # service names sit far deeper.
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
+    return "(unnamed)"
+}
+function flush(  i, kind, nm, host, insvc, b, l) {
+    if (n == 0) return
+    kind = ""
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+
+    if (kind == "Service") {
+        printf "SVC\t%s\n", meta_name()
+    } else if (kind == "Ingress") {
+        nm = meta_name(); host = "(default)"; insvc = 0
+        for (i = 1; i <= n; i++) {
+            l = buf[i]
+            if (l ~ /^[[:space:]]*- host: /) {
+                host = l; sub(/^[[:space:]]*- host:[[:space:]]*/, "", host)
+            }
+            if (l ~ /^[[:space:]]*service:[[:space:]]*$/) { insvc = 1; continue }
+            if (insvc && l ~ /^[[:space:]]*name:[[:space:]]*/) {
+                b = l; sub(/^[[:space:]]*name:[[:space:]]*/, "", b)
+                printf "ING\t%s\t%s\t%s\n", nm, host, b
+                insvc = 0
+            }
+        }
+    }
+    n = 0; delete buf
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
+# --- awk: per-DOCUMENT walk emitting the scale-relevant top-level spec scalars.
+#     Output: <kind> <TAB> <name> <TAB> <field> <TAB> <value>
+SCALE_AWK='
+function meta_name(  i, v) {
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
+    return "(unnamed)"
+}
+function flush(  i, kind, nm, l, f, v) {
+    if (n == 0) return
+    kind = ""
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+    nm = meta_name()
+    for (i = 1; i <= n; i++) {
+        l = buf[i]
+        if (l ~ /^  (replicas|minReplicas|maxReplicas|minAvailable): /) {
+            f = l; sub(/^  /, "", f); sub(/:.*$/, "", f)
+            v = l; sub(/^  [a-zA-Z]+:[[:space:]]*/, "", v)
+            printf "%s\t%s\t%s\t%s\n", kind, nm, f, v
+        }
+    }
+    n = 0; delete buf
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
+# --- awk: emit `<key>\t<value>` for every entry in the rendered app-config
+#     ConfigMap `data:` map. Document-scoped for the same alphabetical-key reason.
+CONFIGMAP_DATA_AWK='
+function flush(  i, kind, nm, indata, l, k, v) {
+    if (n == 0) return
+    kind = ""; nm = ""
+    for (i = 1; i <= n; i++) {
+        if (buf[i] ~ /^kind: /)   { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+        if (buf[i] ~ /^  name: /) { if (nm == "") { nm = buf[i]; sub(/^  name:[[:space:]]*/, "", nm) } }
+    }
+    if (kind == "ConfigMap" && nm == "app-config") {
+        indata = 0
+        for (i = 1; i <= n; i++) {
+            l = buf[i]
+            if (l ~ /^data:[[:space:]]*$/) { indata = 1; continue }
+            if (indata && l ~ /^[^ ]/)     { indata = 0; continue }
+            if (indata && l ~ /^  [^ ].*:/) {
+                k = l; sub(/^  /, "", k); sub(/:.*$/, "", k)
+                v = l; sub(/^  [^:]*:[[:space:]]*/, "", v)
+                printf "%s\t%s\n", k, v
+            }
+        }
+    }
+    n = 0; delete buf
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
 is_local_only_target() {
     local rel="$1" excluded
     for excluded in "${LOCAL_ONLY_TARGETS[@]}"; do
@@ -239,6 +459,34 @@ is_local_only_target() {
     done
     return 1
 }
+
+# ---------------------------------------------------------------------------
+# INV-6 allowlist parse + hygiene (malformed / blank reason / duplicate). The
+# STALE rule is evaluated AFTER the per-target loop, once it is known which
+# entries were actually needed.
+# ---------------------------------------------------------------------------
+declare -A ALLOW_INGRESS_REASON=()
+declare -A ALLOW_INGRESS_USED=()
+# The size guard (rather than the `${arr[@]+"${arr[@]}"}` idiom) keeps this safe
+# under `set -u` on an EMPTY array while still quoting each element properly —
+# reasons contain spaces, so an unquoted expansion would word-split them into
+# bogus entries.
+if (( ${#ALLOW_UNRESOLVED_INGRESS_BACKEND[@]} > 0 )); then
+    for entry in "${ALLOW_UNRESOLVED_INGRESS_BACKEND[@]}"; do
+        svc="${entry%%|*}"
+        reason="${entry#*|}"
+        if [[ -z "$svc" || "$svc" == "$entry" ]]; then
+            fail "INV-6 allowlist: entry '$entry' is malformed — the required shape is '<service-name>|<reason>'."
+        fi
+        if [[ -z "${reason//[[:space:]]/}" ]]; then
+            fail "INV-6 allowlist: entry '$svc' has a blank reason. An unexplained exemption is indistinguishable from a forgotten defect — a backend that resolves nowhere answers 503 for a published host, which is exactly the shape INV-6 exists to catch."
+        fi
+        if [[ -n "${ALLOW_INGRESS_REASON[$svc]:-}" ]]; then
+            fail "INV-6 allowlist: duplicate entry '$svc'."
+        fi
+        ALLOW_INGRESS_REASON["$svc"]="$reason"
+    done
+fi
 
 for dir in "${TARGETS[@]}"; do
     rel="${dir#"$REPO_ROOT"/}"
@@ -331,13 +579,78 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
-    if [[ "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* || "$inv4_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg" >&2
+    # ---------------- INV-6 ----------------
+    # Every Ingress backend Service name must resolve to a Service in this SAME
+    # render. Runs for EVERY target (base, local, staging, production): the
+    # defect it pins was a production defect, not a local-overlay one.
+    awk "$INGRESS_BACKEND_AWK" "$render" > "$TMP/ingress.tsv"
+    awk -F'\t' '$1 == "SVC" { print $2 }' "$TMP/ingress.tsv" | sort -u > "$TMP/services.txt"
+    awk -F'\t' '$1 == "ING"' "$TMP/ingress.tsv" > "$TMP/backends.tsv"
+
+    svc_count=$(wc -l < "$TMP/services.txt")
+    backend_count=$(wc -l < "$TMP/backends.tsv")
+    (( svc_count > 0 )) || parse_fail "[$rel] INV-6 found 0 'kind: Service' documents in the render. Either the render lost every Service (a far bigger problem) or the parser is blind — in which case every backend would be reported unresolved, or, if the backend parse is equally blind, nothing would be checked at all. Fix the parser, do not delete the invariant."
+    (( backend_count > 0 )) || parse_fail "[$rel] INV-6 found 0 Ingress backend references in the render. This platform ships two Ingresses (jtoye-ingress + jtoye-sse-ingress) in every target, so zero backends means the Ingress shape changed and the assertion is now vacuous. Fix the parser, do not delete the invariant."
+
+    inv6_bad=0
+    inv6_allowed=0
+    while IFS=$'\t' read -r _tag ing host backend; do
+        if grep -qxF "$backend" "$TMP/services.txt"; then
+            continue
+        fi
+        if [[ -n "${ALLOW_INGRESS_REASON[$backend]:-}" ]]; then
+            ALLOW_INGRESS_USED["$backend"]=1
+            (( ++inv6_allowed ))
+            echo "  INFO [$rel] INV-6: backend Service '$backend' (host '$host', Ingress '$ing') is ALLOWLISTED: ${ALLOW_INGRESS_REASON[$backend]}"
+            continue
+        fi
+        echo "  FAIL [$rel] INV-6: Ingress '$ing' publishes host '$host' and routes it to Service '$backend', which does NOT exist in the $rel render." >&2
+        echo "        Services present in this render: $(tr '\n' ' ' < "$TMP/services.txt")" >&2
+        inv6_bad=1
+    done < "$TMP/backends.tsv"
+
+    if (( inv6_bad != 0 )); then
+        echo "        nginx answers 503 for a published host with no backend — a broken endpoint that" >&2
+        echo "        looks configured. It is also a TLS hazard: hosts share one certificate secret," >&2
+        echo "        and a cert-manager HTTP-01 challenge for a hostname this controller does not" >&2
+        echo "        actually serve can fail the WHOLE order, stalling issuance for the hosts that" >&2
+        echo "        DO work. This is exactly what the Keycloak host rule did in staging and" >&2
+        echo "        production until plan 26-04 removed it." >&2
+        echo "        NOTE: k8s/base deliberately ships NO Keycloak workload — Keycloak is an" >&2
+        echo "        EXTERNAL managed identity provider (see app-config keycloak.issuer.uri), and" >&2
+        echo "        public DNS for its hostname resolves to that IdP, not to this controller. So" >&2
+        echo "        the fix is to REMOVE the rule, NOT to add a Service. If a backend really is" >&2
+        echo "        created outside kustomize, add it to ALLOW_UNRESOLVED_INGRESS_BACKEND WITH a" >&2
+        echo "        reason." >&2
+        FAILED=1
+        inv6_msg="FAIL"
     else
-        echo "OK   [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg"
+        inv6_msg="OK ($backend_count backend ref(s) -> $svc_count Service(s))"
+        if (( inv6_allowed > 0 )); then
+            inv6_msg="OK ($backend_count backend ref(s) -> $svc_count Service(s), $inv6_allowed allowlisted)"
+        fi
+    fi
+
+    if [[ "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg" >&2
+    else
+        echo "OK   [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg"
     fi
 done
 echo
+
+# ---------------------------------------------------------------------------
+# INV-6 allowlist STALE rule: an entry nobody needed is a standing excuse for
+# something already fixed, so it fails rather than rotting silently.
+# ---------------------------------------------------------------------------
+if (( ${#ALLOW_INGRESS_REASON[@]} > 0 )); then
+    for svc in "${!ALLOW_INGRESS_REASON[@]}"; do
+        if [[ -z "${ALLOW_INGRESS_USED[$svc]:-}" ]]; then
+            echo "FAIL: INV-6 allowlist: STALE entry '$svc' — every target's render now resolves that backend (or no Ingress references it at all), so the exemption is unnecessary. Remove the entry rather than leaving a standing excuse for a defect that is already fixed." >&2
+            FAILED=1
+        fi
+    done
+fi
 
 # ===========================================================================
 # INV-5 — docs level, block-scoped per Secret name
@@ -432,8 +745,267 @@ fi
 echo
 
 # ===========================================================================
+# LOC-1..LOC-6 — the k8s/local overlay (Phase 26 / INFRA-01)
+#
+# CONDITIONAL BY DESIGN: if the overlay is ever removed this section is skipped
+# and the script stays valid, rather than failing on a missing directory.
+# ===========================================================================
+LOCAL_SECTION="LOC-1..LOC-6 SKIPPED (k8s/local/kustomization.yaml not present)"
+
+if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
+    echo "LOC-1..LOC-6 (INFRA-01, k8s/local): the committed local overlay's shape"
+
+    LOCAL_RENDER="$TMP/loc_local.yaml"
+    if ! kubectl kustomize "$LOCAL_DIR" > "$LOCAL_RENDER" 2> "$TMP/stderr"; then
+        echo "ERROR [k8s/local]: 'kubectl kustomize' build failed:" >&2
+        cat "$TMP/stderr" >&2
+        exit 2
+    fi
+    BASE_RENDER="$TMP/loc_base.yaml"
+    if ! kubectl kustomize "$K8S_DIR/base" > "$BASE_RENDER" 2> "$TMP/stderr"; then
+        echo "ERROR [k8s/base]: 'kubectl kustomize' build failed (needed as the LOC-2 maxReplicas reference):" >&2
+        cat "$TMP/stderr" >&2
+        exit 2
+    fi
+
+    LOCAL_HOST_SHIM="host.minikube.internal"
+
+    # Keys whose value MUST resolve through the minikube host gateway. Asserted
+    # per key BY NAME, so a lost shim cannot hide behind an added one.
+    SHIMMED_KEYS=(
+      'redis.host'
+      'rabbitmq.host'
+      'stomp.broker.relay-host'
+      's3.endpoint'
+      's3.backup.endpoint'
+      'smtp.host'
+      'keycloak.issuer.uri'
+      'keycloak.admin.base-url'
+    )
+
+    awk "$CONFIGMAP_DATA_AWK" "$LOCAL_RENDER" > "$TMP/loc_cfg.tsv"
+    cfg_keys=$(wc -l < "$TMP/loc_cfg.tsv")
+    (( cfg_keys > 0 )) || parse_fail "LOC-1 found no app-config data keys in the k8s/local render — the ConfigMap shape changed and every LOC-1/LOC-3 assertion would pass vacuously. Fix the parser, do not delete the invariant."
+
+    cfg_value() {
+        awk -F'\t' -v k="$1" '$1 == k { print $2; found=1 } END { if (!found) print "(ABSENT)" }' "$TMP/loc_cfg.tsv"
+    }
+
+    # ---------------- LOC-1 ----------------
+    loc1_bad=0
+    for key in "${SHIMMED_KEYS[@]}"; do
+        val="$(cfg_value "$key")"
+        if [[ "$val" != *"$LOCAL_HOST_SHIM"* ]]; then
+            echo "  FAIL [k8s/local] LOC-1: app-config key '$key' is '$val' — it must resolve through '$LOCAL_HOST_SHIM'." >&2
+            loc1_bad=1
+        fi
+    done
+    shim_total=$(grep -c "$LOCAL_HOST_SHIM" "$LOCAL_RENDER" || true)
+    if (( shim_total < ${#SHIMMED_KEYS[@]} )); then
+        echo "  FAIL [k8s/local] LOC-1: only $shim_total '$LOCAL_HOST_SHIM' occurrence(s) in the render; at least ${#SHIMMED_KEYS[@]} are required (one per shimmed key)." >&2
+        loc1_bad=1
+    fi
+    if (( loc1_bad != 0 )); then
+        echo "        A pod cannot reach the host's docker-compose backing services on localhost —" >&2
+        echo "        that is the POD's own loopback. minikube maintains the host-gateway mapping as" >&2
+        echo "        '$LOCAL_HOST_SHIM' (its underlying IP varies by driver, so an IP literal is" >&2
+        echo "        the DEF-1 defect class). An unshimmed endpoint fails at RUNTIME, per feature," >&2
+        echo "        not at build time: a wrong s3.endpoint breaks image upload only, a wrong" >&2
+        echo "        smtp.host breaks email only. DELIBERATE EXCEPTIONS, both browser-reachable and" >&2
+        echo "        both correctly NOT in the list above: s3.public-url (the browser loads image" >&2
+        echo "        URLs) and keycloak.public.issuer.uri (the issuer Keycloak STAMPS into 'iss')." >&2
+        FAILED=1
+        loc1_msg="FAIL"
+    else
+        loc1_msg="OK (${#SHIMMED_KEYS[@]} keys shimmed by name, $shim_total render occurrence(s))"
+    fi
+
+    # ---------------- LOC-2 ----------------
+    awk "$SCALE_AWK" "$LOCAL_RENDER" > "$TMP/loc_scale.tsv"
+    awk "$SCALE_AWK" "$BASE_RENDER"  > "$TMP/base_scale.tsv"
+
+    dep_replicas=$(awk -F'\t' '$1=="Deployment" && $3=="replicas"'                 "$TMP/loc_scale.tsv" | wc -l)
+    dep_ones=$(awk -F'\t'     '$1=="Deployment" && $3=="replicas" && $4=="1"'      "$TMP/loc_scale.tsv" | wc -l)
+    hpa_mins=$(awk -F'\t'     '$1=="HorizontalPodAutoscaler" && $3=="minReplicas"' "$TMP/loc_scale.tsv" | wc -l)
+    hpa_ones=$(awk -F'\t'     '$1=="HorizontalPodAutoscaler" && $3=="minReplicas" && $4=="1"' "$TMP/loc_scale.tsv" | wc -l)
+    pdb_mins=$(awk -F'\t'     '$1=="PodDisruptionBudget" && $3=="minAvailable"'    "$TMP/loc_scale.tsv" | wc -l)
+    pdb_ones=$(awk -F'\t'     '$1=="PodDisruptionBudget" && $3=="minAvailable" && $4=="1"' "$TMP/loc_scale.tsv" | wc -l)
+
+    (( dep_replicas > 0 && hpa_mins > 0 && pdb_mins > 0 )) || parse_fail "LOC-2 found Deployment replicas=$dep_replicas, HPA minReplicas=$hpa_mins, PDB minAvailable=$pdb_mins in the k8s/local render — a zero means the parser is blind and the count assertions would pass vacuously. Fix the parser, do not delete the invariant."
+
+    loc2_bad=0
+    for spec in "Deployment replicas 3 $dep_replicas $dep_ones" \
+                "HorizontalPodAutoscaler minReplicas 3 $hpa_mins $hpa_ones" \
+                "PodDisruptionBudget minAvailable 3 $pdb_mins $pdb_ones"; do
+        read -r kind field want total ones <<< "$spec"
+        if (( total != want || ones != want )); then
+            echo "  FAIL [k8s/local] LOC-2: expected $want $kind object(s) with '$field: 1'; found $total object(s), $ones of them at 1." >&2
+            awk -F'\t' -v k="$kind" -v f="$field" '$1==k && $3==f { print "        " $1 "/" $2 ": " $3 ": " $4 }' "$TMP/loc_scale.tsv" >&2
+            loc2_bad=1
+        fi
+    done
+
+    loc_max=$(awk -F'\t' '$1=="HorizontalPodAutoscaler" && $3=="maxReplicas" { print $4 }' "$TMP/loc_scale.tsv" | sort -n | tr '\n' ' ')
+    base_max=$(awk -F'\t' '$1=="HorizontalPodAutoscaler" && $3=="maxReplicas" { print $4 }' "$TMP/base_scale.tsv" | sort -n | tr '\n' ' ')
+    [[ -n "${base_max// /}" ]] || parse_fail "LOC-2 found no HPA maxReplicas values in the k8s/base render, so the local-vs-base comparison has no reference and would pass vacuously. Fix the parser, do not delete the invariant."
+    if [[ "$loc_max" != "$base_max" ]]; then
+        echo "  FAIL [k8s/local] LOC-2: the local HPA maxReplicas multiset [$loc_max] DIVERGES from the k8s/base multiset [$base_max]." >&2
+        echo "        maxReplicas is an INPUT to k8s/scripts/check-connection-math.sh: it asserts" >&2
+        echo "        maxReplicas x DB_POOL_SIZE (plus Keycloak, the exporter, healthchecks and" >&2
+        echo "        pg-backup) fits Postgres max_connections with >= 20% headroom. Changing it in" >&2
+        echo "        the local overlay makes the local render stop proving the same arithmetic the" >&2
+        echo "        gate checks, and it buys nothing: an HPA with no metrics-server never scales" >&2
+        echo "        up regardless of its ceiling. Scale local with 'replicas:' + minReplicas/" >&2
+        echo "        minAvailable (D-09), never by lowering the ceiling." >&2
+        loc2_bad=1
+    fi
+    if (( loc2_bad != 0 )); then
+        FAILED=1
+        loc2_msg="FAIL"
+    else
+        loc2_msg="OK (replicas/minReplicas/minAvailable = 1 x3 each; maxReplicas [$loc_max] == base)"
+    fi
+
+    # ---------------- LOC-3 ----------------
+    LOCAL_BACKUP_ENDPOINT="http://$LOCAL_HOST_SHIM:9000"
+    backup_val="$(cfg_value 's3.backup.endpoint')"
+    if [[ "$backup_val" != "$LOCAL_BACKUP_ENDPOINT" ]]; then
+        echo "  FAIL [k8s/local] LOC-3: app-config 's3.backup.endpoint' is '$backup_val', expected exactly '$LOCAL_BACKUP_ENDPOINT'." >&2
+        echo "        The base value is the EMPTY string, which the backup script reads as \"real AWS" >&2
+        echo "        S3\". Locally that aims a database dump at real AWS with no credentials, and it" >&2
+        echo "        makes the restore rehearsal (issue #101) impossible to run at all." >&2
+        FAILED=1
+        loc3_msg="FAIL"
+    else
+        loc3_msg="OK ($backup_val)"
+    fi
+
+    # ---------------- LOC-4 ----------------
+    awk 'BEGIN{RS="\n---"} /kind: Ingress/{print}' "$LOCAL_RENDER" > "$TMP/loc_ingress.yaml"
+    loc_ing_docs=$(grep -c '^kind: Ingress$' "$LOCAL_RENDER" || true)
+    (( loc_ing_docs > 0 )) || parse_fail "LOC-4/LOC-5 found 0 Ingress documents in the k8s/local render. The local overlay must render both jtoye-ingress and jtoye-sse-ingress; zero means the parser is blind and every 'must not contain' assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+
+    loc4_bad=0
+    for pat in 'configuration-snippet' 'cert-manager.io/cluster-issuer' \
+               'nginx.ingress.kubernetes.io/limit-rps' \
+               'nginx.ingress.kubernetes.io/limit-connections' \
+               'nginx.ingress.kubernetes.io/limit-burst-multiplier'; do
+        if grep -n "$pat" "$TMP/loc_ingress.yaml" > "$TMP/hits" 2> /dev/null; then
+            echo "  FAIL [k8s/local] LOC-4: '$pat' is present in a local Ingress:" >&2
+            sed 's/^/        /' "$TMP/hits" >&2
+            loc4_bad=1
+        fi
+    done
+    if grep -n '^  tls:' "$TMP/loc_ingress.yaml" > "$TMP/hits" 2> /dev/null; then
+        echo "  FAIL [k8s/local] LOC-4: a local Ingress still carries a 'tls:' block:" >&2
+        sed 's/^/        /' "$TMP/hits" >&2
+        loc4_bad=1
+    fi
+    if (( loc4_bad != 0 )); then
+        echo "        PIT-1: minikube v1.36.0 bundles ingress-nginx controller v1.12.2, where" >&2
+        echo "        allow-snippet-annotations defaults to FALSE and annotations-risk-level to" >&2
+        echo "        High. Its validating admission webhook REJECTS a snippet annotation" >&2
+        echo "        outright, so 'kubectl apply -k k8s/local' fails for BOTH Ingress objects and" >&2
+        echo "        nothing deploys cleanly around it. The three rate-limit annotations are" >&2
+        echo "        PIT-10: a Playwright run from one source IP can trip the per-IP connection" >&2
+        echo "        cap and produce 503s that look like application faults. tls: must be absent" >&2
+        echo "        because no cert-manager runs locally, so 'secretName: jtoye-tls' would never" >&2
+        echo "        exist and nginx would serve its self-signed fallback." >&2
+        echo "        FIX IT IN THE LOCAL OVERLAY, NOT ON THE CLUSTER. The base annotation is" >&2
+        echo "        DELIBERATELY PRESERVED for staging/production (it sets six security headers)." >&2
+        echo "        Setting allow-snippet-annotations: \"true\" / annotations-risk-level:" >&2
+        echo "        \"Critical\" on the addon would make the apply succeed by re-enabling a" >&2
+        echo "        documented Critical-risk annotation class that ingress-nginx disables by" >&2
+        echo "        default — weakening the cluster to satisfy a local convenience." >&2
+        FAILED=1
+        loc4_msg="FAIL"
+    else
+        loc4_msg="OK ($loc_ing_docs Ingress doc(s): no snippet, no cert-manager, no rate limits, no tls)"
+    fi
+
+    # ---------------- LOC-5 ----------------
+    LOCAL_EXPECTED_HOSTS="api.jtoye.local app.jtoye.local"
+    loc_hosts=$(grep -E '^[[:space:]]*- host: ' "$TMP/loc_ingress.yaml" | sed 's/^[[:space:]]*- host:[[:space:]]*//' | sort -u | tr '\n' ' ')
+    loc_hosts="${loc_hosts% }"
+    loc5_bad=0
+    if [[ "$loc_hosts" != "$LOCAL_EXPECTED_HOSTS" ]]; then
+        echo "  FAIL [k8s/local] LOC-5: local Ingress hosts are [$loc_hosts], expected exactly [$LOCAL_EXPECTED_HOSTS] (D-12)." >&2
+        loc5_bad=1
+    fi
+    # A production hostname surviving into the local render. Occurrences of the
+    # domain as an ANNOTATION KEY NAMESPACE (`jtoye.co.uk/<name>:`) are excluded:
+    # those are k8s annotation keys on a NetworkPolicy, not endpoints, and driving
+    # them to zero would mean renaming an annotation for no benefit. Anything else
+    # — a host, a TLS SAN, a CORS origin, a config value — is a real leak.
+    if grep -E 'jtoye\.co\.uk' "$LOCAL_RENDER" | grep -vE '^[[:space:]]+jtoye\.co\.uk/' > "$TMP/hits" 2> /dev/null; then
+        echo "  FAIL [k8s/local] LOC-5: a production hostname survives into the local render:" >&2
+        sed 's/^/        /' "$TMP/hits" >&2
+        loc5_bad=1
+    fi
+    if grep -qE '^[[:space:]]+name: keycloak$' "$TMP/loc_ingress.yaml"; then
+        echo "  FAIL [k8s/local] LOC-5: a local Ingress routes to a Service named 'keycloak', which exists in no render." >&2
+        loc5_bad=1
+    fi
+    if (( loc5_bad != 0 )); then
+        echo "        Local is reached through the minikube ingress addon plus /etc/hosts entries" >&2
+        echo "        for those two names. A production hostname in the local render either routes" >&2
+        echo "        local traffic at production or (more usually) at nothing, and it means the" >&2
+        echo "        local run is not exercising the ingress path it claims to. There is no" >&2
+        echo "        keycloak host locally on purpose: Keycloak is a compose service the browser" >&2
+        echo "        reaches directly, not an in-cluster workload." >&2
+        FAILED=1
+        loc5_msg="FAIL"
+    else
+        loc5_msg="OK (hosts: $loc_hosts)"
+    fi
+
+    # ---------------- LOC-6 ----------------
+    # D-01 at the SOURCE level. check-no-plaintext-secrets.sh already fails on any
+    # `kind: Secret` or placeholder in the BUILD OUTPUT; this asserts the input, so
+    # the constraint is visible in the directory where the mistake would be made.
+    loc6_bad=0
+    if grep -rn 'secretGenerator' "$LOCAL_DIR" > "$TMP/hits" 2> /dev/null; then
+        echo "  FAIL [k8s/local] LOC-6: kustomize secret generation is used under k8s/local:" >&2
+        sed 's/^/        /' "$TMP/hits" >&2
+        echo "        D-01 forbids it: it emits a 'kind: Secret' into the build output, and" >&2
+        echo "        check-no-plaintext-secrets.sh auto-discovers k8s/local at 'find -maxdepth 2'" >&2
+        echo "        and fails on exactly that. Local Secrets come OUT-OF-BAND from" >&2
+        echo "        scripts/k8s-local-secrets.sh, which sources the gitignored .env." >&2
+        loc6_bad=1
+    fi
+    if grep -rn 'REPLACE_WITH' "$LOCAL_DIR" > "$TMP/hits" 2> /dev/null; then
+        echo "  FAIL [k8s/local] LOC-6: an unsubstituted placeholder literal is present under k8s/local:" >&2
+        sed 's/^/        /' "$TMP/hits" >&2
+        echo "        Local has no CI substitution step, so a placeholder here reaches the render" >&2
+        echo "        verbatim and fails check-no-plaintext-secrets.sh (which exempts only the one" >&2
+        echo "        deploy-timestamp annotation staging/production stamp)." >&2
+        loc6_bad=1
+    fi
+    if (( loc6_bad != 0 )); then
+        FAILED=1
+        loc6_msg="FAIL"
+    else
+        loc6_msg="OK (no kustomize secret generation, no placeholder literal)"
+    fi
+
+    if [[ "$loc1_msg" == FAIL* || "$loc2_msg" == FAIL* || "$loc3_msg" == FAIL* \
+          || "$loc4_msg" == FAIL* || "$loc5_msg" == FAIL* || "$loc6_msg" == FAIL* ]]; then
+        echo "FAIL [k8s/local]: LOC-1 $loc1_msg | LOC-2 $loc2_msg | LOC-3 $loc3_msg | LOC-4 $loc4_msg | LOC-5 $loc5_msg | LOC-6 $loc6_msg" >&2
+    else
+        echo "  OK   [k8s/local] LOC-1 $loc1_msg"
+        echo "  OK   [k8s/local] LOC-2 $loc2_msg"
+        echo "  OK   [k8s/local] LOC-3 $loc3_msg"
+        echo "  OK   [k8s/local] LOC-4 $loc4_msg"
+        echo "  OK   [k8s/local] LOC-5 $loc5_msg"
+        echo "  OK   [k8s/local] LOC-6 $loc6_msg"
+    fi
+    LOCAL_SECTION="LOC-1..LOC-6 checked on k8s/local"
+    echo
+fi
+
+# ===========================================================================
 if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-5 hold across ${#TARGETS[@]} kustomize target(s)."
+echo "PASS: INV-1..INV-6 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."
