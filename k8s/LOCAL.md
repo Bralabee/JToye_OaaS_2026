@@ -662,6 +662,84 @@ next time — no inherited namespaces or Secrets — use `minikube delete -p <pr
 at the cost of a full re-start and re-load. The `/etc/hosts` line is harmless to leave in place; the
 node IP is stable across `stop`/`start` for an existing profile, but re-check it after a `delete`.
 
+### Phase 26 end state — PERFORMED 2026-07-26 (plan 26-09)
+
+**A written teardown is not a performed one.** The section above was authored by plan 26-06; this
+subsection is the record of it actually being executed at the end of the phase, because no plan in
+Phase 26 restored the environment it changed and the phase would otherwise have ended with the
+project's **canonical local dev/E2E runtime stopped** and a rehearsal cluster running in its place —
+which `CLAUDE.md`'s Incremental Betterment Doctrine forbids leaving unaccounted for.
+
+**Decision taken: `stop-and-restore`** (the plan's recommended option). Both mutations were already
+covered by plan 26-07 Task 1's itemised, human-approved reversal list — `minikube stop -p jtoye` as
+reversal (b) and `docker compose … start …` as reversal (a) — so nothing new was authorised here; the
+open question was only which end state the phase should leave behind. The profile was **stopped, not
+deleted**: `stop` preserves etcd, the rehearsal is re-runnable by the single command `scripts/k8s-local-up.sh`
+(D-14), and §7 A1 already documents the stale-state caveat a preserved etcd brings with it.
+
+**The order is load-bearing and was followed — cluster first, then apps.** Starting the compose apps
+while the profile was still running would have put two writers on the shared dev Postgres: exactly the
+condition `k8s_local_assert_compose_xor` exists to prevent, and exactly what §11's pre-apply inventory
+measured at **16 live connections** when a stale namespace came back with the profile.
+
+```
+STEP 1  (reversal (b))   minikube stop -p "$K8S_LOCAL_MINIKUBE_PROFILE"
+        23:40:17Z -> 23:40:29Z   "* Stopping node "jtoye" ... * 1 node stopped."   exit 0
+        profile status after   : Stopped
+        profile still in the valid list : 1   (stopped, NOT deleted)
+
+STEP 2  (reversal (a))   docker compose -f docker-compose.full-stack.yml start \
+                           core-java frontend edge-go mcp-server
+        exit 0; all four reported `running` within ~5s and `healthy` within ~10s.
+        The six backing services were NOT touched — they stayed up throughout.
+```
+
+**Ten services up, i.e. the pre-phase state:**
+
+```
+core-java  running healthy        keycloak  running healthy
+edge-go    running healthy        mailhog   running healthy
+frontend   running healthy        minio     running healthy
+mcp-server running healthy        postgres  running healthy
+                                  rabbitmq  running healthy
+                                  redis     running healthy
+```
+
+**Verified by real HTTP, not by `docker compose ps`** — a container can be `running` and `healthy`
+while the application behind it is not serving:
+
+```
+http://localhost:9090/health                -> 200  OK
+http://localhost:9090/api/v1/public/shops   -> 200  {"content":[{"slug":"brixton-village-grill", …
+http://localhost:3000/api/health            -> 200  {"status":"ok"}
+http://localhost:8089/health                -> 200  {"edge":"OK","uptime":21}
+http://localhost:9100/health                -> 200  {"status":"ok"}
+http://localhost:3000/                      -> 200  61293 bytes, contains <html>
+```
+
+`/api/v1/public/shops` returning **real seeded rows** rather than an empty `content: []` is deliberate,
+for the same reason it was in §11 L1c: an empty catalogue is a green-looking regression.
+
+**End-state proof — the guard REFUSES again, and it is the same refusal plan 26-05 recorded at the
+start of the phase.** This is the falsifiable evidence that compose is canonical once more; a guard
+that stayed silent would prove nothing:
+
+```
+$ bash -c 'source scripts/lib/k8s-local-guards.sh; k8s_local_load_env; k8s_local_assert_compose_xor'
+OK: env loaded from …/.env; all 13 K8S_LOCAL_* keys present
+REFUSED [compose-apps-running]: compose APP service(s) still running: core-java frontend edge-go
+mcp-server. The local cluster and compose would be TWO WRITERS on the same shared dev Postgres.
+Bring the app containers down first (a human decision — this tooling never stops a container,
+because a second session may own this stack). The backing services must STAY UP.
+exit=1
+```
+
+Same arm (`compose-apps-running`), same four services named, same exit code as 26-05's recorded
+refusal. The loop the phase opened is closed.
+
+**To run the rehearsal again**, reverse this in the mirror order — stop the four compose app containers
+first, then `scripts/k8s-local-up.sh`, which starts the profile and runs the two guards for you.
+
 ---
 
 ## 11. Rehearsal Evidence
