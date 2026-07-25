@@ -13,7 +13,7 @@ import { PublicFooter } from "@/components/public/public-footer"
  */
 export function PublicShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-cream">
       <PublicHeader />
       <main className="flex-1">{children}</main>
       <PublicFooter />

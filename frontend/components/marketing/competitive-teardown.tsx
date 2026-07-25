@@ -154,7 +154,7 @@ const statusMeta: Record<Status, { icon: string; label: string; short: string; c
 
 const tagCls: Record<Tag, string> = {
   "J'Toye leads": "border-emerald-600 bg-emerald-600 text-white",
-  "Flipdish leads": "border-slate-900 bg-slate-900 text-white",
+  "Flipdish leads": "border-oxblood bg-oxblood text-white",
   "Hard gap": "border-orange-600 bg-orange-600 text-white",
   Parity: "border-slate-400 bg-slate-100 text-slate-700",
 }
@@ -201,18 +201,18 @@ export function CompetitiveTeardown() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-300 selection:text-slate-900">
+      <div className="min-h-screen bg-cream text-slate-900 selection:bg-amber-300 selection:text-slate-900">
         <a
           href="#overview"
-          className="sr-only z-50 rounded bg-slate-900 px-4 py-3 text-sm font-semibold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
+          className="sr-only z-50 rounded bg-oxblood px-4 py-3 text-sm font-semibold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
         >
           Skip to teardown
         </a>
 
         {/* Hero */}
-        <header className="border-b-4 border-slate-900 bg-slate-900 text-slate-50">
+        <header className="border-b-4 border-oxblood bg-oxblood text-slate-50">
           <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
-            <div className="flex flex-wrap items-center justify-between gap-3 font-mono text-xs font-bold uppercase tracking-[0.16em]">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.16em]">
               <span className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 bg-amber-300" /> J&apos;Toye OaaS / competitive teardown
               </span>
@@ -220,7 +220,7 @@ export function CompetitiveTeardown() {
             </div>
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.3fr_0.7fr] lg:items-end">
               <div>
-                <p className="mb-4 font-mono text-xs uppercase tracking-[0.2em] text-amber-300">
+                <p className="mb-4 text-xs uppercase tracking-[0.2em] text-amber-300">
                   Flipdish vs J&apos;Toye — the honest scoreboard
                 </p>
                 <h1 className="max-w-4xl text-4xl font-bold leading-[0.97] tracking-[-0.055em] sm:text-6xl">
@@ -239,17 +239,17 @@ export function CompetitiveTeardown() {
         {/* Jump nav */}
         <nav
           aria-label="Teardown sections"
-          className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/95 backdrop-blur"
+          className="sticky top-0 z-30 border-b border-slate-200 bg-cream/95 backdrop-blur"
         >
           <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
-            <span className="mr-2 shrink-0 font-mono text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
+            <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
               Jump
             </span>
             {NAV.map(([id, label]) => (
               <a
                 key={id}
                 href={`#${id}`}
-                className="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                className="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 {label}
               </a>
@@ -291,8 +291,8 @@ export function CompetitiveTeardown() {
                   J&apos;Toye spikes on UK compliance and platform.
                 </p>
               </div>
-              <figure className="border-[3px] border-slate-900 bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
-                <figcaption className="mb-2 font-mono text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+              <figure className="border-[3px] border-oxblood bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
+                <figcaption className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
                   Category coverage radar
                 </figcaption>
                 <div
@@ -357,10 +357,10 @@ export function CompetitiveTeardown() {
                     type="button"
                     aria-pressed={tagFilter === filter}
                     onClick={() => setTagFilter(filter)}
-                    className={`rounded-full border px-3 py-1.5 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 ${
+                    className={`rounded-full border px-3 py-1.5 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                       tagFilter === filter
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 bg-slate-50 hover:bg-emerald-50"
+                        ? "border-oxblood bg-oxblood text-white"
+                        : "border-slate-300 bg-cream hover:bg-cream"
                     }`}
                   >
                     {filter}
@@ -377,17 +377,17 @@ export function CompetitiveTeardown() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search features…"
-                  className="w-full rounded-full border-2 border-slate-900 bg-white px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                  className="w-full rounded-full border-2 border-oxblood bg-white px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 />
               </div>
             </div>
 
-            <p className="mt-4 font-mono text-xs uppercase tracking-[0.12em] text-slate-500" aria-live="polite">
+            <p className="mt-4 text-xs uppercase tracking-[0.12em] text-slate-500" aria-live="polite">
               Showing {visible.length} of {FEATURES.length} features
             </p>
 
             {/* Column header (aligned columns at md+) */}
-            <div className="mt-4 hidden grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] gap-3 border-b-2 border-slate-900 px-4 pb-2 font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500 md:grid">
+            <div className="mt-4 hidden grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] gap-3 border-b-2 border-oxblood px-4 pb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 md:grid">
               <span>Feature</span>
               <span>Flipdish</span>
               <span>J&apos;Toye</span>
@@ -439,9 +439,9 @@ export function CompetitiveTeardown() {
                 <m.div
                   key={gap}
                   {...hover}
-                  className="flex items-center gap-3 border-l-4 border-orange-500 bg-white p-4 text-base font-bold text-slate-800"
+                  className="flex items-center gap-3 border-l-4 border-amber-500 bg-white p-4 text-base font-bold text-slate-800"
                 >
-                  <span aria-hidden="true" className="font-mono text-orange-600">
+                  <span aria-hidden="true" className="text-amber-600">
                     ✕
                   </span>
                   {gap}
@@ -460,7 +460,7 @@ export function CompetitiveTeardown() {
               <ScaleColumn title="Flipdish" tone="slate" rows={SCALE.flipdish} />
               <ScaleColumn title="J'Toye" tone="orange" rows={SCALE.jtoye} />
             </div>
-            <p className="mt-6 border-l-4 border-slate-900 bg-white p-5 text-sm leading-6 text-slate-600">
+            <p className="mt-6 border-l-4 border-oxblood bg-white p-5 text-sm leading-6 text-slate-600">
               Flipdish monetizes via SaaS subscription + setup + per-order commission + add-on modules. J&apos;Toye&apos;s
               only wired monetization is a Stripe Connect per-order platform fee; there is no SaaS subscription billing
               built.
@@ -469,8 +469,8 @@ export function CompetitiveTeardown() {
 
           {/* Wedge conclusion */}
           <section id="wedge" aria-labelledby="wedge-heading" className="mt-20 scroll-mt-20">
-            <div className="border-2 border-slate-900 bg-slate-900 p-6 text-slate-50 sm:p-9">
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-amber-300">The strategic wedge</p>
+            <div className="border-2 border-oxblood bg-oxblood p-6 text-slate-50 sm:p-9">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300">The strategic wedge</p>
               <h2 id="wedge-heading" className="mt-3 text-3xl font-bold tracking-[-0.04em] sm:text-4xl">
                 Compete on compliance + marketplace-engine + agent-ready.
               </h2>
@@ -520,18 +520,18 @@ export function CompetitiveTeardown() {
               stub). Flipdish&apos;s features are live across 5,000+ brands. <strong>Last updated: 2026-07-24.</strong>
             </aside>
             <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-dashed border-slate-300 pt-6 text-sm">
-              <span className="font-mono text-xs uppercase tracking-[0.12em] text-slate-500">
+              <span className="text-xs uppercase tracking-[0.12em] text-slate-500">
                 Full write-up: docs/analysis/flipdish-vs-jtoye-teardown.md
               </span>
               <a
                 href="/business-model-guide"
-                className="inline-flex items-center gap-2 rounded-full border-2 border-slate-900 px-4 py-2 font-semibold hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                className="inline-flex items-center gap-2 rounded-full border-2 border-oxblood px-4 py-2 font-semibold hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 Business model guide
               </a>
               <a
                 href="/for-operators"
-                className="inline-flex items-center gap-2 rounded-full border-2 border-slate-900 px-4 py-2 font-semibold hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+                className="inline-flex items-center gap-2 rounded-full border-2 border-oxblood px-4 py-2 font-semibold hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 Operator pitch
               </a>
@@ -539,10 +539,10 @@ export function CompetitiveTeardown() {
           </section>
         </div>
 
-        <footer className="border-t-4 border-slate-900 bg-slate-900 px-5 py-7 text-slate-300">
+        <footer className="border-t-4 border-oxblood bg-oxblood px-5 py-7 text-slate-300">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 sm:px-3">
-            <p className="font-mono text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / competitive teardown</p>
-            <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-400">Last updated 24 July 2026</p>
+            <p className="text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / competitive teardown</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-400">Last updated 24 July 2026</p>
           </div>
         </footer>
       </div>
@@ -552,9 +552,9 @@ export function CompetitiveTeardown() {
 
 function SectionLabel({ number, label }: { number: string; label: string }) {
   return (
-    <p className="mb-5 flex items-center gap-3 font-mono text-xs font-bold uppercase tracking-[0.15em] text-orange-600">
+    <p className="mb-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-600">
       <span>{number}</span>
-      <span className="h-px w-10 bg-orange-500" />
+      <span className="h-px w-10 bg-amber-500" />
       {label}
     </p>
   )
@@ -573,14 +573,14 @@ function StatTile({
   whileTap?: { scale: number }
 }) {
   const accents: Record<string, string> = {
-    slate: "border-slate-900 text-slate-900",
+    slate: "border-oxblood text-oxblood",
     emerald: "border-emerald-600 text-emerald-700",
-    orange: "border-orange-600 text-orange-600",
+    orange: "border-orange-600 text-orange-700",
     amber: "border-amber-500 text-amber-700",
   }
   return (
     <m.div {...motionProps} className={`border-[3px] bg-white p-4 shadow-[5px_5px_0_theme(colors.slate.200)] ${accents[accent]}`}>
-      <dt className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
       <dd className="mt-2 text-3xl font-bold tracking-[-0.04em]">{value}</dd>
     </m.div>
   )
@@ -599,25 +599,25 @@ function StatusCell({ status }: { status: Status }) {
 
 function FeatureRow({ feature }: { feature: Feature }) {
   return (
-    <details className="group border-2 border-slate-200 bg-white open:border-slate-900 md:border-x-0 md:border-t-0 md:border-b md:border-slate-200">
-      <summary className="grid cursor-pointer list-none gap-3 p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 md:grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] md:items-center">
+    <details className="group border-2 border-slate-200 bg-white open:border-oxblood md:border-x-0 md:border-t-0 md:border-b md:border-slate-200">
+      <summary className="grid cursor-pointer list-none gap-3 p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 md:grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] md:items-center">
         <span className="flex items-center gap-2 font-bold">
-          <span aria-hidden="true" className="font-mono text-xs text-slate-400 transition group-open:rotate-90">
+          <span aria-hidden="true" className="text-xs text-slate-400 transition group-open:rotate-90">
             ▸
           </span>
           <span>
             {feature.name}
-            <span className="mt-0.5 block font-mono text-xs font-medium uppercase tracking-[0.1em] text-slate-400">
+            <span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.1em] text-slate-400">
               {feature.group}
             </span>
           </span>
         </span>
         <span className="flex items-center gap-2 md:block">
-          <span className="font-mono text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">Flipdish</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">Flipdish</span>
           <StatusCell status={feature.flipdish} />
         </span>
         <span className="flex items-center gap-2 md:block">
-          <span className="font-mono text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">J&apos;Toye</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">J&apos;Toye</span>
           <StatusCell status={feature.jtoye} />
         </span>
         <span>
@@ -626,13 +626,13 @@ function FeatureRow({ feature }: { feature: Feature }) {
           </span>
         </span>
       </summary>
-      <div className="border-t border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 md:pl-9">
+      <div className="border-t border-slate-200 bg-cream px-4 py-4 text-sm leading-6 md:pl-9">
         <p className="text-slate-700">
-          <span className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Verdict · </span>
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Verdict · </span>
           {feature.note}
         </p>
         <p className="mt-3 text-slate-500">
-          <span className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-slate-500">J&apos;Toye evidence · </span>
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">J&apos;Toye evidence · </span>
           <code className="break-words rounded bg-white px-1.5 py-0.5 text-xs text-slate-700">{feature.evidence}</code>
         </p>
       </div>
@@ -649,14 +649,14 @@ function ScaleColumn({
   tone: "slate" | "orange"
   rows: readonly (readonly [string, string])[]
 }) {
-  const head = tone === "slate" ? "bg-slate-900 text-slate-50" : "bg-orange-500 text-slate-900"
+  const head = tone === "slate" ? "bg-oxblood text-slate-50" : "bg-amber-500 text-slate-900"
   return (
-    <div className="overflow-hidden border-[3px] border-slate-900 bg-white shadow-[8px_8px_0_theme(colors.slate.200)]">
-      <div className={`px-5 py-3 font-mono text-sm font-bold uppercase tracking-[0.14em] ${head}`}>{title}</div>
+    <div className="overflow-hidden border-[3px] border-oxblood bg-white shadow-[8px_8px_0_theme(colors.slate.200)]">
+      <div className={`px-5 py-3 text-sm font-bold uppercase tracking-[0.14em] ${head}`}>{title}</div>
       <dl className="divide-y divide-slate-200">
         {rows.map(([label, value]) => (
           <div key={label} className="grid grid-cols-[0.6fr_1.4fr] gap-3 px-5 py-3">
-            <dt className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+            <dt className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
             <dd className="text-sm font-semibold text-slate-800">{value}</dd>
           </div>
         ))}

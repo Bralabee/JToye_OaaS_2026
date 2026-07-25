@@ -50,7 +50,7 @@ export default function OrderTrackingPage({
 }) {
   const { slug, orderNumber } = use(params)
   return (
-    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" /></div>}>
+    <Suspense fallback={<div className="mx-auto max-w-lg px-4 py-16 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" /></div>}>
       <OrderTrackingContent slug={slug} orderNumber={orderNumber} />
     </Suspense>
   )
@@ -129,7 +129,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   if (loading) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
         <p className="mt-3 text-sm text-slate-500">Loading order status...</p>
       </div>
     )
@@ -157,8 +157,8 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               <CheckCircle2 className="h-8 w-8 text-emerald-600" />
             </div>
           ) : (
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
-              <Clock className="h-8 w-8 text-orange-500" />
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+              <Clock className="h-8 w-8 text-amber-700" />
             </div>
           )}
           <h1 className="mt-4 text-xl font-bold text-slate-900">
@@ -169,7 +169,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       )}
 
       {/* Order number */}
-      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm text-center mb-6">
+      <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm text-center mb-6">
         <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Order number</p>
         <div className="mt-1 flex items-center justify-center gap-2">
           <p className="text-sm font-bold font-mono text-slate-900">{orderNumber}</p>
@@ -228,7 +228,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                         isComplete
                           ? "bg-emerald-500 text-white"
                           : isActive
-                          ? "bg-orange-500 text-white ring-4 ring-orange-100"
+                          ? "bg-amber-500 text-oxblood ring-4 ring-amber-100"
                           : "bg-slate-100 text-slate-400"
                       }`}
                     >
@@ -258,7 +258,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                     >
                       {step.label}
                     </p>
-                    <p className={`text-xs ${isActive ? "text-orange-600" : "text-slate-400"}`}>
+                    <p className={`text-xs ${isActive ? "text-amber-700" : "text-slate-400"}`}>
                       {isActive && order.updatedAt
                         ? `${step.desc} · ${formatTime(order.updatedAt)}`
                         : step.desc}
@@ -305,14 +305,14 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               /* storage may be unavailable — /track falls back to its prompt */
             }
           }}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 py-2.5 text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors"
         >
           <Package className="h-4 w-4" />
           Track this order
         </Link>
         <Link
           href={`/shop/${slug}`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3 text-sm font-bold text-white hover:bg-oxblood-700 transition-all"
         >
           <Store className="h-4 w-4" />
           Back to shop
@@ -341,7 +341,7 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
           Enter the email you used when placing this order.
         </p>
       </div>
-      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+      <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <p className="text-xs font-mono text-slate-400 mb-3">{orderNumber}</p>
         <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
           <input
@@ -350,11 +350,11 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
             value={emailInput}
             onChange={(e) => setEmailInput(e.target.value)}
             placeholder="your@email.com"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+            className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
           />
           <button
             type="submit"
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 transition-all"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-oxblood py-3 text-sm font-bold text-white hover:bg-oxblood-700 transition-all"
           >
             View order status
           </button>

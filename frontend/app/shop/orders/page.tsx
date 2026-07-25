@@ -87,7 +87,7 @@ function formatDate(iso: string): string {
 const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
   PENDING: { icon: Clock, color: "text-amber-500 bg-amber-50", label: "Received" },
   CONFIRMED: { icon: CircleDot, color: "text-blue-500 bg-blue-50", label: "Confirmed" },
-  PREPARING: { icon: ChefHat, color: "text-orange-500 bg-orange-50", label: "Preparing" },
+  PREPARING: { icon: ChefHat, color: "text-amber-800 bg-amber-50", label: "Preparing" },
   READY: { icon: Package, color: "text-emerald-500 bg-emerald-50", label: "Ready" },
   COMPLETED: { icon: CheckCircle2, color: "text-slate-400 bg-slate-50", label: "Completed" },
   CANCELLED: { icon: XCircle, color: "text-red-500 bg-red-50", label: "Cancelled" },
@@ -117,7 +117,7 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
       }}
       className="block group"
     >
-      <div className={`rounded-xl bg-white border ${isActive ? "border-orange-200 shadow-sm" : "border-slate-100"} p-4 transition-all group-hover:shadow-md group-hover:-translate-y-0.5`}>
+      <div className={`rounded-xl bg-white border ${isActive ? "border-amber-300 shadow-sm" : "border-cream-100"} p-4 transition-all group-hover:shadow-md group-hover:-translate-y-0.5`}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -133,7 +133,7 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
             </p>
             <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
           </div>
-          <div className="flex items-center gap-1 text-slate-400 group-hover:text-orange-500 transition-colors mt-1">
+          <div className="flex items-center gap-1 text-slate-400 group-hover:text-amber-600 transition-colors mt-1">
             <span className="text-xs font-medium">{isActive ? "Track" : "View"}</span>
             <ArrowRight className="h-4 w-4" />
           </div>
@@ -237,7 +237,7 @@ function CustomerOrdersContent() {
   if (loading) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
         <p className="mt-3 text-sm text-slate-500">Loading your orders...</p>
       </div>
     )
@@ -260,7 +260,7 @@ function CustomerOrdersContent() {
               data-testid="orders-status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as OrderStatusFilter)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              className="mt-1 w-full rounded-lg border border-cream-100 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
             >
               {ORDER_STATUS_OPTIONS.map((s) => (
                 <option key={s} value={s}>
@@ -276,7 +276,7 @@ function CustomerOrdersContent() {
               data-testid="orders-date-from"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              className="mt-1 w-full rounded-lg border border-cream-100 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
           </label>
         </div>
@@ -323,7 +323,7 @@ function CustomerOrdersContent() {
           <p className="mt-3 text-sm text-slate-500">No orders found for this email.</p>
           <Link
             href="/shop"
-            className="mt-4 inline-flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700"
+            className="mt-4 inline-flex items-center gap-2 text-sm text-amber-700 hover:text-amber-800"
           >
             <Store className="h-4 w-4" />
             Browse shops

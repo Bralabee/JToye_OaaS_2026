@@ -1,13 +1,11 @@
 /**
  * PublicHeader wordmark home-target contract.
  *
- * The logo returns you to the "home" of the surface you're actually on:
- *  - /track is a customer order surface (part of the shopping app) so its
- *    wordmark goes to /shop — fixing the reported bug where /track kicked
- *    shoppers back out to the marketing landing.
- *  - Marketing surfaces (/, /for-operators, /business-model-guide) home to /.
- * (/shop* pages use the shop layout's own wordmark, already -> /shop, so the
- * whole app is consistent: any customer surface -> /shop, marketing -> /.)
+ * The wordmark ALWAYS returns you to the landing page (/), from every public
+ * surface. It used to be context-aware (/track homed to /shop), which meant the
+ * logo landed you somewhere different depending on where you clicked it — the
+ * reported inconsistent-nav bug. The storefront chrome (app/shop/layout.tsx)
+ * points its own wordmark at / too, so the rule holds app-wide.
  */
 import { render, screen } from "@testing-library/react"
 import { usePathname } from "next/navigation"
@@ -20,30 +18,39 @@ function wordmarkHref() {
   return screen.getByRole("link", { name: /toye/i }).getAttribute("href")
 }
 
+// Plain per-case blocks (deliberately not a table-driven `each` form): the
+// docs-freshness metric gate counts literal block openings, so a table would
+// make this file's coverage invisible to it.
 describe("PublicHeader wordmark home target", () => {
   afterEach(() => mockedPathname.mockReturnValue("/"))
 
+  function expectHomeFrom(pathname: string) {
+    mockedPathname.mockReturnValue(pathname)
+    render(<PublicHeader />)
+    expect(wordmarkHref()).toBe("/")
+  }
+
   it("marketing landing (/) -> wordmark links to /", () => {
-    mockedPathname.mockReturnValue("/")
-    render(<PublicHeader />)
-    expect(wordmarkHref()).toBe("/")
+    expectHomeFrom("/")
   })
 
-  it("/for-operators (marketing) -> wordmark links to /", () => {
-    mockedPathname.mockReturnValue("/for-operators")
-    render(<PublicHeader />)
-    expect(wordmarkHref()).toBe("/")
+  it("/for-operators -> wordmark links to /", () => {
+    expectHomeFrom("/for-operators")
   })
 
-  it("/track (customer order surface) -> wordmark links to /shop, not the landing", () => {
-    mockedPathname.mockReturnValue("/track")
-    render(<PublicHeader />)
-    expect(wordmarkHref()).toBe("/shop")
+  it("/track -> wordmark links to /, NOT /shop (it used to home to the shop)", () => {
+    expectHomeFrom("/track")
   })
 
-  it("/track/ORD-123 (nested track route) -> wordmark still links to /shop", () => {
-    mockedPathname.mockReturnValue("/track/ORD-123")
-    render(<PublicHeader />)
-    expect(wordmarkHref()).toBe("/shop")
+  it("/track/ORD-123 (nested track route) -> wordmark still links to /", () => {
+    expectHomeFrom("/track/ORD-123")
+  })
+
+  it("/business-model-guide -> wordmark links to /", () => {
+    expectHomeFrom("/business-model-guide")
+  })
+
+  it("/competitive -> wordmark links to /", () => {
+    expectHomeFrom("/competitive")
   })
 })

@@ -5,7 +5,8 @@
  * destination set — including /for-operators — at every breakpoint:
  *  - an inline "For operators" link for >=sm viewports
  *  - a hamburger menu control (aria-label "Open menu") for <sm viewports
- *    whose sheet contains Browse shops / For operators / Track order.
+ *    whose sheet contains Shops / For operators / Track order (labels match
+ *    PublicHeader — the same destination must not be named differently per surface).
  *
  * Regression guard for the Phase 19 defect where /shop shipped with no
  * mobile menu at all, leaving /for-operators reachable only via the
@@ -52,7 +53,7 @@ describe("StorefrontNav (shop storefront header)", () => {
     const trackLink = screen.getByRole("link", { name: /^track order$/i })
     expect(trackLink.getAttribute("href")).toBe("/track")
 
-    const browseLink = screen.getByRole("link", { name: /^browse shops$/i })
-    expect(browseLink.getAttribute("href")).toBe("/shop")
+    const shopsLink = screen.getByRole("link", { name: /^shops$/i })
+    expect(shopsLink.getAttribute("href")).toBe("/shop")
   })
 })

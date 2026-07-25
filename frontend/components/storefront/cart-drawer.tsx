@@ -63,7 +63,7 @@ export function CartDrawer() {
         className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
       >
         {/* Header */}
-        <div className="flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200 px-4">
+        <div className="flex h-16 flex-shrink-0 items-center justify-between border-b border-cream-100 px-4">
           <div className="min-w-0">
             <SheetTitle className="text-base font-bold text-slate-900">
               Your basket
@@ -83,7 +83,7 @@ export function CartDrawer() {
             )}
             <SheetClose
               aria-label="Close basket"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             >
               <X className="h-5 w-5" />
             </SheetClose>
@@ -93,14 +93,14 @@ export function CartDrawer() {
         {items.length === 0 ? (
           /* Empty state — mirrors the cart page's copy + iconography. */
           <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
-            <ShoppingBag className="h-16 w-16 text-slate-200" />
+            <ShoppingBag className="h-16 w-16 text-oxblood/25" />
             <h2 className="mt-4 text-lg font-semibold text-slate-900">
               Your basket is empty
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               Add items from the menu to get started.
             </p>
-            <SheetClose className="mt-6 inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 transition-colors">
+            <SheetClose className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors">
               Back to menu
             </SheetClose>
           </div>
@@ -119,14 +119,14 @@ export function CartDrawer() {
                     transition={springSoft}
                     className="overflow-hidden"
                   >
-                    <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+                    <div className="mb-3 flex items-center gap-3 rounded-xl border border-cream-100 bg-white p-3 shadow-sm">
                       {/* Branded fallback — never renders a broken <img>. */}
                       <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg">
                         <SafeImage
                           src={item.imageUrl}
                           alt={item.title}
                           className="h-full w-full object-cover"
-                          fallbackClassName="h-full w-full bg-slate-100"
+                          fallbackClassName="h-full w-full bg-cream"
                           fallbackIcon={<Store className="h-6 w-6 text-slate-300" />}
                         />
                       </div>
@@ -150,7 +150,7 @@ export function CartDrawer() {
                           aria-label={
                             item.quantity === 1 ? "Remove item" : "Decrease quantity"
                           }
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
                         >
                           {item.quantity === 1 ? (
                             <Trash2 className="h-3.5 w-3.5 text-red-400" />
@@ -165,7 +165,7 @@ export function CartDrawer() {
                           whileTap={{ scale: 0.9 }}
                           onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                           aria-label="Increase quantity"
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
                         >
                           <Plus className="h-3.5 w-3.5" />
                         </m.button>
@@ -177,7 +177,7 @@ export function CartDrawer() {
             </div>
 
             {/* Sticky footer */}
-            <div className="flex-shrink-0 space-y-3 border-t border-slate-200 bg-white p-4">
+            <div className="flex-shrink-0 space-y-3 border-t border-cream-100 bg-white p-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Subtotal</span>
                 <span className="font-semibold text-slate-900">
@@ -194,7 +194,7 @@ export function CartDrawer() {
               <Link
                 href={`/shop/${shopSlug}/checkout`}
                 onClick={() => setOpen(false)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-orange-600 active:scale-[0.98]"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-oxblood-700 active:scale-[0.98]"
               >
                 Checkout · {formatPrice(totalPennies)}
               </Link>
@@ -202,7 +202,7 @@ export function CartDrawer() {
               <Link
                 href={`/shop/${shopSlug}/cart`}
                 onClick={() => setOpen(false)}
-                className="flex w-full items-center justify-center gap-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                className="flex w-full items-center justify-center gap-1 rounded-2xl border border-cream-100 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-cream"
               >
                 View full basket
               </Link>

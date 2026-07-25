@@ -130,7 +130,7 @@ function PaymentForm({
 
   return (
     <form onSubmit={handlePayment} className="space-y-4">
-      <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+      <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <CreditCard className="h-4 w-4 text-slate-500" />
           <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
@@ -151,7 +151,7 @@ function PaymentForm({
       <button
         type="submit"
         disabled={paying || !stripe || !elements}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {paying ? (
           <>
@@ -265,7 +265,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         <p className="mt-1 text-sm text-slate-500">Add items from the menu first.</p>
         <Link
           href={`/shop/${slug}`}
-          className="mt-6 inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 transition-colors"
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors"
         >
           Browse menu
         </Link>
@@ -389,7 +389,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </p>
         </div>
 
-        <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm mb-6">
+        <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm mb-6">
           <h2 className="text-sm font-semibold text-slate-900 mb-3">Order total</h2>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
@@ -413,7 +413,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between pt-2 border-t border-cream-100">
               <span className="text-base font-bold text-slate-900">Total</span>
               <span className="text-base font-bold text-slate-900">{formatPrice(codConfirmation.totalAmountPennies)}</span>
             </div>
@@ -433,13 +433,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
         <Link
           href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
         >
           Track your order
         </Link>
         <Link
           href={`/shop/${slug}`}
-          className="flex w-full items-center justify-center gap-1 mt-3 rounded-2xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          className="flex w-full items-center justify-center gap-1 mt-3 rounded-2xl border border-cream-100 py-2.5 text-sm font-medium text-slate-600 hover:bg-cream transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to shop
@@ -473,7 +473,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </p>
 
         {/* Order summary */}
-        <div className="mt-4 rounded-xl bg-white border border-slate-100 p-4 shadow-sm mb-4">
+        <div className="mt-4 rounded-xl bg-white border border-cream-100 p-4 shadow-sm mb-4">
           <h2 className="text-sm font-semibold text-slate-900 mb-3">Order summary</h2>
           <div className="space-y-2">
             {items.map((item) => (
@@ -490,7 +490,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+          <div className="mt-3 border-t border-cream-100 pt-3 space-y-1.5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Subtotal</span>
               <span className="text-slate-900">{formatPrice(paymentState.subtotalPennies)}</span>
@@ -580,7 +580,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // unchanged): gross * 20 / 120, rounded down.
   const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
   const inputBase =
-    "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
+    "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
 
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
@@ -597,15 +597,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
         {/* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */}
-        <div className="grid grid-cols-2 gap-2 rounded-xl bg-white border border-slate-100 p-1.5 shadow-sm">
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-white border border-cream-100 p-1.5 shadow-sm">
           <button
             type="button"
             onClick={() => setFulfilmentType("DELIVERY")}
             aria-pressed={fulfilmentType === "DELIVERY"}
             className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
               fulfilmentType === "DELIVERY"
-                ? "bg-orange-500 text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                ? "bg-oxblood text-white"
+                : "bg-cream text-slate-600 hover:bg-cream-100"
             }`}
           >
             <Bike className="h-4 w-4" />
@@ -617,8 +617,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             aria-pressed={fulfilmentType === "COLLECTION"}
             className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
               fulfilmentType === "COLLECTION"
-                ? "bg-orange-500 text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                ? "bg-oxblood text-white"
+                : "bg-cream text-slate-600 hover:bg-cream-100"
             }`}
           >
             <Store className="h-4 w-4" />
@@ -628,7 +628,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
         {/* Conditional UK delivery address — only for DELIVERY */}
         {fulfilmentType === "DELIVERY" && (
-          <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm space-y-4">
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm space-y-4">
             <h2 className="text-sm font-semibold text-slate-900">Delivery address</h2>
 
             <div className="space-y-1.5">
@@ -639,7 +639,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 value={address1}
                 onChange={(e) => setAddress1(e.target.value)}
                 placeholder="e.g., 12 Coldharbour Lane"
-                className={`${inputBase} ${fieldErrors.address1 ? "border-red-300" : "border-slate-200"}`}
+                className={`${inputBase} ${fieldErrors.address1 ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.address1 && (
                 <p className="text-xs text-red-600">{fieldErrors.address1}</p>
@@ -654,7 +654,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 value={address2}
                 onChange={(e) => setAddress2(e.target.value)}
                 placeholder="Flat, building, etc."
-                className={`${inputBase} border-slate-200`}
+                className={`${inputBase} border-cream-100`}
               />
             </div>
 
@@ -666,7 +666,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="e.g., London"
-                className={`${inputBase} ${fieldErrors.city ? "border-red-300" : "border-slate-200"}`}
+                className={`${inputBase} ${fieldErrors.city ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.city && (
                 <p className="text-xs text-red-600">{fieldErrors.city}</p>
@@ -682,7 +682,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 onChange={(e) => setPostcode(e.target.value)}
                 onBlur={() => setPostcode((p) => p.trim().toUpperCase())}
                 placeholder="e.g., SW9 8LF"
-                className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-slate-200"}`}
+                className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.postcode && (
                 <p className="text-xs text-red-600">{fieldErrors.postcode}</p>
@@ -692,7 +692,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         )}
 
         {/* Customer details */}
-        <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm space-y-4">
+        <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-slate-900">Your details</h2>
 
           <div className="space-y-1.5">
@@ -704,7 +704,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="e.g., Ade Johnson"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
             />
           </div>
 
@@ -717,7 +717,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="e.g., ade@example.com"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
             />
           </div>
 
@@ -730,7 +730,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               placeholder="e.g., 07700 900000"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
             />
           </div>
 
@@ -742,13 +742,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Any special requests or dietary requirements..."
               rows={2}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 resize-none"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
             />
           </div>
         </div>
 
         {/* Order summary */}
-        <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+        <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900 mb-3">Order summary</h2>
           <div className="space-y-2">
             {items.map((item) => (
@@ -765,7 +765,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               </div>
             ))}
           </div>
-          <div className="mt-4 border-t border-slate-100 pt-3 space-y-1.5">
+          <div className="mt-4 border-t border-cream-100 pt-3 space-y-1.5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Subtotal</span>
               <span className="text-slate-900">{formatPrice(subtotalPennies)}</span>
@@ -801,7 +801,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             PaymentService.isConfigured()). When the backend doesn't send the
             field (old backend), render nothing — the pre-fix behaviour. */}
         {shop?.acceptsCardPayments !== undefined && (
-          <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-900">How you&apos;ll pay</h2>
             {shop.acceptsCardPayments ? (
               <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
@@ -843,7 +843,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         <button
           type="submit"
           disabled={submitting || belowMinimum}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (
             <>
