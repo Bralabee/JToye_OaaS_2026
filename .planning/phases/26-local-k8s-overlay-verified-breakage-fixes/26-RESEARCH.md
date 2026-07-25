@@ -1232,7 +1232,10 @@ evidence). Nothing may be marked complete on "it worked once" without the record
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Resolution status added 2026-07-25 during phase planning. Every question below carries its
+> resolution inline and cites the plan that closed it — none is still open.
 
 1. **How does the frontend pod perform OIDC discovery when the public issuer is not pod-reachable?** *(highest risk)*
    - **What we know:** `frontend/auth.ts` deliberately splits the browser-facing authorization URL
@@ -1253,6 +1256,14 @@ evidence). Nothing may be marked complete on "it worked once" without the record
      (`wellKnown: \`${kcServerBase}/.well-known/openid-configuration\``) — the exact same
      split-horizon pattern already applied to `token`/`userinfo`, and additive so compose/prod are
      unchanged. **Plan for this contingency explicitly; do not discover it during the rehearsal.**
+   - **RESOLVED — no `auth.ts` change needed, no spike needed.** Source-level analysis of
+     `@auth/core@0.41.3`, recorded in `26-02-PLAN.md`'s `<interfaces>` block, found discovery is
+     attempted at exactly two call sites and both are gated on a MISSING endpoint override
+     (`lib/actions/signin/authorization-url.js:14`; `lib/actions/callback/oauth/callback.js:35`).
+     `frontend/auth.ts:55-59` sets all three (`authorization`/`token`/`userinfo`), so **no
+     discovery request is made**. In that branch Auth.js sets `as.issuer = provider.issuer`, so
+     `KEYCLOAK_ISSUER` must remain the STAMPED public issuer and `KEYCLOAK_ISSUER_INTERNAL` the
+     pod-reachable one — exactly what D-13 wires into `k8s/base` + the local overlay (plan 26-08).
 
 2. **Does `--dry-run=server` run the ingress-nginx admission webhook?**
    - **What we know:** dry-run requests traverse admission; webhooks declaring `sideEffects: None`
@@ -1260,6 +1271,12 @@ evidence). Nothing may be marked complete on "it worked once" without the record
      truncated on fetch, so I could not quote it.
    - **Recommendation:** treat the dry-run as necessary-but-not-sufficient. Null the snippet
      annotation unconditionally, and keep a real apply in the acceptance criteria (D-16 already does).
+   - **RESOLVED — sidestepped, so the answer cannot change the outcome.** The local overlay nulls
+     the snippet annotation **unconditionally** (plan 26-04, PIT-1) instead of relying on the
+     dry-run to catch it, and a real `kubectl apply -k k8s/local` stays in the acceptance criteria
+     (plan 26-07 Task 2, which also captures the dry-run VERBATIM and fails on any
+     `denied the request` text). Whether the webhook runs under `--dry-run=server` is therefore
+     no longer load-bearing.
 
 3. **`.env` key naming for the backup password.**
    - `k8s/QUICK_START.md:32` already uses the shell name `POSTGRES_BACKUP_PASSWORD`; CONTEXT.md
@@ -1267,6 +1284,10 @@ evidence). Nothing may be marked complete on "it worked once" without the record
      `k8s/LOCAL.md` and the script agree. Recommend `DB_BACKUP_PASSWORD` (consistent with the
      existing `DB_USER`/`DB_PASSWORD` app-role pair, and distinct from the `POSTGRES_*` superuser
      pair — the very distinction DEF-2 is about).
+   - **RESOLVED — `DB_BACKUP_PASSWORD`.** Plan 26-05's `<interfaces>` fixes the `.env` key name and
+     records the rationale; plan 26-02 keeps `k8s/QUICK_START.md`'s existing shell name
+     `POSTGRES_BACKUP_PASSWORD` and cross-references it, and `.env.example` documents both names
+     so the two never drift apart silently.
 
 4. **Should the four unflagged bucket-C prod defects be folded into D-15?**
    - `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, `NOTIFICATION_UNSUBSCRIBE_BASE_URL`,
@@ -1274,18 +1295,36 @@ evidence). Nothing may be marked complete on "it worked once" without the record
      close, are live prod defects, and cost ~4 configmap keys + 4 env entries. Recommend **yes**, with
      the scope addition recorded. The alternative is allowlisting known prod defects as "accepted",
      which contradicts D-08's "reviewed inventory" intent.
+   - **RESOLVED — yes, folded in as D-19.** All four land as `notification.email.tracking-base-url`,
+     `notification.unsubscribe.base-url`, `stripe.connect.return-url` and
+     `stripe.connect.refresh-url` in plan 26-02 Task 1's config-injection inventory, with the scope
+     addition recorded rather than allowlisted.
 
 5. **What does `ci-cd.yaml` pass as the frontend `NEXT_PUBLIC_API_URL` build arg?**
    - PIT-3's corollary means staging/prod frontends are serving a **baked** API URL while the
      ConfigMap injection is inert. I did not trace the CI build step. Worth a 5-minute check during
      planning: if CI bakes nothing, the staging/prod frontend has an empty API base and the dead env
      has been hiding it.
+   - **RESOLVED — CI bakes NOTHING, and the confirmation is recorded as D-18.**
+     `.github/workflows/ci-cd.yaml:443-449`'s `docker/build-push-action` step passes no
+     `build-args` at all, so every CI-built frontend image carries `NEXT_PUBLIC_API_URL` unset
+     while `k8s/base/frontend-deployment.yaml`'s runtime ConfigMap injection masked it. Plan 26-02
+     removes the dead runtime env with the explanation and files the architectural gap as a dated
+     deferred item (one image cannot carry two baked URLs — a server config endpoint is out of
+     scope per PIT-3); plan 26-05's `scripts/k8s-local-up.sh` bakes the value from the rendered
+     local ConfigMap so the local image is correct.
 
 6. **Are the 6 NetworkPolicies worth rendering at all locally, given PIT-6?**
    - D-11 says render-not-enforce, which is right. But rendering a DNS rule that is *provably broken*
      under enforcement is a "validated" manifest that would fail in production. Recommend `k8s/LOCAL.md`
      states the PIT-6 finding explicitly and the deferred list gains "fix `includeSelectors` vs
      NetworkPolicy podSelectors" as a prerequisite for the Calico follow-up.
+   - **RESOLVED — the provably-broken rule is FIXED, so render-not-enforce is now sound.** The
+     `k8s-app: kube-dns` selector bug is D-17: plan 26-01 Task 2 fixes it with an explicit
+     `fields:` list (proven by the golden-render diff) and plan 26-03's INV-3 asserts it on the
+     render, so local no longer validates a rule that would fail under enforcement. Plan 26-06
+     states the render-not-enforce caveat in `k8s/LOCAL.md` and records that the Calico
+     prerequisite is now cleared.
 
 ---
 
