@@ -414,6 +414,52 @@ all four with manifest-matching names and prints their identities, and §11 requ
 recorded next to every result. **A pass with no recorded image identity is not a pass** — it may be a
 pass for code that is three phases stale.
 
+**PIT-4b — the host image ID is NOT the in-cluster image ID; say which side you measured** (found by
+plan 26-08, 2026-07-25). `minikube image load` re-imports the tarball, and the docker daemon inside the
+node computes a **different** image ID for the same build. Measured on this cluster, same tag, same
+build minute:
+
+| tag | host docker ID | in-cluster ID | created |
+|---|---|---|---|
+| `jtoye-core-java:local` | `bba33e72…` | `f43a5e84…` | 20:09:50 UTC |
+| `jtoye-edge-go:local`   | `e0e87717…` | `0644afc5…` | 2026-07-14 12:26:08 UTC |
+| `jtoye-frontend:local`  | `3286c715…` | `def4382b…` | 20:10:19 UTC |
+| `jtoye-pg-backup:15`    | `943a78f6…` | `1939105c…` | 20:10:44 UTC |
+
+§11's run header records the **host** IDs (that is what step 7 prints after building). The IDs the
+cluster actually runs are the right-hand column, which is what `kubectl get pod -o
+jsonpath='{…containerStatuses[0].imageID}'` reports. They are reconciled by the **identical CreatedAt
+minute**, which is the field that answers PIT-4. Nothing is wrong here — but a reader comparing a pod's
+`imageID` against §11's header would find a mismatch and reasonably conclude the evidence was captured
+against a different image, so record which side a digest came from.
+
+**A3 — the STOMP relay rejects the KDS topic: `/topic` destinations cannot contain `/`** (found by plan
+26-08 Task 3, 2026-07-25). **This is a production-affecting defect, not a local caveat.** It is
+recorded here rather than fixed because the fix spans the backend publisher, the frontend subscriber and
+the tenant-isolation channel convention — see §11 L6 for the full two-directional evidence and the
+falsification.
+
+- The application publishes and subscribes to `/topic/kitchen/{tenantId}/{shopId}`
+  (`core-java/.../order/OrderStateChangeListener.java:109`, `frontend/app/dashboard/kitchen/page.tsx:277`,
+  convention documented at `core-java/.../websocket/TenantChannelInterceptor.java:123`).
+- RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>` as the
+  routing key, and `<name>` must be a **single segment**. It rejects anything with an extra `/`:
+  `ERROR message:Invalid destination … '/kitchen/…/…' is not a valid topic destination`.
+- Spring's **in-memory** simple broker accepts arbitrary paths, which is why this has never shown up in
+  development: dev compose defaults to `STOMP_BROKER_MODE=in-memory` (`application.yml:222-224`). Base
+  sets `stomp.broker.mode: "relay"`, so **staging and production run the broken path**.
+- Consequence: zero relayed KDS events, plus a permanent ~5s **reconnect storm** (each rejected
+  SUBSCRIBE tears the session down; @stomp/stompjs redials on `reconnectDelay: 5000`). The board still
+  appears live only because `useStomp`'s `onReconnect` hook fires a full `fetchOrders()` on every
+  redial — accidental polling wearing realtime's clothes.
+- **Do not "fix" this by flipping `stomp.broker.mode` to `in-memory`.** That would hide the defect and
+  break multi-replica correctness: the simple broker is per-JVM, so with `replicas: 3` an event
+  published by one pod never reaches a client connected to another. The relay exists for exactly that
+  reason.
+- A dot-delimited destination is the shape RabbitMQ accepts and it preserves the tenant/shop segments
+  and the interceptor's prefix check; that is the suggested direction, with its acceptance test recorded
+  in `deferred-items.md`.
+
 ---
 
 ## 8. Troubleshooting
@@ -533,9 +579,18 @@ node IP is stable across `stop`/`start` for an existing profile, but re-check it
 ## 11. Rehearsal Evidence
 
 Rows **L1–L5 are FILLED** (plan 26-07, 2026-07-25, behind its human-action approval — which is what
-authorised the shared-state mutations). Rows **L6–L7 remain deliberately UNFILLED**: they are plan
-26-08's, and this plan did not run them. An unfilled row means *not yet proven* — it stays visibly
-unfilled rather than carrying something plausible.
+authorised the shared-state mutations).
+
+Rows **L6–L7 are FILLED** by plan 26-08 (2026-07-25). **L7 (the DEF-5 ingress login) PASSED. L6 (the
+functional STOMP relay) was FALSIFIED** — the relay is reachable and authenticated, and it *rejects* the
+KDS topic because a RabbitMQ `/topic` destination cannot contain `/`. That is a production-affecting
+defect (base sets `stomp.broker.mode: relay`), recorded as §7 **A3** and surfaced for a decision rather
+than patched inside this plan: the fix spans the backend publisher, the frontend subscriber and the
+tenant-isolation channel convention. A falsified row is a *stronger* result than an unproven one — it is
+the outcome D-06 was written to obtain, and it is recorded as a failure rather than smoothed into a pass.
+
+**L6's human-verify gate is still OPEN at the time of writing.** The automated half is complete and
+recorded below; the human's browser judgement has not yet been given, and nothing here claims it has.
 
 ### Run header
 
@@ -1218,31 +1273,218 @@ Actual  : SPLIT INTO TWO HALVES by plan 26-08, because the command above cannot 
           pod's "System" session at a 4 ms delta. Full capture and counts in the
           subsection above.
 
-          BROWSER HALF — see below, filled by 26-08 Task 3 behind its human-verify gate.
+          BROWSER HALF — RUN, AND IT FALSIFIED THE PATH. Full evidence below.
 ```
+
+**Browser half of L6 — the relay is reached, and it REJECTS the KDS topic.** Captured in one live
+browser session against `http://app.jtoye.local` (no stubs, no mocks, real login). Reported as a
+finding, not smoothed over — see §7 A3.
+
+What WORKED, and it matters, because it isolates the defect to the destination and nothing else:
+
+```
+websocket opened            : ws://api.jtoye.local/ws        (14 opens over the session)
+STOMP CONNECT  sent         : yes
+STOMP CONNECTED received    : yes
+  CONNECTED
+  server:RabbitMQ/3.12.14
+  session:session-ZnxI-6gaL4s4Qmg47iMARQ
+  heart-beat:10000,10000
+  version:1.2
+  user-name:99d11593-ea98-4891-a136-220884094283
+```
+
+`server:RabbitMQ/3.12.14` in a frame delivered to the BROWSER is the strongest single line in this
+document for D-06: the browser's STOMP session is being served by the **host RabbitMQ through the
+relay**, not by Spring's in-memory simple broker (which identifies itself with no `server` header). The
+`user-name` is the authenticated vendor's subject, so the CONNECT Authorization header was honoured.
+
+What FAILED:
+
+```
+SUBSCRIBE sent (14x)
+  destination:/topic/kitchen/00000000-0000-0000-0000-000000000001/97d95aa4-f6e8-4bb6-b9ad-525e49c61ef6
+
+ERROR received (14x)
+  message:Invalid destination
+  content-type:text/plain
+  version:1.0,1.1,1.2
+  content-length:118
+
+  '/kitchen/00000000-0000-0000-0000-000000000001/97d95aa4-f6e8-4bb6-b9ad-525e49c61ef6' is not a valid topic destination
+
+frame census: open 14 | CONNECT 14 | CONNECTED 14 | SUBSCRIBE 14 | ERROR 14 | close 14 | MESSAGE 0
+```
+
+**Both directions are rejected, not just the subscriber.** The publish side fails on the relay's own
+`_system_` session, 43 ms after the state change was accepted:
+
+```
+21:44:24.505 INFO  PaymentEventOutboxFlusher        Flushed outbox event ORDER_STATE_CHANGED (exchange=order.events)
+21:44:24.511 INFO  OrderStateChangeListener         Order state change received: order=ORD-00000000-20260712-23C4097F
+                                                    tenant=00000000-…-000000000001 CONFIRMED -> PREPARING
+21:44:24.548 ERROR StompBrokerRelayMessageHandler   Received ERROR {message=[Invalid destination] …}
+                                                    session=_system_ payload='/kitchen/00000000-…/97d95aa4-…'
+```
+
+The trigger itself succeeded — `POST http://api.jtoye.local/api/v1/orders/afe90b6d-…/start-preparation`
+→ **HTTP 200**, `status: PREPARING` — so the API, the ingress, the outbox and the AMQP listener are all
+healthy. Only the STOMP destination is invalid.
+
+**The board DID visibly change without a manual refresh — and that is the trap this row exists to
+catch.** `ORD-…-23C4097F Confirmed` → `ORD-…-23C4097F Preparing`, with **0** navigations to
+`/dashboard/kitchen` during the wait. A human watching the screen would call that a pass. It is not: 0
+MESSAGE frames arrived, and the same 30-second window contains **24** `/api/v1/orders…` requests — three
+per redial, because every rejected SUBSCRIBE closes the session, `@stomp/stompjs` redials after
+`reconnectDelay: 5000`, and `useStomp`'s `onReconnect` fires a full `fetchOrders()`. The visible update
+is a **refetch caused by the failure**, not a relayed event. Reconnect-driven polling is
+indistinguishable from realtime by eye and distinguishable only by frame census.
+
+**Diagnosis falsified in two arms** against the same broker, port and credentials, over a raw socket
+(read-only — a SUBSCRIBE creates an auto-delete queue that vanishes on DISCONNECT; nothing published):
+
+```
+ARM A control  destination:/topic/kitchen.00000000-…-000000000001.97d95aa4-…   (dots, one segment)
+               CONNECTED true   SUBSCRIBE ok true (RECEIPT)   ERROR none
+ARM B app shape destination:/topic/kitchen/00000000-…-000000000001/97d95aa4-…  (extra slashes)
+               CONNECTED true   SUBSCRIBE ok false            ERROR 'Invalid destination'
+DIAGNOSIS CONFIRMED: a RabbitMQ /topic destination must be a SINGLE segment.
+```
+
+ARM A is the load-bearing half: it proves the broker, the port, the STOMP login and the passcode are all
+correct (so DEF-4 really is fixed) and that **only the destination shape** is at fault. Without it,
+"Invalid destination" could have been read as another credential or connectivity problem.
+
+**L6 verdict: the relay is PROVEN reachable and PROVEN authenticated, and the KDS event path is PROVEN
+BROKEN.** D-06's browser half is therefore recorded as FALSIFIED rather than unproven — a stronger and
+more useful outcome than a pass, and precisely why D-06 insisted this be exercised on the cluster where
+`stomp.broker.mode` is `relay` instead of in compose where it is `in-memory`. The defect is
+production-affecting (base sets `relay`); see §7 A3 and `deferred-items.md`.
 
 **L7 — DEF-5: a real vendor login through the ingress reaches a dashboard** *(owner: 26-08)*
 
 ```
-Command : PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
-            npx playwright test e2e/dashboard-mobile.spec.ts
-          (credentials: user admin-user, password from the .env key KC_SEED_USER_PASSWORD)
+Command : (cd frontend && PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
+            E2E_VENDOR_USERNAME=admin-user E2E_VENDOR_PASSWORD="$KC_SEED_USER_PASSWORD" \
+            npx playwright test --project=mobile e2e/dashboard-mobile.spec.ts)
+          (credentials: user admin-user, password from the .env key KC_SEED_USER_PASSWORD —
+           referenced by NAME, never echoed. Run from frontend/: there is no
+           playwright.config.ts at the repository root, so `--prefix frontend` from the
+           root resolves neither the config nor the `mobile` project.)
 Expected: pass. This is the ONLY step that actually proves the split-horizon issuer fix —
           a real Keycloak flow, browser-issuer token, pod-side JWKS fetch.
-Actual  : NOT RUN — deliberately unfilled. This row belongs to plan 26-08. The L1c
-          ingress smoke exercises only UNAUTHENTICATED endpoints, so it says nothing
-          about the split-horizon issuer pair; DEF-5 stays unproven until 26-08.
+Actual  : DEF-5 PROVEN. The authorize redirect, captured verbatim from the browser:
+
+--- the redirect the SSO button produced (VERBATIM) ---
+http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/auth
+  ?scope=openid+profile+email
+  &response_type=code
+  &client_id=core-api
+  &redirect_uri=http%3A%2F%2Fapp.jtoye.local%2Fapi%2Fauth%2Fcallback%2Fkeycloak
+  &code_challenge=O8Oo6g6f5_QXCIHO6IPNNVvDeAA-suWrGaMmP4DFzTA
+  &code_challenge_method=S256
+--- end ---
+
+          Three things are proven by that one URL: the browser was sent to the PUBLIC
+          issuer host (not the pod-reachable one); `client_id=core-api` is the realm's
+          real client, resolved from app-config/keycloak.client-id (it was the literal
+          `frontend`, a client that does not exist in jtoye-dev); and the callback is the
+          ingress origin, which the realm now accepts.
+
+          Keycloak hosted form host : localhost:8085
+          POST-LOGIN URL            : http://app.jtoye.local/dashboard
+          rendered <h1>             : "Dashboard"   (not the sign-in page)
+          login wall time           : 591 ms
+                                      A ~10s hang followed by a 401 is the feedback_port3100
+                                      symptom of a server-side call to the PUBLIC host. 591 ms
+                                      is a decisive negative for it: the code-for-token
+                                      exchange used KEYCLOAK_ISSUER_INTERNAL.
+          `redirect_uri` errors in the frontend pod log for the login window : 0
+          `Invalid parameter: redirect_uri` anywhere                          : 0
+
+          THE TWO ISSUER VALUES, AND THEY DIFFER — that difference IS DEF-5:
+            frontend KEYCLOAK_ISSUER          = http://localhost:8085/realms/jtoye-dev
+            frontend KEYCLOAK_ISSUER_INTERNAL = http://host.minikube.internal:8085/realms/jtoye-dev
+            core-java JWT_EXPECTED_ISSUER     = http://localhost:8085/realms/jtoye-dev
+            core-java KC_ISSUER_URI           = http://host.minikube.internal:8085/realms/jtoye-dev
+          The stamped token confirms which side is which: a direct-grant token minted by
+          this realm carries iss=http://localhost:8085/realms/jtoye-dev, aud=core-api,
+          tenant_id=00000000-0000-0000-0000-000000000001 — and core-java ACCEPTED it
+          through the ingress (HTTP 200 on /api/v1/orders). So `iss` is validated against
+          the public value while JWKS is fetched from the pod-reachable one. Collapsing
+          them to a single value would have made the login pass while proving nothing.
+
+          API ORIGIN — the XOR rule, measured rather than asserted:
+            /api/v1 requests by host : {"api.jtoye.local": 10}
+            loopback APP requests    : 0   (Keycloak on :8085 is the browser-reachable
+                                            IdP by design — a compose backing service,
+                                            not an application origin)
+            /api/v1 responses >= 400 : 0
+          Real seeded data rendered, not an empty shell: the shop switcher listed
+          "Unsorted legacy items", "Brixton Village Grill", "Peckham Jollof Co.",
+          "Mama Ade's Kitchen", and the kitchen board rendered real orders with line
+          items. An empty catalogue would have been a green-looking regression.
+
+          VISUAL / MOBILE:
+            375px horizontal overflow : scrollWidth 375 == clientWidth 375 -> none
+            <img> elements with naturalWidth === 0 : 0
+              (the dashboard and kitchen routes render 0 <img> elements at all — a
+               legitimate zero, stated rather than dressed up as an image proof. The
+               s3.public-url image path is NOT exercised by this journey.)
+            mobile-tab-bar elements in the live DOM : 1, visible
+            console errors : 15, ALL accounted for — 14 are the A3 `STOMP error: Invalid
+              destination` cascade and 1 is an authjs `Failed to fetch` from a getSession
+              race during the redirect. None is unexplained.
+
+          SPEC RESULT, reported exactly as measured: 10 passed / 3 failed on the first
+          run and 11 passed / 2 failed on a second run with the spec's own
+          NEXT_PUBLIC_API_URL supplied so its route() stubs intercept. NOT a DEF-5
+          failure and NOT an environment fault — every failure is at line 268
+          (`expect(getByTestId('mobile-tab-bar')).toBeVisible()`), which runs AFTER
+          `vendorLogin` has already succeeded in `beforeEach`; a login failure would have
+          thrown there instead. So all 13 tests performed a real Keycloak login through
+          the ingress, twice. The failure is a pre-existing strict-mode fragility: the
+          locator is not `.first()`, and during an App Router transition two shells are
+          briefly mounted, so it resolves 2 elements. It is FLAKY (different routes failed
+          on each run) and it does not reproduce in the unstubbed journey above, which
+          measured exactly 1 visible tab bar. Recorded as a deferred item; deliberately
+          NOT fixed here (pre-existing, unrelated to this plan's change, outside its file
+          list).
 ```
+
+**L7's precondition, read back from the RUNNING Keycloak** (de-fenced deliberately — see the addendum
+below; this array legitimately contains a pre-existing loopback entry on the core-java port, and fencing
+it would make this document fail its own loopback check on a string that predates the phase):
+
+> `GET /admin/realms/jtoye-dev/clients?clientId=core-api` → `.redirectUris` =
+> `[ "http://localhost:8080/*", "http://localhost:3100/*", "http://localhost:3000/*", "http://localhost:9090/*", "http://app.jtoye.local/*" ]`
+> — 4 pre-existing localhost entries retained, 1 added. `webOrigins` = `[ "*" ]` (unchanged),
+> `post.logout.redirect.uris` = `"+"` (unchanged), `publicClient` = `false`,
+> `standardFlowEnabled` = `true`. A `frontend` client still does **not** exist in this realm
+> (`?clientId=frontend` returns 0 results), which is what made the hardcoded literal unusable.
+>
+> Falsified in both directions so the acceptance is not blanket-acceptance: an authorize request
+> carrying `redirect_uri=http://app.jtoye.local/api/auth/callback/keycloak` returns **HTTP 200** (the
+> login page renders), while an unlisted host still returns `Invalid parameter: redirect_uri`. The
+> client secret survived the additive update — a `client_credentials` grant returned HTTP 200 both
+> before and after.
 
 ### Sign-off
 
 ```
 Rows L1–L5 filled with real captured output        : [x]  (26-07, 2026-07-25)
-Rows L6–L7 filled with real captured output        : [ ]  owned by 26-08, NOT RUN here
-Four image identities recorded in the header       : [x]  all four built during this run
-No loopback address anywhere in the evidence       : [x]  see the check below
+Rows L6–L7 filled with real captured output        : [x]  (26-08, 2026-07-25)
+                                                     L7 PASSED · L6 FALSIFIED (see §7 A3)
+L6's human-verify browser gate approved            : [ ]  OPEN at time of writing — the
+                                                     automated half is recorded, the human
+                                                     judgement is not yet given and is not
+                                                     claimed anywhere above
+Four image identities recorded in the header       : [x]  host-side IDs; see §7 PIT-4b for
+                                                     the host-vs-in-cluster reconciliation
+No loopback address anywhere in the evidence       : [x]  see the check below + the 26-08 addendum
 Both backup arms recorded (L4)                     : [x]  arm A = 0, arm B = 4067
 Recorded by                                        : plan 26-07 executor, 2026-07-25
+                                                     plan 26-08 executor, 2026-07-25 (L6/L7)
 ```
 
 **The loopback check, measured rather than asserted — and stated in the only form that can actually
@@ -1298,6 +1540,16 @@ PIT-1 snippet annotation is nulled locally and the controller's posture was neve
 anything pass), and **nothing** about NetworkPolicy enforcement (minikube's default CNI does not
 enforce; all 6 policies were applied and are inert). INFRA-01 and INFRA-02 are therefore **not** marked
 complete by this plan.
+
+**What L6 and L7 add, and what they still do not establish** (plan 26-08). L7 closes DEF-5: a real
+Keycloak flow through the ingress, with the two issuer values recorded as demonstrably different values
+and the token's stamped `iss` accepted by core-java. L6 closes D-06's *identity* question and **opens** a
+new one — the relay is reachable and correctly authenticated, and the KDS destination is invalid, so the
+KDS realtime path is unproven-because-broken rather than unproven-because-untested (§7 A3). Neither row
+touches TLS, the nginx header snippet, NetworkPolicy enforcement or HPA scaling — §6 stands unchanged and
+uncontradicted. The `s3.public-url` browser image path is likewise **not** exercised: the dashboard and
+kitchen routes render zero `<img>` elements. **26-08 does not mark INFRA-01 or INFRA-02 complete
+either** — plan 26-09 owns that, and A3 is now an input to it.
 
 ---
 

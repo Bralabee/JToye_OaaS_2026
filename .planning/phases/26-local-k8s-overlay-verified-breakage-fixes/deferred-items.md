@@ -531,3 +531,106 @@ the broker (identity) and through a real browser session (function) — and reco
 **Acceptance for the closure:** the reworked spec passes against `PLAYWRIGHT_BASE_URL=http://app.jtoye.local`
 with a real login, creates an order without edge-go, and FAILS (not skips) if the relay is unavailable —
 proven by pointing `stomp.broker.relay-host` at an unreachable host and observing a red run.
+
+---
+
+## 2026-07-25 — **PRODUCTION DEFECT:** the STOMP relay rejects the KDS topic — a `/topic` destination cannot contain `/`
+
+**Found by:** plan 26-08 Task 3, the live browser journey D-06 exists to force. **Severity: production
+affecting.** `k8s/base/configmap.yaml` sets `stomp.broker.mode: "relay"`, so staging and production both
+run the broken path. Dev compose defaults to `STOMP_BROKER_MODE=in-memory`
+(`core-java/src/main/resources/application.yml:222-224`), where Spring's simple broker accepts arbitrary
+destination paths — which is exactly why this has never been seen before, and exactly what D-06
+predicted ("dev compose never exercises the relay").
+
+**The defect.** The application publishes and subscribes to `/topic/kitchen/{tenantId}/{shopId}`:
+- publisher: `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java:109`
+- subscriber: `frontend/app/dashboard/kitchen/page.tsx:277` (via `frontend/hooks/use-stomp.ts`)
+- convention: `core-java/src/main/java/uk/jtoye/core/websocket/TenantChannelInterceptor.java:123`
+  (`/topic/{feature}/{tenantId}/{...}`)
+
+RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>` as the routing
+key, and `<name>` must be a **single segment**. It answers:
+
+```
+ERROR
+message:Invalid destination
+'/kitchen/00000000-0000-0000-0000-000000000001/97d95aa4-f6e8-4bb6-b9ad-525e49c61ef6' is not a valid topic destination
+```
+
+**Both directions fail.** 14/14 browser SUBSCRIBEs rejected, and the relay's own `_system_` session
+rejected on publish 43 ms after `OrderStateChangeListener` logged `CONFIRMED -> PREPARING`. MESSAGE
+frames delivered: **0**.
+
+**Why it looks like it works, which is the dangerous part.** Each rejected SUBSCRIBE tears the session
+down; `@stomp/stompjs` redials on `reconnectDelay: 5000`; `useStomp`'s `onReconnect` hook fires a full
+`fetchOrders()`. So the board updates roughly every 5 s with no manual refresh, and by eye that is
+indistinguishable from realtime. Measured: 24 `/api/v1/orders…` requests in a 30 s window, 14 WebSocket
+opens, 0 MESSAGE frames. Anyone verifying this visually — including the human-verify step of this very
+plan — would reasonably call it a pass. Only a frame census falsifies it.
+
+**Diagnosis proven, not inferred** — two arms against the same broker, port and credentials over a raw
+socket (read-only; a SUBSCRIBE makes an auto-delete queue that vanishes on DISCONNECT, nothing
+published):
+
+| arm | destination | CONNECTED | SUBSCRIBE | ERROR |
+|---|---|---|---|---|
+| A (control) | `/topic/kitchen.<tenant>.<shop>` (dots) | true | **ok (RECEIPT)** | none |
+| B (app shape) | `/topic/kitchen/<tenant>/<shop>` (slashes) | true | **rejected** | `Invalid destination` |
+
+Arm A is load-bearing: it proves the broker, port, STOMP login and passcode are all correct — i.e. DEF-4
+really is fixed — and isolates the fault to the destination shape alone.
+
+**Why it was NOT fixed in plan 26-08 (deviation Rule 4 — architectural).** The fix changes the topic
+naming convention across three surfaces simultaneously (Java publisher, TypeScript subscriber, and the
+`TenantChannelInterceptor` tenant-isolation prefix check that parses those segments to enforce
+cross-tenant isolation), none of which is in that plan's `files_modified`, and Phase 26's stated boundary
+is "no application behaviour change" beyond the additive edits its decisions authorise. Getting the
+interceptor's parsing wrong is a **tenant-isolation** risk, so it needs its own plan, its own tests and
+its own review.
+
+**Do NOT close this by setting `stomp.broker.mode: in-memory`.** That hides the defect and breaks
+multi-replica correctness: the simple broker is per-JVM, so with `replicas: 3` an event published by one
+pod never reaches a client attached to another. The relay exists precisely for that.
+
+**Suggested direction.** Move to a dot-delimited routing key that RabbitMQ accepts while keeping every
+segment and the interceptor's prefix check — e.g. `/topic/kitchen.{tenantId}.{shopId}` — updating
+publisher, subscriber and interceptor in one change. Note `amq.topic` treats `.` as its wildcard
+separator, so a dotted UUID becomes five routing-key words; confirm the interceptor's tenant check and
+any future wildcard subscriptions still behave, and check every other `/topic/...` destination in the
+codebase for the same shape, not just the kitchen one.
+
+**Acceptance for the closure (must FAIL before it passes):**
+1. Against a relay-mode cluster, a browser KDS session receives a **MESSAGE** frame after an order
+   status change — asserted on the frame census, not on the board's appearance, because the board
+   updates either way.
+2. `grep -c 'Invalid destination'` in the core-java log over the run = **0**.
+3. WebSocket opens over a 60 s idle KDS session = **1** (proving the reconnect storm is gone).
+4. A cross-tenant subscribe attempt is still refused by `TenantChannelInterceptor` — the isolation test
+   must be re-run, not assumed, because the destination format it parses has changed.
+
+---
+
+## 2026-07-25 — `dashboard-mobile.spec.ts:268` is strict-mode fragile and flakes on a duplicate tab bar
+
+**Found by:** plan 26-08 Task 3, running the spec against the ingress. **Pre-existing; unrelated to that
+plan's change; deliberately not fixed** (outside its file list, and the SCOPE BOUNDARY rule).
+
+`frontend/e2e/dashboard-mobile.spec.ts:268` asserts
+`expect(page.getByTestId("mobile-tab-bar")).toBeVisible()` with no `.first()`. During an App Router
+transition two `DashboardShell` trees are briefly mounted, so the locator resolves **2** elements and
+Playwright raises a strict-mode violation (the first one measuring `hidden`).
+
+Measured twice: **10 passed / 3 failed** (Dashboard, Shops, Orders), then **11 passed / 2 failed**
+(Dashboard, Finance) on a re-run with the spec's own `NEXT_PUBLIC_API_URL` supplied. Different routes
+fail each time, so it is flake, not a route defect. `/dashboard` failed in both runs — that is the case
+where the test `goto`s the URL it is already on.
+
+**It is not a product regression.** The unstubbed live journey in `k8s/LOCAL.md` §11 L7 measured exactly
+**1** `mobile-tab-bar` element, visible, on the same build through the same ingress. And it is not a
+DEF-5 failure: every failure is at line 268, which runs *after* `vendorLogin` has already succeeded in
+`beforeEach` — so all 13 tests performed a real Keycloak login through the ingress on both runs.
+
+**Suggested closure:** scope the locator (`.first()`, or assert on a count of >= 1 visible) and add an
+explicit wait for the transition to settle. Do NOT weaken it to `toBeAttached()` — visibility is the
+MOBL-01 assertion's whole point. Re-verify at both 390px and 375px.
