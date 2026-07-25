@@ -176,7 +176,7 @@ must be DOWN while the cluster runs.
 Research surfaced three further verified defects; the user folded all three in. These are tracked
 decisions, not discretion.
 
-- **D-17 — kube-dns NetworkPolicy selector bug (verified PRODUCTION defect).** The base
+- **D-17:** kube-dns NetworkPolicy selector bug (verified PRODUCTION defect) — the base
   `labels: [{pairs, includeSelectors: true}]` transformer injects the common labels into the DNS
   egress `podSelector` of `k8s/base/networkpolicies/20-core-java.yaml:60-66`. The rendered
   `kubectl kustomize k8s/production` output emits `app.kubernetes.io/managed-by: kustomize` +
@@ -187,7 +187,7 @@ decisions, not discretion.
   the render, and is not wired into CI at all. **Fix the selector AND add a render-level assertion**
   so the class cannot silently return with the next transformer edit. Applies to every overlay, not
   just local.
-- **D-18 — frontend `NEXT_PUBLIC_*` is build-time, so the k8s ConfigMap injection is dead config.**
+- **D-18:** frontend `NEXT_PUBLIC_*` is build-time, so the k8s ConfigMap injection is dead config —
   `frontend/Dockerfile:22-23` takes `NEXT_PUBLIC_API_URL` as a build ARG, and line 31 of that same
   file already documents that `NEXT_PUBLIC_*` is "inlined at BUILD time — a runtime `environment:`"
   does not work. `k8s/base/frontend-deployment.yaml:49-53` injects it from `app-config` at runtime →
@@ -196,7 +196,7 @@ decisions, not discretion.
   (and the other `NEXT_PUBLIC_*` args), **and** the misleading runtime injection in
   `frontend-deployment.yaml` is corrected or removed so no one trusts dead config again. This keeps
   D-16's full browser proof reachable.
-- **D-19 — fold the 4 remaining prod-affecting localhost defaults into D-15.**
+- **D-19:** fold the 4 remaining prod-affecting localhost defaults into D-15 —
   `NOTIFICATION_UNSUBSCRIBE_BASE_URL`, `NOTIFICATION_EMAIL_TRACKING_BASE_URL`,
   `STRIPE_CONNECT_RETURN_URL`, `STRIPE_CONNECT_REFRESH_URL` all default to `http://localhost:3000`
   and are unsupplied by any manifest — so production emails carry unsubscribe/tracking links pointing
