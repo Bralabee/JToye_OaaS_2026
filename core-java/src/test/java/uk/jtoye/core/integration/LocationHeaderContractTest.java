@@ -124,18 +124,20 @@ class LocationHeaderContractTest {
      * a UUID-subject Keycloak JWT that is BOTH a realm admin (implicit GROUP_ADMIN — the
      * 23-08 fail-closed shop gate the shop/promotion/announcement creates cross, and the
      * {@code hasRole('admin')} gate the finance/refund creates require) AND carries
-     * {@code SCOPE_catalog:write} (the product-create scope gate, #206). Replaces the
-     * pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the fail-closed
-     * {@code ShopAccessService} now correctly denies. None of these methods asserts a
-     * denial, so a single admin+write-scope operator token preserves each one's original
-     * access intent (create succeeds, its Location dereferences).
+     * {@code SCOPE_catalog:write} (the product-create scope gate, #206) AND
+     * {@code SCOPE_customers:write} (Phase 25 [CR-01]: the customer-create/mutation scope
+     * gate). Replaces the pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the
+     * fail-closed {@code ShopAccessService} now correctly denies. None of these methods
+     * asserts a denial, so a single admin+write-scope operator token preserves each one's
+     * original access intent (create succeeds, its Location dereferences).
      */
     private static RequestPostProcessor operatorJwt() {
         return jwt().jwt(j -> j
                         .subject(UUID.randomUUID().toString())
                         .claim("email", "operator@example.com"))
                 .authorities(new SimpleGrantedAuthority("ROLE_admin"),
-                        new SimpleGrantedAuthority("SCOPE_catalog:write"));
+                        new SimpleGrantedAuthority("SCOPE_catalog:write"),
+                        new SimpleGrantedAuthority("SCOPE_customers:write"));
     }
 
     /**

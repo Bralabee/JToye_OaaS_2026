@@ -8,6 +8,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -63,6 +67,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// Phase 25 [CR-01]: POST /orders is now gated by @PreAuthorize("hasAuthority('SCOPE_orders:write')"),
+// and OrderService.createOrder additionally requires SHOP_MANAGER on the target shop (VSA-02). This
+// test drives the proxied controller bean directly, so @EnableMethodSecurity needs a SecurityContext.
+// Pre-Phase-25 it ran with NO auth — the ShopAccessService "internal caller" bypass treated that as an
+// implicit GROUP_ADMIN. A realm-admin principal (ROLE_admin = implicit GROUP_ADMIN) preserves exactly
+// that access intent, and SCOPE_orders:write satisfies the new gate. Supplied class-wide for the
+// main-thread cases; the concurrent worker threads install it explicitly (ThreadLocal context does not
+// propagate to the pool).
+@WithMockUser(authorities = {"ROLE_admin", "SCOPE_orders:write"})
 class OrderIdempotencyIntegrationTest {
 
     @Container
@@ -145,6 +158,13 @@ class OrderIdempotencyIntegrationTest {
         try {
             Callable<Object> worker = () -> {
                 TenantContext.set(TENANT_ID);
+                // Phase 25 [CR-01]: the pooled worker thread does not inherit the class-level
+                // @WithMockUser SecurityContext, so install it explicitly — ROLE_admin (implicit
+                // GROUP_ADMIN for the VSA-02 shop gate) + SCOPE_orders:write (the @PreAuthorize gate).
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken("idem-worker", "n/a",
+                                java.util.List.of(new SimpleGrantedAuthority("ROLE_admin"),
+                                        new SimpleGrantedAuthority("SCOPE_orders:write"))));
                 try {
                     gate.await();
                     return orderController.createOrder(request, key);
@@ -152,6 +172,7 @@ class OrderIdempotencyIntegrationTest {
                     return t;
                 } finally {
                     TenantContext.clear();
+                    SecurityContextHolder.clearContext();
                 }
             };
 

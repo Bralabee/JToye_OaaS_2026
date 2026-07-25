@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.common.idempotency.Idempotent;
@@ -58,6 +59,7 @@ public class OrderController {
      * Create a new order.
      * POST /orders
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [AI-02]: activate reserved orders:write (D-01)
     @PostMapping
     @Idempotent(endpoint = "orders.create")
     @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.")
@@ -129,6 +131,7 @@ public class OrderController {
      * PUT /orders/{id}
      * Only allowed on DRAFT or PENDING orders.
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PutMapping("/{id}")
     @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders")
     public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
@@ -179,6 +182,7 @@ public class OrderController {
      * Delete order.
      * DELETE /orders/{id}
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete order", description = "Deletes an order and its items")
     public ResponseEntity<Void> deleteOrder(@PathVariable UUID id) {
@@ -193,6 +197,7 @@ public class OrderController {
      * POST /orders/{id}/submit
      * Transition: DRAFT → PENDING
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/submit")
     @Operation(summary = "Submit order", description = "Submit a draft order for processing (DRAFT → PENDING)")
     public ResponseEntity<OrderDto> submitOrder(@PathVariable UUID id) {
@@ -205,6 +210,7 @@ public class OrderController {
      * POST /orders/{id}/confirm
      * Transition: PENDING → CONFIRMED
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/confirm")
     @Operation(summary = "Confirm order", description = "Confirm a pending order (PENDING → CONFIRMED)")
     public ResponseEntity<OrderDto> confirmOrder(@PathVariable UUID id) {
@@ -217,6 +223,7 @@ public class OrderController {
      * POST /orders/{id}/start-preparation
      * Transition: CONFIRMED → PREPARING
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/start-preparation")
     @Operation(summary = "Start preparation", description = "Start preparing a confirmed order (CONFIRMED → PREPARING)")
     public ResponseEntity<OrderDto> startPreparation(@PathVariable UUID id) {
@@ -229,6 +236,7 @@ public class OrderController {
      * POST /orders/{id}/mark-ready
      * Transition: PREPARING → READY
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/mark-ready")
     @Operation(summary = "Mark as ready", description = "Mark a preparing order as ready (PREPARING → READY)")
     public ResponseEntity<OrderDto> markOrderReady(@PathVariable UUID id) {
@@ -241,6 +249,7 @@ public class OrderController {
      * POST /orders/{id}/complete
      * Transition: READY → COMPLETED
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/complete")
     @Operation(summary = "Complete order", description = "Complete a ready order (READY → COMPLETED)")
     public ResponseEntity<OrderDto> completeOrder(@PathVariable UUID id) {
@@ -253,6 +262,7 @@ public class OrderController {
      * POST /orders/{id}/cancel
      * Transition: ANY → CANCELLED
      */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel order", description = "Cancel an order at any stage (ANY → CANCELLED)")
     public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id) {

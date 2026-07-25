@@ -42,6 +42,7 @@ services:
       EDGE_API_CLIENT_SECRET: ${EDGE_API_CLIENT_SECRET:?EDGE_API_CLIENT_SECRET must be set (renders realm edge-api client)}
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
       INTEGRATION_CATALOG_RO_SECRET: ${INTEGRATION_CATALOG_RO_SECRET:?INTEGRATION_CATALOG_RO_SECRET must be set (renders realm integration-catalog-ro client)}
+      INTEGRATION_ORDERS_RW_SECRET: ${INTEGRATION_ORDERS_RW_SECRET:?INTEGRATION_ORDERS_RW_SECRET must be set (renders realm integration-orders-rw client)}
     volumes:
       - ./keycloak:/keycloak
     entrypoint:
@@ -50,7 +51,7 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET' \
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
     networks:

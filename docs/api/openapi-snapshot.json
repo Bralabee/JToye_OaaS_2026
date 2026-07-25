@@ -4067,8 +4067,10 @@
             "scopes" : {
               "catalog:read" : "Read the product catalog (list/get products)",
               "catalog:write" : "Create, update, and delete products and product images",
-              "orders:read" : "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced",
-              "orders:write" : "Reserved for the [AI-1] MCP model (#203) — defined, not yet enforced"
+              "customers:read" : "Reserved for the MCP model — defined-only, not enforced this phase",
+              "customers:write" : "Enforced; gates POST /customers (Phase 25 [AI-02])",
+              "orders:read" : "Reserved for the MCP model — defined, not yet enforced",
+              "orders:write" : "Enforced; gates POST /orders (Phase 25 [AI-02])"
             },
             "tokenUrl" : "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token"
           }
@@ -4088,7 +4090,7 @@
       "email" : "engineering@jtoye.uk",
       "name" : "J'Toye Engineering"
     },
-    "description" : "## Multi-Tenant UK Retail SaaS Platform\n\nThis API provides the core system-of-record functionality for J'Toye OaaS,\na multi-tenant SaaS platform designed for UK retail operations.\n\n### Security\nAll endpoints (except `/health`) require JWT authentication from Keycloak.\n\n### Multi-Tenancy\n- Tenant isolation is enforced via PostgreSQL Row-Level Security (RLS)\n- JWT must contain `tenant_id`, `tenantId`, or `tid` claim\n- Dev fallback: Use `X-Tenant-Id` header when JWT lacks tenant claim\n\n### Compliance\n- **Natasha's Law**: All products require `ingredients_text` and `allergen_mask`\n- **HMRC VAT**: All financial transactions require `vat_rate`\n\n### Client Scopes (issue #206 [AI-4])\nLeast-privilege machine/integration access is granted via OAuth2 client\nscopes (`catalog-scopes` security scheme, client-credentials grant):\n- `catalog:read` — list/get products (read surface, authenticated-only)\n- `catalog:write` — create/update/delete products + images (gates all nine product mutations)\n- `orders:read`, `orders:write` — reserved taxonomy for the [AI-1] MCP model (#203); defined, not yet enforced\n\nA `catalog:read`-only token gets **200** on `GET /products` and **403** on\nany product write. See `docs/security-scopes.md` for the client-credentials\nrecipe and realm re-import note.\n\n### Pagination\nList endpoints support pagination via query parameters:\n- `page` (default: 0)\n- `size` (default: 20, max: 100)\n- `sort` (e.g., `createdAt,desc`)\n",
+    "description" : "## Multi-Tenant UK Retail SaaS Platform\n\nThis API provides the core system-of-record functionality for J'Toye OaaS,\na multi-tenant SaaS platform designed for UK retail operations.\n\n### Security\nAll endpoints (except `/health`) require JWT authentication from Keycloak.\n\n### Multi-Tenancy\n- Tenant isolation is enforced via PostgreSQL Row-Level Security (RLS)\n- JWT must contain `tenant_id`, `tenantId`, or `tid` claim\n- Dev fallback: Use `X-Tenant-Id` header when JWT lacks tenant claim\n\n### Compliance\n- **Natasha's Law**: All products require `ingredients_text` and `allergen_mask`\n- **HMRC VAT**: All financial transactions require `vat_rate`\n\n### Client Scopes (issue #206 [AI-4])\nLeast-privilege machine/integration access is granted via OAuth2 client\nscopes (`catalog-scopes` security scheme, client-credentials grant):\n- `catalog:read` — list/get products (read surface, authenticated-only)\n- `catalog:write` — create/update/delete products + images (gates all nine product mutations)\n- `orders:write` — create orders (enforced; gates `POST /orders`, Phase 25 [AI-02])\n- `customers:write` — create customers (enforced; gates `POST /customers`, Phase 25 [AI-02])\n- `orders:read`, `customers:read` — reserved taxonomy for the MCP model; defined, not yet enforced\n\nA `catalog:read`-only token gets **200** on `GET /products` and **403** on\nany product write. See `docs/security-scopes.md` for the client-credentials\nrecipe and realm re-import note.\n\n### Pagination\nList endpoints support pagination via query parameters:\n- `page` (default: 0)\n- `size` (default: 20, max: 100)\n- `sort` (e.g., `createdAt,desc`)\n",
     "license" : {
       "name" : "Proprietary",
       "url" : "https://jtoye.uk/license"

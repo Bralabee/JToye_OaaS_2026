@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.common.idempotency.Idempotent;
@@ -67,6 +68,7 @@ public class CustomerController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [AI-02]: new customers:write scope (D-02)
     @PostMapping
     @Idempotent(endpoint = "customers.create")
     @Operation(summary = "Create customer", description = "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.")
@@ -103,6 +105,7 @@ public class CustomerController {
         return ResponseEntity.status(status).location(location).body(dto);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @PutMapping("/{id}")
     @Operation(summary = "Update customer", description = "Updates an existing customer for the authenticated tenant")
     @ApiResponses(value = {
@@ -121,6 +124,7 @@ public class CustomerController {
         }
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete customer", description = "Deletes a customer for the authenticated tenant")
     @ApiResponses(value = {
