@@ -343,6 +343,65 @@ headroom. If load tests (#115) ever show 10 connections per pod saturating,
 prefer introducing PgBouncer (transaction mode) in front of Postgres over
 inflating pool sizes.
 
+## K8s static gates
+
+Five scripts under `k8s/scripts/` run on every PR in the `k8s-validate` job
+(`.github/workflows/ci-cd.yaml`). They are client-side only — no cluster access,
+no credentials — and the whole set takes about two seconds. Run all five locally
+before pushing a `k8s/` change:
+
+```bash
+# The complete static set. Stops at the first gate that fails.
+bash k8s/scripts/check-no-plaintext-secrets.sh \
+  && bash k8s/scripts/check-connection-math.sh \
+  && bash k8s/scripts/check-env-contract.sh \
+  && bash k8s/scripts/check-render-invariants.sh \
+  && bash k8s/scripts/render-golden.sh \
+  && echo ALL_GATES_GREEN
+```
+
+| Script | What it guarantees |
+|--------|--------------------|
+| `check-no-plaintext-secrets.sh` | `k8s/base` and every overlay build, and no build output contains a top-level `kind: Secret` or a `REPLACE_WITH_*` placeholder (outside the known non-secret `deployment.timestamp` annotation). Plaintext Secret material can never become a live kustomize resource (#100). |
+| `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter + reserved slots) fits Postgres `max_connections` with ≥20% headroom, the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
+| `check-env-contract.sh` | The core-java env contract in **both** directions: every env name the manifest injects is read by some `application*.yml` (a wrong name silently resolves to a Spring default — this is how the AMQP pool authenticated as the wrong user), and every `${PLACEHOLDER}` whose default is local-only or absent is either supplied by a manifest or carries an **explicit allowlist entry with a reason**. The allowlist is itself gated: a blank reason, a duplicate, or a now-unnecessary entry fails. Requires GNU `grep -P`. Covers **core-java only**. |
+| `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1`/`minioadmin` literal in a non-local render; and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
+| `render-golden.sh` | The `kubectl kustomize k8s/staging` and `k8s/production` output is byte-identical to the reviewed goldens in `k8s/goldens/`. A `k8s/base` edit that changes either render without a regenerated golden fails the PR. |
+
+**Exit-code convention (shared by all five):**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Clean — the assertion holds. |
+| `1` | Violation — a real defect in the manifests, config or docs. Fix the input, not the gate. |
+| `2` | Parse or tooling failure — a missing tool (`kubectl`, GNU `grep -P`), a failed `kustomize` build, a missing baseline, or a parser that can no longer find its subject. A `2` means the assertion is **void, not passing**: fix the parser rather than deleting the invariant. |
+
+### Golden-render workflow (required after any intentional `k8s/base` change)
+
+The goldens are the reviewable record of what a base edit does to the shipped
+staging and production output. They are **never hand-edited** — `--write` is the
+arbiter:
+
+```bash
+# 1. Optional but recommended: name a pre-change baseline BEFORE editing.
+k8s/scripts/render-golden.sh --snapshot my-change
+
+# 2. Make the k8s/base edit.
+
+# 3. Regenerate the goldens and review what changed in the render.
+k8s/scripts/render-golden.sh --write
+k8s/scripts/render-golden.sh --diff-since my-change   # '<' removed, '>' added
+
+# 4. Commit the regenerated goldens in the SAME PR as the base edit.
+git add k8s/goldens k8s/base
+```
+
+Committing the golden diff alongside the base edit is what makes the change
+reviewable: a reviewer sees both the cause and its full effect on every
+environment, including the additions and removals the edit did *not* intend.
+`k8s/goldens/` deliberately contains no `kustomization.yaml`, so it is never
+mistaken for a fourth overlay by the other gates' discovery loop.
+
 ## Monitoring and Observability
 
 ### Prometheus Metrics

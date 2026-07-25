@@ -179,15 +179,37 @@ jobs:
           name: integration-test-results
           path: core-java/build-local/reports/tests/integrationTest/
 
-  # Job 1c: K8s manifest validation (#100 / P2-9, #94 / P2-3).
-  # Client-side only — builds k8s/base + every overlay with `kubectl kustomize`
-  # and fails if any output contains a top-level `kind: Secret` (committed
-  # plaintext/placeholder Secret material) or a REPLACE_WITH_* placeholder in
-  # anything other than the known deployment.timestamp annotation.
-  # SealedSecret manifests (ciphertext) are allowed.
-  # Also asserts the DB connection budget: HPA maxReplicas × Hikari pool
-  # (+ Keycloak + backup + exporter) must fit Postgres max_connections with
-  # >=20% headroom, and the core-java HPA must not scale on memory (#94).
+  # Job 1c: K8s manifest validation (#100 / P2-9, #94 / P2-3, Phase 26 INFRA-02).
+  # Client-side only (no cluster access) — five static gates, all under
+  # k8s/scripts/, all sharing the exit-code convention 0 = clean / 1 = violation /
+  # 2 = parse-or-tooling failure. Full local run + rationale for each:
+  # k8s/DEPLOYMENT.md "K8s static gates".
+  #
+  #   1. check-no-plaintext-secrets.sh — builds k8s/base + every overlay with
+  #      `kubectl kustomize` and fails if any output contains a top-level
+  #      `kind: Secret` (committed plaintext/placeholder Secret material) or a
+  #      REPLACE_WITH_* placeholder in anything other than the known
+  #      deployment.timestamp annotation. SealedSecrets (ciphertext) are allowed.
+  #   2. check-connection-math.sh — the DB connection budget: HPA maxReplicas ×
+  #      Hikari pool (+ Keycloak + backup + exporter) must fit Postgres
+  #      max_connections with >=20% headroom, and the core-java HPA must not
+  #      scale on memory (#94).
+  #   3. check-env-contract.sh — the two-direction core-java env contract
+  #      (D-07/D-08): no env is injected that no application*.yml reads (DEF-4),
+  #      and no placeholder with a local-only or missing default is left
+  #      unsupplied without a REASONED allowlist entry (DEF-6). Needs GNU
+  #      `grep -P`, which ubuntu-latest provides; it exits 2 without it.
+  #   4. check-render-invariants.sh — RENDER-level assertions that pin the
+  #      Phase 26 fixes: no hardcoded Postgres port, no EnvVar with both `value`
+  #      and `valueFrom` (the API server rejects that apply), no common labels
+  #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
+  #      outage under an enforcing CNI), no localhost/minioadmin literal in a
+  #      non-local render, and no DB superuser in the secret recipe or template.
+  #   5. render-golden.sh — byte-compares the staging and production renders
+  #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
+  #      changes either render without a regenerated, reviewed golden fails the
+  #      PR. Regenerate with `k8s/scripts/render-golden.sh --write` and commit
+  #      the golden diff in the SAME PR; never hand-edit a golden.
   k8s-validate:
     name: K8s Kustomize Secret Guard
     runs-on: ubuntu-latest
@@ -209,6 +231,21 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
+
+      - name: Assert the core-java env contract holds in both directions (D-07/D-08)
+        run: |
+          chmod +x ./k8s/scripts/check-env-contract.sh
+          ./k8s/scripts/check-env-contract.sh
+
+      - name: Assert rendered-manifest invariants (DB_PORT, kube-dns selector, no localhost, DB role)
+        run: |
+          chmod +x ./k8s/scripts/check-render-invariants.sh
+          ./k8s/scripts/check-render-invariants.sh
+
+      - name: Assert the staging/production render matches its reviewed golden
+        run: |
+          chmod +x ./k8s/scripts/render-golden.sh
+          ./k8s/scripts/render-golden.sh
 
   # Job 1d: OpenAPI breaking-change gate (#97 AC3).
   # Regenerates the core-java OpenAPI spec from source — the
