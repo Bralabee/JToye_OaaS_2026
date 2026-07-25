@@ -357,3 +357,53 @@ also make the "1257" figure's provenance unrecoverable without git archaeology.
 **Suggested owner.** The milestone-close pass (`/gsd:review-backlog` or the v2.3 wrap-up), which
 already updates `PROJECT.md`. The durable fix is to stop quoting a number there at all and point only
 at `docs/metrics.json` — a count in prose next to a gate that does not check it will always drift.
+
+---
+
+## 2026-07-25 — The compose⊕k8s XOR guard cannot see a second writer already inside the cluster
+
+**Discovered by.** Plan 26-07, live, during the A1 pre-apply inventory. This is the most transferable
+finding the phase produced, so it is recorded here rather than only in the plan summary.
+
+**What.** `k8s_local_assert_compose_xor` enforces D-04 by inspecting **compose only** — the four app
+services must be down, the six backing services up. It never looks at the cluster it is about to
+start. The guard is therefore asymmetric: it will refuse to start a cluster while compose is up, but
+it will happily start a cluster that **already contains its own writers**.
+
+**Measured, not hypothesised.** The `jtoye` profile had been left `Stopped` on 2026-07-14, and a
+Stopped profile preserves etcd. On start it restored the `jtoye-staging` namespace with **11 running
+pods** (core-java 3/3, edge-go 5/5, frontend 3/3) on the stale `:2.1.0` images — code predating Phases
+23, 24 and 25 — plus a `pg-backup` CronJob that fired immediately and failed `BackoffLimitExceeded`.
+Those pods held **16 live connections to the shared dev Postgres as `jtoye_app`**:
+
+```
+jtoye_app <- 172.18.0.1/32  (16 conns)
+```
+
+So `minikube start` alone silently re-created the two-writers-on-one-shared-dev-Postgres hazard that
+the human is asked to stop their compose apps in order to avoid — and every guard in the phase
+reported green while it was happening. Deleting the namespace (46 objects) dropped remote connections
+to **0**, which is how the attribution was established.
+
+**Why it is not fixed here.** Plan 26-07's declared file list is `k8s/LOCAL.md` +
+`docs/runbooks/backups.md`. Adding a cluster-side arm to `k8s_local_assert_compose_xor` changes a
+load-bearing safety guard and needs its own falsification probes on both arms (refuse and proceed),
+which is a plan's worth of work, not a drive-by edit inside the phase's single live-mutation window.
+Three script defects were already fixed in this plan under Rule 1/3 because they *blocked* the
+rehearsal; this one does not block it, and the standing instruction was explicitly to record rather
+than implement.
+
+**Suggested closure.** After step 3's profile start and before any apply, refuse if a namespace outside
+the expected set (`jtoye-local`, `kube-*`, `default`, `ingress-nginx`) has a Deployment with non-zero
+replicas — naming the offending namespaces the way the compose arms already name offending services.
+Two details matter: the refusal must be a REFUSE arm with its own name (e.g.
+`REFUSED [cluster-writers-present]`) so it can be falsified like the other four, and it must not
+auto-delete anything — deleting a namespace is a human decision for exactly the reason stopping a
+compose container is.
+
+**Interim mitigation, already shipped.** `k8s/LOCAL.md` §7 A1 now carries this as a named guard gap
+with the measured numbers and an instruction to run the inventory by hand on every first start and
+treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
+
+**Suggested owner.** A follow-up plan touching `scripts/lib/k8s-local-guards.sh`, or the next phase
+that revisits the local-k8s tooling.
