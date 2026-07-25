@@ -536,6 +536,12 @@ proven by pointing `stomp.broker.relay-host` at an unreachable host and observin
 
 ## 2026-07-25 — **PRODUCTION DEFECT:** the STOMP relay rejects the KDS topic — a `/topic` destination cannot contain `/`
 
+> **TRACKED AS GitHub issue [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** (OPEN,
+> `bug` / `P1`) — filed 2026-07-25 by plan 26-09 at phase close. This entry stays as the full technical
+> record (mechanism, two-arm falsification, fix sites, acceptance test); **#266 is the authoritative
+> status and the thing that gets scheduled.** A deferred item that lives only inside a completed phase
+> directory is not tracked work.
+
 **Found by:** plan 26-08 Task 3, the live browser journey D-06 exists to force. **Severity: production
 affecting.** `k8s/base/configmap.yaml` sets `stomp.broker.mode: "relay"`, so staging and production both
 run the broken path. Dev compose defaults to `STOMP_BROKER_MODE=in-memory`

@@ -436,6 +436,14 @@ against a different image, so record which side a digest came from.
 **A3 — CONFIRMED PRODUCTION DEFECT: the STOMP relay rejects the KDS topic, because a RabbitMQ `/topic`
 destination must be a SINGLE segment.**
 
+> **TRACKED AS GitHub issue [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** —
+> *"KDS WebSocket relay path is structurally broken in staging/production — RabbitMQ rejects the
+> slashed `/topic` destination"* (OPEN, labels `bug` / `P1`). Filed 2026-07-25 at phase close so the
+> defect is scheduled work in the issue tracker rather than a note that only exists inside a finished
+> phase directory. The suggested direction and the must-fail-first four-part acceptance test remain in
+> `.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`; #266 is the
+> authoritative status.
+
 *Found by plan 26-08 Task 3 (2026-07-25) on this local cluster; the finding and the "record now, fix in
 its own scoped work" disposition were reviewed and **approved by the human at 26-08's verification
 gate**, who independently confirmed the amber-dot symptom below in a real browser. This is **not** a
@@ -1598,7 +1606,10 @@ L6/L7 human-verify browser gate approved           : [x]  APPROVED 2026-07-25. H
 Four image identities recorded in the header       : [x]  host-side IDs; see §7 PIT-4b for
                                                      the host-vs-in-cluster reconciliation
 No loopback address anywhere in the evidence       : [x]  see the check below + the 26-08 addendum
-Both backup arms recorded (L4)                     : [x]  arm A = 0, arm B = 4067
+Both backup arms recorded (L4)                     : [x]  arm A = products 0, arm B = products 47
+                                                     (corrected by 26-09: this line read
+                                                     "arm B = 4067", a transcription error —
+                                                     L4's measured figure is products 47)
 Recorded by                                        : plan 26-07 executor, 2026-07-25
                                                      plan 26-08 executor, 2026-07-25 (L6/L7)
 ```
@@ -1660,6 +1671,129 @@ PIT-1 snippet annotation is nulled locally and the controller's posture was neve
 anything pass), and **nothing** about NetworkPolicy enforcement (minikube's default CNI does not
 enforce; all 6 policies were applied and are inert). INFRA-01 and INFRA-02 are therefore **not** marked
 complete by this plan.
+
+### Phase-closure verification (plan 26-09, 2026-07-26)
+
+The closing plan re-audited this section rather than trusting it, and ran the whole test suite rather
+than only the tests this phase added — the repo's recorded green-by-construction pattern is a per-plan
+executor running its own new tests and shipping a suite-wide regression. This phase changed
+`core-java/src/main/resources/application.yml` (the D-05 STOMP credential chain), so the entire JVM
+suite was in scope.
+
+**Completeness: 7 live rows required, 7 filled.** `26-VALIDATION.md`'s Per-Task Verification Map types
+exactly **7** rows as `live` (INFRA-01 ref-resolution, INFRA-02b non-superuser boot, INFRA-02c CronJob
+completion, INFRA-02c non-empty dump, INFRA-02d no boot-time rejection, INFRA-02d KDS relay function,
+DEF-5 ingress login). §11 carries exactly **7** primary rows L1–L7 answering them one-for-one, plus 5
+supplementary rows (L1b/L1c/L1d, L2b/L2c) — 12 headed rows in total, each with captured output. Counts
+stated and equal: **7 = 7**. L6 is filled with a **falsified** result, which is a filled row, not a gap.
+
+**Placeholder and loopback sweeps, each falsified before being trusted.** Both results are stated in
+prose and **deliberately not shown in a fenced block**, for the recursive reason 26-08 recorded one
+level up: the loopback assertion is scoped to §11's fenced lines, so pasting its own worked example
+into a fence puts the forbidden string inside the material it checks and the check starts failing on
+itself. Writing the example out here cost this section a 0 → 1 self-break before it was caught.
+
+The placeholder sweep — the four unfilled-evidence markers (the two well-known all-caps "to be done"
+tokens, an unclosed angle-bracket `fill` marker, and a run of underscores), anywhere in §11 — returns
+**0**. Falsified by re-running it over §11 plus one appended line whose Actual value is one of those
+tokens, which returns 1, so the pattern can fire. **This paragraph names none of the four literally,
+and that is deliberate**: the first draft spelled two of them out, which put them inside the material
+the sweep scans and took the count 0 → 2. Second instance of the same recursion in one subsection.
+
+The loopback sweep — an application API base on the core-java or frontend port, scoped to §11's fenced
+lines only — returns **0**, now over **598** captured-output lines (up from 26-08's 549 as this
+subsection's measurement fences landed; the figure quoted is the FINAL one, re-taken after the last
+edit, because every added fenced line moves it. The first draft of this line guessed **639** from the
+size of the text being added instead of measuring it — caught by re-running the count rather than
+trusting the prose, which is the whole discipline this section is written to enforce).
+Falsified by re-running it over the fenced view plus one appended line carrying a loopback api-base,
+which returns 1.
+
+**Secret sweep — the literal-value form is UNSATISFIABLE here, and the stronger form is recorded
+instead.** The obvious assertion ("the decoded value of each local secret does not appear in
+`k8s/LOCAL.md`") returns **38 hits** for `DB_PASSWORD` on a perfectly clean document, because the local
+dev value is a six-letter common English word and this runbook cannot discuss `kubectl create secret`,
+`secretKeyRef`, `Secrets` or `secret cache` without using it. Every one of the 38 is prose; none is a
+credential. That is the same class of unfalsifiable criterion this phase kept catching (26-06's
+`grep -c '^-'`, 26-08's quoted-scalar golden grep) — a check that fires on a clean tree teaches a reader
+to ignore it.
+
+The satisfiable form scopes the match to a **credential-bearing shape**: `key=value` / `key: value` on a
+password/passcode/secret-key/login key, `--password <value>`, or URL userinfo `://user:value@` — plus the
+base64 blob of each value, since a Secret leak is as likely to be encoded as literal.
+
+```
+key                      credential-shape   base64-blob
+DB_PASSWORD                     0                0
+DB_BACKUP_PASSWORD              0                0
+RABBITMQ_PASSWORD               0                0
+REDIS_PASSWORD                  0                0
+MINIO_ROOT_PASSWORD             0                0
+KC_SEED_USER_PASSWORD           0                0
+KEYCLOAK_CLIENT_SECRET          0                0
+POSTGRES_PASSWORD               0                0
+TOTAL                           0                0
+
+falsification: a scratchpad COPY of this file with two real leaks appended
+               (`DB_PASSWORD=<value>` and a `postgresql://jtoye_app:<value>@…` URL)
+               scores 2. The sweep can fire; 0 on the real file is a real negative.
+               The copy was deleted; `git diff --numstat k8s/LOCAL.md` was 0 lines
+               at that point, so the probe never touched the tracked document.
+```
+
+**Full regression suite, run on the final tree** (JDK 21; `core-java/build.gradle.kts:15` redirects the
+build directory to `build-local`, so `core-java/build/test-results/` is a **stale 2025-12-27 artifact
+reporting 3 failures** — a false RED that must not be read as this run's result):
+
+```
+./gradlew :core-java:cleanTest :core-java:test --no-daemon
+  BUILD SUCCESSFUL in 47s
+  104 classes · 767 tests · 0 failures · 0 errors · 1 skipped
+  (cleanTest is load-bearing: without it the task reports UP-TO-DATE / BUILD SUCCESSFUL
+   while executing NOTHING — recorded in 26-06)
+  includes StompCredentialResolutionTest 8/8 — this phase's own D-05 addition
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --no-daemon
+  BUILD SUCCESSFUL in 40m   (real Postgres via Testcontainers)
+  98 classes · 392 tests · 0 failures · 0 errors · 1 skipped
+  vs Phase 23's recorded baseline 81 classes / 332 tests / 1 skipped: +17 classes, +60 tests.
+  DELTA EXPLAINED — none of it is this phase's: Phases 24 (media CoW + pipeline) and 25
+  (MCP write scopes) added Testcontainers classes after that baseline was taken;
+  29 of the 98 classes match media/idempotency/shop-access/staff/scope/write.
+  Phase 26 added ONE Java test and it is a unit test, not a tagged integration test.
+
+cd frontend && npm run build      -> exit 0 (this is the tsc gate; jest does NOT type-check)
+cd frontend && npx jest --ci      -> 59 suites · 377 tests · 0 failures · 2 snapshots
+bash scripts/docs-freshness.sh    -> exit 0 ("total logical invocations: 1698")
+
+k8s static gates, each recorded individually:
+  check-no-plaintext-secrets.sh  exit 0   3 targets, 23 resources each, 0 plaintext Secrets
+  check-connection-math.sh       exit 0   133 <= 157 with >=20% headroom
+  check-env-contract.sh          exit 0   49 injected names all read; 0 violations either direction
+  check-render-invariants.sh     exit 0   INV-1..INV-6 over 4 targets; LOC-1..LOC-6 on k8s/local
+  render-golden.sh               exit 0   staging + production match goldens (1469 lines each)
+
+Go suite: NOT RUN, and that is the correct outcome, asserted rather than assumed —
+  git diff --name-only <phase-base>..HEAD -- '*.go'  =  0 files.
+  edge-go gained a manifest env entry only; no Go source changed.
+```
+
+**`npx tsc --noEmit` is red at 366 errors and that is the PRE-EXISTING count, not a regression.** All
+366 are jest-dom matcher typings (`toHaveClass`, `toBeInTheDocument`) in `*.test.tsx` files that
+`next build` never type-checks. The honest assertion is *count-unchanged at 366*, not *exit 0*; stating
+it as exit 0 would make the gate permanently red and therefore permanently ignored.
+
+**Reconciling jest's 377 with `docs/metrics.json`'s `jest_blocks: 382`.** The two are measured
+differently and both are right. `scripts/docs-freshness.sh:56` counts the lexical token `\b(it|test)\(`,
+which also matches five `RegExp.prototype.test(` calls — four in `frontend/__tests__/link-graph.test.ts`
+(lines 47 ×2, 117, 119) and one in `frontend/app/dashboard/kitchen/__tests__/page.test.tsx:210`.
+382 − 5 = **377**, exactly the runner's figure. Zero tests are skipped or `.todo`. `docs/metrics.json`
+was **not** touched — plan 26-06 is its single writer, and `docs-freshness.sh` exits 0 as committed.
+
+**One correction made to this section by 26-09.** The Sign-off block recorded
+`arm B = 4067` where L4's measured figure is `products 47`. Corrected in place with the correction
+stated, because a wrong number in a sign-off is worse than a missing one: a later reader auditing the
+summary line and never opening L4 would carry the wrong figure forward.
 
 **What L6 and L7 add, and what they still do not establish** (plan 26-08). L7 closes DEF-5: a real
 Keycloak flow through the ingress, with the two issuer values recorded as demonstrably different values
