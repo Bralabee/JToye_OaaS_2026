@@ -68,8 +68,28 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: host
+        # DEF-1 (Phase 26 / INFRA-02a): the port is CONFIG, not a constant.
+        # GLOBAL_RULE_6 / ARCHITECTURE_RULE_8 (config injection, no
+        # environment-varying literals): a hardcoded "5432" made every
+        # environment's Postgres port a manifest edit. The host dev Postgres
+        # publishes 5433 (docker-compose.full-stack.yml, to dodge the cohabiting
+        # OlaJay stack), so local could not work at all and staging/prod were one
+        # port change away from breaking. postgres-credentials already carries a
+        # `port` key that k8s/base/pg-backup-cronjob.yaml consumes exactly like
+        # this — the two consumers of the same secret key now look identical.
+        #
+        # The literal `value:` had to be DELETED, not merely supplemented by an
+        # overlay patch: a kustomize strategic-merge patch that adds `valueFrom`
+        # to an env item that still has `value:` renders an EnvVar with BOTH
+        # fields. `kubectl kustomize` accepts it, but the API server rejects the
+        # apply with `env[i].valueFrom: Invalid value: "": may not be specified
+        # when 'value' is not empty` (reproduced with kubectl v1.33.3 /
+        # kustomize v5.6.0, the CI-pinned version). There is no overlay shortcut.
         - name: DB_PORT
-          value: "5432"
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: port
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
