@@ -164,3 +164,170 @@ empty. So the class cannot return silently — including via a future overlay.
 
 **Suggested owner.** A future in-cluster-identity phase, if one is ever wanted. Nothing is blocked
 today: the removal deleted no working path, because there was no backend to reach.
+
+## 26-06 — Calico CNI locally to actually enforce NetworkPolicies (prerequisite now CLEARED)
+
+**Recorded during:** 26-06 Task 1 (the `k8s/LOCAL.md` "what local does NOT prove" section).
+**Dated:** 2026-07-25.
+
+**What.** The 6 NetworkPolicies render unchanged in `k8s/local` and are validated as manifests, but
+minikube's default CNI does not enforce NetworkPolicies at all (D-11). Local therefore proves their
+validity and nothing about their behaviour. Installing Calico on the local profile would make local
+the **only** environment that proves enforcement.
+
+**Why it is not done here.** It exceeds the roadmap criteria for this phase, and it is not a
+drop-in: `k8s/base/networkpolicies/20-core-java.yaml` allows public egress to `0.0.0.0/0` with
+`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16` in `except[]`, and its only in-cluster allow
+targets a `jtoye-infrastructure` namespace that does not exist locally. The minikube host gateway
+sits inside `192.168.0.0/16`, so under an enforcing CNI the **entire** local traffic pattern — ports
+5433/8085/6379/5672/61613/9000/1025 to `host.minikube.internal` — is denied. Enabling Calico without
+first adding a host-gateway egress rule would simply break the local cluster.
+
+**Status change worth recording: the stated prerequisite is now cleared.** This follow-up was
+previously blocked behind the D-17 kube-dns selector defect — a Calico local cluster would have
+inherited a total DNS blackhole for core-java, because the `labels:` transformer was injecting the
+common labels into the DNS-egress `podSelector`. Plan 26-01 fixed that in all three kustomizations
+(and it is repeated in `k8s/local/kustomization.yaml`), and plan 26-03's **INV-3** in
+`k8s/scripts/check-render-invariants.sh` asserts it on the render per target. So the blocker is gone;
+what remains is the host-gateway egress rule and the decision to spend the local resources.
+
+**Suggested owner.** A network-policy phase, ideally the same one that rolls enforcement out on AKS —
+the concrete CIDR and port list it needs is written out in `k8s/LOCAL.md` § "What local does NOT
+prove", so it starts from the truth rather than a guess.
+
+## 26-06 — Env-contract gate covers core-java only; `edge-go` and the frontend are ungated
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** `k8s/scripts/check-env-contract.sh` asserts the env contract in both directions for
+core-java by parsing `k8s/base/core-java-deployment.yaml` against `application*.yml`. It covers
+**neither** `edge-go` nor the frontend — the gate's own summary line and the `k8s/DEPLOYMENT.md`
+§ "K8s static gates" table both say "Covers **core-java only**" so the limit is not silently implied.
+
+**Why it matters rather than being cosmetic.** This is the same DEF-4/DEF-6 bug class, just in two
+other services. Phase 26 found a concrete instance: `edge-go/cmd/edge/main.go` has read
+`JWT_EXPECTED_ISSUER` since the issuer/JWKS decoupling fix, and **no k8s manifest ever supplied it**
+(plan 26-02 wired it). A core-java-only gate could not have caught that.
+
+**Why it is not done here.** Extending it needs two new parsers with different shapes: Go
+`os.Getenv("NAME")` call sites (plus `os.LookupEnv`, and any wrapper that reads a default), and
+Next.js `process.env.NAME` — where the **dynamic** `process.env[expr]` form is not statically
+resolvable at all and is exactly the form `frontend/lib/env-validation.ts` uses. The frontend also
+needs the build-time/runtime distinction encoded (a `NEXT_PUBLIC_*` name supplied as a runtime `env:`
+is *dead config*, which is defect 6 of this phase), so a naive "is it injected?" check would report
+the opposite of the truth.
+
+**Suggested owner.** A follow-up hardening phase, or whichever phase next touches `edge-go` or
+frontend env wiring.
+
+## 26-06 — The customer-storefront realm is unconfigured in EVERY k8s environment
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** `CUSTOMER_KC_ISSUER_URI`, `CUSTOMER_JWT_EXPECTED_ISSUER` and
+`NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` exist in `docker-compose.full-stack.yml` and are read by the
+application, but appear in **no** `k8s/` manifest — base, staging, production or local. So the
+customer (storefront) realm is unconfigured in every Kubernetes environment, not just locally. This
+is a real production gap, not a local-overlay omission.
+
+**Why it is not fixed here.** Deliberately deferred in `26-CONTEXT.md` § `<deferred>` ("Customer-storefront
+realm in k8s"), and recorded as a **reasoned allowlist entry** in
+`k8s/scripts/check-env-contract.sh` rather than left silent: supplying only the core issuer would
+half-wire the realm and make a broken configuration look configured, which is worse than an obviously
+absent one. The full set also spans a `NEXT_PUBLIC_*` value, which is build-time (see the 26-02 entry
+above), so wiring it correctly needs the frontend-runtime-config decision too.
+
+**Suggested owner.** The storefront / customer-identity (CID) work, which owns the realm itself.
+
+## 26-06 — Sealed-secrets / external-secrets for the local path
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** Local secrets arrive from `scripts/k8s-local-secrets.sh`, which sources the gitignored
+`.env` and applies each Secret with `kubectl create secret … --dry-run=client -o yaml | kubectl apply
+-f -` (D-01). Values are briefly visible in `argv` to a local `ps`, and nothing is encrypted at rest
+beyond etcd's own defaults.
+
+**Why it is not fixed here.** `.planning/PROJECT.md:141` locks the decision for this milestone: plain
+GitHub + k8s Secrets now, "Work Order H (sealed-secrets or external-secrets-operator) is the
+long-term answer". `26-CONTEXT.md` § "Out of scope" repeats it. Accepted for local specifically
+because the host is a single-user development machine and `k8s/QUICK_START.md` already documents the
+same imperative pattern for the bootstrap path.
+
+**Suggested owner.** Work Order H / the secrets-management phase. `docs/runbooks/sealed-secrets.md`
+already carries the staging/production workflow to extend.
+
+## 26-06 — No `mcp-server` k8s manifest set
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** The MCP server shipped in Phases 20 and 25 and runs in compose (it is one of the four
+compose **app** services the XOR guard requires to be down), but `k8s/` has no Deployment, Service,
+HPA, PDB, NetworkPolicy or Ingress for it at all. So the local cluster — and staging and production —
+run the platform without its MCP surface.
+
+**Why it is not fixed here.** `26-CONTEXT.md` § "Out of scope" excludes it explicitly. It is not a
+local-overlay patch: a new service needs its own manifests, its own scoped credential (the Phase 25
+`integration-orders-rw`-style client), its own NetworkPolicy row in
+`k8s/base/networkpolicies/README.md`'s flow matrix, and an ingress decision (is the MCP endpoint
+public?). It also has connection-budget consequences — `k8s/scripts/check-connection-math.sh` would
+need the new pool counted.
+
+**Suggested owner.** Its own phase (manifests + scoped credentials + ingress).
+
+## 26-06 — `emptyDir` at `/var/log/jtoye` in the base is the durable PIT-5 fix
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** Under the prod profile that every k8s environment uses (D-10),
+`core-java/src/main/resources/application-prod.yml:91` sets
+`logging.file.name: ${LOG_PATH:/var/log/jtoye}/application.log`. The container runs as
+`runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
+logback's FileAppender fails to start on **every** boot with a `FileNotFoundException … Permission
+denied`, and file logging is silently absent. Non-fatal (the app continues; the 2026-07-14 rehearsal
+reached 11/11 READY that way), but it is boot noise that reads like a real fault **in staging and
+production too**, not only locally.
+
+**What was done instead, and why it is not the fix.** `k8s/local/configmap-patch.yaml` sets
+`log.path: /tmp`, which the pod user can write. That resolves it for local only. The base default is
+deliberately **unchanged**, because changing where production writes its application log is a
+production behaviour change and this phase's boundary is "no change to behaviour for existing,
+already-configured environments".
+
+**The durable fix.** Mount an `emptyDir` at `/var/log/jtoye` in `k8s/base/core-java-deployment.yaml`
+(or make the path a first-class config key with a writable default). That keeps the prod log path
+intact *and* makes it writable, in every environment, without a per-overlay patch. It touches the
+Deployment's volumes and the golden renders, so it wants its own reviewed change.
+
+**Suggested owner.** An observability or logging phase, or the next base-manifest hardening pass.
+
+## 26-06 — `OLLAMA_URL` and `ZIPKIN_ENDPOINT` remain allowlisted omissions
+
+**Recorded during:** 26-06 Task 1.
+**Dated:** 2026-07-25.
+
+**What.** Both are `${PLACEHOLDER}` values `application*.yml` expects, supplied by no manifest, and
+both are carried as **reasoned entries in the allowlist** of
+`k8s/scripts/check-env-contract.sh` (the gate fails a blank reason, a duplicate, or an entry that has
+become unnecessary — so these cannot rot silently):
+
+- `OLLAMA_URL` — there is no in-cluster Ollama, and the media vision stage is advisory-only behind
+  `jtoye.media.vision.enabled`, which defaults `false` (Phase 24 IMG-03: a vision failure never
+  rejects an upload, it only flags for review). Supplying this would point core-java at a host that
+  does not exist; the unreachable default keeps the stage inert, which is the intended k8s behaviour.
+- `ZIPKIN_ENDPOINT` — no in-cluster Zipkin/OTLP collector is deployed, and Micrometer tracing export
+  is best-effort: spans are dropped silently and no request path degrades. A supplied-but-wrong
+  endpoint would be worse than an unreachable default.
+
+**Why they are recorded rather than closed.** Each needs a real backing service before a value would
+mean anything, and inventing one is the DEF-6 defect class in reverse. They are listed here so the
+inventory of "what is deliberately unsupplied" lives in one reviewable place as well as in the gate.
+
+**Suggested owner.** `OLLAMA_URL` → whichever phase deploys or points at a real inference endpoint.
+`ZIPKIN_ENDPOINT` → the observability phase that adds a collector (which the readiness report's own
+"Long-Term" recommendations already propose).

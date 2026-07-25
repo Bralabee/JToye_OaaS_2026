@@ -249,6 +249,43 @@ psql -U <superuser> -d jtoye_restore_drill -c 'SELECT count(*) FROM products;'
 dropdb -U <superuser> jtoye_restore_drill
 ```
 
+### Falsifying the dump — the two-arm recipe (added 2026-07-25, Phase 26 / INFRA-02c)
+
+**Every automated check in this pipeline passes on a schema-only, zero-row dump.** That is the whole
+reason this section exists. `infra/backups/k8s-backup.sh` verifies the artifact two ways:
+
+- `MIN_BACKUP_BYTES` (default **1000**) — a size floor. Sixty Flyway migrations of DDL comfortably
+  exceed 1 KiB, so an empty database clears it easily.
+- `pg_restore --list` — a table-of-contents read. A zero-row dump lists its schema perfectly.
+
+Combine that with the FORCE RLS trap documented above (a `pg_dump` as the app role with no tenant GUC
+captures **zero rows** from every tenant table, silently) and you have a pipeline that can report a
+verified, uploaded, retained backup containing no data at all. A confirmation adds nothing here. Only
+a **restore-and-count** falsifies it, and only with the counterexample alongside:
+
+| Arm | Take the dump as | Restore, then `SELECT count(*) FROM products` | What it establishes |
+|---|---|---|---|
+| **A — the counterexample** | the **app** role (`jtoye_app`: NOSUPERUSER, subject to FORCE RLS, no `app.current_tenant_id` GUC set) | must be **`products = 0`** | That the trap is real in *this* database, so the size floor and the TOC listing are demonstrably not the thing doing the work. A non-zero count here means RLS is not enforcing and the isolation model needs investigating before the backup does. |
+| **B — the real backup** | the **BYPASSRLS** dump role (`jtoye_backup`) | must be **`products > 0`** | That the artifact the CronJob actually uploads carries tenant data. |
+
+Run **both, in the same session, against the same database.** Arm B on its own is exactly the result a
+broken pipeline also produces once, by luck; arm A is what makes arm B mean something. Record both
+counts, not just "restored OK".
+
+Use the commands already proven in [Restore procedure (custom format)](#restore-procedure-custom-format)
+verbatim for each arm — they are not repeated here, so they cannot drift. The only difference between
+the arms is which role took the dump; the restore side is identical (restore as the superuser into a
+throwaway database, count, drop).
+
+Producing arm A is a one-off `pg_dump` under the app role's credentials — it is not something the
+CronJob will ever do for you, because the CronJob is wired to the `backup-username` /
+`backup-password` keys of `postgres-credentials` on purpose.
+
+For the local-cluster rehearsal of this recipe (how to trigger the CronJob on demand, and where the
+captured counts are recorded), see `k8s/LOCAL.md` § "Backup rehearsal" and its rehearsal-evidence row
+**L4**. The BYPASSRLS role is bootstrapped there by `scripts/k8s-local-secrets.sh`, which invokes
+`infra/backups/create-backup-role.sql` rather than restating the role's privileges.
+
 ### Pending (needs a live cluster — flagged, not yet done)
 The following ACs require the prod/staging cluster (AKS `sipbihs2aks` currently
 unreachable; no local cluster):

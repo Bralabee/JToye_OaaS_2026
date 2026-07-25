@@ -1,5 +1,13 @@
 # Quick Start - Kubernetes Deployment
 
+> **This document is the PRODUCTION/STAGING recipe.** For the local minikube rehearsal, see
+> [`k8s/LOCAL.md`](./LOCAL.md) — the local path is a different procedure, not a smaller version of
+> this one. It needs the compose-XOR-k8s guard, an out-of-band secret bootstrap from `.env`, and
+> locally built images, and it is driven by one command (`scripts/k8s-local-up.sh`) rather than the
+> steps below. `k8s/LOCAL.md` also records exactly what a green local run does **not** prove (TLS,
+> the nginx security-header snippet, NetworkPolicy enforcement), so a local pass is never mistaken
+> for a production guarantee.
+
 ## TL;DR - Deploy to Production in 5 Minutes
 
 ### Prerequisites Installed?

@@ -3,6 +3,13 @@
 ## Overview
 This guide provides comprehensive instructions for deploying the JToye OaaS platform to Kubernetes clusters in production and staging environments.
 
+> **Scope: staging and production.** For the local minikube rehearsal, see
+> [`k8s/LOCAL.md`](./LOCAL.md). The `k8s/local` overlay consumes the docker-compose backing services
+> over `host.minikube.internal` and is brought up by `scripts/k8s-local-up.sh` — do not read the
+> production recipe below as the local one. `k8s/LOCAL.md` also states plainly which controls a
+> local run does **not** exercise (no TLS/cert-manager, no nginx security-header snippet, no
+> NetworkPolicy enforcement), and carries the rehearsal-evidence template.
+
 ## Prerequisites
 
 ### Required Tools

@@ -1,0 +1,550 @@
+# Local Kubernetes Rehearsal — `k8s/local`
+
+**Operator runbook for the `jtoye-local` minikube overlay.**
+Authored in Phase 26 (plan 26-06). Live evidence captured by plans 26-07 and 26-08.
+
+You should be able to bring this cluster up, verify it, and tear it back down using nothing but
+this file. If you find yourself needing to read a `.planning/` plan or a research document to get
+through a step, that is a defect in this runbook — fix it here.
+
+---
+
+## 1. What this is and is not
+
+**What it is.** The committed, reviewable, re-runnable replacement for the imperative sequence used
+during the first live-deploy rehearsal on 2026-07-14. That rehearsal reached 11/11 pods READY through
+hand-typed `kubectl patch configmap` / `kubectl create secret` steps that lived nowhere in the
+repository — so it could not be reviewed, re-run or regression-tested. `k8s/local` (6 files, 23
+rendered resources) plus `scripts/k8s-local-up.sh` are that knowledge, in git.
+
+**What it is for.** Rehearsing the **production config path** on real Kubernetes. The overlay keeps
+`SPRING_PROFILES_ACTIVE=prod` (decision D-10) deliberately: the internal 9091 management port, no SQL
+logging, and production pool sizes are the point. It also exercises the **Ingress path**, real
+rollout and probe behaviour, and the STOMP **relay** broker mode — three surfaces no other local
+runtime touches (dev compose defaults to `STOMP_BROKER_MODE=in-memory`, so a normal compose run
+never exercises the relay at all).
+
+**What it is NOT.** It is not a development runtime. For day-to-day work — writing code, running the
+Jest/Playwright suites, iterating on a page — use Docker Compose:
+
+```bash
+scripts/start-dev.sh        # the canonical local dev + E2E runtime
+```
+
+Compose remains canonical for development and E2E (`CLAUDE.md` § "Runtime & deploy topology");
+Kubernetes remains the staging/production deploy target. **Neither layer is retired.** This cluster
+is a deploy-layer rehearsal you run occasionally, not a place to live.
+
+For the staging/production recipe see `k8s/QUICK_START.md` and `k8s/DEPLOYMENT.md`. Do not mistake
+either for this one — the local path needs guards, an out-of-band secret bootstrap and locally built
+images that the production path does not.
+
+---
+
+## 2. The compose XOR k8s rule
+
+**compose XOR k8s** applies at *local runtime only*, and it is more precise than "run one or the
+other":
+
+| Compose layer | Required state while the cluster runs | Why |
+|---|---|---|
+| **App** services — `core-java`, `frontend`, `edge-go`, `mcp-server` | **DOWN** | Both they and the cluster pods write the **same shared dev Postgres**. Two writers on one database is the footgun this rule exists to stop. |
+| **Backing** services — `postgres`, `redis`, `rabbitmq`, `keycloak`, `minio`, `mailhog` | **UP** | The cluster does not run its own backing services. Every endpoint in the overlay is shimmed to `host.minikube.internal`, so the pods **consume** these six. |
+
+Bring the four app containers down (and leave the six backing services running):
+
+```bash
+docker compose -f docker-compose.full-stack.yml stop core-java frontend edge-go mcp-server
+```
+
+`scripts/k8s-local-up.sh` **refuses** rather than trusting you to have done it. It checks both halves
+and names the offending services:
+
+- `REFUSED [compose-apps-running]: compose APP service(s) still running: …`
+- `REFUSED [compose-backing-down]: compose BACKING service(s) not running: …`
+
+The guard is **read-only by construction** — it never stops, starts or removes a container. Stopping
+the app containers is a human decision, because a second concurrent session may own that stack.
+
+---
+
+## 3. Prerequisites
+
+**Tools** (the versions this path was built and verified against):
+
+| Tool | Verified version | Notes |
+|---|---|---|
+| `kubectl` | v1.33.3 | Bundled Kustomize **v5.6.0** — `kubectl kustomize` is used throughout; no separate `kustomize` binary is needed. |
+| `minikube` | v1.36.0 | Bundles ingress-nginx controller **v1.12.2** — see §6, this is load-bearing. |
+| `docker` | 29.6.2 | Driver for the minikube profile and the image builds. |
+| `jq` | any | Used to parse the minikube profile registry. |
+
+**`.env` keys.** The scripts read the gitignored `.env`; `.env.example` documents every key with its
+consumer. The local-k8s block is:
+
+```
+K8S_LOCAL_POD_HOST            # host.minikube.internal — the pod-side name for the host gateway
+K8S_LOCAL_DB_PORT             # 5433  published compose Postgres port
+K8S_LOCAL_KC_PORT             # 8085  published compose Keycloak port
+K8S_LOCAL_REDIS_PORT          # 6379
+K8S_LOCAL_AMQP_PORT           # 5672  RabbitMQ AMQP
+K8S_LOCAL_STOMP_PORT          # 61613 RabbitMQ STOMP
+K8S_LOCAL_MINIO_PORT          # 9000  MinIO S3 API
+K8S_LOCAL_SMTP_PORT           # 1025  Mailhog SMTP
+K8S_LOCAL_KUBE_CONTEXT        # the ONLY context this tooling will target
+K8S_LOCAL_MINIKUBE_PROFILE    # profile name
+K8S_LOCAL_MINIKUBE_CPUS       # 4
+K8S_LOCAL_MINIKUBE_MEMORY     # 12g
+K8S_LOCAL_BACKUP_BUCKET       # bucket for the pg-backup CronJob dumps
+DB_BACKUP_PASSWORD            # BYPASSRLS dump-role password (refuses a CHANGE_ME value)
+NOTIFICATION_UNSUBSCRIBE_SECRET  # optional; empty keeps one-click unsubscribe inert
+```
+
+Every port above is the **published compose value** — none is a script literal. If a compose port
+moves, change it here and nowhere else.
+
+Values live only in `.env`. This runbook names variables, never values; keep it that way.
+
+**`/etc/hosts`.** The ingress hostnames must resolve to the minikube node IP. One line, exact shape:
+
+```
+<minikube-node-ip> api.jtoye.local app.jtoye.local
+```
+
+`scripts/k8s-local-up.sh` reads the hostnames **from the rendered overlay** and the IP from the
+profile, prints the exact line with the real values substituted, and stops. It never escalates
+privilege — you add the line yourself.
+
+---
+
+## 4. Bring-up
+
+One command, idempotent, re-runnable from a stopped cluster:
+
+```bash
+scripts/k8s-local-up.sh                 # full bring-up
+scripts/k8s-local-up.sh --dry-run-only  # stop after the server-side dry-run; no real apply
+scripts/k8s-local-up.sh --skip-build    # reuse existing local tags (refuses if any is absent)
+```
+
+It runs twelve steps in this order. The order is load-bearing, and each step is runnable by hand if
+one fails:
+
+| # | Step | What it does / how to run it alone |
+|---|---|---|
+| 0 | flags | Parsed first, so a typo can never fall through into a mutating step (`--nope` → exit 2, zero tool calls). |
+| 1 | preflight | Loads `.env`, asserts the `K8S_LOCAL_*` contract by name, checks `docker/kubectl/minikube/jq`, then runs `scripts/verify-env.sh`. |
+| 2 | compose XOR | §2. **Precedes the profile start** — a mis-invocation cannot start a cluster against a live compose stack. |
+| 3 | profile + context | `minikube start -p <profile> --cpus … --memory …` if not already Running, then asserts the kubectl context (it does not exist in kubeconfig until the profile starts). |
+| 4 | ingress addon | `minikube addons enable ingress -p <profile>` (idempotent). metrics-server is deliberately **not** enabled — see §6. |
+| 5 | reachability | `minikube ssh -p <profile> -- nc -vz -w 3 host.minikube.internal <port>` for all seven ports. |
+| 6 | hosts file | Checks each rendered ingress hostname resolves to the node IP; prints the fix. |
+| 7 | images | Builds and loads all four images, then prints their identities. See §7 (stale-image rule). |
+| 8 | bootstrap | `scripts/k8s-local-secrets.sh` — namespace, BYPASSRLS dump role, backup bucket, all Secrets. |
+| 9 | apply | `kubectl apply -f k8s/local/namespace.yaml` **first**, then `apply -k k8s/local --dry-run=server` printed verbatim, then the real apply. |
+| 10 | rollout | `rollout status deploy/core-java` (5m), `deploy/frontend` (3m), `deploy/edge-go` (3m). |
+| 11 | smoke | `curl` `<api>/health`, `<api>/public/shops`, `<app>/api/health` — **through the ingress hostnames**, never a loopback address. |
+| 12 | evidence | Prints a copy-pasteable block for §11 of this file. |
+
+Every host, port, hostname, tag and browser build-arg comes from `.env` or from the **committed
+overlay render**, so the script cannot drift from what the cluster actually serves.
+
+The context guard has four named refusal arms — `unresolvable-profile-ip`, `wrong-name`,
+`context-absent`, `server-host-mismatch`. The last one compares the context's API-server host to the
+profile's node IP, so a same-named context pointing elsewhere is still rejected. `kubectl config
+use-context` is never called; every cluster call passes `--context` explicitly. **This matters on
+this host: the other kubectl context is employer infrastructure and must never be targeted.**
+
+---
+
+## 5. What the overlay changes
+
+| Change | Value(s) | Why |
+|---|---|---|
+| Endpoint shims (8) | `keycloak.issuer.uri`, `keycloak.admin.base-url`, `redis.host`, `rabbitmq.host`, `stomp.broker.relay-host`, `s3.endpoint`, `s3.backup.endpoint`, `smtp.host` → `host.minikube.internal` | Pods consume the compose backing services on the host. The underlying gateway IP varies by driver, so the **name** is used, never an IP. |
+| Deliberately **not** shimmed | `s3.public-url` → `localhost:9000/…`, `keycloak.public.issuer.uri` → `localhost:8085/realms/jtoye-dev` | Browser-reachable, not pod-reachable. See the note below. |
+| Scale triple | `replicas: 1` ×3, HPA `minReplicas: 1` ×3, PDB `minAvailable: 1` ×3 | `replicas:` reaches Deployments only, so HPAs and PDBs need the second mechanism (`scale-patch.yaml`, one file, six documents). A PDB of 2 over 1 replica makes the pod undrainable. |
+| HPA `maxReplicas` | **UNCHANGED** from base | It is an input to `k8s/scripts/check-connection-math.sh`. Lowering it locally would make the local render stop proving the same connection arithmetic. An HPA with no metrics-server never scales up anyway. |
+| Ingress hosts | `api.jtoye.local` → `core-java:9090`, `app.jtoye.local` → `frontend:3000`; SSE ingress `api.jtoye.local/api/v1/orders/stream` (`pathType: Exact`) | The one deploy surface no other local runtime exercises, and it gives NextAuth a stable callback origin. 9091 is the internal management port and is published through no ingress. |
+| Image tags | all three service images pinned to `newTag: local` | A locally built tag that exists in no registry. Base sets `imagePullPolicy: IfNotPresent`, which is exactly right for `minikube image load`. The `pg-backup` image is loaded as-is at its immutable tag. |
+| Split-horizon issuer pair | `keycloak.issuer.uri` = pod-reachable; `keycloak.public.issuer.uri` = browser-reachable | Two different values, by design. Set both to the pod URL and every real token is rejected on `iss` mismatch; set both to the browser URL and the pod cannot fetch JWKS. This is the class that once caused a total live-auth outage. |
+| `log.path` | `/tmp` | See §7, PIT-5. |
+| Secrets | **zero** `kind: Secret` in the render | Enforced by `k8s/scripts/check-no-plaintext-secrets.sh`, which auto-discovers every overlay. Secrets arrive out-of-band from `scripts/k8s-local-secrets.sh`. |
+
+**Why `s3.public-url` stays browser-reachable while `s3.endpoint` is pod-reachable.** They are
+consumed by two different clients. `s3.endpoint` is where the **pod** writes, via a server-side AWS
+SDK call, so it must be the shimmed host. `s3.public-url` is the origin baked into the image URLs
+that go out in API responses and are then fetched by the **browser on your own machine** — where
+`host.minikube.internal` does not resolve at all. Shimming it would leave every product image broken
+while every server-side upload still reported success: a silent, browser-only failure. The same
+asymmetry is why the Keycloak issuer pair holds two values.
+
+---
+
+## 6. What local does NOT prove
+
+Read this before treating a green local run as a production guarantee. **A local pass proves manifest
+validity and the ingress path. It proves none of the following.**
+
+**TLS and HSTS — not proven.** The local overlay sets `tls: null` and `ssl-redirect: "false"` on both
+Ingresses, because there is no cert-manager here. `secretName: jtoye-tls` would never exist and nginx
+would silently serve its own self-signed fallback certificate. So local says nothing about TLS
+termination, certificate issuance or renewal, or HSTS. (ASVS V9 is deliberately degraded locally.)
+
+**The nginx security-header snippet — not proven.** minikube v1.36.0 bundles ingress-nginx controller
+**v1.12.2**, where `allow-snippet-annotations` defaults to `false` and `annotations-risk-level`
+defaults to `High` (hardened defaults since ingress-nginx v1.9.0). The base ingress carries
+`nginx.ingress.kubernetes.io/configuration-snippet` with 6 `more_set_headers` directives — including
+HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`. That
+annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
+objects**. The local overlay therefore nulls the annotation. It is **UNCHANGED in staging and
+production**, and CI asserts both halves (the local render has no snippet; the production render
+keeps it).
+
+> **Do NOT "fix" this by enabling snippet annotations on the local cluster.** Setting
+> `allow-snippet-annotations: "true"` / `annotations-risk-level: "Critical"` on the ingress addon
+> would make the apply succeed by re-enabling a documented Critical-risk annotation class that
+> ingress-nginx disables by default — weakening a cluster's admission posture for local
+> convenience. `scripts/k8s-local-up.sh` never touches the controller's configuration.
+>
+> Flag for staging/production too: whichever ingress-nginx version runs there must have snippets
+> enabled, or those six headers are silently absent (or the apply has been failing).
+
+**NetworkPolicy enforcement — not proven (D-11).** All 6 policies render unchanged locally and are
+validated as *manifests*. minikube's default CNI **does not enforce NetworkPolicies at all**, so
+nothing about the traffic rules is exercised. This is not a small gap — under an enforcing CNI the
+rendered policy set would deny the **entire** local traffic pattern:
+
+- `k8s/base/networkpolicies/20-core-java.yaml` allows public egress to `0.0.0.0/0` with
+  `10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16` in `except[]`. The minikube host gateway sits on
+  the bridge inside `192.168.0.0/16`, so every call to `host.minikube.internal` is denied.
+- That same policy's only in-cluster allow targets `namespaceSelector: jtoye-infrastructure`, a
+  namespace that **does not exist locally**.
+- The ports the local pattern actually needs — `5433` (Postgres), `8085` (Keycloak), `6379` (Redis),
+  `5672` (AMQP), `61613` (STOMP), `9000` (MinIO), `1025` (SMTP) — appear in no allowed egress rule
+  for the host gateway. The in-cluster rule lists `5432/6379/5672/61613/9000/9093`, but scoped to
+  that non-existent namespace.
+
+So "an enforcing CNI would need explicit egress rules" is concretely: a rule permitting TCP to the
+host gateway CIDR on those seven ports. The policy flow matrix and rollback steps are in
+`k8s/base/networkpolicies/README.md`.
+
+**HPA scaling behaviour — not proven.** metrics-server is deliberately not enabled; D-09 sets
+`minReplicas: 1` so nothing needs to compute a metric. An HPA here sits inert.
+
+---
+
+## 7. Known findings and caveats
+
+**PIT-5 — the logback boot error, fixed locally.** Under the prod profile,
+`application-prod.yml:91` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container runs as
+`runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
+logback's FileAppender fails to start with a `FileNotFoundException … Permission denied` on every
+boot. It is **non-fatal** (the app continues; the 2026-07-14 run reached 11/11 READY that way), but it
+is noise that reads like a real fault, and file logging is silently absent. The local overlay sets
+`log.path: /tmp`, which the pod user can write. The **base default is unchanged**; the durable fix is
+an `emptyDir` mounted at `/var/log/jtoye` in the base (recorded as a deferred item).
+
+**PIT-6 / D-17 — the kube-dns selector poisoning, fixed and CI-asserted.** The `labels:` transformer
+used to carry `includeSelectors: true`, which injects the common labels into **every**
+`podSelector.matchLabels` kustomize finds — including the DNS-egress rule of
+`networkpolicies/20-core-java.yaml`. The rendered selector then read
+`{k8s-app: kube-dns, app.kubernetes.io/managed-by: kustomize, app.kubernetes.io/part-of: jtoye-platform, environment: …}`.
+Real kube-dns pods carry none of those extra labels, so the rule matched nothing: **total DNS
+blackhole for core-java under an enforcing CNI.** This was live in `k8s/base` **and in
+`k8s/production`**, not merely in the new local overlay.
+
+Plan 26-01 fixed it by replacing `includeSelectors: true` with `includeSelectors: false` plus an
+explicit three-kind `fields:` list, in all three kustomizations *and* repeated in `k8s/local` (each
+overlay's own `labels` entry triggers its own transformer pass). Plan 26-03's **INV-3** in
+`k8s/scripts/check-render-invariants.sh` asserts it **on the render**, per target, so the class
+cannot return silently with the next transformer edit.
+
+Note the reason a render-level assertion was necessary: `k8s/scripts/validate-networkpolicies.py`
+cannot see this defect at all. It parses the **raw files** under `k8s/base/networkpolicies/`, never
+the kustomize output — and the poisoning is introduced *by* the render. It is also not wired into CI.
+That is exactly why INV-3 exists.
+
+Because this fix was the stated prerequisite for the "Calico CNI locally to prove enforcement"
+follow-up, **that prerequisite is now cleared** — a Calico local cluster would no longer inherit a
+DNS blackhole.
+
+**P-6 — the immutable-selector caveat.** The label transformer still writes into
+`Deployment.spec.selector.matchLabels`, and that field is **immutable after creation**. This is fine
+for a fresh `jtoye-local` namespace. But if you ever change the overlay's `labels:` pairs on a cluster
+that already has these Deployments, `kubectl apply` fails with
+`field is immutable` — and the only recovery is to **delete and recreate the Deployments** (Services
+and PDBs likewise carry transformed selectors). Plan or expect a delete/recreate whenever a label
+pair changes.
+
+**A1 — stale etcd state on first start.** A **Stopped** minikube profile preserves etcd. Namespaces
+and Secrets created imperatively during the 2026-07-14 rehearsal may therefore reappear the moment
+the profile starts — and a leftover Secret can **mask a genuinely missing one**, turning a real gap
+into a false green. On first start, take an inventory and clean up:
+
+```bash
+kubectl --context <ctx> get ns,secrets -A
+# delete any stale rehearsal namespace you recognise, then let the bootstrap
+# recreate everything in the fresh jtoye-local namespace
+```
+
+The fresh `jtoye-local` namespace is the recommended clean slate precisely because it cannot inherit
+anything.
+
+**PIT-4 — the stale-image rule (anti-anecdote).** The `ghcr.io/bralabee/jtoye-*:2.1.0` images sitting
+on this host were built on 2026-07-13/14 and therefore **predate Phases 23, 24 and 25**. Loading them
+would produce READY pods rehearsing three-phase-old code against a current database. Step 7 rebuilds
+all four with manifest-matching names and prints their identities, and §11 requires those identities
+recorded next to every result. **A pass with no recorded image identity is not a pass** — it may be a
+pass for code that is three phases stale.
+
+---
+
+## 8. Troubleshooting
+
+**`admission webhook "validate.nginx.ingress.kubernetes.io" denied the request`**
+The error text names the offending annotation. Cause: the ingress-nginx v1.12.2 snippet-annotation
+policy described in §6. If it names `configuration-snippet`, the local ingress patch has lost its
+`nginx.ingress.kubernetes.io/configuration-snippet: null` line — restore it. Do **not** relax
+`allow-snippet-annotations` on the controller.
+
+**`namespaces "jtoye-local" not found` on every object during a dry-run (PIT-8)**
+A server-side dry-run does **not** create the Namespace it is validating, so every namespaced object
+fails until the namespace exists. Correct order:
+
+```bash
+kubectl --context <ctx> apply -f k8s/local/namespace.yaml
+kubectl --context <ctx> apply -k k8s/local --dry-run=server
+```
+
+**Pod stuck in `CreateContainerConfigError` (PIT-13)**
+Two distinct cases, and telling them apart is the whole diagnosis:
+
+1. **A non-optional `secretKeyRef` whose KEY is missing from an existing Secret.** This genuinely
+   blocks container creation — the pod sits in `CreateContainerConfigError` until the key exists.
+   `stomp-login` / `stomp-passcode` on `rabbitmq-credentials` are in this class: no `optional` flag,
+   so an operator who skips them gets a pod that never becomes READY. `kubectl describe pod <name>`
+   names the missing key.
+2. **A `secretKeyRef` marked `optional: true`.** These do **not** block anything. Plan 26-02 marked
+   seven refs optional (the media/SMTP/Stripe/notification credentials). With the Secret absent the
+   env stays unset, `application.yml`'s own default applies, and the feature stays inert. If you are
+   in `CreateContainerConfigError`, it is *not* one of these.
+
+**A host backing service is unreachable from inside the cluster (PIT-11)**
+Suspect a **host firewall on the minikube bridge before you touch a manifest.** minikube requires the
+host service to listen on all interfaces (`0.0.0.0`); every compose port already publishes that way,
+so the remaining risk is ufw/firewalld blocking the bridge subnet. Step 5 already probes this, and
+you can repeat it by hand:
+
+```bash
+minikube ssh -p <profile> -- "nc -vz -w 3 host.minikube.internal 5433"
+minikube ssh -p <profile> -- "nc -vz -w 3 host.minikube.internal 8085"
+```
+
+If the probe fails, do not start editing manifests.
+
+**`apply` fails with `field is immutable`**
+See §7, P-6. A selector label changed; delete and recreate the affected Deployments.
+
+**`REFUSED [server-host-mismatch]`**
+The configured context exists but its API server is not the minikube node. This is the guard doing
+its job — on this host the alternative context is employer infrastructure. Do not "fix" it by
+pointing the context elsewhere.
+
+---
+
+## 9. Backup rehearsal
+
+Trigger the CronJob on demand rather than waiting for its schedule:
+
+```bash
+kubectl --context <ctx> -n jtoye-local create job pg-backup-manual --from=cronjob/pg-backup
+kubectl --context <ctx> -n jtoye-local wait --for=condition=complete job/pg-backup-manual --timeout=10m
+kubectl --context <ctx> -n jtoye-local get job pg-backup-manual -o jsonpath='{.status.succeeded}'
+```
+
+### Falsify the dump — do not confirm it
+
+**A completed job and a verified dump are both compatible with a dump containing zero rows.**
+`infra/backups/k8s-backup.sh` checks a `MIN_BACKUP_BYTES` floor (default **1000**) and runs
+`pg_restore --list`. Sixty Flyway migrations of DDL comfortably exceed 1 KiB and list perfectly, so
+**both checks pass on a schema-only, zero-row dump.** The tenant tables use FORCE ROW LEVEL SECURITY,
+which applies RLS even to the table owner, so a `pg_dump` as the app role with no tenant GUC set
+silently captures nothing at all.
+
+Only a restore-and-count falsifies it, and it takes **two arms** — the counterexample is what makes
+the positive result mean something:
+
+| Arm | Dump taken as | Restored `SELECT count(*) FROM products` | Verdict |
+|---|---|---|---|
+| **A — the counterexample** | the APP role (`jtoye_app`, NOSUPERUSER, FORCE RLS, no tenant GUC) | must be `products = 0` | If this is non-zero, RLS is not actually enforcing and the whole isolation model is in question. |
+| **B — the real backup** | the BYPASSRLS dump role (`jtoye_backup`) | must be `products > 0` | This is the only arm that proves the CronJob's dump is worth keeping. |
+
+Run **both**. Arm B alone proves nothing about whether the floor and the listing were doing any work;
+Arm A alone proves nothing about the backup. The restore commands are already written down and
+proven — use them verbatim from `docs/runbooks/backups.md` § "Restore procedure (custom format)",
+substituting the dump from each arm. Do not duplicate them here; they drift.
+
+The BYPASSRLS role is created by `scripts/k8s-local-secrets.sh` (which invokes
+`infra/backups/create-backup-role.sql` — the single definition of the role's privileges) and verified
+from the database side via `rolbypassrls`. Nothing else provisions it: not compose, not Flyway,
+because only a superuser can grant `BYPASSRLS`.
+
+The backup bucket deliberately gets **no** public-read policy. The images bucket has one; database
+dumps must not be world-readable.
+
+---
+
+## 10. Teardown
+
+End where you started:
+
+```bash
+# 1. Stop the cluster. `stop` preserves etcd (see §7, A1); `delete` does not.
+minikube stop -p <profile>
+
+# 2. Bring the compose app containers back up.
+docker compose -f docker-compose.full-stack.yml up -d core-java frontend edge-go mcp-server
+```
+
+The backing services were up the whole time and need no action. If you want a genuinely clean slate
+next time — no inherited namespaces or Secrets — use `minikube delete -p <profile>` instead of `stop`,
+at the cost of a full re-start and re-load. The `/etc/hosts` line is harmless to leave in place; the
+node IP is stable across `stop`/`start` for an existing profile, but re-check it after a `delete`.
+
+---
+
+## 11. Rehearsal Evidence
+
+**This section is a TEMPLATE. Every `Actual` field below is deliberately empty.**
+
+Plan 26-07 fills rows L1–L5 (behind its human-action approval, which is what authorises the shared
+state mutations). Plan 26-08 fills L6–L7 (the two browser/relay proofs). An unfilled row means
+*not yet proven* — leave it visibly unfilled rather than writing something plausible in it.
+
+### Run header — fill this before any row
+
+```
+date (UTC)        :
+git commit        :
+minikube profile  :                       node IP:
+namespace         :
+kubectl context   :
+ingress hosts     :
+api base          :
+app base          :
+
+IMAGE IDENTITIES (all four — mandatory, see §7 PIT-4)
+  ghcr.io/bralabee/jtoye-core-java:local   id/digest:
+  ghcr.io/bralabee/jtoye-edge-go:local     id/digest:
+  ghcr.io/bralabee/jtoye-frontend:local    id/digest:
+  ghcr.io/bralabee/jtoye-pg-backup:<tag>   id/digest:
+```
+
+`scripts/k8s-local-up.sh` step 12 prints this block with the real values already substituted — paste
+it, do not retype it.
+
+### The evidence-invalidating rule
+
+**If `localhost:9090` (or any other loopback address) appears anywhere in the captured output, the run
+does not count.** A loopback API base means the compose app containers were up and the compose XOR
+k8s guard was bypassed — so whatever answered was the compose stack, not the cluster, and the ingress
+path was never exercised. Discard the run, stop the app containers, start again. The same applies to
+a run whose image identities are blank: it proves nothing about which code was deployed.
+
+### Live rows
+
+Seven rows, one per **live** entry in the phase validation contract.
+
+**L1 — INFRA-01: every reference resolves against a real API server** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> apply -f k8s/local/namespace.yaml
+          kubectl --context <ctx> apply -k k8s/local --dry-run=server
+Expected: exit 0, one "… (server dry run)" line per object, no "not found" and no
+          admission-webhook denial. Capture the output VERBATIM — a dry-run that
+          silently skipped a webhook and one that genuinely passed share an exit code.
+Actual  :
+```
+
+**L2 — INFRA-02b: core-java boots as a NOSUPERUSER role** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> -n jtoye-local logs deploy/core-java | grep -c "is NOT a superuser"
+          plus the DB-side truth: SELECT current_user, usesuper  under the pod's connection identity
+Expected: log count >= 1, AND the DB reports usesuper = false. Both arms — the log
+          alone is the app's own claim about itself.
+Actual  :
+```
+
+**L3 — INFRA-02c: the pg-backup CronJob completes in-cluster and uploads** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> -n jtoye-local create job pg-backup-manual --from=cronjob/pg-backup
+          kubectl --context <ctx> -n jtoye-local get job pg-backup-manual -o jsonpath='{.status.succeeded}'
+Expected: .status.succeeded == 1, and the dump object present in the local backup bucket.
+Actual  :
+```
+
+**L4 — INFRA-02c: the dump is NON-EMPTY, both arms** *(owner: 26-07)*
+
+```
+Command : §9 arm A (app-role dump) and arm B (jtoye_backup dump), each restored per
+          docs/runbooks/backups.md § "Restore procedure (custom format)"
+Expected: arm A -> products = 0 ; arm B -> products > 0. Record BOTH numbers.
+          A missing arm A makes arm B unfalsifiable.
+Actual  : arm A =            arm B =
+```
+
+**L5 — INFRA-02d: no boot-time broker rejection** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> -n jtoye-local logs deploy/core-java | grep -c "Access refused for user"
+Expected: exactly 0. Assert the COUNT, not the absence of a line you looked for —
+          a missing log line and an absent grep hit look identical otherwise.
+Actual  :
+```
+
+**L6 — INFRA-02d: a KDS client receives a relayed order event** *(owner: 26-08)*
+
+```
+Command : RELAY_E2E=true PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
+            npx playwright test e2e/stomp-relay.spec.ts
+Expected: pass, and the host RabbitMQ shows a live STOMP connection authenticated as the
+          dedicated STOMP login (NOT guest). Record the broker-side connection line too.
+Actual  :
+```
+
+**L7 — DEF-5: a real vendor login through the ingress reaches a dashboard** *(owner: 26-08)*
+
+```
+Command : PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
+            npx playwright test e2e/dashboard-mobile.spec.ts
+          (credentials: user admin-user, password from the .env key KC_SEED_USER_PASSWORD)
+Expected: pass. This is the ONLY step that actually proves the split-horizon issuer fix —
+          a real Keycloak flow, browser-issuer token, pod-side JWKS fetch.
+Actual  :
+```
+
+### Sign-off
+
+```
+All seven rows filled with real captured output    : [ ]
+Four image identities recorded in the header       : [ ]
+No loopback address anywhere in the evidence       : [ ]
+Both backup arms recorded (L4)                     : [ ]
+Recorded by                                        :
+```
+
+---
+
+## Related documents
+
+- `k8s/QUICK_START.md` — the staging/production 5-minute recipe (Secrets → apply → verify → DNS → TLS).
+- `k8s/DEPLOYMENT.md` — the living deployment how-to, including the five static CI gates and the
+  golden-render workflow.
+- `k8s/PRODUCTION_READINESS_REPORT.md` — a dated signed audit. Read it as a record, not as current
+  state; later corrections are appended as dated notes.
+- `k8s/base/networkpolicies/README.md` — policy flow matrix, verification and rollback.
+- `docs/runbooks/backups.md` — backup mechanics, verification and the restore procedures §9 references.
+- `.env.example` — every `K8S_LOCAL_*` key with its consumer and provenance.
