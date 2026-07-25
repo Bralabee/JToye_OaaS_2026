@@ -433,36 +433,116 @@ minute**, which is the field that answers PIT-4. Nothing is wrong here — but a
 `imageID` against §11's header would find a mismatch and reasonably conclude the evidence was captured
 against a different image, so record which side a digest came from.
 
-**A3 — the STOMP relay rejects the KDS topic: `/topic` destinations cannot contain `/`** (found by plan
-26-08 Task 3, 2026-07-25). **This is a production-affecting defect, not a local caveat.** It is
-recorded here rather than fixed because the fix spans the backend publisher, the frontend subscriber and
-the tenant-isolation channel convention — see §11 L6 for the full two-directional evidence and the
-falsification.
+**A3 — CONFIRMED PRODUCTION DEFECT: the STOMP relay rejects the KDS topic, because a RabbitMQ `/topic`
+destination must be a SINGLE segment.**
 
-- The application publishes and subscribes to `/topic/kitchen/{tenantId}/{shopId}`
-  (`core-java/.../order/OrderStateChangeListener.java:109`, `frontend/app/dashboard/kitchen/page.tsx:277`,
-  convention documented at `core-java/.../websocket/TenantChannelInterceptor.java:123`).
-- RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>` as the
-  routing key, and `<name>` must be a **single segment**. It rejects anything with an extra `/`:
-  `ERROR message:Invalid destination … '/kitchen/…/…' is not a valid topic destination`.
-- Spring's **in-memory** simple broker accepts arbitrary paths, which is why this has never shown up in
-  development: dev compose defaults to `STOMP_BROKER_MODE=in-memory` (`application.yml:222-224`). Base
-  sets `stomp.broker.mode: "relay"`, so **staging and production run the broken path**.
-- Consequence: zero relayed KDS events, plus a permanent ~5s **reconnect storm** (each rejected
-  SUBSCRIBE tears the session down; @stomp/stompjs redials on `reconnectDelay: 5000`). The board still
-  appears live only because `useStomp`'s `onReconnect` hook fires a full `fetchOrders()` on every
-  redial — accidental polling wearing realtime's clothes.
-- **Do not "fix" this by flipping `stomp.broker.mode` to `in-memory`.** That would hide the defect and
-  break multi-replica correctness: the simple broker is per-JVM, so with `replicas: 3` an event
-  published by one pod never reaches a client connected to another. The relay exists for exactly that
-  reason.
-- A dot-delimited destination is the shape RabbitMQ accepts and it preserves the tenant/shop segments
-  and the interceptor's prefix check; that is the suggested direction, with its acceptance test recorded
-  in `deferred-items.md`.
+*Found by plan 26-08 Task 3 (2026-07-25) on this local cluster; the finding and the "record now, fix in
+its own scoped work" disposition were reviewed and **approved by the human at 26-08's verification
+gate**, who independently confirmed the amber-dot symptom below in a real browser. This is **not** a
+local caveat and **not** a "needs investigation" note: the mechanism is proven in both directions and
+falsified two-arm against the live broker. It is unfixed here only because the fix is architectural —
+see "What the fix must touch".*
+
+**The constraint, stated plainly.** RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic`
+exchange with `<name>` as the routing key. **`<name>` must be a single segment — it may not contain
+`/`.** Any additional slash is rejected outright:
+
+```
+ERROR
+message:Invalid destination
+'/kitchen/00000000-0000-0000-0000-000000000001/97d95aa4-f6e8-4bb6-b9ad-525e49c61ef6' is not a valid topic destination
+```
+
+Spring's **in-memory** simple broker accepts arbitrary destination paths, so the same code is correct
+there and invalid the moment it is relayed.
+
+**Why every k8s environment is affected while development is not.**
+`k8s/base/configmap.yaml:36` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
+nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
+broken path**. Meanwhile `docker-compose.full-stack.yml:215` passes
+`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `application.yml:224` reads
+`mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
+(`WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
+production undetected, and it is exactly what D-06 predicted when it insisted the relay be proven on the
+cluster rather than in compose.
+
+**Proven in BOTH directions, not just the subscriber.**
+
+- *Subscribe side:* 14 browser SUBSCRIBEs, 14 `Invalid destination` ERRORs, **0 MESSAGE frames**.
+- *Publish side:* the relay's own `_system_` session is rejected too, 43 ms after
+  `OrderStateChangeListener` logged `CONFIRMED -> PREPARING`. The event never reaches the exchange.
+
+**Raw-socket two-arm falsification** — same broker, same port, same credentials, read-only (a SUBSCRIBE
+creates an auto-delete queue that vanishes on DISCONNECT; nothing was published):
+
+| arm | destination | CONNECTED | SUBSCRIBE | ERROR |
+|---|---|---|---|---|
+| **A** (control) | `/topic/kitchen.<tenantId>.<shopId>` — dots, one segment | true | **ok (RECEIPT)** | none |
+| **B** (the app's shape) | `/topic/kitchen/<tenantId>/<shopId>` — extra slashes | true | **rejected** | `Invalid destination` |
+
+**Arm A is the load-bearing half.** Without it, `Invalid destination` could be misread as yet another
+credential or connectivity problem. With it, the broker, the port, the STOMP login and the passcode are
+all proven correct — **DEF-4 really is fixed** — and the fault is isolated to the destination *shape*
+alone.
+
+**THE OPERATOR-FACING TELL — read this before you "verify" the relay.**
+**The kitchen board WILL appear to update live even though the relay is delivering nothing.** Every
+rejected SUBSCRIBE tears the session down, `@stomp/stompjs` redials on `reconnectDelay: 5000`, and
+`useStomp`'s `onReconnect` hook fires a full `fetchOrders()` on each redial. Measured over one 30-second
+window: **14 WebSocket opens, 24 `/api/v1/orders…` requests, 0 MESSAGE frames.** The board moved
+`Confirmed → Preparing` with zero page navigations. Accidental polling wearing realtime's clothes — and
+by eye it is indistinguishable from a working relay. Anyone testing this later will otherwise "confirm"
+a relay that is not relaying, which is precisely the false-green class this repository keeps catching.
+
+*The honest signal is the connection dot beside the shop selector on `/dashboard/kitchen`*
+(`frontend/app/dashboard/kitchen/page.tsx:376-386`):
+
+| dot | `connectionLabel` | meaning |
+|---|---|---|
+| **green** (`bg-green-500`) | `Connected` | the subscription was accepted — the relay is working |
+| **amber** (`bg-yellow-500`) | `Reconnecting...` | **the A3 symptom** — SUBSCRIBE is being rejected, in a redial loop |
+| grey (`bg-gray-400`) | `Disconnected` | no session at all |
+
+Observed here, and independently confirmed by the human at the 26-08 gate: **amber, never green.**
+Judge the relay by the dot and the frame census, never by whether the board moves.
+
+**What the fix must touch — all three, in one change.** This is why it is not a bolt-on:
+
+1. `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java:109` — the publisher:
+   `String topic = "/topic/kitchen/" + event.tenantId() + "/" + order.getShopId();`
+2. `frontend/app/dashboard/kitchen/page.tsx:277` — the subscriber:
+   `` ? `/topic/kitchen/${tenantId}/${selectedShopId}` `` (dialled by `frontend/hooks/use-stomp.ts`)
+3. `core-java/src/main/java/uk/jtoye/core/websocket/TenantChannelInterceptor.java:123` — the
+   **tenant-isolation** convention `/topic/{feature}/{tenantId}/{...}`, whose enforcement parses those
+   very segments. Changing the delimiter changes what that parser sees, so a cross-tenant subscribe
+   test must be **re-run, not assumed**.
+
+A dot-delimited routing key (`/topic/kitchen.{tenantId}.{shopId}`) is the shape RabbitMQ accepts and it
+preserves every segment; note `amq.topic` treats `.` as its wildcard separator, so a dotted UUID becomes
+several routing-key words. The full suggested direction and a **must-fail-before-it-passes** four-part
+acceptance test live in
+`.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`.
+
+**DO NOT "fix" this by flipping `stomp.broker.mode` to `in-memory`.** It would make the symptom vanish
+while making the system worse. `WebSocketConfig.java:76`'s simple broker is **per-JVM**, and
+`k8s/base/core-java-deployment.yaml:10` sets `replicas: 3` — so an event published by one pod would
+never reach a client connected to another. The relay exists for exactly that reason. Silencing the error
+would trade a loud, diagnosable failure for a silent, replica-dependent one.
+
+Full two-directional evidence, the frame census and the verbatim ERROR body are in §11, row **L6**.
 
 ---
 
 ## 8. Troubleshooting
+
+**The kitchen display looks live but the connection dot is AMBER, and `core-java` logs
+`Received ERROR {message=[Invalid destination]…}` every ~5 seconds**
+This is **A3**, a confirmed production defect — not a local misconfiguration, and nothing here will fix
+it. The relay is connected and authenticated; the *destination* `/topic/kitchen/{tenantId}/{shopId}` is
+invalid because a RabbitMQ `/topic` destination may not contain `/`. **Do not conclude the relay works
+because the board updates** — it updates from a reconnect-driven refetch, not from a relayed event.
+Check the dot (green = working, amber = A3) and the frame census, and read §7 A3 before changing
+anything. In particular, do **not** set `stomp.broker.mode: in-memory` to silence it.
 
 **`admission webhook "validate.nginx.ingress.kubernetes.io" denied the request`**
 The error text names the offending annotation. Cause: the ingress-nginx v1.12.2 snippet-annotation
@@ -589,8 +669,18 @@ than patched inside this plan: the fix spans the backend publisher, the frontend
 tenant-isolation channel convention. A falsified row is a *stronger* result than an unproven one — it is
 the outcome D-06 was written to obtain, and it is recorded as a failure rather than smoothed into a pass.
 
-**L6's human-verify gate is still OPEN at the time of writing.** The automated half is complete and
-recorded below; the human's browser judgement has not yet been given, and nothing here claims it has.
+**L6/L7's human-verify gate is CLOSED — APPROVED, 2026-07-25.** The human ran the journey in a real
+browser and reported two things, both recorded here as given:
+
+1. **Login: PASSED.** Signed in at `http://app.jtoye.local` as `admin-user` and landed on a dashboard.
+   L7 stands as PROVEN.
+2. **Status dot: AMBER — it never went green.** That **corroborates** the A3 measurement rather than
+   contradicting it, so no re-run was required. L6 stands as FALSIFIED on the 14 SUBSCRIBE / 14 ERROR /
+   0 MESSAGE frame census plus the raw-socket two-arm proof.
+
+**A3 disposition, decided at that gate: RECORD NOW, FIX IN ITS OWN SCOPED WORK.** The Rule 4 stop was
+upheld — changing a tenant-isolation prefix parser earns its own plan and its own threat model rather
+than a bolt-on to a closing plan. See §7 A3.
 
 ### Run header
 
@@ -1280,6 +1370,30 @@ Actual  : SPLIT INTO TWO HALVES by plan 26-08, because the command above cannot 
 browser session against `http://app.jtoye.local` (no stubs, no mocks, real login). Reported as a
 finding, not smoothed over — see §7 A3.
 
+**Image identity for L6 AND L7** (mandatory per PIT-4; both rows were captured in the same session
+against the same workloads, so the identity is stated once here and applies to both):
+
+```
+core-java  ghcr.io/bralabee/jtoye-core-java:local  in-cluster sha256:f43a5e84…  (host sha256:bba33e72…)
+                                                   pod core-java-88b85df6f-x7vxn, startedAt 21:10:05Z
+edge-go    ghcr.io/bralabee/jtoye-edge-go:local    in-cluster sha256:0644afc5…  (host sha256:e0e87717…)
+frontend   ghcr.io/bralabee/jtoye-frontend:local   in-cluster sha256:def4382b…  (host sha256:3286c715…)
+                                                   pod frontend-849d595866-2xdxb (rolled by 26-08 Task 1,
+                                                   restartCount 0) — SAME image as the run header, only
+                                                   the pod is new: the client-id change is a runtime env,
+                                                   not a rebuild
+pg-backup  ghcr.io/bralabee/jtoye-pg-backup:15     in-cluster sha256:1939105c…  (host sha256:943a78f6…)
+```
+
+These are the **same four builds** the run header records — the header carries the HOST-side ids and
+this block carries the ids the cluster actually runs; they differ by mechanism, not by build, and are
+reconciled by an identical `CreatedAt` (see §7 **PIT-4b**). None is a `:2.1.0` tag, so PIT-4 is
+satisfied: L6 and L7 were captured against code built during the 26-07 run, not against the
+three-phase-stale images sitting on this host.
+
+The frontend image additionally proves the D-18 build-arg wiring: `api.jtoye.local` appears **10×** in
+its static chunks and `localhost:9090` **0×**, so the browser bundle really is pointed at the ingress.
+
 What WORKED, and it matters, because it isolates the defect to the destination and nothing else:
 
 ```
@@ -1475,10 +1589,12 @@ it would make this document fail its own loopback check on a string that predate
 Rows L1–L5 filled with real captured output        : [x]  (26-07, 2026-07-25)
 Rows L6–L7 filled with real captured output        : [x]  (26-08, 2026-07-25)
                                                      L7 PASSED · L6 FALSIFIED (see §7 A3)
-L6's human-verify browser gate approved            : [ ]  OPEN at time of writing — the
-                                                     automated half is recorded, the human
-                                                     judgement is not yet given and is not
-                                                     claimed anywhere above
+L6/L7 human-verify browser gate approved           : [x]  APPROVED 2026-07-25. Human report:
+                                                     login PASSED (app.jtoye.local -> dashboard);
+                                                     status dot AMBER, never green — which
+                                                     CORROBORATES A3, so no re-run was needed.
+                                                     A3 disposition: record now, fix in its own
+                                                     scoped work (Rule 4 stop upheld).
 Four image identities recorded in the header       : [x]  host-side IDs; see §7 PIT-4b for
                                                      the host-vs-in-cluster reconciliation
 No loopback address anywhere in the evidence       : [x]  see the check below + the 26-08 addendum
@@ -1512,8 +1628,12 @@ and cannot be served through an ingress. Every URL that reaches an application i
 outside §11 entirely.
 
 **Addendum, plan 26-08 (2026-07-25).** This section grew by two evidence blocks, so the measurement was
-re-taken rather than assumed: the pattern count inside §11's fences is still **0**, now over 412
-captured-output lines (up from 278). The check was re-falsified before being trusted — a fence carrying
+re-taken rather than assumed: the pattern count inside §11's fences is still **0**, now over **549**
+captured-output lines (up from 278; 412 at the Task 2 commit, 547 before the approved gate result was
+recorded in the sign-off block). The figure quoted here is the FINAL measurement of the finished
+section, deliberately re-taken after the last edit rather than left at whichever intermediate value was
+written down first — every edit that adds a fenced line moves it, so a stale figure here would be its
+own small false-green. The check was re-falsified before being trusted — a fence carrying
 the forbidden string, injected INSIDE §11, takes the count 0 → **1**; the same fence appended at
 end-of-file leaves it at 0, which is the awk scoping working correctly rather than the check being
 blind. Restoration was by `cp` from a scratchpad copy and verified byte-identical with `cmp`; no
