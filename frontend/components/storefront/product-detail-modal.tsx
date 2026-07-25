@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { AspectFrame } from "@/components/ui/aspect-frame"
 import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
@@ -94,26 +95,18 @@ export function ProductDetailModal({
             <X className="h-5 w-5" />
           </button>
 
-          {/* Image carousel.
-              The image MUST be absolutely positioned inside the aspect box. As
-              an in-flow child, `h-full` has no definite height to resolve
-              against — the parent's height is exactly what `aspect-ratio` is
-              deriving — so the browser falls back to the image's INTRINSIC
-              ratio and the box stretches to match it: `aspect-ratio` yields to
-              content. That gave a modal whose shape changed per product (a
-              900x1200 photo rendered 512x683, an 858x645 one rendered 512x385).
-              Out of flow, the 4:3 box governs and `object-cover` crops, so
-              every product opens the same shape. Same idiom as the menu cards
-              and the uploader preview. */}
+          {/* Image carousel. The fixed-ratio window comes from AspectFrame —
+              see the note there for why hand-rolling it silently produced a
+              modal that changed shape with every photo. Overlays ride as
+              children and position against the frame. */}
           {images.length > 0 ? (
-            <div className="relative aspect-[4/3] bg-cream flex-shrink-0 overflow-hidden">
-              <SafeImage
-                src={images[currentImageIndex]}
-                alt={`${product.title} - image ${currentImageIndex + 1}`}
-                className="absolute inset-0 w-full h-full object-cover"
-                loading="eager"
-              />
-
+            <AspectFrame
+              ratio="4/3"
+              src={images[currentImageIndex]}
+              alt={`${product.title} - image ${currentImageIndex + 1}`}
+              loading="eager"
+              className="bg-cream flex-shrink-0"
+            >
               {/* Navigation arrows */}
               {hasMultipleImages && (
                 <>
@@ -162,16 +155,23 @@ export function ProductDetailModal({
                           : "ring-transparent opacity-70 hover:opacity-100"
                       }`}
                     >
+                      {/* Definite-height box (h-10), so h-full resolves. */}
                       <SafeImage src={url} alt="" className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
               )}
-            </div>
+            </AspectFrame>
           ) : (
-            <div className="aspect-[4/3] bg-gradient-to-br from-cream-100 to-cream flex items-center justify-center flex-shrink-0">
-              <ShoppingBag className="h-16 w-16 text-oxblood/25" />
-            </div>
+            // Same window with no image: AspectFrame renders SafeImage's
+            // fallback, so the placeholder cannot drift from the real frame.
+            <AspectFrame
+              ratio="4/3"
+              src={null}
+              alt=""
+              className="bg-gradient-to-br from-cream-100 to-cream flex-shrink-0"
+              fallbackIcon={<ShoppingBag className="h-16 w-16 text-oxblood/25" />}
+            />
           )}
 
           {/* Content */}

@@ -17,6 +17,7 @@
 import { render, screen } from "@testing-library/react"
 import { ProductDetailModal } from "../product-detail-modal"
 import type { PublicProduct } from "@/types/storefront"
+import { expectSoundAspectFrames } from "@/test-utils/aspect-frame-contract"
 
 function product(overrides: Partial<PublicProduct> = {}): PublicProduct {
   return {
@@ -52,35 +53,48 @@ function renderModal(p: PublicProduct) {
 }
 
 describe("ProductDetailModal image framing", () => {
-  it("takes the hero image OUT OF FLOW so the 4:3 box governs its height", () => {
+  it("frames the hero image soundly (shared aspect-frame contract)", () => {
+    const { container } = renderModal(product())
+    // One frame, structurally sound. The shared helper is the single place
+    // this rule is written down, so every component that grows a frame can
+    // adopt the same guard.
+    expectSoundAspectFrames(container, 1)
+  })
+
+  it("declares a 4:3 window and takes the image out of flow", () => {
     renderModal(product())
 
     const img = screen.getByAltText(/party jollof rice - image 1/i)
-    // Out of flow + pinned to all four edges: without this the box inherits
-    // the image's intrinsic ratio instead of imposing 4:3.
+    const frame = img.closest("[data-aspect-frame]") as HTMLElement
+    expect(frame.getAttribute("data-aspect-frame")).toBe("4/3")
+    expect(frame.className).toMatch(/aspect-\[4\/3\]/)
     expect(img.className).toMatch(/\babsolute\b/)
     expect(img.className).toMatch(/\binset-0\b/)
     expect(img.className).toMatch(/\bobject-cover\b/)
   })
 
-  it("frames the hero image in a clipped 4:3 box", () => {
-    renderModal(product())
-
-    const img = screen.getByAltText(/party jollof rice - image 1/i)
-    const box = img.parentElement as HTMLElement
-    expect(box.className).toMatch(/aspect-\[4\/3\]/)
-    // The box must clip, so object-cover crops rather than bleeding past the
-    // modal's rounded corners.
-    expect(box.className).toMatch(/\boverflow-hidden\b/)
-    // A positioned ancestor is required for inset-0 to resolve to this box.
-    expect(box.className).toMatch(/\brelative\b/)
-  })
-
-  it("uses the same 4:3 frame for the no-image placeholder", () => {
+  it("uses the same sound 4:3 frame for the no-image placeholder", () => {
     const { container } = renderModal(
       product({ imageUrl: null, imageUrls: [] })
     )
-    const placeholder = container.querySelector('[class*="aspect-[4/3]"]')
-    expect(placeholder).not.toBeNull()
+    expectSoundAspectFrames(container, 1)
+    expect(
+      container.querySelector('[data-aspect-frame="4/3"]')
+    ).not.toBeNull()
+  })
+
+  it("keeps the carousel overlays inside the frame (multi-image)", () => {
+    const { container } = renderModal(
+      product({
+        imageUrls: [
+          "http://example.test/a.jpg",
+          "http://example.test/b.jpg",
+        ],
+      })
+    )
+    // Thumbnails live in their own definite-height boxes and must NOT be
+    // mistaken for unsound frame images — the contract excludes them.
+    expectSoundAspectFrames(container, 1)
+    expect(screen.getByAltText(/image 1/i)).toBeTruthy()
   })
 })
