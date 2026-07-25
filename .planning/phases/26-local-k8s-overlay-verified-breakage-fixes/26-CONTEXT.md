@@ -171,6 +171,47 @@ must be DOWN while the cluster runs.
   `project_phase_23_gap_closure` memory). Plus the backup rehearsal: the CronJob run puts a
   **non-empty** dump object into host MinIO.
 
+### Post-research additions (appended 2026-07-25 after `26-RESEARCH.md`)
+
+Research surfaced three further verified defects; the user folded all three in. These are tracked
+decisions, not discretion.
+
+- **D-17 — kube-dns NetworkPolicy selector bug (verified PRODUCTION defect).** The base
+  `labels: [{pairs, includeSelectors: true}]` transformer injects the common labels into the DNS
+  egress `podSelector` of `k8s/base/networkpolicies/20-core-java.yaml:60-66`. The rendered
+  `kubectl kustomize k8s/production` output emits `app.kubernetes.io/managed-by: kustomize` +
+  `app.kubernetes.io/part-of: jtoye-platform` + `environment: production` **alongside**
+  `k8s-app: kube-dns` — real kube-dns pods carry none of those, so the selector matches nothing and
+  core-java has NO DNS egress under an enforcing CNI (total outage). Inert on minikube (no
+  enforcement) and invisible to `k8s/scripts/validate-networkpolicies.py`, which reads raw files, not
+  the render, and is not wired into CI at all. **Fix the selector AND add a render-level assertion**
+  so the class cannot silently return with the next transformer edit. Applies to every overlay, not
+  just local.
+- **D-18 — frontend `NEXT_PUBLIC_*` is build-time, so the k8s ConfigMap injection is dead config.**
+  `frontend/Dockerfile:22-23` takes `NEXT_PUBLIC_API_URL` as a build ARG, and line 31 of that same
+  file already documents that `NEXT_PUBLIC_*` is "inlined at BUILD time — a runtime `environment:`"
+  does not work. `k8s/base/frontend-deployment.yaml:49-53` injects it from `app-config` at runtime →
+  inert in every k8s environment (latent staging/prod defect). Therefore: `scripts/k8s-local-up.sh`
+  **builds a local frontend image** with `--build-arg NEXT_PUBLIC_API_URL=http://api.jtoye.local`
+  (and the other `NEXT_PUBLIC_*` args), **and** the misleading runtime injection in
+  `frontend-deployment.yaml` is corrected or removed so no one trusts dead config again. This keeps
+  D-16's full browser proof reachable.
+- **D-19 — fold the 4 remaining prod-affecting localhost defaults into D-15.**
+  `NOTIFICATION_UNSUBSCRIBE_BASE_URL`, `NOTIFICATION_EMAIL_TRACKING_BASE_URL`,
+  `STRIPE_CONNECT_RETURN_URL`, `STRIPE_CONNECT_REFRESH_URL` all default to `http://localhost:3000`
+  and are unsupplied by any manifest — so production emails carry unsubscribe/tracking links pointing
+  at localhost and a Stripe Connect return sends vendors to localhost. ~4 more `app-config` keys in
+  the same edit as D-15.
+
+**Corrections to this document (found during research):**
+- The `secretKeyRef` port precedent in `k8s/base/pg-backup-cronjob.yaml` is at **lines 46-50**, not
+  64-68 (61-65 is `PGPASSWORD`). Grep `key: port`.
+- The test baseline is **1690** logical invocations (`docs/metrics.json`), not the 1684 stated in
+  `CLAUDE.md`/`AGENTS.md` prose — that prose is stale and should be reconciled by whichever plan
+  touches docs (`scripts/docs-freshness.sh --write` is the arbiter).
+- `.env`/docs already use `POSTGRES_BACKUP_PASSWORD` (`k8s/QUICK_START.md:32`) for what D-02 calls
+  `DB_BACKUP_PASSWORD` — pick one name and use it consistently.
+
 ### Claude's Discretion
 
 - Exact `.env` key names for D-02/D-03 (suggested: `DB_BACKUP_PASSWORD`, `K8S_LOCAL_HOST`,
