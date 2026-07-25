@@ -94,13 +94,23 @@ export function ProductDetailModal({
             <X className="h-5 w-5" />
           </button>
 
-          {/* Image carousel */}
+          {/* Image carousel.
+              The image MUST be absolutely positioned inside the aspect box. As
+              an in-flow child, `h-full` has no definite height to resolve
+              against — the parent's height is exactly what `aspect-ratio` is
+              deriving — so the browser falls back to the image's INTRINSIC
+              ratio and the box stretches to match it: `aspect-ratio` yields to
+              content. That gave a modal whose shape changed per product (a
+              900x1200 photo rendered 512x683, an 858x645 one rendered 512x385).
+              Out of flow, the 4:3 box governs and `object-cover` crops, so
+              every product opens the same shape. Same idiom as the menu cards
+              and the uploader preview. */}
           {images.length > 0 ? (
-            <div className="relative aspect-[4/3] bg-cream flex-shrink-0">
+            <div className="relative aspect-[4/3] bg-cream flex-shrink-0 overflow-hidden">
               <SafeImage
                 src={images[currentImageIndex]}
                 alt={`${product.title} - image ${currentImageIndex + 1}`}
-                className="w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover"
                 loading="eager"
               />
 
