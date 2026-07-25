@@ -302,7 +302,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 — human-gated)*
 
-- [ ] 26-07-PLAN.md (Wave 7) — Live rehearsal, part 1 (D-16): human prerequisites checkpoint (compose app shutdown, `/etc/hosts`), verbatim server dry-run, 3/3 READY rollout, DEF-1/DEF-2/DEF-4 boot proofs with DEF-2 corroborated independently from the database side, and the pg-backup CronJob run with the two-arm non-empty falsification (app-role dump → `products = 0`, backup-role dump → `products > 0`)
+- [x] 26-07-PLAN.md (Wave 7) — Live rehearsal, part 1 (D-16): human prerequisites checkpoint (compose app shutdown, `/etc/hosts`), verbatim server dry-run, 3/3 READY rollout, DEF-1/DEF-2/DEF-4 boot proofs with DEF-2 corroborated independently from the database side, and the pg-backup CronJob run with the two-arm non-empty falsification (app-role dump → `products = 0`, backup-role dump → `products > 0`)
 
 **Wave 8** *(blocked on Wave 7 — human-gated)*
 
@@ -325,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 6/9 | In Progress|  |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 7/9 | In Progress|  |
