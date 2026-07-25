@@ -271,6 +271,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 |---|-------------|------|--------|-----------|
 | 260715-fcq | Reconcile stale docs to current state (milestone identity → v2.3; test count 1257→1401; schema V51→V56; incl. AGENTS.md mirror) | 2026-07-15 | aed0929 | [260715-fcq-reconcile-stale-project-docs-to-current-](./quick/260715-fcq-reconcile-stale-project-docs-to-current-/) |
 | 260723-hc6 | Clear Trivy CVE gate on PR #255 — bump sharp 0.34.5→0.35.3 (frontend) + fast-uri 3.1.3→3.1.4 (mcp-server) via npm overrides; vuln-DB time-bomb, not a Phase 23 regression. next build + jest 360/360 + vitest 27/27 green, docs-freshness 1574 unchanged | 2026-07-23 | af196dc | [260723-hc6-bump-sharp-and-fast-uri-to-clear-trivy-c](./quick/260723-hc6-bump-sharp-and-fast-uri-to-clear-trivy-c/) |
+| 260725-wy2 | Re-verify SYSTEM_DESIGN_V2 §1 against the codebase: as-built topology diagram (11 services, real ports, protocol per edge), corrected version table + 4 missing services, new §1.4 protocol matrix (REST/AMQP/STOMP/SSE/webhook egress, 5-exchange inventory, split-horizon auth) and new §1.5 recording the confirmed STOMP relay defect (A3). Docs only; §1.2 + §§2-10 left as labelled design intent | 2026-07-25 | c4a2df9 | [260725-wy2-update-system-design-v2-architecture-ove](./quick/260725-wy2-update-system-design-v2-architecture-ove/) |
 
 ## Session Continuity
 
