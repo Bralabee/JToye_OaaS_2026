@@ -9,20 +9,29 @@ import { SafeImage } from "@/components/ui/safe-image"
  *
  * WHY THIS EXISTS (do not hand-roll the box again):
  *
- * `aspect-ratio` sets a PREFERRED size. It yields to content. An in-flow child
- * with `h-full` has no definite height to resolve against — the parent's height
- * is exactly what `aspect-ratio` is deriving — so the browser falls back to the
- * image's INTRINSIC ratio and the box stretches to match it. The declared ratio
- * silently does nothing, and every image renders a different shape.
+ * `aspect-ratio` sets a PREFERRED size: it yields to content. An IN-FLOW image
+ * in a NON-CLIPPING box expands that box to its own intrinsic height, and the
+ * declared ratio silently does nothing.
  *
  * That shipped: the product modal declared `aspect-[4/3]` and, at a constant
- * 512px width, rendered a 900x1200 photo as 512x683, a 675x1200 as 512x910 and
- * an 858x645 as 512x385. `getComputedStyle` reported `aspect-ratio: 4 / 3` the
- * whole time, which is what makes it easy to look straight past.
+ * 512px width, rendered a 900x1200 photo as 512x683 and an 858x645 as 512x385 —
+ * a different shape per photo. `getComputedStyle` reported `aspect-ratio: 4 / 3`
+ * the whole time, which is what makes it easy to look straight past.
  *
- * The frame only holds when the image is OUT OF FLOW inside a positioned,
- * clipping box. Three call sites used to spell that out by hand and one of them
- * drifted. It now lives here once, so the wrong version cannot be expressed.
+ * MEASURED, not assumed (each variant built and measured in a real browser):
+ *
+ *   in flow + no clip  -> 512x683 / 512x385   BROKEN (what shipped)
+ *   in flow + clip     -> 512x384             fine
+ *   out of flow + clip -> 512x384             fine (what we do)
+ *
+ * So EITHER guard is sufficient — clipping is what actually did the work in the
+ * original one-line fix, not the absolute positioning it was first credited to.
+ * This component applies both deliberately: clipping keeps `object-cover` from
+ * bleeding past rounded corners anyway, and out-of-flow keeps overlay children
+ * from ever being able to stretch the frame either.
+ *
+ * Three call sites used to spell this out by hand and one drifted. It now lives
+ * here once, so the wrong version cannot be expressed at a call site.
  *
  * Overlays (badges, carousel arrows, dot indicators) go in `children` and are
  * positioned against the frame, which is `relative` for exactly that reason.
@@ -83,7 +92,7 @@ export function AspectFrame({
       <SafeImage
         src={src}
         alt={alt}
-        // absolute: the whole point. In flow, this collapses back to the bug.
+        // Out of flow, so nothing here can ever stretch the frame.
         className="absolute inset-0 h-full w-full object-cover"
         fallbackClassName="absolute inset-0 flex h-full w-full items-center justify-center"
         fallbackIcon={fallbackIcon}

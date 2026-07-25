@@ -48,32 +48,43 @@ describe("AspectFrame", () => {
   })
 })
 
+/**
+ * The rule is a DISJUNCTION — clip, or take the image out of flow — because
+ * that is what measurement showed. At a constant 512px width, in a real
+ * browser: in-flow + no clip gave 512x683; in-flow + clip gave 512x384;
+ * out-of-flow + clip gave 512x384. Encoding a stricter rule than the truth
+ * would flag sound code, and guards that flag sound code get switched off.
+ */
 describe("aspect-frame contract self-test", () => {
-  it("REPORTS a hand-rolled frame whose image is in flow (the shipped defect)", () => {
+  it("REPORTS the shape that actually shipped: in flow AND no clipping", () => {
     const { container } = render(
-      <div className="relative aspect-[4/3] overflow-hidden">
-        {/* The exact shape that shipped: in-flow image with h-full. */}
+      <div className="relative aspect-[4/3]">
         <img className="w-full h-full object-cover" alt="broken" />
       </div>
     )
     const violations = findAspectFrameViolations(container)
     expect(violations).toHaveLength(1)
-    expect(violations[0]).toMatch(/IN FLOW/)
+    expect(violations[0]).toMatch(/neither clips nor takes its image out of flow/)
   })
 
-  it("REPORTS a frame that does not clip or is not positioned", () => {
+  it("accepts an in-flow image when the frame CLIPS (measured 512x384)", () => {
     const { container } = render(
-      <div className="aspect-[4/3]">
+      <div className="relative aspect-[4/3] overflow-hidden">
+        <img className="w-full h-full object-cover" alt="x" />
+      </div>
+    )
+    expect(findAspectFrameViolations(container)).toEqual([])
+  })
+
+  it("REPORTS a pinned image with no positioned frame to pin against", () => {
+    const { container } = render(
+      <div className="aspect-[4/3] overflow-hidden">
         <img className="absolute inset-0 h-full w-full object-cover" alt="x" />
       </div>
     )
-    const violations = findAspectFrameViolations(container)
-    expect(violations).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/missing "relative"/),
-        expect.stringMatching(/missing "overflow-hidden"/),
-      ])
-    )
+    expect(findAspectFrameViolations(container)).toEqual([
+      expect.stringMatching(/missing "relative"/),
+    ])
   })
 
   it("passes a sound hand-rolled frame (no false positives)", () => {

@@ -3,16 +3,26 @@
  * structurally sound.
  *
  * jsdom has no layout engine, so we cannot measure that a 4:3 box is 4:3. What
- * we CAN do — and what actually catches the defect — is assert the structure
- * that produces the geometry, because there is exactly one way to get it right:
+ * we CAN do is assert the structure that produces the geometry.
  *
- *   frame:  position:relative + a declared aspect-* class + clipping
- *   image:  absolutely positioned and pinned to all four edges
+ * `aspect-ratio` yields to content: an IN-FLOW image in a NON-CLIPPING box
+ * expands it to the image's intrinsic height, and the declared ratio silently
+ * does nothing. Measured in a real browser, at a constant 512px width:
  *
- * If the image is in flow, `aspect-ratio` yields to it and the box silently
- * takes the image's intrinsic ratio instead of the declared one. That is
- * invisible to every gate this repo runs in CI (Jest does no layout; the
- * Playwright specs are not wired into CI), which is how it reached a user.
+ *   in flow + no clip  -> 512x683 / 512x385   BROKEN
+ *   in flow + clip     -> 512x384             fine
+ *   out of flow + clip -> 512x384             fine
+ *
+ * So the invariant is a DISJUNCTION — the frame clips, OR its images are out of
+ * flow — and this contract encodes exactly that rather than a stricter rule.
+ * Over-strict guards flag sound code and get disabled, which is worse than no
+ * guard. (`AspectFrame` itself does both; that is its choice, not the rule.)
+ *
+ * `relative` is separately required whenever anything is pinned to the frame,
+ * or inset-0 resolves against the wrong box.
+ *
+ * The geometric truth is checked in a real browser by
+ * `e2e/public-layout.spec.ts`; this is the cheap in-CI approximation of it.
  *
  * Point this at any rendered container:
  *
@@ -43,20 +53,8 @@ export function findAspectFrameViolations(container: HTMLElement): string[] {
   for (const frame of findAspectFrames(container)) {
     const cls = frame.className
     const label = `aspect frame "${cls}"`
+    const clips = /(^|\s)overflow-hidden(\s|$)/.test(cls)
 
-    // Without a positioned ancestor the image's inset-0 resolves to some other
-    // box entirely.
-    if (!/(^|\s)relative(\s|$)/.test(cls)) {
-      violations.push(`${label} is missing "relative"`)
-    }
-
-    // Clipping, so object-cover crops instead of bleeding past rounded corners.
-    if (!/(^|\s)overflow-hidden(\s|$)/.test(cls)) {
-      violations.push(`${label} is missing "overflow-hidden"`)
-    }
-
-    // Every image the frame is responsible for must be out of flow. An in-flow
-    // one decides the frame's height instead of obeying it — the defect.
     for (const img of Array.from(frame.querySelectorAll("img"))) {
       const imgCls = img.className || ""
 
@@ -70,11 +68,21 @@ export function findAspectFrameViolations(container: HTMLElement): string[] {
       const outOfFlow =
         /(^|\s)absolute(\s|$)/.test(imgCls) && /(^|\s)inset-0(\s|$)/.test(imgCls)
 
-      if (!outOfFlow) {
+      // The defect needs BOTH: an in-flow image AND a box that lets it grow.
+      if (!outOfFlow && !clips) {
         violations.push(
-          `image in ${label} is IN FLOW (class "${imgCls}") — it must be ` +
-            `"absolute inset-0", or the frame silently takes the image's ` +
-            `intrinsic ratio instead of the declared one`
+          `${label} neither clips nor takes its image out of flow ` +
+            `(image class "${imgCls}") — the image's intrinsic height will ` +
+            `expand the box and the declared ratio will be ignored. Add ` +
+            `"overflow-hidden" to the frame, or "absolute inset-0" to the image.`
+        )
+      }
+
+      // Anything pinned needs a positioned frame to pin against.
+      if (outOfFlow && !/(^|\s)relative(\s|$)/.test(cls)) {
+        violations.push(
+          `${label} is missing "relative", so the pinned image resolves ` +
+            `against the wrong box`
         )
       }
     }
