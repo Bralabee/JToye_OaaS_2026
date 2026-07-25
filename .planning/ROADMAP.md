@@ -282,7 +282,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 26-02-PLAN.md (Wave 2) — DEF-6 / D-15 base config-drift closure: 19 new `app-config` keys (media storage, SMTP, CORS, JWT audience, split-horizon issuer D-13, the four `localhost:3000` notification + Stripe Connect URLs D-19, log path, webhook knobs) with prod-identical or repo-derived values; four `optional: true` Secrets; frontend `KEYCLOAK_ISSUER_INTERNAL` + the dead `NEXT_PUBLIC_API_URL` injection removed (D-18); edge-go `JWT_EXPECTED_ISSUER`; DEF-2 `jtoye_app` in the recipe + template
+- [x] 26-02-PLAN.md (Wave 2) — DEF-6 / D-15 base config-drift closure: 19 new `app-config` keys (media storage, SMTP, CORS, JWT audience, split-horizon issuer D-13, the four `localhost:3000` notification + Stripe Connect URLs D-19, log path, webhook knobs) with prod-identical or repo-derived values; four `optional: true` Secrets; frontend `KEYCLOAK_ISSUER_INTERNAL` + the dead `NEXT_PUBLIC_API_URL` injection removed (D-18); edge-go `JWT_EXPECTED_ISSUER`; DEF-2 `jtoye_app` in the recipe + template
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -325,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 1/9 | In Progress|  |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 2/9 | In Progress|  |
