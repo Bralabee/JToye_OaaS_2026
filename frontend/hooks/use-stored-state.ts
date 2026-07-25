@@ -1,7 +1,6 @@
 "use client"
 
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -55,13 +54,13 @@ interface StoredStateOptions<T> {
 function readStored<T>(
   key: string,
   fallback: T,
-  parse: (raw: string) => T | undefined
+  parse?: (raw: string) => T | undefined
 ): T {
   if (typeof window === "undefined") return fallback
   try {
     const raw = window.localStorage.getItem(key)
     if (raw === null) return fallback
-    const parsed = parse(raw)
+    const parsed = parse ? parse(raw) : (JSON.parse(raw) as T)
     return parsed === undefined ? fallback : parsed
   } catch {
     // Private mode, quota, corrupt JSON — a broken cache must never break the UI.
@@ -78,26 +77,26 @@ export function useStoredState<T>(
   // WHICH key `value` holds hydrated data for. Null until the first read.
   const [hydratedKey, setHydratedKey] = useState<string | null>(null)
 
-  // Options and fallback are held in refs so that an inline object or arrow
-  // function at the call site cannot retrigger the effects below every render.
+  // Options and fallback live in refs so an inline object or arrow at the call
+  // site cannot retrigger the effects below on every render.
   const optionsRef = useRef(options)
-  optionsRef.current = options
   const fallbackRef = useRef(fallback)
-  fallbackRef.current = fallback
 
-  const parse = useCallback(
-    (raw: string): T | undefined =>
-      optionsRef.current.parse
-        ? optionsRef.current.parse(raw)
-        : (JSON.parse(raw) as T),
-    []
-  )
+  // Refreshed in an effect, NEVER assigned during render: mutating a ref while
+  // rendering can desync a component from what it rendered, and is an error
+  // under react-hooks/refs. Declared first so it commits before the read and
+  // write effects run in the same commit; on the first commit useRef already
+  // holds the initial values, so ordering is safe either way.
+  useEffect(() => {
+    optionsRef.current = options
+    fallbackRef.current = fallback
+  })
 
   // READ: on mount, and again whenever the key changes.
   useEffect(() => {
-    setValue(readStored(key, fallbackRef.current, parse))
+    setValue(readStored(key, fallbackRef.current, optionsRef.current.parse))
     setHydratedKey(key)
-  }, [key, parse])
+  }, [key])
 
   // WRITE: only for a key we have already read. See the note above — writing
   // before hydration is the clobber, and writing across a key change is the leak.

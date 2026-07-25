@@ -93,11 +93,11 @@ export function CartProvider({
       }
       return [...prev, { ...item, quantity: 1 }]
     })
-  }, [])
+  }, [setItems])
 
   const removeItem = useCallback((productId: string) => {
     setItems((prev) => prev.filter((i) => i.productId !== productId))
-  }, [])
+  }, [setItems])
 
   const updateQuantity = useCallback((productId: string, quantity: number) => {
     if (quantity <= 0) {
@@ -109,11 +109,11 @@ export function CartProvider({
         )
       )
     }
-  }, [])
+  }, [setItems])
 
   const clearCart = useCallback(() => {
     setItems([])
-  }, [])
+  }, [setItems])
 
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPennies = items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0)
