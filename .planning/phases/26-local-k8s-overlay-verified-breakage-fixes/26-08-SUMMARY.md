@@ -1,7 +1,8 @@
 ---
 phase: 26-local-k8s-overlay-verified-breakage-fixes
 plan: 08
-status: AWAITING-HUMAN-VERIFICATION
+status: COMPLETE
+human_gate: APPROVED 2026-07-25 — login PASSED; status dot AMBER (corroborates A3); A3 disposition = record now, fix in its own scoped work
 subsystem: infrastructure
 tags: [kubernetes, minikube, keycloak, oidc, split-horizon, stomp, rabbitmq, relay, evidence, live-e2e]
 requires: ["26-01", "26-02", "26-03", "26-04", "26-05", "26-06", "26-07"]
@@ -40,10 +41,10 @@ decisions:
   - "The KDS relay defect is surfaced for decision, NOT fixed (Rule 4): the fix spans the Java publisher, the TS subscriber and TenantChannelInterceptor's tenant-isolation parsing"
   - "L6 is recorded as FALSIFIED rather than unproven — a falsification is a stronger result and is exactly what D-06 was written to obtain"
 metrics:
-  duration: ~1h35m
+  duration: ~2h05m
   completed: 2026-07-25
-  tasks: 3 (2 complete, 1 automated with its human gate OPEN)
-  commits: 3
+  tasks: 3 (all complete; Task 3's human-verify gate APPROVED)
+  commits: 6
   docs_metrics_json: untouched (26-06 owns it; 0 counted invocations added)
 ---
 
@@ -55,10 +56,14 @@ because a RabbitMQ `/topic` destination cannot contain `/`. That is a production
 (`k8s/base` sets `stomp.broker.mode: relay`), and it is the finding this whole phase existed to make
 possible.**
 
-> **Status: Task 3's `checkpoint:human-verify` gate is OPEN.** Everything automatable is done and
-> recorded; the human's browser judgement has not been given and is not claimed anywhere. This
-> document exists because the plan's `<output>` requires it at this path — it is **not** a claim that
-> the plan is signed off. Plan 26-09 owns marking INFRA-01/INFRA-02 complete.
+> **Status: COMPLETE. Task 3's `checkpoint:human-verify` gate was APPROVED on 2026-07-25.** The human
+> ran the journey in a real browser and reported: **login PASSED** (`app.jtoye.local` → dashboard, so L7
+> is PROVEN), and the **status dot was AMBER, never green** — which *corroborates* the A3 measurement
+> rather than contradicting it, so no re-run was required and L6 stands FALSIFIED. **A3 disposition
+> decided at the gate: record now, fix in its own scoped work** — the Rule 4 stop was upheld, because
+> changing a tenant-isolation prefix parser earns its own plan and its own threat model rather than a
+> bolt-on to a closing plan. Plan 26-09 still owns marking INFRA-01/INFRA-02 complete, and A3 is an
+> input to that decision.
 
 ## Task 1 — the two live blockers (commit `5ae3051`)
 
@@ -173,7 +178,7 @@ route (its two rules are core-java and frontend only); `networkidle` at `:76`/`:
 SSE and STOMP open; and two silent skips at `:46` and `:80-85`. Deferred with a suggested closure per
 item.
 
-## Task 3 — the live journey (commit `9a7327b`) · HUMAN GATE OPEN
+## Task 3 — the live journey (commits `9a7327b`, `49d9fab`) · HUMAN GATE APPROVED
 
 ### L7 — DEF-5: PROVEN
 
@@ -389,12 +394,15 @@ digest came from; the `CreatedAt` minute is what answers PIT-4.
 ## Evidence integrity
 
 The `localhost:9090`-inside-§11's-fences invariant was **re-measured, and re-falsified before being
-trusted**: **0** over 531 captured-output lines (up from 278). A fence carrying the forbidden string
-injected **inside** §11 takes the count 0 → **1**; the same fence appended at end-of-file leaves it at 0
-— which is the awk scoping working, not the check going blind. My first falsification attempt was the
-end-of-file one and **it returned 0**, i.e. the probe was wrong, not the check; it was redone inside §11.
-Restoration was by `cp` from a scratchpad copy and verified byte-identical with `cmp`; **`git checkout --`
-was never used on an uncommitted file** (26-04's recorded process incident).
+trusted**: **0** over **549** captured-output lines (278 → 412 → 547 → 549 as evidence landed; the
+figure recorded in the document is the FINAL one, deliberately re-taken after the last edit, because
+every added fenced line moves it and a stale figure would be its own small false-green). A fence
+carrying the forbidden string injected **inside** §11 takes the count 0 → **1**; the same fence appended
+at end-of-file leaves it at 0 — which is the awk scoping working, not the check going blind. My first
+falsification attempt was the end-of-file one and **it returned 0**, i.e. the probe was wrong, not the
+check; it was redone inside §11 and re-run once more against the finished document. Restoration was by
+`cp` from a scratchpad copy and verified byte-identical with `cmp`; **`git checkout --` was never used on
+an uncommitted file** (26-04's recorded process incident).
 
 The live realm's `redirectUris` array is recorded **de-fenced** because it legitimately contains a
 pre-existing loopback entry on the core-java port; fencing it would make the document fail its own check
@@ -440,16 +448,64 @@ Pod restart counts are **4/3/2** — core-java 4 and edge-go 3 are §7 A2's expl
 `minikube profile list` idempotence defect bounced them between 26-07 and this plan), and frontend is 0
 because it was recreated here.
 
+## Human verification and the post-approval hardening (commit `49d9fab`)
+
+The gate was approved with two reported observations, recorded verbatim in `k8s/LOCAL.md` §11:
+
+1. **Login PASSED** — signed in at `http://app.jtoye.local` as `admin-user`, landed on a dashboard. L7
+   is PROVEN.
+2. **Status dot AMBER, never green** — which **corroborates** the A3 measurement instead of
+   contradicting it, so no re-run was needed. L6 stands FALSIFIED.
+
+**A3 disposition: record now, fix in its own scoped work.** The Rule 4 stop was upheld. Post-approval,
+A3 was rewritten to survive the phase as a **confirmed production defect** rather than a caveat, with
+**every line-number claim verified against the file before being written**:
+
+- `k8s/base/configmap.yaml:36` sets `stomp.broker.mode: "relay"`, and **neither** the staging nor the
+  production configmap patch overrides it — both inherit the broken path — while
+  `docker-compose.full-stack.yml:215` and `application.yml:224` default to `in-memory`, which is exactly
+  why it was never seen in development.
+- The constraint stated plainly: a RabbitMQ `/topic` destination maps onto `amq.topic` with the
+  remainder as the routing key and **must be a single segment**; any extra `/` is rejected.
+- All three files the fix must touch, quoted with their real content:
+  `OrderStateChangeListener.java:109` (publisher), `frontend/app/dashboard/kitchen/page.tsx:277`
+  (subscriber), `TenantChannelInterceptor.java:123` (the tenant-isolation convention whose enforcement
+  parses those segments — so a cross-tenant test must be **re-run, not assumed**).
+- The raw-socket two-arm evidence as a table, with **arm A called out as load-bearing** because it
+  proves DEF-4's credentials really are fixed and isolates the fault to the destination shape.
+- The in-memory warning kept and sharpened: `WebSocketConfig.java:76`'s simple broker is **per-JVM** and
+  `k8s/base/core-java-deployment.yaml:10` sets `replicas: 3`, so flipping the mode would trade a loud,
+  diagnosable failure for a silent, replica-dependent one.
+
+**The operator-facing tell is now recorded in both §7 A3 and §8 Troubleshooting**, because this is the
+exact false-green class this repository keeps catching: *the board LOOKS live* (14 socket opens, 24
+`/api/v1/orders…` requests, **0** MESSAGE frames in one 30-second window) because each rejected
+SUBSCRIBE kills the session, `@stomp/stompjs` redials every 5 s and `onReconnect` refetches. The honest
+signal is the dot at `kitchen/page.tsx:376-386` — green `Connected` vs amber `Reconnecting...` — plus the
+frame census, never whether the board moves. The §8 entry means an operator who hits the 5-second
+`Invalid destination` log lands on A3 instead of hunting a misconfiguration that does not exist.
+
+**L6/L7 now carry an explicit image-identity block** (PIT-4): the same four builds as the run header,
+in-cluster ids alongside the host ids per PIT-4b, none a `:2.1.0` tag, and the frontend pod noted as
+*rolled but same image* — the client-id change is a runtime env, not a rebuild.
+
 ## Requirements
 
 **INFRA-01 and INFRA-02 are deliberately NOT marked complete** (anti-false-green, and the plan says
-26-09 owns it). A3 is now an input to that decision: the KDS realtime path is proven broken in relay
-mode, which is what every k8s environment runs.
+26-09 owns it) — and that holds *even though* the human gate was approved: the approval covers this
+plan's proof, not the requirements' full acceptance. A3 is now a live input to that decision: the KDS
+realtime path is proven broken in relay mode, which is what every k8s environment runs.
+
+`roadmap.update-plan-progress 26 26-08 complete` was run at close; `docs/metrics.json` was not touched
+(26-06 remains its single writer) and `gsd-sdk query state.record-session` was deliberately **not**
+called again — see the deviation note about its mid-plan side effects.
 
 ## Self-Check: PASSED
 
 Files:
-- `FOUND: k8s/LOCAL.md` (§11 L6/L7 filled; §7 A3 + PIT-4b added; sign-off marks the human gate OPEN)
+- `FOUND: k8s/LOCAL.md` (§11 L6/L7 filled with an explicit image-identity block; §7 A3 hardened + PIT-4b
+  added; §8 Troubleshooting entry added; sign-off marks the human gate **APPROVED** with the reported
+  result, and no "OPEN"/"not yet given" language survives anywhere in the document)
 - `FOUND: infra/keycloak/realm-export.template.json` (1 additive redirect URI)
 - `FOUND: k8s/base/configmap.yaml` (`keycloak.client-id`)
 - `FOUND: k8s/base/frontend-deployment.yaml` (`configMapKeyRef`, no inline `value`)
@@ -459,4 +515,14 @@ Files:
 - `FOUND: .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-08-SUMMARY.md`
 - `test ! -f .planning/deferred-items.md` — passes
 
-Commits: `5ae3051`, `82e899f`, `9a7327b` — all verified present. No file deletions in any of the three.
+Commits: `5ae3051` (Task 1), `82e899f` (Task 2), `9a7327b` (Task 3 evidence), `818740e` (SUMMARY),
+`22b3b14` (STATE + blocker), `49d9fab` (post-approval A3 hardening) — all verified present, with **no
+file deletions in any of them**.
+
+Final consistency re-checks, all re-run after the last edit rather than carried forward from an earlier
+run: §11 fenced captured-output lines **549**, the figure quoted in the document **549** (match), the
+forbidden loopback pattern inside those fences **0**, and the check re-falsified 0 → 1 → 0 against the
+finished document. The frame-census numbers (14 SUBSCRIBE / 14 ERROR / 0 MESSAGE / 24 order requests /
+43 ms publish-side delta) and the three fix-site citations agree across all three documents
+(`k8s/LOCAL.md`, `deferred-items.md`, this SUMMARY). Secret sweep over all four edited files: **0** for
+six high-entropy values as literal and base64, `stomp-passcode` **0**, no pasted JWT.

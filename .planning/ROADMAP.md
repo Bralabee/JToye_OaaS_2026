@@ -306,7 +306,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 — human-gated)*
 
-- [ ] 26-08-PLAN.md (Wave 8) — Live rehearsal, part 2 (DEF-5 + D-06): the two planning-discovered login blockers fixed (additive `app.jtoye.local` realm redirect URI; `KEYCLOAK_CLIENT_ID` config-injected instead of a hardcoded literal absent from the dev realm), broker-side STOMP identity proof (dedicated login, zero `guest` connections), then the human-verified journey — real Keycloak vendor login through the ingress to a dashboard, and a kitchen display receiving a relayed order event
+- [x] 26-08-PLAN.md (Wave 8) — Live rehearsal, part 2 (DEF-5 + D-06): the two planning-discovered login blockers fixed (additive `app.jtoye.local` realm redirect URI; `KEYCLOAK_CLIENT_ID` config-injected instead of a hardcoded literal absent from the dev realm), broker-side STOMP identity proof (dedicated login, zero `guest` connections), then the human-verified journey — real Keycloak vendor login through the ingress to a dashboard, and a kitchen display receiving a relayed order event
 
 **Wave 9** *(blocked on Wave 8 — ends with a human-gated end-state decision)*
 
@@ -325,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 7/9 | In Progress|  |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 8/9 | In Progress|  |
