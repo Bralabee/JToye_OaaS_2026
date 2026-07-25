@@ -147,6 +147,8 @@ images:
 patches:
   - path: configmap-patch.yaml
   - path: scale-patch.yaml
+  - path: ingress-patch.yaml
+  - path: sse-ingress-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #

@@ -1092,21 +1092,10 @@ spec:
               number: 3000
         path: /
         pathType: Prefix
-  - host: auth.jtoye.co.uk
-    http:
-      paths:
-      - backend:
-          service:
-            name: keycloak
-            port:
-              number: 8080
-        path: /
-        pathType: Prefix
   tls:
   - hosts:
     - api.jtoye.co.uk
     - app.jtoye.co.uk
-    - auth.jtoye.co.uk
     secretName: jtoye-tls
 ---
 apiVersion: networking.k8s.io/v1

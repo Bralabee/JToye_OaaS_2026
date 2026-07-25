@@ -2,7 +2,19 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: pg-backup
-  namespace: jtoye-production
+  # NO hardcoded namespace here (Phase 26 / 26-CONTEXT.md § Claude's Discretion).
+  # It used to pin the PRODUCTION namespace by name, which was already dead config:
+  # every overlay's own `namespace:` transformer overrides it, and the rendered
+  # CronJob comes out in that overlay's namespace regardless (verified —
+  # 26-RESEARCH.md P-5, and the staging/production render is byte-identical
+  # before and after this removal). Two reasons it is better gone than left:
+  #   - the base is the SHARED layer; naming one environment there is exactly the
+  #     "environment namespaces never live in the base" rule this repo already
+  #     states in k8s/base/kustomization.yaml:5-8.
+  #   - it stopped being harmless the moment someone bypassed kustomize. A raw
+  #     `kubectl apply -f k8s/base/pg-backup-cronjob.yaml -n <ns>` silently
+  #     disagrees with the file, and scripts/deploy.sh's phantom `dev` target did
+  #     exactly that kind of raw per-file apply.
   labels:
     app.kubernetes.io/name: pg-backup
     app.kubernetes.io/component: database

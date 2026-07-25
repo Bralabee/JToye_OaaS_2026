@@ -44,12 +44,48 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
 spec:
   ingressClassName: nginx
+  # TLS: exactly the two hosts this controller actually serves.
+  #
+  # A THIRD host used to sit in this SAN list — the Keycloak hostname — alongside
+  # a rule routing it to a Service named `keycloak`. See the note above `rules:`
+  # for why both were removed. The SAN entry mattered on its own: all three names
+  # share ONE `secretName: jtoye-tls`, and cert-manager issues that certificate as
+  # a single order covering every SAN. An HTTP-01 challenge for a hostname whose
+  # DNS points at the managed identity provider rather than at this controller
+  # cannot be answered here, and a failed challenge fails the WHOLE order — so a
+  # dangling SAN could block or stall renewal for api and app too, taking the
+  # platform's real certificate down with it.
+  #
+  # Keep this list in lockstep with `rules:` below: a host belongs here only if a
+  # rule routes it to a Service that exists in the render. CI asserts the
+  # backend half of that (INV-6 in k8s/scripts/check-render-invariants.sh).
   tls:
   - hosts:
     - api.jtoye.co.uk
     - app.jtoye.co.uk
-    - auth.jtoye.co.uk
     secretName: jtoye-tls
+  # Host rules.
+  #
+  # REMOVED (Phase 26 / plan 26-04, 26-REVIEWS.md Adjudication B — a CONFIRMED
+  # production defect, not a cleanup): a third rule published the Keycloak
+  # hostname and routed it to `service: keycloak` on port 8080. No Service by
+  # that name exists ANYWHERE in k8s/ — verified across every render, whose
+  # complete Service set is core-java, edge-go and frontend, and neither
+  # k8s/staging nor k8s/production adds one. So staging and production were both
+  # publishing a hostname with no backend, for which nginx answers 503.
+  #
+  # It is not an oversight to fill in: Keycloak is an EXTERNAL MANAGED identity
+  # provider in staging and production (see app-config `keycloak.issuer.uri`),
+  # and public DNS for that hostname resolves to the managed IdP, not to this
+  # ingress controller. This controller must therefore not claim the name at all
+  # — claiming it is what turns "someone else serves this" into "we serve this,
+  # badly".
+  #
+  # IF AN IN-CLUSTER KEYCLOAK IS EVER DEPLOYED: the host rule and the TLS SAN
+  # come back TOGETHER WITH its Service and Deployment, in that order — never
+  # before them. Recorded as a dated deferred item in
+  # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
+  # so the displaced intent is not lost.
   rules:
   - host: api.jtoye.co.uk
     http:
@@ -71,13 +107,3 @@ spec:
             name: frontend
             port:
               number: 3000
-  - host: auth.jtoye.co.uk
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: keycloak
-            port:
-              number: 8080

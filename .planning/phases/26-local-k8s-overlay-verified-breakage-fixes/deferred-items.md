@@ -121,3 +121,46 @@ setup?) is a product decision, not a deploy-layer one.
 **Suggested owner.** The phase that builds the vendor payments/payouts dashboard surface. Until
 then, the correct origin is still the right value to ship — a 404 on the platform beats a
 connection-refused at a loopback address, and reverting the origin would restore a worse defect.
+
+## 26-04 — In-cluster Keycloak manifests + the `auth.jtoye.co.uk` ingress rule and its TLS SAN
+
+**Discovered during:** 26-04 Task 2 (the base ingress fix; `26-REVIEWS.md` Adjudication B).
+**Dated:** 2026-07-25.
+
+**What was removed, and why.** `k8s/base/ingress.yaml` published the host `auth.jtoye.co.uk` and
+routed it to `service: keycloak` on port 8080 (pre-change lines `:74-83`), and listed the same
+hostname in the single `jtoye-tls` SAN set alongside `api` and `app` (pre-change lines `:47-52`).
+**No Service named `keycloak` exists anywhere in `k8s/`** — verified across every render, whose
+complete Service set is `core-java`, `edge-go` and `frontend`; neither `k8s/staging` nor
+`k8s/production` adds one (both list `../base` + `namespace.yaml`, one configmap patch, images and
+replicas). So staging and production were each publishing a hostname with no backend, for which
+nginx answers **503**. Both the rule and the SAN entry were removed in `k8s/base` — not merely
+patched out of the local render — because hiding a production defect behind a local overlay
+contradicts D-15's own doctrine of fixing the base.
+
+**Why there is no Service to add instead.** Keycloak is an **external managed identity provider**
+in staging and production: `app-config` `keycloak.issuer.uri` is
+`https://auth.jtoye.co.uk/realms/jtoye-prod`, and public DNS for that hostname resolves to the
+managed IdP, not to this ingress controller. Those two config keys legitimately keep the hostname
+and must NOT be "cleaned up" — they are how the platform finds its IdP. What was wrong was this
+controller *claiming* the name.
+
+**The displaced intent.** If an in-cluster Keycloak is ever deployed into the platform namespace
+(a real option — it would remove a managed-service dependency and make the realm import part of
+the deploy), then the host rule and the TLS SAN come BACK, **together with its Service and
+Deployment and in that order** — never before them. The pre-change shape is recoverable from git
+history and from the in-file comment that replaced it.
+
+**Secondary reason this was worth fixing rather than tolerating.** All the SAN names share ONE
+`secretName: jtoye-tls`, and cert-manager issues that certificate as a single order covering every
+SAN. An HTTP-01 challenge for a hostname this controller does not serve cannot be answered here,
+and a failed challenge fails the whole order — so the dangling SAN was a live risk to issuance and
+renewal for `api` and `app` too.
+
+**Recurrence prevention shipped with the fix.** `INV-6` in
+`k8s/scripts/check-render-invariants.sh` asserts, for **every** target's render, that each Ingress
+backend Service name resolves to a `kind: Service` present in that same render. Its allowlist is
+empty. So the class cannot return silently — including via a future overlay.
+
+**Suggested owner.** A future in-cluster-identity phase, if one is ever wanted. Nothing is blocked
+today: the removal deleted no working path, because there was no backend to reach.
