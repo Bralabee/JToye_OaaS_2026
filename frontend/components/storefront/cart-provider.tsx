@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react"
+import { useStoredState } from "@/hooks/use-stored-state"
 
 export interface CartItem {
   productId: string
@@ -33,24 +34,8 @@ function getStorageKey(slug: string) {
   return `jtoye-cart-${slug}`
 }
 
-function loadCart(slug: string): CartItem[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = localStorage.getItem(getStorageKey(slug))
-    if (!raw) return []
-    const parsed: CartState = JSON.parse(raw)
-    if (parsed.shopSlug !== slug) return []
-    return parsed.items || []
-  } catch {
-    return []
-  }
-}
-
-function saveCart(slug: string, items: CartItem[]) {
-  if (typeof window === "undefined") return
-  const state: CartState = { shopSlug: slug, items }
-  localStorage.setItem(getStorageKey(slug), JSON.stringify(state))
-}
+/** Stable identity, so it can never itself trigger a state change. */
+const EMPTY_ITEMS: CartItem[] = []
 
 export function CartProvider({
   shopSlug,
@@ -59,53 +44,42 @@ export function CartProvider({
   shopSlug: string
   children: ReactNode
 }) {
-  const [items, setItems] = useState<CartItem[]>([])
-  // Which slug `items` currently holds a HYDRATED basket for. Null until the
-  // first read completes. This gates the write effect below — see why there.
-  const [hydratedSlug, setHydratedSlug] = useState<string | null>(null)
-
-  // Load from localStorage on mount, and again whenever the shop changes.
-  useEffect(() => {
-    setItems(loadCart(shopSlug))
-    setHydratedSlug(shopSlug)
-  }, [shopSlug])
-
-  // Persist to localStorage on change, then broadcast so same-document
-  // listeners (nav basket badge) update without a context subscription.
-  // Counts are computed inline from `items` to avoid new effect deps.
-  useEffect(() => {
-    // NEVER persist a basket we have not yet hydrated for THIS slug.
-    //
-    // Both the read above and this write are effects, and this one used to run
-    // on the very first commit — with the pre-hydration empty state — stamping
-    // `items: []` over a real stored basket. A later commit repaired it, so it
-    // looked harmless; under React StrictMode's double-invoke it was not. The
-    // second mount's READ happened after the first mount's WRITE had already
-    // emptied the key, so the read returned nothing and the basket was really
-    // gone (reproducible as an empty basket on a hard nav to /shop/[slug]/cart).
-    //
-    // The same ordering leaked ACROSS shops: app/shop/[slug]/layout.tsx keeps
-    // one CartProvider and swaps `shopSlug` on a client-side nav, so this
-    // effect would fire for the NEW slug while `items` still held the OLD
-    // shop's basket — writing shop A's items into shop B's key.
-    //
-    // Comparing against the slug (not a plain `hydrated` boolean) is what makes
-    // the cross-shop case safe: on the render where the prop has changed but
-    // the re-read has not yet committed, hydratedSlug is still the old slug.
-    if (hydratedSlug !== shopSlug) return
-
-    saveCart(shopSlug, items)
-    if (typeof window === "undefined") return
-    window.dispatchEvent(
-      new CustomEvent("jtoye:cart-updated", {
-        detail: {
-          slug: shopSlug,
-          itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-          totalPennies: items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0),
-        },
-      })
-    )
-  }, [shopSlug, items, hydratedSlug])
+  // Read + write ordering (never persist a basket we have not yet hydrated for
+  // THIS slug) lives in useStoredState — see the note there for the clobber and
+  // the cross-shop leak it closes. Keeping it there rather than here means the
+  // next storage-backed piece of state gets it right for free.
+  const [items, setItems] = useStoredState<CartItem[]>(
+    getStorageKey(shopSlug),
+    EMPTY_ITEMS,
+    {
+      // Stored shape carries its own slug; a mismatched payload is rejected so
+      // a stale key can never surface another shop's basket.
+      parse: (raw) => {
+        const parsed = JSON.parse(raw) as CartState
+        if (parsed.shopSlug !== shopSlug) return undefined
+        return parsed.items || []
+      },
+      serialize: (value) =>
+        JSON.stringify({ shopSlug, items: value } satisfies CartState),
+      // Broadcast so same-document listeners (the nav basket badge) update
+      // without subscribing to this context.
+      onPersist: (value) => {
+        if (typeof window === "undefined") return
+        window.dispatchEvent(
+          new CustomEvent("jtoye:cart-updated", {
+            detail: {
+              slug: shopSlug,
+              itemCount: value.reduce((sum, i) => sum + i.quantity, 0),
+              totalPennies: value.reduce(
+                (sum, i) => sum + i.pricePennies * i.quantity,
+                0
+              ),
+            },
+          })
+        )
+      },
+    }
+  )
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {
     setItems((prev) => {
