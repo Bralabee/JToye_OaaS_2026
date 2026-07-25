@@ -78,7 +78,7 @@ function DietaryBadge({ tag }: { tag: string }) {
   if (t.includes("spicy")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-red-200"><Flame className="h-2.5 w-2.5" />Spicy</span>
   if (t.includes("gluten")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">GF</span>
   if (t.includes("halal")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-semibold text-teal-700 ring-1 ring-teal-200">Halal</span>
-  return <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">{tag.trim()}</span>
+  return <span className="inline-flex items-center rounded-md bg-cream px-1.5 py-0.5 text-xs font-medium text-oxblood-600 ring-1 ring-cream-100">{tag.trim()}</span>
 }
 
 function ProductCard({ product, promo }: { product: PublicProduct; promo?: PublicPromotion }) {
@@ -110,7 +110,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
   return (
     <>
       <article
-        className="group bg-white rounded-xl border border-slate-100 overflow-hidden transition-all hover:shadow-md hover:border-slate-200 cursor-pointer active:scale-[0.99]"
+        className="group bg-white rounded-xl border border-cream-100 overflow-hidden transition-all hover:shadow-md hover:border-amber-200 cursor-pointer active:scale-[0.99]"
         onClick={() => setModalOpen(true)}
       >
         <div className="flex gap-0">
@@ -167,23 +167,23 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               ) : quantity === 0 ? (
                 <button
                   onClick={(e) => handleAddToCart(e)}
-                  className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
                 >
                   <PlusIcon className="h-3 w-3" />
                   Add
                 </button>
               ) : (
-                <div className="inline-flex items-center gap-0 rounded-full bg-orange-500 text-white" onClick={(e) => e.stopPropagation()}>
+                <div className="inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => updateQuantity(product.id, quantity - 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
                   >
                     <Minus className="h-3 w-3" />
                   </button>
                   <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
                   <button
                     onClick={() => updateQuantity(product.id, quantity + 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-orange-600 active:scale-95 transition-all"
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
                   >
                     <PlusIcon className="h-3 w-3" />
                   </button>
@@ -198,8 +198,8 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               src={primaryImage}
               alt={product.title}
               className="absolute inset-0 w-full h-full object-cover"
-              fallbackClassName="w-full h-full bg-gradient-to-br from-slate-100 to-slate-50"
-              fallbackIcon={<Store className="h-8 w-8 text-slate-200" />}
+              fallbackClassName="w-full h-full bg-gradient-to-br from-cream-100 to-cream"
+              fallbackIcon={<Store className="h-8 w-8 text-oxblood/25" />}
               loading="lazy"
             />
             {hasMultipleImages && (
@@ -349,8 +349,8 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   if (rateLimited) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-10 w-10 text-orange-500 animate-spin" />
-        <h2 className="mt-4 text-lg font-semibold text-slate-900">
+        <Loader2 className="mx-auto h-10 w-10 text-amber-500 animate-spin" />
+        <h2 className="mt-4 text-lg font-semibold text-oxblood">
           High demand right now
         </h2>
         {retriesExhausted ? (
@@ -360,7 +360,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             </p>
             <button
               onClick={handleManualRetry}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
             >
               Try again
             </button>
@@ -373,7 +373,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         <div className="mt-4">
           <Link
             href="/shop"
-            className="inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 hover:text-amber-800"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to all shops
@@ -386,14 +386,14 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   if (loading) {
     return (
       <div className="animate-pulse">
-        <div className="h-48 sm:h-64 bg-slate-200" />
+        <div className="h-48 sm:h-64 bg-cream-100" />
         <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
-          <div className="h-6 bg-slate-200 rounded w-1/3" />
-          <div className="h-4 bg-slate-100 rounded w-2/3" />
-          <div className="h-10 bg-slate-100 rounded" />
+          <div className="h-6 bg-cream-100 rounded w-1/3" />
+          <div className="h-4 bg-cream rounded w-2/3" />
+          <div className="h-10 bg-cream rounded" />
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-24 bg-slate-100 rounded-xl" />
+              <div key={i} className="h-24 bg-cream rounded-xl" />
             ))}
           </div>
         </div>
@@ -405,11 +405,11 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
         <Store className="mx-auto h-12 w-12 text-slate-300" />
-        <h2 className="mt-4 text-lg font-semibold text-slate-900">Shop not found</h2>
+        <h2 className="mt-4 text-lg font-semibold text-oxblood">Shop not found</h2>
         <p className="mt-1 text-sm text-slate-500">This shop may no longer be available.</p>
         <Link
           href="/shop"
-          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-amber-700 hover:text-amber-800"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to all shops
@@ -423,7 +423,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
   return (
     <div>
       {/* Hero banner */}
-      <div className="relative h-48 sm:h-64 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500">
+      <div className="relative h-48 sm:h-64 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600">
         {shop.bannerUrl && (
           <SafeImage
             src={shop.bannerUrl}
@@ -453,7 +453,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
                 src={shop.logoUrl}
                 alt={shop.name}
                 className="h-full w-full object-cover"
-                fallbackIcon={<Store className="h-8 w-8 text-orange-500" />}
+                fallbackIcon={<Store className="h-8 w-8 text-oxblood-600" />}
                 loading="eager"
               />
             </div>
@@ -482,7 +482,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
       </div>
 
       {/* Shop details bar */}
-      <div className="bg-white border-b border-slate-200">
+      <div className="bg-white border-b border-cream-100">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
             {shop.address && (
@@ -553,7 +553,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 
       {/* Announcements & Promotions (dedicated public endpoints) */}
       {(announcements.length > 0 || promotions.length > 0) && (
-        <div className="bg-white border-b border-slate-200">
+        <div className="bg-white border-b border-cream-100">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
             {announcements.length > 0 && (
               <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
@@ -587,10 +587,10 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 
       {/* Customer reviews */}
       {reviews.length > 0 && (
-        <div className="bg-white border-b border-slate-200">
+        <div className="bg-white border-b border-cream-100">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-sm font-semibold text-oxblood">
                 Customer reviews ({reviewCount})
               </h2>
               <div className="flex items-center gap-1 text-sm">
@@ -600,7 +600,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             </div>
             <div className="space-y-3">
               {reviews.slice(0, 3).map((review) => (
-                <div key={review.id} className="rounded-lg bg-slate-50 p-3">
+                <div key={review.id} className="rounded-lg bg-cream p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-slate-700">{review.customerName || "Anonymous"}</span>
                     <div className="flex items-center gap-0.5">
@@ -628,7 +628,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
 
       {/* Category navigation (sticky) */}
       {categories.length > 1 && (
-        <div className="sticky top-14 z-40 bg-white border-b border-slate-200 shadow-sm">
+        <div className="sticky top-14 z-40 bg-white border-b border-cream-100 shadow-sm">
           <div className="mx-auto max-w-4xl px-4 sm:px-6">
             <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4">
               {categories.map((cat) => (
@@ -637,8 +637,8 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
                   onClick={() => scrollToCategory(cat)}
                   className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                     activeCategory === cat
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "bg-oxblood text-white"
+                      : "bg-cream text-slate-600 hover:bg-cream-100"
                   }`}
                 >
                   {cat}
@@ -654,7 +654,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         {/* Featured section */}
         {featuredProducts.length > 0 && (
           <section className="mb-8">
-            <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-900 mb-3">
+            <h2 className="flex items-center gap-1.5 text-base font-bold text-oxblood mb-3">
               <Star className="h-4 w-4 text-amber-500" />
               Popular
             </h2>
@@ -677,7 +677,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             ref={(el) => { categoryRefs.current[category] = el }}
             className="mb-8 scroll-mt-28"
           >
-            <h2 className="text-base font-bold text-slate-900 mb-3">{category}</h2>
+            <h2 className="text-base font-bold text-oxblood mb-3">{category}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {products[category].map((product) => (
                 <ProductCard
@@ -695,7 +695,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         {categories.length === 0 && (
           <div className="flex min-h-[40vh] flex-col items-center justify-center text-center py-12">
             <UtensilsCrossed className="h-12 w-12 text-slate-300" />
-            <h3 className="mt-4 text-lg font-semibold text-slate-900">
+            <h3 className="mt-4 text-lg font-semibold text-oxblood">
               No items yet
             </h3>
             <p className="mt-1 text-sm text-slate-500">
@@ -732,13 +732,13 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
               className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
                 belowMinimum
                   ? "bg-slate-700 hover:bg-slate-800"
-                  : "bg-orange-500 hover:bg-orange-600"
+                  : "bg-oxblood hover:bg-oxblood-700"
               } text-white`}
             >
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <ShoppingBag className="h-5 w-5" />
-                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-600">
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-oxblood">
                     {itemCount}
                   </span>
                 </div>

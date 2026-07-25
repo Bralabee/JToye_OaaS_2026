@@ -35,7 +35,7 @@ function CallbackContent() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-sm text-red-600">{error}</p>
-          <Link href="/shop" className="mt-4 inline-block text-sm text-orange-600 hover:text-orange-700">
+          <Link href="/shop" className="mt-4 inline-block text-sm text-amber-700 hover:text-amber-800">
             Back to shop
           </Link>
         </div>
@@ -46,7 +46,7 @@ function CallbackContent() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-orange-500" />
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
         <p className="mt-3 text-sm text-slate-500">Signing you in...</p>
       </div>
     </div>
@@ -55,7 +55,7 @@ function CallbackContent() {
 
 export default function AuthCallbackPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-amber-500" /></div>}>
       <CallbackContent />
     </Suspense>
   )
