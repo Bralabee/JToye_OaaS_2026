@@ -68,7 +68,16 @@ readonly K8S_LOCAL_BACKING_SERVICES="postgres redis rabbitmq keycloak minio mail
 # EXPECTED LOCAL NAMESPACE IS DELIBERATELY ABSENT from this list: it is read at
 # call time from k8s_local_namespace(), so the local namespace keeps exactly one
 # source of truth (k8s/local/kustomization.yaml) and cannot drift into a second.
-readonly K8S_LOCAL_SYSTEM_NAMESPACES="kube-system kube-public kube-node-lease ingress-nginx default"
+#
+# `default` IS DELIBERATELY NOT EXEMPT, and do not "tidy" it back in. It is a
+# writable namespace, not a system one — it is where an unqualified `kubectl run`
+# or `kubectl apply` with no `-n` lands, which is exactly the accidental-writer
+# class this guard exists to catch. Nothing in this tooling puts a workload there:
+# every cluster object goes to the namespace above, and step 4b's webhook probe is
+# a `--dry-run=server` against `default`, which creates nothing. So exempting it
+# would buy no convenience and would leave a hole big enough to drive the original
+# 16-connection incident through a second time.
+readonly K8S_LOCAL_SYSTEM_NAMESPACES="kube-system kube-public kube-node-lease ingress-nginx"
 
 # A pod in any of these phases has stopped for good and can hold no database
 # connection, so the cluster inventory excludes them SERVER-SIDE. Everything else
@@ -495,10 +504,13 @@ k8s_local_assert_cluster_xor() {
 
   These pods can write the same shared dev Postgres as the overlay about to be applied, so proceeding re-creates the TWO-WRITERS-ON-ONE-DATABASE hazard that stopping the compose app containers exists to prevent — and stale images mean stale code against a current schema (a false green). Measured on 2026-07-25: a restored 11-day-old namespace held 16 live 'jtoye_app' connections while every other guard reported green.
 
-  A Stopped minikube profile PRESERVES etcd, so a namespace from an earlier rehearsal comes back the moment the profile starts. Inspect, then delete it yourself — this tooling never deletes a namespace, for the same reason it never stops a compose container:
+  A Stopped minikube profile PRESERVES etcd, so a namespace from an earlier rehearsal comes back the moment the profile starts. Inspect, then remove it yourself — this tooling never deletes anything, for the same reason it never stops a compose container:
 
-    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} -n <namespace> get all
-    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} delete namespace <namespace>
+    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} -n <namespace> get all        # see what is actually in it
+    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} -n <namespace> delete <kind>/<name>   # remove just the workload, OR
+    kubectl --context ${K8S_LOCAL_KUBE_CONTEXT:-<unset>} delete namespace <namespace>  # remove the whole namespace
+
+  If the namespace named above is 'default', only the first two lines apply: 'default' cannot be deleted, so delete the workload inside it. 'default' is NOT exempt on purpose — it is writable, and an unqualified 'kubectl run' with no -n lands there.
 
   Namespaces exempt by design: '${ns_expected}' (ours) and ${K8S_LOCAL_SYSTEM_NAMESPACES// /, }."
     return 1

@@ -78,7 +78,9 @@ is applied, and refuses on any namespace outside the expected one holding live p
 It names each offending namespace, its live pod count, the pod phases and the **image tags** — because a
 stale namespace is usually stale *code* too. Exempt: `jtoye-local` (read from
 `k8s/local/kustomization.yaml`, so there is one source of truth) plus `kube-system`, `kube-public`,
-`kube-node-lease`, `ingress-nginx` and `default`. Like the compose arms it is **read-only**: deleting a
+`kube-node-lease` and `ingress-nginx`. **`default` is NOT exempt** — it is a writable namespace, not a
+system one, and it is where an unqualified `kubectl run` with no `-n` lands, which is precisely the
+accidental-writer case this guard is for. Like the compose arms it is **read-only**: deleting a
 namespace is your decision, and it prints the two commands to inspect and then delete. It **fails
 closed** — a missing `kubectl`, an unreachable API server, an unparseable response or an empty
 inventory all exit **2** (VOID), never 0.
@@ -342,8 +344,14 @@ anything.
 >   — it is the same hazard a few seconds early. Completed pods (the `pg-backup-rehearsal` Job, the
 >   ingress-admission Jobs) are correctly ignored.
 > - Exempt namespaces are `jtoye-local` — read from `k8s/local/kustomization.yaml`, never duplicated
->   into a script literal — plus `kube-system`, `kube-public`, `kube-node-lease`, `ingress-nginx` and
->   `default`. So a **legitimate re-run passes**: your own running pods are not offenders (D-14).
+>   into a script literal — plus `kube-system`, `kube-public`, `kube-node-lease` and `ingress-nginx`. So
+>   a **legitimate re-run passes**: your own running pods are not offenders (D-14).
+> - **`default` is deliberately NOT exempt.** It is a writable namespace, not a system one: an
+>   unqualified `kubectl run` or `kubectl apply` with no `-n` lands there, and that is exactly the
+>   accidental-writer case this guard is for. Nothing in this tooling puts a workload there — step 4b's
+>   webhook probe targets `default` under `--dry-run=server`, which creates nothing — so the strictness
+>   costs you nothing on a clean cluster. Do not add it back to make a stray pod stop complaining;
+>   delete the stray pod.
 > - It **never deletes anything.** It prints the `get all` and `delete namespace` commands and stops;
 >   deleting a namespace is your decision for exactly the reason stopping a compose container is.
 >
