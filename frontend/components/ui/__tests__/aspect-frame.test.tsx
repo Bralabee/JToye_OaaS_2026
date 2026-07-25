@@ -1,3 +1,6 @@
+/* eslint-disable @next/next/no-img-element -- the self-test fixtures below
+   deliberately hand-roll raw <img> frames to reproduce the shipped defect;
+   swapping them for next/image would defeat the point of the fixture. */
 /**
  * AspectFrame — the component that owns fixed-ratio image windows, plus a
  * self-test proving the shared contract actually BITES.
