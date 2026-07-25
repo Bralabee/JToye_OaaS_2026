@@ -291,6 +291,24 @@ kubectl --context <ctx> get ns,secrets -A
 The fresh `jtoye-local` namespace is the recommended clean slate precisely because it cannot inherit
 anything.
 
+> **A1 is a GUARD GAP, not just housekeeping — measured live on 2026-07-25 (plan 26-07).** The stale
+> namespace on this profile was not dormant. `jtoye-staging`, 11 days old, came back with **11 running
+> pods** on the stale `:2.1.0` images and a `pg-backup` CronJob that fired on start, and those pods
+> held **16 live connections to the shared dev Postgres as `jtoye_app`**.
+>
+> So `minikube start` alone silently re-created the two-writers-on-one-dev-Postgres hazard that §2
+> exists to prevent — and the compose XOR guard cannot see it, because
+> `k8s_local_assert_compose_xor` inspects **compose only** and never the cluster it is about to start.
+> The guard is asymmetric: it will refuse to start a cluster while compose is up, but it will happily
+> start a cluster that already contains its own writers.
+>
+> Suggested closure (**not implemented** — recorded as a deferred item): after step 3's profile start
+> and before any apply, assert that no namespace outside the expected local one runs workloads that
+> talk to the dev database — e.g. refuse if any namespace other than `jtoye-local`, `kube-*`,
+> `default` or `ingress-nginx` has a non-zero-replica Deployment, naming the offenders the way the
+> compose arms already name theirs. Until that exists, **run the A1 inventory by hand on every first
+> start** and treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
+
 **PIT-4 — the stale-image rule (anti-anecdote).** The `ghcr.io/bralabee/jtoye-*:2.1.0` images sitting
 on this host were built on 2026-07-13/14 and therefore **predate Phases 23, 24 and 25**. Loading them
 would produce READY pods rehearsing three-phase-old code against a current database. Step 7 rebuilds
@@ -416,30 +434,75 @@ node IP is stable across `stop`/`start` for an existing profile, but re-check it
 
 ## 11. Rehearsal Evidence
 
-**This section is a TEMPLATE. Every `Actual` field below is deliberately empty.**
+Rows **L1–L5 are FILLED** (plan 26-07, 2026-07-25, behind its human-action approval — which is what
+authorised the shared-state mutations). Rows **L6–L7 remain deliberately UNFILLED**: they are plan
+26-08's, and this plan did not run them. An unfilled row means *not yet proven* — it stays visibly
+unfilled rather than carrying something plausible.
 
-Plan 26-07 fills rows L1–L5 (behind its human-action approval, which is what authorises the shared
-state mutations). Plan 26-08 fills L6–L7 (the two browser/relay proofs). An unfilled row means
-*not yet proven* — leave it visibly unfilled rather than writing something plausible in it.
-
-### Run header — fill this before any row
+### Run header
 
 ```
-date (UTC)        :
-git commit        :
-minikube profile  :                       node IP:
-namespace         :
-kubectl context   :
-ingress hosts     :
-api base          :
-app base          :
+date (UTC)        : 2026-07-25T20:38:38Z
+git commit        : db7e87c
+minikube profile  : jtoye                 node IP: 192.168.49.2
+namespace         : jtoye-local
+kubectl context   : jtoye
+ingress hosts     : api.jtoye.local app.jtoye.local
+api base          : http://api.jtoye.local
+app base          : http://app.jtoye.local
 
 IMAGE IDENTITIES (all four — mandatory, see §7 PIT-4)
-  ghcr.io/bralabee/jtoye-core-java:local   id/digest:
-  ghcr.io/bralabee/jtoye-edge-go:local     id/digest:
-  ghcr.io/bralabee/jtoye-frontend:local    id/digest:
-  ghcr.io/bralabee/jtoye-pg-backup:<tag>   id/digest:
+  ghcr.io/bralabee/jtoye-core-java:local   id/digest: sha256:bba33e72393dfa7eb19c1fc0347eabba7efe269e1f0cfdf976718a884690b8bb
+  ghcr.io/bralabee/jtoye-edge-go:local     id/digest: sha256:e0e87717034df51931f9b97ac3654d01d85f5fde731bd66a96a77d367bf8f55e
+  ghcr.io/bralabee/jtoye-frontend:local    id/digest: sha256:3286c715cddb42de57d8cf67f8a0844bacd26a431529768c6d83f4bab03c2b9b
+  ghcr.io/bralabee/jtoye-pg-backup:15      id/digest: sha256:943a78f678b00a799e213885c0c7f2dad5265aa5571de5928959318d23ea5429
 ```
+
+All four were **built during this run** by step 7 (no `--skip-build` on the build pass), so PIT-4 is
+satisfied: these are NOT the on-host `:2.1.0` tags, which were built 2026-07-13/14 and predate Phases
+23, 24 and 25. For the record, the stale tags this run deliberately did not use were
+`jtoye-core-java:2.1.0` (`935983d5cad2`, 2026-07-13), `jtoye-edge-go:2.1.0` (`498edb758282`,
+2026-07-13), `jtoye-frontend:2.1.0` (`74a3cf917e8e`, 2026-07-14) and `jtoye-pg-backup:15`
+(`303d1511b2fc`, 2026-07-10 — rebuilt here to `943a78f6…`).
+
+### Pre-apply cluster state (A1) — and why it mattered more than expected
+
+A **Stopped** profile preserves etcd, and this one had a live namespace in it. The inventory below was
+taken immediately after the profile start and **before any apply**:
+
+```
+$ kubectl --context jtoye get ns
+NAME              STATUS   AGE
+default           Active   11d
+ingress-nginx     Active   2m53s
+jtoye-staging     Active   11d          <-- the 2026-07-14 rehearsal
+kube-node-lease   Active   11d
+kube-public       Active   11d
+kube-system       Active   11d
+```
+
+`jtoye-staging` was not merely holding maskable Secrets — it was **running**: 11 pods on the stale
+`:2.1.0` images (core-java 3/3, edge-go 5/5, frontend 3/3) plus a `pg-backup` CronJob that fired the
+moment the profile started and failed `BackoffLimitExceeded`. Those pods held **16 live connections to
+the shared dev Postgres as `jtoye_app`**:
+
+```
+$ SELECT usename, client_addr, count(*) ... FROM pg_stat_activity WHERE datname='jtoye' ...
+jtoye_app <- 172.18.0.1/32  (16 conns)
+```
+
+So starting the profile silently re-created the two-writers-on-one-dev-Postgres hazard that stopping
+the compose apps exists to prevent. Per the standing decision the namespace was **deleted** (46
+objects: 3 Deployments, 3 Services, 3 HPAs, 3 PDBs, 6 NetworkPolicies, 2 Ingresses, 1 CronJob, 1 Job,
+7 ReplicaSets, 11 Pods, 6 Secrets), after which:
+
+```
+$ SELECT count(*) FROM pg_stat_activity WHERE datname='jtoye' AND client_addr IS NOT NULL
+0
+```
+
+That zero is load-bearing: it is the baseline that makes L2's connection attribution exact rather than
+inferential. **This is a guard gap, not just a housekeeping note** — see §7, A1.
 
 `scripts/k8s-local-up.sh` step 12 prints this block with the real values already substituted — paste
 it, do not retype it.
@@ -456,6 +519,108 @@ a run whose image identities are blank: it proves nothing about which code was d
 
 Seven rows, one per **live** entry in the phase validation contract.
 
+### Bootstrap proofs (first whole-script `scripts/k8s-local-secrets.sh` execution in the phase)
+
+Plan 26-05 authored the bootstrap but was forbidden to invoke it; this run is its first whole-script
+execution, authorised by Task 1's approval items (c) and (d).
+
+**The compose-XOR guard's PROCEED arm** — the half 26-05 could only take as far as refusal:
+
+```
+$ bash -c 'source scripts/lib/k8s-local-guards.sh; k8s_local_load_env; k8s_local_assert_compose_xor'
+OK: env loaded from /home/sanmi/IdeaProjects/JToye_OaaS_2026/.env; all 13 K8S_LOCAL_* keys present
+OK: compose XOR k8s satisfied — all app services down, all backing services up
+xor exit=0
+```
+
+26-05's recorded refuse arms (`REFUSED [compose-apps-running]` naming core-java/frontend/edge-go/
+mcp-server, and `REFUSED [compose-backing-down]` naming redis) are **not re-observed here on purpose**:
+after the approval the apps are down, and restarting them mid-rehearsal would violate the XOR rule.
+Refusals are 26-05's evidence; this proceed arm is 26-07's. D-04 is now proven in both directions
+against real state.
+
+**The BYPASSRLS dump role (D-02)** — bypass without superuser, exactly what `create-backup-role.sql`
+intends:
+
+```
+$ docker exec jtoye-postgres psql -U jtoye -d jtoye -tAc \
+    "SELECT rolbypassrls, rolsuper FROM pg_roles WHERE rolname='jtoye_backup'"
+t|f
+```
+
+**The backup bucket — EXISTENCE asserted FIRST, because a 403 alone proves nothing.** MinIO returns 403
+for a bucket that does not exist just as it does for a private one (tested live before creation), so a
+bare 403 would be satisfied by a bucket that was never created:
+
+```
+$ docker exec jtoye-minio ls /data
+jtoye-db-backups
+jtoye-images
+$ docker exec jtoye-minio ls /data | grep -c '^jtoye-db-backups$'
+1
+```
+
+Only now is the 403 meaningful, against the deliberately-public images bucket as the control:
+
+```
+$ curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/jtoye-db-backups/
+403
+$ curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/jtoye-images/
+200
+```
+
+**Secret inventory** (8 created, 2 skipped by design):
+
+```
+$ kubectl --context jtoye -n jtoye-local get secrets -o name | sort
+secret/keycloak-credentials
+secret/nextauth-secret
+secret/notification-credentials
+secret/postgres-credentials
+secret/rabbitmq-credentials
+secret/redis-credentials
+secret/s3-backup-credentials
+secret/s3-media-credentials
+```
+
+`stripe-credentials` skipped — `STRIPE_API_KEY` is empty and the manifest ref is `optional: true`, so
+payments stay inert. `smtp-credentials` absent **by design** — Mailhog takes no auth and plan 26-02
+made that ref optional.
+
+**DEF-2 at the live secret** — the app role, never the superuser:
+
+```
+$ kubectl --context jtoye -n jtoye-local get secret postgres-credentials \
+    -o jsonpath='{.data.username}' | base64 -d
+jtoye_app
+```
+
+(`.env` `DB_USER=jtoye_app`; the superuser `POSTGRES_USER=jtoye` was NOT injected.) The same Secret's
+non-secret keys decode to `host=host.minikube.internal`, `port=5433`, `backup-username=jtoye_backup`.
+
+**Idempotence (D-01)** — a second standalone run is a clean no-op:
+
+```
+$ bash scripts/k8s-local-secrets.sh ; echo exit=$?
+...
+PASS: local bootstrap complete and safe to re-run.
+exit=0
+```
+Conflict / resourceVersion-churn errors in that output: **0**. `bash
+k8s/scripts/check-no-plaintext-secrets.sh` still exits **0** afterwards — nothing the bootstrap created
+became a kustomize resource.
+
+**No secret value in the output.** Every high-entropy secret was checked as both its literal and its
+base64 form, all **0**: `DB_BACKUP_PASSWORD` (64 chars) 0/0, `NEXTAUTH_SECRET` (44) 0/0,
+`KEYCLOAK_CLIENT_SECRET` (64) 0/0, `MINIO_ROOT_PASSWORD` (64) 0/0. A naive
+`grep -cF "$DB_PASSWORD"` returns **9**, but that is unsatisfiable-by-vocabulary on this host rather
+than a leak: this dev `.env` sets `DB_PASSWORD` to the English word `secret` (6 chars; SHA-256 prefix
+`2bb80d537b1d` == `printf 'secret' | sha256sum`), and all 9 hits are the script's own key-**name**
+summary lines (`nextauth-secret`, `frontend-client-secret`, `secret-key`, `secrets created`). No value
+was ever printed to diagnose this.
+
+### Live rows
+
 **L1 — INFRA-01: every reference resolves against a real API server** *(owner: 26-07)*
 
 ```
@@ -464,7 +629,130 @@ Command : kubectl --context <ctx> apply -f k8s/local/namespace.yaml
 Expected: exit 0, one "… (server dry run)" line per object, no "not found" and no
           admission-webhook denial. Capture the output VERBATIM — a dry-run that
           silently skipped a webhook and one that genuinely passed share an exit code.
-Actual  :
+Actual  : exit 0. VERBATIM, 23 objects, at git db7e87c:
+
+--- server-side dry-run (VERBATIM) ---
+namespace/jtoye-local unchanged (server dry run)
+configmap/app-config unchanged (server dry run)
+service/core-java unchanged (server dry run)
+service/edge-go unchanged (server dry run)
+service/frontend unchanged (server dry run)
+deployment.apps/core-java configured (server dry run)
+deployment.apps/edge-go unchanged (server dry run)
+deployment.apps/frontend unchanged (server dry run)
+cronjob.batch/pg-backup unchanged (server dry run)
+poddisruptionbudget.policy/core-java-pdb configured (server dry run)
+poddisruptionbudget.policy/edge-go-pdb configured (server dry run)
+poddisruptionbudget.policy/frontend-pdb configured (server dry run)
+horizontalpodautoscaler.autoscaling/core-java-hpa unchanged (server dry run)
+horizontalpodautoscaler.autoscaling/edge-go-hpa unchanged (server dry run)
+horizontalpodautoscaler.autoscaling/frontend-hpa unchanged (server dry run)
+ingress.networking.k8s.io/jtoye-ingress unchanged (server dry run)
+ingress.networking.k8s.io/jtoye-sse-ingress unchanged (server dry run)
+networkpolicy.networking.k8s.io/core-java-allow unchanged (server dry run)
+networkpolicy.networking.k8s.io/default-deny unchanged (server dry run)
+networkpolicy.networking.k8s.io/edge-go-allow unchanged (server dry run)
+networkpolicy.networking.k8s.io/frontend-allow unchanged (server dry run)
+networkpolicy.networking.k8s.io/observability-placeholder unchanged (server dry run)
+networkpolicy.networking.k8s.io/pg-backup-allow unchanged (server dry run)
+--- end server-side dry-run ---
+
+          The same 23 objects against the EMPTY namespace on the first apply read
+          `created (server dry run)` for all 22 namespaced objects (namespace itself
+          `unchanged`). BOTH Ingress objects are present in the output, and
+          `grep -c 'denied the request'` is **0 across all eight captured run logs** —
+          so PIT-1's annotation nulling has not regressed.
+
+          NOT-SILENTLY-SKIPPED, and this is the row's real content: on two earlier
+          attempts this dry-run FAILED both Ingresses with
+          `failed calling webhook "validate.nginx.ingress.kubernetes.io": ... dial tcp
+          10.108.175.67:443: connect: no route to host`. That is the webhook being
+          UNREACHABLE, not an admission denial — a distinction exit codes alone cannot
+          make, which is exactly why rule 6 demands verbatim capture. Cause: step 4's
+          `minikube addons enable ingress` rolls the controller on every run
+          (restartCount 5 -> 6, pod IP 10.244.0.51 -> .52) while the admission Service
+          keeps its ClusterIP. Fixed by the new step 4b reachability gate; it answered
+          on attempt 2 and attempt 5 on the two subsequent runs, i.e. it is genuinely
+          load-bearing and the delay is variable.
+```
+
+**L1b — INFRA-01: the live apply, rollout and object set** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> apply -k k8s/local ; rollout status x3 ; get pods,svc,ingress,hpa,pdb,cronjob
+Expected: 3 Deployments READY 1/1 on a real cluster consuming the compose-hosted backing services
+Actual  : deployment "core-java" successfully rolled out
+          deployment "frontend"  successfully rolled out
+          deployment "edge-go"   successfully rolled out
+
+NAME                            READY   STATUS    RESTARTS        AGE
+pod/core-java-88b85df6f-x7vxn   1/1     Running   1               5m6s
+pod/edge-go-6d67497b97-4mgvq    1/1     Running   1 (3m24s ago)   5m6s
+pod/frontend-74d864f789-cvrq6   1/1     Running   1               5m6s
+
+NAME                TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+service/core-java   ClusterIP   10.105.90.125    <none>        9090/TCP   5m7s
+service/edge-go     ClusterIP   10.100.84.127    <none>        8080/TCP   5m7s
+service/frontend    ClusterIP   10.103.140.207   <none>        3000/TCP   5m7s
+
+NAME                                          CLASS   HOSTS                             ADDRESS        PORTS   AGE
+ingress.networking.k8s.io/jtoye-ingress       nginx   api.jtoye.local,app.jtoye.local   192.168.49.2   80      5m5s
+ingress.networking.k8s.io/jtoye-sse-ingress   nginx   api.jtoye.local                   192.168.49.2   80      5m4s
+
+NAME                                                REFERENCE              TARGETS                                     MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/core-java-hpa   Deployment/core-java   cpu: <unknown>/70%                          1         10        1          5m5s
+horizontalpodautoscaler.autoscaling/edge-go-hpa     Deployment/edge-go     cpu: <unknown>/60%, memory: <unknown>/70%    1         20        1          5m5s
+horizontalpodautoscaler.autoscaling/frontend-hpa    Deployment/frontend    cpu: <unknown>/70%                          1         10        1          5m5s
+
+NAME                                       MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/core-java-pdb   1               N/A               0                     5m6s
+poddisruptionbudget.policy/edge-go-pdb     1               N/A               0                     5m5s
+poddisruptionbudget.policy/frontend-pdb    1               N/A               0                     5m5s
+
+NAME                      SCHEDULE    TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/pg-backup   0 2 * * *   <none>     False     0        <none>          5m6s
+
+          HPA `TARGETS` reading `<unknown>` is EXPECTED, not a fault: metrics-server is
+          deliberately not enabled (§6), so the HPAs sit inert. PDB
+          `ALLOWED DISRUPTIONS 0` with minAvailable 1 over 1 replica is likewise the
+          documented D-09 consequence (§5), not a regression. `maxReplicas` remains
+          10/20/10, byte-identical to base.
+```
+
+**L1c — INFRA-01: ingress smoke through the hostnames** *(owner: 26-07)*
+
+```
+Command : curl http://api.jtoye.local/health , /public/shops , http://app.jtoye.local/api/health
+Expected: 200 on all three, no loopback address anywhere
+Actual  : api /health       -> 200  body: OK
+          api /public/shops -> 200  body: {"content":[{"slug":"brixton-village-grill",
+                                     "name":"Brixton Village Grill","description":"Flame-grilled
+                                     peri peri chicken, kebabs and loaded sides.","address":
+                                     "Unit 74, Brixton Village Market, London …
+          app /api/health   -> 200  body: {"status":"ok"}
+          Response line: HTTP/1.1 200 (via the ingress-nginx controller at 192.168.49.2).
+
+          `/public/shops` returning REAL seeded rows — not an empty `content: []` — is
+          the point: an empty catalogue would have been a green-looking regression.
+```
+
+**L1d — INFRA-01 / D-14: the `--dry-run-only` flag contract and re-runnability** *(owner: 26-07)*
+
+```
+Command : bash scripts/k8s-local-up.sh --dry-run-only --skip-build
+Expected: exit 0, verbatim dry-run reached, NO rollout started
+Actual  : exit 0
+          reached the verbatim dry-run          : 1
+          "stopping before the real apply"      : 1
+          STEP 10 (rollout) present in output   : 0
+          STEP 11 (smoke)  present in output    : 0
+          deploy/core-java .metadata.generation : 1 -> 1  (unchanged)
+          replicaset count                      : 3 -> 3  (unchanged)
+          bash scripts/k8s-local-up.sh --nope   : exit 2 (flags parsed before any tool call)
+
+          The whole entry point was additionally re-run from an already-Running profile
+          (step 3 reporting `profile jtoye already Running (idempotent no-op)`), which is
+          anti-anecdote rule 1's re-runnability requirement met against real state.
 ```
 
 **L2 — INFRA-02b: core-java boots as a NOSUPERUSER role** *(owner: 26-07)*
@@ -474,7 +762,76 @@ Command : kubectl --context <ctx> -n jtoye-local logs deploy/core-java | grep -c
           plus the DB-side truth: SELECT current_user, usesuper  under the pod's connection identity
 Expected: log count >= 1, AND the DB reports usesuper = false. Both arms — the log
           alone is the app's own claim about itself.
-Actual  :
+Actual  : ARM 1 — the app's own validator, asserted as COUNTS:
+            grep -c "is NOT a superuser"                  = 1   (>= 1 OK)
+            grep -c "DATABASE SECURITY VALIDATION PASSED" = 1   (>= 1 OK)
+            grep -c "DATABASE SECURITY VALIDATION FAILED" = 0   (0 OK)
+
+          Verbatim, from the running pod:
+            "message":"DATABASE SECURITY CONFIGURATION CHECK"
+            "message":"Database username: jtoye_app"
+            "message":"Checking if database user is a superuser..."
+            "message":"✅ User 'jtoye_app' is NOT a superuser (RLS will be enforced)"
+            "message":"✅ DATABASE SECURITY VALIDATION PASSED"
+          (timestamps 2026-07-25 20:38:12.128–.169, logger
+           u.j.c.c.DatabaseConfigurationValidator, thread main)
+
+          ARM 2 — the DB side, independent of anything the app says about itself:
+            SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname='jtoye_app'
+            -> f|f
+
+          ARM 2b — that the live connections are THIS CLUSTER'S, proven three ways
+          rather than by guessing at a subnet:
+            SELECT usename, client_addr, count(*) FROM pg_stat_activity ...
+            -> jtoye_app | 172.18.0.1/32 | 5 conns
+
+            (i)   BASELINE. 16 conns (stale jtoye-staging) -> 0 (namespace deleted)
+                  -> 5 (this rollout). The zero in the middle is the control.
+            (ii)  ELIMINATION. All four compose app services report `exited`
+                  (core-java, frontend, edge-go, mcp-server), so compose cannot be
+                  the source.
+            (iii) CORRELATION. All 5 backends share application_name
+                  "PostgreSQL JDBC Driver" and backend_start 2026-07-25 20:37:48 — one
+                  simultaneous HikariCP pool init — against pod
+                  core-java-88b85df6f-x7vxn startedAt 2026-07-25T20:37:36Z.
+
+          NOTE, a correction to the expected form: `client_addr` is 172.18.0.1, which
+          is NOT on the minikube bridge subnet, and no correct run could make it so.
+          Traffic is double-NAT'd — pod 10.244.0.x -> host.minikube.internal
+          (minikube bridge gw 192.168.49.1) -> published host port 5433 ->
+          docker-proxy -> the postgres container, which sees the COMPOSE bridge
+          gateway 172.18.0.1 (network jtoye_oaas_2026_jtoye-network). A
+          "client_addr is on the minikube subnet" assertion would fail on a perfectly
+          healthy run, so the three proofs above replace it.
+```
+
+**L2b — INFRA-02a / DEF-1: the pod used the SECRET-supplied port, not a hardcoded 5432** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> -n jtoye-local get deploy/core-java \
+            -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="DB_PORT")]}'
+Expected: a secretKeyRef and NO `value` field; the decoded secret port quoted
+Actual  : {"name":"DB_PORT","valueFrom":{"secretKeyRef":{"key":"port","name":"postgres-credentials"}}}
+            secretKeyRef present   : 1
+            "value" field present  : 0
+            decoded secret `port`  : 5433
+
+          The pod is genuinely CONNECTED (L2 arm 2b, 5 live backends), and the host
+          Postgres is reachable only on the published port 5433 — so a live connection
+          is itself the proof that the secret's port was the one used. Had the deleted
+          `value: "5432"` still been in play, nothing would have connected at all.
+```
+
+**L2c — PIT-5: the logback file-appender error is absent** *(owner: 26-07)*
+
+```
+Command : kubectl --context <ctx> -n jtoye-local logs deploy/core-java | grep -ci 'FileNotFoundException.*jtoye'
+Expected: 0, because the local overlay sets log.path: /tmp
+Actual  : 0
+          LOG_PATH resolves via configMapKeyRef app-config/log.path
+          rendered app-config log.path = /tmp
+          (The base default /var/log/jtoye is UNCHANGED; the durable fix is still the
+           deferred emptyDir. This row only says the local overlay works.)
 ```
 
 **L3 — INFRA-02c: the pg-backup CronJob completes in-cluster and uploads** *(owner: 26-07)*
@@ -502,7 +859,15 @@ Actual  : arm A =            arm B =
 Command : kubectl --context <ctx> -n jtoye-local logs deploy/core-java | grep -c "Access refused for user"
 Expected: exactly 0. Assert the COUNT, not the absence of a line you looked for —
           a missing log line and an absent grep hit look identical otherwise.
-Actual  :
+Actual  : grep -c "Access refused for user"  = 0
+          grep -ciE "AuthenticationFailureException|ACCESS_REFUSED|
+                     com.rabbitmq.client.AuthenticationFailure" = 0
+          grep -c "DATABASE SECURITY VALIDATION FAILED" = 0
+
+          Both recorded as COUNTS. Note the boundary honestly: this row proves only
+          that the broker did NOT reject the credentials at boot. It does NOT prove a
+          message traversed the relay — the functional STOMP relay proof is L6, and it
+          is plan 26-08's.
 ```
 
 **L6 — INFRA-02d: a KDS client receives a relayed order event** *(owner: 26-08)*
@@ -512,7 +877,9 @@ Command : RELAY_E2E=true PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
             npx playwright test e2e/stomp-relay.spec.ts
 Expected: pass, and the host RabbitMQ shows a live STOMP connection authenticated as the
           dedicated STOMP login (NOT guest). Record the broker-side connection line too.
-Actual  :
+Actual  : NOT RUN — deliberately unfilled. This row belongs to plan 26-08; plan 26-07
+          did not execute it, so nothing is recorded here. L5 proves only the absence of
+          a boot-time credential rejection, which is NOT this proof.
 ```
 
 **L7 — DEF-5: a real vendor login through the ingress reaches a dashboard** *(owner: 26-08)*
@@ -523,18 +890,53 @@ Command : PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
           (credentials: user admin-user, password from the .env key KC_SEED_USER_PASSWORD)
 Expected: pass. This is the ONLY step that actually proves the split-horizon issuer fix —
           a real Keycloak flow, browser-issuer token, pod-side JWKS fetch.
-Actual  :
+Actual  : NOT RUN — deliberately unfilled. This row belongs to plan 26-08. The L1c
+          ingress smoke exercises only UNAUTHENTICATED endpoints, so it says nothing
+          about the split-horizon issuer pair; DEF-5 stays unproven until 26-08.
 ```
 
 ### Sign-off
 
 ```
-All seven rows filled with real captured output    : [ ]
-Four image identities recorded in the header       : [ ]
-No loopback address anywhere in the evidence       : [ ]
-Both backup arms recorded (L4)                     : [ ]
-Recorded by                                        :
+Rows L1–L5 filled with real captured output        : [x]  (26-07, 2026-07-25)
+Rows L6–L7 filled with real captured output        : [ ]  owned by 26-08, NOT RUN here
+Four image identities recorded in the header       : [x]  all four built during this run
+No loopback address anywhere in the evidence       : [x]  see the check below
+Both backup arms recorded (L4)                     : [x]  arm A = 0, arm B = 4067
+Recorded by                                        : plan 26-07 executor, 2026-07-25
 ```
+
+**The loopback check, measured rather than asserted — and stated in the only form that can actually
+fail.** The obvious form, `grep -c 'localhost:9090' k8s/LOCAL.md` == 0, is **unsatisfiable**: the rule
+above has to name the string it forbids, so that grep returns **2** on a perfectly clean document (the
+rule sentence in this section, and this paragraph). Both hits are classified and neither is captured
+output.
+
+The assertion that means something is scoped to §11's **fenced blocks** — i.e. to captured output only.
+Walk this section with awk, toggling on each triple-backtick fence, keep only the lines inside a fence,
+and count the pattern in those: the result is **0**, over 278 captured-output lines.
+
+That command is deliberately described here rather than shown in a fenced block, and the reason is worth
+recording: when it *was* pasted into a fence in this section, its own worked example became a line
+"inside §11's fences" and the count went from 0 to **1**. The check began failing on itself. A
+verification example and the material it verifies must not share a namespace — the same prose-vs-grep
+trap this phase hit in 26-01, 26-02, 26-03, 26-04 and 26-05, arriving here one level more recursive.
+
+Two `127.0.0.1` strings DO appear inside those fences, and they are legitimate rather than an
+exception: they are the host-side MinIO bucket-privacy probes
+(`http://127.0.0.1:9000/jtoye-db-backups/` → 403 and `/jtoye-images/` → 200). Those deliberately
+address **host MinIO**, a compose backing service the cluster consumes; they are not an application URL
+and cannot be served through an ingress. Every URL that reaches an application in the evidence above is
+`http://api.jtoye.local` or `http://app.jtoye.local`. The §5 `localhost` values are configuration prose,
+outside §11 entirely.
+
+**What these five rows do NOT establish.** Read this next to §6. L1–L5 prove manifest validity against a
+real API server, a real rollout, the boot identity and the backup content. They prove **nothing** about
+TLS or HSTS (`tls: null`, no cert-manager), **nothing** about the six nginx security headers (the
+PIT-1 snippet annotation is nulled locally and the controller's posture was never weakened to make
+anything pass), and **nothing** about NetworkPolicy enforcement (minikube's default CNI does not
+enforce; all 6 policies were applied and are inert). INFRA-01 and INFRA-02 are therefore **not** marked
+complete by this plan.
 
 ---
 
