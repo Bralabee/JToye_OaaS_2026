@@ -488,3 +488,46 @@ CLOSED with a behaviour table (0 / 1 / 2 arms) and the reasons behind the depart
 cannot mistake the omission for an oversight. The suggested-closure paragraph earlier in THIS entry is
 deliberately left as written, and so is the captured `kubectl get ns` output in `k8s/LOCAL.md` §11 —
 those are records of what was proposed and observed, not documentation of current behaviour.
+
+---
+
+## 2026-07-25 — `frontend/e2e/stomp-relay.spec.ts` cannot run against the ingress; rework it to be ingress-capable
+
+**Found by:** plan 26-08 Task 2, while looking for a mechanical proof of D-06's browser half.
+
+**Why this is deferred rather than fixed here.** The spec is a compose-era artifact and each of the four
+problems below needs its own decision (which auth path, which order-creation path, which wait strategy),
+so changing it is a design task rather than a config fix. 26-08 proved D-06 two other ways instead — at
+the broker (identity) and through a real browser session (function) — and recorded the spec's limits in
+`k8s/LOCAL.md` §11 so a future green run of it is never mistaken for the proof.
+
+**The four structural mismatches, each verified against the committed file:**
+
+1. **Stub-cookie auth.** `frontend/e2e/stomp-relay.spec.ts:61-63` and `:149-151` inject
+   `authjs.session-token: "e2e-stub"`. `frontend/app/dashboard/layout.tsx:19` resolves the session
+   server-side with `await auth()` and redirects when it is absent, so a fabricated token lands the run
+   on `/auth/signin`. **Suggested closure:** reuse `frontend/e2e/dashboard-mobile.spec.ts`'s real
+   Keycloak login helper (`E2E_VENDOR_USERNAME` / `E2E_VENDOR_PASSWORD`), which is already proven to
+   work against `app.jtoye.local` — see 26-08's L7 evidence.
+2. **Orders are posted to edge-go, which the local ingress does not route.**
+   `frontend/e2e/stomp-relay.spec.ts:29` reads `EDGE_URL` with a loopback default on port 8089. The
+   local overlay's Ingress has exactly two rules (`api.jtoye.local` → `core-java:9090`,
+   `app.jtoye.local` → `frontend:3000`); `k8s/base` has no edge-go rule in any overlay.
+   **Suggested closure:** either create the order through core-java on `api.jtoye.local` (the same path
+   26-08's browser journey uses) or add an edge-go ingress rule — the first is smaller and does not
+   change the deploy surface.
+3. **`networkidle` never settles on the kitchen page.** `:76` and `:167`. `/dashboard/kitchen` holds an
+   SSE stream and a STOMP connection open for its lifetime. **Suggested closure:** wait on a specific
+   element/row appearing (`expect(locator).toBeVisible()`), never on a load state. This trap is already
+   recorded in the project's fleet-supervision learnings.
+4. **Two silent skip conditions.** `:46` skips without `RELAY_E2E`; `:80-85` skips without
+   `TEST_SHOP_ID` / `TEST_PRODUCT_ID`. A skipped spec reported as green is a false pass, and this is the
+   most likely way L6 would have been ticked without proving anything. **Suggested closure:** derive the
+   shop/product ids from the API at run time (they are seeded and readable through
+   `GET /public/shops`), so the spec has no reason to skip; keep `RELAY_E2E` as a deliberate opt-in but
+   make the runner assert it ran (`--forbid-only` does not cover skips — assert a non-zero expected
+   count).
+
+**Acceptance for the closure:** the reworked spec passes against `PLAYWRIGHT_BASE_URL=http://app.jtoye.local`
+with a real login, creates an order without edge-go, and FAILS (not skips) if the relay is unavailable —
+proven by pointing `stomp.broker.relay-host` at an unreachable host and observing a red run.

@@ -1060,16 +1060,165 @@ Actual  : grep -c "Access refused for user"  = 0
           is plan 26-08's.
 ```
 
+### Broker-side STOMP identity (plan 26-08, 2026-07-25) — and why `list_connections` cannot show it
+
+L5 above is a *negative*: no credential rejection. The positive that DEF-4 actually needs is **which
+principal the relay authenticated as**, asserted at the broker rather than inferred from a quiet log.
+That distinction is not academic: a relay that never connected at all also produces
+`Access refused for user` = 0.
+
+**`rabbitmqctl list_connections` structurally cannot answer this on RabbitMQ 3.12, so the obvious form
+of the assertion is unsatisfiable.** Measured, not assumed — `list_connections` lists **AMQP** readers
+only, and the sole row it returns is the Spring `CachingConnectionFactory` pool:
+
+```
+$ docker exec jtoye-rabbitmq rabbitmqctl list_connections user peer_host peer_port protocol
+Listing connections ...
+user	peer_host	peer_port	protocol
+jtoye	172.18.0.1	48468	{0,9,1}
+```
+
+`{0,9,1}` is AMQP 0-9-1. Piping that through `grep -ci stomp` returns **0** no matter how healthy the
+relay is, so an assertion of the form "`list_connections … | grep -ci stomp` >= 1" can never pass and
+would have been recorded as a DEF-4 failure against a working relay. `rabbitmqctl
+list_stomp_connections` also **rejects** the `user` info key outright
+(`Error (argument validation): Info key(s) user are not supported`). The identity column it does expose
+is **`auth_login`**.
+
+**Two independent broker-side views, both naming the dedicated login.** The plugin's own CLI:
+
+```
+$ docker exec jtoye-rabbitmq rabbitmqctl list_stomp_connections conn_name auth_login peer_host peer_port protocol
+Listing STOMP connections ...
+conn_name	auth_login	peer_host	peer_port	protocol
+172.18.0.1:54520 -> 172.18.0.14:61613	jtoye	172.18.0.1	54520	{'STOMP', 0}
+```
+
+and the management API, which unlike `list_connections` does carry non-AMQP protocols:
+
+```
+$ curl -s -u "$RABBITMQ_USER:$RABBITMQ_PASSWORD" http://localhost:15672/api/connections \
+    | jq '[.[]|select(.protocol|startswith("STOMP"))]|.[]'
+{
+  "name": "172.18.0.1:54520 -> 172.18.0.14:61613",
+  "user": "jtoye",
+  "protocol": "STOMP 1.2",
+  "peer_host": "172.18.0.1",
+  "peer_port": 54520,
+  "connected_at": 1785013837263
+}
+```
+
+Counts, so every claim is a number rather than an impression:
+
+```
+total broker connections                       2   (1 AMQP + 1 STOMP)
+STOMP connections                              1
+STOMP rows with user == guest                  0
+STOMP rows with user == jtoye                  1
+auth_login == guest   (CLI view)               0
+auth_login == jtoye   (CLI view)               1
+NON-VACUITY: rows matching a protocol nothing  0   (startswith("MQTT") — proves the
+             on this broker uses                   protocol filter selects, not passes-all)
+PREDICATE CAN FIRE: the identical guest        1   (applied to a synthetic fixture holding a
+             predicate on a fixture                guest STOMP row — so 0 on live data is a
+                                                   real negative, not a broken jq path)
+```
+
+`jtoye` is the value of `rabbitmq-credentials/stomp-login`, i.e. the dedicated STOMP login the
+deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:226-235`). **No
+passcode value appears anywhere in this document** — the login NAME is the only credential material
+recorded, and that is asserted below in the Sign-off.
+
+**`peer_host` is `172.18.0.1`, and that is the healthy answer — not a compose leftover.** The same
+double-NAT that 26-07 measured for Postgres applies here: pod `10.244.0.x` →
+`host.minikube.internal` (minikube gateway `192.168.49.1`) → the published host port 61613 →
+docker-proxy → the rabbitmq container, which sees the **compose** bridge gateway. So "peer_host is on
+the minikube bridge subnet" cannot hold on a healthy run, and attribution is established the way
+26-07 established it for L2 — by elimination and correlation:
+
+- **Elimination.** All four compose app services are `exited` at the time of capture
+  (`core-java exited`, `frontend exited`, `edge-go exited`, `mcp-server exited`; the six backing
+  services `running`), so no compose process could be holding a STOMP connection. Nothing else on this
+  host speaks STOMP.
+- **Correlation, to the millisecond.** The broker's `connected_at` is `1785013837263` =
+  `2026-07-25 21:10:37.263`. The pod's own relay lifecycle, verbatim:
+
+```
+2026-07-25 21:10:32.291  u.j.core.websocket.WebSocketConfig          STOMP broker relay configured: host.minikube.internal:61613
+2026-07-25 21:10:36.865  o.s.m.s.s.StompBrokerRelayMessageHandler    Starting...
+2026-07-25 21:10:36.875  o.s.m.s.s.StompBrokerRelayMessageHandler    Starting "system" session, StompBrokerRelay[ReactorNettyTcpClient[...]]
+2026-07-25 21:10:36.977  o.s.m.s.s.StompBrokerRelayMessageHandler    Started.
+2026-07-25 21:10:37.267  o.s.m.s.s.StompBrokerRelayMessageHandler    "System" session connected.
+2026-07-25 21:10:37.269  o.s.m.s.s.StompBrokerRelayMessageHandler    BrokerAvailabilityEvent[available=true, ...]
+```
+
+  Broker `21:10:37.263` vs pod `21:10:37.267` — a **4 ms** delta, inside the current container's
+  lifetime (`startedAt 2026-07-25T21:10:05Z`). `BrokerAvailabilityEvent[available=true]` is Spring's
+  own confirmation that the relay is usable, not merely dialled.
+
+**Pod-side resolved values** (non-secret names only, passcode never read):
+
+```
+$ kubectl --context jtoye -n jtoye-local exec deploy/core-java -- printenv \
+    STOMP_BROKER_MODE STOMP_RELAY_HOST STOMP_RELAY_PORT STOMP_CLIENT_LOGIN RABBITMQ_USER
+relay
+host.minikube.internal
+61613
+jtoye
+jtoye
+```
+
+`STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to `in-memory`
+(`application.yml:222-224`), so this code path is exercised **only** on this cluster (D-06).
+Re-asserted on the CURRENT pod after Task 1's frontend re-apply:
+`grep -c "Access refused for user"` = **0**, `grep -c 'In-memory simple broker'` = **0**,
+`grep -c 'STOMP broker relay configured'` = **1**, restart count **4** and stable (§7 A2 explains why
+it is 4 rather than 26-07's 3 — an idempotence defect in `scripts/k8s-local-up.sh` step 3 bounced the
+pods once between the two plans; a stable count with a clean current boot log is success).
+
+**Why `frontend/e2e/stomp-relay.spec.ts` is NOT the ingress-path proof.** Four structural reasons, each
+verified against the committed file, recorded so the next reader does not re-derive them — and so a
+green-looking run of that spec is never mistaken for D-06:
+
+1. **It authenticates with a stub cookie.** `authjs.session-token: "e2e-stub"` at
+   `frontend/e2e/stomp-relay.spec.ts:61-63` and again at `:149-151`. `/dashboard/kitchen` gates
+   server-side: `frontend/app/dashboard/layout.tsx:19` calls `await auth()` and redirects on no
+   session, and a fabricated token is not a session. The spec would land on `/auth/signin`.
+2. **It posts orders to edge-go, which the local ingress does not route.** `:29` reads
+   `EDGE_URL` with a loopback default on port 8089. The overlay's Ingress has exactly two rules —
+   `api.jtoye.local` → `core-java:9090` and `app.jtoye.local` → `frontend:3000` (verified in
+   `kubectl kustomize k8s/local`). There is no edge-go backend to reach.
+3. **It waits on `networkidle`** (`:76`, `:167`). The kitchen page holds SSE and STOMP connections
+   open, so that state never settles — a trap this repository has hit repeatedly.
+4. **It skips silently on two separate conditions.** `:46` skips without `RELAY_E2E`; `:80-85` skips
+   without `TEST_SHOP_ID`/`TEST_PRODUCT_ID`. A skipped spec reported as green is a false pass, which is
+   the single most likely way this row would have been ticked without proving anything.
+
+So D-06 is proven two other ways: at the **broker**, above (identity), and through a **real browser
+session** in L6/L7 below (function). Reworking the spec to be ingress-capable is recorded as a
+deferred item, not silently left as a trap.
+
 **L6 — INFRA-02d: a KDS client receives a relayed order event** *(owner: 26-08)*
 
 ```
-Command : RELAY_E2E=true PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
+Command : (as originally written) RELAY_E2E=true PLAYWRIGHT_BASE_URL=http://app.jtoye.local \
             npx playwright test e2e/stomp-relay.spec.ts
 Expected: pass, and the host RabbitMQ shows a live STOMP connection authenticated as the
           dedicated STOMP login (NOT guest). Record the broker-side connection line too.
-Actual  : NOT RUN — deliberately unfilled. This row belongs to plan 26-08; plan 26-07
-          did not execute it, so nothing is recorded here. L5 proves only the absence of
-          a boot-time credential rejection, which is NOT this proof.
+Actual  : SPLIT INTO TWO HALVES by plan 26-08, because the command above cannot serve as
+          the proof — see "Broker-side STOMP identity" immediately above for the four
+          structural reasons (stub cookie vs a server-side auth() gate, an edge-go target
+          the local ingress does not route, a networkidle wait on an SSE/STOMP page, and
+          two silent skip conditions).
+
+          BROKER HALF — PROVEN (26-08 Task 2, 2026-07-25). One live STOMP 1.2 connection
+          from the cluster, auth_login/user = jtoye (the dedicated stomp-login), guest
+          count 0, corroborated by two independent broker views and correlated to the
+          pod's "System" session at a 4 ms delta. Full capture and counts in the
+          subsection above.
+
+          BROWSER HALF — see below, filled by 26-08 Task 3 behind its human-verify gate.
 ```
 
 **L7 — DEF-5: a real vendor login through the ingress reaches a dashboard** *(owner: 26-08)*
@@ -1119,6 +1268,28 @@ address **host MinIO**, a compose backing service the cluster consumes; they are
 and cannot be served through an ingress. Every URL that reaches an application in the evidence above is
 `http://api.jtoye.local` or `http://app.jtoye.local`. The §5 `localhost` values are configuration prose,
 outside §11 entirely.
+
+**Addendum, plan 26-08 (2026-07-25).** This section grew by two evidence blocks, so the measurement was
+re-taken rather than assumed: the pattern count inside §11's fences is still **0**, now over 412
+captured-output lines (up from 278). The check was re-falsified before being trusted — a fence carrying
+the forbidden string, injected INSIDE §11, takes the count 0 → **1**; the same fence appended at
+end-of-file leaves it at 0, which is the awk scoping working correctly rather than the check being
+blind. Restoration was by `cp` from a scratchpad copy and verified byte-identical with `cmp`; no
+`git checkout --` was used on an uncommitted file (26-04's recorded process incident).
+
+One further loopback string now appears inside these fences and is legitimate for the same reason the
+two MinIO probes are: `http://localhost:15672/api/connections`, the host RabbitMQ **management API**.
+That is a compose backing service the cluster consumes over the host gateway — and the only broker-side
+view that reports non-AMQP protocols at all — not an application endpoint, and it cannot be served
+through an ingress. The forbidden pattern remains specifically an application API base on the core-java
+port, and that count is 0.
+
+The verbatim `redirectUris` read-back from the live realm (L7's precondition) is recorded **de-fenced**
+in L7 below, for exactly the recursive reason 26-07 recorded for its worked example: that array
+legitimately contains a pre-existing loopback entry on the core-java port, and pasting it into a fence
+would make this document fail its own check on a string that predates this phase and is not captured
+application output. The content is verbatim and complete; only the fence is omitted, and this sentence
+is why.
 
 **What these five rows do NOT establish.** Read this next to §6. L1–L5 prove manifest validity against a
 real API server, a real rollout, the boot identity and the backup content. They prove **nothing** about
