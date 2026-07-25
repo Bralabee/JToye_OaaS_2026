@@ -46,11 +46,39 @@ spec:
         env:
         - name: NODE_ENV
           value: "production"
-        - name: NEXT_PUBLIC_API_URL
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: api.url
+        # ---------------------------------------------------------------------
+        # D-18 (Phase 26 / INFRA-02): NEXT_PUBLIC_API_URL was DELETED from here,
+        # not renamed — it was DEAD CONFIG in every k8s environment.
+        #
+        # Next.js inlines every literal `process.env.NEXT_PUBLIC_*` reference
+        # into the bundle at Docker BUILD time. frontend/Dockerfile:22-23 takes
+        # NEXT_PUBLIC_API_URL as a build ARG for exactly that reason, and line 31
+        # of that same file already documents the rule: "NEXT_PUBLIC_* is inlined
+        # into the browser bundle at build time, so a runtime `environment:`
+        # value cannot reach the client bundle". A runtime `env:` entry here
+        # therefore reached NOTHING that any component reads.
+        #
+        # Worse, it was actively MASKING the boot-time signal:
+        # frontend/lib/env-validation.ts reads its list via the DYNAMIC form
+        # `process.env[envVar]`, which Next.js does NOT inline, so the injected
+        # runtime value satisfied the required-var check while every inlined
+        # literal in the app was still `undefined`. Removing it lets
+        # validateEnvironment() tell the truth (a console.error naming the
+        # missing var — it never throws, so nothing hard-fails).
+        #
+        # app-config/api.url REMAINS the source of truth: it is what feeds the
+        # `--build-arg NEXT_PUBLIC_API_URL=...`, which scripts/k8s-local-up.sh
+        # passes when it builds the local image. CI currently passes NO
+        # build-args at all (.github/workflows/ci-cd.yaml:443-456), so
+        # staging/production images ship this value unset — a single image cannot
+        # bake two different per-environment API URLs, so the durable fix is a
+        # runtime config source. Tracked as a dated deferred item in
+        # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
+        # (out of scope for Phase 26 per 26-RESEARCH.md PIT-3).
+        #
+        # NEXTAUTH_URL below is NOT of this class — it is a genuine server-side
+        # runtime env, read by Auth.js in the Node process. It stays.
+        # ---------------------------------------------------------------------
         - name: NEXTAUTH_URL
           valueFrom:
             configMapKeyRef:
@@ -68,7 +96,43 @@ spec:
             secretKeyRef:
               name: keycloak-credentials
               key: frontend-client-secret
+        # ---------------------------------------------------------------------
+        # DEF-5 / D-13 (Phase 26 / INFRA-02): the split-horizon issuer contract.
+        # frontend/auth.ts has ALWAYS split these two — the k8s manifests simply
+        # never supplied the internal half, so only the public value existed and
+        # both roles collapsed onto it. Benign while one host serves both;
+        # fatal the moment they differ. This is the issue #87 class that caused a
+        # total live-auth outage (memory: jwt_issuer_jwks_split_horizon), plus the
+        # feedback_port3100 symptom where a server-side call to the PUBLIC host
+        # hangs ~10.5s on connect timeout and then 401s.
+        #
+        #   KEYCLOAK_ISSUER          = the issuer Keycloak STAMPS into tokens.
+        #     The BROWSER must reach it (authorize redirect), and in the
+        #     non-discovery branch Auth.js sets `as.issuer = provider.issuer`,
+        #     which is what the id_token `iss` is validated against. So this must
+        #     be the PUBLIC value — hence keycloak.public.issuer.uri.
+        #     auth.ts:47 already falls kcPublicBase back to KEYCLOAK_ISSUER, so
+        #     no NEXT_PUBLIC_* runtime env is needed for the authorize redirect.
+        #   KEYCLOAK_ISSUER_INTERNAL = the POD-REACHABLE host used for the
+        #     server-side token + userinfo exchange and the refresh call
+        #     (auth.ts:14,45,58-59).
+        #
+        # Base behaviour is BYTE-IDENTICAL: keycloak.public.issuer.uri holds the
+        # same value as keycloak.issuer.uri, so staging/production render the
+        # same effective URLs they did before. Only the local overlay splits them.
+        #
+        # No auth.ts change is required: Auth.js performs OIDC discovery at
+        # exactly two call sites and both are gated on the endpoint overrides
+        # being absent (authorization-url.js:14, callback/oauth/callback.js:35).
+        # auth.ts:55-59 sets authorization/token/userinfo explicitly, so no
+        # discovery request is made against either host.
+        # ---------------------------------------------------------------------
         - name: KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.public.issuer.uri
+        - name: KEYCLOAK_ISSUER_INTERNAL
           valueFrom:
             configMapKeyRef:
               name: app-config

@@ -14,3 +14,35 @@ data:
 
   # Keycloak deprovisioning realm (issue #102 remainder) — production realm.
   keycloak.admin.realms: "jtoye-prod"
+
+  # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
+  # base app-config keys, stated EXPLICITLY here rather than inherited, so this
+  # overlay is self-describing and a future base default change cannot silently
+  # move a production email link or a vendor payout redirect. Every value is
+  # derived from this overlay's OWN keycloak.issuer.uri / frontend.url above, and
+  # every one is byte-identical to the base value — so this addition changes
+  # nothing about the production render's effective behaviour.
+  #
+  # Media storage (s3.*) and SMTP are deliberately NOT overridden here: the base
+  # values are already the correct AWS eu-west-2 regional endpoints, and
+  # smtp.auth stays "false".
+
+  # D-13 split-horizon: production serves both roles from one public host, so the
+  # stamped issuer equals the JWKS host. The key exists so that stays a stated
+  # fact rather than an assumption.
+  keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+
+  # Single production platform origin. NOT a wildcard. Read by CorsConfig AND
+  # WebSocketConfig (the KDS STOMP handshake).
+  cors.allowed-origins: "https://app.jtoye.co.uk"
+
+  # D-19: these two defaulted to a loopback dev origin, so every production
+  # notification email shipped an unsubscribe link and a tracking URL pointing at
+  # the recipient's own machine.
+  notification.email.tracking-base-url: "https://app.jtoye.co.uk"
+  notification.unsubscribe.base-url: "https://app.jtoye.co.uk"
+
+  # D-19: a vendor finishing Stripe Connect onboarding was being returned to a
+  # loopback dev origin, stranding MARKETPLACE payout setup at the last step.
+  stripe.connect.return-url: "https://app.jtoye.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app.jtoye.co.uk/dashboard/payments/connect/refresh"
