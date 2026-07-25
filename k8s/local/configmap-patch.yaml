@@ -1,0 +1,152 @@
+---
+# =============================================================================
+# LOCAL app-config overrides (Phase 26 / INFRA-01)
+#
+# HOW THIS PATCH BEHAVES
+#   A strategic-merge patch on a ConfigMap MERGES the keys listed here into the
+#   base's `data` map — it does NOT replace `data` (verified, 26-RESEARCH.md
+#   P-3). So this file lists only what CHANGES for local; every other base key
+#   (redis.port, rabbitmq.port, stomp.broker.mode, s3.region, s3.bucket,
+#   jwt.expected-audience, the webhook-delivery knobs, …) is inherited unchanged.
+#
+#   COROLLARY, and it is load-bearing: every key below must ALREADY EXIST in
+#   k8s/base/configmap.yaml. A merge patch happily introduces a brand-new key,
+#   but nothing would consume it — no deployment has a configMapKeyRef for it —
+#   so a typo'd key name produces a silently ignored value rather than an error.
+#   That is the DEF-6 defect class this phase exists to close, so do not add a
+#   key here without adding its base key and its env wiring in the same change.
+#
+# WHY host.minikube.internal AND NOT AN IP
+#   The local cluster consumes the docker-compose backing services running on the
+#   HOST. minikube maintains the host-gateway mapping under the name
+#   `host.minikube.internal`; the underlying IP "varies by driver and potentially
+#   by cluster", so hardcoding 192.168.49.1 would be an environment-varying
+#   literal (the exact class of defect DEF-1 was). Host services must also listen
+#   on 0.0.0.0 — every compose port publishes that way today (verified).
+#
+# PORT PROVENANCE — nothing here is invented
+#   All host ports are the published compose values in
+#   docker-compose.full-stack.yml: Postgres 5433 (line 31 — shifted off 5432 to
+#   dodge the cohabiting OlaJay stack), Keycloak 8085 (line 102), Redis 6379
+#   (line 131), RabbitMQ 5672 AMQP + 61613 STOMP (lines 151-153), MinIO 9000
+#   (line 401), Mailhog SMTP 1025 (line 480). The realm is `jtoye-dev`, the realm
+#   compose imports.
+#
+# NOT HERE ON PURPOSE: DB_HOST / DB_PORT
+#   Those are not app-config keys at all. They come from the
+#   `postgres-credentials` Secret, whose `host`/`port` keys the deployment reads
+#   via secretKeyRef (DEF-1, plan 26-01). scripts/k8s-local-secrets.sh (plan
+#   26-05) creates that Secret with host=host.minikube.internal and port=5433.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # --- Keycloak: the split-horizon pair (D-13 / DEF-5) -----------------------
+  #
+  # These two keys MUST hold DIFFERENT values locally, and collapsing them to one
+  # value would make the whole local auth rehearsal prove nothing. This is the
+  # #87 class that once caused a total live-auth outage.
+  #
+  #   keycloak.issuer.uri        — where the POD fetches JWKS and talks OIDC.
+  #                                A pod cannot reach `localhost:8085`; that is
+  #                                the pod's own loopback. It must go out to the
+  #                                host gateway.
+  #   keycloak.public.issuer.uri — the issuer Keycloak actually STAMPS into the
+  #                                token's `iss` claim, which is the value `iss`
+  #                                validation must compare against. Compose runs
+  #                                Keycloak with KC_HOSTNAME=localhost and
+  #                                KC_HOSTNAME_PORT=8085, so every token it mints
+  #                                says `http://localhost:8085/realms/jtoye-dev`
+  #                                — regardless of which host address fetched it.
+  #
+  # Set both to the pod-reachable URL and every real token is rejected
+  # (`iss` mismatch). Set both to localhost and the pod cannot fetch JWKS at all.
+  keycloak.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-dev"
+  keycloak.public.issuer.uri: "http://localhost:8085/realms/jtoye-dev"
+
+  # Admin API host is an IN-CLUSTER (pod-side) call, so it is the shimmed host.
+  # NOTE: keycloak.admin.enabled stays "false" (inherited from base) — tenant
+  # deprovisioning is not part of the local rehearsal, and an enabled admin
+  # client with no credential Secret would only add noise.
+  keycloak.admin.base-url: "http://host.minikube.internal:8085"
+  keycloak.admin.realms: "jtoye-dev"
+
+  # --- Ingress hosts (D-12) --------------------------------------------------
+  # The two `.local` hosts served by the minikube ingress addon, resolved via
+  # /etc/hosts entries pointing at `minikube -p jtoye ip`. This is the one deploy
+  # surface no other local runtime exercises, and it gives NextAuth a stable
+  # callback origin. No `keycloak.jtoye.local`: Keycloak is a compose service the
+  # browser reaches directly on localhost:8085, not an in-cluster workload, so
+  # publishing a cluster host for it would route to nothing.
+  api.url: "http://api.jtoye.local"
+  frontend.url: "http://app.jtoye.local"
+
+  # --- Shared backing-service endpoint shims --------------------------------
+  # Ports come from the base keys (redis.port 6379, rabbitmq.port 5672,
+  # stomp.broker.relay-port 61613), which already match the compose values, so
+  # only the host changes. stomp.broker.mode stays "relay" (base) — that is D-06:
+  # dev compose defaults to in-memory, so the relay path is ONLY ever exercised
+  # on this cluster.
+  redis.host: "host.minikube.internal"
+  rabbitmq.host: "host.minikube.internal"
+  stomp.broker.relay-host: "host.minikube.internal"
+
+  # --- Media storage: pod-reachable vs BROWSER-reachable --------------------
+  #
+  # s3.endpoint is where the POD writes (server-side AWS SDK call) -> shimmed.
+  #
+  # s3.public-url is DELIBERATELY NOT SHIMMED, and this is the single least
+  # obvious value in this file. It is the origin baked into the image URLs that
+  # go out in API responses and are then fetched by the BROWSER on the developer's
+  # machine. `host.minikube.internal` does not resolve outside the cluster, so
+  # shimming it would render every product image broken while every server-side
+  # upload still succeeded — a silent, browser-only failure. localhost:9000 is
+  # exactly what compose serves (docker-compose.full-stack.yml:230).
+  s3.endpoint: "http://host.minikube.internal:9000"
+  s3.public-url: "http://localhost:9000/jtoye-images"
+
+  # --- Backup CronJob target (INFRA-01 / INFRA-02c) -------------------------
+  # Base leaves this EMPTY, which means "real AWS S3". Locally that would send a
+  # production database dump at real AWS with no credentials. Repointed at the
+  # host MinIO, which is also what makes the #101 restore rehearsal runnable
+  # locally. The bucket/prefix/region keys are inherited from base.
+  s3.backup.endpoint: "http://host.minikube.internal:9000"
+
+  # --- Email: Mailhog -------------------------------------------------------
+  # Mailhog accepts anything and offers no auth and no TLS, so auth/starttls are
+  # both false here (base ships auth "false" + starttls "true" for SES).
+  # Sent mail is viewable at http://localhost:8025.
+  smtp.host: "host.minikube.internal"
+  smtp.port: "1025"
+  smtp.auth: "false"
+  smtp.starttls: "false"
+
+  # --- CORS / WebSocket origin ----------------------------------------------
+  # A single origin, not a wildcard. This same property is read by BOTH
+  # CorsConfig and WebSocketConfig (setAllowedOrigins), so it is a hard
+  # prerequisite for the KDS STOMP/WebSocket proof: a wrong value here fails the
+  # handshake, not just an XHR.
+  cors.allowed-origins: "http://app.jtoye.local"
+
+  # --- Local origins for outbound links (D-19 keys, local values) ------------
+  # Unsubscribe + open/click tracking links in locally-sent mail, and the Stripe
+  # Connect return/refresh redirects. Paths are inherited from the base values
+  # verbatim; only the origin changes. (Those two dashboard routes do not exist
+  # in the frontend yet — a recorded NOT-PROVISIONED item from plan 26-02; the
+  # origin still has to be right or the redirect leaves the platform entirely.)
+  notification.email.tracking-base-url: "http://app.jtoye.local"
+  notification.unsubscribe.base-url: "http://app.jtoye.local"
+  stripe.connect.return-url: "http://app.jtoye.local/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "http://app.jtoye.local/dashboard/payments/connect/refresh"
+
+  # --- Log path (26-RESEARCH.md PIT-5) --------------------------------------
+  # Under the prod profile (D-10 keeps it) application-prod.yml:91 logs to
+  # ${LOG_PATH:/var/log/jtoye}/application.log. The container runs as
+  # runAsUser: 1000 and /var/log is root-owned, and the image never creates that
+  # directory — so logback's FileAppender fails to start on every boot with a
+  # Permission denied. Non-fatal (the app continues; 2026-07-14 booted 11/11
+  # READY) but it is noise that looks like a real fault, and file logging is
+  # silently absent. /tmp is writable by the pod user.
+  log.path: "/tmp"
