@@ -840,7 +840,43 @@ Actual  : 0
 Command : kubectl --context <ctx> -n jtoye-local create job pg-backup-manual --from=cronjob/pg-backup
           kubectl --context <ctx> -n jtoye-local get job pg-backup-manual -o jsonpath='{.status.succeeded}'
 Expected: .status.succeeded == 1, and the dump object present in the local backup bucket.
-Actual  :
+Actual  : job name used: pg-backup-rehearsal
+          kubectl wait --for=condition=complete -> "condition met", exit 0
+          .status.succeeded = 1
+
+          FULL JOB LOG (verbatim):
+[2026-07-25T20:48:29Z] Starting backup of jtoye on host.minikube.internal:5433 as jtoye_backup (BYPASSRLS expected)
+[2026-07-25T20:48:30Z] Dump verified: 214370 bytes, archive readable
+[2026-07-25T20:48:31Z] Uploading to s3://jtoye-db-backups/backups/jtoye-backup-20260725-204829.dump
+Completed 209.3 KiB/209.3 KiB (1.7 MiB/s) with 1 file(s) remainingupload: tmp/jtoye-backup-20260725-204829.dump to s3://jtoye-db-backups/backups/jtoye-backup-20260725-204829.dump
+[2026-07-25T20:48:31Z] Pruning objects older than 20260625 (30d retention)
+[2026-07-25T20:48:31Z] Pruned 0 old backup(s)
+[2026-07-25T20:48:31Z] Backup complete: jtoye-backup-20260725-204829.dump
+
+          It dumped as jtoye_backup (the BYPASSRLS role) against
+          host.minikube.internal:5433 — i.e. the in-cluster job reached the compose
+          Postgres over the pod host on the secret-supplied port, and the S3 target was
+          the overlay's s3.backup.endpoint http://host.minikube.internal:9000.
+
+          OBJECT — existence established FIRST, then the privacy probe:
+            $ mc ls --recursive b/jtoye-db-backups
+            [2026-07-25 20:48:31 UTC] 209KiB STANDARD backups/jtoye-backup-20260725-204829.dump
+            key  : backups/jtoye-backup-20260725-204829.dump
+            size : 214370 bytes  (MIN_BACKUP_BYTES floor is 1000 — cleared by 214x)
+
+            unauthenticated GET that key                      -> 403
+            unauthenticated GET a known jtoye-images object    -> 200   (control)
+              control key: 00000000-…-000000000001/media/71c253f8-…-e81c7e2e4246.webp
+              (that object's existence was confirmed by mc first, so the 200 is real)
+
+          Ordering is load-bearing and was followed: the key came from the job log and
+          was confirmed in the bucket listing BEFORE the 403 was interpreted. MinIO
+          returns 403 for a nonexistent bucket or key too, so an unordered probe would
+          be satisfiable by absence. Because this key is read from the job log, this
+          object-level probe is the STRONGER of the two privacy proofs.
+
+          NOTE: the size floor does not distinguish anything about CONTENT — see L4,
+          where a zero-row dump clears it by 149x.
 ```
 
 **L4 — INFRA-02c: the dump is NON-EMPTY, both arms** *(owner: 26-07)*
@@ -850,7 +886,56 @@ Command : §9 arm A (app-role dump) and arm B (jtoye_backup dump), each restored
           docs/runbooks/backups.md § "Restore procedure (custom format)"
 Expected: arm A -> products = 0 ; arm B -> products > 0. Record BOTH numbers.
           A missing arm A makes arm B unfalsifiable.
-Actual  : arm A =            arm B =
+Actual  : arm A = products 0        arm B = products 47
+
+          ARM A — the counterexample. pg_dump as jtoye_app (NOSUPERUSER, subject to
+          FORCE RLS, no app.current_tenant_id GUC), restored into jtoye_restore_armA:
+            products=0  orders=0  customers=0  shops=0
+
+          AND THIS IS THE POINT — both of the pipeline's own verifications PASS on that
+          zero-row artifact:
+            1. MIN_BACKUP_BYTES floor (default 1000): artifact is 149268 bytes
+               -> PASSES, by 149x
+            2. pg_restore --list: PASSES, archive structurally readable,
+               393 TOC entries
+          So a dump containing no rows at all satisfies every automated content check
+          in infra/backups/k8s-backup.sh. Only the restore-and-count separates the arms.
+
+          ARM B — the real backup. The object the CronJob actually uploaded, downloaded
+          with the runbook's aws-cli --endpoint-url procedure and restored into
+          jtoye_restore_armB:
+            downloaded 214370 bytes (byte-identical to the size the job log reported)
+            pg_restore rc=0, 0 errors, RTO 9s
+            products=47  orders=23  customers=12  shops=5
+
+          CROSS-CHECK against the live database read through the BYPASSRLS role:
+            products=47  customers=12  orders=23  shops=5   — an exact match, so the
+            dump captured the full tenant data rather than a subset.
+
+          MECHANISM, recorded precisely because it differs from the runbook's wording.
+          The runbook says an app-role dump "silently captures ZERO rows". Measured
+          here on PostgreSQL 15 with 36 tables ENABLE RLS, all 36 FORCE:
+            - a plain SELECT as jtoye_app with no GUC returns 0 rows, SILENTLY
+              (products=0, customers=0) — the trap is real and is what the restore shows;
+            - pg_dump additionally requests row_security=off, which Postgres REFUSES for
+              a non-BYPASSRLS role on a FORCE-RLS table, so pg_dump itself EXITS 1 with
+              `ERROR: query would be affected by row-level security policy for table
+              "customers"`.
+          So pg_dump has a second safety net the runbook does not claim: it fails loudly
+          rather than silently. That does NOT retire the BYPASSRLS role, and it does not
+          make arm A redundant — the partial artifact left behind still clears the size
+          floor and the TOC check while restoring to zero rows, which is exactly the
+          false-green this evidence exists to exclude. k8s-backup.sh's explicit rc check
+          plus its `rm -f "$TMP"` on failure are what stop that artifact being uploaded;
+          both are load-bearing and neither is implied by the two content checks.
+
+          Both scratch databases were DROPPED afterwards; `SELECT count(*) FROM
+          pg_database WHERE datname LIKE 'jtoye_restore%'` returns 0, and the database
+          list is back to the preflight set (jtoye, keycloak, postgres).
+
+          The 2026-07-10 runbook reference figures were products=25, orders=57,
+          customers=4, shops=10; the dev DB has since moved to 47/23/12/5. Same order of
+          magnitude, which is all that figure was ever for.
 ```
 
 **L5 — INFRA-02d: no boot-time broker rejection** *(owner: 26-07)*
