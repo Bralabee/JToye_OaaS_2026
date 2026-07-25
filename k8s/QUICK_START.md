@@ -29,6 +29,14 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 
 ```bash
 # Generate secure passwords
+#
+# NAMING NOTE (Phase 26 reconcile): the shell variable below is
+# POSTGRES_BACKUP_PASSWORD and stays that way — it is the name this document has
+# always used. The `.env` key that plan 26-05 adds for the local-k8s bootstrap is
+# DB_BACKUP_PASSWORD. The two names are the same thing at different layers: both
+# feed the SAME `backup-password` key of the postgres-credentials Secret, which
+# pg-backup-cronjob.yaml reads as PGPASSWORD for the BYPASSRLS jtoye_backup role.
+# Do not treat a mismatch between the two documents as a defect.
 export POSTGRES_PASSWORD=$(openssl rand -base64 32)
 export POSTGRES_BACKUP_PASSWORD=$(openssl rand -base64 32)
 export REDIS_PASSWORD=$(openssl rand -base64 32)
@@ -43,11 +51,26 @@ kubectl create namespace jtoye-production
 
 # backup-* keys: BYPASSRLS dump role for the pg-backup CronJob (#90).
 # Create the role itself via infra/backups/create-backup-role.sql.
+#
+# DEF-2 (Phase 26 / INFRA-02b): `username` MUST be the NOSUPERUSER application
+# role `jtoye_app`, NOT the `jtoye` superuser this recipe used to name. A
+# superuser BYPASSES every Row-Level Security policy, so multi-tenant isolation
+# becomes impossible — and core-java refuses to start rather than run that way:
+# DatabaseConfigurationValidator queries pg_roles at boot and throws
+# SecurityConfigurationException ("Application is using PostgreSQL superuser ...
+# Superusers BYPASS Row-Level Security policies"). A copy-paste of the old
+# recipe therefore produced a pod that never became READY.
+# In .env the two are already separate pairs and it is the FIRST you want:
+#   DB_USER / DB_PASSWORD             -> the app role (jtoye_app) — USE THIS
+#   POSTGRES_USER / POSTGRES_PASSWORD -> the superuser — do NOT use for the app
+# `backup-username=jtoye_backup` below is the deliberate exception: a read-only
+# BYPASSRLS role that exists precisely so pg_dump captures rows from FORCE-RLS
+# tenant tables (as the app role it would dump 0 rows).
 kubectl create secret generic postgres-credentials \
   --from-literal=host=postgresql-primary.jtoye-infrastructure.svc.cluster.local \
   --from-literal=port=5432 \
   --from-literal=database=jtoye \
-  --from-literal=username=jtoye \
+  --from-literal=username=jtoye_app \
   --from-literal=password="$POSTGRES_PASSWORD" \
   --from-literal=backup-username=jtoye_backup \
   --from-literal=backup-password="$POSTGRES_BACKUP_PASSWORD" \
@@ -66,7 +89,20 @@ kubectl create secret generic redis-credentials \
 
 # stomp-login/stomp-passcode: STOMP relay credentials consumed by core-java
 # (STOMP_CLIENT_LOGIN / STOMP_CLIENT_PASSCODE) — omit them and pods fail
-# with a missing-key error.
+# with a missing-key error. That operational instruction still holds: those two
+# secretKeyRef entries carry no `optional` flag, so a missing KEY inside an
+# EXISTING Secret does put the pod into CreateContainerConfigError.
+#
+# Phase 26 / D-05 correction to what the envs then DO: before Phase 26 neither
+# STOMP_CLIENT_LOGIN nor STOMP_CLIENT_PASSCODE was read by any application*.yml,
+# so the injected values reached nothing and the relay silently fell back to
+# `guest` (the observed boot-time "Access refused for user 'guest'"). After
+# Phase 26's additive chain — ${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}} — they
+# genuinely feed the relay login, with the RabbitMQ pool credential as the
+# fallback and `guest` only when nothing at all is supplied.
+#
+# `username=jtoye` below is the RabbitMQ BROKER user and is CORRECT — the DEF-2
+# NOSUPERUSER correction applies only to the postgres-credentials DB role above.
 kubectl create secret generic rabbitmq-credentials \
   --from-literal=username=jtoye \
   --from-literal=password="$RABBITMQ_PASSWORD" \
@@ -83,6 +119,52 @@ kubectl create secret generic keycloak-credentials \
 
 kubectl create secret generic nextauth-secret \
   --from-literal=secret="$NEXTAUTH_SECRET" \
+  -n jtoye-production
+
+# ---------------------------------------------------------------------------
+# OPTIONAL secrets (Phase 26 / DEF-6 / D-15) — create ONLY the ones whose
+# feature you are activating in this environment.
+#
+# core-java references all four with the secretKeyRef `optional` flag set, so
+# skipping one does NOT block pod start: the env stays unset, application.yml's
+# own default applies, and that feature stays INERT. That is deliberately the
+# same behaviour these environments had before Phase 26 supplied the config.
+# Creating the Secret is the act that switches the feature on.
+# ---------------------------------------------------------------------------
+
+# OPTIONAL — vendor media uploads (Phase 24). Bucket-limited IAM user / MinIO
+# service account (GetObject/PutObject/DeleteObject only) for the bucket named by
+# app-config s3.bucket. A NARROWER, separate grant from s3-backup-credentials.
+kubectl create secret generic s3-media-credentials \
+  --from-literal=access-key='YOUR_S3_MEDIA_ACCESS_KEY' \
+  --from-literal=secret-key='YOUR_S3_MEDIA_SECRET_KEY' \
+  -n jtoye-production
+
+# OPTIONAL — outbound email (Phase 22). SES SMTP credentials (an IAM SMTP user),
+# not an IAM access key pair. Creating this alone is NOT enough: also flip
+# app-config smtp.auth to "true" in k8s/<env>/configmap-patch.yaml, and verify
+# the SES sending domain in the deployment region first — otherwise the first
+# send is a loud SMTP auth failure instead of the previous silent no-op.
+kubectl create secret generic smtp-credentials \
+  --from-literal=username='YOUR_SES_SMTP_USERNAME' \
+  --from-literal=password='YOUR_SES_SMTP_PASSWORD' \
+  -n jtoye-production
+
+# OPTIONAL — Stripe. api-key is the SECRET key (sk_live_…), never a publishable
+# key. webhook-secret (whsec_…) is what inbound Stripe event signatures are
+# verified against, so treat it as required once payments are live here.
+kubectl create secret generic stripe-credentials \
+  --from-literal=api-key='YOUR_STRIPE_SECRET_KEY' \
+  --from-literal=webhook-secret='YOUR_STRIPE_WEBHOOK_SECRET' \
+  -n jtoye-production
+
+# OPTIONAL but SECURITY-RELEVANT — HMAC signing key for one-click unsubscribe
+# links. Its application.yml default is the EMPTY STRING (an HMAC over an empty
+# key, which is forgeable), so create this in any environment that sends
+# notification email.
+export UNSUBSCRIBE_SIGNING_SECRET=$(openssl rand -base64 32)
+kubectl create secret generic notification-credentials \
+  --from-literal=unsubscribe-signing-secret="$UNSUBSCRIBE_SIGNING_SECRET" \
   -n jtoye-production
 
 # IMPORTANT: Save these passwords securely!

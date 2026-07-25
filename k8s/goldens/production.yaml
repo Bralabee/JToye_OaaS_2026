@@ -11,12 +11,18 @@ metadata:
 apiVersion: v1
 data:
   api.url: https://api.jtoye.co.uk
+  cors.allowed-origins: https://app.jtoye.co.uk
   frontend.url: https://app.jtoye.co.uk
+  jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
+  keycloak.public.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
   log.level: INFO
+  log.path: /var/log/jtoye
+  notification.email.tracking-base-url: https://app.jtoye.co.uk
+  notification.unsubscribe.base-url: https://app.jtoye.co.uk
   rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
@@ -25,10 +31,23 @@ data:
   s3.backup.endpoint: ""
   s3.backup.prefix: backups
   s3.backup.region: eu-west-2
+  s3.bucket: jtoye-images
+  s3.endpoint: https://s3.eu-west-2.amazonaws.com
+  s3.public-url: https://s3.eu-west-2.amazonaws.com/jtoye-images
+  s3.region: eu-west-2
+  smtp.auth: "false"
+  smtp.host: email-smtp.eu-west-2.amazonaws.com
+  smtp.port: "587"
+  smtp.starttls: "true"
   sql.log.level: WARN
   stomp.broker.mode: relay
   stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   stomp.broker.relay-port: "61613"
+  stripe.connect.refresh-url: https://app.jtoye.co.uk/dashboard/payments/connect/refresh
+  stripe.connect.return-url: https://app.jtoye.co.uk/dashboard/payments/connect/return
+  webhook.delivery.max-attempts: "8"
+  webhook.delivery.retention-days: "30"
+  webhook.target.block-private-ranges: "true"
 kind: ConfigMap
 metadata:
   annotations:
@@ -291,6 +310,143 @@ spec:
             secretKeyRef:
               key: stomp-passcode
               name: rabbitmq-credentials
+        - name: JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.public.issuer.uri
+              name: app-config
+        - name: JWT_EXPECTED_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              key: jwt.expected-audience
+              name: app-config
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              key: cors.allowed-origins
+              name: app-config
+        - name: LOG_PATH
+          valueFrom:
+            configMapKeyRef:
+              key: log.path
+              name: app-config
+        - name: S3_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              key: s3.endpoint
+              name: app-config
+        - name: S3_REGION
+          valueFrom:
+            configMapKeyRef:
+              key: s3.region
+              name: app-config
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              key: s3.bucket
+              name: app-config
+        - name: S3_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              key: s3.public-url
+              name: app-config
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: s3-media-credentials
+              optional: true
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: s3-media-credentials
+              optional: true
+        - name: SMTP_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: smtp.host
+              name: app-config
+        - name: SMTP_PORT
+          valueFrom:
+            configMapKeyRef:
+              key: smtp.port
+              name: app-config
+        - name: SMTP_AUTH
+          valueFrom:
+            configMapKeyRef:
+              key: smtp.auth
+              name: app-config
+        - name: SMTP_STARTTLS
+          valueFrom:
+            configMapKeyRef:
+              key: smtp.starttls
+              name: app-config
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: smtp-credentials
+              optional: true
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: smtp-credentials
+              optional: true
+        - name: NOTIFICATION_EMAIL_TRACKING_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: notification.email.tracking-base-url
+              name: app-config
+        - name: NOTIFICATION_UNSUBSCRIBE_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: notification.unsubscribe.base-url
+              name: app-config
+        - name: NOTIFICATION_UNSUBSCRIBE_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: unsubscribe-signing-secret
+              name: notification-credentials
+              optional: true
+        - name: STRIPE_CONNECT_RETURN_URL
+          valueFrom:
+            configMapKeyRef:
+              key: stripe.connect.return-url
+              name: app-config
+        - name: STRIPE_CONNECT_REFRESH_URL
+          valueFrom:
+            configMapKeyRef:
+              key: stripe.connect.refresh-url
+              name: app-config
+        - name: STRIPE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api-key
+              name: stripe-credentials
+              optional: true
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: webhook-secret
+              name: stripe-credentials
+              optional: true
+        - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS
+          valueFrom:
+            configMapKeyRef:
+              key: webhook.delivery.max-attempts
+              name: app-config
+        - name: WEBHOOK_DELIVERY_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              key: webhook.delivery.retention-days
+              name: app-config
+        - name: WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES
+          valueFrom:
+            configMapKeyRef:
+              key: webhook.target.block-private-ranges
+              name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent
         lifecycle:
@@ -412,6 +568,11 @@ spec:
             configMapKeyRef:
               key: keycloak.issuer.uri
               name: app-config
+        - name: JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.public.issuer.uri
+              name: app-config
         - name: PORT
           value: "8080"
         image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
@@ -511,11 +672,6 @@ spec:
       - env:
         - name: NODE_ENV
           value: production
-        - name: NEXT_PUBLIC_API_URL
-          valueFrom:
-            configMapKeyRef:
-              key: api.url
-              name: app-config
         - name: NEXTAUTH_URL
           valueFrom:
             configMapKeyRef:
@@ -534,6 +690,11 @@ spec:
               key: frontend-client-secret
               name: keycloak-credentials
         - name: KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.public.issuer.uri
+              name: app-config
+        - name: KEYCLOAK_ISSUER_INTERNAL
           valueFrom:
             configMapKeyRef:
               key: keycloak.issuer.uri

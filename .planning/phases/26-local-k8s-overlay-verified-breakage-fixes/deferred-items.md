@@ -80,3 +80,44 @@ failure, or S3 403/404) rather than the previous silent no-op.
 **Suggested owner.** The operator performing the next staging/production rollout, alongside
 26-01's `PRE-ROLLOUT OPERATOR CHECK` for `rabbitmq-credentials/username`. Plan 26-06 owns the
 dated note on `k8s/PRODUCTION_READINESS_REPORT.md` that carries both.
+
+## 26-02 — `NOT-PROVISIONED`: the Stripe Connect return/refresh paths have no frontend route
+
+**Discovered during:** 26-02 Task 3 (provisioned-resources check).
+**Dated:** 2026-07-25.
+
+**What.** `stripe.connect.return-url` and `stripe.connect.refresh-url` now resolve to
+`https://app.jtoye.co.uk/dashboard/payments/connect/{return,refresh}` (and the staging equivalents).
+**Those routes do not exist.** Verified in-repo, not assumed:
+
+- `find frontend/app -type d \( -name connect -o -name payments -o -name payouts -o -name stripe \)`
+  returns **nothing**. `frontend/app/dashboard/` has `customers finance kitchen marketing media
+  onboarding orders products shops staff webhooks` — and no `payments`.
+- `grep -rn 'payments/connect' frontend --include=*.ts --include=*.tsx` returns **nothing**: the
+  frontend has no reference to the path at all.
+- The value IS consumed: `core-java/.../payment/StripeConnectService.java:107` passes it to
+  Stripe's AccountLink API as `setReturnUrl(...)`, so Stripe really does redirect a vendor there
+  at the end of Connect onboarding.
+
+**This plan did not cause it, and did improve it.** The PATH is byte-identical to the
+`application.yml` default (`${STRIPE_CONNECT_RETURN_URL:http://localhost:3000/dashboard/payments/connect/return}`);
+26-02 changed only the ORIGIN. Before: a vendor was redirected to a loopback address on their own
+machine — connection refused, and nothing about the platform on screen. After: the vendor lands on
+the real platform origin and gets a **404**. Strictly better (the Stripe-side account link has
+already been committed server-side either way, and the vendor is at least on the platform where
+they can navigate to their dashboard), but still a broken landing destination — precisely the
+lifecycle dead-end class the `feedback_audit_landing_destinations` memory flags.
+
+**Failure mode on first use.** A vendor completing Stripe Connect onboarding sees a 404 page. No
+server error, no data loss, no silent state corruption — the `stripe_connect_status` update path is
+independent of this redirect. It is a UX dead-end, not a correctness defect.
+
+**Why it is not fixed here.** Adding `frontend/app/dashboard/payments/connect/return/page.tsx` (and
+`refresh`) is a new UI route — new application surface, which `26-CONTEXT.md` § "Out of scope" bars
+for this phase ("no application behaviour change; no new feature surface"). Choosing what those
+pages should say (poll Connect status? show a success/pending state? deep-link back to the payouts
+setup?) is a product decision, not a deploy-layer one.
+
+**Suggested owner.** The phase that builds the vendor payments/payouts dashboard surface. Until
+then, the correct origin is still the right value to ship — a 404 on the platform beats a
+connection-refused at a loopback address, and reverting the origin would restore a worse defect.
