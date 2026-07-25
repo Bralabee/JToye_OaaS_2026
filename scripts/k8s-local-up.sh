@@ -154,6 +154,70 @@ minikube addons enable ingress -p "$PROFILE" || die "could not enable the ingres
 echo "OK: ingress addon enabled for profile ${PROFILE}"
 
 # ---------------------------------------------------------------------------
+# STEP 4b — WAIT FOR THE ADMISSION WEBHOOK TO ACTUALLY ANSWER
+#
+# `addons enable ingress` is idempotent in effect but NOT inert: it re-applies
+# the addon manifests and rolls the controller container. Observed across
+# consecutive runs of this script: restartCount 5 -> 6 with the pod IP moving
+# 10.244.0.51 -> 10.244.0.52. The admission Service keeps its ClusterIP, so for
+# a few seconds the API server dials the ClusterIP and lands on the OLD pod IP:
+#
+#   Internal error occurred: failed calling webhook
+#   "validate.nginx.ingress.kubernetes.io": ... dial tcp 10.108.175.67:443:
+#   connect: no route to host
+#
+# Step 9 then fails on both Ingress objects, and the message reads
+# `error when creating ".../k8s/local"` — which points an operator straight at
+# the manifests, when the manifests are fine. That is the PIT-11 misdiagnosis
+# shape (blame the manifest, miss the infrastructure) and it made this script
+# not reliably re-runnable, breaking D-14.
+#
+# A pod-readiness wait does NOT fix it: the container reports ready=true for the
+# whole window. The only sufficient check is to exercise the real webhook path,
+# so this probes with a throwaway Ingress under --dry-run=server. A dry-run
+# creates nothing, and any ANSWER (accept or deny) proves reachability — only a
+# transport failure is retried.
+# ---------------------------------------------------------------------------
+step "STEP 4b: ingress admission webhook reachability"
+webhook_answers() {
+  local out
+  out="$(k8s_local_kubectl apply -n default --dry-run=server -f - 2>&1 <<'PROBE'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: k8s-local-webhook-readiness-probe
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: webhook-readiness-probe.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webhook-readiness-probe
+                port:
+                  number: 80
+PROBE
+  )" || true
+  # A transport failure is the only retryable condition. An admission DENIAL is a
+  # real answer, so it ends the wait and is left for step 9 to surface properly.
+  ! grep -Eq 'failed calling webhook|no route to host|connection refused|context deadline exceeded|EOF' <<<"$out"
+}
+WEBHOOK_OK=0
+for attempt in $(seq 1 30); do
+  if webhook_answers; then
+    echo "OK: admission webhook answered on attempt ${attempt}"
+    WEBHOOK_OK=1
+    break
+  fi
+  [ "$attempt" -eq 1 ] && echo "waiting for the ingress-nginx admission webhook to converge after the addon roll..."
+  sleep 5
+done
+[ "$WEBHOOK_OK" -eq 1 ] || die "the ingress-nginx admission webhook did not become reachable within 150s. This is an INFRASTRUCTURE condition, not a manifest problem — check 'kubectl --context ${K8S_LOCAL_KUBE_CONTEXT} -n ingress-nginx get pods,endpointslices' and the controller's restart count. Do NOT relax allow-snippet-annotations to work around it (PIT-1)."
+
+# ---------------------------------------------------------------------------
 # STEP 5 — backing-service reachability FROM INSIDE the cluster
 #
 # A pod that cannot reach the host backing services fails in a way that looks

@@ -222,7 +222,15 @@ docker run --rm --network "$MINIO_NETWORK" \
     set -e
     mc alias set bootstrap "$MC_URL" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
     mc mb --ignore-existing "bootstrap/$MC_BUCKET"
-    mc ls bootstrap | grep -q "$MC_BUCKET"
+    # Verify with mc itself, NOT `mc ls | grep`: the minio/mc image is minimal and
+    # ships no grep (nor sed nor awk), so the piped form died with
+    # "grep: command not found" — AFTER mc had already created the bucket, which
+    # left the bootstrap half-applied (role + bucket created, no Secrets) and
+    # reported a failure for a step that had actually succeeded. `mc ls <bucket>`
+    # exits 0 when the bucket exists and 1 when it does not, which is the whole
+    # assertion with no external binary. (Found in plan 26-07, the first execution
+    # of this script.)
+    mc ls "bootstrap/$MC_BUCKET" > /dev/null
   '
 echo "OK: bucket ${K8S_LOCAL_BACKUP_BUCKET} exists in host MinIO (no public-read policy applied)"
 
