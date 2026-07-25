@@ -130,13 +130,13 @@ test.describe("Shop Discovery", () => {
     await page.goto(`${BASE}/shop`)
     await page.waitForLoadState("networkidle")
 
-    await page.fill('input[placeholder*="Search"]', "Nigerian")
+    await page.fill('#shop-search', "Nigerian")
     await page.waitForTimeout(1500)
     await expect(page.locator(`text=${SHOP_NAME}`)).toBeVisible()
 
-    await page.fill('input[placeholder*="Search"]', "xyznonexistent")
+    await page.fill('#shop-search', "xyznonexistent")
     await page.waitForTimeout(1500)
-    await expect(page.locator("text=No shops found")).toBeVisible()
+    await expect(page.locator("text=No kitchens found")).toBeVisible()
   })
 })
 

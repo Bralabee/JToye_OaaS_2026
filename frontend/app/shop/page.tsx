@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { Suspense, useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
-import { MapPin, Clock, Search, Store, ChevronRight, Loader2 } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { MapPin, Search, Store, ChevronRight, Loader2, X } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
 import {
@@ -41,9 +42,9 @@ function ShopCard({ shop }: { shop: PublicShop }) {
 
   return (
     <Link href={`/shop/${shop.slug}`} className="group block">
-      <article className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 transition-all duration-200 group-hover:shadow-md group-hover:border-slate-200 group-hover:-translate-y-0.5">
+      <article className="bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 group-hover:shadow-md group-hover:border-amber-200 group-hover:-translate-y-0.5">
         {/* Banner */}
-        <div className="relative h-36 sm:h-44 bg-gradient-to-br from-orange-400 via-orange-500 to-rose-500 overflow-hidden">
+        <div className="relative h-36 sm:h-44 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600 overflow-hidden">
           {shop.bannerUrl && (
             <SafeImage
               src={shop.bannerUrl}
@@ -74,7 +75,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
               src={shop.logoUrl}
               alt={shop.name}
               className="h-full w-full object-cover"
-              fallbackIcon={<Store className="h-6 w-6 text-orange-500" />}
+              fallbackIcon={<Store className="h-6 w-6 text-oxblood-600" />}
               loading="lazy"
             />
           </div>
@@ -83,10 +84,10 @@ function ShopCard({ shop }: { shop: PublicShop }) {
         {/* Content */}
         <div className="p-4">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-slate-900 text-base leading-tight group-hover:text-orange-600 transition-colors">
+            <h3 className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
               {shop.name}
             </h3>
-            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-orange-500 transition-colors flex-shrink-0 mt-0.5" />
+            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-600 transition-colors flex-shrink-0 mt-0.5" />
           </div>
 
           {shop.description && (
@@ -101,7 +102,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
               {tags.slice(0, 3).map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600"
+                  className="inline-flex items-center rounded-md bg-cream px-2 py-0.5 text-xs font-medium text-oxblood-600"
                 >
                   {tag}
                 </span>
@@ -150,12 +151,33 @@ function ShopCard({ shop }: { shop: PublicShop }) {
   )
 }
 
-export default function ShopDiscoveryPage() {
+// Suggested searches — the same vocabulary the landing hero advertises, so a
+// shopper who arrives here directly gets the same "search by X" affordance
+// instead of a bare box (the guide text used to suggest terms nothing acted on).
+const SUGGESTIONS = [
+  { emoji: "🍗", label: "Grill", q: "grill" },
+  { emoji: "🍚", label: "Jollof", q: "jollof" },
+  { emoji: "🥘", label: "Caribbean", q: "caribbean" },
+  { emoji: "🍛", label: "South Asian", q: "south asian" },
+  { emoji: "🥗", label: "Vegan", q: "vegan" },
+  { emoji: "🍰", label: "Desserts", q: "dessert" },
+]
+
+function ShopDiscovery() {
+  const searchParams = useSearchParams()
+  const urlQuery = searchParams.get("q") ?? ""
+
   const [shops, setShops] = useState<PublicShop[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
+  // Seeded from ?q= so the landing search / category chips / a shared link all
+  // arrive with the query already applied, not on a blank index.
+  const [searchQuery, setSearchQuery] = useState(urlQuery)
   const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
   const [page, setPage] = useState(0)
+  // Tracks the ?q= we have already reflected into state, so the URL->state and
+  // state->URL syncs below can never ping-pong.
+  const appliedUrlQuery = useRef(urlQuery)
   // F-RATE (#88): a public 429 must surface a transient "busy / retrying" state,
   // never the authoritative "No shops found" empty state.
   const [rateLimited, setRateLimited] = useState(false)
@@ -178,6 +200,7 @@ export default function ShopDiscoveryPage() {
       )
       setShops(res.data.content)
       setTotalPages(res.data.totalPages)
+      setTotalElements(res.data.totalElements)
       // A real (possibly empty) 200 clears the busy state and resets the budget.
       setRateLimited(false)
       setRetriesExhausted(false)
@@ -198,6 +221,7 @@ export default function ShopDiscoveryPage() {
       } else {
         // Genuine failure / empty — preserve the existing empty behaviour.
         setShops([])
+        setTotalElements(0)
         setRateLimited(false)
         setRetriesExhausted(false)
       }
@@ -231,53 +255,137 @@ export default function ShopDiscoveryPage() {
     setPage(0)
   }, [searchQuery])
 
+  // URL -> state: a category chip clicked while already on /shop (or a back/
+  // forward step) changes ?q= without remounting; adopt it.
+  useEffect(() => {
+    if (urlQuery !== appliedUrlQuery.current) {
+      appliedUrlQuery.current = urlQuery
+      setSearchQuery(urlQuery)
+    }
+  }, [urlQuery])
+
+  // state -> URL: typing rewrites ?q= (debounced) so the result set is
+  // shareable and survives a reload. replaceState keeps it out of history so
+  // Back still leaves the storefront rather than replaying every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const term = searchQuery.trim()
+      if (term === appliedUrlQuery.current) return
+      const params = new URLSearchParams(window.location.search)
+      if (term) params.set("q", term)
+      else params.delete("q")
+      const qs = params.toString()
+      appliedUrlQuery.current = term
+      window.history.replaceState(
+        null,
+        "",
+        qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+      )
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
       {/* Hero */}
-      <div className="mb-8 sm:mb-10">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-          Discover local vendors
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-oxblood">
+          Discover local kitchens
         </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-xl">
+        <p className="mt-2 text-sm sm:text-base text-slate-600 max-w-xl">
           Browse independent food vendors, explore their menus and order directly.
         </p>
       </div>
 
       {/* Search */}
-      <div className="relative mb-6 sm:mb-8 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search by name or cuisine..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 transition-colors"
-        />
+      <div className="mb-4 max-w-xl">
+        <label htmlFor="shop-search" className="sr-only">
+          Search kitchens, dishes or a postcode
+        </label>
+        <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-oxblood-600"
+          />
+          <input
+            id="shop-search"
+            type="search"
+            autoComplete="off"
+            placeholder="Try “jollof”, “vegan” or your postcode…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-500 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-cream hover:text-oxblood focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Suggested searches — same vocabulary as the landing hero */}
+      <div className="mb-6 sm:mb-8 flex flex-wrap gap-2">
+        {SUGGESTIONS.map((s) => {
+          const active = searchQuery.trim().toLowerCase() === s.q
+          return (
+            <button
+              key={s.q}
+              type="button"
+              onClick={() => setSearchQuery(active ? "" : s.q)}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition-colors ${
+                active
+                  ? "border-oxblood bg-oxblood text-white"
+                  : "border-cream-100 bg-white text-slate-700 hover:border-amber-300 hover:text-oxblood"
+              }`}
+            >
+              <span aria-hidden>{s.emoji}</span> {s.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Result summary — confirms the query actually ran */}
+      {!loading && !rateLimited && searchQuery.trim() && (
+        <p aria-live="polite" className="mb-4 text-sm text-slate-600">
+          {totalElements === 0
+            ? "No kitchens match "
+            : `${totalElements} ${totalElements === 1 ? "kitchen" : "kitchens"} for `}
+          <span className="font-semibold text-oxblood">
+            &ldquo;{searchQuery.trim()}&rdquo;
+          </span>
+        </p>
+      )}
 
       {/* Results */}
       {rateLimited ? (
         // F-RATE (#88): busy/retrying state — NEVER the "No shops found" empty
         // state. Static copy only; the 429 body carries no useful detail.
         <div className="text-center py-16">
-          <Loader2 className="mx-auto h-10 w-10 text-orange-500 animate-spin" />
-          <h3 className="mt-4 text-base font-medium text-slate-900">
+          <Loader2 className="mx-auto h-10 w-10 text-amber-500 animate-spin" />
+          <h3 className="mt-4 text-base font-semibold text-oxblood">
             High demand right now
           </h3>
           {retriesExhausted ? (
             <>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-600">
                 The marketplace is still busy. Please try again in a moment.
               </p>
               <button
                 onClick={handleManualRetry}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 active:scale-95 transition-all"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-amber-ink hover:-translate-y-0.5 active:scale-95 transition-all"
               >
                 Try again
               </button>
             </>
           ) : (
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               The marketplace is busy — retrying automatically…
             </p>
           )}
@@ -286,13 +394,13 @@ export default function ShopDiscoveryPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-white rounded-2xl overflow-hidden animate-pulse">
-              <div className="h-36 sm:h-44 bg-slate-200" />
+              <div className="h-36 sm:h-44 bg-cream-100" />
               <div className="p-4 space-y-3">
-                <div className="h-4 bg-slate-200 rounded w-2/3" />
-                <div className="h-3 bg-slate-100 rounded w-full" />
+                <div className="h-4 bg-cream-100 rounded w-2/3" />
+                <div className="h-3 bg-cream rounded w-full" />
                 <div className="flex gap-2">
-                  <div className="h-5 bg-slate-100 rounded w-16" />
-                  <div className="h-5 bg-slate-100 rounded w-20" />
+                  <div className="h-5 bg-cream rounded w-16" />
+                  <div className="h-5 bg-cream rounded w-20" />
                 </div>
               </div>
             </div>
@@ -300,13 +408,26 @@ export default function ShopDiscoveryPage() {
         </div>
       ) : shops.length === 0 ? (
         <div className="text-center py-16">
-          <Store className="mx-auto h-12 w-12 text-slate-300" />
-          <h3 className="mt-4 text-base font-medium text-slate-900">No shops found</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <Store className="mx-auto h-12 w-12 text-cream-100" />
+          <h3 className="mt-4 text-base font-semibold text-oxblood">
+            No kitchens found
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
             {searchQuery
-              ? "Try a different search term."
-              : "No shops are currently available."}
+              ? "Try a different dish, cuisine or postcode — or browse everything."
+              : "No kitchens are currently available."}
           </p>
+          {searchQuery && (
+            // Never a dead end: a zero-result query keeps one tap back to the
+            // full catalogue.
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="mt-4 inline-flex items-center rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-amber-ink shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
+            >
+              Browse all kitchens
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -322,7 +443,7 @@ export default function ShopDiscoveryPage() {
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="rounded-full border border-cream-100 bg-white px-4 py-1.5 text-sm font-medium text-oxblood-600 hover:border-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Previous
               </button>
@@ -332,7 +453,7 @@ export default function ShopDiscoveryPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="rounded-full border border-cream-100 bg-white px-4 py-1.5 text-sm font-medium text-oxblood-600 hover:border-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Next
               </button>
@@ -341,5 +462,36 @@ export default function ShopDiscoveryPage() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * useSearchParams needs a Suspense boundary; the fallback mirrors the loaded
+ * layout (heading + pill search + card grid) so arriving from the landing hero
+ * does not flash an empty page.
+ */
+export default function ShopDiscoveryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+          <div className="h-8 w-64 rounded bg-cream-100 animate-pulse" />
+          <div className="mt-4 h-12 w-full max-w-xl rounded-full bg-cream-100 animate-pulse" />
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl overflow-hidden animate-pulse">
+                <div className="h-36 sm:h-44 bg-cream-100" />
+                <div className="p-4 space-y-3">
+                  <div className="h-4 bg-cream-100 rounded w-2/3" />
+                  <div className="h-3 bg-cream rounded w-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <ShopDiscovery />
+    </Suspense>
   )
 }

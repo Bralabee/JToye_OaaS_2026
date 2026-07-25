@@ -15,10 +15,19 @@ describe("OperatorPitch design tokens (Surface C re-skin)", () => {
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}/)
   })
 
-  it("renders on-token classes within the locked orange/emerald/slate family", () => {
-    expect(src).toMatch(/bg-slate-900/)
-    expect(src).toMatch(/text-orange-500/)
-    expect(src).toMatch(/text-amber-300/)
+  it("renders on-token classes within the landing brand family (oxblood/cream/gold/amber)", () => {
+    // The surface used to run its own navy/emerald/mono skin, which read as a
+    // different product to anyone arriving from `/`. It now shares the landing
+    // brand thread (jtoyedigital.co.uk oxblood + Work Sans + amber appetite).
+    expect(src).toMatch(/bg-oxblood/)
+    expect(src).toMatch(/text-cream|bg-cream/)
+    expect(src).toMatch(/text-gold/)
+    expect(src).toMatch(/bg-amber-500/)
+  })
+
+  it("does not regress to the old off-brand navy/emerald/mono skin", () => {
+    expect(src).not.toMatch(/bg-slate-900|bg-slate-800|bg-emerald-50|border-emerald-200/)
+    expect(src).not.toMatch(/font-mono/)
   })
 
   it("obeys the public display cap — no font-black / text-7xl / serif", () => {

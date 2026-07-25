@@ -1,7 +1,7 @@
 /**
  * Component tests for the F-RATE fix (#88): a public-API HTTP 429 must render a
  * transient "busy / retrying" state on both storefront surfaces — NEVER the
- * authoritative empty state ("No shops found" / "Shop not found"). A genuine
+ * authoritative empty state ("No kitchens found" / "Shop not found"). A genuine
  * 200-with-empty-content must still render the real empty state, proving the UI
  * distinguishes "rate limited" from "actually empty".
  *
@@ -63,7 +63,7 @@ async function flush() {
 }
 
 describe("/shop list — 429 handling", () => {
-  it("shows a busy/retrying state on 429 instead of 'No shops found'", async () => {
+  it("shows a busy/retrying state on 429 instead of 'No kitchens found'", async () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
@@ -72,7 +72,7 @@ describe("/shop list — 429 handling", () => {
     await flush()
 
     expect(screen.getByText(/retrying/i)).toBeInTheDocument()
-    expect(screen.queryByText("No shops found")).not.toBeInTheDocument()
+    expect(screen.queryByText("No kitchens found")).not.toBeInTheDocument()
   })
 
   it("renders the genuine empty state once a real empty 200 arrives (429 != empty)", async () => {
@@ -92,7 +92,7 @@ describe("/shop list — 429 handling", () => {
     await flush()
 
     expect(screen.queryByText(/retrying/i)).not.toBeInTheDocument()
-    expect(screen.getByText("No shops found")).toBeInTheDocument()
+    expect(screen.getByText("No kitchens found")).toBeInTheDocument()
   })
 })
 

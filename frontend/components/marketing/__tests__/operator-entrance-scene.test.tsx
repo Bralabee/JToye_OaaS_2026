@@ -2,13 +2,16 @@ import { render, screen } from "@testing-library/react"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
 
 /**
- * jsdom has no matchMedia and cannot drive scroll, so `useOperatorScrollScene`
- * no-ops (`canEnhance()` false): no pin, no horizontal track, no split. These
- * tests prove the no-FOUC floor — the headline and all four pilot steps stay
- * fully visible and the scope is never marked active. The pin/horizontal
- * behaviour itself is proven by the Playwright spec (Task 5).
+ * jsdom has no matchMedia, so `useOperatorEntranceScene` no-ops
+ * (`canEnhance()` false): no split, no entrance tweens. These tests prove the
+ * no-FOUC floor — the headline and all four pilot steps stay fully visible and
+ * the scope is never marked active.
+ *
+ * The scene is now an ON-LOAD entrance (no ScrollTrigger pinning, no
+ * horizontally scrolled pilot rail); that behaviour, and the absence of any
+ * pin-spacer, is proven live by e2e/marketing-motion.spec.ts.
  */
-describe("OperatorScrollScene enhancement — no-FOUC floor", () => {
+describe("OperatorEntranceScene enhancement — no-FOUC floor", () => {
   beforeEach(() => {
     Element.prototype.scrollIntoView = jest.fn()
   })

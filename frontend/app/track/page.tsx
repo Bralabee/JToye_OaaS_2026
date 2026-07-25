@@ -44,7 +44,7 @@ export default function TrackOrderPage() {
       <Suspense
         fallback={
           <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+            <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
           </div>
         }
       >
@@ -143,8 +143,8 @@ function TrackOrderContent() {
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
       {/* Search form */}
-      <form onSubmit={handleSearch} className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm">
-        <h1 className="text-base font-bold text-slate-900">Track your order</h1>
+      <form onSubmit={handleSearch} className="rounded-xl bg-white border border-cream-100 p-5 shadow-sm">
+        <h1 className="text-xl font-bold text-oxblood">Track your order</h1>
         <p className="mt-1 mb-4 text-xs text-slate-500">
           Enter your order number and the email you used — no sign-in needed.
         </p>
@@ -159,7 +159,7 @@ function TrackOrderContent() {
               onChange={(e) => setOrderNumber(e.target.value)}
               placeholder="ORD-XXXXXXXX-XXXXXXXX-XXXXXXXX"
               required
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono text-slate-900 placeholder:text-slate-300 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-mono text-slate-900 placeholder:text-slate-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
             />
           </div>
 
@@ -172,14 +172,14 @@ function TrackOrderContent() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@email.com"
               required
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-300 focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 transition-all"
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-amber-500 py-3 text-sm font-bold text-amber-ink hover:bg-amber-400 disabled:opacity-60 transition-all"
           >
             {loading ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> Looking up...</>
@@ -201,7 +201,7 @@ function TrackOrderContent() {
       {order && (
         <div className="mt-6 space-y-4">
           {/* Shop + total */}
-          <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
@@ -218,8 +218,8 @@ function TrackOrderContent() {
                   <CheckCircle2 className="h-3 w-3" /> Complete
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                   {STEPS[currentStep]?.label || order.status}
                 </span>
               )}
@@ -228,7 +228,7 @@ function TrackOrderContent() {
 
           {/* Progress */}
           {!isCancelled && (
-            <div className="rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+            <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-1">
                 {STEPS.map((step, i) => {
                   const isComplete = i <= currentStep
@@ -245,7 +245,7 @@ function TrackOrderContent() {
                         className={`flex h-8 w-8 items-center justify-center rounded-full text-xs ${
                           isComplete
                             ? isActive
-                              ? "bg-orange-500 text-white ring-2 ring-orange-200"
+                              ? "bg-amber-500 text-oxblood ring-2 ring-amber-200"
                               : "bg-emerald-500 text-white"
                             : "bg-slate-100 text-slate-400"
                         }`}
@@ -262,7 +262,7 @@ function TrackOrderContent() {
               {/* Progress bar — scaleX from the left, animated on status change */}
               <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
                 <m.div
-                  className="h-full w-full bg-orange-500 rounded-full"
+                  className="h-full w-full bg-amber-500 rounded-full"
                   style={{ transformOrigin: "left" }}
                   initial={false}
                   animate={{ scaleX: Math.max(0.05, currentStep / (STEPS.length - 1)) }}

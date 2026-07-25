@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { PublicShell } from "@/components/public/public-shell"
 import { HeroScene } from "@/components/marketing/hero-scene"
+import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 
 export const metadata: Metadata = {
@@ -31,26 +32,27 @@ const trustMarkers = [
   "No app to download",
 ]
 
-// Discovery chips (sketch 004 variant C). Each is a real crawlable link into the
-// storefront so the marketplace reads as alive from the first screen.
+// Discovery chips (sketch 004 variant C). Each is a real crawlable link that
+// runs the query it advertises (`/shop?q=…`) rather than dumping you on the
+// unfiltered index, so the marketplace reads as alive from the first screen.
 const categories = [
-  { emoji: "🍗", label: "Grill" },
-  { emoji: "🍚", label: "Jollof" },
-  { emoji: "🥘", label: "Caribbean" },
-  { emoji: "🍛", label: "South Asian" },
-  { emoji: "🥗", label: "Vegan" },
-  { emoji: "🍰", label: "Desserts" },
+  { emoji: "🍗", label: "Grill", q: "grill" },
+  { emoji: "🍚", label: "Jollof", q: "jollof" },
+  { emoji: "🥘", label: "Caribbean", q: "caribbean" },
+  { emoji: "🍛", label: "South Asian", q: "south asian" },
+  { emoji: "🥗", label: "Vegan", q: "vegan" },
+  { emoji: "🍰", label: "Desserts", q: "dessert" },
 ]
 
 // Illustrative "cooking near you" strip (sketch 004 variant A). Emoji + warm
 // gradient stand in for real dish photography until vendor media lands; the
 // cards link into the storefront.
 const featuredDishes = [
-  { emoji: "🍗", grad: "from-[#fbe9d4] to-[#f6c99a]", name: "Jollof & Grilled Chicken", vendor: "Mama's Kitchen", rating: "4.8", price: "£9.50" },
-  { emoji: "🍛", grad: "from-[#f6dcd8] to-[#e8a9a2]", name: "Lamb Biryani", vendor: "Spice Route", rating: "4.9", price: "£11.00" },
-  { emoji: "🥙", grad: "from-[#e7f3ea] to-[#a9d9bb]", name: "Halloumi Wrap", vendor: "Olive & Vine", rating: "4.7", price: "£7.25" },
-  { emoji: "🍰", grad: "from-[#fdeecb] to-[#f3cf7a]", name: "Basque Cheesecake", vendor: "Crumb & Co", rating: "4.9", price: "£5.00" },
-  { emoji: "🍜", grad: "from-[#efe4f3] to-[#c9a9d9]", name: "Pho Bo", vendor: "Hanoi House", rating: "4.8", price: "£10.50" },
+  { emoji: "🍗", grad: "from-[#fbe9d4] to-[#f6c99a]", name: "Jollof & Grilled Chicken", vendor: "Mama's Kitchen", rating: "4.8", price: "£9.50", q: "jollof" },
+  { emoji: "🍛", grad: "from-[#f6dcd8] to-[#e8a9a2]", name: "Lamb Biryani", vendor: "Spice Route", rating: "4.9", price: "£11.00", q: "biryani" },
+  { emoji: "🥙", grad: "from-[#e7f3ea] to-[#a9d9bb]", name: "Halloumi Wrap", vendor: "Olive & Vine", rating: "4.7", price: "£7.25", q: "wrap" },
+  { emoji: "🍰", grad: "from-[#fdeecb] to-[#f3cf7a]", name: "Basque Cheesecake", vendor: "Crumb & Co", rating: "4.9", price: "£5.00", q: "dessert" },
+  { emoji: "🍜", grad: "from-[#efe4f3] to-[#c9a9d9]", name: "Pho Bo", vendor: "Hanoi House", rating: "4.8", price: "£10.50", q: "pho" },
 ]
 
 const heroTiles = [
@@ -103,30 +105,15 @@ export default function Home() {
                   go live in a day.
                 </p>
 
-                {/* C: discovery search + category chips */}
-                <div className="mt-6 flex max-w-xl gap-2.5">
-                  <Link
-                    href="/shop"
-                    className="flex flex-1 items-center gap-2.5 rounded-full border border-cream-100 bg-white px-5 py-3 text-sm text-slate-500 shadow-sm transition-colors hover:border-amber-300"
-                    aria-label="Search kitchens and dishes"
-                  >
-                    <Search className="h-4 w-4 shrink-0 text-oxblood-600" />
-                    <span className="truncate">
-                      Search kitchens or dishes — &ldquo;jollof&rdquo;, &ldquo;vegan&rdquo;, &ldquo;SO51&rdquo;…
-                    </span>
-                  </Link>
-                  <Link
-                    href="/shop"
-                    className="inline-flex items-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-[#3a2400] shadow-[0_10px_28px_rgba(217,119,6,0.30)] transition-transform hover:-translate-y-0.5"
-                  >
-                    Search
-                  </Link>
-                </div>
+                {/* C: discovery search + category chips. Both run a REAL query
+                    against /shop?q= — the chips stay crawlable <a href> so the
+                    category pages are reachable without JS. */}
+                <HeroSearch />
                 <div className="mt-3.5 flex flex-wrap gap-2">
                   {categories.map((c) => (
                     <Link
                       key={c.label}
-                      href="/shop"
+                      href={`/shop?q=${encodeURIComponent(c.q)}`}
                       className="inline-flex items-center gap-1.5 rounded-full border border-cream-100 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-amber-300 hover:text-oxblood"
                     >
                       <span aria-hidden>{c.emoji}</span> {c.label}
@@ -139,11 +126,11 @@ export default function Home() {
                   <Link
                     href="/shop"
                     data-hero-door
-                    className="group flex flex-col rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 p-6 text-[#3a2400] shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
+                    className="group flex flex-col rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 p-6 text-amber-ink shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
                   >
                     <UtensilsCrossed className="h-8 w-8" />
                     <span className="mt-4 text-lg font-bold">Order food near you</span>
-                    <span className="mt-1 text-sm text-[#5a3d10]">
+                    <span className="mt-1 text-sm text-amber-ink/75">
                       Browse independent kitchens and order in minutes.
                     </span>
                     <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold">
@@ -198,7 +185,7 @@ export default function Home() {
               {featuredDishes.map((d) => (
                 <Link
                   key={d.name}
-                  href="/shop"
+                  href={`/shop?q=${encodeURIComponent(d.q)}`}
                   className="group min-w-[190px] shrink-0 overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-shadow hover:shadow-md"
                 >
                   <div className={`grid h-28 place-items-center bg-gradient-to-br ${d.grad} text-5xl`}>

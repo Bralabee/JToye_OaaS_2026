@@ -16,9 +16,13 @@ describe("BusinessModelGuide design tokens (Surface C re-skin)", () => {
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}/)
   })
 
-  it("renders on-token classes within the locked orange/emerald/slate family", () => {
-    expect(src).toMatch(/bg-slate-900/)
-    expect(src).toMatch(/text-orange-600/)
+  it("renders on-token classes within the landing brand family (oxblood/cream/amber)", () => {
+    // Chrome + accents now share the landing brand thread; emerald/orange stay
+    // as SEMANTIC hues (evidence confidence, "we can support" vs "to validate")
+    // and are deliberately not rebranded.
+    expect(src).toMatch(/bg-oxblood/)
+    expect(src).toMatch(/bg-cream/)
+    expect(src).toMatch(/amber-500|amber-600/)
     expect(src).toMatch(/bg-emerald-50/)
   })
 

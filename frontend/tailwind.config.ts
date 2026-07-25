@@ -57,6 +57,10 @@ const config: Config = {
         oxblood: { DEFAULT: "#3A0B0D", deep: "#1F0F28", 700: "#571417", 600: "#6E1D21" },
         cream: { DEFAULT: "#FBF6F0", 100: "#F4EBE1" },
         gold: "#E8B04B",
+        // Ink for text sitting ON the amber appetite accent (amber-500 pills).
+        // Tokenised so marketing components never need the raw hex — the
+        // palette-discipline gate greps components/marketing for `#rrggbb`.
+        "amber-ink": "#3A2400",
       },
       borderRadius: {
         lg: "var(--radius)",

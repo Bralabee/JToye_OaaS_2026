@@ -16,25 +16,25 @@ import { CompanyLegalLine } from "@/components/platform/company-legal"
 /**
  * Operator sign-in. This page is a LANDING DESTINATION, not just transit:
  * every expired dashboard session and every /dashboard deep link ends here,
- * so it must carry the shipped brand (orange/emerald/slate — public-header
+ * so it must carry the shipped brand (oxblood + cream + amber — public-header
  * wordmark idiom) and must never be a dead end (escape links below the CTA).
  */
 export default function SignInPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-slate-100 p-4">
-      <Card className="w-full max-w-md border-slate-200 shadow-xl">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-cream via-white to-cream-100 p-4">
+      <Card className="w-full max-w-md border-cream-100 shadow-xl">
         <CardHeader className="space-y-4 text-center pb-6">
           <Link
             href="/"
             aria-label="J'Toye home"
-            className="mx-auto flex w-fit items-center gap-2 text-xl font-semibold tracking-tight text-slate-900"
+            className="mx-auto flex w-fit items-center gap-2 text-xl font-semibold tracking-tight text-oxblood"
           >
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-base font-bold text-white">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-oxblood text-base font-bold text-white">
               J
             </span>
             <span>J&apos;Toye</span>
           </Link>
-          <CardTitle className="text-2xl font-bold text-slate-900">
+          <CardTitle className="text-2xl font-bold text-oxblood">
             Welcome back
           </CardTitle>
           <CardDescription className="text-base text-slate-600">
@@ -44,7 +44,7 @@ export default function SignInPage() {
         <CardContent className="space-y-4">
           <Button
             onClick={() => signIn("keycloak", { callbackUrl: "/dashboard" })}
-            className="w-full h-12 bg-orange-600 text-base font-semibold text-white hover:bg-orange-700"
+            className="w-full h-12 rounded-full bg-oxblood text-base font-semibold text-white hover:bg-oxblood-700"
             size="lg"
           >
             Sign in with Keycloak
@@ -52,7 +52,7 @@ export default function SignInPage() {
           <p className="text-center text-xs text-slate-500">
             Secure authentication via Keycloak OIDC
           </p>
-          <div className="flex items-center justify-center gap-6 border-t border-slate-200 pt-4 text-sm">
+          <div className="flex items-center justify-center gap-6 border-t border-cream-100 pt-4 text-sm">
             <Link
               href="/"
               className="inline-flex items-center gap-1 text-slate-600 transition-colors hover:text-slate-900"
@@ -62,7 +62,7 @@ export default function SignInPage() {
             </Link>
             <Link
               href="/shop"
-              className="font-medium text-orange-600 transition-colors hover:text-orange-700"
+              className="font-medium text-amber-600 transition-colors hover:text-amber-700"
             >
               Browse kitchens
             </Link>
