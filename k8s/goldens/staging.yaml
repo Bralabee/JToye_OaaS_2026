@@ -1,0 +1,1351 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    environment: staging
+    name: jtoye-staging
+  name: jtoye-staging
+---
+apiVersion: v1
+data:
+  api.url: https://api-staging.jtoye.co.uk
+  frontend.url: https://app-staging.jtoye.co.uk
+  keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
+  keycloak.admin.enabled: "false"
+  keycloak.admin.realms: jtoye-staging
+  keycloak.issuer.uri: https://auth-staging.jtoye.co.uk/realms/jtoye-staging
+  log.level: DEBUG
+  rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  rabbitmq.port: "5672"
+  redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
+  redis.port: "6379"
+  s3.backup.bucket: jtoye-db-backups
+  s3.backup.endpoint: ""
+  s3.backup.prefix: backups
+  s3.backup.region: eu-west-2
+  sql.log.level: DEBUG
+  stomp.broker.mode: relay
+  stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  stomp.broker.relay-port: "61613"
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: app-config
+  namespace: jtoye-staging
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: core-java
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: core-java
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: edge-go
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: edge-go
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: edge-go
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: core-java
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: backend
+    environment: staging
+  name: core-java
+  namespace: jtoye-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: core-java
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "9091"
+        prometheus.io/scrape: "true"
+      labels:
+        app: core-java
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: backend
+        environment: staging
+        version: v1
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - core-java
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: prod
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              key: host
+              name: postgres-credentials
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              key: database
+              name: postgres-credentials
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: postgres-credentials
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: postgres-credentials
+        - name: DB_POOL_SIZE
+          value: "10"
+        - name: KC_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.issuer.uri
+              name: app-config
+        - name: KC_ADMIN_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.enabled
+              name: app-config
+        - name: KC_ADMIN_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.base-url
+              name: app-config
+        - name: KC_DEPROVISION_REALMS
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.realms
+              name: app-config
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              key: admin-username
+              name: keycloak-credentials
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: admin-password
+              name: keycloak-credentials
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: redis.host
+              name: app-config
+        - name: RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: rabbitmq.host
+              name: app-config
+        - name: RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: rabbitmq-credentials
+        - name: RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: rabbitmq-credentials
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: redis-credentials
+        - name: STOMP_BROKER_MODE
+          valueFrom:
+            configMapKeyRef:
+              key: stomp.broker.mode
+              name: app-config
+        - name: STOMP_RELAY_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: stomp.broker.relay-host
+              name: app-config
+        - name: STOMP_RELAY_PORT
+          valueFrom:
+            configMapKeyRef:
+              key: stomp.broker.relay-port
+              name: app-config
+        - name: STOMP_CLIENT_LOGIN
+          valueFrom:
+            secretKeyRef:
+              key: stomp-login
+              name: rabbitmq-credentials
+        - name: STOMP_CLIENT_PASSCODE
+          valueFrom:
+            secretKeyRef:
+              key: stomp-passcode
+              name: rabbitmq-credentials
+        image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sh
+              - -c
+              - sleep 10
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health/liveness
+            port: 9091
+          periodSeconds: 10
+          timeoutSeconds: 3
+        name: core-java
+        ports:
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        - containerPort: 9091
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health/readiness
+            port: 9091
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /actuator/health/liveness
+            port: 9091
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: edge-go
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: gateway
+    environment: staging
+  name: edge-go
+  namespace: jtoye-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: edge-go
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        prometheus.io/scrape: "true"
+      labels:
+        app: edge-go
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: gateway
+        environment: staging
+        version: v1
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - edge-go
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - env:
+        - name: CORE_API_URL
+          value: http://core-java:9090
+        - name: KC_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.issuer.uri
+              name: app-config
+        - name: PORT
+          value: "8080"
+        image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        name: edge-go
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: ui
+    environment: staging
+  name: frontend
+  namespace: jtoye-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+      labels:
+        app: frontend
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: ui
+        environment: staging
+        version: v1
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - frontend
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - env:
+        - name: NODE_ENV
+          value: production
+        - name: NEXT_PUBLIC_API_URL
+          valueFrom:
+            configMapKeyRef:
+              key: api.url
+              name: app-config
+        - name: NEXTAUTH_URL
+          valueFrom:
+            configMapKeyRef:
+              key: frontend.url
+              name: app-config
+        - name: NEXTAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: secret
+              name: nextauth-secret
+        - name: KEYCLOAK_CLIENT_ID
+          value: frontend
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: frontend-client-secret
+              name: keycloak-credentials
+        - name: KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.issuer.uri
+              name: app-config
+        image: ghcr.io/bralabee/jtoye-frontend:2.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        name: frontend
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1001
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: pg-backup
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: pg-backup
+  namespace: jtoye-staging
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+      labels:
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        environment: staging
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        metadata:
+          annotations:
+            deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+            documentation: https://github.com/jtoye/oaas-platform
+            maintainer: jtoye-devops-team
+          labels:
+            app.kubernetes.io/managed-by: kustomize
+            app.kubernetes.io/name: pg-backup
+            app.kubernetes.io/part-of: jtoye-platform
+            environment: staging
+        spec:
+          containers:
+          - env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-credentials
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-credentials
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: database
+                  name: postgres-credentials
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: backup-username
+                  name: postgres-credentials
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: backup-password
+                  name: postgres-credentials
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  key: s3.backup.bucket
+                  name: app-config
+            - name: S3_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  key: s3.backup.prefix
+                  name: app-config
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  key: s3.backup.endpoint
+                  name: app-config
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                configMapKeyRef:
+                  key: s3.backup.region
+                  name: app-config
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: access-key
+                  name: s3-backup-credentials
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: secret-key
+                  name: s3-backup-credentials
+            - name: RETENTION_DAYS
+              value: "30"
+            image: ghcr.io/bralabee/jtoye-pg-backup:15
+            imagePullPolicy: IfNotPresent
+            name: pg-backup
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 250m
+                memory: 256Mi
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+  schedule: 0 2 * * *
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java-pdb
+  namespace: jtoye-staging
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: core-java
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: edge-go-pdb
+  namespace: jtoye-staging
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: edge-go
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend-pdb
+  namespace: jtoye-staging
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: frontend
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java-hpa
+  namespace: jtoye-staging
+spec:
+  behavior:
+    scaleDown:
+      policies:
+      - periodSeconds: 60
+        type: Percent
+        value: 50
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      policies:
+      - periodSeconds: 30
+        type: Percent
+        value: 100
+      - periodSeconds: 30
+        type: Pods
+        value: 2
+      stabilizationWindowSeconds: 0
+  maxReplicas: 10
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  minReplicas: 3
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-java
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: edge-go-hpa
+  namespace: jtoye-staging
+spec:
+  maxReplicas: 20
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 60
+        type: Utilization
+    type: Resource
+  - resource:
+      name: memory
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  minReplicas: 5
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: edge-go
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend-hpa
+  namespace: jtoye-staging
+spec:
+  maxReplicas: 10
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  minReplicas: 3
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-methods: GET, POST, PUT, DELETE, OPTIONS,
+      PATCH
+    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.jtoye.co.uk
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    nginx.ingress.kubernetes.io/proxy-buffer-size: 8k
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-ingress
+  namespace: jtoye-staging
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: api.jtoye.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: core-java
+            port:
+              number: 9090
+        path: /
+        pathType: Prefix
+  - host: app.jtoye.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+        path: /
+        pathType: Prefix
+  - host: auth.jtoye.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - api.jtoye.co.uk
+    - app.jtoye.co.uk
+    - auth.jtoye.co.uk
+    secretName: jtoye-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-methods: GET, OPTIONS
+    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.jtoye.co.uk
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-sse-ingress
+  namespace: jtoye-staging
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: api.jtoye.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: core-java
+            port:
+              number: 9090
+        path: /api/v1/orders/stream
+        pathType: Exact
+  tls:
+  - hosts:
+    - api.jtoye.co.uk
+    secretName: jtoye-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: core-java-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    - port: 6379
+      protocol: TCP
+    - port: 5672
+      protocol: TCP
+    - port: 61613
+      protocol: TCP
+    - port: 9000
+      protocol: TCP
+    - port: 9093
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+    - podSelector:
+        matchLabels:
+          app: edge-go
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+    ports:
+    - port: 9090
+      protocol: TCP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+    ports:
+    - port: 9090
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: core-java
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: default-deny
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: default-deny
+  namespace: jtoye-staging
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: edge-go-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: edge-go-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+          k8s-app: kube-dns
+  - ports:
+    - port: 9090
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: core-java
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 8080
+      protocol: TCP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+    ports:
+    - port: 8080
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: edge-go
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: frontend-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+          k8s-app: kube-dns
+  - ports:
+    - port: 9090
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: core-java
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 3000
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: frontend
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    jtoye.co.uk/notes: |
+      No observability pods are shipped from this kustomization yet.
+      Replace with concrete policies when Grafana/Prometheus/Alertmanager
+      move into this namespace. Prometheus-scrape ingress rules for
+      core-java + edge-go live in 20-core-java.yaml + 30-edge-go.yaml.
+    jtoye.co.uk/placeholder: "true"
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: observability-placeholder
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: observability-placeholder
+  namespace: jtoye-staging
+spec:
+  podSelector:
+    matchLabels:
+      app: nonexistent-placeholder
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: pg-backup-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: pg-backup-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/part-of: jtoye-platform
+          environment: staging
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    - port: 9000
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/name: pg-backup
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  policyTypes:
+  - Ingress
+  - Egress

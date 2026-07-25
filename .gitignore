@@ -153,3 +153,9 @@ infra/keycloak/realm-export-customers.json
 frontend/e2e/.last-customer-email
 .qa-council/
 docker-compose.frontend-3100.yml
+
+# Phase 26 golden-render pre-change snapshots (k8s/scripts/render-golden.sh --snapshot):
+# per-execution baselines for the --diff-since assertions in plans 26-01/26-02/26-04/26-08,
+# never committed artifacts — keeping them untracked is what lets the `--write` idempotence
+# check stay a clean `git diff --quiet k8s/goldens`.
+k8s/goldens/.pre/
