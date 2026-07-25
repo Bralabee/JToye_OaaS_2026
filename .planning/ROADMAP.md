@@ -278,7 +278,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 26-01-PLAN.md (Wave 1) — Golden-render baseline harness + the three surgical base fixes with verified mechanics: `DB_PORT` → `secretKeyRef` (DEF-1), `RABBITMQ_USERNAME` → `RABBITMQ_USER` (DEF-4 deploy half), the kustomize `labels` `fields:` fix that un-poisons the kube-dns NetworkPolicy selector (D-17), plus the additive `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}` chain (D-05) with a three-case resolution test
+- [ ] 26-01-PLAN.md (Wave 1) — Golden-render baseline harness + the three surgical base fixes with verified mechanics: `DB_PORT` → `secretKeyRef` (DEF-1), `RABBITMQ_USERNAME` → `RABBITMQ_USER` (DEF-4 deploy half), the kustomize `labels` `fields:` fix that un-poisons the kube-dns NetworkPolicy selector (D-17), plus the additive `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}` chain (D-05) with a three-case resolution test; the golden harness also ships `--snapshot`/`--diff-since` (fail-closed on a missing baseline) and the rename carries a recorded pre-rollout operator confirmation of the live `rabbitmq-credentials/username` value
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -290,7 +290,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 26-04-PLAN.md (Wave 4) — The committed `k8s/local` overlay (INFRA-01): namespace, eight `host.minikube.internal` endpoint shims, the D-09 scale triple with `maxReplicas` untouched, backup → host MinIO, ingress-nginx-v1.12.2-admissible Ingress patches (PIT-1 snippet + PIT-10 rate limits nulled, TLS removed), prod profile retained (D-10), NetworkPolicies rendered-not-enforced (D-11); plus LOC-1..LOC-5 render assertions
+- [ ] 26-04-PLAN.md (Wave 4) — The committed `k8s/local` overlay (INFRA-01): namespace, eight `host.minikube.internal` endpoint shims, the D-09 scale triple with `maxReplicas` untouched, backup → host MinIO, ingress-nginx-v1.12.2-admissible Ingress patches (PIT-1 snippet + PIT-10 rate limits nulled, TLS removed), prod profile retained (D-10), NetworkPolicies rendered-not-enforced (D-11); plus the `k8s/base` fix removing the dangling `auth.jtoye.co.uk` -> `keycloak` rule and its TLS SAN (a host published with no backend in any render), and LOC-1..LOC-5 + the all-target INV-6 dangling-backend render assertions
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -308,9 +308,9 @@ Plans:
 
 - [ ] 26-08-PLAN.md (Wave 8) — Live rehearsal, part 2 (DEF-5 + D-06): the two planning-discovered login blockers fixed (additive `app.jtoye.local` realm redirect URI; `KEYCLOAK_CLIENT_ID` config-injected instead of a hardcoded literal absent from the dev realm), broker-side STOMP identity proof (dedicated login, zero `guest` connections), then the human-verified journey — real Keycloak vendor login through the ingress to a dashboard, and a kitchen display receiving a relayed order event
 
-**Wave 9** *(blocked on Wave 8)*
+**Wave 9** *(blocked on Wave 8 — ends with a human-gated end-state decision)*
 
-- [ ] 26-09-PLAN.md (Wave 9) — Phase-gate closure: full `:core-java:test` + `:core-java:integrationTest` + frontend build/jest regression sweep, evidence-block completeness audit, then INFRA-01 / INFRA-02 marked complete with per-sub-item cited proofs, and ROADMAP / STATE / 26-VALIDATION reconciled
+- [ ] 26-09-PLAN.md (Wave 9) — Phase-gate closure: full `:core-java:test` + `:core-java:integrationTest` + frontend build/jest regression sweep, evidence-block completeness audit, then INFRA-01 / INFRA-02 marked complete with per-sub-item cited proofs, ROADMAP / STATE / 26-VALIDATION reconciled, and a human-gated end-state decision that restores the canonical compose app containers (cluster stopped first, XOR guard refusing again as the proof) rather than leaving the canonical local dev/E2E runtime displaced
 **UI hint**: no
 
 ## Progress

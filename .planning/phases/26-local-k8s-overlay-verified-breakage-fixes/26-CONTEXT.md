@@ -398,7 +398,56 @@ decisions, not discretion.
 
 </deferred>
 
+<revision_notes>
+## Revision note — appended 2026-07-25, after the cross-AI plan review (`26-REVIEWS.md`)
+
+**Nature of this note: clarification only.** Nothing above is rewritten. This repository treats dated
+documents as records rather than living docs (see `<code_context>` § "Dated audits are records, not
+docs"), so a later correction is appended, never edited in. Raised by GitHub Copilot CLI in
+`26-REVIEWS.md` (§ Concerns, MEDIUM) and adjudicated there as fair.
+
+**The tension.** `<domain>` § "Out of scope" opens with "no application behaviour change". The phase
+as planned nevertheless edits three application-config surfaces:
+
+1. `core-java/src/main/resources/application.yml` — the STOMP credential chain becomes
+   `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}`. **Authorised by D-05**, and deliberately additive:
+   compose sets `RABBITMQ_USER` and no `STOMP_CLIENT_*`, so it resolves to exactly today's values
+   there.
+2. `infra/keycloak/realm-export.template.json` — the `core-api` client gains
+   `http://app.jtoye.local/*` in `redirectUris`. **Authorised by DEF-5 + D-16**, whose ingress login is
+   "the only step that actually proves DEF-5"; strictly additive, with no existing localhost entry
+   removed.
+3. `k8s/base/frontend-deployment.yaml` — the `KEYCLOAK_ISSUER` / `KEYCLOAK_ISSUER_INTERNAL`
+   split-horizon wiring, removal of the dead runtime `NEXT_PUBLIC_API_URL` injection, and (discovered
+   during planning) `KEYCLOAK_CLIENT_ID` moving from a hardcoded literal to a `configMapKeyRef` whose
+   base value is byte-identical. **Authorised by D-13, D-18 and the DEF-5/D-16 login requirement.**
+
+**What the boundary sentence means.** "No application behaviour change" means **no change to behaviour
+for existing, already-configured environments.** Every edit above is either additive (a new fallback
+level, a new redirect URI, a new env name) or byte-identical in its base value, so a correctly
+configured staging or production environment renders and behaves as it did before. It does NOT mean
+the phase touches no application-config file — it necessarily does, because DEF-4 and DEF-5 are
+two-sided defects whose k8s half cannot be fixed on its own. What remains genuinely out of scope is
+unchanged: no new feature surface, no endpoint, no Flyway migration or schema change (`schema_version`
+stays 59), no controller, no UI route, no Azure/AKS work, no `mcp-server` manifests, no sealed-secrets
+adoption.
+
+**Not scope creep.** Each of the three edits is individually authorised by a locked decision above
+(D-05, D-13, D-18, DEF-5, D-16), and `26-REVIEWS.md` reached the same conclusion. The only additions
+beyond the locked set are the two live login blockers plan 26-08 records — the realm redirect URI and
+the hardcoded frontend OIDC client id — and both are prerequisites for D-16's ingress login rather
+than new scope.
+
+**One further deploy-layer defect, recorded here for traceability** (in scope — it is `k8s/base`, not
+application behaviour, but it does change the staging/production render): `k8s/base/ingress.yaml`
+routes `auth.jtoye.co.uk` to a Service `keycloak` that exists in no render, and lists that hostname in
+the single `jtoye-tls` SAN set. Plan 26-04 removes both, per D-15's own doctrine of fixing the base
+defect rather than papering over it locally, with a reviewed golden diff and a deferred item recording
+the in-cluster-Keycloak intent (`26-REVIEWS.md` Adjudication B).
+</revision_notes>
+
 ---
 
 *Phase: 26-Local-K8s Overlay + Verified Breakage Fixes*
 *Context gathered: 2026-07-25*
+*Revision note appended: 2026-07-25 (post cross-AI review; original decision text unchanged)*
