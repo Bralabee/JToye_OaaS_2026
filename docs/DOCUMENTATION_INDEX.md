@@ -36,6 +36,7 @@
 | **How do I run with Docker?** | guides/QUICK_START.md or guides/DOCKER_QUICK_START.md |
 | **What's the project overview?** | [README.md](../README.md) |
 | **What business model should J'Toye pursue?** | [analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md) |
+| **How does J'Toye compare to Flipdish?** | [analysis/flipdish-vs-jtoye-teardown.md](analysis/flipdish-vs-jtoye-teardown.md) (live: [`/competitive`](http://localhost:3200/competitive)) |
 | **Where is the prospective-vendor pitch?** | [`/for-operators`](http://localhost:3200/for-operators) |
 | **What pages exist in the frontend?** | [SITEMAP.md](SITEMAP.md) |
 | **How do I deploy to production?** | guides/DEPLOYMENT_GUIDE.md |
@@ -82,6 +83,7 @@
 25. **[analysis/INFRASTRUCTURE_CATALOG.md](analysis/INFRASTRUCTURE_CATALOG.md)** - Docker, K8s, CI/CD, scripts, monitoring, backups
 26. **[analysis/GAPS_AND_IMPROVEMENTS.md](analysis/GAPS_AND_IMPROVEMENTS.md)** - Discrepancies, feature gaps, and improvement opportunities
 27. **[analysis/REMEDIATION-BACKLOG-2026-07-08.md](analysis/REMEDIATION-BACKLOG-2026-07-08.md)** - Prioritized P0-P3 remediation backlog from the 2026-07-08 four-agent enterprise-readiness audit
+28. **[analysis/flipdish-vs-jtoye-teardown.md](analysis/flipdish-vs-jtoye-teardown.md)** - Evidence-based Flipdish vs J'Toye competitive feature teardown (29 features, 8 categories; live interactive view at `/competitive`)
 
 ### Troubleshooting
 28. **[troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md)** - ⚠️ Docker networking fix (iptables)

@@ -149,6 +149,7 @@ export function BusinessModelGuide() {
           ))}
           <div className="ml-auto hidden shrink-0 gap-2 sm:flex print:hidden">
             <a href="/for-operators" className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500">Operator pitch</a>
+            <a href="/competitive" className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500">How we compare</a>
             <button type="button" onClick={copyLink} className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"><Copy size={15} /> Copy link</button>
             <a href="/business-model-guide.pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"><Printer size={15} /> Print / save PDF</a>
           </div>

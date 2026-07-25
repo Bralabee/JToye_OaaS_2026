@@ -68,6 +68,11 @@ export function PublicFooter() {
                 </Link>
               </li>
               <li>
+                <Link href="/competitive" className="text-cream/85 transition-colors hover:text-white">
+                  How we compare
+                </Link>
+              </li>
+              <li>
                 <Link href="/auth/signin" className="text-cream/85 transition-colors hover:text-white">
                   Vendor sign in
                 </Link>
