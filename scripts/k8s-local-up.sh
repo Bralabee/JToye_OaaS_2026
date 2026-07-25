@@ -243,8 +243,17 @@ IMG_BACKUP="$(awk '$1=="image:" && $2 ~ /jtoye-pg-backup/{print $2; exit}' "$REP
 # Drift guard: the three service image NAMES must appear in the render, or we
 # would build images the cluster will never pull.
 RENDER="$(kubectl kustomize "$OVERLAY")"
+# A HERESTRING, not a pipe, and the reason is not style. `grep -q` exits the
+# instant it matches; the writer of a pipe then takes SIGPIPE and reports 141,
+# and `set -o pipefail` promotes that 141 to the pipeline's status. So
+# `printf "$RENDER" | grep -Fq …` reports FAILURE precisely when the pattern IS
+# found — the assertion inverts, and it inverts as a RACE (it passed 1 run in 8,
+# whenever printf happened to finish before grep exited). The render is ~38 KB,
+# which is large enough to lose that race almost every time. `<<<` removes the
+# pipe entirely, so there is no writer to signal. (Found in plan 26-07, the first
+# execution of this script; the die message asserted a drift that did not exist.)
 for ref in "$IMG_CORE" "$IMG_EDGE" "$IMG_FRONT" "$IMG_BACKUP"; do
-  printf '%s' "$RENDER" | grep -Fq "image: ${ref}" \
+  grep -Fq "image: ${ref}" <<<"$RENDER" \
     || die "image '${ref}' does not appear in the ${OVERLAY} render — the manifests and this script have drifted"
 done
 echo "OK: all four image references match the overlay render"

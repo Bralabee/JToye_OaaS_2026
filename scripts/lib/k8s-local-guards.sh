@@ -147,13 +147,13 @@ k8s_local_profile_ip() {
 
   local ip=""
   ip="$(minikube ip -p "$profile" 2>/dev/null || true)"
-  if ! printf '%s' "$ip" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+  if ! grep -qE '^[0-9]+(\.[0-9]+){3}$' <<<"$ip"; then
     ip="$(minikube profile list -o json 2>/dev/null \
           | jq -r --arg p "$profile" \
               '.valid[]? | select(.Name == $p) | .Config.Nodes[0].IP // empty' \
           2>/dev/null || true)"
   fi
-  printf '%s' "$ip" | grep -qE '^[0-9]+(\.[0-9]+){3}$' || return 1
+  grep -qE '^[0-9]+(\.[0-9]+){3}$' <<<"$ip" || return 1
   printf '%s\n' "$ip"
   return 0
 }
@@ -198,7 +198,9 @@ k8s_local_assert_context() {
     return 1
   fi
 
-  if ! kubectl config get-contexts -o name 2>/dev/null | grep -Fxq "$want"; then
+  local ctx_names
+  ctx_names="$(kubectl config get-contexts -o name 2>/dev/null || true)"
+  if ! grep -Fxq "$want" <<<"$ctx_names"; then
     k8s_local_refuse "context-absent" \
       "kubectl context '${want}' does not exist in kubeconfig — the minikube profile '${profile}' creates it on start, so start the profile first (scripts/k8s-local-up.sh does this in order); ${employer_warning}"
     return 1
@@ -270,14 +272,24 @@ k8s_local_assert_compose_xor() {
     return 2
   fi
 
+  # HERESTRINGS, not pipes — and here the fail DIRECTION is what makes it urgent.
+  # `grep -q` exits on first match, the pipe's writer takes SIGPIPE and reports
+  # 141, and the caller's `set -o pipefail` promotes 141 to the pipeline status.
+  # In the APP loop below a spurious 141 reads as "this app service is NOT
+  # running", so the guard would FAIL OPEN: it would conclude the compose apps
+  # are down while they are still up, and let a cluster start against a live
+  # compose stack — the two-writers-on-one-dev-Postgres hazard this guard exists
+  # to prevent. (The backing loop fails closed by comparison, and this input is
+  # small enough that the race was never observed here; the 38 KB render in
+  # scripts/k8s-local-up.sh is where the class actually bit, in plan 26-07.)
   local svc running_apps="" down_backing=""
   for svc in $K8S_LOCAL_APP_SERVICES; do
-    if printf '%s\n' "$state" | grep -qE "^${svc} running$"; then
+    if grep -qE "^${svc} running$" <<<"$state"; then
       running_apps="${running_apps} ${svc}"
     fi
   done
   for svc in $K8S_LOCAL_BACKING_SERVICES; do
-    if ! printf '%s\n' "$state" | grep -qE "^${svc} running$"; then
+    if ! grep -qE "^${svc} running$" <<<"$state"; then
       down_backing="${down_backing} ${svc}"
     fi
   done
