@@ -17,8 +17,30 @@
 
 import { test, expect } from "@playwright/test"
 
-const BASE = process.env.FRONTEND_URL || "http://localhost:3000"
+// Base URL resolution, in precedence order. FRONTEND_URL stays FIRST so the
+// existing compose-targeted invocation behaves exactly as it did before;
+// PLAYWRIGHT_BASE_URL is added underneath it so a single variable can drive this
+// spec and dashboard-mobile.spec.ts together (playwright.config.ts already reads
+// it for baseURL). Nothing was removed — this is purely additive.
+const BASE =
+  process.env.FRONTEND_URL ||
+  process.env.PLAYWRIGHT_BASE_URL ||
+  "http://localhost:3000"
 const API = process.env.EDGE_URL || "http://localhost:8089"
+
+// Cookie domain FOLLOWS the base URL rather than being hardcoded.
+//
+// WHY: a browser at an ingress hostname does not send a cookie scoped to the
+// loopback host, so while that scope was hardcoded this spec could not run
+// against the Kubernetes ingress at all — playwright.config.ts had already been
+// parameterised, but the cookie scope was left behind (26-RESEARCH.md PIT-9).
+const COOKIE_DOMAIN = new URL(BASE).hostname
+
+// Inert by default; set DEBUG_E2E_TARGET=1 to confirm what this spec resolved to
+// before blaming a failure on the transport.
+if (process.env.DEBUG_E2E_TARGET) {
+  console.log(`[stomp-relay] BASE=${BASE} API=${API} cookieDomain=${COOKIE_DOMAIN}`)
+}
 
 test.describe("STOMP Broker Relay - Cross-Replica Broadcast", () => {
   test.skip(!process.env.RELAY_E2E, "Set RELAY_E2E=true to run against multi-replica stack")
@@ -28,12 +50,17 @@ test.describe("STOMP Broker Relay - Cross-Replica Broadcast", () => {
   }) => {
     const context = await browser.newContext()
 
-    // Authenticate via stub session cookie (same pattern as kitchen-flow.spec.ts)
+    // Authenticate via STUB session cookie (same pattern as kitchen-flow.spec.ts).
+    //
+    // This is a transport check, NOT an auth proof: the value is a fixed stub, so
+    // a pass here says nothing about the DEF-5 split-horizon issuer fix. That
+    // proof needs a REAL Keycloak login, which is dashboard-mobile.spec.ts's job
+    // in plan 26-08. Do not read a green run here as "auth works".
     await context.addCookies([
       {
         name: "authjs.session-token",
         value: "e2e-stub",
-        domain: "localhost",
+        domain: COOKIE_DOMAIN,
         path: "/",
         httpOnly: true,
         sameSite: "Lax",
@@ -115,11 +142,13 @@ test.describe("STOMP Broker Relay - Cross-Replica Broadcast", () => {
   }) => {
     const context = await browser.newContext()
 
+    // STUB session cookie again — see the note on the first test: transport check,
+    // not an auth proof.
     await context.addCookies([
       {
         name: "authjs.session-token",
         value: "e2e-stub",
-        domain: "localhost",
+        domain: COOKIE_DOMAIN,
         path: "/",
         httpOnly: true,
         sameSite: "Lax",
