@@ -278,7 +278,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 26-01-PLAN.md (Wave 1) — Golden-render baseline harness + the three surgical base fixes with verified mechanics: `DB_PORT` → `secretKeyRef` (DEF-1), `RABBITMQ_USERNAME` → `RABBITMQ_USER` (DEF-4 deploy half), the kustomize `labels` `fields:` fix that un-poisons the kube-dns NetworkPolicy selector (D-17), plus the additive `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}` chain (D-05) with a three-case resolution test; the golden harness also ships `--snapshot`/`--diff-since` (fail-closed on a missing baseline) and the rename carries a recorded pre-rollout operator confirmation of the live `rabbitmq-credentials/username` value
+- [x] 26-01-PLAN.md (Wave 1) — Golden-render baseline harness + the three surgical base fixes with verified mechanics: `DB_PORT` → `secretKeyRef` (DEF-1), `RABBITMQ_USERNAME` → `RABBITMQ_USER` (DEF-4 deploy half), the kustomize `labels` `fields:` fix that un-poisons the kube-dns NetworkPolicy selector (D-17), plus the additive `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}` chain (D-05) with a three-case resolution test; the golden harness also ships `--snapshot`/`--diff-since` (fail-closed on a missing baseline) and the rename carries a recorded pre-rollout operator confirmation of the live `rabbitmq-credentials/username` value
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -325,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/9 | Planned     | - |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 1/9 | In Progress|  |

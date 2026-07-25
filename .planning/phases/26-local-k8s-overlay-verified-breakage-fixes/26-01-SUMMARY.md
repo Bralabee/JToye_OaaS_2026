@@ -257,7 +257,7 @@ to exactly the values it did before.
 
 Rendered spot-checks:
 ```
-$ kubectl kustobjmize k8s/production | grep -A 4 'name: DB_PORT'   # (both container and cronjob consumers)
+$ kubectl kustomize k8s/production | grep -A 4 'name: DB_PORT'   # (both container and cronjob consumers)
         - name: DB_PORT
           valueFrom:
             secretKeyRef:
@@ -454,6 +454,25 @@ to be appended by 26-06).
   overlay copied from the pre-fix staging shape would silently re-poison its own NetworkPolicy
   selectors. The golden gate catches it for staging/production; a brand-new overlay (e.g. `k8s/local`
   in **26-05**) has no golden yet, so assert its kube-dns selector directly.
+
+## Self-Check: PASSED
+
+All 5 created files and all 6 modified files exist on disk; all 8 commits
+(`fcbcdc6`, `550474f`, `ff40049`, `41ac344`, `445e95e`, `370bda5`, `486f0b4`, `9fd9f2a`)
+resolve in `git log`. Every must_haves truth in the plan frontmatter is backed by a
+command + captured output above — none is claimed unproven.
+
+| must_haves truth | Proof |
+|---|---|
+| Reviewer can prove base edits leave staging/production behaviourally unchanged | `--diff-since 26-01-task2` diff reproduced above, grouped by kind, every removed line attributed to its document kind |
+| `DB_PORT` sourced from `postgres-credentials` | rendered EnvVar shows `valueFrom.secretKeyRef` `key: port`; `grep -cE '^\s+value: "5432"'` = 0 |
+| No rendered core-java EnvVar carries both `value:` and `valueFrom:` | rendered `DB_PORT` `^\s*value:` count = **0** |
+| Injected RabbitMQ env name matches what `application.yml` reads | `- name: RABBITMQ_USER` ×1; `RABBITMQ_USERNAME` in `k8s/base|staging|production` = 0; `application.yml` reads `${RABBITMQ_USER:jtoye}` |
+| Rename ships with a recorded operator confirmation | `UNAVAILABLE-FROM-THIS-HOST` with actual `kubectl config get-contexts` output + in-manifest PRE-ROLLOUT OPERATOR CHECK (grep-verified) |
+| Every golden assertion anchored to a NAMED snapshot that must resolve | `--diff-since does-not-exist` → exit **2**, 0 bytes stdout; `--snapshot` refuses a stale label with exit 1 |
+| STOMP chain resolves dedicated → RabbitMQ → `guest` | 8/8 GREEN, RED on exactly the 4 level-1 cases pre-change |
+| Rendered kube-dns podSelector contains ONLY `k8s-app: kube-dns` in base/staging/production | 4 blocks × 1 key in each of the three renders (was 4 × 4) |
+| Deployment/Service/PDB selectors byte-identical before and after | 9 extracted selector blocks per target, `diff` empty for both |
 
 ---
 *Phase: 26-local-k8s-overlay-verified-breakage-fixes*
