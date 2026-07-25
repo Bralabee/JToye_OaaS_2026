@@ -360,7 +360,7 @@ at `docs/metrics.json` — a count in prose next to a gate that does not check i
 
 ---
 
-## 2026-07-25 — The compose⊕k8s XOR guard cannot see a second writer already inside the cluster
+## 2026-07-25 — The compose⊕k8s XOR guard cannot see a second writer already inside the cluster — **CLOSED `6a2663b`**
 
 **Discovered by.** Plan 26-07, live, during the A1 pre-apply inventory. This is the most transferable
 finding the phase produced, so it is recorded here rather than only in the plan summary.
@@ -407,3 +407,57 @@ treat a surviving `jtoye-*` namespace as a blocker rather than clutter.
 
 **Suggested owner.** A follow-up plan touching `scripts/lib/k8s-local-guards.sh`, or the next phase
 that revisits the local-k8s tooling.
+
+### CLOSED — 2026-07-25, commit `6a2663b`
+
+Closed as a scoped out-of-plan hardening attributed to this phase, on the user's explicit instruction,
+against the live `jtoye` profile (so the proceed arm is real, not synthetic).
+
+**What shipped.** `k8s_local_assert_cluster_xor` — a NEW sibling of `k8s_local_assert_compose_xor`
+rather than an overload of it, because the two inspect different subsystems and have different tooling
+failure modes — wired into `scripts/k8s-local-up.sh` as **step 3b**: after `minikube start`, before the
+addon, the bootstrap and any apply. Running it pre-start is exactly what made the 16 connections
+invisible.
+
+**Two deliberate departures from the suggested closure above, both strictly stronger.**
+
+1. It counts **pods, not non-zero-replica Deployments**. The 26-07 offender also carried a
+   CronJob-spawned `pg-backup` pod, and a Job, StatefulSet, DaemonSet or bare Pod holds a dev-Postgres
+   connection exactly as well as a Deployment's pod does. Counting pods catches every shape, including
+   ones nobody has enumerated yet.
+2. "Live" excludes only the terminal phases (`Succeeded`, `Failed`), so **`Pending` counts too** — a pod
+   still pulling its image in a stale namespace is the same hazard a few seconds early. Completed pods
+   (the `pg-backup-rehearsal` Job, the ingress-admission Jobs) are correctly ignored.
+
+**Kept from the suggested closure.** A named arm (`REFUSED [cluster-writers-present]`) so it is
+falsifiable like the other four; no auto-deletion of anything; the offenders are NAMED — namespace, live
+pod count, pod phases and **image tags** — because a bare exit code was the thing that taught the
+operator nothing. Exempt: the expected namespace read from `k8s/local/kustomization.yaml` (one source of
+truth, no new literal) plus `kube-system`, `kube-public`, `kube-node-lease`, `ingress-nginx`, `default`,
+which is a named constant beside the existing service inventories.
+
+**Fails closed on every tooling path** — missing `kubectl`, unreachable API server, unparseable
+response, or an **empty** inventory all exit 2 (VOID). The empty case is explicit because wave 5 had to
+fix that exact fail-open class in the compose guard. No `grep -q` under a pipe anywhere (the `43fb5e1`
+inversion class).
+
+**Falsified on three arms, verbatim output recorded in the session:** PROCEED exit 0 with `jtoye-local`'s
+3 running pods correctly not flagged; REFUSE exit 1 naming a scratch namespace, its pod count, phase and
+image tag, then exit 0 again once deleted; VOID exit 2 on a nonexistent context, an empty fixture, an
+unparseable fixture and with `kubectl` off `PATH`. Plus an end-to-end wiring proof: the real
+`scripts/k8s-local-up.sh` aborted at step 3b before step 4 mutated anything. D-14 re-runnability is
+intact — `jtoye-local` running pods are the normal second-invocation state and pass.
+
+**One unanticipated defect found while proving the wiring, fixed in the same commit (Rule 1).** Step 3's
+idempotence check compared `minikube profile list -o json`'s `.Status` against `Running`, but a healthy
+profile reports **`OK`** there (`Running` is `minikube status`'s vocabulary). The "already Running
+(idempotent no-op)" branch was therefore **dead**, and every invocation called `minikube start` on an
+already-running profile — which on the docker driver bounces every pod in the cluster (measured: all
+three `jtoye-local` pods to `CreateContainerConfigError` on `failed to sync secret cache`, ~2 minutes
+unavailable, restarts 3/2/2 → 4/3/3, ingress controller rolled 9 → 10). It self-heals, so it read as
+nothing while silently destroying a running rehearsal's state — and it is a large part of why step 4b's
+webhook gate is load-bearing. Recorded as `k8s/LOCAL.md` §7 **A2**.
+
+**Operator-facing record.** `k8s/LOCAL.md` §2 gains the cluster half of the XOR rule and its refusal
+arm; §4's step table gains the 3b row; §7 A1 is flipped from "guard gap, run the inventory by hand" to
+CLOSED with a behaviour table (0 / 1 / 2 arms) and the reasons behind the two departures above.
