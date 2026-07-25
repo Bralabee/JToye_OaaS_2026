@@ -224,10 +224,29 @@ stomp:
     mode: ${STOMP_BROKER_MODE:in-memory}
     relay-host: ${STOMP_RELAY_HOST:localhost}
     relay-port: ${STOMP_RELAY_PORT:61613}
-    client-login: ${RABBITMQ_USER:guest}
-    client-passcode: ${RABBITMQ_PASSWORD:guest}
-    system-login: ${RABBITMQ_USER:guest}
-    system-passcode: ${RABBITMQ_PASSWORD:guest}
+    # D-05 (Phase 26 / DEF-4): three-level ADDITIVE fallback chain, dedicated
+    # credential first. The single-level `${RABBITMQ_USER:guest}` form this
+    # replaces was one half of DEF-4 — a two-sided env-name mismatch:
+    # k8s/base/core-java-deployment.yaml injected the RabbitMQ user under an env
+    # name matching the secret KEY (not the Spring placeholder) AND injected
+    # STOMP_CLIENT_LOGIN / STOMP_CLIENT_PASSCODE from
+    # rabbitmq-credentials/stomp-login/stomp-passcode — and NO application*.yml
+    # read any of those three names. So the relay resolved to the terminal
+    # default and RabbitMQ logged `Access refused for user 'guest'` at boot.
+    # Compose never caught it: STOMP_BROKER_MODE defaults to in-memory, so a
+    # normal compose run does not exercise the relay at all.
+    #
+    # Additive on purpose (Incremental Betterment): compose sets RABBITMQ_USER /
+    # RABBITMQ_PASSWORD and no STOMP_CLIENT_*, so it resolves to exactly today's
+    # values, while k8s now PREFERS the dedicated STOMP credential that
+    # rabbitmq-credentials and k8s/QUICK_START.md already provision. Nested
+    # defaults are a real Spring feature, already used by
+    # jtoye.security.jwt.expected-issuer above.
+    # Proven at all three precedence levels by StompCredentialResolutionTest.
+    client-login: ${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}
+    client-passcode: ${STOMP_CLIENT_PASSCODE:${RABBITMQ_PASSWORD:guest}}
+    system-login: ${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}
+    system-passcode: ${STOMP_CLIENT_PASSCODE:${RABBITMQ_PASSWORD:guest}}
 
 server:
   port: ${SERVER_PORT:9090}
