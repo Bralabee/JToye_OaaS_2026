@@ -15,6 +15,7 @@ Full codebase analysis generated on 2026-04-01 via comprehensive crawl of every 
 | [MCKINSEY_ANALYSIS.md](MCKINSEY_ANALYSIS.md) | Strategic McKinsey-style assessment of the project's current state, complications, and structured horizons for improvement |
 | [ENTERPRISE_STRATEGIC_ANALYSIS.md](ENTERPRISE_STRATEGIC_ANALYSIS.md) | Comprehensive 16-framework enterprise analysis: SWOT, Porter's Five Forces, PESTLE, Value Chain, BCG, Ansoff, TRL, TOGAF, Balanced Scorecard, ISO 31000 Risk, CMMI, Business Model Canvas, McKinsey 7S, Technical Debt Quadrant, MoSCoW, Wardley Map |
 | [REMEDIATION-BACKLOG-2026-07-08.md](REMEDIATION-BACKLOG-2026-07-08.md) | Prioritized P0-P3 remediation backlog distilled from the 2026-07-08 four-agent enterprise-readiness audit (verified against main @ 805e02e) |
+| [MESSAGING-BROKER-EVALUATION-2026-07-26.md](MESSAGING-BROKER-EVALUATION-2026-07-26.md) | RabbitMQ vs Redpanda vs NATS, assessed against the actual topology. Verdict: stay on RabbitMQ (decision recorded in ADR-0003). Also records the five real messaging-layer defects that became Phase 27, and the verified finding that PostgreSQL logical decoding bypasses RLS |
 
 ## Usage
 
