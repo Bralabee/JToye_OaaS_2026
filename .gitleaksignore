@@ -17,3 +17,19 @@ ac12fa5e9d0804da3ecec30560d9ba782dee9150:k8s/base/secrets-template.yaml:generic-
 171eca378401ba2d568472233b9a0cbfa7206634:mcp-server/src/tools/create-order.test.ts:generic-api-key:37
 171eca378401ba2d568472233b9a0cbfa7206634:mcp-server/src/tools/create-order.test.ts:generic-api-key:78
 171eca378401ba2d568472233b9a0cbfa7206634:mcp-server/src/tools/create-order.test.ts:generic-api-key:196
+
+# Phase 26 (PR #267, squash a67f50d). "probe-secret-5h5gtmbdfg" is a fake secret
+# the phase PLANTED to prove check-no-plaintext-secrets.sh could FAIL, and
+# 26-04-SUMMARY.md records gitleaks' own output verbatim as the evidence — so the
+# evidence trips the scanner that produced it. Not a credential.
+#
+# Only fires on `push` to main: gitleaks-action scans --log-opts=-1 there, and a
+# squash merge makes that single commit the ENTIRE phase diff, so every file
+# reads as newly added. The pull_request run scans a narrow --first-parent
+# A^..B range and never saw it, which is why PR #267 was green and main was red.
+#
+# Fingerprints (not an inline gitleaks:allow, which the header prefers) because
+# line 378 sits inside a fenced block holding verbatim captured tool output;
+# editing it would corrupt the recorded evidence it exists to preserve.
+a67f50d906bd133a33d715125a7c1248a5b8ee44:.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-04-SUMMARY.md:generic-api-key:378
+a67f50d906bd133a33d715125a7c1248a5b8ee44:.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-04-SUMMARY.md:generic-api-key:617
