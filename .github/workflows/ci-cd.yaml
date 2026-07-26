@@ -139,7 +139,7 @@ jobs:
       # required check. push/release bypass the filter (see the reusable gate below).
       - name: Filter paths affecting the Java integration suite
         id: filter
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           filters: |
             integration:
@@ -209,7 +209,7 @@ jobs:
       # stays a satisfiable required check.
       - name: Filter paths affecting the frontend
         id: filter
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           filters: |
             frontend:
