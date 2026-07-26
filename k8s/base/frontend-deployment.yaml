@@ -46,11 +46,53 @@ spec:
         env:
         - name: NODE_ENV
           value: "production"
-        - name: NEXT_PUBLIC_API_URL
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: api.url
+        # ---------------------------------------------------------------------
+        # D-18 (Phase 26 / INFRA-02): NEXT_PUBLIC_API_URL was DELETED from here,
+        # not renamed — it was DEAD CONFIG in every k8s environment.
+        #
+        # Next.js inlines every literal `process.env.NEXT_PUBLIC_*` reference
+        # into the bundle at Docker BUILD time. frontend/Dockerfile:22-23 takes
+        # NEXT_PUBLIC_API_URL as a build ARG for exactly that reason, and line 31
+        # of that same file already documents the rule: "NEXT_PUBLIC_* is inlined
+        # into the browser bundle at build time, so a runtime `environment:`
+        # value cannot reach the client bundle". A runtime `env:` entry here
+        # therefore reached NOTHING that any component reads.
+        #
+        # Worse, it was actively MASKING the boot-time signal:
+        # frontend/lib/env-validation.ts reads its list via the DYNAMIC form
+        # `process.env[envVar]`, which Next.js does NOT inline, so the injected
+        # runtime value satisfied the required-var check while every inlined
+        # literal in the app was still `undefined`. Removing it lets
+        # validateEnvironment() tell the truth (a console.error naming the
+        # missing var — it never throws, so nothing hard-fails).
+        #
+        # app-config/api.url REMAINS the source of truth, and as of the CR-02 fix
+        # that is now true for EVERY environment, not just local:
+        #   - scripts/k8s-local-up.sh reads api.url out of the rendered ConfigMap
+        #     and passes it as `--build-arg NEXT_PUBLIC_API_URL=...`.
+        #   - CI passes the same build-arg from repo variable
+        #     FRONTEND_PUBLIC_API_URL, and each deploy job ASSERTS that the value
+        #     baked into the image equals THIS overlay's api.url before it applies
+        #     (.github/workflows/ci-cd.yaml, step "Assert the baked frontend API
+        #     origin matches this environment"). api.url is therefore a live
+        #     consumer again — a mismatch fails the deploy instead of shipping a
+        #     browser CSP that names the wrong origin.
+        #   - frontend/Dockerfile REFUSES TO BUILD on an empty NEXT_PUBLIC_API_URL,
+        #     so the previous silent outcome (apiOrigin:"" inlined, enforcing CSP
+        #     with no API origin, READY pods, passing smoke tests) is now a loud
+        #     build failure.
+        #
+        # RESIDUAL, deliberately: build-and-push still produces ONE frontend image
+        # per commit, so one baked origin serves whichever environment matches it.
+        # The deploy-time assertion makes that constraint enforced rather than
+        # silent; per-environment images (or a genuinely runtime CSP origin) remain
+        # the durable fix. See the dated entry in
+        # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
+        # (application-architecture change, out of scope per 26-RESEARCH.md PIT-3).
+        #
+        # NEXTAUTH_URL below is NOT of this class — it is a genuine server-side
+        # runtime env, read by Auth.js in the Node process. It stays.
+        # ---------------------------------------------------------------------
         - name: NEXTAUTH_URL
           valueFrom:
             configMapKeyRef:
@@ -61,14 +103,72 @@ spec:
             secretKeyRef:
               name: nextauth-secret
               key: secret
+        # ---------------------------------------------------------------------
+        # Phase 26 / plan 26-08: KEYCLOAK_CLIENT_ID was the hardcoded literal
+        # `value: "frontend"` — a config-injection violation of the same class
+        # as DEF-1's DB_PORT hardcode (GLOBAL_RULE_6 / ARCHITECTURE_RULE_8), and
+        # the reason the local ingress login could not work at all.
+        #
+        # The dev realm has NO `frontend` client. Grep it:
+        # `grep -c '"clientId" : "frontend"' infra/keycloak/realm-export.template.json`
+        # returns 0. The client the frontend actually authenticates as is
+        # `core-api` — .env and .env.example both set KEYCLOAK_CLIENT_ID=core-api,
+        # and the keycloak-credentials Secret's `frontend-client-secret` key is
+        # populated from .env's KEYCLOAK_CLIENT_SECRET, i.e. core-api's secret.
+        # So the literal here named a client that does not exist in the realm
+        # whose secret was being presented: an OIDC flow that cannot complete.
+        #
+        # The base VALUE is unchanged (app-config/keycloak.client-id is the
+        # byte-identical string `frontend`), so staging and production resolve
+        # exactly as before; only k8s/local patches it to `core-api`.
+        # ---------------------------------------------------------------------
         - name: KEYCLOAK_CLIENT_ID
-          value: "frontend"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.client-id
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: keycloak-credentials
               key: frontend-client-secret
+        # ---------------------------------------------------------------------
+        # DEF-5 / D-13 (Phase 26 / INFRA-02): the split-horizon issuer contract.
+        # frontend/auth.ts has ALWAYS split these two — the k8s manifests simply
+        # never supplied the internal half, so only the public value existed and
+        # both roles collapsed onto it. Benign while one host serves both;
+        # fatal the moment they differ. This is the issue #87 class that caused a
+        # total live-auth outage (memory: jwt_issuer_jwks_split_horizon), plus the
+        # feedback_port3100 symptom where a server-side call to the PUBLIC host
+        # hangs ~10.5s on connect timeout and then 401s.
+        #
+        #   KEYCLOAK_ISSUER          = the issuer Keycloak STAMPS into tokens.
+        #     The BROWSER must reach it (authorize redirect), and in the
+        #     non-discovery branch Auth.js sets `as.issuer = provider.issuer`,
+        #     which is what the id_token `iss` is validated against. So this must
+        #     be the PUBLIC value — hence keycloak.public.issuer.uri.
+        #     auth.ts:47 already falls kcPublicBase back to KEYCLOAK_ISSUER, so
+        #     no NEXT_PUBLIC_* runtime env is needed for the authorize redirect.
+        #   KEYCLOAK_ISSUER_INTERNAL = the POD-REACHABLE host used for the
+        #     server-side token + userinfo exchange and the refresh call
+        #     (auth.ts:14,45,58-59).
+        #
+        # Base behaviour is BYTE-IDENTICAL: keycloak.public.issuer.uri holds the
+        # same value as keycloak.issuer.uri, so staging/production render the
+        # same effective URLs they did before. Only the local overlay splits them.
+        #
+        # No auth.ts change is required: Auth.js performs OIDC discovery at
+        # exactly two call sites and both are gated on the endpoint overrides
+        # being absent (authorization-url.js:14, callback/oauth/callback.js:35).
+        # auth.ts:55-59 sets authorization/token/userinfo explicitly, so no
+        # discovery request is made against either host.
+        # ---------------------------------------------------------------------
         - name: KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.public.issuer.uri
+        - name: KEYCLOAK_ISSUER_INTERNAL
           valueFrom:
             configMapKeyRef:
               name: app-config

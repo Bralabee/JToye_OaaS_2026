@@ -1,0 +1,168 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# =============================================================================
+# LOCAL overlay (Phase 26 / INFRA-01)
+#
+# WHAT THIS IS
+#   The committed, reviewable, buildable replacement for the imperative
+#   in-cluster `kubectl patch configmap` / `kubectl create secret` steps used
+#   during the 2026-07-14 first-live-deploy rehearsal. That rehearsal reached
+#   11/11 pods READY, but none of how it got there was in the repository, so it
+#   could not be reviewed, re-run or regression-tested. This directory is that
+#   knowledge, in git.
+#
+# WHAT LOCAL IS FOR (and what it is NOT)
+#   The local cluster consumes the SHARED docker-compose backing services
+#   (Postgres, Redis, RabbitMQ, Keycloak, MinIO, Mailhog) over
+#   `host.minikube.internal`, so every endpoint is shimmed in
+#   configmap-patch.yaml. It is a DEPLOY-LAYER rehearsal — the one surface no
+#   other local runtime exercises (the Ingress path, real rollout/probe
+#   behaviour, the prod config profile). Compose remains the canonical local dev
+#   + E2E runtime (CLAUDE.md § "Runtime & deploy topology").
+#
+#   COMPOSE XOR K8S at local runtime: the compose APP containers
+#   (core-java/frontend/edge-go/mcp-server) must be DOWN while this overlay runs,
+#   because both would write the same shared dev Postgres. The compose BACKING
+#   services must be UP, because this overlay points at them. That rule is
+#   enforced as a hard guard by scripts/k8s-local-up.sh (plan 26-05), not left as
+#   a doc line.
+#
+# THREE THINGS THIS OVERLAY DELIBERATELY DOES NOT DO
+#
+#   1. NO deploy-time annotation stamp. k8s/staging and k8s/production carry a
+#      `commonAnnotations` entry holding a placeholder that CI substitutes at
+#      deploy time. Local has no CI stamp step, and
+#      k8s/scripts/check-no-plaintext-secrets.sh exempts only that ONE exact
+#      annotation key from its placeholder ban — so an unsubstituted placeholder
+#      here would fail that gate. There is nothing to gain locally from a deploy
+#      timestamp, so the block is simply absent.
+#
+#   2. NO kustomize secret generation. This overlay emits ZERO `kind: Secret`.
+#      D-01 is a hard constraint: check-no-plaintext-secrets.sh auto-discovers
+#      every kustomization at `find k8s -maxdepth 2`, so `k8s/local` is gated
+#      the moment it exists, and any generated Secret would fail the build.
+#      Local secrets arrive OUT-OF-BAND from the committed
+#      `scripts/k8s-local-secrets.sh` (authored in plan 26-05), which sources the
+#      gitignored .env and applies each Secret idempotently via
+#      `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
+#      Secrets required before apply: postgres-credentials,
+#      s3-backup-credentials, redis-credentials, rabbitmq-credentials,
+#      keycloak-credentials, nextauth-secret.
+#
+#   3. NO SPRING_PROFILES_ACTIVE override. Local keeps the base value `prod`
+#      (D-10). Rehearsing the PRODUCTION config path — internal 9091 management
+#      port, no SQL logging, prod pool sizes — is the entire point, and it
+#      already booted 11/11 READY that way on 2026-07-14. A `dev` profile locally
+#      would rehearse a configuration that never ships.
+#
+# NETWORKPOLICIES ARE UNPATCHED ON PURPOSE (D-11)
+#   All 6 NetworkPolicies render unchanged here. Local proves their manifest
+#   VALIDITY, never their ENFORCEMENT: minikube's default CNI does not enforce
+#   NetworkPolicies at all. 26-RESEARCH.md PIT-7 records that the rendered egress
+#   set (`ipBlock 0.0.0.0/0` with RFC1918 in `except[]`, plus an in-cluster allow
+#   targeting a `jtoye-infrastructure` namespace that does not exist locally)
+#   would deny the ENTIRE local traffic pattern under an enforcing CNI. Inert
+#   today; the concrete CIDR + port list lives in the k8s/LOCAL.md runbook so the
+#   Calico follow-up starts from the truth rather than from a guess.
+# =============================================================================
+namespace: jtoye-local
+
+# Reference base configuration + this environment's namespace
+# (`resources` replaces the deprecated `bases`)
+resources:
+  - ../base
+  - namespace.yaml
+
+# Local-specific labels.
+#
+# D-17 (Phase 26): the explicit `fields:` list is NOT optional and NOT
+# boilerplate — it mirrors k8s/base/kustomization.yaml (see the full rationale
+# there) and it is repeated here because each overlay's own `labels` entry
+# triggers its own transformer pass. A new overlay copied from the PRE-FIX
+# staging shape (`includeSelectors: true`, no `fields:`) would silently
+# re-inject `environment: local` into the kube-dns DNS-egress podSelector of
+# networkpolicies/20-core-java.yaml, giving core-java ZERO DNS egress under an
+# enforcing CNI.
+#
+# A brand-new overlay has NO committed golden, so the k8s/goldens render
+# baseline cannot catch that regression here the way it does for
+# staging/production. The kube-dns selector of THIS overlay is therefore
+# asserted directly, per target, by INV-3 in
+# k8s/scripts/check-render-invariants.sh.
+labels:
+  - pairs:
+      environment: local
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service
+      - path: spec/selector/matchLabels
+        create: true
+        group: policy
+        kind: PodDisruptionBudget
+
+# Local image tags. Names match the base manifests
+# (ghcr.io/bralabee/jtoye-<service>); only the tag differs.
+#
+# `local` is a LOCALLY BUILT tag that exists in no registry. It must be built and
+# then loaded into the cluster's own image store:
+#   minikube -p jtoye image load ghcr.io/bralabee/jtoye-<service>:local
+# The base sets `imagePullPolicy: IfNotPresent` on all three containers, which is
+# exactly right for loaded images: the kubelet uses the loaded copy and never
+# tries to pull a tag the registry does not have.
+#
+# The frontend image in particular MUST be built locally rather than reused:
+# Next.js inlines every NEXT_PUBLIC_* value at Docker BUILD time
+# (frontend/Dockerfile:22-23 and its own line-31 note; D-18), so a local
+# frontend needs `--build-arg NEXT_PUBLIC_API_URL=http://api.jtoye.local`. There
+# is no runtime env that can fix it afterwards — the runtime injection that used
+# to imply otherwise was dead config and was removed in plan 26-02.
+# scripts/k8s-local-up.sh (plan 26-05) owns the build + load sequence.
+#
+# The pg-backup image (ghcr.io/bralabee/jtoye-pg-backup:15, built from
+# infra/backups/Dockerfile) is NOT retagged: its base tag is already immutable
+# and environment-independent, so it is loaded as-is.
+images:
+  - name: ghcr.io/bralabee/jtoye-core-java
+    newTag: "local"
+  - name: ghcr.io/bralabee/jtoye-edge-go
+    newTag: "local"
+  - name: ghcr.io/bralabee/jtoye-frontend
+    newTag: "local"
+
+# `patches` with a bare `path` auto-detects strategic-merge, the
+# behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
+#
+# scale-patch.yaml is ONE file holding SIX documents; kustomize matches each
+# document to its target by GVK + name, so one entry covers all 3 HPAs and all
+# 3 PDBs (verified, 26-RESEARCH.md P-2).
+patches:
+  - path: configmap-patch.yaml
+  - path: scale-patch.yaml
+  - path: ingress-patch.yaml
+  - path: sse-ingress-patch.yaml
+
+# Local runs ONE of each service (D-09, DEF-3).
+#
+# The base is sized for production (3/5/3 = 11 pods). `replicas:` here reaches
+# Deployment/ReplicationController/ReplicaSet/StatefulSet ONLY — it does NOT
+# touch HorizontalPodAutoscaler or PodDisruptionBudget (26-RESEARCH.md P-1),
+# which is precisely why scale-patch.yaml exists as a second mechanism. Without
+# it, an HPA `minReplicas: 3` would immediately scale a 1-replica Deployment back
+# up (or sit Unknown with no metrics-server), and a PDB `minAvailable: 2` over 1
+# replica blocks every voluntary eviction — the pod becomes undrainable.
+replicas:
+  - name: core-java
+    count: 1
+  - name: edge-go
+    count: 1
+  - name: frontend
+    count: 1

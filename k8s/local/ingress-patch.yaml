@@ -1,0 +1,98 @@
+---
+# =============================================================================
+# LOCAL jtoye-ingress patch (Phase 26 / D-12)
+#
+# WHAT LOCAL THEREFORE DOES NOT PROVE — read this before trusting a local pass:
+#   There is no cert-manager and no TLS here, and the security-header snippet is
+#   removed (see PIT-1 below). So a green local run proves NOTHING about HSTS,
+#   X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+#   or TLS termination. Those remain staging/production-only behaviours, and the
+#   k8s/LOCAL.md runbook (plan 26-06) states that plainly so nobody reads "the
+#   ingress worked locally" as "the ingress is configured correctly".
+#
+# WHY `rules:` REPLACES RATHER THAN MERGES
+#   `Ingress.spec.rules` has no patch merge key, so supplying `rules:` in a
+#   strategic-merge patch REPLACES the whole list (verified, 26-RESEARCH.md P-4).
+#   Every base rule therefore disappears from the local render and only the two
+#   below survive. That is intended — but it is NOT how the dangling
+#   Keycloak-host rule got fixed. Relying on replacement to hide it would have
+#   left staging and production still publishing a host with no backend, which is
+#   the opposite of D-15's own doctrine. It is removed IN k8s/base by this same
+#   plan (26-REVIEWS.md Adjudication B); this patch would render identically
+#   either way.
+#
+# PIT-1 IS THE ONE MANDATORY LINE IN THIS FILE
+#   minikube v1.36.0 bundles ingress-nginx controller v1.12.2, where
+#   `allow-snippet-annotations` defaults to FALSE and `annotations-risk-level` to
+#   High (hardened defaults since ingress-nginx 1.9). The base ingress carries a
+#   snippet annotation, so its validating admission webhook REJECTS both Ingress
+#   objects — nothing else deploys cleanly around it. Nulling the annotation
+#   locally is the fix.
+#
+#   DO NOT "fix" it the other way. Setting `allow-snippet-annotations: "true"` /
+#   `annotations-risk-level: "Critical"` on the cluster addon would make the apply
+#   succeed by re-enabling a documented Critical-risk annotation class that
+#   ingress-nginx disables by default — weakening the cluster's posture to satisfy
+#   a local convenience. The base annotation is deliberately left INTACT for
+#   staging/production, and CI asserts both halves (LOC-4 asserts local has none;
+#   the production render keeps its snippet).
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jtoye-ingress
+  annotations:
+    # --- deleted (a null value REMOVES the annotation; verified P-4) ----------
+    # No cert-manager runs locally, so this issuer name would reference nothing
+    # and no Certificate would ever be created.
+    cert-manager.io/cluster-issuer: null
+    # PIT-1 — MANDATORY. See the header. Removing this line makes
+    # `kubectl apply -k k8s/local` fail at the admission webhook.
+    nginx.ingress.kubernetes.io/configuration-snippet: null
+    # PIT-10 — a Playwright run drives many requests and many concurrent
+    # connections from ONE source IP, which is plausibly enough to trip the
+    # per-IP connection cap and produce sporadic 503s that look like application
+    # faults. Rate limiting protects a public internet edge; local has no such
+    # edge, and a flaky E2E signal is worse than no limit here.
+    nginx.ingress.kubernetes.io/limit-rps: null
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: null
+    nginx.ingress.kubernetes.io/limit-connections: null
+
+    # --- overridden ----------------------------------------------------------
+    # Local is plain HTTP: with no TLS block and no cert, an SSL redirect would
+    # bounce every request to a port serving nginx's self-signed fallback.
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # Must match app-config `cors.allowed-origins`, which is also what
+    # CorsConfig and the KDS WebSocket handshake read.
+    nginx.ingress.kubernetes.io/cors-allow-origin: "http://app.jtoye.local"
+spec:
+  # A null value deletes the whole TLS block (verified P-4). Necessary, not
+  # cosmetic: `secretName: jtoye-tls` would never exist locally, and nginx
+  # silently falls back to its own self-signed default certificate — so the
+  # browser gets a cert warning on a hostname the developer then distrusts.
+  tls: null
+  # REPLACES the base list. Ports match the rendered Services: core-java 9090
+  # (the API; note 9091 is the internal management port and is deliberately NOT
+  # published through any ingress) and frontend 3000.
+  rules:
+    - host: api.jtoye.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: core-java
+                port:
+                  number: 9090
+    - host: app.jtoye.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

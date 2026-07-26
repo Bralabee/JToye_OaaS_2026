@@ -530,3 +530,119 @@ The platform can be deployed to production with confidence after completing the 
 **Approved for Production:** YES ✓
 **Date:** 2026-01-16
 **Next Review:** After first production deployment
+
+---
+
+## Post-audit note (2026-07-25) — six production-affecting defects Phase 26 closed that this audit did not surface
+
+**Nature of this note: APPENDED, not a revision.** Everything above is the dated v0.8.0 record from
+2026-01-16 and stays exactly as signed. This section records what a later phase found in the same
+manifests, so a reader who trusts the 95/100 score knows what it did not cover.
+
+Phase 26's stated goal was a committed local overlay. In building it, six defects were verified in
+`k8s/base` or its overlays that affect **staging and production**, not only local. Each was fixed in
+the base rather than papered over locally. All six were present when this audit was signed; none is
+in the "Security Scan" or "Recommendations" sections above.
+
+| # | Defect | Where | Production effect | Fixed in |
+|---|--------|-------|-------------------|----------|
+| 1 | **`DB_PORT` hardcoded** as a literal `value: "5432"` in the core-java env block, while the `postgres-credentials` Secret already carried a `port` key that `pg-backup-cronjob.yaml` consumed via `secretKeyRef` | `k8s/base/core-java-deployment.yaml` | One managed-Postgres port change away from a total outage that no manifest review would predict, because the port appears to be config-injected. The literal was **deleted** (not supplemented) — `value` and `valueFrom` are mutually exclusive in `EnvVar`, and a render carrying both is accepted by `kubectl kustomize` and **rejected by the API server at apply time**. | plan **26-01** |
+| 2 | **Split-horizon issuer env absent from every k8s manifest.** `JWT_EXPECTED_ISSUER` (core + edge) and the frontend's `KEYCLOAK_ISSUER_INTERNAL` are wired in compose and appeared in no k8s manifest at all; edge-go's `main.go` had read `JWT_EXPECTED_ISSUER` since the issuer/JWKS decoupling fix, with nothing ever supplying it | `k8s/base/configmap.yaml`, `core-java-deployment.yaml`, `edge-go-deployment.yaml`, `frontend-deployment.yaml` | Benign in production only by coincidence (the public issuer happens to equal the pod-reachable URL). The moment they diverge — a private ingress, an internal service name, a split-horizon DNS zone — this is the class that previously caused a **total live-auth outage**. New `app-config` keys default to today's public issuer, so staging and production render byte-identical behaviour. | plan **26-02** |
+| 3 | **Base config drift vs the shipped v2.2/v2.3 feature set.** The base injected 23 env vars into core-java (DB, Keycloak, Redis, RabbitMQ, STOMP) and nothing for media storage, email, Stripe, CORS, JWT audience or the webhook-delivery knobs — so each silently resolved to its local-only `application.yml` default. Includes **four `http://localhost:3000` defaults**: `NOTIFICATION_UNSUBSCRIBE_BASE_URL`, `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, `STRIPE_CONNECT_RETURN_URL`, `STRIPE_CONNECT_REFRESH_URL` | `k8s/base/configmap.yaml`, `core-java-deployment.yaml` | **Production emails carried unsubscribe and open/click-tracking links pointing at `localhost:3000`**, and a vendor finishing Stripe Connect onboarding was redirected to a loopback address on their own machine. Media uploads and email would have failed silently against loopback endpoints. Core-java injected env went 23 → 49; all new credential refs are `optional: true`, so no unprovisioned feature can become a loud failure without a deliberate operator act. | plan **26-02** |
+| 4 | **kube-dns NetworkPolicy selector poisoning.** The `labels:` transformer carried `includeSelectors: true`, which injects the common labels into every `podSelector.matchLabels` — including the DNS-egress rule of `networkpolicies/20-core-java.yaml`. The rendered selector demanded `k8s-app: kube-dns` **plus** `app.kubernetes.io/managed-by`, `app.kubernetes.io/part-of` and `environment`, which real kube-dns pods do not carry | `k8s/base/kustomization.yaml`, `k8s/staging/`, `k8s/production/` (verified live in the **production** render) | Under a policy-enforcing CNI the DNS rule matches nothing ⇒ **total DNS blackhole for core-java**. Inert only because no enforcing CNI is in use yet — i.e. this was armed and waiting for the network-policy rollout the "Long-Term" recommendation above proposes. Invisible to `k8s/scripts/validate-networkpolicies.py`, which parses raw files rather than the render (and is not wired into CI); hence a render-level assertion, **INV-3** in `k8s/scripts/check-render-invariants.sh`. | plan **26-01** (fix) + **26-03** (assertion) |
+| 5 | **A published ingress host with no backend in any render.** `k8s/base/ingress.yaml` routed **`auth.jtoye.co.uk`** to `service: keycloak` on port 8080, and listed that hostname in the single `jtoye-tls` SAN set alongside `api` and `app`. **No Service named `keycloak` exists anywhere in `k8s/`** — the complete rendered Service set in all four targets is `core-java`, `edge-go`, `frontend` | `k8s/base/ingress.yaml` | Staging **and** production each published a hostname nginx answers with **503**. Worse, all SAN names share one `secretName: jtoye-tls` and cert-manager issues that as a single order: an HTTP-01 challenge for a host this controller does not serve cannot be answered, and a failed challenge fails the whole order — so the dangling SAN was a live risk to certificate **issuance and renewal for `api` and `app` too**. Keycloak is an external managed IdP, so the fix is removal, not adding a Service. Goldens 1476 → 1465 lines. Recurrence prevented by **INV-6** (every Ingress backend Service name must resolve to a `kind: Service` in the same render; empty allowlist). | plan **26-04** |
+| 6 | **Inert `NEXT_PUBLIC_API_URL` runtime injection.** `frontend-deployment.yaml` injected `NEXT_PUBLIC_API_URL` from `app-config/api.url` as a runtime `env:` entry. Next.js inlines `NEXT_PUBLIC_*` at Docker **BUILD** time — the frontend Dockerfile takes it as a build ARG and its own in-file comment already documented the rule | `k8s/base/frontend-deployment.yaml` | Dead config in **every** k8s environment: staging and production frontends served whatever API URL CI baked, not what the ConfigMap said. It was also **masking** the boot-time env check, because `frontend/lib/env-validation.ts` reads its required list via the dynamic `process.env[envVar]` form that Next.js does not inline — so the injected runtime value satisfied the check while every inlined literal in the app was already `undefined`. The dead env was removed and replaced with an explanatory block; the check now reports the truth. The durable fix (a server config source or per-environment image builds) is recorded as a deferred item. | plan **26-02** |
+
+**What Phase 26 did NOT re-audit.** This note is a defect record, not a fresh readiness review. The
+2026-07-06 note above still stands: the manifests have not been re-audited since the 2.1.0 image
+bump, and a fresh readiness review remains advisable before the next production release. Phase 26
+added five static CI gates (`k8s/scripts/check-no-plaintext-secrets.sh`,
+`check-connection-math.sh`, `check-env-contract.sh`, `check-render-invariants.sh`,
+`render-golden.sh`) that make these six classes non-recurring, which is a different thing from a
+clean audit.
+
+### OUTSTANDING OPERATOR ACTIONS
+
+**These cannot be verified from the repository. Do them before the next staging or production
+rollout.**
+
+#### 1. BLOCKING — confirm `rabbitmq-credentials` / `username` before rolling out
+
+Plan **26-01** renamed the env the core-java deployment injects from `RABBITMQ_USERNAME` to
+**`RABBITMQ_USER`**, because `application.yml` reads `${RABBITMQ_USER}` and the old name was read by
+nothing. The Secret **key** (`username`) is unchanged. The consequence is the point:
+
+- **Before the rename**, `spring.rabbitmq.username` silently fell back to its `application.yml`
+  default — the literal `jtoye` — while using the Secret's real password.
+- **After the rename**, the Secret's `username` **value** takes effect for the primary AMQP pool for
+  the first time.
+
+So if the live Secret's `username` holds anything other than the broker user whose password that
+Secret carries, the first rollout after the rename **breaks AMQP authentication**. Confirm in **both**
+namespaces:
+
+```bash
+kubectl -n jtoye-staging    get secret rabbitmq-credentials -o jsonpath='{.data.username}' | base64 -d
+kubectl -n jtoye-production get secret rabbitmq-credentials -o jsonpath='{.data.username}' | base64 -d
+```
+
+**Expected output in each:** `jtoye` (the RabbitMQ broker user — this is a username, not a
+credential; no password value appears in this command or anywhere in this note).
+
+**Remediation direction, and it is one-way:** if the value differs, **change the SECRET** to the
+broker user whose password that Secret authenticates. **Never revert the rename.** Reverting restores
+a state in which the manifest injects an env nothing reads and the pool authenticates as a hardcoded
+Spring default — the original defect, re-armed and now undetectable to anyone reading the manifest.
+
+**No static gate can cover this, by construction.** Secret *values* never appear in a kustomize
+render, and `k8s/scripts/check-no-plaintext-secrets.sh` exists specifically to guarantee they never
+will (it fails any build emitting a `kind: Secret` or a `REPLACE_WITH_*` placeholder). The check is
+therefore an operator action permanently, not a gap awaiting automation. It is also carried as a
+blocking `PRE-ROLLOUT OPERATOR CHECK` comment block in
+`k8s/base/core-java-deployment.yaml` next to the renamed env.
+
+**Plan 26-01's recorded confirmation outcome, verbatim:**
+
+> ### Outcome: `UNAVAILABLE-FROM-THIS-HOST`
+>
+> **Attempted from this host, actual output:**
+> ```
+> $ kubectl config get-contexts
+> CURRENT   NAME          CLUSTER       AUTHINFO                                    NAMESPACE
+>           sipbihs2aks   sipbihs2aks   clusterUser_sipbihs2aks_group_sipbihs2aks
+>
+> $ kubectl config current-context
+> error: current-context is not set
+> ```
+>
+> **Reason:** exactly one kubeconfig context exists — the employer AKS cluster `sipbihs2aks`, which is
+
+(That context is employer infrastructure and must never be targeted, which is why the confirmation
+was recorded as unavailable rather than attempted. The check therefore remains open.)
+
+#### 2. Before activating the newly wired external endpoints
+
+Plan **26-02** replaced four loopback/dev defaults with real external targets, each derived from a
+value already committed in this repository (the AWS SES SMTP endpoint and the regional S3 endpoint
+for the committed backup region, the image bucket name, and those two concatenated). **Provenance is
+not provisioning**, and it could not be verified from the authoring host (no AWS credentials present;
+only the employer AKS context in kubeconfig). Recorded as `UNVERIFIABLE-FROM-THIS-HOST`.
+
+Before creating `smtp-credentials` or `s3-media-credentials`, or flipping `app-config` `smtp.auth` to
+`"true"`, confirm: the SES sending domain is **verified in the deployment region**, and the image
+bucket **exists in that region**. If either is false, the first newly-wired call becomes a loud
+runtime error (SMTP auth failure, or S3 403/404) instead of the previous silent no-op. Nothing
+activates without one of those deliberate acts — `smtp.auth` ships `"false"` and all seven new
+credential refs are `optional: true`.
+
+#### 3. Known broken landing destination (not blocking, recorded)
+
+`stripe.connect.return-url` / `refresh-url` now point at real platform routes
+(`/dashboard/payments/connect/{return,refresh}`) that **do not exist in the frontend**. A vendor
+completing Stripe Connect onboarding lands on a **404**. This is strictly better than the previous
+loopback redirect (connection refused, nothing of the platform on screen) and the account-link commit
+is independent of the redirect, so it is a UX dead-end rather than a correctness defect. Building
+those pages is a product decision left to the vendor-payments phase.
+
+**Full detail for all of the above:**
+`.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`.

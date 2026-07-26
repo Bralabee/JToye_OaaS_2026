@@ -1,0 +1,82 @@
+# =============================================================================
+# LOCAL scale minimums (Phase 26 / D-09, DEF-3)
+#
+# WHY THIS FILE EXISTS AT ALL
+#   The overlay's `replicas:` list (kustomization.yaml) reaches ONLY
+#   Deployment / ReplicationController / ReplicaSet / StatefulSet. It does NOT
+#   touch HorizontalPodAutoscaler or PodDisruptionBudget
+#   [kubectl.docs.kubernetes.io/references/kustomize/kustomization/replicas/,
+#   verified by render in 26-RESEARCH.md P-1]. So scaling local to one replica
+#   needs TWO mechanisms, and this is the second one.
+#
+#   Without it:
+#     - HPA minReplicas 3/3/5 would immediately scale each Deployment back up —
+#       or, with no metrics-server on minikube, sit in an Unknown/unable-to-fetch
+#       state while still holding the floor.
+#     - PDB minAvailable 2/2/3 over ONE replica makes the pod UNDRAINABLE: every
+#       voluntary eviction (node drain, rollout) is blocked forever, because
+#       evicting the only pod would breach the budget.
+#
+# ONE FILE, SIX DOCUMENTS
+#   kustomize matches each document to its target by GVK + name, so a single
+#   `patches: - path: scale-patch.yaml` entry covers all six objects. Verified by
+#   render: replicas 1 x3, minReplicas 1 x3, minAvailable 1 x3, and maxReplicas
+#   UNCHANGED. No JSON6902 patch is needed (26-RESEARCH.md P-2).
+#
+# maxReplicas IS DELIBERATELY UNTOUCHED — DO NOT "TIDY" IT
+#   HPA maxReplicas is an INPUT to the Postgres connection budget:
+#   k8s/scripts/check-connection-math.sh asserts
+#   maxReplicas x DB_POOL_SIZE (+ Keycloak, exporter, healthcheck, pg-backup)
+#   fits max_connections with >= 20% headroom. Lowering it locally would make the
+#   local render disagree with the budget the gate actually checks, so the local
+#   render would no longer prove the same arithmetic. It also costs nothing to
+#   leave: an HPA with no metrics-server never scales up regardless of its
+#   ceiling. k8s/scripts/check-render-invariants.sh (LOC-2) asserts the local
+#   maxReplicas multiset is identical to the one k8s/base renders.
+#
+# NOTHING ELSE IS SET IN ANY DOCUMENT BELOW. Each patch carries exactly the one
+# field it changes, so a base change to metrics, behaviour or selectors flows
+# through to local untouched.
+# =============================================================================
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-java-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: edge-go-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-java-pdb
+spec:
+  minAvailable: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+spec:
+  minAvailable: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: edge-go-pdb
+spec:
+  minAvailable: 1

@@ -14,3 +14,40 @@ data:
 
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
+
+  # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
+  # base app-config keys. Each value is derived from this overlay's OWN
+  # keycloak.issuer.uri / frontend.url above — never from the production values
+  # the base carries — so a staging email link, a staging CORS origin and a
+  # staging Stripe Connect return all resolve to the staging platform.
+  #
+  # Media storage (s3.*) and SMTP are deliberately NOT overridden here: those
+  # base values are the correct AWS eu-west-2 regional endpoints for staging and
+  # production alike, and smtp.auth stays "false" in both.
+
+  # D-13 split-horizon: in staging one host serves both roles today, so this is
+  # byte-identical to keycloak.issuer.uri above — the key exists so the two can
+  # diverge without a manifest edit.
+  keycloak.public.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
+
+  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
+  # value is the byte-identical string `frontend` that used to be hardcoded in
+  # frontend-deployment.yaml, so staging keeps authenticating as exactly the same
+  # OIDC client it always has — the key exists so it CAN be changed per
+  # environment without patching the Deployment, not because staging needs a
+  # different value. Only k8s/local patches it (to `core-api`, the jtoye-dev
+  # realm's actual client). Adding a redundant `keycloak.client-id: "frontend"`
+  # line here would be noise, not documentation.
+
+  # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
+  # WebSocketConfig (the KDS STOMP handshake).
+  cors.allowed-origins: "https://app-staging.jtoye.co.uk"
+
+  # D-19: unsubscribe + email open/click tracking links in staging notifications.
+  notification.email.tracking-base-url: "https://app-staging.jtoye.co.uk"
+  notification.unsubscribe.base-url: "https://app-staging.jtoye.co.uk"
+
+  # D-19: where Stripe returns a vendor after Connect onboarding. Paths match the
+  # application.yml defaults; only the origin is staging-specific.
+  stripe.connect.return-url: "https://app-staging.jtoye.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app-staging.jtoye.co.uk/dashboard/payments/connect/refresh"

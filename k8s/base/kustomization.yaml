@@ -35,14 +35,50 @@ resources:
   - networkpolicies/50-observability.yaml
 
 # Common labels applied to all resources.
-# `labels` with includeSelectors:true is the direct, behaviour-preserving
-# replacement for the deprecated `commonLabels` (labels are added to metadata
-# AND to selectors / pod templates, exactly as before).
+#
+# D-17 (Phase 26, verified PRODUCTION defect): selector labels are applied to an
+# EXPLICIT kind list instead of via the blanket `includeSelectors: true`, so the
+# transformer can no longer inject the common labels into a
+# `NetworkPolicy.spec.podSelector` or a nested `egress[].to[].podSelector`.
+# `includeSelectors: true` did exactly that to the DNS-egress rule in
+# networkpolicies/20-core-java.yaml: the rendered selector came out as
+# {k8s-app: kube-dns, app.kubernetes.io/managed-by: kustomize,
+#  app.kubernetes.io/part-of: jtoye-platform, environment: <env>}. Real kube-dns
+# pods carry NONE of those extra labels, so the selector matched NOTHING and
+# core-java had ZERO DNS egress under an enforcing CNI — a total outage. Inert on
+# minikube (default CNI does not enforce NetworkPolicies), which is why it
+# survived the live rehearsal, and invisible to
+# k8s/scripts/validate-networkpolicies.py, which parses the RAW files rather than
+# the kustomize render.
+#
+# `includeTemplates: true` keeps the labels on pod templates, and the `fields:`
+# list below keeps them on exactly the three selectors that carried them before
+# (Deployment, Service, PodDisruptionBudget) — verified byte-identical in the
+# render, which matters because Deployment/Service selectors are IMMUTABLE and a
+# changed one fails the apply. NetworkPolicy `spec` is mutable, so dropping the
+# labels there is safe to apply to an existing cluster.
+# The k8s/goldens/ render baseline (k8s/scripts/render-golden.sh) is the
+# render-level assertion that stops this class returning with the next
+# transformer edit.
 labels:
   - pairs:
       app.kubernetes.io/managed-by: kustomize
       app.kubernetes.io/part-of: jtoye-platform
-    includeSelectors: true
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service
+      - path: spec/selector/matchLabels
+        create: true
+        group: policy
+        kind: PodDisruptionBudget
 
 # Common annotations
 commonAnnotations:

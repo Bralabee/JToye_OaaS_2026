@@ -50,11 +50,32 @@ spec:
         env:
         - name: CORE_API_URL
           value: "http://core-java:9090"
+        # KC_ISSUER_URI is the POD-REACHABLE issuer, used only to LOCATE the JWKS
+        # endpoint (edge-go/cmd/edge/main.go:139-140 appends
+        # /protocol/openid-connect/certs to it).
         - name: KC_ISSUER_URI
           valueFrom:
             configMapKeyRef:
               name: app-config
               key: keycloak.issuer.uri
+        # DEF-5 / D-13 (Phase 26 / INFRA-02): the expected `iss` claim, decoupled
+        # from the JWKS host. edge-go has read this name since the issue #87
+        # follow-up — main.go:141 is
+        # `expectedIssuer := getEnv("JWT_EXPECTED_ISSUER", keycloakIssuer)` — but
+        # NO k8s manifest ever supplied it, so every k8s environment silently took
+        # the default and validated `iss` against the JWKS host. Correct only while
+        # one host serves both roles; it rejects every real token the moment they
+        # differ ("invalid issuer").
+        #
+        # Base behaviour is UNCHANGED by this addition twice over: the value is
+        # byte-identical to keycloak.issuer.uri, and the Go default was already
+        # keycloakIssuer. What changes is that a split-host environment can now be
+        # configured instead of needing a code change.
+        - name: JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.public.issuer.uri
         - name: PORT
           value: "8080"
         resources:

@@ -42,7 +42,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 23: Vendor-Scoped Access + Responsive Dashboard Nav** — `shop_staff` (V52) + app-layer role gate + shop-context switcher + staff management, with a GROUP_ADMIN backfill; dashboard nav no longer overlays at 375px (code-complete 2026-07-20; **gap-closure wave 23-08..23-17 CLOSED 2026-07-21** — the 3 confirmed authZ bypasses fixed [CR-01 cache-bypass 23-10, CR-02 STOMP gate 23-11, CR-03/CR-04 fail-closed 23-08] + CR-05..CR-08 staff/frontend + CR-07 strict-scoping 23-14 + the V57 grant_source-backfill deploy blocker fixed [23-17: bare no-GUC UPDATE → V44 per-tenant `set_config` loop, so `SET NOT NULL` no longer bricks boot on a non-fresh DB]; VSA-02/VSA-04 Complete with named green proofs over a green full `integrationTest` (332/0); both known-red CI gates green [OpenAPI snapshot + docs-freshness]. Checkbox stays open pending final `/gsd:secure-phase 23` + `/gsd:verify-work` sign-off; live vendor-auth Playwright deferred to the phase PR) (completed 2026-07-22)
 - [x] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative (completed 2026-07-23)
 - [x] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential (completed 2026-07-24)
-- [ ] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed
+- [x] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed, proven on a live minikube rehearsal (verbatim server dry-run, 3/3 rollout, NOSUPERUSER boot corroborated from the database side, two-arm backup falsification, broker-side STOMP identity, real Keycloak login through the ingress). The rehearsal also **falsified** the KDS relay path — a RabbitMQ `/topic` destination cannot contain `/`, and `k8s/base` sets `relay`, so staging and production both inherit it: a confirmed production defect found only because D-06 insisted the relay be proven on a cluster rather than in compose (tracked as [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266), fixed in its own scoped work — **#266 CLOSED 2026-07-26 by PR #269, `d964a85`: the destination is now a single dot-separated segment built in one place. The live L6 proof — a KDS client receiving a relayed event — is still uncaptured, so this is a fixed defect plus an open evidence gap, not a proven realtime path**) (completed 2026-07-26)
 
 ## Phase Details
 
@@ -267,18 +267,50 @@ Plans:
 **Requirements**: INFRA-01, INFRA-02
 **Success Criteria** (what must be TRUE):
 
-  1. `kubectl kustomize k8s/local` builds and a server dry-run apply resolves every reference — no dangling secret/configmap/label refs. (INFRA-01)
-  2. The `k8s/local` overlay shims endpoints to `host.minikube.internal`, sets `minReplicas=1`, and repoints the backup CronJob to host MinIO — committed, replacing the imperative secret/configmap patches. (INFRA-01)
-  3. `DB_PORT` is injected via `valueFrom.secretKeyRef` (no hardcoded `5432`), and secrets use `DB_USER`/`DB_PASSWORD` (the `jtoye_app` NOSUPERUSER role) so core boots without `DatabaseConfigurationValidator` refusing a DB superuser. (INFRA-02)
-  4. The pg-backup CronJob targets host MinIO and the STOMP relay stomp-login/passcode wiring reaches the spring config (no boot-time `Access refused for user 'guest'`). (INFRA-02)
+  1. `kubectl kustomize k8s/local` builds and a server dry-run apply resolves every reference — no dangling secret/configmap/label refs. (INFRA-01) — **MET.** `check-no-plaintext-secrets.sh` exit 0 (`[k8s/local]: build succeeded, 23 resources`) + `k8s/LOCAL.md` §11 **L1**: verbatim server dry-run, exit 0, 23 objects, 0 `denied the request` across 8 run logs.
+  2. The `k8s/local` overlay shims endpoints to `host.minikube.internal`, sets `minReplicas=1`, and repoints the backup CronJob to host MinIO — committed, replacing the imperative secret/configmap patches. (INFRA-01) — **MET.** `check-render-invariants.sh` exit 0 asserts LOC-1..LOC-6 on the render: 8 endpoint shims, the D-09 scale triple with `maxReplicas` byte-identical to base (10/20/10), and `s3.backup.endpoint: http://host.minikube.internal:9000`. `render-golden.sh` exit 0 proves staging + production renders were not disturbed (1469 lines each).
+  3. `DB_PORT` is injected via `valueFrom.secretKeyRef` (no hardcoded `5432`), and secrets use `DB_USER`/`DB_PASSWORD` (the `jtoye_app` NOSUPERUSER role) so core boots without `DatabaseConfigurationValidator` refusing a DB superuser. (INFRA-02) — **MET.** §11 **L2b**: live env `secretKeyRef present : 1`, `"value" field present : 0`, decoded port 5433 (and the pod is genuinely connected on 5433, so a stale 5432 would have connected to nothing). §11 **L2**: validator counts 1/1/0 with `Database username: jtoye_app`, corroborated independently from the database side by `rolsuper = f`.
+  4. The pg-backup CronJob targets host MinIO and the STOMP relay stomp-login/passcode wiring reaches the spring config (no boot-time `Access refused for user 'guest'`). (INFRA-02) — **MET AS WRITTEN, with one scope statement that must not be lost.** CronJob: §11 **L3** `.status.succeeded = 1`, uploaded to host MinIO via `http://host.minikube.internal:9000`, falsified two-arm in **L4** (arm A products 0 / arm B products 47). STOMP wiring: §11 **L5** `grep -c "Access refused for user"` = **0**, plus the broker-side identity — 1 STOMP connection with `auth_login = jtoye`, `guest` = **0**, with a non-vacuity control and a fixture proving the guest predicate can fire. **NOT met, and never claimed by this criterion: the KDS relay does not actually deliver.** The stronger D-06 row — a KDS client receiving a relayed event — is FALSIFIED (§11 **L6**: 14 SUBSCRIBE / 14 `Invalid destination` / **0 MESSAGE**), because a RabbitMQ `/topic` destination may not contain `/`. `k8s/base/configmap.yaml:36` sets `relay` with no staging/production override, so both inherit it. Tracked as **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** (`bug`/`P1`); see `k8s/LOCAL.md` §7 A3. **Status 2026-07-26: #266 is CLOSED — PR #269 (`d964a85`) made the destination a single dot-separated segment (`StompDestinations`), re-parsed the tenant wall and re-ran its cross-tenant denial. This criterion is unaffected either way: it was MET AS WRITTEN before, and the *functional* row it explicitly never claimed is still not proven — L6 (a KDS client receiving a relayed order event through a real broker) has never been captured and needs a cluster. The remaining item is an evidence gap, not a defect; INFRA-02(d) stays closed on credential wiring only. A fix is not a proof.**
 
-**Plans**: TBD (est. 2)
+**Plans**: 9 plans (9 waves)
 
 Plans:
 
-- [ ] 26-01: Committed `k8s/local` overlay (host.minikube.internal endpoint shims, `minReplicas=1`, backup→MinIO) replacing imperative patches + `kubectl kustomize` build + server dry-run
-- [ ] 26-02: Verified breakage fixes — `DB_PORT` via `secretKeyRef`, `DB_USER`/`DB_PASSWORD` NOSUPERUSER role, pg-backup→host MinIO, STOMP relay login wiring + config-injection (no-hardcoded-port) assertion + boot-as-app-role smoke
+**Wave 1**
 
+- [x] 26-01-PLAN.md (Wave 1) — Golden-render baseline harness + the three surgical base fixes with verified mechanics: `DB_PORT` → `secretKeyRef` (DEF-1), `RABBITMQ_USERNAME` → `RABBITMQ_USER` (DEF-4 deploy half), the kustomize `labels` `fields:` fix that un-poisons the kube-dns NetworkPolicy selector (D-17), plus the additive `${STOMP_CLIENT_LOGIN:${RABBITMQ_USER:guest}}` chain (D-05) with a three-case resolution test; the golden harness also ships `--snapshot`/`--diff-since` (fail-closed on a missing baseline) and the rename carries a recorded pre-rollout operator confirmation of the live `rabbitmq-credentials/username` value
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 26-02-PLAN.md (Wave 2) — DEF-6 / D-15 base config-drift closure: 19 new `app-config` keys (media storage, SMTP, CORS, JWT audience, split-horizon issuer D-13, the four `localhost:3000` notification + Stripe Connect URLs D-19, log path, webhook knobs) with prod-identical or repo-derived values; four `optional: true` Secrets; frontend `KEYCLOAK_ISSUER_INTERNAL` + the dead `NEXT_PUBLIC_API_URL` injection removed (D-18); edge-go `JWT_EXPECTED_ISSUER`; DEF-2 `jtoye_app` in the recipe + template
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 26-03-PLAN.md (Wave 3) — Recurrence prevention: `check-env-contract.sh` (two-direction core-java env contract + local-only-default rule + reasoned allowlist, D-07/D-08) and `check-render-invariants.sh` (INV-1..INV-5: no hardcoded 5432, `DB_PORT` exactly-one-of `value`/`valueFrom`, kube-dns selector purity, no-localhost renders, DEF-2 docs), both wired into the `k8s-validate` CI job alongside the golden-render check
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 26-04-PLAN.md (Wave 4) — The committed `k8s/local` overlay (INFRA-01): namespace, eight `host.minikube.internal` endpoint shims, the D-09 scale triple with `maxReplicas` untouched, backup → host MinIO, ingress-nginx-v1.12.2-admissible Ingress patches (PIT-1 snippet + PIT-10 rate limits nulled, TLS removed), prod profile retained (D-10), NetworkPolicies rendered-not-enforced (D-11); plus the `k8s/base` fix removing the dangling `auth.jtoye.co.uk` -> `keycloak` rule and its TLS SAN (a host published with no backend in any render), and LOC-1..LOC-5 + the all-target INV-6 dangling-backend render assertions
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [x] 26-05-PLAN.md (Wave 5) — Bootstrap tooling: `scripts/lib/k8s-local-guards.sh` (refuse-unless-local-context + compose-XOR guard, D-04), `scripts/k8s-local-secrets.sh` (idempotent secrets + BYPASSRLS `jtoye_backup` role + non-public backup bucket, D-01/D-02), 15 new `K8S_LOCAL_*`/`DB_BACKUP_PASSWORD` `.env` keys (D-03), `scripts/k8s-local-up.sh` as the single bring-up entry point with correctly-baked local images (D-14/D-18), `scripts/deploy.sh` phantom-`dev` fix, Playwright cookie-domain parameterisation
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [x] 26-06-PLAN.md (Wave 6) — `k8s/LOCAL.md` runbook + rehearsal-evidence template (what local does and does NOT prove: no TLS/HSTS, no security-header snippet, no NetworkPolicy enforcement with the PIT-7 CIDRs written out), deploy-doc cross-links, an appended dated note on the signed readiness audit, the two-arm backup falsification recipe, and the single `docs/metrics.json` reconcile + CLAUDE.md/AGENTS.md prose sync
+
+**Wave 7** *(blocked on Wave 6 — human-gated)*
+
+- [x] 26-07-PLAN.md (Wave 7) — Live rehearsal, part 1 (D-16): human prerequisites checkpoint (compose app shutdown, `/etc/hosts`), verbatim server dry-run, 3/3 READY rollout, DEF-1/DEF-2/DEF-4 boot proofs with DEF-2 corroborated independently from the database side, and the pg-backup CronJob run with the two-arm non-empty falsification (app-role dump → `products = 0`, backup-role dump → `products > 0`)
+
+**Wave 8** *(blocked on Wave 7 — human-gated)*
+
+- [x] 26-08-PLAN.md (Wave 8) — Live rehearsal, part 2 (DEF-5 + D-06): the two planning-discovered login blockers fixed (additive `app.jtoye.local` realm redirect URI; `KEYCLOAK_CLIENT_ID` config-injected instead of a hardcoded literal absent from the dev realm), broker-side STOMP identity proof (dedicated login, zero `guest` connections), then the human-verified journey — real Keycloak vendor login through the ingress to a dashboard, and a kitchen display receiving a relayed order event
+
+**Wave 9** *(blocked on Wave 8 — ends with a human-gated end-state decision)*
+
+- [x] 26-09-PLAN.md (Wave 9) — Phase-gate closure: full `:core-java:test` (104 classes / 767 tests / 0 fail) + `:core-java:integrationTest` (98 classes / 392 tests / 0 fail, 40m) + frontend build/jest (59 suites / 377 tests) regression sweep, evidence-block completeness audit (7 live rows required, 7 filled; two corrections made — a wrong `arm B` figure in the sign-off and an unsatisfiable literal-value secret sweep replaced with a falsifiable credential-shape form), then INFRA-01 / INFRA-02 marked complete with per-sub-item cited proofs and the falsified D-06 relay row scoped out to issue #266, ROADMAP / STATE / 26-VALIDATION reconciled, and a human-gated end-state decision restoring the canonical compose app containers (cluster stopped first, XOR guard refusing again as the proof)
 **UI hint**: no
 
 ## Progress
@@ -293,4 +325,4 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
-| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 0/2 | Not started | - |
+| 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |

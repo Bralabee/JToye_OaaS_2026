@@ -287,15 +287,37 @@ jobs:
             frontend/test-results/
           retention-days: 7
 
-  # Job 1c: K8s manifest validation (#100 / P2-9, #94 / P2-3).
-  # Client-side only — builds k8s/base + every overlay with `kubectl kustomize`
-  # and fails if any output contains a top-level `kind: Secret` (committed
-  # plaintext/placeholder Secret material) or a REPLACE_WITH_* placeholder in
-  # anything other than the known deployment.timestamp annotation.
-  # SealedSecret manifests (ciphertext) are allowed.
-  # Also asserts the DB connection budget: HPA maxReplicas × Hikari pool
-  # (+ Keycloak + backup + exporter) must fit Postgres max_connections with
-  # >=20% headroom, and the core-java HPA must not scale on memory (#94).
+  # Job 1c: K8s manifest validation (#100 / P2-9, #94 / P2-3, Phase 26 INFRA-02).
+  # Client-side only (no cluster access) — five static gates, all under
+  # k8s/scripts/, all sharing the exit-code convention 0 = clean / 1 = violation /
+  # 2 = parse-or-tooling failure. Full local run + rationale for each:
+  # k8s/DEPLOYMENT.md "K8s static gates".
+  #
+  #   1. check-no-plaintext-secrets.sh — builds k8s/base + every overlay with
+  #      `kubectl kustomize` and fails if any output contains a top-level
+  #      `kind: Secret` (committed plaintext/placeholder Secret material) or a
+  #      REPLACE_WITH_* placeholder in anything other than the known
+  #      deployment.timestamp annotation. SealedSecrets (ciphertext) are allowed.
+  #   2. check-connection-math.sh — the DB connection budget: HPA maxReplicas ×
+  #      Hikari pool (+ Keycloak + backup + exporter) must fit Postgres
+  #      max_connections with >=20% headroom, and the core-java HPA must not
+  #      scale on memory (#94).
+  #   3. check-env-contract.sh — the two-direction core-java env contract
+  #      (D-07/D-08): no env is injected that no application*.yml reads (DEF-4),
+  #      and no placeholder with a local-only or missing default is left
+  #      unsupplied without a REASONED allowlist entry (DEF-6). Needs GNU
+  #      `grep -P`, which ubuntu-latest provides; it exits 2 without it.
+  #   4. check-render-invariants.sh — RENDER-level assertions that pin the
+  #      Phase 26 fixes: no hardcoded Postgres port, no EnvVar with both `value`
+  #      and `valueFrom` (the API server rejects that apply), no common labels
+  #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
+  #      outage under an enforcing CNI), no localhost/minioadmin literal in a
+  #      non-local render, and no DB superuser in the secret recipe or template.
+  #   5. render-golden.sh — byte-compares the staging and production renders
+  #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
+  #      changes either render without a regenerated, reviewed golden fails the
+  #      PR. Regenerate with `k8s/scripts/render-golden.sh --write` and commit
+  #      the golden diff in the SAME PR; never hand-edit a golden.
   k8s-validate:
     name: K8s Kustomize Secret Guard
     runs-on: ubuntu-latest
@@ -317,6 +339,63 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
+
+      - name: Assert the core-java env contract holds in both directions (D-07/D-08)
+        run: |
+          chmod +x ./k8s/scripts/check-env-contract.sh
+          ./k8s/scripts/check-env-contract.sh
+
+      - name: Assert rendered-manifest invariants (DB_PORT, kube-dns selector, no localhost, DB role)
+        run: |
+          chmod +x ./k8s/scripts/check-render-invariants.sh
+          ./k8s/scripts/check-render-invariants.sh
+
+      - name: Assert the staging/production render matches its reviewed golden
+        run: |
+          chmod +x ./k8s/scripts/render-golden.sh
+          ./k8s/scripts/render-golden.sh
+
+  # Job 1c: Branch-parity gate (2026-07-26).
+  #
+  # Asserts the PR branch contains every commit already on its base branch. A
+  # branch behind its base ships missing work that NO rebuild can fix, and every
+  # other job here will pass while measuring that out-of-date tree — which is
+  # exactly how Phase 26 verified green with a frontend missing three merged UI
+  # PRs. See k8s/DEPLOYMENT.md "Runtime-parity gates".
+  #
+  # THE `--head` ARGUMENT IS LOAD-BEARING, NOT A REFINEMENT. On a pull_request
+  # event actions/checkout checks out GitHub's SYNTHETIC MERGE COMMIT of the PR
+  # head into the base, so the checkout's own HEAD contains the base BY
+  # CONSTRUCTION and `HEAD..origin/base` is always empty. Asserting on it would be
+  # a permanently, vacuously green job. github.event.pull_request.head.sha is the
+  # branch tip as actually pushed, which is the thing reviewers and local runtimes
+  # are looking at.
+  #
+  # The runtime half of this pair — scripts/check-runtime-freshness.sh — is
+  # DELIBERATELY ABSENT from CI and must stay absent: a runner has no running
+  # containers, so it could only ever exit 2 (VOID) here, and a permanently-VOID
+  # job invites a `|| true` that would turn it into a gate that passes because it
+  # measures nothing. It runs where a runtime exists (k8s/LOCAL.md §10).
+  branch-parity:
+    name: Branch Not Behind Base
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history: the gate walks HEAD..base, which a shallow clone cannot.
+          fetch-depth: 0
+
+      - name: Assert this branch is not behind its base branch
+        run: |
+          chmod +x ./scripts/check-branch-behind-base.sh
+          ./scripts/check-branch-behind-base.sh --head "${PR_HEAD_SHA}"
+        env:
+          # Consumed by the script's resolution order; GITHUB_BASE_REF is already
+          # in the environment and names the branch this PR actually targets, so
+          # the base is never hardcoded to `main`.
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
   # Job 1d: OpenAPI breaking-change gate (#97 AC3).
   # Regenerates the core-java OpenAPI spec from source — the
@@ -503,9 +582,30 @@ jobs:
         run: go vet ./...
 
   # Job 3: Build and push Docker images
+  #
+  # CR-01 (Phase 26 code review): this `needs:` list used to be
+  # [test, integration-tests, security-scan], which meant k8s-validate, lint,
+  # openapi-compat and mcp-server-tests gated NOTHING on the deploy path — both
+  # deploy jobs depend only on build-and-push, so a push to main with
+  # DEPLOY_ENABLED=true could `kubectl apply -k k8s/production` while
+  # check-render-invariants.sh / render-golden.sh / check-env-contract.sh were
+  # simultaneously RED in the same workflow run. Plan 26-03's whole deliverable
+  # ("a one-time fix without a gate is a fix that returns") was defeated on the one
+  # path where a returning defect actually reaches a cluster.
+  #
+  # WHY A BARE `needs:` IS SAFE HERE (checked, not assumed). In GitHub Actions a
+  # job whose `needs:` entry is SKIPPED is itself skipped, so adding a skippable
+  # job here would silently BLOCK every deploy instead of gating it. None of the
+  # four added jobs can skip: none carries a job-level `if:`, and the workflow has
+  # no `paths:`/`paths-ignore:` filter. integration-tests does use
+  # dorny/paths-filter, but only for in-job STEP gating — its own comment says
+  # "never a job-level `if:`" precisely so it stays a satisfiable required check
+  # that always reports SUCCESS. That is the pattern any future conditional gate
+  # must follow; a job-level `if:` on any job listed below would turn this gate
+  # into a deploy blocker.
   build-and-push:
     name: Build and Push Images
-    needs: [test, integration-tests, security-scan]
+    needs: [test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'release'
     permissions:
@@ -555,6 +655,46 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # CR-02 (Phase 26 code review): this step used to pass NO build-args at
+          # all. Next.js INLINES every NEXT_PUBLIC_* that is present in the build
+          # environment, and frontend/Dockerfile makes them present-but-EMPTY, so
+          # the pushed frontend image baked apiOrigin:"" and shipped an ENFORCING
+          # CSP with no API/ws/Keycloak origin in connect-src — every browser fetch
+          # refused, while pods stayed READY and the server-side smoke tests passed.
+          # Observed on an image built exactly as this step built it:
+          #   connect-src 'self' https://api.stripe.com https://*.stripe.com
+          #
+          # These are PUBLIC origins and non-secret onboarding copy, so they are
+          # repo `vars` (the existing convention here — cf. vars.DEPLOY_ENABLED),
+          # NOT secrets. No new secret name is introduced. Set them under
+          # Settings > Secrets and variables > Actions > Variables:
+          #   FRONTEND_PUBLIC_API_URL                     (required)
+          #   FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL       (required)
+          #   FRONTEND_PUBLIC_SUPPORT_EMAIL               (optional)
+          #   FRONTEND_PUBLIC_SUPPORT_URL                 (optional)
+          #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
+          # If either required var is unset the frontend Dockerfile's guard FAILS
+          # THE BUILD (exit 1) instead of pushing a broken image — fail-closed, and
+          # the whole point of the fix. The three optional ones degrade gracefully
+          # (frontend/lib/env-validation.ts optionalEnvVars / resolveSupportChannel).
+          #
+          # Passed on ALL THREE matrix legs on purpose. core-java/Dockerfile and
+          # edge-go/Dockerfile declare no matching ARG, so BuildKit logs
+          # "one or more build-args were not consumed" for those two legs — a
+          # warning, not an error. Do NOT "fix" that warning by deleting these
+          # lines; a conditional per-leg expression cannot emit a multi-line
+          # build-args block (GitHub expressions have no newline literal), and
+          # splitting the step in two duplicates it and invites drift.
+          #
+          # NEXT_PUBLIC_KEYCLOAK_URL is deliberately absent: it has no ARG in the
+          # Dockerfile, which is what keeps it RUNTIME-resolvable. See the comment
+          # block in frontend/Dockerfile before you add it here.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_PUBLIC_API_URL }}
+            NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL=${{ vars.FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL }}
+            NEXT_PUBLIC_SUPPORT_EMAIL=${{ vars.FRONTEND_PUBLIC_SUPPORT_EMAIL }}
+            NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
+            NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
@@ -590,9 +730,16 @@ jobs:
           exit-code: '1'
 
   # Job 4: Deploy to staging
+  #
+  # CR-01: k8s-validate is listed DIRECTLY as well as transitively through
+  # build-and-push. Deliberate redundancy — it makes "the deploy path is gated by
+  # the five k8s static gates" a property of this job rather than something that
+  # depends on build-and-push's needs list staying correct. Safe for the same
+  # reason documented on build-and-push: k8s-validate has no job-level `if:` and
+  # the workflow has no path filter, so it cannot skip and cannot cascade a skip.
   deploy-staging:
     name: Deploy to Staging
-    needs: [build-and-push]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     # Gated OFF by default, mirroring the deploy-production DEPLOY_ENABLED gate
     # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
@@ -623,6 +770,59 @@ jobs:
           tar -xzf kustomize.tar.gz kustomize
           sudo mv kustomize /usr/local/bin/kustomize
           kustomize version
+
+      # CR-02: the baked frontend origin must match the environment being deployed.
+      # Runs BEFORE kubeconfig is written — it needs no cluster access, so it fails
+      # before any credential is materialised.
+      #
+      # build-and-push produces ONE frontend image per commit, and NEXT_PUBLIC_API_URL
+      # is INLINED into it at build time. A single image therefore carries a single
+      # API origin and can only be correct for the environment whose app-config
+      # api.url equals it. Nothing enforced that, so supplying the build-arg without
+      # this check would trade CR-02's silent empty origin for an equally silent
+      # WRONG origin (e.g. a production-baked image serving staging). Asserting it
+      # here keeps the fix additive instead of moving the defect.
+      #
+      # This is also the first real consumer of app-config `api.url` in CI: the key
+      # had zero configMapKeyRef consumers in any render after D-18 deleted the dead
+      # runtime env, which is the DEF-4/DEF-6 "config that reaches nothing" shape.
+      #
+      # EXPECTED CONSEQUENCE, stated plainly: k8s/staging api.url is
+      # https://api-staging.jtoye.co.uk and k8s/production api.url is
+      # https://api.jtoye.co.uk, so with one image and one FRONTEND_PUBLIC_API_URL
+      # only ONE of the two deploys can pass this gate. That is the honest state of
+      # a single-image pipeline, and failing loudly here is the point. The durable
+      # fix is per-environment frontend images (or a genuinely runtime CSP origin);
+      # both are larger changes than this review finding, and both deploy jobs are
+      # gated OFF by repo variable today.
+      - name: Assert the baked frontend API origin matches this environment (CR-02)
+        env:
+          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+        run: |
+          set -euo pipefail
+          kustomize build k8s/staging > /tmp/staging-render.yaml
+          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/staging-render.yaml)"
+          if [ -z "$RENDER_API_URL" ]; then
+            echo "FATAL: could not read app-config api.url from the k8s/staging render — this guard is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ -z "$BAKED_API_URL" ]; then
+            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
+            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
+            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
+            exit 2
+          fi
+          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
+            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
+            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
+            echo "         k8s/staging app-config api.url:                           $RENDER_API_URL" >&2
+            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
+            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
+            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
+            exit 1
+          fi
+          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
 
       - name: Configure kubeconfig
         run: |
@@ -681,9 +881,13 @@ jobs:
           exit 1
 
   # Job 5: Deploy to production
+  #
+  # CR-01: k8s-validate listed directly as well as transitively — see the
+  # deploy-staging comment above for why that redundancy is deliberate and why a
+  # bare `needs:` on it cannot skip-cascade.
   deploy-production:
     name: Deploy to Production
-    needs: [build-and-push]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
@@ -710,6 +914,39 @@ jobs:
           tar -xzf kustomize.tar.gz kustomize
           sudo mv kustomize /usr/local/bin/kustomize
           kustomize version
+
+      # CR-02: identical guard to deploy-staging's — see the long rationale there
+      # (one image bakes one inlined API origin, so it is only correct for the
+      # environment whose app-config api.url equals it). Runs before kubeconfig is
+      # written, needs no cluster access, and fails closed on an unreadable render.
+      - name: Assert the baked frontend API origin matches this environment (CR-02)
+        env:
+          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+        run: |
+          set -euo pipefail
+          kustomize build k8s/production > /tmp/production-render.yaml
+          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/production-render.yaml)"
+          if [ -z "$RENDER_API_URL" ]; then
+            echo "FATAL: could not read app-config api.url from the k8s/production render — this guard is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ -z "$BAKED_API_URL" ]; then
+            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
+            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
+            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
+            exit 2
+          fi
+          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
+            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
+            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
+            echo "         k8s/production app-config api.url:                        $RENDER_API_URL" >&2
+            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
+            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
+            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
+            exit 1
+          fi
+          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/production app-config api.url ($RENDER_API_URL)"
 
       - name: Configure kubeconfig
         run: |

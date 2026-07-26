@@ -43,3 +43,141 @@ data:
   s3.backup.prefix: "backups"
   s3.backup.region: "eu-west-2"
   s3.backup.endpoint: ""
+
+  # ===========================================================================
+  # DEF-6 / D-15 / D-19 (Phase 26 / INFRA-02): base-manifest config drift versus
+  # the shipped v2.2/v2.3 feature set.
+  #
+  # Before this block, k8s/base injected 23 env vars into core-java (DB,
+  # Keycloak, Redis, RabbitMQ, STOMP) and NOTHING for media storage, email,
+  # CORS, token audience, notification origins, Stripe Connect origins, the log
+  # path or the webhook-delivery knobs. Every one of those placeholders in
+  # core-java/src/main/resources/application.yml therefore resolved to its
+  # Spring default — and several of those defaults are loopback/dev-only
+  # literals. That is the DEF-4 defect class: an ABSENT env resolving to a
+  # working-looking default, in staging and production as much as locally.
+  #
+  # PROVENANCE RULE for every value below: it is either byte-identical to the
+  # application.yml default (so behaviour is unchanged and the value simply
+  # becomes explicit and overridable per environment) or derived from a value
+  # ALREADY COMMITTED in this repo. No production hostname is invented. Each
+  # comment names its source so a reviewer can check that claim.
+  # ===========================================================================
+
+  # --- D-13 split-horizon issuer ---------------------------------------------
+  # keycloak.issuer.uri (above) is the POD-REACHABLE issuer: it is what locates
+  # the JWKS endpoint. keycloak.public.issuer.uri is the issuer Keycloak STAMPS
+  # into the token's `iss` claim, which is what must be validated against.
+  # In a single-host deployment the two are the same URL, which is why the gap
+  # stayed invisible; in a split-host topology they differ, and validating `iss`
+  # against the JWKS host rejects every real token (issue #87 — a total
+  # live-auth outage, see the jwt_issuer_jwks_split_horizon record).
+  # SOURCE: byte-identical to keycloak.issuer.uri above, so the rendered
+  # production behaviour is unchanged; the local overlay patches it to the
+  # browser-reachable half. Consumed as core JWT_EXPECTED_ISSUER, edge
+  # JWT_EXPECTED_ISSUER and frontend KEYCLOAK_ISSUER.
+  keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+
+  # --- Frontend OIDC client id (Phase 26 / plan 26-08) -----------------------
+  # This key exists because k8s/base/frontend-deployment.yaml hardcoded the
+  # literal `value: "frontend"` for KEYCLOAK_CLIENT_ID. That is the same
+  # config-injection violation as DEF-1's DB_PORT hardcode (GLOBAL_RULE_6 /
+  # ARCHITECTURE_RULE_8): an environment-VARYING value baked into the shared
+  # base, so no overlay could change it without patching the Deployment itself.
+  #
+  # It was not merely a style point — it made the local ingress login
+  # IMPOSSIBLE. The dev realm (infra/keycloak/realm-export.template.json) has
+  # NO client named `frontend`; the client the frontend actually authenticates
+  # as is `core-api` (.env / .env.example both set KEYCLOAK_CLIENT_ID=core-api).
+  # A hardcoded `frontend` therefore started an OIDC flow against a client that
+  # does not exist in that realm, which DEF-5's D-16 ingress login has to pass
+  # through. Only the local overlay patches this key; see
+  # k8s/local/configmap-patch.yaml.
+  #
+  # SOURCE: byte-identical to the literal it replaces, so the staging and
+  # production renders resolve to the SAME string they did before — the render
+  # gains a ConfigMap key and an env SOURCE, never a changed value. Asserted on
+  # the production render (T-26-48: a silently changed OIDC client identity is
+  # an elevation-of-privilege surface, so the value equality is a criterion,
+  # not an assumption).
+  keycloak.client-id: "frontend"
+
+  # --- CORS + token audience -------------------------------------------------
+  # cors.allowed-origins pins the single platform origin. NOT a wildcard.
+  # It is ALSO read by WebSocketConfig (setAllowedOrigins) — the same property
+  # backs both the REST CorsConfig and the KDS STOMP handshake, so an absent
+  # value silently allowed only the dev-default origin for both.
+  # SOURCE: the existing frontend.url key above (each overlay patches it to its
+  # own frontend.url).
+  cors.allowed-origins: "https://app.jtoye.co.uk"
+  # SOURCE: application.yml `${JWT_EXPECTED_AUDIENCE:core-api}` — identical, so
+  # validation neither loosens nor tightens. AudienceValidator throws at
+  # construction on a blank value, so this key can never silently no-op.
+  jwt.expected-audience: "core-api"
+
+  # --- Logging path ----------------------------------------------------------
+  # SOURCE: application-prod.yml `${LOG_PATH:/var/log/jtoye}` — identical.
+  log.path: "/var/log/jtoye"
+
+  # --- Media storage (S3) — IMG-01..04 / Phase 24 ----------------------------
+  # Unsupplied, storage.s3.* resolved to a dev MinIO endpoint with the
+  # well-known minioadmin/minioadmin credentials, so every vendor image upload
+  # in staging/production wrote to a target that does not exist there.
+  # SOURCE: s3.region is the committed s3.backup.region above; s3.bucket is
+  # application.yml `${S3_BUCKET:jtoye-images}`; s3.endpoint is the AWS regional
+  # S3 endpoint FOR that committed region; s3.public-url is the two
+  # concatenated. Credentials are NOT here — they come from the OPTIONAL
+  # s3-media-credentials Secret (see core-java-deployment.yaml).
+  s3.endpoint: "https://s3.eu-west-2.amazonaws.com"
+  s3.region: "eu-west-2"
+  s3.bucket: "jtoye-images"
+  s3.public-url: "https://s3.eu-west-2.amazonaws.com/jtoye-images"
+
+  # --- Email (SMTP) — Phase 22 shipped SES-over-SMTP -------------------------
+  # SOURCE: smtp.host is the AWS SES SMTP endpoint for the committed
+  # s3.backup.region (eu-west-2); smtp.port/auth/starttls are byte-identical to
+  # application.yml's `${SMTP_PORT:587}` / `${SMTP_AUTH:false}` /
+  # `${SMTP_STARTTLS:true}`.
+  #
+  # smtp.auth STAYS "false" DELIBERATELY. It is identical to today's default, so
+  # no credential is offered to any relay and base behaviour is unchanged. An
+  # operator enabling a real relay must do BOTH of: flip smtp.auth (and
+  # smtp.starttls if needed) in that environment's configmap-patch.yaml, AND
+  # create the OPTIONAL smtp-credentials Secret. Until both happen the email
+  # channel stays inert rather than becoming a loud SMTP auth failure.
+  smtp.host: "email-smtp.eu-west-2.amazonaws.com"
+  smtp.port: "587"
+  smtp.auth: "false"
+  smtp.starttls: "true"
+
+  # --- D-19 notification origins (production-affecting) ----------------------
+  # These two default to a loopback dev origin in application.yml, so EVERY
+  # production notification email carried an unsubscribe link and an open/click
+  # tracking URL pointing at the recipient's own machine — a dead link for the
+  # customer and, for unsubscribe, a GDPR/PECR-relevant broken opt-out.
+  # SOURCE: the existing frontend.url key above (overlays patch per env).
+  notification.email.tracking-base-url: "https://app.jtoye.co.uk"
+  notification.unsubscribe.base-url: "https://app.jtoye.co.uk"
+
+  # --- D-19 Stripe Connect return origins (production-affecting) -------------
+  # Same defect class: a vendor completing Stripe Connect onboarding was
+  # redirected to a loopback dev origin instead of the platform, stranding the
+  # MARKETPLACE payout setup at the last step.
+  # SOURCE: frontend.url above + the exact paths in application.yml's
+  # `${STRIPE_CONNECT_RETURN_URL:...}` / `${STRIPE_CONNECT_REFRESH_URL:...}`
+  # defaults. The Stripe API key and webhook secret are NOT here — they come
+  # from the OPTIONAL stripe-credentials Secret.
+  stripe.connect.return-url: "https://app.jtoye.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app.jtoye.co.uk/dashboard/payments/connect/refresh"
+
+  # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
+  # SOURCE: all three byte-identical to their application.yml defaults
+  # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}`,
+  # `${WEBHOOK_DELIVERY_RETENTION_DAYS:30}`,
+  # `${WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES:true}`). Made explicit so the
+  # retry/retention budget and the SSRF private-range block are reviewable and
+  # per-environment tunable instead of being invisible code defaults.
+  # block-private-ranges is a SECURITY control: keep it "true".
+  webhook.delivery.max-attempts: "8"
+  webhook.delivery.retention-days: "30"
+  webhook.target.block-private-ranges: "true"

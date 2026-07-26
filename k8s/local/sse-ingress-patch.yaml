@@ -1,0 +1,54 @@
+---
+# =============================================================================
+# LOCAL jtoye-sse-ingress patch (Phase 26 / D-12)
+#
+# WHAT LOCAL THEREFORE DOES NOT PROVE: the same caveat as ingress-patch.yaml —
+# no cert-manager, no TLS, no security-header snippet, so a green local run says
+# nothing about HSTS, the security headers or TLS termination. Recorded in the
+# k8s/LOCAL.md runbook (plan 26-06).
+#
+# WHY THIS INGRESS EXISTS AT ALL (do not fold it into jtoye-ingress)
+#   nginx annotations apply PER Ingress resource. The main ingress keeps a 60s
+#   proxy-read-timeout, which is right for API calls and fatal for a long-lived
+#   text/event-stream response. This Ingress gives the SSE order-event stream its
+#   own nginx location block with streaming-appropriate settings. nginx merges
+#   rules for the same host across Ingresses and the EXACT path below wins over
+#   the other ingress's `/` prefix, which is why both can serve api.jtoye.local.
+#
+# EVERY SSE-SPECIFIC ANNOTATION IS PRESERVED
+#   The 3600s send/read timeouts and `proxy-buffering: off` are the entire reason
+#   this object exists, and none of them is in the admission-rejected snippet
+#   class — so they are NOT touched. Only the TLS/redirect/CORS surface changes.
+#   The base file also deliberately omits the rate-limit annotations (an SSE
+#   client holds one connection for hours), so there is nothing to null here.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jtoye-sse-ingress
+  annotations:
+    # No cert-manager locally (a null value removes the annotation).
+    cert-manager.io/cluster-issuer: null
+    # Local is plain HTTP; an SSL redirect would break the stream before it opens.
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # The dashboard opens the stream cross-origin with an Authorization header,
+    # so this must match app-config `cors.allowed-origins` exactly.
+    nginx.ingress.kubernetes.io/cors-allow-origin: "http://app.jtoye.local"
+spec:
+  # Deletes the whole TLS block — see ingress-patch.yaml for why the self-signed
+  # nginx fallback is worse than plain HTTP locally.
+  tls: null
+  # REPLACES the base list (`rules:` has no patch merge key). One rule, one exact
+  # path, same host as the API ingress.
+  rules:
+    - host: api.jtoye.local
+      http:
+        paths:
+          - path: /api/v1/orders/stream
+            pathType: Exact
+            backend:
+              service:
+                name: core-java
+                port:
+                  number: 9090

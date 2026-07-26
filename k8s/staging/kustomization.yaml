@@ -10,11 +10,30 @@ resources:
   - ../base
   - namespace.yaml
 
-# Staging-specific labels (labels+includeSelectors replaces deprecated commonLabels)
+# Staging-specific labels.
+# D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —
+# see the rationale there. The base entry alone is NOT sufficient: this overlay's
+# own `includeSelectors: true` re-injected `environment: staging` (and re-triggered
+# the same transformer pass) into the kube-dns DNS-egress podSelector, so all three
+# kustomizations must carry the same shape.
 labels:
   - pairs:
       environment: staging
-    includeSelectors: true
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service
+      - path: spec/selector/matchLabels
+        create: true
+        group: policy
+        kind: PodDisruptionBudget
 
 # Staging-specific annotations
 commonAnnotations:
