@@ -3,6 +3,37 @@
 Out-of-scope discoveries logged during execution (per executor SCOPE BOUNDARY). These are NOT
 fixed in the plan that discovered them. Plans 26-04, 26-06 and 26-08 append to this file.
 
+> **Tracked as GitHub issues — v2.3 milestone backlog review, 2026-07-26.**
+> This file is archived to `.planning/milestones/v2.3-phases/` at milestone close, so every
+> still-open entry below was filed as an issue first. Nothing here is dropped.
+>
+> | Entry | Issue |
+> |---|---|
+> | 26-02 — one frontend image can bake only one correct API origin (CR-02 residue) | **#292** |
+> | 26-02 — `NEXT_PUBLIC_KEYCLOAK_URL` reaches no k8s frontend pod | **#293** |
+> | 26-02 — four external-endpoint base values UNVERIFIABLE-FROM-THIS-HOST | **#294** |
+> | 26-02 — Stripe Connect return/refresh paths have no frontend route (404) | **#295** |
+> | 26-04 — in-cluster Keycloak manifests + the `auth.jtoye.co.uk` ingress rule + TLS SAN | **#296** |
+> | 26-06 — Calico CNI locally to actually enforce NetworkPolicies | **#297** |
+> | 26-06 — env-contract gate covers core-java only; `edge-go` + frontend ungated | **#298** |
+> | 26-06 — customer-storefront realm unconfigured in EVERY k8s environment | **#299** |
+> | 26-06 — sealed-secrets / external-secrets for the local path (Work Order H) | **#300** |
+> | 26-06 — no `mcp-server` k8s manifest set | **#301** |
+> | 26-06 — `emptyDir` at `/var/log/jtoye` is the durable PIT-5 fix | **#302** |
+> | 26-06 — `OLLAMA_URL` / `ZIPKIN_ENDPOINT` allowlisted omissions | **#303** |
+> | `frontend/e2e/stomp-relay.spec.ts` cannot run against the ingress | **#304** |
+> | `dashboard-mobile.spec.ts:268` strict-mode fragile (duplicate tab bar) | **#305** |
+>
+> **Fixed by the review itself, no issue filed:** the `.planning/PROJECT.md` stale-test-baseline entry
+> — that entry's own "Suggested owner" line names `/gsd:review-backlog` / the v2.3 wrap-up as its owner,
+> and it is fixed in the same commit as this annotation (line 128 now points at `docs/metrics.json`
+> rather than quoting a number that no gate checks).
+>
+> Already closed in-phase: the compose⊕k8s XOR guard blind spot (`6a2663b` + `a4ddc50`); the STOMP
+> relay KDS-topic production defect (**#266** → `d964a85`, PR **#269**). Note that #266 is *fixed but
+> unproven end-to-end* — `26-VALIDATION.md`'s INFRA-02d row stays RED deliberately, and **#304** is the
+> cheapest path to closing it.
+
 ## 26-02 — CI builds frontend images with NO `NEXT_PUBLIC_*` build args
 
 **Discovered during:** 26-02 Task 2 (D-18 dead-config removal).

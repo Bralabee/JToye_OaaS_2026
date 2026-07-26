@@ -3,6 +3,18 @@
 Out-of-scope discoveries logged during plan execution (SCOPE BOUNDARY rule). These
 are NOT fixed by the discovering plan; they are reconciled at the phase gate.
 
+> **Tracked as GitHub issues — v2.3 milestone backlog review, 2026-07-26.**
+> This file is archived to `.planning/milestones/v2.3-phases/` at milestone close, so every
+> still-open entry below was filed as an issue first. Nothing here is dropped.
+>
+> | Entry | Issue |
+> |---|---|
+> | WR-04 — unsubscribe token/email as query-string params on POST | **#278** |
+> | IN-02 — no general HTML-escape helper in `EmailTemplateRenderer` | **#279** |
+>
+> Already closed in-phase, no issue needed: OpenAPI snapshot regen and the `docs/metrics.json`
+> reconcile (both executed at the Phase 23 gate by plan 23-15); CR-01 SSRF/DNS-rebinding (`5d7b88d`).
+
 ## OpenAPI snapshot (`docs/api/openapi-snapshot.json`) is stale — needs one phase-gate regeneration
 
 **Discovered during:** 22-03 (webhook subscriptions).
