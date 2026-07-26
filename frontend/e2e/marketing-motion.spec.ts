@@ -13,7 +13,11 @@
  *   - `.gsap-word`               — hand-split headline word spans (desktop only)
  *   - `[data-motion-active]`     — set by each enhancer INSIDE the matchMedia
  *                                  desktop branch; absent on mobile/reduced-motion
- *   - `.pin-spacer`              — inserted by ScrollTrigger.pin (desktop only)
+ *   - `.pin-spacer`              — inserted by ScrollTrigger.pin. `/` still uses
+ *                                  none; `/for-operators` must now have NONE
+ *                                  either (its pins were removed so the page
+ *                                  arrives populated instead of filling on scroll)
+ *   - `[data-rail-item]`         — the three Service-rail items (visible on load)
  *   - `[data-pilot-step]`        — the four pilot steps (must stay visible on the floor)
  */
 import { test, expect } from "@playwright/test"
@@ -55,7 +59,7 @@ test.describe("desktop GSAP scenes (>=768px + motion)", () => {
     expect(after).not.toBe(before)
   })
 
-  test("/for-operators pins the hero, splits the headline, scrolls the pilot rail horizontally", async ({
+  test("/for-operators arrives POPULATED — headline + rail visible without scrolling, no pin", async ({
     page,
   }) => {
     await page.goto(`${BASE}/for-operators`)
@@ -65,12 +69,32 @@ test.describe("desktop GSAP scenes (>=768px + motion)", () => {
       await page.locator("[data-op-headline] .gsap-word").count(),
     ).toBeGreaterThanOrEqual(2)
 
-    // Scroll into the pinned Service-rail hero → ScrollTrigger inserts a pin-spacer.
-    await page.mouse.wheel(0, 400)
-    await page.waitForTimeout(400)
-    expect(await page.locator(".pin-spacer").count()).toBeGreaterThanOrEqual(1)
+    // The entrance plays on LOAD. Past the longest delay+duration (0.35 + 0.55)
+    // everything above the fold must be readable with the page never scrolled —
+    // the hero used to be pinned and the Service rail scrubbed in, so both
+    // landed EMPTY until the user scrolled.
+    await page.waitForTimeout(1400)
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
 
-    // Drive deep into the pinned pilot section → the track translates horizontally.
+    const headline = page.locator("[data-op-headline]")
+    await expect(headline).toBeVisible()
+    const headlineOpacity = await headline.evaluate(
+      (el) => getComputedStyle(el).opacity,
+    )
+    expect(Number(headlineOpacity)).toBeGreaterThan(0.9)
+
+    const rail = page.locator("[data-rail-item]")
+    const railCount = await rail.count()
+    expect(railCount).toBeGreaterThanOrEqual(3)
+    for (let i = 0; i < railCount; i++) {
+      await expect(rail.nth(i)).toBeVisible()
+      const opacity = await rail.nth(i).evaluate((el) => getComputedStyle(el).opacity)
+      expect(Number(opacity)).toBeGreaterThan(0.9)
+    }
+
+    // No scroll hijack anywhere on the page: nothing is pinned any more, and
+    // the four pilot steps are a plain grid rather than a horizontal track.
+    expect(await page.locator(".pin-spacer").count()).toBe(0)
     const track = page.locator("[data-pilot-track]").first()
     const start = await track.evaluate((el) => getComputedStyle(el).transform)
     for (let i = 0; i < 10; i++) {
@@ -78,7 +102,8 @@ test.describe("desktop GSAP scenes (>=768px + motion)", () => {
       await page.waitForTimeout(120)
     }
     const end = await track.evaluate((el) => getComputedStyle(el).transform)
-    expect(end).not.toBe(start)
+    expect(end).toBe(start)
+    expect(await page.locator(".pin-spacer").count()).toBe(0)
   })
 })
 

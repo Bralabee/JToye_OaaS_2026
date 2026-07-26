@@ -6,6 +6,7 @@ import {
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
+import { AspectFrame } from "@/components/ui/aspect-frame"
 import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
@@ -94,16 +95,18 @@ export function ProductDetailModal({
             <X className="h-5 w-5" />
           </button>
 
-          {/* Image carousel */}
+          {/* Image carousel. The fixed-ratio window comes from AspectFrame —
+              see the note there for why hand-rolling it silently produced a
+              modal that changed shape with every photo. Overlays ride as
+              children and position against the frame. */}
           {images.length > 0 ? (
-            <div className="relative aspect-[4/3] bg-slate-100 flex-shrink-0">
-              <SafeImage
-                src={images[currentImageIndex]}
-                alt={`${product.title} - image ${currentImageIndex + 1}`}
-                className="w-full h-full object-cover"
-                loading="eager"
-              />
-
+            <AspectFrame
+              ratio="4/3"
+              src={images[currentImageIndex]}
+              alt={`${product.title} - image ${currentImageIndex + 1}`}
+              loading="eager"
+              className="bg-cream flex-shrink-0"
+            >
               {/* Navigation arrows */}
               {hasMultipleImages && (
                 <>
@@ -152,16 +155,23 @@ export function ProductDetailModal({
                           : "ring-transparent opacity-70 hover:opacity-100"
                       }`}
                     >
+                      {/* Definite-height box (h-10), so h-full resolves. */}
                       <SafeImage src={url} alt="" className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
               )}
-            </div>
+            </AspectFrame>
           ) : (
-            <div className="aspect-[4/3] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center flex-shrink-0">
-              <ShoppingBag className="h-16 w-16 text-slate-200" />
-            </div>
+            // Same window with no image: AspectFrame renders SafeImage's
+            // fallback, so the placeholder cannot drift from the real frame.
+            <AspectFrame
+              ratio="4/3"
+              src={null}
+              alt=""
+              className="bg-gradient-to-br from-cream-100 to-cream flex-shrink-0"
+              fallbackIcon={<ShoppingBag className="h-16 w-16 text-oxblood/25" />}
+            />
           )}
 
           {/* Content */}
@@ -197,7 +207,7 @@ export function ProductDetailModal({
                   </span>
                 ))}
                 {product.preparationTimeMinutes && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2.5 py-1 text-xs font-medium">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cream text-oxblood-600 px-2.5 py-1 text-xs font-medium">
                     <Timer className="h-3 w-3" />
                     {product.preparationTimeMinutes} min
                   </span>
@@ -250,7 +260,7 @@ export function ProductDetailModal({
           </div>
 
           {/* Sticky add-to-cart footer */}
-          <div className="border-t border-slate-100 p-4 bg-white flex-shrink-0">
+          <div className="border-t border-cream-100 p-4 bg-white flex-shrink-0">
             {outOfStock ? (
               <button
                 disabled
@@ -261,7 +271,7 @@ export function ProductDetailModal({
             ) : quantity === 0 ? (
               <button
                 onClick={onAdd}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 transition-all active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink font-semibold py-3 px-4 transition-all active:scale-[0.98]"
               >
                 <ShoppingBag className="h-5 w-5" />
                 Add to cart &middot; {formatPrice(product.pricePennies)}
@@ -272,14 +282,14 @@ export function ProductDetailModal({
                 <div className="flex items-center gap-3">
                   <button
                     onClick={onDecrement}
-                    className="h-10 w-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all active:scale-95"
+                    className="h-10 w-10 rounded-full bg-cream hover:bg-cream-100 flex items-center justify-center transition-all active:scale-95"
                   >
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="text-lg font-bold w-8 text-center">{quantity}</span>
                   <button
                     onClick={onIncrement}
-                    className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition-all active:scale-95"
+                    className="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink flex items-center justify-center transition-all active:scale-95"
                   >
                     <Plus className="h-4 w-4" />
                   </button>

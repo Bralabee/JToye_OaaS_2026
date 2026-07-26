@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react"
+import { useStoredState } from "@/hooks/use-stored-state"
 
 export interface CartItem {
   productId: string
@@ -33,24 +34,8 @@ function getStorageKey(slug: string) {
   return `jtoye-cart-${slug}`
 }
 
-function loadCart(slug: string): CartItem[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = localStorage.getItem(getStorageKey(slug))
-    if (!raw) return []
-    const parsed: CartState = JSON.parse(raw)
-    if (parsed.shopSlug !== slug) return []
-    return parsed.items || []
-  } catch {
-    return []
-  }
-}
-
-function saveCart(slug: string, items: CartItem[]) {
-  if (typeof window === "undefined") return
-  const state: CartState = { shopSlug: slug, items }
-  localStorage.setItem(getStorageKey(slug), JSON.stringify(state))
-}
+/** Stable identity, so it can never itself trigger a state change. */
+const EMPTY_ITEMS: CartItem[] = []
 
 export function CartProvider({
   shopSlug,
@@ -59,29 +44,42 @@ export function CartProvider({
   shopSlug: string
   children: ReactNode
 }) {
-  const [items, setItems] = useState<CartItem[]>([])
-
-  // Load from localStorage on mount
-  useEffect(() => {
-    setItems(loadCart(shopSlug))
-  }, [shopSlug])
-
-  // Persist to localStorage on change, then broadcast so same-document
-  // listeners (nav basket badge) update without a context subscription.
-  // Counts are computed inline from `items` to avoid new effect deps.
-  useEffect(() => {
-    saveCart(shopSlug, items)
-    if (typeof window === "undefined") return
-    window.dispatchEvent(
-      new CustomEvent("jtoye:cart-updated", {
-        detail: {
-          slug: shopSlug,
-          itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-          totalPennies: items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0),
-        },
-      })
-    )
-  }, [shopSlug, items])
+  // Read + write ordering (never persist a basket we have not yet hydrated for
+  // THIS slug) lives in useStoredState — see the note there for the clobber and
+  // the cross-shop leak it closes. Keeping it there rather than here means the
+  // next storage-backed piece of state gets it right for free.
+  const [items, setItems] = useStoredState<CartItem[]>(
+    getStorageKey(shopSlug),
+    EMPTY_ITEMS,
+    {
+      // Stored shape carries its own slug; a mismatched payload is rejected so
+      // a stale key can never surface another shop's basket.
+      parse: (raw) => {
+        const parsed = JSON.parse(raw) as CartState
+        if (parsed.shopSlug !== shopSlug) return undefined
+        return parsed.items || []
+      },
+      serialize: (value) =>
+        JSON.stringify({ shopSlug, items: value } satisfies CartState),
+      // Broadcast so same-document listeners (the nav basket badge) update
+      // without subscribing to this context.
+      onPersist: (value) => {
+        if (typeof window === "undefined") return
+        window.dispatchEvent(
+          new CustomEvent("jtoye:cart-updated", {
+            detail: {
+              slug: shopSlug,
+              itemCount: value.reduce((sum, i) => sum + i.quantity, 0),
+              totalPennies: value.reduce(
+                (sum, i) => sum + i.pricePennies * i.quantity,
+                0
+              ),
+            },
+          })
+        )
+      },
+    }
+  )
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {
     setItems((prev) => {
@@ -95,11 +93,11 @@ export function CartProvider({
       }
       return [...prev, { ...item, quantity: 1 }]
     })
-  }, [])
+  }, [setItems])
 
   const removeItem = useCallback((productId: string) => {
     setItems((prev) => prev.filter((i) => i.productId !== productId))
-  }, [])
+  }, [setItems])
 
   const updateQuantity = useCallback((productId: string, quantity: number) => {
     if (quantity <= 0) {
@@ -111,11 +109,11 @@ export function CartProvider({
         )
       )
     }
-  }, [])
+  }, [setItems])
 
   const clearCart = useCallback(() => {
     setItems([])
-  }, [])
+  }, [setItems])
 
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPennies = items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0)

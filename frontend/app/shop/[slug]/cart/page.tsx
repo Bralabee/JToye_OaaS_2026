@@ -17,12 +17,12 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
   if (items.length === 0) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
-        <ShoppingBag className="h-16 w-16 text-slate-200" />
+        <ShoppingBag className="h-16 w-16 text-oxblood/25" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Your basket is empty</h2>
         <p className="mt-1 text-sm text-slate-500">Add items from the menu to get started.</p>
         <Link
           href={`/shop/${slug}`}
-          className="mt-6 inline-flex items-center gap-2 rounded-full bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 transition-colors"
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to menu
@@ -59,7 +59,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         {items.map((item) => (
           <div
             key={item.productId}
-            className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 p-3 shadow-sm"
+            className="flex items-center gap-3 rounded-xl bg-white border border-cream-100 p-3 shadow-sm"
           >
             {/* Image with branded fallback — no broken <img> ever renders */}
             <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden">
@@ -67,7 +67,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
                 src={item.imageUrl}
                 alt={item.title}
                 className="h-full w-full object-cover"
-                fallbackClassName="h-full w-full bg-slate-100"
+                fallbackClassName="h-full w-full bg-cream"
                 fallbackIcon={<Store className="h-6 w-6 text-slate-300" />}
               />
             </div>
@@ -87,7 +87,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <div className="flex items-center gap-0">
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity - 1)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-95 transition-all"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 hover:bg-cream active:scale-95 transition-all"
               >
                 {item.quantity === 1 ? <Trash2 className="h-3.5 w-3.5 text-red-400" /> : <Minus className="h-3.5 w-3.5" />}
               </button>
@@ -96,7 +96,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
               </span>
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 active:scale-95 transition-all"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 hover:bg-cream active:scale-95 transition-all"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -106,12 +106,12 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       </div>
 
       {/* Order summary */}
-      <div className="mt-6 rounded-xl bg-white border border-slate-100 p-4 shadow-sm">
+      <div className="mt-6 rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-600">Subtotal</span>
           <span className="font-semibold text-slate-900">{formatPrice(totalPennies)}</span>
         </div>
-        <div className="mt-4 border-t border-slate-100 pt-4 flex items-center justify-between">
+        <div className="mt-4 border-t border-cream-100 pt-4 flex items-center justify-between">
           <span className="text-base font-bold text-slate-900">Total</span>
           <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
         </div>
@@ -121,14 +121,14 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       <div className="mt-6 space-y-3">
         <Link
           href={`/shop/${slug}/checkout`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3.5 text-sm font-bold text-white hover:bg-orange-600 active:scale-[0.98] transition-all shadow-lg"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
         >
           Proceed to checkout
-          <span className="text-orange-200">{formatPrice(totalPennies)}</span>
+          <span className="text-gold">{formatPrice(totalPennies)}</span>
         </Link>
         <Link
           href={`/shop/${slug}`}
-          className="flex w-full items-center justify-center gap-1 rounded-2xl border border-slate-200 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          className="flex w-full items-center justify-center gap-1 rounded-2xl border border-cream-100 py-3 text-sm font-medium text-slate-600 hover:bg-cream transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Add more items

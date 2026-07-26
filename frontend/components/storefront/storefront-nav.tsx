@@ -75,7 +75,7 @@ export function StorefrontNav() {
   const desktopLink = (active: boolean) =>
     cn(
       "transition-colors",
-      active ? "text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900"
+      active ? "text-oxblood font-semibold" : "text-slate-600 hover:text-oxblood"
     )
 
   // Same mobile sheet-link idiom as PublicHeader (44px touch target, active tint).
@@ -83,7 +83,7 @@ export function StorefrontNav() {
     cn(
       "flex min-h-11 items-center rounded-lg px-4 text-sm transition-colors",
       active
-        ? "bg-slate-100 text-slate-900 font-semibold"
+        ? "bg-cream text-oxblood font-semibold"
         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
     )
 
@@ -92,8 +92,10 @@ export function StorefrontNav() {
       {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
           including "For operators" so the operator door is reachable from /shop. */}
       <div className="hidden sm:flex items-center gap-4">
+        {/* Label parity with PublicHeader — the same destination must not be
+            called "Shops" on one surface and "Browse" on the next. */}
         <Link href="/shop" className={desktopLink(pathname === "/shop")}>
-          Browse
+          Shops
         </Link>
         <Link
           href="/for-operators"
@@ -141,7 +143,7 @@ export function StorefrontNav() {
               initial={{ scale: 0.5 }}
               animate={{ scale: 1 }}
               transition={springPop}
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-xs font-bold leading-none text-white"
+              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-oxblood px-1 text-xs font-bold leading-none text-white"
             >
               {cartCount}
             </m.span>
@@ -170,7 +172,7 @@ export function StorefrontNav() {
       ) : (
         <button
           onClick={() => customerLogin(typeof window !== "undefined" ? window.location.pathname : "/shop")}
-          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
         >
           <User className="h-3 w-3" />
           Sign in
@@ -184,19 +186,19 @@ export function StorefrontNav() {
           <button
             type="button"
             aria-label="Open menu"
-            className="sm:hidden inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            className="sm:hidden inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           >
             <Menu className="h-5 w-5" />
           </button>
         </SheetTrigger>
         <SheetContent side="right" hideCloseButton className="w-72 p-0">
-          <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
+          <div className="flex h-14 items-center justify-between border-b border-cream-100 px-4">
             <SheetTitle className="text-base font-semibold text-slate-900">
               Menu
             </SheetTitle>
             <SheetClose
               aria-label="Close menu"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             >
               <X className="h-5 w-5" />
             </SheetClose>
@@ -204,7 +206,7 @@ export function StorefrontNav() {
           <nav className="flex flex-col p-2">
             <SheetClose asChild>
               <Link href="/shop" className={mobileLink(pathname === "/shop")}>
-                Browse shops
+                Shops
               </Link>
             </SheetClose>
             <SheetClose asChild>

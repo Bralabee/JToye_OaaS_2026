@@ -18,6 +18,13 @@ import {
  * icon-only hamburger opening a shadcn sheet on <sm. Active state via
  * usePathname prefix match — the storefront/dashboard active-link idiom.
  *
+ * Wordmark contract: it ALWAYS goes to `/`. It previously homed to the surface
+ * you were on (/track -> /shop), which made the logo land you somewhere
+ * different depending on where you clicked it — the reported "wonky" nav. A
+ * logo is the one control users expect to be constant, so every public surface
+ * (including the storefront chrome in app/shop/layout.tsx) now points it at the
+ * landing page.
+ *
  * The three public nav routes (/shop, /for-operators, /track) are rendered as
  * explicit <Link href="..."> literals (not a mapped array) so the link-graph
  * connectivity is greppable and each route reads as a first-class inbound link.
@@ -29,36 +36,29 @@ export function PublicHeader() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
 
-  // The wordmark returns you to the "home" of the surface you're actually on.
-  // /track is a customer order surface — part of the shopping app — so its logo
-  // goes to the shop home, not the marketing landing (which previously kicked
-  // shoppers out of the storefront flow). Marketing surfaces (/, /for-operators,
-  // /business-model-guide) home to the landing page. /shop* pages use the shop
-  // layout's own wordmark (already -> /shop), so the whole app is now consistent.
-  const homeHref = isActive("/track") ? "/shop" : "/"
-
   const desktopLink = (active: boolean) =>
     cn(
       "transition-colors",
-      active ? "text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900"
+      active ? "text-oxblood font-semibold" : "text-slate-600 hover:text-oxblood"
     )
 
   const mobileLink = (active: boolean) =>
     cn(
       "flex min-h-11 items-center rounded-lg px-4 text-sm transition-colors",
       active
-        ? "bg-slate-100 text-slate-900 font-semibold"
+        ? "bg-cream text-oxblood font-semibold"
         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
     )
 
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+    <header className="sticky top-0 z-50 bg-white border-b border-cream-100 shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
-          {/* Wordmark -> home (context-aware: /track -> /shop, marketing -> /) */}
+          {/* Wordmark -> the landing page, from every public surface. */}
           <Link
-            href={homeHref}
-            className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
+            href="/"
+            aria-label="J'Toye home"
+            className="flex items-center gap-2 text-lg font-semibold tracking-tight text-oxblood"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-oxblood text-sm font-bold text-white">
               J
@@ -95,19 +95,19 @@ export function PublicHeader() {
               <button
                 type="button"
                 aria-label="Open menu"
-                className="sm:hidden inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+                className="sm:hidden inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
                 <Menu className="h-5 w-5" />
               </button>
             </SheetTrigger>
             <SheetContent side="right" hideCloseButton className="w-72 p-0">
-              <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
+              <div className="flex h-14 items-center justify-between border-b border-cream-100 px-4">
                 <SheetTitle className="text-base font-semibold text-slate-900">
                   Menu
                 </SheetTitle>
                 <SheetClose
                   aria-label="Close menu"
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
                 >
                   <X className="h-5 w-5" />
                 </SheetClose>
