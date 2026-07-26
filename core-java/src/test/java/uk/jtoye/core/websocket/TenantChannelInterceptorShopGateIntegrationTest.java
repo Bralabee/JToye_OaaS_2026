@@ -109,7 +109,7 @@ class TenantChannelInterceptorShopGateIntegrationTest {
         setStrictScoping(false);  // day-one posture
 
         Message<?> subscribe = subscribe(
-                "/topic/kitchen/" + tenant + "/" + anyShop, tenant, jwt(ungranted));
+                "/topic/kitchen." + tenant + "." + anyShop, tenant, jwt(ungranted));
 
         assertThatCode(() -> interceptor.preSend(subscribe, mock(MessageChannel.class)))
                 .as("day-one preservation: an ungranted user under strict-scoping OFF is NOT broken")
@@ -130,14 +130,14 @@ class TenantChannelInterceptorShopGateIntegrationTest {
 
         // Granted shop A → permitted.
         assertThatCode(() -> interceptor.preSend(
-                subscribe("/topic/kitchen/" + tenant + "/" + shopA, tenant, jwt(user)),
+                subscribe("/topic/kitchen." + tenant + "." + shopA, tenant, jwt(user)),
                 mock(MessageChannel.class)))
                 .as("a STAFF grant on shop A permits subscribing to shop A's kitchen feed")
                 .doesNotThrowAnyException();
 
         // Ungranted shop B → rejected (CR-02 closed on the real transport).
         assertThatThrownBy(() -> interceptor.preSend(
-                subscribe("/topic/kitchen/" + tenant + "/" + shopB, tenant, jwt(user)),
+                subscribe("/topic/kitchen." + tenant + "." + shopB, tenant, jwt(user)),
                 mock(MessageChannel.class)))
                 .as("the same STAFF user is denied an ungranted shop B — the KDS leak is closed")
                 .isInstanceOf(MessageDeliveryException.class)

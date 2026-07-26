@@ -12,6 +12,7 @@
 
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import KitchenPage from "../page"
+import { useStomp } from "@/hooks/use-stomp"
 
 // Mock useStomp — we want the page's render logic, not a real WS
 jest.mock("@/hooks/use-stomp", () => ({
@@ -184,6 +185,32 @@ function stubApi(activeStatuses: string[], createdAt?: string) {
 describe("KitchenPage", () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  // #266: the page previously subscribed to /topic/kitchen/{tenant}/{shop}. Everything after
+  // /topic/ becomes an AMQP routing key on amq.topic and may not contain '/', so the relay
+  // broker used by staging and production rejected it while dev's in-memory broker accepted
+  // it. This test asserts the shape the page actually passes to useStomp — the assertion the
+  // suite was missing when the bad shape shipped.
+  it("subscribes to a single dot-separated KDS topic, never a slashed one", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+
+    await waitFor(() => {
+      expect(useStomp).toHaveBeenCalledWith(
+        "/topic/kitchen.tenant-1.shop-1",
+        expect.any(Function),
+        expect.any(Function)
+      )
+    })
+
+    const topics = (useStomp as jest.Mock).mock.calls
+      .map(([topic]) => topic)
+      .filter((topic): topic is string => typeof topic === "string")
+    expect(topics.length).toBeGreaterThan(0)
+    for (const topic of topics) {
+      expect(topic.slice("/topic/".length)).not.toContain("/")
+    }
   })
 
   it("renders the empty state when no active orders are present", async () => {
