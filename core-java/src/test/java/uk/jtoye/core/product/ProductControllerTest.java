@@ -62,7 +62,8 @@ class ProductControllerTest {
         when(productService.getAllProducts(any(Pageable.class))).thenReturn(productPage);
 
         // When
-        Page<ProductDto> result = productController.list(PageRequest.of(0, 20));
+        // WR-04 (#280): list() gained an optional shopId; null keeps the tenant-wide path.
+        Page<ProductDto> result = productController.list(null, PageRequest.of(0, 20));
 
         // Then
         assertThat(result.getContent()).hasSize(1);

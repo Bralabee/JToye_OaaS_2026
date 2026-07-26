@@ -99,15 +99,26 @@ const ANNOUNCEMENTS = [
   },
 ]
 
+/** Reads ?shopId= off a request URL, or null for the All-shops context. */
+const shopIdOf = (url: string) =>
+  new URLSearchParams(url.split("?")[1] ?? "").get("shopId")
+
 const defaultMock = (url: string) => {
+  // WR-04 (#280): both marketing endpoints narrow SERVER-side now, so the fake server
+  // honours ?shopId= for each. A mock that ignored it would return every shop's rows,
+  // making a correct implementation look broken.
   if (url.startsWith("/api/v1/promotions")) {
+    const shopId = shopIdOf(url)
+    const rows = shopId ? PROMOTIONS.filter((p) => p.shopId === shopId) : PROMOTIONS
     return Promise.resolve({
-      data: { content: PROMOTIONS, totalPages: 1, totalElements: PROMOTIONS.length },
+      data: { content: rows, totalPages: 1, totalElements: rows.length },
     })
   }
   if (url.startsWith("/api/v1/announcements")) {
+    const shopId = shopIdOf(url)
+    const rows = shopId ? ANNOUNCEMENTS.filter((a) => a.shopId === shopId) : ANNOUNCEMENTS
     return Promise.resolve({
-      data: { content: ANNOUNCEMENTS, totalPages: 1, totalElements: ANNOUNCEMENTS.length },
+      data: { content: rows, totalPages: 1, totalElements: rows.length },
     })
   }
   if (url.startsWith("/api/v1/shops")) {
@@ -125,6 +136,12 @@ const kitchenBoardCalls = () =>
     .map(([url]) => url as string)
     .filter((url) => url.startsWith("/api/v1/orders?shopId="))
 
+/** All URLs requested against a given marketing collection endpoint. */
+const callsTo = (prefix: string) =>
+  mockedApiClient.get.mock.calls
+    .map(([url]) => url as string)
+    .filter((url) => url.startsWith(prefix))
+
 describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -137,19 +154,39 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
       mockedGetShopContext.mockReturnValue(SHOP_A)
     })
 
-    it("narrows the promotions list to the selected shop", async () => {
+    it("narrows the promotions list server-side via ?shopId=", async () => {
+      // WR-04 (#280). This previously asserted only the rendered rows, and its own
+      // comment described the client-side mechanism it was locking in ("the shop filter
+      // drops other shops' promotions in a follow-up render tick") — the arrangement
+      // that produced wrong counts and unreachable rows. The narrow now arrives with the
+      // response, so there is no follow-up tick and no need to wait one out.
       render(<MarketingPage />)
+
+      await waitFor(() => expect(callsTo("/api/v1/promotions?").length).toBeGreaterThan(0))
+      expect(callsTo("/api/v1/promotions?").some((u) => u.includes(`shopId=${SHOP_A}`))).toBe(true)
 
       await waitFor(() =>
         expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument()
       )
-      // The shop filter drops other shops' promotions in a follow-up render
-      // tick, so wait for Brixton to disappear rather than asserting it
-      // synchronously — the bare assertion flaked under full-suite CPU
-      // contention (passes in isolation; timing, not a real regression).
+      expect(screen.queryByText("Brixton Bakery Bundle")).not.toBeInTheDocument()
+    })
+
+    it("narrows the announcements list server-side via ?shopId=", async () => {
+      // "Marketing" is two independent domains, so the defect had two endpoints and
+      // needs two assertions. The announcements list is fetched lazily on tab switch
+      // (the effect is gated on activeTab), so the tab has to be clicked to reach it.
+      render(<MarketingPage />)
+
+      // The whole page renders a spinner until the promotions load resolves; the tab
+      // buttons do not exist before that.
       await waitFor(() =>
-        expect(screen.queryByText("Brixton Bakery Bundle")).not.toBeInTheDocument()
+        expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument()
       )
+
+      fireEvent.click(screen.getByRole("button", { name: /announcements/i }))
+
+      await waitFor(() => expect(callsTo("/api/v1/announcements?").length).toBeGreaterThan(0))
+      expect(callsTo("/api/v1/announcements?").some((u) => u.includes(`shopId=${SHOP_A}`))).toBe(true)
     })
 
     it("defaults AND constrains the create-promotion shop to the selected shop (D-08)", async () => {
@@ -175,6 +212,15 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
         expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument()
       )
       expect(screen.getByText("Brixton Bakery Bundle")).toBeInTheDocument()
+    })
+
+    it("requests promotions without a shopId param (today's cross-shop behaviour)", async () => {
+      // A7: sending shopId= in the All-shops context would silently narrow a
+      // GROUP_ADMIN to one shop — a capability regression, not a fix.
+      render(<MarketingPage />)
+
+      await waitFor(() => expect(callsTo("/api/v1/promotions?").length).toBeGreaterThan(0))
+      expect(callsTo("/api/v1/promotions?").every((u) => !u.includes("shopId="))).toBe(true)
     })
 
     it("keeps the full shop dropdown on the create-promotion form", async () => {

@@ -50,6 +50,24 @@ public class PromotionService {
                 .map(promotionMapper::toDto);
     }
 
+    /**
+     * Get promotions for ONE shop of the tenant (WR-04, issue #280, plan 23-18).
+     *
+     * <p>Backs {@code GET /promotions?shopId=}, replacing a client-side filter applied over a
+     * single already-paginated page (wrong counts, false empty state, unreachable rows past page 1).
+     *
+     * <p>VSA-02 (D-02): an explicit shop-scoped read requires at least STAFF on that shop — a
+     * caller without a grant gets a typed 403, NOT an empty page.
+     */
+    @Transactional(readOnly = true)
+    public Page<PromotionDto> getPromotionsByShop(UUID shopId, Pageable pageable) {
+        log.debug("Fetching promotions for shop {} with pagination: page {}, size {}",
+                shopId, pageable.getPageNumber(), pageable.getPageSize());
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        return promotionRepository.findByShopIdIn(Set.of(shopId), pageable)
+                .map(promotionMapper::toDto);
+    }
+
     @Transactional(readOnly = true)
     public Optional<PromotionDto> getPromotionById(UUID id) {
         log.debug("Fetching promotion by ID: {}", id);

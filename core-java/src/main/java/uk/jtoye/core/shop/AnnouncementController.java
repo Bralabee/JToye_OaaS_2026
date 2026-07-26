@@ -37,15 +37,21 @@ public class AnnouncementController {
     }
 
     @GetMapping
-    @Operation(summary = "List announcements", description = "Returns a paginated list of announcements for the authenticated tenant")
+    @Operation(summary = "List announcements", description = "Returns a paginated list of announcements for the authenticated tenant. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved announcements"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT")
+            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
+            @ApiResponse(responseCode = "403", description = "Caller has no grant on the requested shopId")
     })
     public Page<AnnouncementDto> list(
+            @Parameter(description = "Optional shop to narrow the list to")
+            @RequestParam(required = false) UUID shopId,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return announcementService.getAllAnnouncements(pageable);
+        // WR-04 (#280): narrow at the QUERY, not in the browser over one page.
+        return shopId != null
+                ? announcementService.getAnnouncementsByShop(shopId, pageable)
+                : announcementService.getAllAnnouncements(pageable);
     }
 
     @GetMapping("/{id}")
