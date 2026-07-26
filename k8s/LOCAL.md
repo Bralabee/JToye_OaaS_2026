@@ -653,8 +653,16 @@ End where you started:
 # 1. Stop the cluster. `stop` preserves etcd (see §7, A1); `delete` does not.
 minikube stop -p <profile>
 
-# 2. Bring the compose app containers back up.
-docker compose -f docker-compose.full-stack.yml up -d core-java frontend edge-go mcp-server
+# 2. Bring the compose app containers back up. `up -d --build` and NOT `start`:
+#    `start` starts the EXISTING containers and never builds, so if any source
+#    changed while the cluster was up, the runtime you hand back is stale. That
+#    is not hypothetical — it is what happened here on 2026-07-26 (see below).
+docker compose -f docker-compose.full-stack.yml up -d --build core-java frontend edge-go mcp-server
+
+# 3. PROVE the restored runtime matches the branch. HTTP 200 cannot: it is
+#    byte-identical from a stale image and a current one.
+bash scripts/check-branch-behind-base.sh    # the tree contains everything on its base
+bash scripts/check-runtime-freshness.sh     # each running image postdates its own build inputs
 ```
 
 The backing services were up the whole time and need no action. If you want a genuinely clean slate
@@ -739,6 +747,45 @@ refusal. The loop the phase opened is closed.
 
 **To run the rehearsal again**, reverse this in the mirror order — stop the four compose app containers
 first, then `scripts/k8s-local-up.sh`, which starts the profile and runs the two guards for you.
+
+#### What the block above got WRONG, and the gate added because of it (2026-07-26)
+
+**STEP 2 used `docker compose … start`, and that was a defect.** `start` starts the *existing*
+containers; it never builds. Phase 26 had changed `core-java/src/main/resources/application.yml`
+(commit `486f0b4`, the dedicated STOMP credential), so the core-java that came back up was serving a
+jar built *before* that change. Independently, the branch was three commits behind `origin/main`, so
+the frontend image was missing PRs **#263**, **#264** and **#265** — work no rebuild could have added,
+because the code was not in the tree being built.
+
+**Every gate above is green and none of them could see it.** Verification passed 8/8, security 68/68,
+the regression sweep was clean, and the "verified by real HTTP, not by `docker compose ps`" block is
+itself the illustration: `200 OK`, `{"status":"ok"}` and `61293 bytes, contains <html>` are
+**byte-identical** from a stale image and a current one. Even the seeded-rows check — deliberately
+stronger than a status code — reads the same from either. The user caught it by eye.
+
+Two things changed as a result:
+
+1. The teardown recipe in §10 now says `up -d --build`, and adds a proof step.
+2. Two executable gates were added, because the prose rule was already there and did not fire —
+   CLAUDE.md has said "always rebuild ALL containers after code changes before E2E testing" for
+   months, and it did not apply here because the failing activity was *restore the runtime*, not
+   *test*:
+
+   ```bash
+   bash scripts/check-runtime-freshness.sh     # runtime vs tree
+   bash scripts/check-branch-behind-base.sh    # tree vs base
+   ```
+
+   `check-runtime-freshness.sh` compares each service's image `.Metadata.LastTagTime` against the
+   newest commit touching **that image's own** build inputs (so edge-go, whose image legitimately
+   predates the phase because zero Go files changed, still passes), and separately compares the
+   running container's image ID against the ID the tag now points at (so a rebuild that was only
+   `start`ed is caught too). `check-branch-behind-base.sh` asserts `HEAD..origin/<default>` is empty.
+   Both are documented in `k8s/DEPLOYMENT.md`, "Runtime-parity gates".
+
+   **Run the freshness gate BEFORE stopping the app containers for a rehearsal, not after.** With the
+   four app containers down it has nothing to inspect and correctly exits **2** (VOID) — a runtime
+   that is not running cannot be proven fresh, and the gate will not launder that into a pass.
 
 ---
 

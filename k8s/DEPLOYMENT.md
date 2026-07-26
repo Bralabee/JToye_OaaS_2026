@@ -383,6 +383,73 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 | `1` | Violation — a real defect in the manifests, config or docs. Fix the input, not the gate. |
 | `2` | Parse or tooling failure — a missing tool (`kubectl`, GNU `grep -P`), a failed `kustomize` build, a missing baseline, or a parser that can no longer find its subject. A `2` means the assertion is **void, not passing**: fix the parser rather than deleting the invariant. |
 
+## Runtime-parity gates
+
+Two scripts under `scripts/` share the exit-code convention above but answer a
+different question from the five static gates. The static gates ask *is the
+configuration correct*. These ask **is the thing actually running the code you
+think it is** — the question no static gate, test suite or HTTP health check can
+answer, because an `HTTP 200` and a rendered page title are byte-identical from a
+stale image and a current one.
+
+They exist because of a measured failure on 2026-07-26. Phase 26 restored the
+canonical compose runtime with `docker compose start core-java frontend edge-go
+mcp-server`; `start` starts existing containers and never builds, so the core-java
+that came back up was serving a jar from before the phase's own
+`application.yml` change. Simultaneously the branch was three commits behind
+`origin/main`, so the frontend image was missing three merged UI PRs — which no
+rebuild could have fixed, because the code was not in the tree being built.
+Verification, code review, security and a full regression sweep were all green. A
+human caught it by eye. See CLAUDE.md, "Falsifiable evidence + runtime parity".
+
+```bash
+# Before trusting any local E2E result, and before opening a PR:
+bash scripts/check-branch-behind-base.sh \
+  && bash scripts/check-runtime-freshness.sh \
+  && echo RUNTIME_PARITY_PROVEN
+```
+
+| Script | What it guarantees |
+|--------|--------------------|
+| `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. |
+| `check-branch-behind-base.sh` | `HEAD..<remote>/<default-branch>` is empty — this branch contains every commit already on its base. The base branch is **resolved** (`--base`, `$BASE_REF`, `$GITHUB_BASE_REF`, `refs/remotes/origin/HEAD`, then `git ls-remote --symref`), never hardcoded to `main`. Being *ahead* is normal and is not a finding; only being behind is. |
+
+**Why `.Metadata.LastTagTime` and not `.Created`.** Docker preserves the original
+`.Created` across a fully-cached rebuild and across a `docker pull`. Measured on
+the dev host with all four app images correctly rebuilt at 01:44 UTC on
+2026-07-26, `.Created` lagged `.LastTagTime` by 5h34m for core-java and by
+**277 hours** for edge-go. Swapping this one field in the gate — same script,
+`.Created` substituted — reports core-java as DRIFT while it is provably current.
+A gate that cries wolf gets ignored, so the field choice is load-bearing.
+
+**Why an old image is not automatically stale.** Each service is compared only
+against **its own** build inputs. edge-go's image legitimately predates the phase
+because zero Go files changed in it, and the gate passes it. Comparing every image
+against the repo's newest commit would flag edge-go forever.
+
+**Why `git log --full-history`.** Plain `git log -- <paths>` applies history
+simplification and, when a merge is TREESAME to one parent, reports that parent's
+older commit instead of the merge — understating the bar by days and letting an
+image built in the gap falsely pass. Measured difference on the Phase 26 branch for
+core-java's build inputs: 7h45m.
+
+**CI wiring, and why it is deliberately asymmetric.** `check-branch-behind-base.sh`
+runs in the `branch-parity` job of `.github/workflows/ci-cd.yaml`, on
+`pull_request` only, against the PR **head** SHA — not the checkout's HEAD, which
+on a `pull_request` event is GitHub's synthetic merge commit and therefore contains
+the base by construction, which would make the assertion vacuously green.
+`check-runtime-freshness.sh` is **not** in CI and must not be added: a CI runner has
+no running containers, so it could only ever exit 2 (VOID) there, and the pressure
+to "fix" a permanently-VOID job with `|| true` would convert it into exactly the
+kind of gate that is green because it measures nothing. It belongs where a runtime
+exists — local dev, before E2E, and at the end of any phase that hands a runtime
+back (`k8s/LOCAL.md` §10).
+
+**A stopped stack is VOID, not clean.** During a local-k8s rehearsal the four app
+containers are intentionally down; the freshness gate then reports every service
+UNVERIFIED and exits **2**. That is correct — a runtime that is not running cannot
+be proven fresh — and it is why "all services skipped" can never report `0`.
+
 ### Golden-render workflow (required after any intentional `k8s/base` change)
 
 The goldens are the reviewable record of what a base edit does to the shipped

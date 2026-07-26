@@ -355,6 +355,48 @@ jobs:
           chmod +x ./k8s/scripts/render-golden.sh
           ./k8s/scripts/render-golden.sh
 
+  # Job 1c: Branch-parity gate (2026-07-26).
+  #
+  # Asserts the PR branch contains every commit already on its base branch. A
+  # branch behind its base ships missing work that NO rebuild can fix, and every
+  # other job here will pass while measuring that out-of-date tree — which is
+  # exactly how Phase 26 verified green with a frontend missing three merged UI
+  # PRs. See k8s/DEPLOYMENT.md "Runtime-parity gates".
+  #
+  # THE `--head` ARGUMENT IS LOAD-BEARING, NOT A REFINEMENT. On a pull_request
+  # event actions/checkout checks out GitHub's SYNTHETIC MERGE COMMIT of the PR
+  # head into the base, so the checkout's own HEAD contains the base BY
+  # CONSTRUCTION and `HEAD..origin/base` is always empty. Asserting on it would be
+  # a permanently, vacuously green job. github.event.pull_request.head.sha is the
+  # branch tip as actually pushed, which is the thing reviewers and local runtimes
+  # are looking at.
+  #
+  # The runtime half of this pair — scripts/check-runtime-freshness.sh — is
+  # DELIBERATELY ABSENT from CI and must stay absent: a runner has no running
+  # containers, so it could only ever exit 2 (VOID) here, and a permanently-VOID
+  # job invites a `|| true` that would turn it into a gate that passes because it
+  # measures nothing. It runs where a runtime exists (k8s/LOCAL.md §10).
+  branch-parity:
+    name: Branch Not Behind Base
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history: the gate walks HEAD..base, which a shallow clone cannot.
+          fetch-depth: 0
+
+      - name: Assert this branch is not behind its base branch
+        run: |
+          chmod +x ./scripts/check-branch-behind-base.sh
+          ./scripts/check-branch-behind-base.sh --head "${PR_HEAD_SHA}"
+        env:
+          # Consumed by the script's resolution order; GITHUB_BASE_REF is already
+          # in the environment and names the branch this PR actually targets, so
+          # the base is never hardcoded to `main`.
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
   # Job 1d: OpenAPI breaking-change gate (#97 AC3).
   # Regenerates the core-java OpenAPI spec from source — the
   # generateOpenApiSpec Gradle task boots the FULL Spring context against a
