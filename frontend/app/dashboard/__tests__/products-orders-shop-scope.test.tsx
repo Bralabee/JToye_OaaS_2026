@@ -72,8 +72,15 @@ const PRODUCTS = [
 
 const defaultMock = (url: string) => {
   if (url.startsWith("/api/v1/products")) {
+    // WR-04 (#280): the narrow is SERVER-side now, so the fake server has to behave
+    // like one — it honours ?shopId= and returns a total describing that shop. A mock
+    // that ignored the param would return every shop's rows and the screen would look
+    // broken even though the code is right, which is what made the old client-side
+    // assertion here misleading in the first place.
+    const shopId = new URLSearchParams(url.split("?")[1] ?? "").get("shopId")
+    const rows = shopId ? PRODUCTS.filter((p) => p.shopId === shopId) : PRODUCTS
     return Promise.resolve({
-      data: { content: PRODUCTS, totalPages: 1, totalElements: PRODUCTS.length },
+      data: { content: rows, totalPages: 1, totalElements: rows.length },
     })
   }
   if (url.startsWith("/api/v1/shops")) {
@@ -91,6 +98,12 @@ const ordersCalls = () =>
     .map(([url]) => url as string)
     .filter((url) => url.startsWith("/api/v1/orders?"))
 
+/** All URLs the page requested against the products collection endpoint. */
+const productsCalls = () =>
+  mockedApiClient.get.mock.calls
+    .map(([url]) => url as string)
+    .filter((url) => url.startsWith("/api/v1/products?"))
+
 describe("VSA-03 — shop-context scoping on Products & Orders", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -103,11 +116,40 @@ describe("VSA-03 — shop-context scoping on Products & Orders", () => {
       mockedGetShopContext.mockReturnValue(SHOP_A)
     })
 
-    it("narrows the products list to the selected shop", async () => {
+    it("narrows the products list server-side via ?shopId=", async () => {
+      // WR-04 (#280). This used to assert only the RENDERED rows, which passed just as
+      // happily when the narrow was a client-side .filter() over one already-paginated
+      // page — the arrangement that produced wrong counts, a false empty state when a
+      // shop's rows began on page 2, and unreachable rows past page 1. Asserting the
+      // REQUEST is what distinguishes the two implementations.
       render(<ProductsPage />)
+
+      await waitFor(() => expect(productsCalls().length).toBeGreaterThan(0))
+      expect(productsCalls().some((url) => url.includes(`shopId=${SHOP_A}`))).toBe(true)
 
       await waitFor(() => expect(screen.getByText("Jollof Rice")).toBeInTheDocument())
       expect(screen.queryByText("Sourdough Loaf")).not.toBeInTheDocument()
+    })
+
+    it("reports the SHOP's total, not a count of what fitted on this page", async () => {
+      // The defect's most visible symptom: the header count was filtered.length, i.e.
+      // "matches on this page", so a shop with more rows than one page under-reported.
+      mockedApiClient.get.mockImplementation(((url: string) => {
+        if (url.startsWith("/api/v1/products")) {
+          return Promise.resolve({
+            data: {
+              content: [PRODUCTS[0]],
+              totalPages: 3,
+              totalElements: 41,
+            },
+          })
+        }
+        return defaultMock(url)
+      }) as jest.Mock)
+
+      render(<ProductsPage />)
+
+      await waitFor(() => expect(screen.getByText(/41 products/i)).toBeInTheDocument())
     })
 
     it("defaults AND constrains the product create-form shop to the selected shop (D-08)", async () => {
@@ -142,6 +184,15 @@ describe("VSA-03 — shop-context scoping on Products & Orders", () => {
 
       await waitFor(() => expect(screen.getByText("Jollof Rice")).toBeInTheDocument())
       expect(screen.getByText("Sourdough Loaf")).toBeInTheDocument()
+    })
+
+    it("requests products without a shopId param (today's cross-shop behaviour)", async () => {
+      // A7: the All-shops default must be untouched by WR-04. Sending shopId= here
+      // would silently narrow GROUP_ADMINs to one shop — a capability regression.
+      render(<ProductsPage />)
+
+      await waitFor(() => expect(productsCalls().length).toBeGreaterThan(0))
+      expect(productsCalls().every((url) => !url.includes("shopId="))).toBe(true)
     })
 
     it("keeps the full shop dropdown on the product create-form", async () => {

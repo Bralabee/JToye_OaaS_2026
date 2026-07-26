@@ -52,16 +52,22 @@ public class ProductController {
     }
 
     @GetMapping
-    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law.")
+    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved products"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT")
+            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
+            @ApiResponse(responseCode = "403", description = "Caller has no grant on the requested shopId")
     })
     public Page<ProductDto> list(
+            @Parameter(description = "Optional shop to narrow the list to")
+            @RequestParam(required = false) UUID shopId,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        // RLS ensures we only see current tenant rows
-        return productService.getAllProducts(pageable);
+        // RLS ensures we only see current tenant rows; shopId narrows within the tenant
+        // at the QUERY (WR-04 / issue #280) rather than in the browser over one page.
+        return shopId != null
+                ? productService.getProductsByShop(shopId, pageable)
+                : productService.getAllProducts(pageable);
     }
 
     @GetMapping("/{id}")
@@ -83,12 +89,18 @@ public class ProductController {
                     + "title, category, description, ingredients and dietary tags, plus SKU prefix lookup. "
                     + "Returns a JSON array (wire contract frozen: edge WhatsApp flow and dashboard both "
                     + "consume it) of at most one page; optional page/size params paginate, with size "
-                    + "capped by the global pageable maximum (100).")
+                    + "capped by the global pageable maximum (100). Optional shopId narrows to one "
+                    + "shop of the tenant (requires at least STAFF on that shop).")
     public List<ProductDto> search(
             @RequestParam String q,
+            @Parameter(description = "Optional shop to narrow the search to")
+            @RequestParam(required = false) UUID shopId,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 100) Pageable pageable) {
-        return productService.search(q, pageable).getContent();
+        // WR-04 (#280): the dashboard swaps to this endpoint at searchQuery.length >= 2, so
+        // without shopId the shop switcher would silently stop applying mid-typing. The array
+        // return shape is deliberately untouched — the wire contract above stays frozen.
+        return productService.search(q, shopId, pageable).getContent();
     }
 
     // ---- Bulk Import ----

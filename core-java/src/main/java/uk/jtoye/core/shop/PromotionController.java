@@ -37,15 +37,21 @@ public class PromotionController {
     }
 
     @GetMapping
-    @Operation(summary = "List promotions", description = "Returns a paginated list of promotions for the authenticated tenant")
+    @Operation(summary = "List promotions", description = "Returns a paginated list of promotions for the authenticated tenant. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved promotions"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT")
+            @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
+            @ApiResponse(responseCode = "403", description = "Caller has no grant on the requested shopId")
     })
     public Page<PromotionDto> list(
+            @Parameter(description = "Optional shop to narrow the list to")
+            @RequestParam(required = false) UUID shopId,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return promotionService.getAllPromotions(pageable);
+        // WR-04 (#280): narrow at the QUERY, not in the browser over one page.
+        return shopId != null
+                ? promotionService.getPromotionsByShop(shopId, pageable)
+                : promotionService.getAllPromotions(pageable);
     }
 
     @GetMapping("/{id}")

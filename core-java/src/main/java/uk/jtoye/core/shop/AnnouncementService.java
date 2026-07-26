@@ -50,6 +50,24 @@ public class AnnouncementService {
                 .map(announcementMapper::toDto);
     }
 
+    /**
+     * Get announcements for ONE shop of the tenant (WR-04, issue #280, plan 23-18).
+     *
+     * <p>Backs {@code GET /announcements?shopId=}, replacing a client-side filter applied over a
+     * single already-paginated page (wrong counts, false empty state, unreachable rows past page 1).
+     *
+     * <p>VSA-02 (D-02): an explicit shop-scoped read requires at least STAFF on that shop — a
+     * caller without a grant gets a typed 403, NOT an empty page.
+     */
+    @Transactional(readOnly = true)
+    public Page<AnnouncementDto> getAnnouncementsByShop(UUID shopId, Pageable pageable) {
+        log.debug("Fetching announcements for shop {} with pagination: page {}, size {}",
+                shopId, pageable.getPageNumber(), pageable.getPageSize());
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        return announcementRepository.findByShopIdIn(Set.of(shopId), pageable)
+                .map(announcementMapper::toDto);
+    }
+
     @Transactional(readOnly = true)
     public Optional<AnnouncementDto> getAnnouncementById(UUID id) {
         log.debug("Fetching announcement by ID: {}", id);
