@@ -179,6 +179,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 ### Roadmap Evolution
 
+- Phase 27 added (2026-07-27): Operational Maturity — messaging as the first instance. Requirements OPS-01..OPS-05. Seven plans written and audited (5 passes) BEFORE registration; see `.planning/phases/27-operational-maturity/`. NOTE: `gsd-sdk query phase.add` derived Phase **28** because the phase directory already existed — corrected to 27 by hand, and the stray `28-operational-maturity/` directory removed.
+
 - 2026-07-26 — **Phase 26 expanded from an estimated 2 plans to 9 delivered plans across 9 waves.** The estimate was not wrong so much as scoped before anyone had looked at the cluster. Four things grew it, in the order they were discovered:
   1. **DEF-6 / D-15 was scoped in `26-CONTEXT.md` at "roughly one extra plan"** — closing the base config drift so a manifest can never again inject an env name nothing reads, or leave one silently defaulting to `localhost`. It landed as **26-02** and moved core-java's injected env from 23 to 49 names.
   2. **Research added three more decisions and two harnesses that did not exist.** D-17 (the kustomize `labels` transformer poisoning the kube-dns NetworkPolicy selector — live in `k8s/base` **and** `k8s/production`, i.e. a DNS blackhole under any enforcing CNI), D-18 (frontend build-arg wiring) and D-19 (the four hardcoded `localhost:3000` notification/Stripe URLs), plus a **golden-render harness** (26-01) to prove staging and production were not disturbed and an **env-contract gate** (26-03) to stop DEF-4/DEF-6 recurring. Those are 26-01 and 26-03.
