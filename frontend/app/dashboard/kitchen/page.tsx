@@ -272,9 +272,12 @@ export default function KitchenPage() {
   // --- Derive WebSocket topic ---
 
   const tenantId = shops.length > 0 ? shops[0].tenantId : null
+  // #266: one dot-separated segment after /topic/. Everything after the prefix becomes an
+  // AMQP routing key on amq.topic, which may not contain '/' — the old slashed shape was
+  // rejected by the relay broker in staging/production while working in dev's in-memory one.
   const stompTopic =
     tenantId && selectedShopId
-      ? `/topic/kitchen/${tenantId}/${selectedShopId}`
+      ? `/topic/kitchen.${tenantId}.${selectedShopId}`
       : null
 
   // --- Handle incoming WebSocket messages ---

@@ -13,6 +13,7 @@ import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.notification.EmailNotificationService;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.websocket.StompDestinations;
 
 /**
  * Competing-consumer listener on the durable {@code order.state-changes}
@@ -106,7 +107,7 @@ public class OrderStateChangeListener {
             try {
                 orderRepository.findById(event.orderId()).ifPresent(order -> {
                     if (order.getShopId() != null) {
-                        String topic = "/topic/kitchen/" + event.tenantId() + "/" + order.getShopId();
+                        String topic = StompDestinations.kitchen(event.tenantId(), order.getShopId());
                         simpMessagingTemplate.convertAndSend(topic, event);
                         log.debug("WebSocket broadcast to {} for order {}", topic, event.orderNumber());
                     }
