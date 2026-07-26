@@ -2,6 +2,29 @@
 
 Out-of-scope discoveries logged during execution (per executor SCOPE BOUNDARY). These are NOT fixed in the plan that discovered them.
 
+> **Tracked as GitHub issues — v2.3 milestone backlog review, 2026-07-26.**
+> This file is archived to `.planning/milestones/v2.3-phases/` at milestone close, so every
+> still-open entry below was filed as an issue first. Nothing here is dropped.
+>
+> | Entry | Issue |
+> |---|---|
+> | WR-04 — products/marketing narrow client-side over one server-paginated page | **#280** |
+> | WR-03 — post-revocation SSE window (bounded 5 min by `SSE_TIMEOUT`) | **#281** |
+> | IN-01 — `fetchMyShops` hard-codes `size=200` | **#282** |
+> | `asSystem()` marker for the retained `auth == null` bypass | **#283** |
+> | T-23-08-06 — `@Async`/`@Scheduled`/`@RabbitListener` SecurityContext propagation | **#284** |
+> | Bulk-revoke of JIT rows in the staff screen | **#285** |
+> | Vendor-authenticated Playwright E2E (live run) | **#286** |
+> | GCR-W1 — `BulkImportService` cross-tenant `@CacheEvict(allEntries=true)` | **#287** |
+> | GCR-W2 — `ShopSwitcher` blank `<select>` for a zero-access non-GROUP_ADMIN | **#288** |
+> | GCR-I1 — STOMP shop-gate hard-coded to the `kitchen` topic | **#289** |
+> | GCR-I2 — masked directory email rendered twice in the grant picker | **#290** |
+> | 23-06 — `docs-freshness` counts ~5 phantom Jest blocks (`RegExp.test(`) | **#291** |
+>
+> Already tracked elsewhere: `@PreAuthorize` scope backstop on `StaffController` → **#206**.
+> Found obsolete by the review (no issue filed): the AGENTS.md-stale-at-V37 entry — `AGENTS.md:107`
+> now reads V59. See the annotation on that entry below.
+
 ## 23-01
 
 - **docs-freshness count bump (phase-gate reconcile).** 23-01 added 1 Java test file
@@ -131,7 +154,12 @@ check mode exits 0. `schema_version` stayed 56 as predicted.
   by grep (it never runs Playwright), so the count reconcile is unaffected. The Java + Jest suites
   (integrationTest 331/0, jest 360/360) are the load-bearing anti-false-green proof; run the live spec at
   the phase PR after a rebuild + creds.
-- **AGENTS.md schema-version prose is stale at V37 (pre-existing, out of scope).** `AGENTS.md` line ~107
+- **AGENTS.md schema-version prose is stale at V37 — ✅ OBSOLETE, verified 2026-07-26.** This no longer
+  reproduces: `AGENTS.md:107` now reads **"Current schema version: V59"**, matching `CLAUDE.md:108`. It was
+  brought forward by a later phase's doc pass without this entry being closed. Recorded as obsolete by the
+  v2.3 milestone backlog review; **no issue filed** and nothing to carry into v2.4. Original entry below,
+  left verbatim for provenance.
+  <br>~~AGENTS.md schema-version prose is stale at V37 (pre-existing, out of scope).~~ `AGENTS.md` line ~107
   reads "Current schema version: V37 …" — frozen long before Phase 23 and never maintained past V37
   (unlike the CLAUDE.md schema narrative, updated here to V57). This is unrelated to Phase 23 and out of
   the count-sync scope the 260715-fcq quick task established (which syncs the line-15 test-count prose,
