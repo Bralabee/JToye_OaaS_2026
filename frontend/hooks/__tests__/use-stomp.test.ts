@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe("useStomp", () => {
   it("activates a client with a reconnect delay when given a topic", () => {
-    renderHook(() => useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn()))
+    renderHook(() => useStomp("/topic/kitchen.t.s", jest.fn(), jest.fn()))
     expect(mockActivate).toHaveBeenCalledTimes(1)
     expect(lastConfig?.reconnectDelay).toBe(5000)
   })
@@ -67,7 +67,7 @@ describe("useStomp", () => {
   })
 
   it("beforeConnect fetches session and sets connectHeaders with token", async () => {
-    renderHook(() => useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn()))
+    renderHook(() => useStomp("/topic/kitchen.t.s", jest.fn(), jest.fn()))
     expect(lastConfig?.beforeConnect).toBeDefined()
     await lastConfig!.beforeConnect!()
     expect(getSession).toHaveBeenCalled()
@@ -81,7 +81,7 @@ describe("useStomp", () => {
   it("beforeConnect does NOT crash when getSession() throws", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {})
     ;(getSession as jest.Mock).mockRejectedValueOnce(new Error("boom"))
-    renderHook(() => useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn()))
+    renderHook(() => useStomp("/topic/kitchen.t.s", jest.fn(), jest.fn()))
     await expect(lastConfig!.beforeConnect!()).resolves.toBeUndefined()
     // Falls back to an empty token so the broker can reject cleanly
     expect(lastClient?.brokerURL).toBe("ws://core.local:9090/ws")
@@ -94,7 +94,7 @@ describe("useStomp", () => {
 
   it("sets reconnecting=true after a disconnect that followed a successful connect", () => {
     const { result, rerender } = renderHook(() =>
-      useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn())
+      useStomp("/topic/kitchen.t.s", jest.fn(), jest.fn())
     )
     // Initial state
     expect(result.current.connected).toBe(false)
@@ -104,7 +104,7 @@ describe("useStomp", () => {
     })
     rerender()
     expect(mockSubscribe).toHaveBeenCalledWith(
-      "/topic/kitchen/t/s",
+      "/topic/kitchen.t.s",
       expect.any(Function)
     )
     act(() => {
@@ -117,7 +117,7 @@ describe("useStomp", () => {
 
   it("deactivates on unmount", () => {
     const { unmount } = renderHook(() =>
-      useStomp("/topic/kitchen/t/s", jest.fn(), jest.fn())
+      useStomp("/topic/kitchen.t.s", jest.fn(), jest.fn())
     )
     unmount()
     expect(mockDeactivate).toHaveBeenCalled()

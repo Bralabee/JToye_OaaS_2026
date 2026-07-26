@@ -175,7 +175,7 @@ class OrderStateChangeListenerTest {
 
         listener.handleOrderStateChange(event);
 
-        String expectedTopic = "/topic/kitchen/" + tenantId + "/" + shopId;
+        String expectedTopic = "/topic/kitchen." + tenantId + "." + shopId;
         verify(simpMessagingTemplate).convertAndSend(expectedTopic, event);
     }
 

@@ -237,12 +237,20 @@ validator for MCP traffic; `mcp-server` never inspects the token.
 
 ---
 
-### 1.5 Known defect in this topology — the STOMP relay (A3)
+### 1.5 The STOMP destination grammar — and the defect it was written to close (A3 / #266)
 
-> **Status: CONFIRMED PRODUCTION DEFECT, unfixed.** Proven on the local k8s cluster on
-> 2026-07-25 (plan 26-08) and human-confirmed at that phase's verification gate. Recorded
-> here rather than fixed because the fix is architectural. Full evidence: `k8s/LOCAL.md`
-> §A3.
+> **Status: FIXED 2026-07-26 (#266).** Proven on the local k8s cluster on 2026-07-25 (plan
+> 26-08), human-confirmed at that phase's verification gate, and closed by moving the KDS
+> destination to a single dot-separated segment. Kept in full below because the *constraint*
+> is permanent: anyone adding a new `/topic/` destination has to obey it, and the failure
+> mode is invisible in local development. Full evidence: `k8s/LOCAL.md` §A3.
+
+**The rule for any new topic.** Destinations are built by
+`core-java/.../websocket/StompDestinations.java` and must be
+`/topic/{feature}.{tenantId}[.{qualifier}]` — **one dot-separated segment after the prefix,
+with the tenant id as the second word**. `TenantChannelInterceptor` reads the tenant from
+that position to enforce the tenant wall, and rejects any `/topic/` destination containing a
+`/` before it looks at anything else.
 
 `WebSocketConfig` has two broker modes:
 
@@ -253,22 +261,28 @@ validator for MCP traffic; `mcp-server` never inspects the token.
 
 RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>`
 as the routing key, so **`<name>` must be a single segment — it may not contain `/`**. The
-application's KDS destination is `/topic/kitchen/{tenantId}/{shopId}` (three segments), which
-the simple broker accepts and the relay rejects outright with `Invalid destination`. Proven
-in both directions: 14 browser SUBSCRIBEs → 14 errors → **0 MESSAGE frames**, and the
-relay's own `_system_` publish session rejected too. A two-arm raw-socket falsification on
-the same broker isolates the fault to destination *shape* alone (dotted single-segment
-control arm subscribes fine).
+KDS destination *was* `/topic/kitchen/{tenantId}/{shopId}` (three segments), which the simple
+broker accepts and the relay rejects outright with `Invalid destination`. Proven in both
+directions: 14 browser SUBSCRIBEs → 14 errors → **0 MESSAGE frames**, and the relay's own
+`_system_` publish session rejected too. A two-arm raw-socket falsification on the same
+broker isolates the fault to destination *shape* alone (dotted single-segment control arm
+subscribes fine).
 
-**Do not "verify" this by eye.** The kitchen board still appears to update live: each
-rejected SUBSCRIBE tears the session down, the client redials every 5s, and the reconnect
-hook re-fetches orders — measured at 14 WebSocket opens and 24 REST calls with zero MESSAGE
-frames in a 30-second window. That is accidental polling wearing realtime's clothes. The
-honest signal is the connection dot on `/dashboard/kitchen`: **green = relay working,
-amber ("Reconnecting…") = this defect.**
+**Why it survived every gate.** Dev and CI only ever exercise `in-memory`, which accepts
+arbitrary slashed paths, so the wrong shape passed the unit suite, the integration suite and
+every local E2E. Nothing was checking the shape itself — only that the two sides agreed with
+each other, which they did, wrongly. The fix therefore includes two guards that fail on shape
+rather than on agreement: `StompDestinationsTest` asserts the built destination carries no
+`/` after the prefix, and `TenantChannelInterceptorTest.shouldRejectSlashedTopicDestination`
+asserts the wall rejects the old form. Both were confirmed to fail with the fix reverted.
 
-Until it is fixed, treat KDS realtime as **working in compose/dev, degraded to polling in
-every k8s environment**.
+**Do not "verify" this by eye** — the instruction still stands for any future relay change.
+While broken, the kitchen board still appeared to update live: each rejected SUBSCRIBE tears
+the session down, the client redials every 5s, and the reconnect hook re-fetches orders —
+measured at 14 WebSocket opens and 24 REST calls with zero MESSAGE frames in a 30-second
+window. That is accidental polling wearing realtime's clothes. The honest signal is the
+connection dot on `/dashboard/kitchen`: **green = relay working, amber ("Reconnecting…") =
+subscriptions are being rejected.**
 
 ---
 
