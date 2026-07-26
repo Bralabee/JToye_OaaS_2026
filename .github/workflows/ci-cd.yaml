@@ -432,9 +432,30 @@ jobs:
         run: go vet ./...
 
   # Job 3: Build and push Docker images
+  #
+  # CR-01 (Phase 26 code review): this `needs:` list used to be
+  # [test, integration-tests, security-scan], which meant k8s-validate, lint,
+  # openapi-compat and mcp-server-tests gated NOTHING on the deploy path — both
+  # deploy jobs depend only on build-and-push, so a push to main with
+  # DEPLOY_ENABLED=true could `kubectl apply -k k8s/production` while
+  # check-render-invariants.sh / render-golden.sh / check-env-contract.sh were
+  # simultaneously RED in the same workflow run. Plan 26-03's whole deliverable
+  # ("a one-time fix without a gate is a fix that returns") was defeated on the one
+  # path where a returning defect actually reaches a cluster.
+  #
+  # WHY A BARE `needs:` IS SAFE HERE (checked, not assumed). In GitHub Actions a
+  # job whose `needs:` entry is SKIPPED is itself skipped, so adding a skippable
+  # job here would silently BLOCK every deploy instead of gating it. None of the
+  # four added jobs can skip: none carries a job-level `if:`, and the workflow has
+  # no `paths:`/`paths-ignore:` filter. integration-tests does use
+  # dorny/paths-filter, but only for in-job STEP gating — its own comment says
+  # "never a job-level `if:`" precisely so it stays a satisfiable required check
+  # that always reports SUCCESS. That is the pattern any future conditional gate
+  # must follow; a job-level `if:` on any job listed below would turn this gate
+  # into a deploy blocker.
   build-and-push:
     name: Build and Push Images
-    needs: [test, integration-tests, security-scan]
+    needs: [test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'release'
     permissions:
@@ -519,9 +540,16 @@ jobs:
           exit-code: '1'
 
   # Job 4: Deploy to staging
+  #
+  # CR-01: k8s-validate is listed DIRECTLY as well as transitively through
+  # build-and-push. Deliberate redundancy — it makes "the deploy path is gated by
+  # the five k8s static gates" a property of this job rather than something that
+  # depends on build-and-push's needs list staying correct. Safe for the same
+  # reason documented on build-and-push: k8s-validate has no job-level `if:` and
+  # the workflow has no path filter, so it cannot skip and cannot cascade a skip.
   deploy-staging:
     name: Deploy to Staging
-    needs: [build-and-push]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     # Gated OFF by default, mirroring the deploy-production DEPLOY_ENABLED gate
     # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
@@ -610,9 +638,13 @@ jobs:
           exit 1
 
   # Job 5: Deploy to production
+  #
+  # CR-01: k8s-validate listed directly as well as transitively — see the
+  # deploy-staging comment above for why that redundancy is deliberate and why a
+  # bare `needs:` on it cannot skip-cascade.
   deploy-production:
     name: Deploy to Production
-    needs: [build-and-push]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
