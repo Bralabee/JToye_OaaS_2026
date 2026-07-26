@@ -62,6 +62,38 @@ readonly K8S_LOCAL_APP_SERVICES="core-java frontend edge-go mcp-server"
 # they must be UP for the overlay to work at all (D-04, other half).
 readonly K8S_LOCAL_BACKING_SERVICES="postgres redis rabbitmq keycloak minio mailhog"
 
+# The ONLY docker container states in which an APP service is provably not a
+# writer on the shared dev Postgres. Threat T-26-29.
+#
+# THIS IS AN ALLOW-LIST, AND THAT DIRECTION IS THE WHOLE POINT. The APP arm used
+# to ask "is this service's state the literal `running`?" and treat every other
+# answer as safe. That enumerates the BAD states implicitly, so every state
+# nobody thought of defaulted to PERMIT. Measured against a fixture, six states
+# fail open under that form: `restarting`, `paused`, `dead`, `removing`,
+# capitalised `Running`, and any future string docker adds.
+#
+# `restarting` is the reachable one, not a hypothetical: all four app services
+# carry `restart: unless-stopped` in docker-compose.full-stack.yml, and
+# k8s/LOCAL.md §7 documents core-java crash-looping at boot on
+# host.minikube.internal DNS. A crash-looping container legitimately sits in
+# `restarting` and `unless-stopped` guarantees it returns within seconds — as a
+# live writer, after the guard said OK. A `paused` container is worse still: it
+# keeps its established Postgres backends OPEN and resumes writing on unpause.
+# `docker compose ps` without `--all` counts both as up; only the exact-literal
+# match narrowed them out.
+#
+# WHY `dead` AND `removing` ARE NOT IN THIS LIST (they are in the audit's
+# suggested closure, deliberately rejected): neither is *provably* stopped.
+# `dead` means Docker could not finish tearing the container down, so its
+# filesystem may still be mounted and its state is indeterminate; `removing` is a
+# transition that can still end either way. "Not provably stopped" must resolve to
+# REFUSE, because the cost of a false refusal is one human decision while the cost
+# of a false permit is two writers on one database.
+#
+# `exited` = the process is gone. `created` = it never started. A service ABSENT
+# from the inventory entirely is handled separately and also counts as safe.
+readonly K8S_LOCAL_APP_STOPPED_STATES="exited created"
+
 # Namespaces allowed to run workloads on the local profile WITHOUT being treated
 # as a second writer on the shared dev Postgres. Kubernetes' own control-plane
 # namespaces plus the ingress addon's, which carry no application code. The
@@ -312,11 +344,67 @@ k8s_local_assert_compose_xor() {
   # to prevent. (The backing loop fails closed by comparison, and this input is
   # small enough that the race was never observed here; the 38 KB render in
   # scripts/k8s-local-up.sh is where the class actually bit, in plan 26-07.)
-  local svc running_apps="" down_backing=""
+  #
+  # ------------------------------------------------------------------------
+  # READ THE PARAGRAPH ABOVE AS A WARNING ABOUT THIS ONE. Threat T-26-29.
+  #
+  # That paragraph correctly identified the asymmetry — "a spurious 141 reads as
+  # 'this app service is NOT running', so the guard would FAIL OPEN" — fixed the
+  # SIGPIPE cause, and then left THE SAME FAIL-OPEN DIRECTION in place ten lines
+  # below for every other input that produces no match. SIGPIPE was never the only
+  # way to get no match: `restarting`, `paused`, `dead`, `removing` and a
+  # capitalised `Running` all produce no match too, and all five were measured
+  # returning `rc=0 OK` with a live app container in the fixture. Diagnosing one
+  # cause of a wrong answer is not the same as fixing the wrong DIRECTION, and
+  # that is exactly how this recurred as the THIRD instance of the fail-open class
+  # in this phase (after the SIGPIPE inversion and empty `docker compose ps`
+  # reading as clean — both of those are genuinely closed).
+  #
+  # So the APP arm now matches the BACKING arm's direction: it asks "is this
+  # service PROVABLY stopped?" against the K8S_LOCAL_APP_STOPPED_STATES
+  # ALLOW-LIST, and anything else — including a state string that does not exist
+  # yet — counts as a writer and refuses. If you add a state to that list you are
+  # asserting a container in it cannot hold a Postgres connection; prove it first.
+  #
+  # awk, not grep, and awk reads a HERE-STRING: there is no pipe, so there is no
+  # writer to signal and the SIGPIPE class cannot return through this loop at all.
+  # awk also reports the OBSERVED state, so the refusal tells the operator WHY and
+  # not merely which service.
+  # ------------------------------------------------------------------------
+  local svc running_apps="" down_backing="" verdict
   for svc in $K8S_LOCAL_APP_SERVICES; do
-    if grep -qE "^${svc} running$" <<<"$state"; then
-      running_apps="${running_apps} ${svc}"
-    fi
+    # -> "absent" | "safe" | "live <observed,states>"
+    verdict="$(awk -v s="$svc" -v stopped="$K8S_LOCAL_APP_STOPPED_STATES" '
+        BEGIN {
+          n = split(stopped, a, " ")
+          for (i = 1; i <= n; i++) if (a[i] != "") ok[a[i]] = 1
+          found = 0; live = 0; states = ""
+        }
+        $1 == s {
+          found++
+          # A line with no state field is not evidence of being stopped. Name it
+          # rather than emitting an empty "()" the operator cannot act on.
+          st = (NF < 2 ? "no-state-field" : $2)
+          if (!(st in ok)) {
+            live++
+            if (index("," states ",", "," st ",") == 0)
+              states = (states == "" ? st : states "," st)
+          }
+        }
+        END {
+          if (found == 0)     print "absent"
+          else if (live == 0) print "safe"
+          else                print "live " states
+        }
+      ' <<<"$state")"
+    case "$verdict" in
+      absent | safe) : ;;
+      'live '*)      running_apps="${running_apps} ${svc}(${verdict#live })" ;;
+      # Unparseable awk output — including awk itself failing, which yields the
+      # empty string — must NOT read as "not a writer". That is the very defect
+      # this block exists to fix, so it fails CLOSED and names itself.
+      *)             running_apps="${running_apps} ${svc}(STATE-UNPARSEABLE)" ;;
+    esac
   done
   for svc in $K8S_LOCAL_BACKING_SERVICES; do
     if ! grep -qE "^${svc} running$" <<<"$state"; then
@@ -326,7 +414,7 @@ k8s_local_assert_compose_xor() {
 
   if [ -n "$running_apps" ]; then
     k8s_local_refuse "compose-apps-running" \
-      "compose APP service(s) still running:${running_apps}. The local cluster and compose would be TWO WRITERS on the same shared dev Postgres. Bring the app containers down first (a human decision — this tooling never stops a container, because a second session may own this stack). The backing services must STAY UP."
+      "compose APP service(s) NOT PROVABLY STOPPED (observed state in brackets):${running_apps}. The local cluster and compose would be TWO WRITERS on the same shared dev Postgres. Only ${K8S_LOCAL_APP_STOPPED_STATES// /, } count as stopped: a 'restarting' container comes back within seconds under 'restart: unless-stopped', and a 'paused' one still holds its established Postgres backends open and resumes writing on unpause. Bring the app containers down first (a human decision — this tooling never stops a container, because a second session may own this stack). The backing services must STAY UP."
     return 1
   fi
 
