@@ -13,12 +13,45 @@
 #
 # THE INVARIANTS, THE DEFECT EACH PINS, AND THE PLAN THAT FIXED IT
 #
-#   INV-1  DEF-1 / INFRA-02a, SOURCE level. k8s/base/core-java-deployment.yaml
-#          must not carry a hardcoded `value: "5432"` for the Postgres port.
-#          A hardcoded port made every environment's DB port a manifest edit; the
-#          host dev Postgres publishes 5433, so a local cluster could not work at
-#          all. Fixed in plan 26-01 by routing DB_PORT through
-#          postgres-credentials/port.
+#   INV-1  DEF-1 / INFRA-02a, RENDER level, per target. Every rendered DB_PORT
+#          EnvVar must carry `valueFrom:` and NO `value:`. A hardcoded port made
+#          every environment's DB port a manifest edit; the host dev Postgres
+#          publishes 5433, so a local cluster could not work at all. Fixed in plan
+#          26-01 by routing DB_PORT through postgres-credentials/port.
+#
+#          THIS ASSERTION WAS REWRITTEN (code review WR-01). It used to be a
+#          SOURCE-level grep for a single anchored literal:
+#              grep -nE '^[[:space:]]+value: "5432"' k8s/base/core-java-deployment.yaml
+#          which matched ONLY the double-quoted spelling and read only that one
+#          file. That was EVADABLE, and the evasion was DEMONSTRATED: with DB_PORT
+#          regressed to the single-quoted `value: '5432'`, this gate AND
+#          check-env-contract.sh both still exited 0 with the defect they exist to
+#          pin fully restored. YAML has at least three equivalent spellings
+#          ("5432", '5432', bare 5432); kustomize normalises all of them to
+#          `value: "5432"` in the render, so asserting on the RENDER removes the
+#          spelling degree of freedom entirely. Asserting on the SHAPE
+#          (valueFrom present, value absent) removes the literal too: a regression
+#          to `value: "5433"` or to any other port literal fails just the same,
+#          because the defect was never the digits — it was the port being a
+#          manifest constant instead of config (GLOBAL_RULE_6).
+#          Two further gains fall out of moving it into the per-target loop: it now
+#          covers ALL FOUR targets rather than one base file (an overlay that
+#          patched a literal back in was previously invisible), and it covers BOTH
+#          DB_PORT sites per render (the core-java Deployment and the pg-backup
+#          CronJob) rather than only the Deployment.
+#
+#          HOW INV-1 AND INV-2 DIFFER (they are complementary, not redundant):
+#            INV-1 is DB_PORT-specific and fires on `value:` ALONE — the plain
+#                  regression, where the secretKeyRef is REPLACED by a literal.
+#                  INV-2 is blind to that case: nothing carries both keys, so the
+#                  render is a legal manifest that applies cleanly and quietly
+#                  hardcodes the port again.
+#            INV-2 is universal (every EnvVar) and fires only when `value:` and
+#                  `valueFrom:` are BOTH present — the apply-time rejection
+#                  (PIT-2), which is a different failure mode: it never reaches a
+#                  running pod at all.
+#          A DB_PORT carrying both trips BOTH, which is correct: it is
+#          simultaneously a hardcoded port and an unappliable manifest.
 #
 #   INV-2  PIT-2, RENDER level, per target. No rendered EnvVar may carry BOTH
 #          `value:` and `valueFrom:`. `kubectl kustomize` emits that combination
@@ -179,7 +212,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 K8S_DIR="$REPO_ROOT/k8s"
 
-CORE_DEPLOYMENT="$K8S_DIR/base/core-java-deployment.yaml"
+# NOTE (WR-01): there is deliberately NO $CORE_DEPLOYMENT here any more. INV-1 was
+# the only reader, and it read the SOURCE file — which is what made it evadable by
+# quoting style and blind to overlays. INV-1 now asserts on the render inside the
+# per-target loop, so this script no longer depends on any single base filename;
+# renaming or splitting core-java-deployment.yaml cannot make the gate go blind.
 QUICK_START="$K8S_DIR/QUICK_START.md"
 SECRETS_TEMPLATE="$K8S_DIR/base/secrets-template.yaml.example"
 LOCAL_DIR="$K8S_DIR/local"
@@ -243,7 +280,6 @@ FORBIDDEN_RENDER_LITERALS=(
 
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
-[[ -f "$CORE_DEPLOYMENT" ]]  || parse_fail "not found: $CORE_DEPLOYMENT"
 [[ -f "$QUICK_START" ]]      || parse_fail "not found: $QUICK_START"
 [[ -f "$SECRETS_TEMPLATE" ]] || parse_fail "not found: $SECRETS_TEMPLATE"
 
@@ -258,23 +294,7 @@ trap 'rm -rf "$TMP"' EXIT
 FAILED=0
 
 # ===========================================================================
-# INV-1 — source level, once (not per target)
-# ===========================================================================
-echo "INV-1 (DEF-1 / INFRA-02a, source): no hardcoded Postgres port in k8s/base/core-java-deployment.yaml"
-if grep -nE '^[[:space:]]+value: "5432"' "$CORE_DEPLOYMENT"; then
-    echo "  FAIL: a hardcoded Postgres port literal is back in k8s/base/core-java-deployment.yaml." >&2
-    echo "        The port is CONFIG, not a constant: the host dev Postgres publishes 5433, so a" >&2
-    echo "        hardcoded 5432 makes a local cluster impossible and makes every environment's" >&2
-    echo "        port a manifest edit. Route DB_PORT through postgres-credentials/port, exactly" >&2
-    echo "        as k8s/base/pg-backup-cronjob.yaml already does (grep 'key: port')." >&2
-    FAILED=1
-else
-    echo "  OK   [k8s/base/core-java-deployment.yaml]: no 'value: \"5432\"' line"
-fi
-echo
-
-# ===========================================================================
-# Per-target render assertions: INV-2, INV-3, INV-4
+# Per-target render assertions: INV-1, INV-2, INV-3, INV-4, INV-6
 # ===========================================================================
 
 # --- awk: emit one record per rendered EnvVar (name, line, has value, has
@@ -503,7 +523,38 @@ for dir in "${TARGETS[@]}"; do
     envvar_count=$(wc -l < "$TMP/envvars.tsv")
     (( envvar_count > 0 )) || parse_fail "[$rel] INV-2 found 0 EnvVar items in the render — the EnvVar shape changed and this assertion is now blind. Fix the parser, do not delete the invariant."
     if ! grep -qP '^DB_PORT\t' "$TMP/envvars.tsv"; then
-        parse_fail "[$rel] INV-2 found no DB_PORT EnvVar in the render — the assertion would pass vacuously. DB_PORT must be injected (DEF-1); if it was deliberately renamed, update this gate in the same change."
+        parse_fail "[$rel] INV-1/INV-2 found no DB_PORT EnvVar in the render — the assertion would pass vacuously. DB_PORT must be injected (DEF-1); if it was deliberately renamed, update this gate in the same change."
+    fi
+
+    # ---------------- INV-1 ----------------
+    # SHAPE, on the RENDER, per target: every DB_PORT EnvVar carries valueFrom and
+    # no value. No pipes here on purpose — awk counts internally, so there is no
+    # `grep -q` writer to signal under `set -o pipefail` (the SIGPIPE class this
+    # phase fixed elsewhere; the code-review's own suggested fix used
+    # `awk ... | grep -q .`, which reintroduces it).
+    dbport_total=$(awk   -F'\t' '$1 == "DB_PORT"              { c++ } END { print c+0 }' "$TMP/envvars.tsv")
+    dbport_literal=$(awk -F'\t' '$1 == "DB_PORT" && $3 == 1   { c++ } END { print c+0 }' "$TMP/envvars.tsv")
+    dbport_ref=$(awk     -F'\t' '$1 == "DB_PORT" && $4 == 1   { c++ } END { print c+0 }' "$TMP/envvars.tsv")
+
+    (( dbport_total > 0 )) || parse_fail "[$rel] INV-1 counted 0 DB_PORT EnvVar records after the presence check passed — the TSV field layout changed and this assertion is now blind. Fix the parser, do not delete the invariant."
+
+    if (( dbport_literal > 0 || dbport_ref != dbport_total )); then
+        awk -F'\t' -v rel="$rel" '
+            $1 == "DB_PORT" && $3 == 1 { printf "  FAIL [%s] INV-1: DB_PORT (render line %s) carries a LITERAL \047value:\047.\n", rel, $2 }
+            $1 == "DB_PORT" && $4 == 0 { printf "  FAIL [%s] INV-1: DB_PORT (render line %s) has NO \047valueFrom:\047.\n", rel, $2 }
+        ' "$TMP/envvars.tsv" >&2
+        echo "        The Postgres port is CONFIG, not a constant (GLOBAL_RULE_6): the host dev" >&2
+        echo "        Postgres publishes 5433, so a hardcoded 5432 makes a local cluster impossible" >&2
+        echo "        and makes every environment's port a manifest edit. Route DB_PORT through" >&2
+        echo "        postgres-credentials/port, exactly as k8s/base/pg-backup-cronjob.yaml already" >&2
+        echo "        does (grep 'key: port'). This asserts the SHAPE on the RENDER, so no quoting" >&2
+        echo "        style evades it and no overlay can patch a literal back in unseen — the" >&2
+        echo "        previous source-level 'value: \"5432\"' grep was evaded by 'value: '\''5432'\''" >&2
+        echo "        with both gates still green (code review WR-01)." >&2
+        FAILED=1
+        inv1_msg="FAIL"
+    else
+        inv1_msg="OK ($dbport_total DB_PORT EnvVar(s), all valueFrom, 0 literal)"
     fi
 
     inv2_bad=0
@@ -631,10 +682,11 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
-    if [[ "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg" >&2
+    if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
+          || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg" >&2
     else
-        echo "OK   [$rel]: INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg"
     fi
 done
 echo
