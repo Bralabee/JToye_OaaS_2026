@@ -128,6 +128,37 @@ RUN npm run build
 # Stage 2: Runner
 FROM node:20-alpine AS runner
 
+# ---------------------------------------------------------------------------
+# Trivy image gate (.github/workflows/ci-cd.yaml:721 — CRITICAL,HIGH,
+# ignore-unfixed) fails on this base image with TWO independent finding groups.
+# Both come from the base, NOT from the application: `tar` and `sigstore` have
+# ZERO entries in frontend/package-lock.json, and Trivy reports the app's own
+# node_modules as 0 vulnerabilities.
+#
+#   1. Alpine OS packages — libcrypto3 / libssl3 CVE-2026-45447 (OpenSSL heap
+#      use-after-free), 3.5.6-r0, fixed in 3.5.7-r0.
+#   2. npm's OWN bundled dependencies under /usr/local/lib/node_modules/npm —
+#      16 findings incl. tar CVE-2026-59873 (CRITICAL, 6.2.1 -> 7.5.19), plus
+#      sigstore, minimatch, brace-expansion, glob, cross-spawn.
+#
+# npm is build-time only. This stage runs `node server.js` and a `node -e`
+# healthcheck, so nothing here invokes npm or npx — removing it deletes the
+# entire finding class rather than chasing each CVE, and shrinks the image.
+#
+# Measured against the gate's exact flags (severity CRITICAL,HIGH,
+# ignore-unfixed, exit-code 1). BOTH halves are required — neither alone passes:
+#
+#   node:20-alpine as-is        -> exit 1, 2 finding groups
+#   apk upgrade only            -> exit 1, 1 group (npm's bundle remains)
+#   rm -rf npm only             -> exit 1, 1 group (openssl remains)
+#   both (this change)          -> exit 0, 0 findings
+#
+# Do not "tidy" either half away: each was shown to be load-bearing by removing
+# it and watching the gate fail.
+# ---------------------------------------------------------------------------
+RUN apk --no-cache upgrade libcrypto3 libssl3 \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 WORKDIR /app
 
 # Set NODE_ENV to production
