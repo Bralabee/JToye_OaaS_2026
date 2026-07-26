@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -109,15 +109,13 @@ export default function ProductsPage() {
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
 
-  // The products list endpoint takes no shop param, so narrow the already
-  // grant-scoped (23-03) page client-side. This is presentation only — the
-  // authoritative scope is the server's grant set.
-  const visibleProducts = contextShopId
-    ? products.filter((p) => p.shopId === contextShopId)
-    : products
-  // The count label follows what is actually on screen; in the All-shops context
-  // it stays the server's total (today's behaviour, unchanged).
-  const visibleCount = contextShopId ? visibleProducts.length : totalElements
+  // WR-04 (#280): the shop narrow now happens SERVER-side via `?shopId=`
+  // (ProductService.getProductsByShop, gated by the 23-03 grant check), so the
+  // rendered rows, the count and the pager all describe the same result set.
+  // The previous client-side `products.filter(...)` ran over a single already
+  // paginated page, which produced a count that was really "matches on this
+  // page", a false "No products in this shop" when a shop's rows began on page
+  // 2, and rows past page 1 that could not be reached at all.
   const contextShopName = contextShopId
     ? shops.find((s) => s.id === contextShopId)?.name
     : undefined
@@ -132,11 +130,27 @@ export default function ProductsPage() {
     resolver: zodResolver(productSchema),
   })
 
+  // WR-04 (#280): tracks the previous switcher selection so a shop change can
+  // send the pager back to page 0 in the SAME effect pass. Without the reset, a
+  // vendor sitting on page 3 who switches to a shop with one page of products
+  // would be left staring at an out-of-range empty page.
+  const prevShopRef = useRef<string | null | undefined>(undefined)
+
   useEffect(() => {
+    // A switcher change must refetch so the list narrows live (no reload).
+    const shopChanged =
+      prevShopRef.current !== undefined && prevShopRef.current !== contextShopId
+    prevShopRef.current = contextShopId
+    if (shopChanged && currentPage !== 0) {
+      // Re-enters this effect with currentPage 0; deliberately does NOT fetch
+      // here, so the shop change costs exactly one request, not two.
+      setCurrentPage(0)
+      return
+    }
     fetchProducts()
     fetchShops()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
+  }, [currentPage, contextShopId])
 
   const fetchShops = async () => {
     try {
@@ -154,14 +168,18 @@ export default function ProductsPage() {
     } else if (searchQuery.length === 0) {
       fetchProducts()
     }
+    // contextShopId is a dependency so switching shop mid-search re-runs the
+    // search against the new shop rather than leaving stale rows on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
+  }, [searchQuery, contextShopId])
 
   const fetchProducts = async () => {
     try {
       setLoading(true)
+      // VSA-03 / WR-04: outside the All-shops context the list narrows SERVER-side.
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
       const response = await apiClient.get(
-        `/api/v1/products?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/products?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`
       )
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
@@ -180,7 +198,13 @@ export default function ProductsPage() {
 
   const searchProducts = async (query: string) => {
     try {
-      const response = await apiClient.get(`/api/v1/products/search?q=${encodeURIComponent(query)}`)
+      // WR-04 (#280): search obeys the switcher too. Without this the narrow
+      // would silently stop applying the moment the vendor typed two characters,
+      // because this screen swaps to /search at searchQuery.length >= 2.
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
+      const response = await apiClient.get(
+        `/api/v1/products/search?q=${encodeURIComponent(query)}${shopScope}`
+      )
       setProducts(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
@@ -366,7 +390,7 @@ export default function ProductsPage() {
             <div>
               <CardTitle>All Products</CardTitle>
               <CardDescription>
-                {visibleCount} product{visibleCount !== 1 ? "s" : ""}
+                {totalElements} product{totalElements !== 1 ? "s" : ""}
                 {contextShopId
                   ? ` in ${contextShopName || "the selected shop"}`
                   : " in total"}
@@ -383,7 +407,7 @@ export default function ProductsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {visibleProducts.length === 0 ? (
+            {products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Package className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
@@ -414,7 +438,7 @@ export default function ProductsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleProducts.map((product) => {
+                    {products.map((product) => {
                       const allergenNames = getAllergenNames(product.allergenMask)
                       return (
                         <m.tr

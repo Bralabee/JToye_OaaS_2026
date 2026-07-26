@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -234,8 +234,10 @@ export default function MarketingPage() {
   const fetchPromotions = useCallback(async () => {
     try {
       setPromoLoading(true)
+      // VSA-03 / WR-04 (#280): narrow SERVER-side so rows, count and pager agree.
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
       const response = await apiClient.get(
-        `/api/v1/promotions?page=${promoPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/promotions?page=${promoPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`
       )
       setPromotions(response.data.content || [])
       setPromoTotalPages(response.data.totalPages || 0)
@@ -246,13 +248,15 @@ export default function MarketingPage() {
     } finally {
       setPromoLoading(false)
     }
-  }, [promoPage, toast])
+  }, [promoPage, contextShopId, toast])
 
   const fetchAnnouncements = useCallback(async () => {
     try {
       setAnnouncementsLoading(true)
+      // VSA-03 / WR-04 (#280): narrow SERVER-side so rows, count and pager agree.
+      const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
       const response = await apiClient.get(
-        `/api/v1/announcements?page=${announcementsPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/announcements?page=${announcementsPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`
       )
       setAnnouncements(response.data.content || [])
       setAnnouncementsTotalPages(response.data.totalPages || 0)
@@ -263,11 +267,26 @@ export default function MarketingPage() {
     } finally {
       setAnnouncementsLoading(false)
     }
-  }, [announcementsPage, toast])
+  }, [announcementsPage, contextShopId, toast])
 
   useEffect(() => {
     fetchShops()
   }, [fetchShops])
+
+  // WR-04 (#280): a shop change sends BOTH pagers back to page 0 — the new shop
+  // may have fewer pages than the current index, which would strand the vendor on
+  // an out-of-range empty page. Both fetchers already refetch on their own (the
+  // switcher is in their useCallback deps); this only corrects the page index.
+  // When a pager is already at 0 — the common case — setState is a no-op and React
+  // bails out, so the switch still costs exactly one request per list.
+  const prevShopRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (prevShopRef.current !== undefined && prevShopRef.current !== contextShopId) {
+      setPromoPage(0)
+      setAnnouncementsPage(0)
+    }
+    prevShopRef.current = contextShopId
+  }, [contextShopId])
 
   useEffect(() => {
     fetchPromotions()
@@ -486,26 +505,26 @@ export default function MarketingPage() {
 
   // --- Filtering ---
 
-  // VSA-03: outside the All-shops context both lists narrow to the selected
-  // shop. Client-side because these endpoints take no shop param — the rows are
-  // already grant-scoped server-side by 23-03, so this only hides within the
-  // authorised set, never widens it.
-  const inShopContext = (shopId: string) => !contextShopId || shopId === contextShopId
+  // WR-04 (#280): the SHOP narrow moved SERVER-side (`?shopId=`), so the rows
+  // arriving here are already the selected shop's — and the count and pager now
+  // describe that same set instead of the whole tenant's.
+  //
+  // The STATUS filter below is deliberately still client-side. It is the same
+  // defect class (filtering one page of a paginated result, so "3 active" really
+  // means "3 active on this page"), but it is a SEPARATE defect from WR-04 and is
+  // tracked on its own rather than silently folded in here — issue #306.
   const contextShopName = contextShopId
     ? shops.find((s) => s.id === contextShopId)?.name || "Selected shop"
     : undefined
 
   const filteredPromotions = promotions.filter(
-    (p) =>
-      inShopContext(p.shopId) &&
-      (statusFilter === "all" || getPromotionStatus(p) === statusFilter)
+    (p) => statusFilter === "all" || getPromotionStatus(p) === statusFilter
   )
 
   const filteredAnnouncements = announcements.filter(
     (a) =>
-      inShopContext(a.shopId) &&
-      (announcementStatusFilter === "all" ||
-        getAnnouncementStatus(a) === announcementStatusFilter)
+      announcementStatusFilter === "all" ||
+      getAnnouncementStatus(a) === announcementStatusFilter
   )
 
   // --- Shared filter bar ---
@@ -597,8 +616,8 @@ export default function MarketingPage() {
             <CardHeader>
               <CardTitle>Promotions</CardTitle>
               <CardDescription>
-                {contextShopId ? filteredPromotions.length : promoTotalElements} promotion
-                {(contextShopId ? filteredPromotions.length : promoTotalElements) !== 1 ? "s" : ""}
+                {promoTotalElements} promotion
+                {promoTotalElements !== 1 ? "s" : ""}
                 {contextShopId ? ` in ${contextShopName}` : " in total"}
               </CardDescription>
             </CardHeader>
@@ -745,10 +764,8 @@ export default function MarketingPage() {
             <CardHeader>
               <CardTitle>Announcements</CardTitle>
               <CardDescription>
-                {contextShopId ? filteredAnnouncements.length : announcementsTotalElements} announcement
-                {(contextShopId ? filteredAnnouncements.length : announcementsTotalElements) !== 1
-                  ? "s"
-                  : ""}
+                {announcementsTotalElements} announcement
+                {announcementsTotalElements !== 1 ? "s" : ""}
                 {contextShopId ? ` in ${contextShopName}` : " in total"}
               </CardDescription>
             </CardHeader>

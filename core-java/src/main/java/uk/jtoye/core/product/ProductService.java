@@ -214,6 +214,29 @@ public class ProductService {
     }
 
     /**
+     * Get products for ONE shop of the tenant (WR-04, issue #280, plan 23-18).
+     *
+     * <p>Backs the explicit {@code GET /products?shopId=} narrow, replacing a client-side
+     * {@code .filter(p => p.shopId === contextShopId)} applied over a single already-paginated
+     * page — which produced wrong counts, a false empty state when a shop's rows began on page 2,
+     * and rows past page 1 that could not be reached.
+     *
+     * <p>VSA-02 (D-02): an explicit shop-scoped read requires at least STAFF on that shop, exactly
+     * as {@link uk.jtoye.core.order.OrderService#getOrdersByShop}. This is the authorization seam —
+     * a caller without a grant on {@code shopId} gets a typed 403, NOT an empty page, so an
+     * unauthorized narrow is never mistaken for "this shop has nothing".
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> getProductsByShop(UUID shopId, Pageable pageable) {
+        log.debug("Fetching products for shop {} with pagination: page={}, size={}",
+                shopId, pageable.getPageNumber(), pageable.getPageSize());
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        return productRepository.findByShopId(shopId, pageable)
+                .map(productMapper::toDto)
+                .map(this::resolveAssetFirst);
+    }
+
+    /**
      * Full-text product search (tenant-scoped via RLS), paginated.
      *
      * <p>Strategy (Issue #96): each whitespace-separated word is sanitised to
@@ -230,13 +253,34 @@ public class ProductService {
      */
     @Transactional(readOnly = true)
     public Page<ProductDto> search(String query, Pageable pageable) {
-        log.debug("Searching products with query: {}", query);
+        return search(query, null, pageable);
+    }
+
+    /**
+     * Full-text product search, optionally narrowed to ONE shop (WR-04, issue #280, plan 23-18).
+     *
+     * <p>A null {@code shopId} preserves the previous behaviour exactly (grant-set + tenant-wide).
+     * A non-null {@code shopId} is gated by {@code require(shopId, STAFF)} and excludes legacy
+     * tenant-wide rows, mirroring {@link #getProductsByShop} so the list and search views agree
+     * about what "this shop" means.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> search(String query, UUID shopId, Pageable pageable) {
+        log.debug("Searching products with query: {} (shopId={})", query, shopId);
         String tsQuery = toPrefixTsQuery(query);
         if (tsQuery.isEmpty()) {
             return Page.empty(pageable);
         }
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
         String skuPrefix = escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%";
+        if (shopId != null) {
+            // Gate FIRST, before any query runs, so an unauthorized shop can never be probed
+            // for row existence via timing or result shape.
+            shopAccessService.require(shopId, ShopRole.STAFF);
+            return productRepository.searchFullTextByShop(tsQuery, skuPrefix, shopId, unsorted)
+                    .map(productMapper::toDto)
+                    .map(this::resolveAssetFirst);
+        }
         // VSA-02 (D-01): read-scope search to the caller's grant set at the QUERY,
         // mirroring getAllProducts. GROUP_ADMIN uses the tenant-wide FTS; a scoped user
         // uses the grant-set + tenant-wide (shop_id IS NULL) FTS variant (WR-08 read half,

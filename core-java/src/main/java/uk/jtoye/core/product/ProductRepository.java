@@ -53,6 +53,36 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     List<Product> findByShopId(UUID shopId);
 
+    // WR-04 (issue #280, plan 23-18): paged single-shop variant backing the explicit
+    // `GET /products?shopId=` narrow. Deliberately EXCLUDES legacy tenant-wide
+    // (shop_id IS NULL) rows, unlike findTenantScopedInGrantSetOrTenantWide: that is
+    // exactly what the client-side filter this replaces did
+    // (`products.filter(p => p.shopId === contextShopId)`), so moving the narrow to the
+    // server changes WHERE the filter runs and nothing about WHICH rows a vendor sees.
+    // Tenant scoping is RLS's job here — there is no OR-null branch to make non-tenant-local
+    // (contrast findTenantScopedInGrantSetOrTenantWide, which needs an explicit tenant_id for
+    // precisely that reason), and the caller has already passed
+    // shopAccessService.require(shopId, STAFF), which 403s on a shop outside the caller's grants.
+    Page<Product> findByShopId(UUID shopId, Pageable pageable);
+
+    // WR-04 (issue #280, plan 23-18): single-shop FTS variant. Same UNION/ts_rank logic as
+    // searchFullText, narrowed by shop_id so search obeys the shop switcher — without it the
+    // switcher would silently stop applying the moment a vendor types two characters, because
+    // the screen swaps to this endpoint at searchQuery.length >= 2. No OR-null branch (matching
+    // findByShopId above), so RLS + the caller's require() gate carry tenant scoping.
+    @Query(value = "SELECT p.* FROM products p WHERE p.shop_id = :shopId AND p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
+            + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.shop_id = :shopId AND p.id IN ("
+            + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
+            + "UNION "
+            + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
+           nativeQuery = true)
+    Page<Product> searchFullTextByShop(@Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix,
+            @Param("shopId") UUID shopId, Pageable pageable);
+
     // Live product search (Issue #96): GIN/tsvector full-text over the V25
     // search_vector (title A, category B, description/ingredients C, dietary D)
     // using a caller-built prefix tsquery ("chick:*" finds "Chicken"), plus an
