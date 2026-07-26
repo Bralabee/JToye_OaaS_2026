@@ -66,10 +66,36 @@ echo "=== J'Toye local Kubernetes bootstrap: secrets + backup role + bucket ==="
 # ---------------------------------------------------------------------------
 # STEP 1 — GUARDS. Every one of these precedes every mutating call below, so a
 # refusal is provably a no-op.
+#
+# ALL FOUR guards run here, including k8s_local_assert_cluster_xor (audit flag
+# UF-26-04). It used to be called ONLY from scripts/k8s-local-up.sh STEP 3b, while
+# the USAGE block above advertises this script as directly runnable — so a
+# standalone run created the BYPASSRLS dump role, the backup bucket and every
+# Secret against a cluster that might already carry a stale writer namespace. A
+# guard reachable through one of two entry points is a guard with a bypass, and
+# this is the entry point where the mutations actually happen.
+#
+# The hazard is measured, not theoretical: a Stopped minikube profile preserves
+# etcd, and on 2026-07-25 starting this profile restored an 11-day-old
+# `jtoye-staging` namespace holding 16 live `jtoye_app` connections to the shared
+# dev Postgres while every other guard reported green.
+#
+# ORDER IS LOAD-BEARING: cluster_xor goes LAST because it is the only guard that
+# inventories a cluster, and k8s_local_assert_context must have confirmed WHICH
+# cluster first — the other kubectl context on this host is employer
+# infrastructure. It also needs a reachable API server, which this script already
+# requires anyway (assert_context fails when the profile has not been started, and
+# STEP 2 creates the namespace).
+#
+# Running via k8s-local-up.sh therefore evaluates cluster_xor twice (its STEP 3b
+# and here). That is deliberate and cheap: the guard is read-only and idempotent,
+# it is a POINT-IN-TIME snapshot by design, and the second reading is taken closer
+# to the mutations it protects.
 # ---------------------------------------------------------------------------
 k8s_local_load_env
 k8s_local_assert_context
 k8s_local_assert_compose_xor
+k8s_local_assert_cluster_xor
 
 # ---------------------------------------------------------------------------
 # STEP 1b — value preflight. Fail loud, by NAME, before anything is created:
