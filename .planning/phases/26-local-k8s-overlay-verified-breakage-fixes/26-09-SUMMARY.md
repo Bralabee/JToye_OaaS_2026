@@ -54,6 +54,31 @@ row, marking INFRA-01/INFRA-02 complete with per-sub-item citations while keepin
 relay row red and tracked as #266, and performing — not merely documenting — the teardown that restores
 the project's canonical compose runtime.
 
+> **POST-PHASE ANNOTATION — added 2026-07-26 by a records reconcile. Applies to every `#266` reference in
+> this document. Nothing below is rewritten: this is a dated phase record and its findings were correct
+> when measured.**
+>
+> Issue **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** is now **CLOSED**
+> (2026-07-26T10:03:13Z), fixed by PR **#269**, merged to main as **`d964a85`** and already an ancestor of
+> this branch. The destination is now built in one place — `core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java`
+> — as `/topic/{feature}.{tenantId}[.{qualifier}]`, a single dot-separated segment the broker accepts and
+> the idiomatic AMQP routing key. `TenantChannelInterceptor` parses that shape, and the cross-tenant
+> denial this record insisted must be re-tested rather than assumed **was re-run** (`TenantChannelInterceptorTest`
+> case 5, plus a new rejection of any slashed `/topic/` destination on shape alone).
+>
+> **Two things must not be collapsed into one.** The **code defect** that falsified L6 is **FIXED**, with
+> unit + integration coverage (`StompDestinationsTest`, `TenantChannelInterceptorTest`,
+> `TenantChannelInterceptorShopGateIntegrationTest`, `OrderStateChangeListenerTest`,
+> `OrderStateChangeListenerIdempotencyIntegrationTest`, `kitchen/__tests__/page.test.tsx`,
+> `use-stomp.test.ts`) and a live two-arm broker probe of the destination *shape*. But the **live
+> functional proof — evidence row L6, *a KDS client actually receives a relayed order event through a real
+> broker* — has still never been captured**, and capturing it needs a running cluster.
+>
+> Therefore **INFRA-02(d) remains closed on credential wiring only.** It is **not** upgraded to "the
+> realtime path is proven working": **L6 is now an open evidence gap rather than a defect. A fix is not a
+> proof** — treating it as one would be the same green-by-construction failure this phase spent nine plans
+> building against.
+
 ## What Was Built
 
 Nothing was built. This plan is a closer: it verifies, audits, records and restores. Its output is a
@@ -190,6 +215,10 @@ row than the requirement's text — *a KDS client actually receives a relayed ev
 RabbitMQ `/topic` destination may not contain `/`. `k8s/base/configmap.yaml:36` sets
 `stomp.broker.mode: "relay"` with no staging or production override, so **both inherit the broken
 path**. Tracked as **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** (`bug`/`P1`).
+
+> *2026-07-26 annotation:* #266 is now CLOSED (PR #269, `d964a85`) — the destination defect is fixed. The
+> paragraph above stands as recorded: **L6 itself is still not captured**, so INFRA-02(d) is still closed on
+> credential wiring only. See the post-phase annotation at the top of this document.
 
 ## End-State Decision
 
@@ -355,6 +384,10 @@ it verifies must not share a namespace.
   tenant-isolation prefix parser, so it earns its own plan and its own threat model. **Do not close it by
   flipping `stomp.broker.mode` to `in-memory`** — the simple broker is per-JVM and `k8s/base` sets
   `replicas: 3`, which would trade a loud failure for a silent, replica-dependent one.
+  - *2026-07-26 annotation:* **CLOSED by PR #269 (`d964a85`)**, and it did earn its own plan and tests as
+    this entry required — the dotted single-segment destination, `TenantChannelInterceptor` re-parsed, the
+    cross-tenant denial re-run. **What remains deferred is the evidence, not the defect:** L6 (a KDS client
+    receiving a relayed order event through a real broker) is still uncaptured and needs a cluster.
 - `frontend/e2e/stomp-relay.spec.ts` reworked to be ingress-capable (four structural blockers recorded).
 - `dashboard-mobile.spec.ts:268` strict-mode fragility (pre-existing, flaky, not reproducible unstubbed).
 - NetworkPolicy enforcement proof — needs a policy-enforcing CNI. The **prerequisite is now cleared** by

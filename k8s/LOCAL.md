@@ -434,15 +434,35 @@ minute**, which is the field that answers PIT-4. Nothing is wrong here — but a
 against a different image, so record which side a digest came from.
 
 **A3 — CONFIRMED PRODUCTION DEFECT: the STOMP relay rejects the KDS topic, because a RabbitMQ `/topic`
-destination must be a SINGLE segment.**
+destination must be a SINGLE segment.** — **FIXED 2026-07-26 (issue #266, PR #269, `d964a85`). Read the
+status box first; the diagnosis below is kept because the *mechanism* and the operator tell are still what
+you need if you ever see the symptom again.**
 
-> **TRACKED AS GitHub issue [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** —
-> *"KDS WebSocket relay path is structurally broken in staging/production — RabbitMQ rejects the
-> slashed `/topic` destination"* (OPEN, labels `bug` / `P1`). Filed 2026-07-25 at phase close so the
-> defect is scheduled work in the issue tracker rather than a note that only exists inside a finished
-> phase directory. The suggested direction and the must-fail-first four-part acceptance test remain in
-> `.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`; #266 is the
-> authoritative status.
+> **STATUS — 2026-07-26: THE DESTINATION DEFECT IS FIXED. Do not go hunting it.**
+> Issue [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266) is **CLOSED** (2026-07-26T10:03:13Z),
+> fixed by PR **#269** merged to main as **`d964a85`**. The destination is now
+> `/topic/{feature}.{tenantId}[.{qualifier}]` — one dot-separated segment RabbitMQ accepts, which is also
+> the idiomatic AMQP routing key — built in a single place,
+> `core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java`, and consumed by the publisher,
+> the tenant wall and the browser subscriber alike. `TenantChannelInterceptor` parses that shape with the
+> tenant as the second word; its cross-tenant denial was **re-run, not assumed**, and it now also rejects
+> any slashed `/topic/` destination on shape alone, so a stale client fails loudly instead of subscribing to
+> something the broker will never deliver.
+>
+> **What is still NOT proven, so that nobody reports this as a working realtime path:** nothing has yet
+> exercised a real relay end to end. Evidence row **L6** in §11 — *a KDS client actually receives a relayed
+> order event through a real broker* — remains **NOT CAPTURED** and needs a relay-mode cluster. #269
+> captured a live two-arm probe of the destination **shape** (slashed → `Invalid destination`, dotted →
+> RECEIPT), which is necessary but not sufficient. So `26-VALIDATION.md`'s functional row stays **RED** and
+> `REQUIREMENTS.md` INFRA-02(d) stays closed on **credential wiring only**: the defect is fixed, the proof
+> is outstanding, and **a fix is not a proof**. If you are bringing this cluster up anyway, capturing L6's
+> frame census is the cheap way to close it (acceptance items 1–3 in the phase's `deferred-items.md`).
+>
+> *Original tracking note, left as filed:* filed 2026-07-25 at phase close (then OPEN, labels `bug` / `P1`)
+> so the defect was scheduled work in the issue tracker rather than a note that only existed inside a
+> finished phase directory. The suggested direction and the must-fail-first four-part acceptance test remain
+> in `.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`, which now also
+> records what shipped and which acceptance items are still uncaptured.
 
 *Found by plan 26-08 Task 3 (2026-07-25) on this local cluster; the finding and the "record now, fix in
 its own scoped work" disposition were reviewed and **approved by the human at 26-08's verification
@@ -514,7 +534,18 @@ a relay that is not relaying, which is precisely the false-green class this repo
 Observed here, and independently confirmed by the human at the 26-08 gate: **amber, never green.**
 Judge the relay by the dot and the frame census, never by whether the board moves.
 
-**What the fix must touch — all three, in one change.** This is why it is not a bolt-on:
+*2026-07-26 — this tell survives the fix and is still the right instrument.* The destination defect is fixed
+(see the status box above), so amber no longer means "A3". It still means **SUBSCRIBE is being rejected or
+no session is being accepted** — on current code the likeliest causes are a stale pre-#269 frontend or
+core-java image in the cluster (the two sides must agree on the dotted shape), a relay that is down or
+refusing the credentials, or a genuinely new destination-shape mistake, which the interceptor now rejects
+loudly on shape alone. The load-bearing warning is unchanged and is not about this one defect: **the kitchen
+board updates from a reconnect-driven refetch either way, so a moving board is never evidence that the relay
+is delivering.** Judge it by the dot and the frame census.
+
+**What the fix must touch — all three, in one change.** This is why it is not a bolt-on. *(2026-07-26: this
+is exactly what PR #269 did — all three now derive their destination from the single `StompDestinations`
+helper instead of concatenating or index-parsing their own strings. The line numbers below are pre-fix.)*
 
 1. `core-java/src/main/java/uk/jtoye/core/order/OrderStateChangeListener.java:109` — the publisher:
    `String topic = "/topic/kitchen/" + event.tenantId() + "/" + order.getShopId();`
@@ -530,6 +561,9 @@ preserves every segment; note `amq.topic` treats `.` as its wildcard separator, 
 several routing-key words. The full suggested direction and a **must-fail-before-it-passes** four-part
 acceptance test live in
 `.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`.
+*(2026-07-26: this is the shape that shipped in PR #269 — `/topic/kitchen.{tenantId}.{shopId}`. Of the
+four-part acceptance test, item 4 (cross-tenant subscribe still refused) is **met** by re-run tests; items
+1–3 all require a relay-mode cluster run and are **still uncaptured**.)*
 
 **DO NOT "fix" this by flipping `stomp.broker.mode` to `in-memory`.** It would make the symptom vanish
 while making the system worse. `WebSocketConfig.java:76`'s simple broker is **per-JVM**, and
@@ -545,12 +579,18 @@ Full two-directional evidence, the frame census and the verbatim ERROR body are 
 
 **The kitchen display looks live but the connection dot is AMBER, and `core-java` logs
 `Received ERROR {message=[Invalid destination]…}` every ~5 seconds**
-This is **A3**, a confirmed production defect — not a local misconfiguration, and nothing here will fix
-it. The relay is connected and authenticated; the *destination* `/topic/kitchen/{tenantId}/{shopId}` is
-invalid because a RabbitMQ `/topic` destination may not contain `/`. **Do not conclude the relay works
-because the board updates** — it updates from a reconnect-driven refetch, not from a relayed event.
-Check the dot (green = working, amber = A3) and the frame census, and read §7 A3 before changing
-anything. In particular, do **not** set `stomp.broker.mode: in-memory` to silence it.
+**Status 2026-07-26: the defect that caused this is FIXED** — issue #266, PR #269 (`d964a85`) made the
+destination a single dot-separated segment. **On current code this symptom means something else**, most
+likely a **stale pre-#269 image** in the cluster (publisher, tenant wall and browser subscriber must all be
+on the dotted shape — re-tag and `minikube image load` fresh images), a relay that is down or refusing the
+credentials, or a new destination that is not a single segment, which the tenant wall now rejects on shape
+alone. Historically this was **A3**, a confirmed production defect: the relay was connected and
+authenticated, but the *destination* `/topic/kitchen/{tenantId}/{shopId}` was invalid because a RabbitMQ
+`/topic` destination may not contain `/`. The rest of this entry still applies whatever the cause: **do not
+conclude the relay works because the board updates** — it updates from a reconnect-driven refetch, not from a
+relayed event. Check the dot (green = subscription accepted, amber = rejected/reconnecting) and the frame
+census, and read §7 A3 before changing anything. In particular, do **not** set `stomp.broker.mode:
+in-memory` to silence it — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
 **`admission webhook "validate.nginx.ingress.kubernetes.io" denied the request`**
 The error text names the offending annotation. Cause: the ingress-nginx v1.12.2 snippet-annotation
@@ -1607,6 +1647,12 @@ BROKEN.** D-06's browser half is therefore recorded as FALSIFIED rather than unp
 more useful outcome than a pass, and precisely why D-06 insisted this be exercised on the cluster where
 `stomp.broker.mode` is `relay` instead of in compose where it is `in-memory`. The defect is
 production-affecting (base sets `relay`); see §7 A3 and `deferred-items.md`.
+
+> *2026-07-26 annotation — the captured evidence above is left exactly as measured on 2026-07-25.* The
+> defect it proves was **fixed** by PR #269 (`d964a85`, issue #266 CLOSED). **L6 itself is still NOT
+> CAPTURED:** its assertion is *a KDS client receives a relayed order event*, and no such capture exists on
+> any cluster — so this row remains an **open evidence gap**, not a defect, and INFRA-02(d) stays closed on
+> credential wiring only. Re-capture it on the next rehearsal; see the §7 A3 status box. A fix is not a proof.
 
 **L7 — DEF-5: a real vendor login through the ingress reaches a dashboard** *(owner: 26-08)*
 

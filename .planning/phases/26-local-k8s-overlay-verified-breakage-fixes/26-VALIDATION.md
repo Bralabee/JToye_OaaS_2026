@@ -78,6 +78,23 @@ purpose. A falsified row is a stronger result than an unproven one — it is the
 to obtain — and rewriting it green, or quietly downgrading it to "deferred", would make every other row
 in this table worth less.
 
+> **POST-PHASE ANNOTATION — 2026-07-26, records reconcile. The INFRA-02d functional row STAYS RED and its
+> cell is deliberately not edited: the falsification was correct when measured and is the finding this
+> contract exists to have produced.**
+>
+> The **defect** behind that red row is now **fixed**: issue **#266** was CLOSED 2026-07-26T10:03:13Z by PR
+> **#269** (`d964a85`), which moved the destination to `/topic/{feature}.{tenantId}[.{qualifier}]` — one
+> dot-separated segment the broker accepts — built in a single place (`StompDestinations`) and parsed there
+> by `TenantChannelInterceptor`, whose cross-tenant denial was re-run rather than assumed.
+>
+> **The row does not go green, because the row is about a proof and the proof was never taken.** Its
+> assertion is *a KDS client actually receives a relayed order event*; that has **still never been
+> captured** on any cluster, and capturing it requires a running relay-mode cluster. What #269 added is a
+> live two-arm probe of the destination **shape** (dotted → RECEIPT, slashed → `Invalid destination`) plus
+> unit and integration coverage — necessary, not sufficient. **The row's state has therefore changed from
+> "RED — falsified defect" to "RED — open evidence gap"; INFRA-02(d) remains closed on credential wiring
+> only, and a fix is not a proof.**
+
 **Substituted verification — recorded, not silently ticked (threat T-26-56).** `26-CONTEXT.md` expected
 the INFRA-02d relay row to be covered by `frontend/e2e/stomp-relay.spec.ts`. It was **not**. That spec
 was proven structurally incapable of being the ingress-path proof, against the committed file, for four

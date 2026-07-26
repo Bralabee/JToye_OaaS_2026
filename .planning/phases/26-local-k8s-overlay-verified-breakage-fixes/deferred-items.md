@@ -597,13 +597,17 @@ proven by pointing `stomp.broker.relay-host` at an unreachable host and observin
 
 ---
 
-## 2026-07-25 — **PRODUCTION DEFECT:** the STOMP relay rejects the KDS topic — a `/topic` destination cannot contain `/`
+## 2026-07-25 — **PRODUCTION DEFECT:** the STOMP relay rejects the KDS topic — a `/topic` destination cannot contain `/` — **CLOSED `d964a85` (PR #269)**
 
 > **TRACKED AS GitHub issue [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** (OPEN,
 > `bug` / `P1`) — filed 2026-07-25 by plan 26-09 at phase close. This entry stays as the full technical
 > record (mechanism, two-arm falsification, fix sites, acceptance test); **#266 is the authoritative
 > status and the thing that gets scheduled.** A deferred item that lives only inside a completed phase
 > directory is not tracked work.
+>
+> *2026-07-26: that status has moved — **#266 is now CLOSED**. The technical record below is left exactly
+> as written; see the **CLOSED** section at the end of this entry for what shipped and for the one
+> acceptance item that is still uncaptured.*
 
 **Found by:** plan 26-08 Task 3, the live browser journey D-06 exists to force. **Severity: production
 affecting.** `k8s/base/configmap.yaml` sets `stomp.broker.mode: "relay"`, so staging and production both
@@ -677,6 +681,55 @@ codebase for the same shape, not just the kitchen one.
 3. WebSocket opens over a 60 s idle KDS session = **1** (proving the reconnect storm is gone).
 4. A cross-tenant subscribe attempt is still refused by `TenantChannelInterceptor` — the isolation test
    must be re-run, not assumed, because the destination format it parses has changed.
+
+### CLOSED — 2026-07-26, PR **#269** merged to main as **`d964a85`** (issue #266 closed 10:03:13Z)
+
+Closed in its own scoped work, as this entry required — not inside Phase 26, and not by flipping
+`stomp.broker.mode`.
+
+**What shipped.** A new single source of truth for destination shape,
+`core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java`:
+`/topic/{feature}.{tenantId}[.{qualifier}]` — one dot-separated segment after the prefix, which is also the
+idiomatic AMQP routing key. All three fix sites this entry named now derive from it rather than
+concatenating or index-parsing their own strings: the publisher (`OrderStateChangeListener` calls
+`StompDestinations.kitchen(...)`), the browser subscriber (`frontend/app/dashboard/kitchen/page.tsx`), and
+the tenant wall (`TenantChannelInterceptor`, which parses the routing key on `.` with the tenant as the
+second word and the kitchen shop id as the third). It **additionally** rejects any slashed `/topic/`
+destination on shape alone, before the tenant parse, so a stale client fails loudly with the reason instead
+of subscribing to something the broker will never deliver. The suggested dot-delimited direction above is
+exactly what was taken.
+
+**Guards added, each confirmed to FAIL with the fix reverted rather than merely observed passing** — which
+is what this entry's "must FAIL before it passes" rule asked for: `StompDestinationsTest` (a built
+destination carries no `/` after the prefix), `TenantChannelInterceptorTest.shouldRejectSlashedTopicDestination`
+plus the tenant-matching variant, and `kitchen/__tests__/page.test.tsx` asserting the topic handed to
+`useStomp` (nothing previously checked it). Also updated: `TenantChannelInterceptorShopGateIntegrationTest`,
+`OrderStateChangeListenerTest`, `OrderStateChangeListenerIdempotencyIntegrationTest`, `use-stomp.test.ts`.
+No schema change.
+
+**The four-part acceptance, scored honestly — item 4 met, items 1–3 NOT captured:**
+
+| # | acceptance item | state |
+|---|---|---|
+| 1 | a browser KDS session receives a **MESSAGE** frame, asserted on the frame census | **NOT CAPTURED** — needs a relay-mode cluster |
+| 2 | `grep -c 'Invalid destination'` over the run = **0** | **NOT CAPTURED** — same run as item 1 |
+| 3 | WebSocket opens over a 60 s idle KDS session = **1** | **NOT CAPTURED** — same run as item 1 |
+| 4 | a cross-tenant subscribe is still refused by `TenantChannelInterceptor`, **re-run not assumed** | **MET** — `TenantChannelInterceptorTest` case 5 + the shop-gate integration test, on the new dotted shape |
+
+What #269 did capture live is a **two-arm probe of the destination *shape*** against a real broker on
+2026-07-26 — the slashed form still draws `Invalid destination`, the dotted form draws a RECEIPT. That is
+the same arm A/arm B instrument this entry used to diagnose the defect, and it proves the shape is now
+accepted. It is **not** items 1–3: nothing has yet exercised publisher → `amq.topic` → relay → subscribed
+KDS client end to end.
+
+**So the state of this item has changed kind, not disappeared.** The **defect** is fixed and its
+tenant-isolation risk was discharged with tests. **The evidence gap is what remains**: evidence row **L6**
+in `k8s/LOCAL.md` §11 — *a KDS client actually receives a relayed order event* — has still never been
+captured, and it needs a running cluster. `26-VALIDATION.md`'s INFRA-02d functional row therefore stays
+**RED**, and **INFRA-02(d) in `REQUIREMENTS.md` remains closed on credential wiring only.** It is not "the
+realtime path is proven working": **a fix is not a proof.** Whoever next runs the local rehearsal
+(`scripts/k8s-local-up.sh`) should capture items 1–3 while the cluster is up — that is now a cheap
+addition to an existing procedure rather than a plan of its own.
 
 ---
 

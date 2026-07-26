@@ -338,6 +338,15 @@ Non-blocking. Each is real surface that appeared or changed during implementatio
   #266 is a **tenant-isolation-sensitive** change and its cross-tenant subscribe test must be re-run, not
   assumed. That requirement is already written into #266's four-part acceptance test (item 4) and into
   `LOCAL.md` §7 A3.
+  - *2026-07-26 annotation (records reconcile; the assessment above is left as recorded).* **#266 is now
+    CLOSED** (2026-07-26T10:03:13Z) by PR **#269** (`d964a85`), and **the carried-forward requirement was
+    honoured rather than assumed**: `TenantChannelInterceptor` now parses the dotted routing key with the
+    tenant as the second word, its cross-tenant denial is re-tested (`TenantChannelInterceptorTest` case 5,
+    plus `TenantChannelInterceptorShopGateIntegrationTest`), and it additionally rejects any slashed
+    `/topic/` destination on **shape alone, before the tenant parse** — so a stale client fails loudly
+    instead of subscribing to something the broker will never deliver. The security assessment is unchanged
+    (no new surface; the shape check is strictly fail-closed). **The functional evidence gap is unchanged
+    too:** L6 remains uncaptured, so INFRA-02(d) is still closed on credential wiring only.
 - **`LOCAL.md` §6 disclosed non-proofs** (no TLS/HSTS, no PIT-1 header snippet locally, no NetworkPolicy
   enforcement). Judged **adequately disclosed** and scored as accepted risks AR-26-03/AR-26-04, not as
   concealed gaps. The section is concrete (controller version, default flag values, the three RFC1918

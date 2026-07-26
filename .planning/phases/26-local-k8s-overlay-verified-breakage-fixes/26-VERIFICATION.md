@@ -18,6 +18,23 @@ overrides:
 **Status:** passed
 **Re-verification:** No — initial verification
 
+> **POST-PHASE ANNOTATION — added 2026-07-26 by a records reconcile. Applies to every `#266` reference in
+> this report, including the frontmatter override reason. Nothing is rewritten — this report records what
+> was true at `2026-07-26T01:30:00Z`, and the "confirmed OPEN" observations were correct at that instant.**
+>
+> Issue **#266** was **CLOSED** later the same day, at **2026-07-26T10:03:13Z**, by PR **#269** (merged to
+> main as **`d964a85`**). The destination is now built in one place —
+> `core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java` — as
+> `/topic/{feature}.{tenantId}[.{qualifier}]`, one dot-separated segment the broker accepts;
+> `TenantChannelInterceptor` parses that shape and its cross-tenant denial was **re-run, not assumed**.
+>
+> **This does not turn truth #9 green, and it must not be read as doing so.** The **code defect** that
+> falsified L6 is **FIXED**, with unit + integration coverage and a live two-arm probe of the destination
+> *shape*. The **live functional proof — row L6, *a KDS client actually receives a relayed order event
+> through a real broker* — has still never been captured**, and capturing it needs a running cluster. So
+> **INFRA-02(d) remains closed on credential wiring only**, exactly as the override recorded; **L6 is now
+> an open evidence gap rather than a defect. A fix is not a proof.**
+
 ## Verification Method
 
 No previous `26-VERIFICATION.md` existed (initial mode). Environment at verification time: minikube
