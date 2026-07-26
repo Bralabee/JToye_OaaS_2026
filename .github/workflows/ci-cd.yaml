@@ -505,6 +505,46 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # CR-02 (Phase 26 code review): this step used to pass NO build-args at
+          # all. Next.js INLINES every NEXT_PUBLIC_* that is present in the build
+          # environment, and frontend/Dockerfile makes them present-but-EMPTY, so
+          # the pushed frontend image baked apiOrigin:"" and shipped an ENFORCING
+          # CSP with no API/ws/Keycloak origin in connect-src — every browser fetch
+          # refused, while pods stayed READY and the server-side smoke tests passed.
+          # Observed on an image built exactly as this step built it:
+          #   connect-src 'self' https://api.stripe.com https://*.stripe.com
+          #
+          # These are PUBLIC origins and non-secret onboarding copy, so they are
+          # repo `vars` (the existing convention here — cf. vars.DEPLOY_ENABLED),
+          # NOT secrets. No new secret name is introduced. Set them under
+          # Settings > Secrets and variables > Actions > Variables:
+          #   FRONTEND_PUBLIC_API_URL                     (required)
+          #   FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL       (required)
+          #   FRONTEND_PUBLIC_SUPPORT_EMAIL               (optional)
+          #   FRONTEND_PUBLIC_SUPPORT_URL                 (optional)
+          #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
+          # If either required var is unset the frontend Dockerfile's guard FAILS
+          # THE BUILD (exit 1) instead of pushing a broken image — fail-closed, and
+          # the whole point of the fix. The three optional ones degrade gracefully
+          # (frontend/lib/env-validation.ts optionalEnvVars / resolveSupportChannel).
+          #
+          # Passed on ALL THREE matrix legs on purpose. core-java/Dockerfile and
+          # edge-go/Dockerfile declare no matching ARG, so BuildKit logs
+          # "one or more build-args were not consumed" for those two legs — a
+          # warning, not an error. Do NOT "fix" that warning by deleting these
+          # lines; a conditional per-leg expression cannot emit a multi-line
+          # build-args block (GitHub expressions have no newline literal), and
+          # splitting the step in two duplicates it and invites drift.
+          #
+          # NEXT_PUBLIC_KEYCLOAK_URL is deliberately absent: it has no ARG in the
+          # Dockerfile, which is what keeps it RUNTIME-resolvable. See the comment
+          # block in frontend/Dockerfile before you add it here.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_PUBLIC_API_URL }}
+            NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL=${{ vars.FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL }}
+            NEXT_PUBLIC_SUPPORT_EMAIL=${{ vars.FRONTEND_PUBLIC_SUPPORT_EMAIL }}
+            NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
+            NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
@@ -580,6 +620,59 @@ jobs:
           tar -xzf kustomize.tar.gz kustomize
           sudo mv kustomize /usr/local/bin/kustomize
           kustomize version
+
+      # CR-02: the baked frontend origin must match the environment being deployed.
+      # Runs BEFORE kubeconfig is written — it needs no cluster access, so it fails
+      # before any credential is materialised.
+      #
+      # build-and-push produces ONE frontend image per commit, and NEXT_PUBLIC_API_URL
+      # is INLINED into it at build time. A single image therefore carries a single
+      # API origin and can only be correct for the environment whose app-config
+      # api.url equals it. Nothing enforced that, so supplying the build-arg without
+      # this check would trade CR-02's silent empty origin for an equally silent
+      # WRONG origin (e.g. a production-baked image serving staging). Asserting it
+      # here keeps the fix additive instead of moving the defect.
+      #
+      # This is also the first real consumer of app-config `api.url` in CI: the key
+      # had zero configMapKeyRef consumers in any render after D-18 deleted the dead
+      # runtime env, which is the DEF-4/DEF-6 "config that reaches nothing" shape.
+      #
+      # EXPECTED CONSEQUENCE, stated plainly: k8s/staging api.url is
+      # https://api-staging.jtoye.co.uk and k8s/production api.url is
+      # https://api.jtoye.co.uk, so with one image and one FRONTEND_PUBLIC_API_URL
+      # only ONE of the two deploys can pass this gate. That is the honest state of
+      # a single-image pipeline, and failing loudly here is the point. The durable
+      # fix is per-environment frontend images (or a genuinely runtime CSP origin);
+      # both are larger changes than this review finding, and both deploy jobs are
+      # gated OFF by repo variable today.
+      - name: Assert the baked frontend API origin matches this environment (CR-02)
+        env:
+          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+        run: |
+          set -euo pipefail
+          kustomize build k8s/staging > /tmp/staging-render.yaml
+          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/staging-render.yaml)"
+          if [ -z "$RENDER_API_URL" ]; then
+            echo "FATAL: could not read app-config api.url from the k8s/staging render — this guard is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ -z "$BAKED_API_URL" ]; then
+            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
+            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
+            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
+            exit 2
+          fi
+          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
+            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
+            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
+            echo "         k8s/staging app-config api.url:                           $RENDER_API_URL" >&2
+            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
+            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
+            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
+            exit 1
+          fi
+          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
 
       - name: Configure kubeconfig
         run: |
@@ -671,6 +764,39 @@ jobs:
           tar -xzf kustomize.tar.gz kustomize
           sudo mv kustomize /usr/local/bin/kustomize
           kustomize version
+
+      # CR-02: identical guard to deploy-staging's — see the long rationale there
+      # (one image bakes one inlined API origin, so it is only correct for the
+      # environment whose app-config api.url equals it). Runs before kubeconfig is
+      # written, needs no cluster access, and fails closed on an unreadable render.
+      - name: Assert the baked frontend API origin matches this environment (CR-02)
+        env:
+          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+        run: |
+          set -euo pipefail
+          kustomize build k8s/production > /tmp/production-render.yaml
+          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/production-render.yaml)"
+          if [ -z "$RENDER_API_URL" ]; then
+            echo "FATAL: could not read app-config api.url from the k8s/production render — this guard is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ -z "$BAKED_API_URL" ]; then
+            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
+            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
+            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
+            exit 2
+          fi
+          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
+            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
+            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
+            echo "         k8s/production app-config api.url:                        $RENDER_API_URL" >&2
+            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
+            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
+            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
+            exit 1
+          fi
+          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/production app-config api.url ($RENDER_API_URL)"
 
       - name: Configure kubeconfig
         run: |

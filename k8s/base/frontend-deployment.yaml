@@ -66,15 +66,29 @@ spec:
         # validateEnvironment() tell the truth (a console.error naming the
         # missing var — it never throws, so nothing hard-fails).
         #
-        # app-config/api.url REMAINS the source of truth: it is what feeds the
-        # `--build-arg NEXT_PUBLIC_API_URL=...`, which scripts/k8s-local-up.sh
-        # passes when it builds the local image. CI currently passes NO
-        # build-args at all (.github/workflows/ci-cd.yaml:443-456), so
-        # staging/production images ship this value unset — a single image cannot
-        # bake two different per-environment API URLs, so the durable fix is a
-        # runtime config source. Tracked as a dated deferred item in
+        # app-config/api.url REMAINS the source of truth, and as of the CR-02 fix
+        # that is now true for EVERY environment, not just local:
+        #   - scripts/k8s-local-up.sh reads api.url out of the rendered ConfigMap
+        #     and passes it as `--build-arg NEXT_PUBLIC_API_URL=...`.
+        #   - CI passes the same build-arg from repo variable
+        #     FRONTEND_PUBLIC_API_URL, and each deploy job ASSERTS that the value
+        #     baked into the image equals THIS overlay's api.url before it applies
+        #     (.github/workflows/ci-cd.yaml, step "Assert the baked frontend API
+        #     origin matches this environment"). api.url is therefore a live
+        #     consumer again — a mismatch fails the deploy instead of shipping a
+        #     browser CSP that names the wrong origin.
+        #   - frontend/Dockerfile REFUSES TO BUILD on an empty NEXT_PUBLIC_API_URL,
+        #     so the previous silent outcome (apiOrigin:"" inlined, enforcing CSP
+        #     with no API origin, READY pods, passing smoke tests) is now a loud
+        #     build failure.
+        #
+        # RESIDUAL, deliberately: build-and-push still produces ONE frontend image
+        # per commit, so one baked origin serves whichever environment matches it.
+        # The deploy-time assertion makes that constraint enforced rather than
+        # silent; per-environment images (or a genuinely runtime CSP origin) remain
+        # the durable fix. See the dated entry in
         # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
-        # (out of scope for Phase 26 per 26-RESEARCH.md PIT-3).
+        # (application-architecture change, out of scope per 26-RESEARCH.md PIT-3).
         #
         # NEXTAUTH_URL below is NOT of this class — it is a genuine server-side
         # runtime env, read by Auth.js in the Node process. It stays.

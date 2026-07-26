@@ -43,6 +43,69 @@ correctly baked, which is what keeps D-16's full browser proof reachable.
 `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL`, `NEXT_PUBLIC_SUPPORT_*`,
 `NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS`).
 
+### PARTIALLY RESOLVED 2026-07-26 — code review CR-02
+
+The **silent** half is closed; the single-image half is not. Two factual corrections to the
+record above, both measured on built images rather than inferred:
+
+1. **Not "inlined as undefined" — inlined as the EMPTY STRING.** `frontend/Dockerfile`'s
+   unconditional `ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}` makes the name
+   *present-and-empty* in the build environment, so Next's `DefinePlugin` substitutes `""`.
+   Observed in the CI-shaped image (no build-args): `apiOrigin:""`.
+2. **That `ENV` line is what did the damage.** Next inlines only the `NEXT_PUBLIC_*` names that
+   are PRESENT at build time; an ABSENT name survives as a literal `process.env.NAME` lookup and
+   is resolved at RUNTIME from the container environment. Proven side-by-side in the same chunk:
+
+   | name | Dockerfile declares it? | in the built edge chunk |
+   |---|---|---|
+   | `NEXT_PUBLIC_API_URL` | `ARG` + `ENV`, no build-arg | `apiOrigin:""` (frozen) |
+   | `NEXT_PUBLIC_KEYCLOAK_URL` | not declared at all | `keycloakOrigin:process.env.NEXT_PUBLIC_KEYCLOAK_URL||""` (runtime) |
+
+   So declaring an `ARG`/`ENV` without supplying a value is strictly WORSE than not declaring it.
+   This also means `NEXT_PUBLIC_KEYCLOAK_URL` does **not** need a build-arg — it needs a runtime
+   `env:` on the frontend Deployment, which no k8s manifest currently supplies. See the separate
+   note below.
+
+**What CR-02 fixed.** CI now passes the build-args from repo `vars`; `frontend/Dockerfile` refuses
+to build on an empty required value; each deploy job asserts the baked origin equals that
+overlay's `app-config: api.url` before applying. The observed staging/production CSP went from
+
+```
+connect-src 'self' https://api.stripe.com https://*.stripe.com
+form-action 'self'
+```
+
+to (build-args supplied)
+
+```
+connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.jtoye.co.uk wss://api-staging.jtoye.co.uk https://auth-staging.jtoye.co.uk/realms/jtoye-staging
+form-action 'self' https://auth-staging.jtoye.co.uk/realms/jtoye-staging
+```
+
+**What is STILL deferred.** `build-and-push` still builds ONE frontend image per commit, so one
+baked origin can only be correct for one environment. The new deploy-time assertion makes that
+constraint LOUD instead of silent, but does not remove it: with a single
+`vars.FRONTEND_PUBLIC_API_URL`, only the environment whose `api.url` matches can deploy. The
+durable fix is per-environment frontend images (a `build-and-push` matrix/tagging change) or a
+genuinely runtime CSP origin. Unchanged owner and unchanged out-of-scope rationale.
+
+## 26-02 — `NEXT_PUBLIC_KEYCLOAK_URL` reaches no k8s frontend pod (found while fixing CR-02)
+
+**Discovered during:** CR-02 remediation, 2026-07-26. **NOT FIXED** — logged, not actioned.
+
+`frontend/middleware.ts` reads `NEXT_PUBLIC_KEYCLOAK_URL` for the CSP's `connect-src` and
+`form-action`. It is not declared in `frontend/Dockerfile`, so it is **runtime**-resolvable
+(proven above) — and `docker-compose.full-stack.yml` does supply it via `environment:`, which is
+why the local CSP carries the Keycloak origin. `k8s/base/frontend-deployment.yaml` supplies it at
+neither build nor run time, so in every k8s environment the enforcing CSP emits
+`form-action 'self'` with no IdP origin. Chrome checks `form-action` against redirect targets, so
+a sign-in POST that 302s to Keycloak can be refused.
+
+Unlike the API origin this needs **no rebuild**: a single `configMapKeyRef` env on the frontend
+Deployment (`keycloak.public.issuer.uri`, which already exists and is already patched per overlay)
+would fix it, and would also give that key a second consumer. It is a `k8s/base` render change and
+therefore a golden change, which is why it is logged here rather than folded into the CR-02 pass.
+
 ## 26-02 — Four new external-endpoint base values are UNVERIFIABLE-FROM-THIS-HOST
 
 **Discovered during:** 26-02 Task 3 (provisioned-resources check).
