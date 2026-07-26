@@ -204,7 +204,7 @@ class TenantChannelInterceptorTest {
 
     @Test
     void shouldBlockCrossTenantSubscription() {
-        String destination = "/topic/kitchen/" + TENANT_B + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_B + "." + SHOP_ID;
         Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -214,12 +214,41 @@ class TenantChannelInterceptorTest {
 
     @Test
     void shouldRejectInvalidTenantIdInDestination() {
-        String destination = "/topic/kitchen/not-a-uuid/" + SHOP_ID;
+        String destination = "/topic/kitchen.not-a-uuid." + SHOP_ID;
         Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
                 .isInstanceOf(MessageDeliveryException.class)
                 .hasMessageContaining("Invalid tenant ID in destination");
+    }
+
+    /**
+     * #266 regression guard. Everything after {@code /topic/} becomes an AMQP routing key on
+     * {@code amq.topic}, which may not contain {@code '/'}. The in-memory SimpleBroker accepts
+     * slashed paths, so the old shape passed every test and was rejected by the relay in
+     * staging and production. Reject it here so the defect cannot silently return: this test
+     * fails the moment anyone reintroduces a slashed destination.
+     */
+    @Test
+    void shouldRejectSlashedTopicDestination() {
+        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("must be a single dot-separated segment");
+        verifyNoInteractions(shopAccessService);
+    }
+
+    /** The slashed form is rejected on its shape ALONE — before the tenant wall is consulted. */
+    @Test
+    void shouldRejectSlashedTopicEvenWhenTenantMatches() {
+        String destination = "/topic/notifications/" + TENANT_A + "/updates";
+        Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("'/' is not a valid routing-key character");
     }
 
     @Test
@@ -235,7 +264,7 @@ class TenantChannelInterceptorTest {
     @Test
     void shouldAllowNonKitchenTopicWithCorrectTenant() {
         // A non-kitchen topic carries no shop segment → tenant check only, no shop gate.
-        String destination = "/topic/notifications/" + TENANT_A + "/updates";
+        String destination = "/topic/notifications." + TENANT_A + ".updates";
         Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
 
         Message<?> result = interceptor.preSend(message, mock(MessageChannel.class));
@@ -246,7 +275,7 @@ class TenantChannelInterceptorTest {
 
     @Test
     void shouldBlockCrossTenantNonKitchenTopic() {
-        String destination = "/topic/notifications/" + TENANT_B + "/updates";
+        String destination = "/topic/notifications." + TENANT_B + ".updates";
         Message<?> message = buildStompMessage(StompCommand.SUBSCRIBE, destination, null, TENANT_A);
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -271,7 +300,7 @@ class TenantChannelInterceptorTest {
     @Test
     void shouldRejectSubscriptionToUngrantedShop() {
         when(shopAccessService.canAccessShop(any(), any(), anyBoolean(), any())).thenReturn(false);
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -283,7 +312,7 @@ class TenantChannelInterceptorTest {
     @Test
     void shouldAllowSubscriptionToGrantedShop() {
         when(shopAccessService.canAccessShop(any(), any(), anyBoolean(), any())).thenReturn(true);
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         Message<?> result = interceptor.preSend(message, mock(MessageChannel.class));
@@ -294,7 +323,7 @@ class TenantChannelInterceptorTest {
     /** Case 3 — no subscriber identity on the frame is a DENIAL, never inferred trust (CR-03 class). */
     @Test
     void shouldRejectSubscriptionWhenSubscriberIdentityMissing() {
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, null);  // no principal
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -306,7 +335,7 @@ class TenantChannelInterceptorTest {
     /** Case 4 — a malformed (non-UUID) shop segment is rejected, never silently permitted. */
     @Test
     void shouldRejectMalformedShopSegment() {
-        String destination = "/topic/kitchen/" + TENANT_A + "/not-a-uuid";
+        String destination = "/topic/kitchen." + TENANT_A + ".not-a-uuid";
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -318,7 +347,7 @@ class TenantChannelInterceptorTest {
     /** Case 5 — a cross-tenant subscribe fails at the tenant wall BEFORE the shop gate runs. */
     @Test
     void shouldStillRejectCrossTenantBeforeCheckingShop() {
-        String destination = "/topic/kitchen/" + TENANT_B + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_B + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))
@@ -331,7 +360,7 @@ class TenantChannelInterceptorTest {
     /** Case 6 — the pooled inbound thread must not retain TenantContext after either outcome. */
     @Test
     void shouldNotLeakTenantContextAfterValidation() {
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
 
         // Permitted subscribe.
         when(shopAccessService.canAccessShop(any(), any(), anyBoolean(), any())).thenReturn(true);
@@ -355,7 +384,7 @@ class TenantChannelInterceptorTest {
     @Test
     void shouldPassShopAndSubjectThroughToTheGate() {
         when(shopAccessService.canAccessShop(any(), any(), anyBoolean(), any())).thenReturn(true);
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         interceptor.preSend(message, mock(MessageChannel.class));
@@ -377,7 +406,7 @@ class TenantChannelInterceptorTest {
     @Test
     void shouldPassRealmAdminTrueWhenRealmAccessHasAdmin() {
         when(shopAccessService.canAccessShop(any(), any(), anyBoolean(), any())).thenReturn(true);
-        String destination = "/topic/kitchen/" + TENANT_A + "/" + SHOP_ID;
+        String destination = "/topic/kitchen." + TENANT_A + "." + SHOP_ID;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, true));
 
         interceptor.preSend(message, mock(MessageChannel.class));
@@ -392,7 +421,7 @@ class TenantChannelInterceptorTest {
     /** A kitchen destination with no shop segment is malformed, not treated as tenant-wide. */
     @Test
     void shouldRejectKitchenTopicWithoutShopSegment() {
-        String destination = "/topic/kitchen/" + TENANT_A;
+        String destination = "/topic/kitchen." + TENANT_A;
         Message<?> message = buildSubscribe(destination, TENANT_A, subscriberJwt(SUBJECT, false));
 
         assertThatThrownBy(() -> interceptor.preSend(message, mock(MessageChannel.class)))

@@ -47,7 +47,7 @@ import static org.mockito.Mockito.verify;
  *
  * <p><b>N1:</b> the KDS STOMP branch called {@code orderRepository.findById}
  * BEFORE the tenant GUC was set; under enforced RLS the order was invisible,
- * {@code ifPresent} no-oped, and the {@code /topic/kitchen/…} broadcast never
+ * {@code ifPresent} no-oped, and the {@code /topic/kitchen.…} broadcast never
  * fired (invisible on dev where KDS uses SSE). The fix sets tenant context
  * FIRST. This test runs as NOSUPERUSER (ADJ-2 lesson: a SUPERUSER test role
  * bypasses FORCE RLS and cannot see N1 at all).
@@ -167,7 +167,7 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
 
         verify(emailService, times(1)).sendOrderConfirmation(eq(event), eq("idem-customer@example.test"));
         verify(metrics, times(1)).recordOrderCreated();
-        String topic = "/topic/kitchen/" + TENANT + "/" + shopId;
+        String topic = "/topic/kitchen." + TENANT + "." + shopId;
         verify(simpMessagingTemplate, times(1)).convertAndSend(eq(topic), eq(event));
         assertThat(processedRowCount())
                 .as("exactly one dedup row per (tenant, order, status)")
@@ -207,7 +207,7 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
 
         // Pre-fix: findById ran BEFORE the tenant GUC was applied → RLS hid
         // the order → no broadcast, ever, on any RLS-enforced stack.
-        String topic = "/topic/kitchen/" + TENANT + "/" + shopId;
+        String topic = "/topic/kitchen." + TENANT + "." + shopId;
         verify(simpMessagingTemplate, times(1)).convertAndSend(eq(topic), eq(event));
     }
 }

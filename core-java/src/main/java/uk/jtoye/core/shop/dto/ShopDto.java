@@ -7,7 +7,7 @@ import java.util.UUID;
 public class ShopDto {
     private UUID id;
     // QA-council H1: expose tenantId so real-time clients (Kitchen Display STOMP
-    // topic /topic/kitchen/{tenantId}/{shopId}) can derive their subscription.
+    // topic /topic/kitchen.{tenantId}.{shopId}) can derive their subscription.
     // The frontend Shop type already declares tenantId as required; every sibling
     // DTO (OrderDto, CustomerDto) exposes it, and it is already present in the
     // caller's JWT. Public/anonymous responses use the separate PublicShopDto,

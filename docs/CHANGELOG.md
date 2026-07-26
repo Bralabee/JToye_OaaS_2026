@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### KDS realtime restored in staging/production — STOMP destination shape (#266) — 2026-07-26
+
+The kitchen display's live feed was structurally broken in every Kubernetes environment and nowhere else. RabbitMQ's STOMP plugin maps `/topic/<name>` onto the `amq.topic` exchange with `<name>` as the AMQP routing key, and a routing key may not contain `/`. The destination was `/topic/kitchen/{tenantId}/{shopId}`, which Spring's in-memory `SimpleBroker` (the compose default, and all dev/CI ever exercised) accepts and the relay broker rejects outright with `ERROR: Invalid destination`. `k8s/base/configmap.yaml` sets `stomp.broker.mode: relay` and neither staging nor production overrides it, so both inherited the broken path. No schema change.
+
+#### Fixed
+- **KDS subscriptions now reach the relay.** The destination is a single dot-separated segment — `/topic/kitchen.{tenantId}.{shopId}` — built in one place by the new `StompDestinations`, consumed by the publisher (`OrderStateChangeListener`), the tenant wall (`TenantChannelInterceptor`) and the subscriber (`app/dashboard/kitchen/page.tsx`). Verified against the live RabbitMQ STOMP plugin on 2026-07-26: the old slashed form draws `Invalid destination`, the new form draws a RECEIPT.
+- **The tenant wall reads the same grammar.** `TenantChannelInterceptor` parses the routing key on `.` with the tenant as the second word and the kitchen shop id as the third. The CR-02 shop grant-check, the cross-tenant denial, the malformed-UUID denials and the missing-shop-segment denial are all unchanged in behaviour — only the word positions moved.
+
+#### Added
+- **Two guards that fail on shape, not on agreement.** The defect survived every gate because both sides agreed with each other, wrongly, and only `in-memory` was ever exercised. `StompDestinationsTest` asserts a built destination carries no `/` after the prefix; `TenantChannelInterceptorTest.shouldRejectSlashedTopicDestination` asserts the wall rejects the old form outright, before the tenant check. Both were confirmed to fail with the fix reverted. The frontend gained the equivalent: the kitchen page test now asserts the topic passed to `useStomp`, which nothing previously checked.
+
+#### Security
+- Slashed `/topic/` destinations are now **rejected at the wall** rather than silently accepted, so a stale client fails loudly with the reason instead of subscribing to something the broker will never deliver. The rejection happens on shape alone, before the tenant segment is parsed — a cross-tenant slashed destination cannot smuggle itself past the shape check.
+
 ### Scoped machine credentials (#206 [AI-4]) — 2026-07-13
 
 Least-privilege machine/integration access to the catalog surface: a client-credentials token scoped to `catalog:read` only can list products (200) but cannot create or mutate them (403), while operator/admin flows are untouched. This is the auth substrate the [AI-1] MCP model (#203) will consume. No DB migration (schema stays V50).

@@ -38,8 +38,8 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(TenantChannelInterceptor.class);
 
-    /** The single {@code /topic/} feature segment (parts[2]) that carries a shop id. */
-    private static final String KITCHEN_FEATURE = "kitchen";
+    /** The single {@code /topic/} feature word that carries a shop id. */
+    private static final String KITCHEN_FEATURE = StompDestinations.KITCHEN_FEATURE;
 
     private final JwtDecoder jwtDecoder;
     private final ShopAccessService shopAccessService;
@@ -120,36 +120,52 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
         }
 
         // Enforce tenant isolation on ALL /topic/ subscriptions.
-        // Convention: /topic/{feature}/{tenantId}/{...}  (e.g. /topic/kitchen/{tid}/{shopId})
-        // Any topic destination with a tenant segment must match the session tenant.
-        if (!destination.startsWith("/topic/")) {
+        // Convention: /topic/{feature}.{tenantId}[.{qualifier}]  — see StompDestinations.
+        // Any topic destination must carry the tenant as its second word.
+        if (!destination.startsWith(StompDestinations.TOPIC_PREFIX)) {
             return;
         }
 
+        String routingKey = destination.substring(StompDestinations.TOPIC_PREFIX.length());
+
+        // #266: everything after /topic/ becomes an AMQP routing key on amq.topic, which
+        // may not contain '/'. The in-memory SimpleBroker accepts slashed paths, so the old
+        // shape passed here and was rejected by the relay in staging/production. Reject it
+        // at the wall instead: a stale client then fails LOUDLY with the reason, rather than
+        // subscribing to something this broker will never deliver.
+        if (routingKey.indexOf('/') >= 0) {
+            log.warn("Subscription to a slashed topic destination denied (#266): {}", destination);
+            throw new MessageDeliveryException(
+                    "Topic destinations must be a single dot-separated segment; '/' is not a valid "
+                            + "routing-key character: " + destination);
+        }
+
         UUID sessionTenant = getSessionTenant(accessor);
-        String[] parts = destination.split("/");
-        // parts: ["", "topic", "{feature}", "{tenantId}", ...]
-        if (parts.length < 4) {
+        // -1 keeps trailing empty words so "kitchen.{tid}." is malformed, not silently short.
+        String[] parts = routingKey.split(java.util.regex.Pattern.quote(StompDestinations.SEPARATOR), -1);
+        // parts: ["{feature}", "{tenantId}", ...]
+        if (parts.length <= StompDestinations.TENANT_WORD) {
             log.warn("Subscription to topic without tenant segment denied: {}", destination);
             throw new MessageDeliveryException("Topic subscriptions require a tenant segment");
         }
 
+        String tenantWord = parts[StompDestinations.TENANT_WORD];
         try {
-            UUID destTenant = UUID.fromString(parts[3]);
+            UUID destTenant = UUID.fromString(tenantWord);
             if (!destTenant.equals(sessionTenant)) {
                 log.warn("Cross-tenant subscription denied: session={}, destination={}", sessionTenant, destTenant);
                 throw new MessageDeliveryException("Cross-tenant subscription denied");
             }
         } catch (IllegalArgumentException e) {
-            throw new MessageDeliveryException("Invalid tenant ID in destination: " + parts[3]);
+            throw new MessageDeliveryException("Invalid tenant ID in destination: " + tenantWord);
         }
 
         // CR-02: the tenant wall above is not enough for the KDS kitchen topic, whose
-        // {shopId} segment (parts[4]) carries live order state changes for ONE shop. A
-        // subscriber granted only shop A could otherwise SUBSCRIBE to shop B's feed within
-        // its own tenant. Grant-check the shop segment AFTER the tenant check has passed, so
-        // a cross-tenant subscribe still fails with the cross-tenant message, not a shop one.
-        if (KITCHEN_FEATURE.equals(parts[2])) {
+        // {shopId} word carries live order state changes for ONE shop. A subscriber granted
+        // only shop A could otherwise SUBSCRIBE to shop B's feed within its own tenant.
+        // Grant-check the shop word AFTER the tenant check has passed, so a cross-tenant
+        // subscribe still fails with the cross-tenant message, not a shop one.
+        if (KITCHEN_FEATURE.equals(parts[StompDestinations.FEATURE_WORD])) {
             validateShopSubscription(accessor, sessionTenant, parts, destination);
         }
     }
@@ -164,17 +180,20 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
      */
     private void validateShopSubscription(StompHeaderAccessor accessor, UUID sessionTenant,
                                           String[] parts, String destination) {
-        // The kitchen topic REQUIRES a shop segment; its absence is malformed, not tenant-wide.
-        if (parts.length < 5 || parts[4] == null || parts[4].isBlank()) {
+        // The kitchen topic REQUIRES a shop word; its absence is malformed, not tenant-wide.
+        if (parts.length <= StompDestinations.SHOP_WORD
+                || parts[StompDestinations.SHOP_WORD] == null
+                || parts[StompDestinations.SHOP_WORD].isBlank()) {
             log.warn("Kitchen subscription without a shop segment denied: {}", destination);
             throw new MessageDeliveryException("Kitchen subscriptions require a shop segment");
         }
+        String shopWord = parts[StompDestinations.SHOP_WORD];
         UUID shopId;
         try {
-            shopId = UUID.fromString(parts[4]);
+            shopId = UUID.fromString(shopWord);
         } catch (IllegalArgumentException e) {
             log.warn("Kitchen subscription with a malformed shop segment denied: {}", destination);
-            throw new MessageDeliveryException("Invalid shop ID in destination: " + parts[4]);
+            throw new MessageDeliveryException("Invalid shop ID in destination: " + shopWord);
         }
 
         // A SUBSCRIBE always follows an authenticated CONNECT, so an absent or non-UUID
