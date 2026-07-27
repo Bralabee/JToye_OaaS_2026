@@ -129,6 +129,7 @@ class MediaSweepTenantScopeIntegrationTest {
     }
 
     @Autowired private MediaQuarantineRetentionSweep sweep;
+    @Autowired private javax.sql.DataSource dataSource;
     @SpyBean private StorageService storageService;
 
     /** Superuser template — the app datasource is RLS-bound and cannot seed another tenant's row. */
@@ -250,8 +251,17 @@ class MediaSweepTenantScopeIntegrationTest {
         }
     }
 
+    /**
+     * A connection from the APPLICATION datasource — the one the sweep itself uses.
+     *
+     * <p>This must NOT hand-roll a {@code DriverManager} connection with the sweep role's
+     * credentials. An earlier version did, and the VOID arm proved that guard vacuous: with the
+     * downgrade removed entirely the test still PASSED, because the guard was interrogating a
+     * connection it had itself opened as {@code rls_sweep_role} rather than the datasource under
+     * test. A guard that cannot observe the thing it guards is decorative.
+     */
     private Connection appConnection() throws SQLException {
-        return DriverManager.getConnection(postgres.getJdbcUrl(), SWEEP_ROLE, SWEEP_PW);
+        return dataSource.getConnection();
     }
 
     private UUID seedReclaimable(UUID tenant, String key) {
