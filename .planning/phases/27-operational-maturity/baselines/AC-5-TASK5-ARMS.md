@@ -105,6 +105,116 @@ change affecting the whole frontend build.
 
 ## AC-5.5 — 320 px layout on the running stack
 
-See the section appended below once the rebuild + browser run completes. Per the plan the
-"if the stack is unavailable, mark DEFERRED" escape is REMOVED: an unavailable stack makes this
-criterion **VOID (exit 2) and the plan NOT done**, with the recorded evidence of unavailability.
+The stack was up, so the plan's VOID clause did not apply. `spec: frontend/e2e/media-review-320.spec.ts`.
+
+### Runtime first: the containers were rebuilt, and parity proven BY CONTENT
+
+`check-runtime-freshness.sh` reported `core-java DRIFT` and `frontend DRIFT` before the run — the
+frontend image predated Task 5 by 18 h and core-java by 4 h, so a browser run against them would have
+tested code from yesterday. Both rebuilt with `up -d --build` (`start`/`restart` never rebuild), then:
+
+```
+core-java  FRESH  image tagged 2026-07-27 18:47:26 UTC  frontend FRESH 18:47:47 UTC
+PASS: 4 running built service(s) match the source tree (0 unverified).
+```
+
+Timestamps alone are not proof, so the values were read **out of the running artifacts**:
+
+```
+docker exec … unzip -p /app/app.jar BOOT-INF/classes/uk/jtoye/core/media/MediaController.class | strings | grep -c reprocess   -> 4
+docker exec … unzip -p /app/app.jar BOOT-INF/classes/application.yml | grep -c quarantine-retention-ms                          -> 2
+docker exec … grep -rl 'Taking longer than usual' /app/.next | wc -l                                                            -> 3
+curl -s localhost:9090/v3/api-docs | grep -c 'media/{assetId}/reprocess'                                                         -> 1
+                                     grep -c 'redrivable' / '"delayed"'                                                          -> 1 / 1
+```
+
+The **live** app therefore serves the new path and both new fields. A filesystem `find` for the class
+would have returned a misleading 0.
+
+### Fixtures: real rows, not a stubbed route
+
+Three `media_asset` rows were seeded for the demo tenant so the run exercises the whole path —
+core-java deriving the bits, the D-10 widened query, and the rebuilt frontend rendering them.
+Stubbing `/media/review-queue` would have proven only that the component lays out correctly given a
+shape the backend might not send. Reproduce with:
+
+```sql
+INSERT INTO media_asset (id, tenant_id, object_key, sha256, content_type, status, flagged,
+                         failure_reason, process_attempts, quarantine_expires_at, quarantine_reclaimed_at, created_at)
+VALUES
+ (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','…/quarantine/ac55-fixture-redrivable.jpg',
+  repeat('a',64),'image/jpeg','FAILED',false,'Processing stalled before it finished',0, now()+interval '72 hours', NULL,           now()),
+ (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','…/quarantine/ac55-fixture-vetoed.jpg',
+  repeat('b',64),'image/jpeg','FAILED',false,'That file is not a supported image',   0, now()+interval '72 hours', now(),          now()),
+ (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','…/quarantine/ac55-fixture-delayed.jpg',
+  repeat('c',64),'image/jpeg','PENDING',false,NULL,                                   0, now()+interval '72 hours', NULL, now()-interval '30 minutes');
+```
+
+### Arms
+
+| dir | arm | rc | evidence |
+|---|---|---|---|
+| PASS | tree as committed, rebuilt image | 0 | `1 passed (2.7s)`; screenshots in `ac55-screenshots/` |
+| BREAK | `flex-nowrap` + `min-w-[200px] shrink-0` on the FailedRow action row, **rebuilt** | 1 | `control is clipped past the 320px right edge — Expected: <= 320, Received: 449` |
+| PASS | re-confirmed on the RESTORED rebuilt image | 0 | `1 passed (3.2s)`; `PASS: 4 running built service(s) match the source tree` |
+
+---
+
+### Finding A — **the plan's stated assertion cannot detect this defect.** It is vacuous here.
+
+The plan specifies `document.documentElement.scrollWidth <= 320` and predicts the break yields
+`scrollWidth ≈ 380 > 320`. Measured under the break:
+
+```
+PROBE docEl.scrollWidth  = 320      <-- the plan's assertion PASSES on a visibly broken layout
+PROBE body.scrollWidth   = 320
+PROBE row overflow       = { scrollWidth: 408, clientWidth: 238 }
+PROBE re-process box     = { x: 249, width: 200 }        -> right edge 449, far past the 320 viewport
+PROBE clipping ancestors = [ 'MAIN.flex-1 overflow-y-auto  overflowX=auto',
+                             'DIV.flex h-screen overflow-hidden  overflowX=hidden' ]
+```
+
+The dashboard shell wraps content in a scroll container (`overflow-y-auto` computes `overflowX: auto`)
+inside an `overflow-hidden` shell. Those **absorb the overflow before it reaches the document
+element**, so `documentElement.scrollWidth` is pinned at the viewport width no matter how far a child
+overflows. Had this criterion been implemented exactly as written, it would have passed on the
+clipped layout in the screenshot — a criterion incapable of failing.
+
+The assertion that actually fires is the **per-control** one: each action's `x + width` must be
+`<= 320`. It reported `449`. Both are kept — the `scrollWidth` check still guards whole-page
+overflow, which is a different (and real) defect — but the per-control check is the load-bearing one
+and the plan did not specify it.
+
+### Finding B — the first break arm was a **false green**, and the marker that "confirmed" it was vacuous
+
+The first break run returned rc=0. Cause: `docker compose up -d --build frontend` leaves the OLD
+container running and healthy while the new image builds, so a wait-loop polling `Health=healthy`
+returns **immediately** and the test runs against the pre-break image. The marker used to confirm the
+rebuild — `grep -rl 'flex-nowrap' /app/.next` — was **non-discriminating**: Tailwind emits that
+utility class regardless of whether this component uses it, so the marker matched in both directions.
+
+Corrected by polling on a marker that exists **only** in the broken build (`min-w-[200px]`), asserted
+to be `0` files for the restored image. The re-run then produced the RED above. Two lessons, both
+already-known trap classes arriving through a new door: *a rebuild is not complete when the old
+container is still healthy*, and *a marker that matches in both directions proves nothing*.
+
+---
+
+## Regression surface
+
+| run | result |
+|---|---|
+| `npx jest --ci` (FULL frontend suite) | `Test Suites: 62 passed, 62 total` / `Tests: 419 passed, 419 total` |
+| `npm run build` | `✓ Compiled successfully` (rc 0) |
+| `scripts/check-runtime-freshness.sh` | `PASS: 4 running built service(s) match the source tree (0 unverified)` |
+
+Computed metrics after Task 5 (for Task 6 to reconcile — do NOT write `metrics.json` before then):
+
+```
+java_test_methods 1226   java_test_files 212   jest_blocks 424   jest_files 62
+playwright_blocks 43     playwright_specs 13   total_logical_invocations 1818
+```
+
+Note `jest_blocks` 424 vs jest's runtime `419 tests`: the gate counts the **literal** `it(`/`test(`
+tokens (`trap_docs_freshness_block_counter`), which is not the same number as tests executed. Both are
+recorded so Task 6 reconciles against the right one — `docs-freshness.sh --write` is the arbiter.
