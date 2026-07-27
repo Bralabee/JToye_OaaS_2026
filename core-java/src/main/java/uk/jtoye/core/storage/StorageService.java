@@ -284,17 +284,42 @@ public class StorageService {
      * physical delete — IMG-01). Best-effort: a missing object / transient S3 error
      * is logged, never thrown, so a cleanup failure cannot abort the caller's
      * transaction.
+     *
+     * <p>Behaviour is unchanged for every existing caller; it simply discards the
+     * {@link #deleteByKeyChecked(String)} result.
      */
     public void deleteByKey(String objectKey) {
-        if (objectKey == null || objectKey.isBlank()) return;
+        deleteByKeyChecked(objectKey);
+    }
+
+    /**
+     * Checked delete (27-01 / F-5): the same best-effort delete, but it reports whether the
+     * object is actually gone.
+     *
+     * <p>{@link #deleteByKey(String)} catches every exception and only logs, so no caller of it
+     * can ever learn whether the delete worked. {@code MediaQuarantineRetentionSweep} needs that
+     * fact, because "these bytes are gone" is the ONLY termination condition of its sentinel: if
+     * it stamped {@code quarantine_reclaimed_at} unconditionally, a transient S3 error would
+     * strand the object forever with nothing to complain.
+     *
+     * <p>Never throws — the contract that keeps a cleanup failure from aborting a caller's
+     * transaction is preserved.
+     *
+     * @return {@code true} iff the object was removed (or was already absent — a blank key and a
+     *         successful delete of a missing object are both "gone"); {@code false} on any error.
+     */
+    public boolean deleteByKeyChecked(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) return true;
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder()
                     .bucket(properties.getS3().getBucket())
                     .key(objectKey)
                     .build());
             log.info("Deleted object from storage by key: {}", objectKey);
+            return true;
         } catch (Exception e) {
             log.warn("Failed to delete object {}: {}", objectKey, e.getMessage());
+            return false;
         }
     }
 

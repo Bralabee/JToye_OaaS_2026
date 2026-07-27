@@ -7,6 +7,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.exception.AssetAlreadyActiveException;
+import uk.jtoye.core.media.exception.QuarantineNotRetainedException;
+import uk.jtoye.core.media.exception.RedriveBudgetExhaustedException;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -14,6 +17,7 @@ import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +54,7 @@ public class MediaAssetService {
     private final ProductRepository productRepository;
     private final ShopAccessService shopAccessService;
     private final StorageService storageService;
+    private final MediaProperties mediaProperties;
     private final ObjectMapper objectMapper;
 
     public MediaAssetService(MediaAssetRepository mediaAssetRepository,
@@ -58,6 +63,7 @@ public class MediaAssetService {
                              ProductRepository productRepository,
                              ShopAccessService shopAccessService,
                              StorageService storageService,
+                             MediaProperties mediaProperties,
                              ObjectMapper objectMapper) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMediaRepository = productMediaRepository;
@@ -65,6 +71,7 @@ public class MediaAssetService {
         this.productRepository = productRepository;
         this.shopAccessService = shopAccessService;
         this.storageService = storageService;
+        this.mediaProperties = mediaProperties;
         this.objectMapper = objectMapper;
     }
 
@@ -166,6 +173,13 @@ public class MediaAssetService {
         asset.setProductId(productId);
         asset.setIsPrimary(placement.isPrimary());
         asset.setSortOrder(placement.sortOrder());
+        // 27-01 / D-03: claim the retained raw bytes for a declared horizon. Until this asset
+        // reaches a terminal state, these bytes are the vendor's ONLY copy — the reaper can no
+        // longer delete them, and MediaQuarantineRetentionSweep will not reclaim them before
+        // quarantine_expires_at. reclaimedAt stays null: nothing has been deleted yet.
+        asset.setQuarantineExpiresAt(
+                OffsetDateTime.now().plusNanos(mediaProperties.getQuarantineRetentionMs() * 1_000_000L));
+        asset.setQuarantineReclaimedAt(null);
         asset = mediaAssetRepository.saveAndFlush(asset);
 
         // Same-tx transactional outbox insert -> MediaEventOutboxFlusher publishes to
@@ -209,6 +223,11 @@ public class MediaAssetService {
         asset.setProductId(productId);
         asset.setIsPrimary(placement.isPrimary());
         asset.setSortOrder(placement.sortOrder());
+        // 27-01 / D-03: the bytes are RE-claimed on this path — a previously reclaimed asset gets a
+        // fresh horizon and its sentinel cleared, because a new quarantine object now exists.
+        asset.setQuarantineExpiresAt(
+                OffsetDateTime.now().plusNanos(mediaProperties.getQuarantineRetentionMs() * 1_000_000L));
+        asset.setQuarantineReclaimedAt(null);
         asset = mediaAssetRepository.saveAndFlush(asset);
 
         MediaProcessingEvent event = new MediaProcessingEvent(tenantId, asset.getId());
@@ -331,9 +350,70 @@ public class MediaAssetService {
      */
     @Transactional(readOnly = true)
     public List<MediaAssetDto> reviewQueue() {
-        return mediaAssetRepository.findReviewQueue().stream()
-                .map(this::toDto)
+        OffsetDateTime delayCutoff = delayCutoff();
+        return mediaAssetRepository.findReviewQueue(delayCutoff).stream()
+                .map(a -> toDto(a, delayCutoff))
                 .toList();
+    }
+
+    /**
+     * Manual re-drive of a stalled/failed upload from its RETAINED quarantine bytes
+     * (27-01 / D-04) — the recovery half of the durability trade V60 makes. Before this,
+     * a dispatch stall was terminal: the reaper deleted the vendor's only copy and the only
+     * recourse was to find and re-upload the original file. Now the bytes survive for
+     * {@code jtoye.media.quarantine-retention-ms} and one idempotent call re-runs the pipeline.
+     *
+     * <p>Order is load-bearing, exactly as in {@link #dismissFlag} (WR-03): the RLS-scoped
+     * {@code findById} runs FIRST, so a foreign-tenant asset is a 404 and never a 403 — a 403
+     * would confirm the id exists somewhere, which is a cross-tenant oracle. The VSA-02
+     * shop-scoped write gate ({@code SHOP_MANAGER}) then runs against the owning shop.
+     *
+     * <p>Three typed RFC 7807 409s guard the preconditions, each with a stable {@code code}:
+     * the bytes must still be retained, the asset must not already be ACTIVE, and the
+     * {@code process_attempts} budget must not be exhausted (T-27-03).
+     *
+     * <p>On success, in ONE transaction: the asset returns to {@code PENDING} with its failure
+     * state cleared, {@code process_attempts} increments, and a fresh {@code media_event_outbox}
+     * row is inserted — the same transactional-outbox hand-off the accept path uses, so the
+     * re-drive is as durable as the original upload. The worker's V60 claim lock (D-04) makes it
+     * safe against a redelivery of the ORIGINAL event racing this one.
+     */
+    public MediaAcceptDto redriveFromQuarantine(UUID assetId) {
+        MediaAsset asset = mediaAssetRepository.findById(assetId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + assetId));
+        shopAccessService.require(resolveOwningShopId(asset), ShopRole.SHOP_MANAGER);
+
+        // Both halves are independently load-bearing: never-claimed bytes (pre-V60 / backfilled)
+        // and already-reclaimed bytes (swept, or discarded by a worker validation veto) are
+        // different histories with the same consequence — there is nothing left to re-process.
+        if (asset.getQuarantineExpiresAt() == null || asset.getQuarantineReclaimedAt() != null) {
+            throw new QuarantineNotRetainedException(
+                    "The original upload for asset " + assetId + " is no longer retained; re-upload the image");
+        }
+        if (asset.getStatus() == MediaAsset.Status.ACTIVE) {
+            throw new AssetAlreadyActiveException(
+                    "Asset " + assetId + " is already ACTIVE; re-processing would discard a live image");
+        }
+        int budget = mediaProperties.getMaxProcessAttempts();
+        if (asset.getProcessAttempts() >= budget) {
+            throw new RedriveBudgetExhaustedException(
+                    "Asset " + assetId + " has used all " + budget + " re-process attempts; re-upload the image");
+        }
+
+        asset.setStatus(MediaAsset.Status.PENDING);
+        asset.setProcessAttempts(asset.getProcessAttempts() + 1);
+        asset.setFailureReason(null);
+        asset.setFlagged(false);
+        asset = mediaAssetRepository.saveAndFlush(asset);
+
+        // Same-tx outbox insert — the asset's return to PENDING and the event that will act on it
+        // commit together or neither does.
+        MediaProcessingEvent event = new MediaProcessingEvent(asset.getTenantId(), asset.getId());
+        mediaEventOutboxRepository.save(new MediaEventOutbox(asset.getTenantId(), asset.getId(), serialize(event)));
+
+        log.info("Re-drive of asset {} from retained quarantine {}: back to PENDING (attempt {}/{}) + outbox row",
+                assetId, asset.getObjectKey(), asset.getProcessAttempts(), budget);
+        return new MediaAcceptDto(asset.getId(), asset.getStatus().name());
     }
 
     /**
@@ -360,7 +440,7 @@ public class MediaAssetService {
         asset.setFlagged(false);
         asset = mediaAssetRepository.saveAndFlush(asset);
         log.info("Dismissed content flag on asset {} (Keep) — stays {}", assetId, asset.getStatus());
-        return toDto(asset);
+        return toDto(asset, delayCutoff());
     }
 
     /**
@@ -396,9 +476,22 @@ public class MediaAssetService {
      */
     @Transactional(readOnly = true)
     public List<MediaAssetDto> mediaForProduct(UUID productId) {
+        OffsetDateTime delayCutoff = delayCutoff();
         return productMediaRepository.findAssetsForProduct(productId).stream()
-                .map(this::toDto)
+                .map(a -> toDto(a, delayCutoff))
                 .toList();
+    }
+
+    /**
+     * The instant before which a still-{@code PENDING} asset counts as stalled (D-10):
+     * {@code now - jtoye.media.reaper-grace-ms}. Computed ONCE per request and passed down, so
+     * every row in one response is classified against the same clock reading — and so the
+     * {@link MediaAssetDto#from} mapping stays clock-free and unit-testable at the exact boundary.
+     * Deliberately the reaper's OWN grace, so "the UI says stalled" and "the reaper would treat it
+     * as an orphan" cannot drift apart.
+     */
+    private OffsetDateTime delayCutoff() {
+        return OffsetDateTime.now().minusNanos(mediaProperties.getReaperGraceMs() * 1_000_000L);
     }
 
     /**
@@ -406,14 +499,14 @@ public class MediaAssetService {
      * derivative + thumbnail URLs ONLY for an {@code ACTIVE} asset (a PENDING/FAILED
      * asset has no servable object — its quarantine bytes are gone or not yet produced).
      */
-    private MediaAssetDto toDto(MediaAsset asset) {
+    private MediaAssetDto toDto(MediaAsset asset, OffsetDateTime delayCutoff) {
         String url = null;
         String thumbnailUrl = null;
         if (asset.getStatus() == MediaAsset.Status.ACTIVE && asset.getObjectKey() != null) {
             url = storageService.urlForKey(asset.getObjectKey());
             thumbnailUrl = thumbnailUrlFor(asset.getObjectKey());
         }
-        return MediaAssetDto.from(asset, url, thumbnailUrl);
+        return MediaAssetDto.from(asset, url, thumbnailUrl, delayCutoff);
     }
 
     /**

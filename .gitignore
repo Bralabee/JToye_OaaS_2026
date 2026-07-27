@@ -163,3 +163,6 @@ docker-compose.frontend-3100.yml
 # never committed artifacts — keeping them untracked is what lets the `--write` idempotence
 # check stay a clean `git diff --quiet k8s/goldens`.
 k8s/goldens/.pre/
+
+# Playwright screenshot output from e2e/media-review-320.spec.ts (evidence copies live in .planning)
+e2e-artifacts/

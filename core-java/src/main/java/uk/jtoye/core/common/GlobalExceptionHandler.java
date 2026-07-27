@@ -28,6 +28,7 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
 import uk.jtoye.core.media.exception.PayloadTooLargeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -412,6 +413,26 @@ public class GlobalExceptionHandler {
                 HttpStatus.PAYLOAD_TOO_LARGE, "Upload exceeds the maximum permitted size");
         problem.setTitle("Payload Too Large");
         problem.setType(URI.create("https://jtoye.uk/errors/payload-too-large"));
+        return problem;
+    }
+
+    /**
+     * Phase 27 (27-01 / D-04) — the three preconditions that reject a manual re-drive
+     * ({@code POST /api/v1/media/{assetId}/reprocess}): bytes not retained, the asset is already
+     * ACTIVE, or the re-drive budget is exhausted (T-27-03). All three are 409 — the request is
+     * well-formed and the caller is authorized; the asset's state is simply incompatible.
+     *
+     * <p>ONE handler for the whole {@link MediaRedriveRejectedException} family rather than three
+     * near-identical methods: each subclass carries its own stable {@code type} slug and
+     * {@code code}, which are read off the exception here. An agent branches on {@code code}
+     * without parsing prose (D-06 / agent-readiness).
+     */
+    @ExceptionHandler(MediaRedriveRejectedException.class)
+    public ProblemDetail handleMediaRedriveRejected(MediaRedriveRejectedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Media Re-process Rejected");
+        problem.setType(URI.create("https://jtoye.uk/errors/" + ex.getTypeSlug()));
+        problem.setProperty("code", ex.getCode());
         return problem;
     }
 

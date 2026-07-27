@@ -137,18 +137,18 @@ states:
     locator: "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java:44"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java#FAILED"
-    what_stops: "A vendor's uploaded image, permanently. UNRECOVERABLE BY RETRY: the reaper deletes the quarantined object from storage BEFORE flipping the row to FAILED (MediaPendingReaper.java:79 calls storageService.deleteByKey, then sets FAILED), so the bytes are gone. A broker outage longer than reaperGraceMs (900_000 ms) destroys every upload in flight, and the vendor is told only that processing failed."
+    what_stops: "A vendor image upload that never reached ACTIVE. Since 27-01 (V60) there are TWO sub-cases and they are NOT equally bad — distinguish them by quarantine_reclaimed_at before telling a vendor anything. (a) DISPATCH STALL: the reaper flipped a stale PENDING row whose event WAS dispatched, or was poison. It performs NO object delete — the original bytes are RETAINED and the asset is re-drivable via POST /api/v1/media/{assetId}/reprocess until quarantine_expires_at (72 h default). (b) WORKER VETO or EXPIRED: MediaProcessingWorker rejected the bytes on validation, or MediaQuarantineRetentionSweep reclaimed them at the retention horizon; quarantine_reclaimed_at is stamped and only a fresh upload can recover it. BEFORE 27-01 every FAILED asset had its bytes deleted first, so this state was unrecoverable by retry in ALL cases — a broker outage longer than reaperGraceMs (900_000 ms) destroyed every upload in flight."
     owner: maintainer
     detection:
-      signal: 'count of media_asset rows in status FAILED'
-      alert: MediaAssetsFailed
+      signal: 'increase(media_reaper_stalled_failed_total[1h]) > 0'
+      alert: MediaStallFailures
     runbook: "docs/runbooks/terminal-states.md#ts-07"
-    operator_action: "SELECT id, tenant_id, created_at, failure_reason FROM media_asset WHERE status = 'FAILED'; — RLS-scoped. The object is already deleted; the only remedy is asking the vendor to re-upload. Check broker availability over the window before concluding the file was invalid."
-    related: ["27-01"]
+    operator_action: "Check TS-17 FIRST — a suspended stall sweep means nothing is being classified at all. Then, RLS-scoped: SELECT id, tenant_id, created_at, failure_reason, quarantine_reclaimed_at, quarantine_expires_at FROM media_asset WHERE status = 'FAILED'; — rows with quarantine_reclaimed_at IS NULL still hold their bytes and the vendor can Re-process them from the review queue; rows with it stamped, or past quarantine_expires_at, need a re-upload. Check broker availability across the window before concluding a file was invalid."
+    related: ["27-01", "TS-17"]
     deferred:
-      reason: "No metric or alert exists for FAILED asset counts. 27-01 owns the fix for the delete-then-FAIL ordering and WILL DELETE OR MOVE the code at the locator above (quarantine_reclaimed_at sentinel + PESSIMISTIC_WRITE claim lock + a vendor-visible DELAYED state); this row's locator must be updated in the same PR or the gate's locator check fails on 27-01's merge."
+      reason: "The signal above names a real exported counter (the reaper increments media.reaper.stalled_failed at the flip) but NO alert rule consumes it yet — 27-03 owns rule content. 27-01's code change has LANDED, so this row's prose and detection signal were rewritten in that PR: the previous text described the delete-then-FAIL ordering and cited a reaper line number that no longer performs a byte delete at all. Locators are deliberately written WITHOUT an inline line reference in prose here — a row that names the stale locator it is correcting re-trips the very check that catches it."
       expires: 2026-09-30
-      tracked_by: "27-01"
+      tracked_by: "27-03"
 
   - id: TS-08
     name: webhook_delivery FAILED
@@ -302,3 +302,21 @@ states:
       reason: "PROVEN INSTANCE, not hypothetical: jtoye-redis-exporter ran a wget-based healthcheck that its scratch-based image cannot execute, reporting 'unhealthy' for 20 days while working perfectly (redis_up=1, metrics flowing). The compose file had ALREADY removed that healthcheck, with a comment explaining this exact failure, in commit 7dcaf93 at 2026-07-07 22:47:55 UTC — the container was created at 2026-07-07 22:23:46 UTC, 84 minutes earlier, and was never recreated. The image itself declares no healthcheck (verified null), so the container was the only source. Content-based sweep of all five monitoring services found redis-exporter to be the sole mismatch. Timestamp comparison alone is NOT a sufficient detector: it flagged jtoye-prometheus as stale when that container was recreated an hour before the commit that touched its block, so any gate for this must compare CONTENT, not creation time."
       expires: 2026-09-30
       tracked_by: "27-06"
+
+  - id: TS-17
+    name: media stall sweep suspended
+    kind: detection_defect
+    discovered: "2026-07-27, while executing 27-01 Task 6. The 27-01 plan specifies this row as 'TS-13'; that id was already taken by the PostgreSQL exporter row, so it is filed here as TS-17 — the number moved, the content did not."
+    locator: "core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java:185"
+    what_stops: "Classification of EVERY stalled upload, platform-wide. The reaper could not show the dispatch path healthy from this JVM (broker admin absent, queue info threw or was null, zero consumers broker-wide, or the local media.process listener container is missing/stopped/unsubscribed — see the Liveness enum), so the whole tick returns before touching a single tenant. Fails CLOSED by design (D-05): while suspended, no PENDING asset can be wrongly flipped to FAILED, but none is classified either, so a vendor sees the DELAYED affordance indefinitely rather than a terminal state with a Re-process button. Bounded-growth is NOT affected — MediaQuarantineRetentionSweep is deliberately not gated on this and still reclaims bytes at the 72 h horizon. NOT OBSERVABLE FROM HERE: a remote replica's dead consumer; the probe only sees this JVM's own listener registry."
+    owner: maintainer
+    detection:
+      signal: 'increase(media_reaper_suspended_total[30m]) > 0'
+      alert: MediaReaperSuspended
+    runbook: "docs/runbooks/terminal-states.md#ts-17"
+    operator_action: "Confirm the broker is reachable and that media.process has consumers: rabbitmq_queue_consumers{queue=\"media.process\"}, or rabbitmqctl list_queues name consumers. If the queue is fine, the local listener container is the suspect — restart core-java and re-check. The suspension reason is logged verbatim at WARN as event=media_reaper_suspended reason=<Liveness>, which names which of the eight probes failed; read that before changing anything. URGENCY: the retention sweep keeps running, so a suspension lasting longer than jtoye.media.quarantine-retention-ms (72 h default) converts recoverable stalled uploads into expired, unrecoverable ones — see TS-07 sub-case (b)."
+    related: ["27-01", "TS-07", "TS-04"]
+    deferred:
+      reason: "media.reaper.suspended is incremented in code (MediaPendingReaper.java:185) but Micrometer only exports a counter after its first increment, so media_reaper_suspended_total is absent from /actuator/prometheus on a healthy stack — verified: the sibling media_reaper_undispatched_skipped_total reads 3.0 there because it HAS fired. No alert rule consumes it; 27-03 owns rule content and must also confirm the series exists before writing a rule against it."
+      expires: 2026-09-30
+      tracked_by: "27-03"

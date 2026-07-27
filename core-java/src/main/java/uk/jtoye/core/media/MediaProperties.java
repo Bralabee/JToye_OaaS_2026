@@ -66,6 +66,45 @@ public class MediaProperties {
     private long reaperGraceMs = 900_000;
 
     /**
+     * How long a {@link MediaProcessingWorker} waits to acquire the {@code SELECT … FOR UPDATE}
+     * claim on an asset row before giving up, in milliseconds (27-01 / D-04a). Applied as
+     * {@code SET LOCAL lock_timeout} on the worker transaction's own connection.
+     *
+     * <p>Bounds the resources a BLOCKED loser holds — an AMQP consumer thread and a Hikari
+     * connection (prod {@code maximum-pool-size: 10}) — for the duration of the winner's whole
+     * pipeline. A timed-out loser dead-letters a no-op message, because the winner's committed row
+     * makes it a {@code not_pending} skip anyway.
+     *
+     * <p>Not {@code NOWAIT} (0): that would convert every benign same-asset redelivery race into an
+     * immediate exception, removing the small legitimate window in which a loser would have
+     * acquired and cleanly skipped. 10 s absorbs that window; 0 s does not.
+     */
+    private long claimLockTimeoutMs = 10_000;
+
+    /**
+     * Maximum number of HUMAN-INITIATED re-drives of one asset (27-01 / D-04, T-27-03). Bounds
+     * {@code media_asset.process_attempts} so a vendor cannot loop a permanently-broken upload
+     * through the pipeline indefinitely.
+     */
+    private int maxProcessAttempts = 3;
+
+    /**
+     * How long the raw quarantine bytes are retained before {@link MediaQuarantineRetentionSweep}
+     * may reclaim them, in milliseconds (27-01 / D-08). Default 72 h.
+     *
+     * <p>This number IS the plan's central trade: it converts <em>unbounded loss at 15 minutes</em>
+     * (the old reaper deleted the vendor's only copy the moment a broker outage outlasted the
+     * grace) into <em>bounded loss at 72 hours</em>. 72 h covers any realistic broker outage plus a
+     * weekend, while bounding the F-3 exposure window — the {@code jtoye-images} bucket is
+     * {@code mc anonymous set download}, so a quarantine object is anonymously readable by key for
+     * as long as it is retained.
+     */
+    private long quarantineRetentionMs = 259_200_000L;
+
+    /** How often {@link MediaQuarantineRetentionSweep} runs, in milliseconds. Default 1 h. */
+    private long retentionIntervalMs = 3_600_000L;
+
+    /**
      * Advisory vision (content-relevance) stage config (IMG-03). Disabled by
      * default — the Ollama provider is unreliable, so the pipeline ships behind
      * this advisory flag (SPEC / CONTEXT D-04, stage 6).
@@ -95,6 +134,18 @@ public class MediaProperties {
 
     public long getReaperGraceMs() { return reaperGraceMs; }
     public void setReaperGraceMs(long reaperGraceMs) { this.reaperGraceMs = reaperGraceMs; }
+
+    public long getClaimLockTimeoutMs() { return claimLockTimeoutMs; }
+    public void setClaimLockTimeoutMs(long claimLockTimeoutMs) { this.claimLockTimeoutMs = claimLockTimeoutMs; }
+
+    public int getMaxProcessAttempts() { return maxProcessAttempts; }
+    public void setMaxProcessAttempts(int maxProcessAttempts) { this.maxProcessAttempts = maxProcessAttempts; }
+
+    public long getQuarantineRetentionMs() { return quarantineRetentionMs; }
+    public void setQuarantineRetentionMs(long quarantineRetentionMs) { this.quarantineRetentionMs = quarantineRetentionMs; }
+
+    public long getRetentionIntervalMs() { return retentionIntervalMs; }
+    public void setRetentionIntervalMs(long retentionIntervalMs) { this.retentionIntervalMs = retentionIntervalMs; }
 
     public Vision getVision() { return vision; }
     public void setVision(Vision vision) { this.vision = vision; }
