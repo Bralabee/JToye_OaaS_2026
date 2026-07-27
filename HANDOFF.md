@@ -1,12 +1,17 @@
-# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–3 of 6 done and pushed
+# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–4 of 6 done and pushed
 
-> **Update (same session, later):** PR #315 is **MERGED** (`9d6ce8c`) — `runcheck.sh` is now on
-> `main` at `.planning/phases/27-operational-maturity/baselines/runcheck.sh`. The branch was merged
-> up from `main` and is 0 behind. **27-01 Task 3 is COMPLETE** (commits `7d216c4`, `e99efb7`).
-> Resume at **Task 4** (plan line ~1284). Two items below need reading before you continue:
-> §3a (what Task 3 proved) and §3b (AC-3.6, the one Task 3 criterion still open).
+> **Update (new session, 2026-07-27 evening): 27-01 Task 4 is COMPLETE and pushed.**
+> Commits `a94ce77` (implementation), `fbfedb9` (AC-4.5 test rewrite), `9501630` (OpenAPI snapshot),
+> `17dca23` (the arms record). Branch is **0 behind** `origin/main` (`9d6ce8c`), tree clean.
+> **Resume at Task 5** (plan line ~1420) — the frontend DELAYED affordance.
+> Read **§3c** below first: Task 4 produced three findings, one of which (AC-4.3) withdrew a
+> criterion the plan stated but that is not implementable.
+>
+> Earlier in this handoff: PR #315 is MERGED (`9d6ce8c`) — `runcheck.sh` is on `main` at
+> `.planning/phases/27-operational-maturity/baselines/runcheck.sh`. Task 3 is COMPLETE
+> (`7d216c4`, `e99efb7`, `c69f373`, `fb4b77d`); §3a/§3b still worth reading.
 
-**Generated:** 2026-07-27 (session that merged #314, opened #315, and executed 27-01 Tasks 1–2).
+**Generated:** 2026-07-27; last updated by the session that executed 27-01 **Task 4**.
 **Supersedes** the 27-00 handoff. Its §5/§7/§8/§9 content is still live and carried forward below —
 do not lose it.
 
@@ -17,9 +22,9 @@ do not lose it.
 | | |
 |---|---|
 | Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | **`feature/27-01-media-durability`** — 3 ahead of `origin/main` (`60cb641`), 0 behind, **pushed** |
+| Branch | **`feature/27-01-media-durability`** — **0 behind** `origin/main` (`9d6ce8c`); 16 ahead as of `17dca23`, **pushed** |
 | Working tree | clean |
-| Other branch | `docs/27-00-planning-artifacts` → **PR #315 OPEN**, needs merging |
+| Other branch | `docs/27-00-planning-artifacts` → PR #315 **MERGED** |
 | Stack | Compose up, healthy (`jtoye-redis-exporter` unhealthy — pre-existing, unrelated) |
 | minikube `jtoye` | Stopped — compose XOR k8s, never both |
 | `hey` | still at `~/go/bin`, not on PATH by default |
@@ -29,10 +34,10 @@ cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git switch feature/27-01-media-durability
 ```
 
-### Gate state at handoff (real output, measured at close)
+### Gate state at handoff (real output, measured at close of Task 4)
 
 ```
-scripts/check-branch-behind-base.sh   rc=0   11 ahead, 0 behind (base 9d6ce8c)
+scripts/check-branch-behind-base.sh   rc=0   16 ahead, 0 behind (base 9d6ce8c) at 17dca23
 scripts/docs-freshness.sh             rc=1   <- EXPECTED MID-PLAN. Task 6 owns metrics.json.
 scripts/check-runtime-freshness.sh    rc=1   <- EXPECTED MID-PLAN. See below.
 scripts/check-terminal-states.sh      rc=1   <- still correct until 27-03
@@ -41,9 +46,16 @@ scripts/check-alert-liveness.sh       rc=1   <- still correct until 27-03
 
 **All four rc=1 are correct right now. None is a regression. Do not "fix" any of them.**
 
-- `docs-freshness` — `metrics.json` is deliberately NOT updated mid-plan; Tasks 4–5 will move the
+- `docs-freshness` — `metrics.json` is deliberately NOT updated mid-plan; Task 5 will move the
   numbers again. **Task 6 writes it once.** Baseline to compute deltas from is the REAL
   `origin/main`: **1765 / 1182 / 207**, *not* the plan's stale `1759 / 1176 / 206`.
+  Measured drift after Task 4 (`docs-freshness.sh` output, verbatim):
+  ```
+  manifest:  java_test_methods 1182  java_test_files 207  schema_version 59  total 1765
+  computed:  java_test_methods 1226  java_test_files 212  schema_version 60  total 1809
+  ```
+  i.e. **+44 Java methods / +5 files** across Tasks 1–4, and `schema_version` already reads V60.
+  The plan's Task 6 table predicted `+28 / +3`; state the ACTUALS and let `--write` arbitrate.
 - `check-runtime-freshness` — verbatim:
   ```
   core-java  DRIFT  [image-not-rebuilt]  image tagged 2026-07-27 11:07:34 UTC
@@ -53,19 +65,26 @@ scripts/check-alert-liveness.sh       rc=1   <- still correct until 27-03
   owns the rebuild + parity proof** (`docker compose ... up -d --build core-java` — `start` does not
   rebuild — then read the value out of the running fat jar, not the filesystem).
 
-### Test state at close (real output)
+### Test state at close of Task 4 (counts read from `build-local/test-results/`, not from "BUILD SUCCESSFUL")
 
 ```
 ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.media.*'
-  -> BUILD SUCCESSFUL   unit media:  tests=36 failures=0 errors=0
+  -> classes=5   tests=38  failures=0 errors=0 skipped=0     (was 36 at Task 3 -> +2)
 
 ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.media.*'
-  -> BUILD SUCCESSFUL   integ media: tests=56 failures=0 errors=0
+  -> classes=18  tests=63  failures=0 errors=0 skipped=0     (was 56 at Task 3 -> +7)
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
+    --tests 'uk.jtoye.core.security.*' --tests '*ScopedCatalogAccess*' --tests '*GateStrictness*'
+  -> classes=22  tests=118 failures=0 errors=0 skipped=0
 ```
 
-**The FULL suite has NOT been run since Task 1** — only the media package. Task 6 must run the whole
-thing, because `trap_scope_gate_integrationtest_regression` says a new `@PreAuthorize` gate has
-repeatedly broken *existing* integrationTests, and Task 4 adds one.
+The third run was deliberate: `trap_scope_gate_integrationtest_regression` says a new
+`@PreAuthorize` gate has repeatedly broken *existing* integrationTests, and Task 4 adds one
+(`POST /{assetId}/reprocess`). **It did not fire this time.** That is NOT a substitute for Task 6's
+full-suite run — it covers the auth surface only.
+
+**The FULL suite has still NOT been run since Task 1.** Task 6 owns it.
 
 ---
 
@@ -170,7 +189,49 @@ downgraded role regardless of the datasource under test. It now probes the injec
 the VOID arm then fires with `VOID: the app datasource is not the downgraded role`. **Run the VOID
 arm on every guard you write.**
 
-## 4. WHERE TO RESUME — 27-01 Task 4
+## 3c. Task 4 — DONE. Three findings, one withdrawn criterion
+
+Full arm-by-arm record with real output: **`.planning/phases/27-operational-maturity/baselines/AC-4-ARMS.md`**.
+Read it before writing Task 5's criteria.
+
+**Finding 1 — AC-4.3's stated break is NOT implementable, and its stated RED was wrong.** The plan
+says "move `shopAccessService.require(...)` above the `findById`", expecting `404 → 403`. Under RLS
+there is no asset above the `findById` to resolve an owning shop from, and the request 404s
+afterwards regardless. The arm that DOES falsify the property is **removing the datasource
+downgrade**, and it produced something worse than the anticipated oracle: with the wall not
+filtering, the re-drive **SUCCEEDS on another tenant's asset (202)**. *What delivers the 404 is the
+RLS wall, not the ordering* — the ordering is what AC-4.4 proves. Generalise this: for any
+"a foreign X is 404" criterion in this codebase, the break is the WALL, not the call order.
+
+**Finding 2 — AC-4.5's first form could not discharge its own criterion.** Both fixtures looped
+through `andExpect(status().isConflict())`. `andExpect` aborts at the first failure and reports an
+unlabelled `expected 409 but was 202` — byte-identical whichever fixture broke — while the stated
+RED is explicitly one-sided ("the SECOND fixture 202s while the first still 409s"). Rewritten
+(`fbfedb9`) so both requests run before any assertion; the break now reports
+`[half 2 — the bytes were claimed and have since been reclaimed] expected: 409 but was: 202` with
+half 1 green. **A criterion whose RED cannot name what broke is not discharging that criterion.**
+
+**Finding 3 — `MediaReviewQueueIntegrationTest` needed NO edit**, though the plan enumerated it as
+"expected to need a fixture assertion update". Its `pendingId` fixture is created at `now()`, well
+inside the 15-minute `reaper-grace-ms`, so the D-10 widening genuinely does not select it. The file
+is unchanged since `74c2846`. The widening is additive **in fact**, not merely asserted to be.
+
+Also worth carrying: **AC-4.1's break left every status assertion GREEN** (`PENDING`,
+`process_attempts=1`, `failure_reason IS NULL`) and turned only the outbox count RED — which is
+precisely why the count is the load-bearing half. And the **VOID arm fired on all 7 tests** with
+`VOID: the app datasource is not the downgraded role`, proving the guard probes the injected
+`DataSource` rather than a connection it opened itself (the defect AC-3.6 exposed).
+
+### One deliberate deviation from the plan's wording
+
+The plan said the two derived bits are computed "in `MediaAssetService.toDto`". They are computed in
+**`MediaAssetDto.from(asset, url, thumbnailUrl, delayCutoff)`**, with the service computing the
+cutoff once per request and passing it in. This is the reading that satisfies the plan's own stated
+goal ("so the mapping stays testable"): the derivation is a pure, Spring-free transform exercised at
+the exact boundary by `MediaAssetDtoMappingTest`, rather than only end-to-end. AC-4.8's break
+("hardcode `redrivable` to `false`") applies one file over and was run — RED at **both** layers.
+
+## 4. WHERE TO RESUME — 27-01 Task 5
 
 ### Do this first (2 minutes, expected outcomes stated)
 
@@ -183,43 +244,42 @@ If it reports *behind*, `git merge origin/main --no-edit` before doing anything 
 behind its base ships a runtime missing already-merged work and no rebuild fixes it.
 
 Then read, in this order:
-1. `.planning/phases/27-operational-maturity/27-01-PLAN.md` **lines 1284–1418** (Task 4 only).
-2. §3a and §3b above — three findings that change how you write criteria in this codebase.
+1. `.planning/phases/27-operational-maturity/27-01-PLAN.md` **lines 1420–1512** (Task 5 only).
+2. §3c above, then §3a/§3b — the findings that change how you write criteria in this codebase.
 3. §5 traps, especially trap 1 (it cost three fixes in this plan).
 
-### Task 4 in one paragraph
+### The wire contract Task 5 consumes (shipped and proven — do not re-derive it)
 
-`POST /api/v1/media/{assetId}/reprocess` → `202` + `MediaAcceptDto`. Requires retained bytes
-(`quarantine_expires_at IS NOT NULL AND quarantine_reclaimed_at IS NULL`), `status <> ACTIVE`, and
-`process_attempts < max-process-attempts` (the property already exists, default 3). Sets
-`status → PENDING`, `process_attempts += 1`, `failure_reason → NULL`, `flagged → false`, and inserts
-a fresh outbox row **in the same tx**. Mirror `MediaController.keep` exactly for authorization:
-`@PreAuthorize("hasAuthority('SCOPE_catalog:write')")` **plus** the VSA-02
-`shopAccessService.require(resolveOwningShopId(asset), SHOP_MANAGER)` applied **after** the RLS
-`findById`, so a foreign asset is a 404 and never a 403 oracle. Carries the uniform
-`Idempotency-Key` contract via `IdempotencyService.execute("media.reprocess", …)` and RFC 7807
-errors. Plus the derived `delayed`/`redrivable` DTO bits and the review-queue widening (D-10), and
-regenerate `docs/api/openapi-snapshot.json`.
+`MediaAssetDto` now ends with two derived booleans. Both are in `docs/api/openapi-snapshot.json`.
 
-### Groundwork Task 4 can rely on (already shipped and proven)
-
-| Thing | Where | State |
+| field | true when | UI meaning |
 |---|---|---|
-| `process_attempts`, `quarantine_expires_at`, `quarantine_reclaimed_at` | V60 | applied, Envers-mirrored |
-| `maxProcessAttempts` / `quarantineRetentionMs` / `retentionIntervalMs` / `claimLockTimeoutMs` | `MediaProperties` + `application.yml` | 5 keys, env-contract gate green |
-| `redrivable` semantics | `expires_at IS NOT NULL AND reclaimed_at IS NULL` | one column pair, three writers, all proven |
-| worker claim lock | `lockForProcessing` + `SET LOCAL lock_timeout` | makes the manual re-drive safe (D-04) |
-| `failRetainingBytes` vs `failAndDiscard` | `MediaProcessingWorker` | D-07 split, both proven |
+| `redrivable` | `quarantine_expires_at IS NOT NULL AND quarantine_reclaimed_at IS NULL` | the original bytes are still on disk → offer **Re-process** |
+| `delayed` | `status == PENDING` and older than `jtoye.media.reaper-grace-ms` (15 min) | the upload has visibly stalled → replace the spinner |
 
+- `POST /api/v1/media/{assetId}/reprocess` → **202** `{assetId, status}`. Requires an
+  `Idempotency-Key` header (reuse `ImageUploader`'s generator — do not re-implement).
+- The three 409s carry a machine-parseable `code`, which Task 5's error toast must surface
+  verbatim rather than a generic message: `media.quarantine_not_retained`, `media.already_active`,
+  `media.redrive_budget_exhausted`.
+- `GET /api/v1/media/review-queue` now also returns stalled PENDING rows (D-10), so `ReviewQueue.tsx`
+  will receive a status it has never rendered before. That is the M4 surface.
 
+### Task 5 in one paragraph
 
-Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines). Task 4 starts at
-**line ~1284**. Remaining: Tasks 4, 5, 6 — plus AC-3.6 (§3b).
+`frontend/types/api.ts` gains `redrivable`/`delayed` on `MediaAsset`; `frontend/lib/media-api.ts`
+gains `reprocessAsset(assetId)`. `asset-image.tsx`'s PENDING branch splits: `!delayed` keeps the
+existing spinner **byte-for-byte**, `delayed` renders an amber `role="status"` card ("Taking longer
+than usual" + a **Check again** control). Its FAILED branch keeps **Re-upload** unchanged
+(Incremental Betterment — it is the working good) and adds **Re-process** as a secondary action only
+when `redrivable`. `ReviewQueue.tsx` gets the same treatment plus optimistic removal and a 409 toast
+carrying the RFC 7807 `code`. AC-5.5 requires a **real browser at 320 px against the running Compose
+stack** — the plan explicitly REMOVED the "if the stack is unavailable, mark DEFERRED" escape, so if
+the stack is down that criterion is **VOID (exit 2) and the plan is not done**.
 
-- **Task 4** — `POST /api/v1/media/{assetId}/reprocess` + `delayed`/`redrivable` DTO bits +
-  review-queue widening + OpenAPI snapshot.
-- **Task 5** — frontend DELAYED affordance (`asset-image.tsx`, `ReviewQueue.tsx`), 6 Jest blocks.
-- **Task 6** — metrics reconcile, full suite, terminal-states rows, runtime parity.
+Remaining after Task 5: **Task 6** — metrics reconcile, full suite, terminal-states rows, runtime
+parity. Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines); Task 5 at
+**line ~1420**, Task 6 at **line ~1514**.
 
 ### Task 6 correction you must carry
 
