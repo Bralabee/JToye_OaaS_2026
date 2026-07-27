@@ -269,19 +269,39 @@ class MediaRedriveControllerTest {
         // worker validation veto). Identical outcome, different history.
         UUID reclaimed = seedAsset(tenantA, productA, "FAILED", retained(), OffsetDateTime.now(), 0, "not an image");
 
-        for (UUID asset : new UUID[]{neverClaimed, reclaimed}) {
-            mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                            .header("Idempotency-Key", key()).with(vendorJwt(tenantA)))
-                    .andExpect(status().isConflict())
-                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/media-quarantine-not-retained"))
-                    .andExpect(jsonPath("$.code").value("media.quarantine_not_retained"));
+        // Both requests run BEFORE any assertion, and each half is asserted under its own label.
+        // A shared loop with andExpect() inside would abort at the first failure and report an
+        // unlabelled "expected 409 but was 202" — which cannot say WHICH half broke, and so could
+        // not discharge this criterion's stated RED ("the SECOND fixture 202s while the first
+        // still 409s"). Deleting one half of the predicate must be visibly one-sided.
+        MvcResult neverClaimedResult = reprocess(neverClaimed);
+        MvcResult reclaimedResult = reprocess(reclaimed);
 
-            // The concrete harm the guard prevents: a bytes-gone asset left PENDING with an
-            // enqueued event the worker can only fail on a missing object.
+        assertThat(neverClaimedResult.getResponse().getStatus())
+                .as("half 1 — the bytes were never claimed").isEqualTo(409);
+        assertThat(reclaimedResult.getResponse().getStatus())
+                .as("half 2 — the bytes were claimed and have since been reclaimed").isEqualTo(409);
+
+        for (MvcResult result : new MvcResult[]{neverClaimedResult, reclaimedResult}) {
+            assertThat(result.getResponse().getContentType())
+                    .as("RFC 7807 typed, not prose").startsWith("application/problem+json");
+            assertThat(result.getResponse().getContentAsString())
+                    .as("stable type URI + machine-parseable code")
+                    .contains("https://jtoye.uk/errors/media-quarantine-not-retained")
+                    .contains("media.quarantine_not_retained");
+        }
+
+        // The concrete harm the guard prevents: a bytes-gone asset left PENDING with an enqueued
+        // event the worker can only fail on a missing object.
+        for (UUID asset : new UUID[]{neverClaimed, reclaimed}) {
             assertThat(statusOf(asset)).as("a rejected re-drive leaves the asset terminal").isEqualTo("FAILED");
             assertThat(outboxCount(asset)).as("a rejected re-drive enqueues nothing").isZero();
         }
+    }
+
+    private MvcResult reprocess(UUID assetId) throws Exception {
+        return mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", assetId)
+                .header("Idempotency-Key", key()).with(vendorJwt(tenantA))).andReturn();
     }
 
     // --- AC-4.6 -------------------------------------------------------------
