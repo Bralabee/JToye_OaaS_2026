@@ -1,4 +1,18 @@
-# Prometheus configuration for JToye OaaS monitoring
+# Prometheus configuration TEMPLATE for JToye OaaS monitoring (phase 27, plan 27-00).
+#
+# Placeholders (__CORE_JAVA_METRICS_PORT__) are rendered at container start by
+# entrypoint.sh using sed. The rendered output (prometheus.yml) is .gitignored.
+#
+# Prometheus has no native env-var substitution in scrape configs, which is why the
+# sed wrapper exists — the same reason and the same mechanism as
+# ../alertmanager/alertmanager.yml.tmpl. DO NOT replace with ${VAR} syntax:
+# Prometheus passes it through literally and the target becomes unresolvable.
+#
+# EDITING THIS FILE: edit the .tmpl, never the rendered prometheus.yml (it is
+# overwritten on every container start). `/-/reload` is not enabled, so after editing
+# run `docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d
+# --force-recreate prometheus` — a plain `restart` re-runs the entrypoint too, but
+# only `up -d` picks up a changed environment value.
 global:
   scrape_interval: 15s # Scrape targets every 15 seconds
   evaluation_interval: 15s # Evaluate rules every 15 seconds
@@ -29,14 +43,36 @@ scrape_configs:
         labels:
           service: 'prometheus'
 
-  # Core Java API (Spring Boot Actuator). issue #98 [P2-7] item 4: in prod the
-  # actuator endpoints are served ONLY on the internal management port (9091),
-  # not the public app port (9090). Scrape the management port so this target
-  # hits the port that actually serves /actuator/prometheus.
+  # Core Java API (Spring Boot Actuator).
+  #
+  # The actuator port DIFFERS BY RUNTIME, which is why this is injected and not a
+  # literal (phase 27, plan 27-00):
+  #
+  #   prod / k8s  — application-prod.yml:106-107 sets a SEPARATE internal
+  #                 management port, `${MANAGEMENT_SERVER_PORT:9091}`, so actuator
+  #                 is served ONLY there. k8s/base/core-java-deployment.yaml
+  #                 declares containerPort 9091 `management` and annotates
+  #                 `prometheus.io/port: "9091"` — correct for that runtime.
+  #   dev/compose — docker-compose.full-stack.yml:173 runs SPRING_PROFILES_ACTIVE=dev,
+  #                 which sets NO management.server.port, so the actuator stays on the
+  #                 app port `${SERVER_PORT:9090}` (application.yml:252) and the scrape
+  #                 endpoint is opted in via MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+  #                 (docker-compose.full-stack.yml:209).
+  #
+  # Before 27-00 this line was the literal `core-java:9091`, which is the prod value.
+  # Against the dev profile nothing binds 9091, so the target was DOWN and SIX alerts
+  # were dataless while TWO more (HighMemoryUsage, FrequentGarbageCollection) silently
+  # bound to Keycloak's JVM despite carrying `service: core-java`. Evidence:
+  # .planning/phases/27-operational-maturity/baselines/B-1.txt, B-7.txt.
+  #
+  # Substituting one literal for another would only move which runtime is wrong, and
+  # would re-arm the moment SERVER_PORT or MANAGEMENT_SERVER_PORT is overridden. The
+  # value therefore comes from CORE_JAVA_METRICS_PORT via entrypoint.sh, the same
+  # render-at-start idiom alertmanager already uses in the sibling directory.
   - job_name: 'core-java'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['core-java:9091']
+      - targets: ['core-java:__CORE_JAVA_METRICS_PORT__']
         labels:
           service: 'core-api'
           component: 'backend'
