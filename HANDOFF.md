@@ -12,11 +12,13 @@
 |---|---|
 | Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
 | Branch | `main` — the Phase 27 branches were merged and **deleted** |
-| `origin/main` | `2d5486d` (planning #309) on top of `2f8eeca` (27-05 fix #310) |
+| `origin/main` | `5f15948` (handoff #311) → `2d5486d` (planning #309) → `2f8eeca` (27-05 fix #310) |
 | Uncommitted | none — working tree clean |
 | Stack | Compose up and **runtime-fresh** (all 4 built services PASS `check-runtime-freshness.sh`); broker `3.12.14`; Prometheus host port **9091** |
 | minikube `jtoye` | **Stopped, not deleted.** compose XOR k8s — never both (shared dev DB) |
 | Metrics | `origin/main` = **1765 / 1182 / V59** (rebaselined by 27-05's guard suite) |
+| Branches | **Only `origin/main`** remains (+22 dependabot). All 7 non-dependabot branches deleted after housekeeping |
+| Open PRs | 5, **all dependabot** (#252-#259). Nothing of ours pending |
 
 ```bash
 git fetch origin && git switch -c feature/<next-plan> origin/main
@@ -31,6 +33,31 @@ git fetch origin && git switch -c feature/<next-plan> origin/main
 | 27-04 throughput + guards | 2 | not started |
 | 27-03 failure visibility | 3 | not started — **unblocked by 27-05** |
 | 27-02 broker upgrade · 27-06 CI wiring | 4 | not started — **unblocked by 27-05** |
+
+### 1a. Environment breakage found by housekeeping — NOT fixed, deliberately
+
+**`gsd-sdk` is broken on this machine.** `~/.npm/_npx/` was pruned, so the global link
+`$(npm root -g)/@gsd-build/sdk` → `~/.npm/_npx/4db0de1f85c3165e/.../get-shit-done-cc/sdk` is a
+**dangling symlink**. `gsd-sdk` is not on PATH, and `doctor.sh` reports it permanently `UNKNOWN`
+(its `npx-linked` probe `readlink -f`s the link, so the path degrades to `/../package.json`).
+
+*Not* repaired inside housekeeping, on purpose. The documented fix
+(`npx -y get-shit-done-cc@latest --global`, per `~/dotfiles/CLAUDE_TROUBLESHOOTING.md` §5) installs
+**@latest** — an upgrade, not a repair — and `~/dotfiles/claude/.claude/gsd-patches/` holds **4
+patches + `reapply.sh`** that an upgrade would clobber. Sequence when you do it:
+
+```bash
+npx -y get-shit-done-cc@latest --global     # upgrades 67 skills
+~/dotfiles/claude/.claude/gsd-patches/reapply.sh
+~/dotfiles/toolchain/doctor.sh --write-lock  # then commit the lock on a feature branch → PR
+```
+
+**Impact is small**: the 67 `gsd-*` skills are standalone files and work fine, and this project
+already has `context_window: 1000000` in `.planning/config.json` — the one thing `gsd-sdk` is
+documented for. It only bites when setting up a **new** GSD project.
+
+Other toolchain drift, report-only: conda `26.1.1`→`26.5.3`, ms-fabric-cli `1.2.0`→`1.6.1` (the
+latter belongs to the AIMS project, not this one).
 
 ---
 
@@ -194,6 +221,30 @@ nothing. Always `:core-java:cleanTest :core-java:test`, and confirm the result-X
 ---
 
 ## 9. Resume instructions
+
+**Start here (new terminal, 2026-07-27):**
+```bash
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+git checkout main && git pull --ff-only origin main   # expect 5f15948 or later, clean tree
+./scripts/docs-freshness.sh            # expect exit 0 at 1765
+./scripts/check-runtime-freshness.sh   # expect PASS 4/4 — if the stack was stopped, expect VOID(2), not a pass
+docker ps --format '{{.Names}}' | grep -c jtoye        # expect ~16
+docker exec jtoye-rabbitmq rabbitmqctl list_queues name messages | grep webhook
+#   expect: webhook.deliveries.dlq 9   ·   webhook.deliveries 0   — 9 is CORRECT and deliberate
+```
+
+**Trap — squash merges make `check-runtime-freshness.sh` cry DRIFT falsely.** The repo squash-merges,
+so the merge commit is stamped at *merge* time while the image was built from the *pre-merge* SHA.
+The gate compares image-tag-time vs newest-build-input-commit-time and reports DRIFT even when the
+running code is byte-identical. Hit exactly this at session close: `core-java` image 00:24 vs
+`2f8eeca` 09:46. **Before rebuilding, check whether the content actually differs:**
+
+```bash
+git diff --stat <sha-image-was-built-from> origin/main -- core-java/src core-java/build.gradle.kts
+# empty  -> content is current; the DRIFT is a timestamp artifact
+```
+A rebuild still clears it honestly (and was done at 11:07 UTC, gate now PASS 4/4) — but know which
+you are fixing, because "old image" is not the same as "wrong image".
 
 1. `git fetch origin && git switch -c feature/<next-plan> origin/main`. **Do NOT recreate
    `feature/phase-27-operational-maturity`** — it was merged and deleted; an earlier version of this
