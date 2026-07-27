@@ -1,7 +1,7 @@
 # Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–5 of 6 done and pushed
 
 > **Update (2026-07-27 evening): 27-01 Tasks 4 AND 5 are COMPLETE and pushed** (`c78072d`).
-> Branch is **0 behind** `origin/main` (`9d6ce8c`), 20 ahead, tree clean.
+> Branch is **0 behind** `origin/main` (`9d6ce8c`), 21 ahead at `c3b3300`, tree clean, pushed.
 > **ONLY TASK 6 REMAINS** (plan line ~1514) — metrics reconcile, full Java suite, terminal-states
 > rows, runtime parity.
 >
@@ -32,10 +32,10 @@ do not lose it.
 | | |
 |---|---|
 | Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | **`feature/27-01-media-durability`** — **0 behind** `origin/main` (`9d6ce8c`); 20 ahead as of `c78072d`, **pushed** |
+| Branch | **`feature/27-01-media-durability`** — **0 behind** `origin/main` (`9d6ce8c`); 21 ahead at `c3b3300`, **pushed** |
 | Working tree | clean |
 | Other branch | `docs/27-00-planning-artifacts` → PR #315 **MERGED** |
-| Stack | Compose up, healthy (`jtoye-redis-exporter` unhealthy — pre-existing, unrelated) |
+| Stack | Compose up, all 10 services healthy. **`core-java` + `frontend` REBUILT in Task 5** — parity green. (`jtoye-redis-exporter` unhealthy — pre-existing, unrelated, not a compose service) |
 | minikube `jtoye` | Stopped — compose XOR k8s, never both |
 | `hey` | still at `~/go/bin`, not on PATH by default |
 
@@ -47,7 +47,7 @@ git switch feature/27-01-media-durability
 ### Gate state at handoff (real output, measured at close of Task 5)
 
 ```
-scripts/check-branch-behind-base.sh   rc=0   20 ahead, 0 behind (base 9d6ce8c) at c78072d
+scripts/check-branch-behind-base.sh   rc=0   21 ahead, 0 behind (base 9d6ce8c) at c3b3300
 scripts/docs-freshness.sh             rc=1   <- EXPECTED MID-PLAN. Task 6 owns metrics.json.
 scripts/check-runtime-freshness.sh    rc=0   <- GREEN: Task 5 rebuilt core-java + frontend
 scripts/check-terminal-states.sh      rc=1   <- still correct until 27-03
