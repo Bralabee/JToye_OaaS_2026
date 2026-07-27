@@ -11,7 +11,6 @@
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import { ReviewQueue } from "@/components/dashboard/media/ReviewQueue"
 import { fetchReviewQueue, keepAsset, reprocessAsset } from "@/lib/media-api"
-import { useToast } from "@/hooks/use-toast"
 import type { MediaAsset } from "@/types/api"
 
 jest.mock("@/lib/media-api", () => ({
@@ -19,17 +18,19 @@ jest.mock("@/lib/media-api", () => ({
   keepAsset: jest.fn(),
   reprocessAsset: jest.fn(),
 }))
+
 // A STABLE toast reference (the real useToast returns a module-level store, so
 // `toast` is stable across renders). An unstable mock would make the component's
 // `load`/`handleKeep` useCallbacks change every render and re-fire the fetch
 // effect — masking real behaviour.
-jest.mock("@/hooks/use-toast", () => {
-  const toast = jest.fn()
-  return { useToast: () => ({ toast }) }
-})
-
-/** The stable module-level `toast` spy the mock hands every render. */
-const toastSpy = () => (useToast() as unknown as { toast: jest.Mock }).toast
+//
+// The spy is declared HERE rather than reached through `useToast()` in a helper:
+// calling a hook from a plain function trips react-hooks/rules-of-hooks, which is
+// an ERROR (not a warning) and fails the CI Lint job while `npm run build` and
+// jest both stay green. The `mock` prefix is what lets jest's hoisting of
+// `jest.mock` above this declaration still see it.
+const mockToast = jest.fn()
+jest.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }))
 
 const mockedFetch = fetchReviewQueue as jest.MockedFunction<typeof fetchReviewQueue>
 const mockedKeep = keepAsset as jest.MockedFunction<typeof keepAsset>
@@ -207,7 +208,7 @@ describe("ReviewQueue", () => {
 
     // The three 409 codes have three different remedies. A generic "please try
     // again" collapses them into one dead end, so the code must reach the vendor.
-    expect(toastSpy()).toHaveBeenCalledWith(
+    expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({
         variant: "destructive",
         description: expect.stringContaining("media.quarantine_not_retained"),
