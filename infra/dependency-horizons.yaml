@@ -1,0 +1,485 @@
+# Dependency support-horizon manifest — J'Toye OaaS
+#
+# One row per distinct pinned artifact in this repo. Enforced by
+# scripts/check-dependency-horizons.sh (phase 27, plan 27-00, Task 5).
+#
+# WHY THIS FILE EXISTS
+#
+#   The original brief named ONE end-of-life dependency. Building the mechanism found SIX
+#   (measured 2026-07-27 against endoflife.date, baseline B-4):
+#
+#     rabbitmq/3.12      EOL 2024-02-21   2y5m past
+#     prometheus/2.48    EOL 2023-12-28   2y7m past
+#     grafana/10.2       EOL 2024-07-24   2y   past
+#     keycloak/24.0      EOL 2024-06-10   2y1m past
+#     nodejs/20          EOL 2026-04-30   3m   past
+#     alpine-linux/3.20  EOL 2026-04-01   4m   past
+#
+#   That difference — one believed, six measured — is the argument for the mechanism. A
+#   horizon that lives in someone's memory is not a horizon.
+#
+# ON `eol_slug`: IT IS MEASURED, NEVER DERIVED FROM THE IMAGE NAME
+#
+#   This is the single trap this schema exists to close. The image name is NOT the API slug.
+#   Measured with `curl -o /dev/null -w '%{http_code} %{redirect_url}'` on 2026-07-27:
+#
+#     node      -> 301 -> nodejs           alpine   -> 301 -> alpine-linux
+#     postgres  -> 301 -> postgresql       golang   -> (image name; slug is `go`)
+#     minio 404 · minio/mc 404 · ollama 404 · mailhog 404 · alertmanager 404
+#     redis-exporter 404 · postgres-exporter 404 · scratch 404
+#     java 404 · openjdk 404  (the Java horizon is tracked via `eclipse-temurin`, the
+#                              distribution this repo actually builds on)
+#
+#   A gate built on the naive image name either silently follows a redirect it never
+#   recorded, or reads a 404 body as "no EOL data" and passes. Both are how a check earns
+#   a `|| true`. Every slug below returns 200 DIRECTLY, with no redirect.
+#
+# ON `eol_cycle` vs `resolved_cycle`: FLOATING TAGS ARE RESOLVED WITH EVIDENCE
+#
+#   `redis:7-alpine` has no cycle "7" in the catalogue (cycles are 8.8 … 7.4, 7.2, 7.0 …).
+#   `gradle-8.10.2` has no cycle "8.10" — that catalogue is major-only (9, 8, 7 …).
+#   Guessing either would make the gate VOID forever. Both carry a `resolved_cycle` with the
+#   evidence that produced it.
+#
+# ON `owner`: THERE IS NO PLATFORM-OPERATOR IDENTITY IN THIS SYSTEM
+#
+#   Same recorded architectural fact as docs/ops/terminal-states.yaml. All admin here is
+#   tenant-scoped; there is no cross-tenant operator role and no ops rota. Writing
+#   `owner: platform` (as 27-00-PLAN.md's schema example shows) would be fabrication.
+#   `maintainer` is used wherever the maintainer can actually act. `UNASSIGNED` appears on
+#   exactly one row, and only because that row's whole point is that nobody owns it — and
+#   the gate requires a dated `manual_review` before it will accept UNASSIGNED at all.
+#
+# ON `kind`: FIVE VALUES, ONE MORE THAN THE PLAN NAMED
+#
+#   27-00-PLAN.md Task 5(a) declares `image | toolchain | first_party | out_of_repo`.
+#   `edge-go/Dockerfile:30` is `FROM scratch`, which H-1 discovery extracts and which
+#   therefore needs a row. But `scratch` is not a dependency: it is Docker's reserved empty
+#   build stage — the ABSENCE of a base image. It has no upstream, so it cannot age, and
+#   filing it as an UNKNOWN awaiting `manual_review` would schedule a human to re-check a
+#   fact that cannot change. `kind: pseudo` is added for it, exempt from EOL lookup by rule
+#   (like first_party) but still subject to every other rule. The width of that exemption is
+#   asserted, not assumed — see the gate header.
+#
+# EXEMPTIONS
+#
+#   Six rows are past horizon today. Each carries a non-empty reason, a dated `expires`, and
+#   a `tracked_by`. An expired exemption is a FAIL, and an exemption on a row that is NOT
+#   past horizon is a FAIL (STALE) — so this file cannot silently become a permanent
+#   allowlist in either direction.
+#
+# WHEN CI GOES AMBER AND RED WITH NO CODE CHANGE — INTENDED, STATED IN ADVANCE
+#
+#   rabbitmq 4.3 (the only viable upgrade target) carries a vendor community-support horizon
+#   of 2026-11-30. With HORIZON_WARN_DAYS=90 this manifest turns the `ops-contracts` job
+#   AMBER on ~2026-09-01 and RED on 2026-12-01 with no commit in between. That is the
+#   mechanism working, not an outage. Do not diagnose it as a broken gate.
+
+version: 1
+
+dependencies:
+
+  # ------------------------------------------------------------------ runtime images
+  - id: postgres
+    pin: "postgres:15-alpine"
+    sites: ["docker-compose.full-stack.yml:14"]
+    kind: image
+    owner: maintainer
+    eol_slug: postgresql
+    eol_cycle: "15"
+    eol_date: "2027-11-11"
+
+  - id: alpine
+    pin: "alpine:3.20"
+    sites: ["docker-compose.full-stack.yml:48"]
+    kind: image
+    owner: maintainer
+    eol_slug: alpine-linux
+    eol_cycle: "3.20"
+    eol_date: "2026-04-01"
+    exemption:
+      reason: >-
+        Alpine 3.20 went EOL 2026-04-01. This pin is the seed/init helper in the dev compose
+        stack only — it is not a build base and ships in nothing. 3.22 is current. Deferred
+        because the upgrade is trivial but untested against the seed scripts, and doing it
+        blind during an ops-spine phase would risk the local stack every other 27-xx plan
+        measures against.
+      expires: "2026-11-30"
+      tracked_by: "DEFERRED-27"
+
+  - id: keycloak
+    pin: "quay.io/keycloak/keycloak:24.0.5"
+    sites: ["docker-compose.full-stack.yml:81"]
+    kind: image
+    owner: maintainer
+    eol_slug: keycloak
+    eol_cycle: "24.0"
+    eol_date: "2024-06-10"
+    exemption:
+      reason: >-
+        Keycloak 24.0 went EOL 2024-06-10 (777 days past). Upgrading is NOT a tag bump: KC 25+
+        changes the admin API and the user-profile handling this repo already has a recorded
+        trap for (unmanaged tenant_id attributes are stripped on admin-API user creation), the
+        realm import path is Postgres-backed, and JWT issuer/JWKS split-horizon has caused a
+        total live-auth outage here before. It needs its own plan with a live auth rehearsal,
+        not a line in an ops-spine phase.
+      expires: "2026-12-31"
+      tracked_by: "DEFERRED-27"
+
+  - id: redis
+    pin: "redis:7-alpine"
+    sites: ["docker-compose.full-stack.yml:126"]
+    kind: image
+    owner: maintainer
+    eol_slug: redis
+    eol_cycle: "7.4"
+    resolved_cycle: "7.4"
+    resolved_evidence: >-
+      The tag is the floating `7-alpine`; the catalogue has no cycle "7" (cycles are
+      8.8, 8.6, 8.4, 8.2, 8.0, 7.4, 7.2, 7.0, 6.2, 6.0, 5.0). Resolved by reading the
+      RUNNING container: `docker exec jtoye-redis redis-server --version` reports v=7.4.8,
+      so 7.4 is the deployed series. Catalogue `eol: false` for 7.4.
+    eol_date: "false"
+
+  - id: rabbitmq
+    pin: "rabbitmq:3.12-management-alpine"
+    sites: ["docker-compose.full-stack.yml:144"]
+    kind: image
+    owner: maintainer
+    eol_slug: rabbitmq
+    eol_cycle: "3.12"
+    eol_date: "2024-02-21"
+    vendor_eol: "2024-02-29"
+    vendor_source: "https://www.rabbitmq.com/release-information"
+    exemption:
+      reason: >-
+        RabbitMQ 3.12 community support ended 2024-02-29 (vendor) / 2024-02-21 (catalogue);
+        commercial support ended 2025-06-30. THE TARGET IS 4.3, AND THE REASON IS DATED:
+        4.1 EOL 2026-01-30 (already past), 4.2 EOL 2026-07-31 (four days after this row was
+        written), 4.3 carries catalogue `eol: false` but vendor community support ending
+        2026-11-30. So 4.3 is the ONLY viable series and its own horizon is under five months
+        away — upgrading to 4.2 would land on a series that dies within the week. 27-02 owns
+        the upgrade and reads this row rather than re-deriving it. ORDERING HAZARD recorded
+        with it: destroying the broker before 27-01 lands drops in-flight media.process
+        messages.
+      expires: "2026-11-30"
+      tracked_by: "27-02"
+
+  - id: minio
+    pin: "minio/minio:${MINIO_IMAGE_TAG:-latest}"
+    sites: ["docker-compose.full-stack.yml:393"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      endoflife.date has no `minio` product (404, measured 2026-07-27), and the pin is a
+      floating `:latest` behind an env override, so there is no cycle to resolve even if the
+      product existed. Horizon is UNKNOWN by construction, not by omission.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/minio/minio/releases"
+
+  - id: minio-mc
+    pin: "minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
+    sites: ["docker-compose.full-stack.yml:415"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Same 404 + floating-tag position as `minio`. Separate row because it is a separate
+      pinned artifact with its own env override.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/minio/mc/releases"
+
+  - id: ollama
+    pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"
+    sites:
+      - "docker-compose.full-stack.yml:435"
+      - "docker-compose.full-stack.yml:460"
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      endoflife.date 404 (measured 2026-07-27), floating `:latest`. Pinned at TWO sites —
+      the model-puller and the server — and H-5 asserts the pin at both, so bumping one and
+      not the other is a drift failure rather than an invisible skew.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/ollama/ollama/releases"
+
+  - id: mailhog
+    pin: "mailhog/mailhog:v1.0.1"
+    sites: ["docker-compose.full-stack.yml:476"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      endoflife.date 404 (measured 2026-07-27). MailHog is archived upstream and receives no
+      releases; the horizon is not "unknown pending a check" so much as "there will never be
+      another version". Dev-only SMTP sink, never deployed to staging or production.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/mailhog/MailHog"
+
+  # ------------------------------------------------------------------ monitoring images
+  #  27-02's draft manifest omitted this entire block. 27-02 now consumes THIS file (D-B),
+  #  so the omission is closed here rather than inherited.
+  - id: prometheus
+    pin: "prom/prometheus:v2.48.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:8"]
+    kind: image
+    owner: maintainer
+    eol_slug: prometheus
+    eol_cycle: "2.48"
+    eol_date: "2023-12-28"
+    exemption:
+      reason: >-
+        Prometheus 2.48 went EOL 2023-12-28 (942 days past — the oldest breach in this file).
+        Deferred deliberately for ONE phase: 27-00 Task 1 and Task 4 have just re-templated
+        prometheus.yml and alertmanager.yml, and 27-03 is about to rewrite the alert rules
+        this server evaluates. Moving to 3.x mid-flight would change PromQL evaluation and
+        remote-write behaviour underneath two plans that are using this server as their
+        measuring instrument. Upgrade after 27-03 lands, not before.
+      expires: "2026-12-31"
+      tracked_by: "DEFERRED-27"
+
+  - id: grafana
+    pin: "grafana/grafana:10.2.2"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:50"]
+    kind: image
+    owner: maintainer
+    eol_slug: grafana
+    eol_cycle: "10.2"
+    eol_date: "2024-07-24"
+    exemption:
+      reason: >-
+        Grafana 10.2 went EOL 2024-07-24 (733 days past). Dev-stack visualisation only — it
+        is not on the request path and holds no tenant data; the dashboards it renders are
+        provisioned from files in this repo, so the blast radius of a bad upgrade is the
+        dashboards, not the platform. Deferred with prometheus so the monitoring stack moves
+        as one piece after 27-03, rather than one component at a time.
+      expires: "2026-12-31"
+      tracked_by: "DEFERRED-27"
+
+  - id: alertmanager
+    pin: "prom/alertmanager:v0.27.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:81"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      endoflife.date has no `alertmanager` product (404 on `alertmanager` and on
+      `prometheus-alertmanager`, both measured 2026-07-27). Alertmanager versions
+      independently of Prometheus, so the `prometheus` row's horizon does NOT cover it —
+      which is precisely the assumption that let it be omitted from 27-02's draft.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/prometheus/alertmanager/releases"
+
+  - id: redis-exporter
+    pin: "oliver006/redis_exporter:v1.58.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:118"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Third-party exporter, endoflife.date 404 (measured 2026-07-27). See
+      docs/ops/terminal-states.yaml TS-16: this image's compose entry drifted from its
+      RUNNING container for 20 days without any gate noticing, because
+      check-runtime-freshness.sh scopes itself to BUILT services.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/oliver006/redis_exporter/releases"
+
+  - id: postgres-exporter
+    pin: "prometheuscommunity/postgres-exporter:v0.15.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:138"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault
+      (register TS-13) was masked for weeks behind a green `up` — a reminder that "the
+      container is running" says nothing about whether it works.
+    manual_review:
+      last_checked: "2026-07-27"
+      expires: "2027-01-27"
+      url: "https://github.com/prometheus-community/postgres_exporter/releases"
+
+  # ------------------------------------------------------------------ build base images
+  - id: eclipse-temurin-jdk
+    pin: "eclipse-temurin:21-jdk-alpine"
+    sites: ["core-java/Dockerfile:5"]
+    kind: image
+    owner: maintainer
+    eol_slug: eclipse-temurin
+    eol_cycle: "21"
+    eol_date: "2029-12-31"
+
+  - id: eclipse-temurin-jre
+    pin: "eclipse-temurin:21-jre-alpine"
+    sites: ["core-java/Dockerfile:27"]
+    kind: image
+    owner: maintainer
+    eol_slug: eclipse-temurin
+    eol_cycle: "21"
+    eol_date: "2029-12-31"
+
+  - id: golang
+    pin: "golang:1.25-alpine"
+    sites: ["edge-go/Dockerfile:7"]
+    kind: image
+    owner: maintainer
+    eol_slug: go
+    eol_cycle: "1.25"
+    eol_date: "false"
+    note: >-
+      Catalogue `eol: false`. Go's real policy is support until two newer majors ship; 1.26
+      is out (go1.26.5 is installed on the dev host), so 1.25 loses support when 1.27 ships.
+      That is a horizon without a date, so no `vendor_eol` is recorded — inventing one would
+      be the same fabrication this file exists to prevent.
+
+  - id: node
+    pin: "node:20-alpine"
+    sites:
+      - "frontend/Dockerfile:5"
+      - "frontend/Dockerfile:129"
+      - "mcp-server/Dockerfile:7"
+      - "mcp-server/Dockerfile:21"
+    kind: image
+    owner: maintainer
+    eol_slug: nodejs
+    eol_cycle: "20"
+    eol_date: "2026-04-30"
+    exemption:
+      reason: >-
+        Node 20 went EOL 2026-04-30 — the most recent of the six breaches, and the one with
+        the largest blast radius: this pin is the build AND runtime base for BOTH the frontend
+        (Next.js 16 / React 19) and the mcp-server, across four sites. Node 22 is the LTS
+        successor. Deferred because the move must be made with the frontend typecheck gate and
+        the Playwright suite green in the same change (`npm run build` is the only thing that
+        type-checks here; jest does not), and because 20 open dependabot PRs already queue
+        major bumps against these two images that must be triaged, not bulk-merged, alongside it.
+      expires: "2026-11-30"
+      tracked_by: "DEFERRED-27"
+
+  - id: scratch
+    pin: "scratch"
+    sites: ["edge-go/Dockerfile:30"]
+    kind: pseudo
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Docker's reserved empty build stage — the absence of a base image, not a dependency.
+      No upstream, no releases, nothing to age; endoflife.date 404 as expected. Exempt from
+      EOL lookup by rule (`kind: pseudo`), and from nothing else: it still requires a pin, an
+      owner and a site, and H-5 still asserts `FROM scratch` is really at that line.
+
+  # ------------------------------------------------------------------ toolchains
+  - id: go-toolchain
+    pin: "go 1.25.0"
+    sites: ["edge-go/go.mod:3"]
+    kind: toolchain
+    owner: maintainer
+    eol_slug: go
+    eol_cycle: "1.25"
+    eol_date: "false"
+    note: >-
+      Distinct from the `golang` image row: go.mod's directive sets the LANGUAGE version the
+      module compiles against, the image sets the compiler that builds it. They can drift
+      apart, so they are two rows and H-5 checks both sites.
+
+  - id: java-toolchain
+    pin: "JavaLanguageVersion.of(21)"
+    sites: ["core-java/build.gradle.kts:9"]
+    kind: toolchain
+    owner: maintainer
+    eol_slug: eclipse-temurin
+    eol_cycle: "21"
+    eol_date: "2029-12-31"
+    note: >-
+      Tracked through `eclipse-temurin` because endoflife.date has no `java` or `openjdk`
+      product (both 404, measured 2026-07-27) and Temurin is the distribution this repo
+      actually builds and ships on. CLAUDE.md pins JDK 21 — JDK 25 is incompatible with
+      Gradle 8.10 — so a horizon breach here is a two-artifact upgrade, not a version bump.
+
+  - id: gradle
+    pin: "gradle-8.10.2-bin.zip"
+    sites: ["gradle/wrapper/gradle-wrapper.properties:3"]
+    kind: toolchain
+    owner: maintainer
+    eol_slug: gradle
+    eol_cycle: "8"
+    resolved_cycle: "8"
+    resolved_evidence: >-
+      The wrapper pins 8.10.2; the catalogue has no cycle "8.10" because it tracks MAJORS
+      only (9, 8, 7, 6, 5, 4, 3, 2, 1 — fetched 2026-07-27). Resolved to the major, whose
+      catalogue entry is `eol: false` with latest 8.14.5.
+    eol_date: "false"
+
+  # ------------------------------------------------------------------ first-party images
+  #  We are upstream of these, so there is no external horizon to breach. They are exempt
+  #  from EOL lookup BY RULE and from nothing else — a new first-party image still cannot
+  #  escape the manifest, because H-1 discovers it and demands a row.
+  - id: jtoye-core-java
+    pin: "ghcr.io/bralabee/jtoye-core-java:2.1.0"
+    sites: ["k8s/base/core-java-deployment.yaml:50"]
+    kind: first_party
+    owner: maintainer
+    eol_slug: null
+
+  - id: jtoye-frontend
+    pin: "ghcr.io/bralabee/jtoye-frontend:2.1.0"
+    sites: ["k8s/base/frontend-deployment.yaml:40"]
+    kind: first_party
+    owner: maintainer
+    eol_slug: null
+
+  - id: jtoye-edge-go
+    pin: "ghcr.io/bralabee/jtoye-edge-go:2.1.0"
+    sites: ["k8s/base/edge-go-deployment.yaml:44"]
+    kind: first_party
+    owner: maintainer
+    eol_slug: null
+
+  - id: jtoye-pg-backup
+    pin: "ghcr.io/bralabee/jtoye-pg-backup:15"
+    sites: ["k8s/base/pg-backup-cronjob.yaml:47"]
+    kind: first_party
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      The `:15` tag tracks the postgres major it backs up, not a first-party semver. It must
+      move in lockstep with the `postgres` row; they are deliberately separate rows so a
+      postgres major upgrade that forgets the backup image shows up as two rows disagreeing
+      rather than as one silent skew.
+
+  # ------------------------------------------------------------------ out of repo
+  #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
+  #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten
+  #  work — and the gate PRINTS it on every run so it cannot become invisible.
+  - id: rabbitmq-k8s
+    pin: unknown
+    sites: []
+    kind: out_of_repo
+    owner: UNASSIGNED
+    eol_slug: null
+    note: >-
+      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26:
+      `grep -rn 'image:.*rabbitmq' k8s/` returns NOTHING — the only rabbitmq strings under
+      k8s/ are the configmap host/port and the `rabbitmq-credentials` Secret refs. Its
+      version is therefore unresolvable from this repo by construction, which is why this row
+      is UNASSIGNED: there is no platform-operator identity here to assign it to, and saying
+      so is more useful than inventing a name. See ADR-0002 and
+      docs/runbooks/rabbitmq-broker-upgrade.md.
+    manual_review:
+      last_checked: "2026-07-26"
+      expires: "2026-10-26"
+      url: "https://www.rabbitmq.com/release-information"
