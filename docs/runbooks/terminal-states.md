@@ -141,22 +141,36 @@ SELECT id, aggregate_id, attempts, last_error FROM media_event_outbox WHERE pois
 
 ## TS-07 — media_asset FAILED
 
-**What stopped.** A vendor's uploaded image, permanently. **Unrecoverable by retry**: the reaper
-deletes the quarantined object from storage *before* flipping the row to `FAILED`
-(`MediaPendingReaper.java:79`), so the bytes are gone. A broker outage longer than
-`reaperGraceMs` (900 000 ms) destroys every upload in flight.
+**What stopped.** A vendor image upload that never reached `ACTIVE`. Since 27-01 (V60) there are
+**two sub-cases and they are not equally bad** — read `quarantine_reclaimed_at` before you tell a
+vendor anything:
+
+| | sub-case | bytes | recovery |
+|---|---|---|---|
+| **(a)** | dispatch stall or poison payload — the reaper flipped a stale `PENDING` row whose event *was* dispatched. It performs **no** object delete. | **retained** | vendor presses **Re-process** (`POST /api/v1/media/{assetId}/reprocess`) until `quarantine_expires_at` |
+| **(b)** | worker veto on validation, or the retention sweep reclaimed at the horizon | **gone** | re-upload only |
+
+Sub-case (a) is distinguished by `quarantine_reclaimed_at IS NULL`. Before 27-01 every `FAILED`
+asset had its bytes deleted first, so this state was unrecoverable by retry in *all* cases and a
+broker outage longer than `reaperGraceMs` (900 000 ms) destroyed every upload in flight.
 
 **How to see it.** RLS-scoped.
 ```sql
-SELECT id, tenant_id, created_at, failure_reason FROM media_asset WHERE status = 'FAILED';
+SELECT id, tenant_id, created_at, failure_reason,
+       quarantine_reclaimed_at, quarantine_expires_at
+FROM   media_asset
+WHERE  status = 'FAILED';
 ```
 
-**What to do.** Check broker availability across the window **before** concluding the file was
-invalid. The object is already deleted, so the only remedy is asking the vendor to re-upload.
+**What to do.** Check **[TS-17](#ts-17)** first — a suspended stall sweep means nothing is being
+classified at all, and the rows you are looking at are not the whole picture. Then split the result
+on `quarantine_reclaimed_at`: NULL rows are recoverable and the vendor can Re-process them from the
+review queue; stamped rows, and anything past `quarantine_expires_at`, need a fresh upload. Check
+broker availability across the window before concluding a file was invalid.
 
 **What NOT to do.** Do not tell the vendor their file was rejected until you have ruled out a broker
-outage — during one, valid files fail too. 27-01 owns the fix and will change the code this section
-points at.
+outage — during one, valid files fail too. Do not tell a sub-case (a) vendor to re-upload; their
+original is still there and Re-process is cheaper and lossless.
 
 ## TS-08 — webhook_delivery FAILED
 
@@ -337,3 +351,54 @@ recreated an hour *before* the commit touching its block. **Proven instance:**
 `jtoye-redis-exporter` ran a `wget` healthcheck its scratch-based image cannot execute, reporting
 "unhealthy" for 20 days while working perfectly; the compose file had already removed that
 healthcheck in `7dcaf93`, 84 minutes after the container was created.
+
+## TS-17 — media stall sweep suspended
+
+> Filed as TS-17, not TS-13. The 27-01 plan drafted this row as "TS-13"; that id was already taken by
+> the PostgreSQL exporter row. The number moved, the content did not.
+
+**What stopped.** Classification of **every** stalled upload, platform-wide. `MediaPendingReaper`
+probes the dispatch path before it touches any tenant, and when that probe fails the whole tick
+returns at `MediaPendingReaper.java:185`. This **fails closed by design** (D-05): while suspended, no
+`PENDING` asset can be wrongly flipped to `FAILED` — but none is classified either, so a vendor sees
+the DELAYED affordance indefinitely instead of a terminal state with a Re-process button.
+
+Eight distinct causes share this one state, and the log names which one fired:
+
+```
+BROKER_ADMIN_ABSENT · QUEUE_INFO_THREW · QUEUE_INFO_NULL · BROKER_WIDE_ZERO_CONSUMERS
+REGISTRY_ABSENT · NO_LOCAL_CONTAINER · LOCAL_CONTAINER_STOPPED · LOCAL_CONTAINER_NO_CONSUMERS
+```
+
+**How to see it.** The counter is the signal, but read the log line first — it tells you which probe
+failed, which the counter cannot:
+```bash
+docker compose -f docker-compose.full-stack.yml logs core-java \
+  | grep 'event=media_reaper_suspended'
+# -> event=media_reaper_suspended reason=LOCAL_CONTAINER_STOPPED
+```
+```promql
+increase(media_reaper_suspended_total[30m]) > 0
+```
+
+**What to do.** Confirm the broker is reachable and that `media.process` has consumers
+(`rabbitmq_queue_consumers{queue="media.process"}`, or `rabbitmqctl list_queues name consumers`). If
+the queue is healthy, the local listener container is the suspect — restart `core-java` and re-check
+the log line above.
+
+**Urgency.** `MediaQuarantineRetentionSweep` is deliberately **not** gated on this and keeps
+reclaiming bytes at `jtoye.media.quarantine-retention-ms` (72 h default). A suspension outlasting
+that horizon silently converts recoverable stalled uploads into expired, unrecoverable ones — it
+turns [TS-07](#ts-07) sub-case (a) into sub-case (b), one asset at a time.
+
+**What NOT to do.** Do not "fix" a suspension by disabling the liveness probe. The probe is what
+stops the reaper destroying user data during a broker outage; removing it restores the exact defect
+27-01 exists to close. Also do not read a suspension as proof the whole platform's dispatch is dead —
+the probe only sees **this JVM's** listener registry, so a remote replica's dead consumer is *not*
+observable here, and a healthy local probe does not clear a remote one.
+
+**Absent series is not absent risk.** Micrometer only exports a counter after its first increment, so
+`media_reaper_suspended_total` does **not** appear in `/actuator/prometheus` on a stack that has never
+suspended. Its sibling `media_reaper_undispatched_skipped_total` is present precisely because it *has*
+fired. Any 27-03 rule written against this metric must confirm the series exists first, or it will be
+a rule matching zero series — the F-1 defect that motivated this register.
