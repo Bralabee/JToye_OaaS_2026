@@ -344,9 +344,9 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 
 Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 
-- [ ] 27-00-PLAN.md (Wave 1) — Spine: terminal-states register, alert-liveness mechanism, dependency-horizon manifest + gate, load-baseline harness, the `core-java` scrape-port fix
+- [x] 27-00-PLAN.md (Wave 1) — Spine: terminal-states register, alert-liveness mechanism, dependency-horizon manifest + gate, load-baseline harness, the `core-java` scrape-port fix — **merged PR #314** (`60cb641`)
 - [ ] 27-01-PLAN.md (Wave 1) — Media durability: the P0 in which a broker outage >15 min deletes quarantined uploads; adds a reclaim sentinel and a claim lock
-- [ ] 27-05-PLAN.md (Wave 1) — Webhook fan-out: the trusted-packages converter defect; the only plan in the phase that closes a *live* outage
+- [x] 27-05-PLAN.md (Wave 1) — Webhook fan-out: the trusted-packages converter defect; the only plan in the phase that closes a *live* outage — **merged PR #310**; fix verified in the delivered runtime (3 trusted-package literals read from inside the running `app.jar`), DLQ left at 9 for 27-03/27-02
 - [ ] 27-04-PLAN.md (Wave 2) — Throughput + guards: `spring.rabbitmq.listener.simple.*` is inert via a bean-name collision; media container factory; publish-side destination guard
 - [ ] 27-03-PLAN.md (Wave 3) — Failure visibility: all `alerts.yml` rule content, four missing runbook sections, `check-alert-metrics.sh`, DLQ archive
 - [ ] 27-02-PLAN.md (Wave 4) — Broker upgrade: 3.12 → 4.3.4 fresh install (no direct upgrade path exists), volume snapshot + rollback, DLQ purge and disposition

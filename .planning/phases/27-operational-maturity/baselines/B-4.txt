@@ -1,0 +1,66 @@
+BASELINE: B-4
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-5.1
+SUBJECT: Six pinned runtime dependencies are past their support horizon (F-6), fetched live from
+  endoflife.date on 2026-07-27 using the RECORDED eol_slug for each. The original brief said one.
+  The mechanism found six — that difference is the argument for the mechanism.
+COMMAND: for pair in rabbitmq:3.12 prometheus:2.48 grafana:10.2 keycloak:24.0 nodejs:20 alpine-linux:3.20 postgresql:15 redis:7 go:1.25 eclipse-temurin:21; do s=${pair%%:*}; c=${pair##*:}; j=$(curl -s --max-time 20 "https://endoflife.date/api/$s.json"); eol=$(jq -r --arg c "$c" '.[] | select(.cycle==$c) | .eol' <<<"$j"); echo "$s $c $eol"; done
+EXIT: 0
+--- OUTPUT ---
+today=2026-07-27
+
+SLUG             CYCLE    EOL          STATUS
+rabbitmq         3.12     2024-02-21   PAST EOL      (2y5m)
+prometheus       2.48     2023-12-28   PAST EOL      (2y7m)
+grafana          10.2     2024-07-24   PAST EOL      (2y)
+keycloak         24.0     2024-06-10   PAST EOL      (2y1m)
+nodejs           20       2026-04-30   PAST EOL      (3m)
+alpine-linux     3.20     2026-04-01   PAST EOL      (4m)
+postgresql       15       2027-11-11   OK
+redis            7        -            CYCLE NOT FOUND (cycles: 8.8,8.6,8.4,8.2,8.0,7.4,7.2,7.0,6.2,6.0)
+go               1.25     false        OK (no EOL declared)
+eclipse-temurin  21       2029-12-31   OK
+
+Six PAST EOL. Two non-past resolutions (postgresql, eclipse-temurin), one open-ended (go),
+one CYCLE NOT FOUND (redis pins :7-alpine but endoflife.date has no cycle "7" — 7.4 is the
+nearest; an UNKNOWN, not a clean pass).
+--- CONTROL COMMAND ---
+for s in node nodejs alpine alpine-linux postgres postgresql redis rabbitmq prometheus grafana keycloak go eclipse-temurin minio ollama; do code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://endoflife.date/api/$s.json"); loc=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "https://endoflife.date/api/$s.json"); printf '%-16s code=%s %s\n' "$s" "$code" "${loc:+-> $loc}"; done
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+node             code=301 -> https://endoflife.date/api/nodejs.json
+nodejs           code=200
+alpine           code=301 -> https://endoflife.date/api/alpine-linux.json
+alpine-linux     code=200
+postgres         code=301 -> https://endoflife.date/api/postgresql.json
+postgresql       code=200
+redis            code=200
+rabbitmq         code=200
+prometheus       code=200
+grafana          code=200
+keycloak         code=200
+go               code=200
+eclipse-temurin  code=200
+minio            code=404
+ollama           code=404
+
+Pin locations confirmed on this tree:
+  infra/monitoring/docker-compose.monitoring.yml:8   prom/prometheus:v2.48.0
+  infra/monitoring/docker-compose.monitoring.yml:34  grafana/grafana:10.2.2
+  docker-compose.full-stack.yml:14   postgres:15-alpine
+  docker-compose.full-stack.yml:48   alpine:3.20
+  docker-compose.full-stack.yml:81   quay.io/keycloak/keycloak:24.0.5
+  docker-compose.full-stack.yml:126  redis:7-alpine
+  docker-compose.full-stack.yml:144  rabbitmq:3.12-management-alpine
+  docker-compose.full-stack.yml:393/415/435/460  minio/minio, minio/mc, ollama/ollama — all :latest
+  frontend/Dockerfile:5,129 + mcp-server/Dockerfile:7,21  node:20-alpine
+  edge-go/Dockerfile:7  golang:1.25-alpine        core-java/Dockerfile:5,27  eclipse-temurin:21-*
+--- WHY THIS CONTROL ---
+This is the trap the eol_slug field exists to close. The image name is NOT the API slug: node,
+alpine and postgres each 301-redirect to a different slug, and minio/ollama 404 outright. A gate
+built on the naive image name either silently follows a redirect it never recorded, or reads a 404
+body as "no EOL data" and passes. The control proves each recorded slug resolves 200 directly, and
+proves the two unknowable ones are unknowable — so an UNKNOWN row is a measured fact, not a
+fetch failure being read as clean. postgresql/eclipse-temurin returning OK proves the probe
+discriminates and is not reporting PAST EOL for everything.

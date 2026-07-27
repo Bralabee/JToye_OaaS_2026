@@ -1,0 +1,35 @@
+BASELINE: B-1
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-1.1
+SUBJECT: The core-java Prometheus scrape target is DOWN (F-3). prometheus.yml:36-46 scrapes
+  core-java:9091 — the prod-profile management port — while compose runs SPRING_PROFILES_ACTIVE=dev,
+  which binds nothing on 9091. Six alerts are dataless as a direct consequence.
+COMMAND: docker exec jtoye-prometheus wget -qO- 'http://localhost:9090/api/v1/targets?state=any' | jq -r '.data.activeTargets[] | "\(.labels.job) \(.health) \(.lastError)"'
+EXIT: 0
+--- OUTPUT ---
+core-java down Get "http://core-java:9091/actuator/prometheus": dial tcp 172.18.0.2:9091: connect: connection refused
+edge-go up
+keycloak up
+postgres up
+prometheus up
+rabbitmq up
+redis up
+--- CONTROL COMMAND ---
+docker exec jtoye_oaas_2026-core-java-1 sh -c 'wget -qO- -S http://localhost:9090/actuator/prometheus 2>&1 | head -1; echo "9090_lines=$(wget -qO- http://localhost:9090/actuator/prometheus | wc -l)"; echo "9091=$(wget -qO- http://localhost:9091/actuator/prometheus 2>&1 | head -1)"'
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+  HTTP/1.1 200
+9090_lines=818
+9091=wget: can't connect to remote host: Connection refused
+--- WHY THIS CONTROL ---
+The probe alone cannot distinguish "core-java publishes no metrics" from "Prometheus is asking the
+wrong port". The control settles it: the application serves 818 lines of Prometheus exposition on
+:9090 right now and refuses :9091. The target is down because of the scrape URL, not the app.
+Container name is jtoye_oaas_2026-core-java-1 — docker-compose.full-stack.yml:170 removed
+container_name to support --scale, so `jtoye-core-java` does not exist and a probe using it would
+report a false absence.
+--- DEVIATION FROM PLAN'S RECORDED FIGURE ---
+27-00-PLAN.md F-3 records 1141 lines on :9090 (measured 2026-07-26). Measured here: 818. The
+difference is metric cardinality on a stack restarted since, not a contradiction — the load-bearing
+facts (200 on :9090, refused on :9091) are unchanged. Recorded rather than silently adopted.

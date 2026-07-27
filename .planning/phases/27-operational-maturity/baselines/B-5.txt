@@ -1,0 +1,38 @@
+BASELINE: B-5
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-6.1
+SUBJECT: No HTTP load-generation tool is installed on this host (GAP 3 / issue #115). The existing
+  infra/load-testing/load-test.sh therefore measures nothing, and separately asserts no status code
+  — an unauthenticated GET /shops returns 401, so a 401 flood would read as throughput.
+COMMAND: for t in hey ab k6 wrk vegeta siege locust; do p=$(command -v "$t"); if [ -n "$p" ]; then echo "$t PRESENT $p"; else echo "$t MISSING"; fi; done
+EXIT: 0
+--- OUTPUT ---
+hey MISSING
+ab MISSING
+k6 MISSING
+wrk MISSING
+vegeta MISSING
+siege MISSING
+locust MISSING
+--- CONTROL COMMAND ---
+for t in go curl docker jq; do p=$(command -v "$t"); if [ -n "$p" ]; then echo "$t PRESENT $p"; else echo "$t MISSING"; fi; done; go version; ls "$(go env GOPATH)/bin"
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+go PRESENT /snap/bin/go
+curl PRESENT /usr/bin/curl
+docker PRESENT /usr/bin/docker
+jq PRESENT /usr/bin/jq
+go version go1.26.5 linux/amd64
+/home/sanmi/go/bin: actionlint age age-inspect age-keygen age-plugin-batchpass buf gopls govulncheck migrate oapi-codegen protoc-gen-go protoc-gen-go-grpc sops swag
+--- WHY THIS CONTROL ---
+Seven consecutive MISSING results are exactly what a broken detector produces — a typo in the loop,
+a `command -v` that always fails, a PATH that resolves nothing. The control runs the identical
+construct against four tools that ARE installed and prints their real paths, proving the detector
+discriminates. It also establishes the remedy is available locally: go 1.26.5 is present and
+$GOPATH/bin is a populated, writable install target, so `go install github.com/rakyll/hey@latest`
+is a viable install path with no new system dependency. `hey` is confirmed absent from that
+directory listing, so the MISSING result is not a PATH-ordering artefact.
+--- NOTE ---
+AC-6.1 expects this gate to exit 2 (VOID) before install, printing the install command — not exit 0
+and not exit 1. "No tool installed" must never be reported as "baseline clean".

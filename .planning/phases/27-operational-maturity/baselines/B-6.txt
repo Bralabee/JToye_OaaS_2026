@@ -1,0 +1,55 @@
+BASELINE: B-6
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-1.2
+SUBJECT: pg_up = 0 while up{job="postgres"} = 1 (F-3b). DatabaseDown (alerts.yml:69-70) alerts on
+  up{job="postgres"} == 0, which is 1 — so it reports HEALTHY while no PostgreSQL metric is being
+  collected at all. pg_up, the correct signal, is present, is 0 right now, and is referenced by NO
+  rule. This is the live proof of the plan's core lesson: a target being UP is not evidence the
+  thing behind it is healthy.
+COMMAND: curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=pg_up' | jq -c '.data.result'  ;  curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=up{job="postgres"}' | jq -c '.data.result'
+EXIT: 0
+--- OUTPUT ---
+pg_up:
+[{"metric":{"__name__":"pg_up","component":"database","instance":"jtoye-postgres-exporter:9187","job":"postgres","service":"postgresql"},"value":[1785153701.371,"0"]}]
+
+up{job="postgres"}:
+[{"metric":{"__name__":"up","component":"database","instance":"jtoye-postgres-exporter:9187","job":"postgres","service":"postgresql"},"value":[1785153701.376,"1"]}]
+
+count(pg_stat_database_numbackends)   # the TooManyDatabaseConnections selector
+[]                                    # matches ZERO series, same root cause
+
+$ docker logs jtoye-postgres-exporter --tail 12
+ts=2026-07-27T12:00:47.923Z caller=server.go:74 level=info msg="Established new database connection" fingerprint=postgres:5432
+ts=2026-07-27T12:00:47.924Z caller=collector.go:176 level=error msg="Error opening connection to database" err="error querying postgresql version: pq: SSL is not enabled on the server"
+ts=2026-07-27T12:00:48.924Z caller=postgres_exporter.go:682 level=error err="Error opening connection to database (postgresql://jtoye:PASSWORD_REMOVED@postgres:5432/jtoye?sslmode=require): pq: SSL is not enabled on the server"
+  ... the same three lines repeat every 15s; log window is CURRENT (timestamps are today, minutes old)
+
+$ docker exec jtoye-postgres psql ... -tAc "show ssl"
+off
+
+DSN source:  infra/monitoring/docker-compose.monitoring.yml:118
+  DATA_SOURCE_NAME: "postgresql://...@postgres:5432/...?sslmode=${POSTGRES_EXPORTER_SSLMODE:-require}"
+Committed source of the breakage:  .env.example:14  POSTGRES_EXPORTER_SSLMODE=require
+.env does not set the variable, so the :-require default applies against a server with ssl=off.
+--- CONTROL COMMAND ---
+docker exec jtoye-postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1"'
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+1
+--- WHY THIS CONTROL ---
+pg_up = 0 is equally consistent with wrong credentials, a wrong database name, an unreachable host,
+or the sslmode mismatch. The control authenticates with the same user/database from inside the
+server container and returns 1 — credentials, database and reachability are all fine. Combined with
+`show ssl` = off and the exporter's own error text naming `sslmode=require`, the sslmode is isolated
+as the operative cause. The password is read from the container's own environment and never enters
+the command line or this file.
+--- CORRECTION TO THE REVISION BRIEF ---
+The brief attributes this to DNS. It is NOT DNS: the exporter logs "Established new database
+connection fingerprint=postgres:5432" immediately before failing, so the name resolved and the TCP
+connection succeeded. The failure is the subsequent version query under a TLS requirement the
+server cannot satisfy. 27-00-PLAN.md F-3b already carries this correction; this capture confirms it
+independently against a current log window (the brief's 2026-05-05 log lines predated the run).
+--- SECOND FAIL-DIRECTION ARM OWED AT AC-1.2 ---
+After the fix, set POSTGRES_EXPORTER_SSLMODE=require again, restart the exporter, and confirm pg_up
+returns to 0 while up stays 1. Without that arm the fix is correlation, not cause.
