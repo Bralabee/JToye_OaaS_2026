@@ -117,19 +117,34 @@ the fixture change are recorded in the commit message.
 **AC-3.5's two halves were cross-checked**: break 1 trips the env-contract gate but not the
 membership loop; break 2 trips membership but not the gate. They test different properties.
 
-## 3b. THE ONE TASK 3 CRITERION STILL OPEN — AC-3.6
+## 3b. AC-3.6 — CLOSED (`c69f373`, `fb4b77d`). Task 3 is now complete.
 
-**`sweepIsTenantScopedUnderNosuperuser` is NOT written.** Everything else in Task 3 has a recorded
-RED. This one needs the NOSUPERUSER role downgrade (the `rls_test_role` pattern in
-`MediaProcessingWorkerIntegrationTest.java:68-90` is the template): seed reclaimable quarantine
-assets under tenants A and B, run the sweep as the downgraded role with the GUC pinned to A, assert
-B's rows are untouched.
+`MediaSweepTenantScopeIntegrationTest`, 2 tests. This one was hard and produced three findings.
 
-**Its break is the important half**: remove `pinTenantGuc(tenantId)` from the sweep's transaction
-callback and `findReclaimableQuarantine` returns ZERO rows under FORCE RLS — so the failure mode is
-"nothing to do", which is exactly why the pin must be asserted rather than assumed. A
-Testcontainers-**superuser** run passes vacuously (superusers bypass RLS), so this criterion is only
-meaningful under the downgrade.
+**The downgrade had to be redesigned twice.** Two approaches are documented in the class javadoc as
+rejected, so they are not re-attempted: (1) `SET LOCAL ROLE` inside the test — the sweep opens its
+OWN transactions on pooled connections, so a role set on the test's connection never reaches them;
+(2) `ALTER ROLE … SET role` + `softEvictConnections()` — **measurably flaky, 1 failure in 3 runs**,
+because soft eviction retires idle connections but not in-use ones. What ships: the application
+datasource authenticates as `rls_sweep_role` (NOSUPERUSER/NOBYPASSRLS) from its first connection
+while **Flyway keeps the superuser**, with `ALTER DEFAULT PRIVILEGES` issued before context start so
+Flyway's tables are auto-granted. No eviction, no race. 3/3 and 4/4 clean runs.
+
+**The plan's stated break does not fail — and this matters beyond 27-01.** Removing the sweep's
+explicit `pinTenantGuc` alone leaves the test GREEN, proven as a recorded control arm.
+`TenantSetLocalAspect` (`security/TenantSetLocalAspect.java`) pins `app.current_tenant_id` from
+`TenantContext` **before every Spring Data repository call inside an active transaction**, so every
+explicit `pinTenantGuc` in this codebase is defence-in-depth layered under a global aspect. Any
+future criterion of the form "prove component X pins the tenant" must break `TenantContext.set`,
+not the explicit pin. Recorded arms: break `TenantContext.set` → rc=1; remove only the explicit pin
+→ rc=0 (control).
+
+**The VOID guard was itself vacuous, and the VOID arm is what caught it.** With the downgrade
+removed entirely the test still passed, because `assertDowngradeIsReal` opened its own
+`DriverManager` connection using the sweep role's credentials — so it always observed the
+downgraded role regardless of the datasource under test. It now probes the injected `DataSource`;
+the VOID arm then fires with `VOID: the app datasource is not the downgraded role`. **Run the VOID
+arm on every guard you write.**
 
 ## 4. WHERE TO RESUME — 27-01 Task 4
 
@@ -151,10 +166,11 @@ Task 6 delta off the real number.
 
 ## 4. Things that will bite you (new this session)
 
-1. **`git checkout <file>` on UNSTAGED work restores from HEAD and silently wipes the whole task's
-   edit, not just your break.** It destroyed `deleteByKeyChecked` mid-run. **Stage or commit before
-   running any break arm** — then `git checkout --` restores *your* version. Every arm after that
-   point followed this.
+1. **`git checkout <file>` after a break arm restores from the INDEX/HEAD — and silently discards
+   any edit you made after staging.** This bit **three times** in this plan: it wiped
+   `deleteByKeyChecked`, then the AC-3.6 de-flaking fix, then the AC-3.6 guard fix. Staging is not
+   enough if you edit again afterwards. **COMMIT before running break arms**, and if a break arm
+   run reveals a fix, commit that fix before running the next arm.
 2. **The Bash tool's CWD persists across calls.** A `cd` into `build-local/test-results/` made a
    later `git add` fail with `did not match any files`. Use absolute paths (it is GLOBAL_RULE_0).
 3. **`List.of(new Object[]{a,b,c})` yields `List<Object>`, not a one-row `List<Object[]>`** — the
