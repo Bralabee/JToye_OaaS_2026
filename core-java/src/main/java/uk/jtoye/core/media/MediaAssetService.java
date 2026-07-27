@@ -14,6 +14,7 @@ import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +51,7 @@ public class MediaAssetService {
     private final ProductRepository productRepository;
     private final ShopAccessService shopAccessService;
     private final StorageService storageService;
+    private final MediaProperties mediaProperties;
     private final ObjectMapper objectMapper;
 
     public MediaAssetService(MediaAssetRepository mediaAssetRepository,
@@ -58,6 +60,7 @@ public class MediaAssetService {
                              ProductRepository productRepository,
                              ShopAccessService shopAccessService,
                              StorageService storageService,
+                             MediaProperties mediaProperties,
                              ObjectMapper objectMapper) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMediaRepository = productMediaRepository;
@@ -65,6 +68,7 @@ public class MediaAssetService {
         this.productRepository = productRepository;
         this.shopAccessService = shopAccessService;
         this.storageService = storageService;
+        this.mediaProperties = mediaProperties;
         this.objectMapper = objectMapper;
     }
 
@@ -166,6 +170,13 @@ public class MediaAssetService {
         asset.setProductId(productId);
         asset.setIsPrimary(placement.isPrimary());
         asset.setSortOrder(placement.sortOrder());
+        // 27-01 / D-03: claim the retained raw bytes for a declared horizon. Until this asset
+        // reaches a terminal state, these bytes are the vendor's ONLY copy — the reaper can no
+        // longer delete them, and MediaQuarantineRetentionSweep will not reclaim them before
+        // quarantine_expires_at. reclaimedAt stays null: nothing has been deleted yet.
+        asset.setQuarantineExpiresAt(
+                OffsetDateTime.now().plusNanos(mediaProperties.getQuarantineRetentionMs() * 1_000_000L));
+        asset.setQuarantineReclaimedAt(null);
         asset = mediaAssetRepository.saveAndFlush(asset);
 
         // Same-tx transactional outbox insert -> MediaEventOutboxFlusher publishes to
@@ -209,6 +220,11 @@ public class MediaAssetService {
         asset.setProductId(productId);
         asset.setIsPrimary(placement.isPrimary());
         asset.setSortOrder(placement.sortOrder());
+        // 27-01 / D-03: the bytes are RE-claimed on this path — a previously reclaimed asset gets a
+        // fresh horizon and its sentinel cleared, because a new quarantine object now exists.
+        asset.setQuarantineExpiresAt(
+                OffsetDateTime.now().plusNanos(mediaProperties.getQuarantineRetentionMs() * 1_000_000L));
+        asset.setQuarantineReclaimedAt(null);
         asset = mediaAssetRepository.saveAndFlush(asset);
 
         MediaProcessingEvent event = new MediaProcessingEvent(tenantId, asset.getId());

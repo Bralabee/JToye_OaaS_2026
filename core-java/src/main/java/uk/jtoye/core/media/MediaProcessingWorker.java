@@ -15,6 +15,7 @@ import uk.jtoye.core.media.exception.UnreadableImageException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -168,7 +169,9 @@ public class MediaProcessingWorker {
         try {
             raw = storageService.getBytes(quarantineKey);
         } catch (RuntimeException e) {
-            fail(asset, quarantineKey, "Could not read the quarantined upload");
+            // D-07: a read failure is a TRANSIENT S3/MinIO condition, not a verdict on the bytes.
+            // Deleting here converted a blip into permanent loss. Retain and stay re-drivable.
+            failRetainingBytes(asset, "Could not read the quarantined upload");
             return;
         }
 
@@ -178,11 +181,12 @@ public class MediaProcessingWorker {
             normalized = mediaNormalizer.normalize(raw);
         } catch (DecompressionBombException | UnreadableImageException e) {
             // D3 hard veto (IMG-03): content-type spoof / bomb / undecodable / disallowed type.
-            fail(asset, quarantineKey, e.getMessage());
+            // D-07: these bytes are worthless and possibly hostile — still discard them.
+            failAndDiscard(asset, quarantineKey, e.getMessage());
             return;
         } catch (RuntimeException e) {
             // A compress/normalize failure is also a hard veto — never store a raw or partial artifact.
-            fail(asset, quarantineKey, "Image could not be processed: " + e.getMessage());
+            failAndDiscard(asset, quarantineKey, "Image could not be processed: " + e.getMessage());
             return;
         }
 
@@ -203,6 +207,12 @@ public class MediaProcessingWorker {
 
         // Stage 6 (IMG-03 advisory): flag-not-block on low content-relevance.
         applyAdvisoryVision(asset, normalized.derivativeBytes());
+
+        // 27-01: the quarantine object is deleted below, so the sentinel closes here. This MUST be
+        // set before the saveAndFlush for the same reason the ACTIVE flip is — placeOnActive runs a
+        // @Modifying(clearAutomatically = true) repoint that discards a later dirty update, which
+        // would silently leave the asset advertising retained bytes that no longer exist.
+        asset.setQuarantineReclaimedAt(OffsetDateTime.now());
 
         // Persist the ACTIVE (+ maybe flagged) row BEFORE the CoW repoint's @Modifying
         // context clear, or the dirty ACTIVE update would be discarded.
@@ -276,12 +286,30 @@ public class MediaProcessingWorker {
      * and the raw quarantine object deleted (this phase is re-upload-only; the raw is never
      * re-processed, so it must not linger).
      */
-    private void fail(MediaAsset asset, String quarantineKey, String reason) {
+    private void failAndDiscard(MediaAsset asset, String quarantineKey, String reason) {
+        asset.setStatus(MediaAsset.Status.FAILED);
+        asset.setFailureReason(truncate(reason));
+        // The bytes are gone, so the sentinel closes here — this asset is NOT re-drivable, and
+        // saying so is what stops the vendor being offered a Re-process that cannot work.
+        asset.setQuarantineReclaimedAt(OffsetDateTime.now());
+        mediaAssetRepository.saveAndFlush(asset);
+        storageService.deleteByKey(quarantineKey);
+        log.info("event=media_process_failed asset={} disposition=discarded reason={}",
+                asset.getId(), reason);
+    }
+
+    /**
+     * D-07: FAILED with the raw bytes RETAINED — for a transient condition where the bytes are
+     * fine and only our access to them failed. No delete, and both quarantine markers are left
+     * exactly as they were, so {@code redrivable} stays true and one Re-process click recovers the
+     * upload without the vendor re-uploading anything.
+     */
+    private void failRetainingBytes(MediaAsset asset, String reason) {
         asset.setStatus(MediaAsset.Status.FAILED);
         asset.setFailureReason(truncate(reason));
         mediaAssetRepository.saveAndFlush(asset);
-        storageService.deleteByKey(quarantineKey);
-        log.info("event=media_process_failed asset={} reason={}", asset.getId(), reason);
+        log.info("event=media_process_failed asset={} disposition=bytes_retained reason={}",
+                asset.getId(), reason);
     }
 
     private static String truncate(String reason) {

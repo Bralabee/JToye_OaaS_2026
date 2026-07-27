@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -60,6 +61,9 @@ class MediaDurabilityIntegrationTest {
     @Autowired private MediaAssetRepository mediaAssetRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private TransactionTemplate txTemplate;
+    @Autowired private MediaQuarantineRetentionSweep sweep;
+    @Autowired private MediaProperties mediaProperties;
+    @org.springframework.boot.test.mock.mockito.SpyBean private uk.jtoye.core.storage.StorageService storageService;
 
     private UUID tenant;
 
@@ -76,6 +80,7 @@ class MediaDurabilityIntegrationTest {
         jdbc.update("DELETE FROM media_asset_aud WHERE tenant_id = ?", tenant);
         jdbc.update("DELETE FROM media_asset WHERE tenant_id = ?", tenant);
         TenantContext.clear();
+        Mockito.reset(storageService);
     }
 
     // ------------------------------------------------------------------
@@ -221,6 +226,116 @@ class MediaDurabilityIntegrationTest {
                 .isEqualTo(2);
         assertThat(aud.get("quarantine_reclaimed_at")).isNotNull();
         assertThat(aud).containsKey("quarantine_expires_at");
+    }
+
+    // ==================================================================
+    // AC-3.2 — the sentinel actually TERMINATES (M1).
+    // Testcontainers, not Mockito: the guards under test live in the @Query,
+    // and a mocked repository never executes it — the stub does the filtering,
+    // so editing the JPQL changes nothing and the criterion holds in BOTH
+    // directions. That vacuity is exactly what would ship a sweep that
+    // re-deletes the same objects on every tick forever.
+    // ==================================================================
+
+    @Test
+    void reclaimedAssetIsNotSweptAgain() {
+        // LEGACY row: quarantine_expires_at IS NULL, created 5 days ago -> the legacy arm selects
+        // it. This is the shape that proves the draft's design looped forever: its termination
+        // marker was "set quarantineExpiresAt = null", which is this arm's own PRECONDITION.
+        String key = tenant + "/quarantine/legacy.jpg";
+        UUID assetId = seedLegacyReclaimable(key);
+        Mockito.doReturn(true).when(storageService).deleteByKeyChecked(key);
+
+        // VOID guard: prove the fixture is genuinely selectable BEFORE tick 1. "Never selected"
+        // and "selected once, then terminated" are not the same property.
+        assertThat(reclaimableIds()).as("fixture must be selectable, or the test proves nothing")
+                .contains(assetId);
+
+        sweep.sweep();
+        sweep.sweep();
+
+        Mockito.verify(storageService, Mockito.times(1)).deleteByKeyChecked(key);
+        assertThat(reclaimableIds())
+                .as("(b) the real predicate — not the sweep's bookkeeping — must no longer return it")
+                .doesNotContain(assetId);
+        assertThat(mediaAssetRepository.findById(assetId).orElseThrow().getQuarantineReclaimedAt())
+                .isNotNull();
+    }
+
+    @Test
+    void expiringRowIsReclaimedOnce() {
+        String key = tenant + "/quarantine/expiring.jpg";
+        UUID assetId = seedReclaimable(key, "FAILED", OffsetDateTime.now().minusHours(1));
+        Mockito.doReturn(true).when(storageService).deleteByKeyChecked(key);
+
+        assertThat(reclaimableIds()).contains(assetId);
+
+        sweep.sweep();
+        sweep.sweep();
+
+        Mockito.verify(storageService, Mockito.times(1)).deleteByKeyChecked(key);
+        assertThat(reclaimableIds()).doesNotContain(assetId);
+    }
+
+    // ==================================================================
+    // AC-3.3(a) — guard 1 (status <> ACTIVE) fails independently.
+    // The key deliberately CONTAINS /quarantine/ so guard 2 does NOT block
+    // this fixture: guard 1 is the only thing in the way.
+    // ==================================================================
+
+    @Test
+    void activeAssetIsNeverReclaimed() {
+        String key = tenant + "/quarantine/live.jpg";       // deliberately inconsistent state
+        UUID assetId = seedReclaimable(key, "ACTIVE", OffsetDateTime.now().minusHours(1));
+
+        assertThat(reclaimableIds())
+                .as("guard 1 lives in the @Query — a live derivative is never a candidate")
+                .doesNotContain(assetId);
+
+        sweep.sweep();
+
+        Mockito.verify(storageService, Mockito.never()).deleteByKeyChecked(key);
+        assertThat(mediaAssetRepository.findById(assetId).orElseThrow().getQuarantineReclaimedAt())
+                .isNull();
+    }
+
+    // ---- fixtures for the sweep criteria ----------------------------------
+
+    /** The real predicate, run under the tenant GUC — this is what AC-3.2(b) asserts on. */
+    private List<UUID> reclaimableIds() {
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime legacyCutoff =
+                now.minusNanos(mediaProperties.getQuarantineRetentionMs() * 1_000_000L);
+        return txTemplate.execute(s -> {
+            TenantContext.set(tenant);
+            return mediaAssetRepository.findReclaimableQuarantine(now, legacyCutoff)
+                    .stream().map(MediaAsset::getId).toList();
+        });
+    }
+
+    private UUID seedReclaimable(String key, String status, OffsetDateTime expiresAt) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO media_asset (id, tenant_id, object_key, sha256, content_type,
+                                         status, flagged, quarantine_expires_at)
+                VALUES (?, ?, ?, ?, 'image/jpeg', ?, false, ?)
+                """, id, tenant, key, randomSha(), status, expiresAt);
+        return id;
+    }
+
+    /** A pre-V60 row: no expiry claimed, old enough for the legacy created_at arm. */
+    private UUID seedLegacyReclaimable(String key) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO media_asset (id, tenant_id, object_key, sha256, content_type,
+                                         status, flagged, quarantine_expires_at, created_at)
+                VALUES (?, ?, ?, ?, 'image/jpeg', 'FAILED', false, NULL, now() - interval '5 days')
+                """, id, tenant, key, randomSha());
+        return id;
+    }
+
+    private static String randomSha() {
+        return (UUID.randomUUID().toString().replace("-", "") + "0".repeat(64)).substring(0, 64);
     }
 
     /** {@code information_schema.columns} for a table, keyed by column name. */
