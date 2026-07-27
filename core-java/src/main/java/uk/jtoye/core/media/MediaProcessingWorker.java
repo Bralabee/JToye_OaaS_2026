@@ -101,6 +101,7 @@ public class MediaProcessingWorker {
     private final ImageAnalysisService imageAnalysisService;
     private final MediaProperties mediaProperties;
     private final EntityManager entityManager;
+    private final MediaProcessingMetrics metrics;
 
     public MediaProcessingWorker(MediaAssetRepository mediaAssetRepository,
                                  MediaAssetService mediaAssetService,
@@ -108,7 +109,8 @@ public class MediaProcessingWorker {
                                  StorageService storageService,
                                  ImageAnalysisService imageAnalysisService,
                                  MediaProperties mediaProperties,
-                                 EntityManager entityManager) {
+                                 EntityManager entityManager,
+                                 MediaProcessingMetrics metrics) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.mediaAssetService = mediaAssetService;
         this.mediaNormalizer = mediaNormalizer;
@@ -116,6 +118,7 @@ public class MediaProcessingWorker {
         this.imageAnalysisService = imageAnalysisService;
         this.mediaProperties = mediaProperties;
         this.entityManager = entityManager;
+        this.metrics = metrics;
     }
 
     @RabbitListener(queues = RabbitMQConfig.MEDIA_EVENTS_QUEUE)
@@ -141,6 +144,13 @@ public class MediaProcessingWorker {
             }
         });
 
+        // 27-04 T1: the sample starts HERE, after the GUC pin, because the pin is the worker's own
+        // setup (connection acquisition + two round trips) rather than image-processing service
+        // time; folding it in would blend Hikari contention into the latency budget this timer
+        // exists to express. It stops in the finally below, so every exit path is recorded exactly
+        // once — including the two skips and an exception on its way to the retry advice.
+        long startNanos = System.nanoTime();
+        String outcome = "skipped";
         try {
             // D-04 CLAIM: SELECT ... FOR UPDATE, not a plain findById. See the class javadoc.
             MediaAsset asset = mediaAssetRepository.lockForProcessing(event.assetId()).orElse(null);
@@ -156,7 +166,16 @@ public class MediaProcessingWorker {
                 return;
             }
             process(asset);
+            outcome = asset.getStatus() == MediaAsset.Status.FAILED ? "failed" : "active";
+        } catch (RuntimeException e) {
+            // An escaped exception (e.g. the D-04a 55P03 lock timeout) is on its way to the retry
+            // advice and then media.process.dlq. Rethrown UNCHANGED — this catch only attributes
+            // the sample, because leaving it tagged `skipped` would hide dead-lettering work
+            // inside the no-op bucket, which is the one bucket nobody investigates.
+            outcome = "failed";
+            throw e;
         } finally {
+            metrics.record(outcome, System.nanoTime() - startNanos);
             TenantContext.clear();
         }
     }
