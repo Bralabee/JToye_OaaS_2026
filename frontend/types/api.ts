@@ -65,6 +65,16 @@ export type MediaAssetStatus = "PENDING" | "ACTIVE" | "FAILED"
  *   - `failureReason` is set ONLY on FAILED.
  *   - `flagged` marks an ACTIVE asset awaiting a content-relevance decision
  *     (Keep / Replace) in the review queue (D-04).
+ *
+ * Phase 27 (27-01) adds the last two, both DERIVED server-side — there is no
+ * column for either, so never try to compute them client-side from the other
+ * fields:
+ *   - `redrivable` — the raw quarantine bytes are still retained, so
+ *     POST /media/{assetId}/reprocess can re-run the pipeline over them. This
+ *     is the ONLY thing that decides whether Re-process is offered.
+ *   - `delayed` — a PENDING asset older than the reaper grace, i.e. one that has
+ *     visibly stalled (D-10). Without it a stalled upload is an indefinite
+ *     spinner with nothing to act on.
  */
 export interface MediaAsset {
   assetId: string
@@ -75,6 +85,8 @@ export interface MediaAsset {
   thumbnailUrl: string | null
   width: number | null
   height: number | null
+  redrivable: boolean
+  delayed: boolean
 }
 
 /**

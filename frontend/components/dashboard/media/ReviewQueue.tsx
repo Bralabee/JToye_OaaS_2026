@@ -6,10 +6,12 @@ import Link from "next/link"
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Images,
   Inbox,
   Loader2,
   RefreshCw,
+  RotateCcw,
   XCircle,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -32,16 +34,18 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AssetImage } from "@/components/ui/asset-image"
-import { fetchReviewQueue, keepAsset } from "@/lib/media-api"
+import { fetchReviewQueue, keepAsset, reprocessAsset } from "@/lib/media-api"
 import type { MediaAsset } from "@/types/api"
 
 // --- Static presentation metadata (orange/emerald/slate/amber palette) --------
 
-const KIND_META: Record<"FAILED" | "FLAGGED", { label: string; badge: string; icon: LucideIcon }> = {
+const KIND_META: Record<"FAILED" | "FLAGGED" | "DELAYED", { label: string; badge: string; icon: LucideIcon }> = {
   // A rejected upload — red signals "this did not go live; re-upload".
   FAILED: { label: "Rejected", badge: "bg-red-100 text-red-700 hover:bg-red-100", icon: XCircle },
   // A flagged-but-live image — amber signals "your call: Keep or Replace".
   FLAGGED: { label: "Needs review", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100", icon: AlertTriangle },
+  // A stalled upload (27-01 / D-10) — amber signals "not lost, just slow".
+  DELAYED: { label: "Taking longer", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100", icon: Clock },
 }
 
 function httpStatus(err: unknown): number | undefined {
@@ -56,12 +60,35 @@ function errorDetail(err: unknown, fallback: string): string {
   return e?.response?.data?.detail ?? e?.response?.data?.message ?? e?.message ?? fallback
 }
 
+/**
+ * The RFC 7807 `code` extension the media API attaches to its 409s (27-01):
+ * `media.quarantine_not_retained` / `media.already_active` /
+ * `media.redrive_budget_exhausted`. Surfaced verbatim so a vendor reading the toast
+ * — or a support engineer reading a screenshot — can tell "we no longer have your
+ * file" apart from "you've retried this too many times". A generic
+ * "something went wrong" collapses three different remedies into one dead end.
+ */
+function errorCode(err: unknown): string | undefined {
+  const e = err as { response?: { data?: { code?: string } } }
+  return e?.response?.data?.code
+}
+
+/** Vendor-facing copy per re-process rejection code, with the code kept visible. */
+const REPROCESS_CODE_COPY: Record<string, string> = {
+  "media.quarantine_not_retained":
+    "We no longer have the original file — please re-upload it from the product.",
+  "media.already_active": "This image is already live, so there is nothing to re-process.",
+  "media.redrive_budget_exhausted":
+    "This upload has been retried too many times — please re-upload a new image.",
+}
+
 export function ReviewQueue() {
   const { toast } = useToast()
 
   const [assets, setAssets] = useState<MediaAsset[]>([])
   const [loading, setLoading] = useState(true)
   const [keepingId, setKeepingId] = useState<string | null>(null)
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null)
   // Replace/Re-upload target — the queue asset carries no product linkage
   // (24-05 MediaAssetDto), so a replacement is performed on the product page.
   const [replaceTarget, setReplaceTarget] = useState<MediaAsset | null>(null)
@@ -109,6 +136,41 @@ export function ReviewQueue() {
     [toast]
   )
 
+  /**
+   * Re-process (27-01 / D-04): re-run the pipeline over the vendor's retained
+   * bytes. On the 202 the asset is back in PENDING, so it leaves the "Rejected"
+   * section immediately (optimistic removal) rather than lingering as a rejection
+   * the vendor has already acted on. On a 409 the row STAYS — the failure is
+   * terminal for these bytes and the row is where the remedy is offered.
+   */
+  const handleReprocess = useCallback(
+    async (asset: MediaAsset) => {
+      try {
+        setReprocessingId(asset.assetId)
+        await reprocessAsset(asset.assetId)
+        setAssets((prev) => prev.filter((a) => a.assetId !== asset.assetId))
+        toast({
+          title: "Re-processing your image",
+          description: "We're running your original upload through again — this usually takes a moment.",
+        })
+      } catch (err: unknown) {
+        const code = errorCode(err)
+        toast({
+          variant: "destructive",
+          title: "Couldn't re-process this image",
+          // Surface the typed code, not a generic message: the three rejections have
+          // three different remedies (re-upload / nothing to do / re-upload).
+          description: code
+            ? `${REPROCESS_CODE_COPY[code] ?? errorDetail(err, "Please try again.")} (${code})`
+            : errorDetail(err, "Please try again."),
+        })
+      } finally {
+        setReprocessingId(null)
+      }
+    },
+    [toast]
+  )
+
   // --- Loading ----------------------------------------------------------------
 
   if (loading) {
@@ -122,7 +184,11 @@ export function ReviewQueue() {
 
   const failed = assets.filter((a) => a.status === "FAILED")
   const flagged = assets.filter((a) => a.status === "ACTIVE" && a.flagged)
-  const nothingWaiting = failed.length === 0 && flagged.length === 0
+  // 27-01 / D-10: the API now also returns stalled PENDING rows. Before this the
+  // only surface for a stalled upload was a spinner on the one product page it
+  // came from — a vendor with an unhealthy dispatch path had nowhere to see it.
+  const delayed = assets.filter((a) => a.status === "PENDING" && a.delayed)
+  const nothingWaiting = failed.length === 0 && flagged.length === 0 && delayed.length === 0
 
   return (
     <div className="space-y-8">
@@ -141,7 +207,23 @@ export function ReviewQueue() {
         </Card>
       ) : (
         <>
-          {/* Rejected (FAILED) — reason + Re-upload -------------------------- */}
+          {/* Stalled (PENDING & delayed, 27-01 / D-10) — explained, not spinning */}
+          {delayed.length > 0 && (
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Taking longer than usual</h2>
+                <p className="text-sm text-slate-600">
+                  These uploads are still queued. Nothing is lost — your original files are saved
+                  and we&apos;re retrying. Check back in a moment.
+                </p>
+              </div>
+              {delayed.map((asset) => (
+                <DelayedRow key={asset.assetId} onCheckAgain={() => void load()} />
+              ))}
+            </section>
+          )}
+
+          {/* Rejected (FAILED) — reason + Re-upload, + Re-process when redrivable */}
           {failed.length > 0 && (
             <section className="space-y-4">
               <div>
@@ -155,7 +237,10 @@ export function ReviewQueue() {
                 <FailedRow
                   key={asset.assetId}
                   asset={asset}
+                  reprocessing={reprocessingId === asset.assetId}
+                  disabled={reprocessingId !== null}
                   onReupload={() => setReplaceTarget(asset)}
+                  onReprocess={() => handleReprocess(asset)}
                 />
               ))}
             </section>
@@ -231,9 +316,63 @@ function Header() {
   )
 }
 
+// --- Stalled (PENDING & delayed) row — 27-01 / D-10 ---------------------------
+
+/**
+ * A stalled upload. It carries no image (a PENDING asset has no servable object)
+ * and no failure reason — the honest message is "still queued, nothing lost", plus
+ * a way to re-check. Deliberately NOT a Re-process control: the asset is still
+ * PENDING, so the API would answer 409 `media.already_active`-adjacent nonsense;
+ * the pipeline has not given up on it yet.
+ */
+function DelayedRow({ onCheckAgain }: { onCheckAgain: () => void }) {
+  const meta = KIND_META.DELAYED
+  const Icon = meta.icon
+  return (
+    <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <CardTitle className="text-base">Still processing</CardTitle>
+            <Badge className={`${meta.badge} pointer-events-none`}>
+              <Icon className="mr-1 h-3 w-3" aria-hidden="true" />
+              {meta.label}
+            </Badge>
+          </div>
+          <CardDescription>
+            Your upload is safe and still queued — we&apos;re retrying.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            className="border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+            onClick={onCheckAgain}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+            Check again
+          </Button>
+        </CardContent>
+      </Card>
+    </m.div>
+  )
+}
+
 // --- Rejected (FAILED) row ----------------------------------------------------
 
-function FailedRow({ asset, onReupload }: { asset: MediaAsset; onReupload: () => void }) {
+function FailedRow({
+  asset,
+  reprocessing,
+  disabled,
+  onReupload,
+  onReprocess,
+}: {
+  asset: MediaAsset
+  reprocessing: boolean
+  disabled: boolean
+  onReupload: () => void
+  onReprocess: () => void
+}) {
   const meta = KIND_META.FAILED
   const Icon = meta.icon
   return (
@@ -250,14 +389,37 @@ function FailedRow({ asset, onReupload }: { asset: MediaAsset; onReupload: () =>
           <CardDescription>{asset.failureReason || "This image could not be processed."}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="outline"
-            className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
-            onClick={onReupload}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-            Re-upload
-          </Button>
+          {/* Mobile-first: STACK at 320 px, go side-by-side from sm. Shrinking to
+              fit is what clips the second action. Re-upload stays first and
+              unchanged — Re-process is additive (Incremental Betterment). */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              className="w-full border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-auto"
+              onClick={onReupload}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+              Re-upload
+            </Button>
+            {asset.redrivable && (
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={onReprocess}
+                disabled={disabled}
+              >
+                {reprocessing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+                )}
+                {reprocessing ? "Re-processing…" : "Re-process"}
+              </Button>
+            )}
+          </div>
+          {asset.redrivable && (
+            <p className="mt-2 text-xs text-slate-500">Your original upload is still saved.</p>
+          )}
         </CardContent>
       </Card>
     </m.div>
