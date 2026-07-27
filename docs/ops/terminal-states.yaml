@@ -1,0 +1,290 @@
+# Terminal-failure-state register — J'Toye OaaS
+#
+# A terminal state is one where work has permanently stopped and will not resume on its own.
+# Every such state must have: a locator that resolves to real code, a consequence written from the
+# USER's point of view, an owner (or an honestly-recorded absence), a runnable operator action, and
+# a detection signal — or a DATED deferral saying when the absence of detection becomes a failure.
+#
+# Enforced by scripts/check-terminal-states.sh (phase 27, plan 27-00). An expired `deferred.expires`
+# is a FAIL, so a deferral cannot quietly become permanent.
+#
+# ON `owner`. This project has NO platform-operator identity and no ops rota — all admin is
+# tenant-scoped, and there is no cross-tenant operator role (recorded architectural fact, not an
+# oversight). The schema example in 27-00-PLAN.md shows `owner: vendor-integrations`; no such team
+# exists here and writing it down would be fabrication. `maintainer` is used where the maintainer
+# can actually act. TS-11 carries UNASSIGNED because its problem is precisely that the event it
+# publishes has no recipient that exists.
+#
+# ON `runbook`. All rows point at docs/runbooks/terminal-states.md, which carries one section per
+# row. Where an alert-specific section also exists in docs/runbooks/alerts.md it is named in
+# operator_action instead, because 27-03 owns that file.
+#
+# Row count is >= 14 by contract. Rows TS-15 and TS-16 are ABOVE that contract: they were found
+# while executing 27-00 Tasks 0-1, not during planning, and are folded in here rather than filed as
+# follow-ups — see their `discovered` fields.
+
+version: 1
+states:
+
+  - id: TS-01
+    name: order.state-changes.dlq
+    kind: amqp_dlq
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:27"
+    what_stops: "Order state-change events that exhausted retries. The kitchen display and the vendor's order list stop reflecting reality for those orders, and no customer-facing status ever updates again."
+    owner: maintainer
+    detection:
+      signal: 'rabbitmq_detailed_queue_messages_ready{queue="order.state-changes.dlq"}'
+      alert: DeadLetterQueueNonEmpty
+    runbook: "docs/runbooks/terminal-states.md#ts-01"
+    operator_action: "Peek non-destructively: rabbitmqadmin get queue=order.state-changes.dlq ackmode=reject_requeue_true count=10. NEVER ack — ack destroys the message and the evidence. Read x-death for the original exchange and failure count, decide replay vs discard, and record the decision before acting."
+    deferred:
+      reason: "No alert rule references any DLQ depth. The aggregated rabbitmq scrape emits no queue label, so no per-queue selector can match until 27-03 adds the /metrics/detailed job. Evidence: baselines/B-2.txt."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-02
+    name: payment.events.dlq
+    kind: amqp_dlq
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:32"
+    what_stops: "Payment events that exhausted retries. Money moved at Stripe but the platform's ledger never learns, so the vendor's revenue figures and the customer's receipt disagree with the card statement."
+    owner: maintainer
+    detection:
+      signal: 'rabbitmq_detailed_queue_messages_ready{queue="payment.events.dlq"}'
+      alert: DeadLetterQueueNonEmpty
+    runbook: "docs/runbooks/terminal-states.md#ts-02"
+    operator_action: "Peek non-destructively: rabbitmqadmin get queue=payment.events.dlq ackmode=reject_requeue_true count=10. NEVER ack. Reconcile each event against Stripe before deciding replay vs discard — a discarded payment event is a permanent ledger gap, not a lost notification."
+    deferred:
+      reason: "Same as TS-01 — no per-queue series exists to alert on until 27-03 lands the detailed scrape."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-03
+    name: webhook.deliveries.dlq
+    kind: amqp_dlq
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:62"
+    what_stops: "Vendor webhook deliveries that exhausted retries. The vendor's integration silently stops receiving events — no error reaches them, their automation simply goes quiet."
+    owner: maintainer
+    detection:
+      signal: 'rabbitmq_detailed_queue_messages_ready{queue="webhook.deliveries.dlq"}'
+      alert: DeadLetterQueueNonEmpty
+    runbook: "docs/runbooks/terminal-states.md#ts-03"
+    operator_action: "Peek non-destructively: rabbitmqadmin get queue=webhook.deliveries.dlq ackmode=reject_requeue_true count=10. NEVER ack. THIS QUEUE HOLDS NINE REAL VENDOR EVENTS as of 2026-07-27, dead since 2026-07-15, deliberately preserved byte-identical (payloads, x-death and __TypeId__ intact). 27-03 archives and characterises them; 27-02's human checkpoint decides replay vs discard before the broker volume is destroyed. Do not purge. Assert on the DELTA, never on depth == 9."
+    related: ["#205", "27-05"]
+    deferred:
+      reason: "Same as TS-01. The producer defect that filled this queue is fixed (27-05, commit 2f8eeca — untrusted-package deserialization); the batch itself is still awaiting disposition."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-04
+    name: media.process.dlq
+    kind: amqp_dlq
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:78"
+    what_stops: "Image-processing jobs that exhausted retries. The vendor's uploaded photo stays stuck showing 'processing' forever, and the product it belongs to goes to market without an image."
+    owner: maintainer
+    detection:
+      signal: 'rabbitmq_detailed_queue_messages_ready{queue="media.process.dlq"}'
+      alert: DeadLetterQueueNonEmpty
+    runbook: "docs/runbooks/terminal-states.md#ts-04"
+    operator_action: "Peek non-destructively: rabbitmqadmin get queue=media.process.dlq ackmode=reject_requeue_true count=10. NEVER ack. Cross-reference each job against media_asset rows in PENDING or FAILED — see TS-07, whose quarantined bytes may already have been deleted by the reaper."
+    deferred:
+      reason: "Same as TS-01."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-05
+    name: payment_event_outbox poison
+    kind: outbox_poison
+    locator: "core-java/src/main/resources/db/migration/V46__outbox_reliability.sql:24"
+    what_stops: "A payment event that failed to publish enough times to be marked poison. It will never be retried, so the same ledger divergence as TS-02 occurs — but silently inside Postgres, with no queue to inspect."
+    owner: maintainer
+    detection:
+      signal: payment_outbox_dead_letter_total
+      alert: OutboxPoisonRows
+    runbook: "docs/runbooks/terminal-states.md#ts-05"
+    operator_action: "SELECT id, aggregate_id, attempts, last_error FROM payment_event_outbox WHERE poison = true; — remember the table is RLS-scoped, so set the tenant GUC first or it returns zero rows and reads as clean. Fix the cause, then clear poison to allow the flusher to resurrect the row."
+    deferred:
+      reason: "The counter payment_outbox_dead_letter_total is registered and exported (verified live at 0.0) but referenced by NO alert rule. 27-03 owns all alerts.yml rule content."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-06
+    name: media_event_outbox poison
+    kind: outbox_poison
+    locator: "core-java/src/main/resources/db/migration/V58__media_event_outbox.sql:29"
+    what_stops: "A media event that failed to publish enough times to be marked poison. The upload pipeline never starts for that asset, so the vendor's image is stuck exactly as in TS-04 — with no queue entry to find it by."
+    owner: maintainer
+    detection:
+      signal: media_outbox_dead_letter_total
+      alert: OutboxPoisonRows
+    runbook: "docs/runbooks/terminal-states.md#ts-06"
+    operator_action: "SELECT id, aggregate_id, attempts, last_error FROM media_event_outbox WHERE poison = true; — RLS-scoped, set the tenant GUC first. Same resurrect procedure as TS-05."
+    deferred:
+      reason: "Same as TS-05 — media_outbox_dead_letter_total is exported but referenced by no rule."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-07
+    name: media_asset FAILED
+    kind: entity_status
+    locator: "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java:44"
+    what_stops: "A vendor's uploaded image, permanently. UNRECOVERABLE BY RETRY: the reaper deletes the quarantined object from storage BEFORE flipping the row to FAILED (MediaPendingReaper.java:79 calls storageService.deleteByKey, then sets FAILED), so the bytes are gone. A broker outage longer than reaperGraceMs (900_000 ms) destroys every upload in flight, and the vendor is told only that processing failed."
+    owner: maintainer
+    detection:
+      signal: 'count of media_asset rows in status FAILED'
+      alert: MediaAssetsFailed
+    runbook: "docs/runbooks/terminal-states.md#ts-07"
+    operator_action: "SELECT id, tenant_id, created_at, failure_reason FROM media_asset WHERE status = 'FAILED'; — RLS-scoped. The object is already deleted; the only remedy is asking the vendor to re-upload. Check broker availability over the window before concluding the file was invalid."
+    related: ["27-01"]
+    deferred:
+      reason: "No metric or alert exists for FAILED asset counts. 27-01 owns the fix for the delete-then-FAIL ordering and WILL DELETE OR MOVE the code at the locator above (quarantine_reclaimed_at sentinel + PESSIMISTIC_WRITE claim lock + a vendor-visible DELAYED state); this row's locator must be updated in the same PR or the gate's locator check fails on 27-01's merge."
+      expires: 2026-09-30
+      tracked_by: "27-01"
+
+  - id: TS-08
+    name: webhook_delivery FAILED
+    kind: entity_status
+    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:43"
+    what_stops: "One outbound webhook delivery, terminally. The vendor's system never learns that this specific order, refund or status change happened — and because delivery is per-event, their data diverges from the platform's by exactly the events that failed."
+    owner: maintainer
+    detection:
+      signal: 'count of webhook_delivery rows in status FAILED'
+      alert: WebhookDeliveriesFailed
+    runbook: "docs/runbooks/terminal-states.md#ts-08"
+    operator_action: "SELECT id, subscription_id, event_type, attempts, last_status_code FROM webhook_delivery WHERE status = 'FAILED'; — RLS-scoped. A 4xx last_status_code means the vendor's endpoint rejected it (their fix); 5xx or timeout means theirs was down (replay is appropriate). Contact the vendor before replaying anything financial."
+    related: ["#205"]
+    deferred:
+      reason: "No metric or alert exists for FAILED delivery counts. 27-03 owns rule content."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-09
+    name: webhook_subscription AUTO_PAUSED
+    kind: entity_status
+    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookSubscription.java:46"
+    what_stops: "EVERY future event for one vendor subscription, not just the failed one. The worker flips the subscription to AUTO_PAUSED after sustained delivery failure (WebhookDeliveryWorker.java:229) and nothing tells the vendor. Their integration goes permanently quiet and they discover it from missing data, not from an error."
+    owner: maintainer
+    detection:
+      signal: 'count of webhook_subscription rows in status AUTO_PAUSED'
+      alert: WebhookSubscriptionsAutoPaused
+    runbook: "docs/runbooks/terminal-states.md#ts-09"
+    operator_action: "SELECT id, tenant_id, target_url, updated_at FROM webhook_subscription WHERE status = 'AUTO_PAUSED'; — RLS-scoped. Confirm the vendor's endpoint is healthy, THEN notify the vendor before re-enabling: silently resuming can flood a vendor with a backlog they did not expect."
+    related: ["#205"]
+    deferred:
+      reason: "No metric, no alert, and no vendor-facing notification. This is the highest-consequence unowned state in the register — a paying vendor's integration stops with nobody informed. 27-03 owns rule content; the vendor-notification half has no owner yet."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-10
+    name: tenants.keycloak_deprovisioned_at NULL on an OFFBOARDED tenant
+    kind: entity_status
+    locator: "core-java/src/main/java/uk/jtoye/core/tenant/Tenant.java:76"
+    what_stops: "Identity-layer offboarding. The tenant is OFFBOARDED and TenantStatusInterceptor rejects their requests, but their Keycloak users were never disabled — so a stolen or cached token can still mint at the IdP. Deprovisioning runs best-effort after commit, so a Keycloak outage leaves this NULL with only an ERROR log."
+    owner: maintainer
+    detection:
+      signal: 'count of tenants rows WHERE status = OFFBOARDED AND keycloak_deprovisioned_at IS NULL'
+      alert: TenantDeprovisioningIncomplete
+    runbook: "docs/runbooks/terminal-states.md#ts-10"
+    operator_action: "SELECT id, name, offboarded_at FROM tenants WHERE status = 'OFFBOARDED' AND keycloak_deprovisioned_at IS NULL; — the tenants table is deliberately RLS-free. Re-trigger with POST /api/v1/admin/tenants/{id}/keycloak/deprovision (idempotent). Requires jtoye.keycloak.admin.enabled=true and a base-url, or it returns RFC 7807 400 'not configured'."
+    deferred:
+      reason: "Detected only by an ERROR log line, which nothing scrapes or alerts on. 27-03 owns rule content."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-11
+    name: onboarding stalled
+    kind: entity_status
+    locator: "core-java/src/main/java/uk/jtoye/core/onboarding/OnboardingEventPublisher.java:41"
+    what_stops: "A vendor's application to join the platform. The ONBOARDING_STALLED event is published correctly and reaches the outbox — and then nobody receives it, because no cross-tenant operator identity exists in this system. A prospective vendor waits indefinitely and the business never learns it lost them."
+    owner: UNASSIGNED
+    detection:
+      signal: ONBOARDING_STALLED
+      alert: null
+    runbook: "docs/runbooks/terminal-states.md#ts-11"
+    operator_action: "SELECT id, tenant_id, status, updated_at FROM vendor_onboarding WHERE status IN ('VERIFYING','ACTION_REQUIRED') AND updated_at < now() - interval '7 days'; — RLS-scoped, so loop tenants or the result is empty and reads as clean. Then work the queue at GET /api/v1/onboarding/admin/reviews, which is tenant-scoped and therefore cannot show you every tenant at once."
+    deferred:
+      reason: "owner is UNASSIGNED because there is no platform-operator identity to assign it TO — all admin in this system is tenant-scoped by design, so no role exists that could receive a cross-tenant stalled-onboarding alert. Naming a plausible team here would be fabrication and would make the register read as covered when it is not. Closing this needs a product decision about operator identity, not a rule."
+      expires: 2026-09-30
+      tracked_by: "arch_no_platform_operator"
+
+  - id: TS-12
+    name: scrape target down
+    kind: infra_target
+    locator: "infra/monitoring/prometheus/prometheus.yml.tmpl:72"
+    what_stops: "All observability for one service. Every alert whose selector depends on that target's metrics silently evaluates against zero series and stays inactive — the monitoring reports healthy precisely because it can see nothing."
+    owner: maintainer
+    detection:
+      signal: 'up == 0'
+      alert: ServiceDown
+    runbook: "docs/runbooks/terminal-states.md#ts-12"
+    operator_action: "curl -sG http://localhost:9091/api/v1/targets --data-urlencode 'state=any' and read health + lastError per job. NOTE the delivery gap: ServiceDown fires correctly and Alertmanager delivers it, but the destination is ops@jtoye.local via Mailhog — a dev sink with no human behind it. A firing ServiceDown reaches nobody. Verified: this alert fired for over 46 hours (activeAt 2026-07-25T13:01:41Z) before being found by hand."
+    related: ["27-00 Task 4"]
+
+  - id: TS-13
+    name: exporter up but blind
+    kind: infra_exporter
+    locator: "infra/monitoring/docker-compose.monitoring.yml:134"
+    what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
+    owner: maintainer
+    detection:
+      signal: 'pg_up{job="postgres"}'
+      alert: DatabaseExporterBlind
+    runbook: "docs/runbooks/terminal-states.md#ts-13"
+    operator_action: "Compare the two queries — they disagree, and that disagreement IS the state: pg_up{job=\"postgres\"} vs up{job=\"postgres\"}. Then read docker logs jtoye-postgres-exporter for the underlying error. Two causes were found stacked here: sslmode=require against a server with ssl=off, and a POSTGRES_EXPORTER_PASSWORD that never matched the database. TLS negotiation precedes authentication, so the first masked the second entirely. Fixing one and re-testing is not enough — assert pg_up == 1."
+    related: ["baselines/B-6.txt", "baselines/B-6-CONTROL-DEFECT.md"]
+    deferred:
+      reason: "pg_up is live and correct but referenced by NO alert rule — verified: grep -c pg_up alerts.yml = 0. A fresh clone still reproduces pg_up=0 behind a green up target, because .env.example ships POSTGRES_EXPORTER_PASSWORD=CHANGE_ME by design and cannot carry the fix. 27-03 owns rule content; 27-00 Task 4's check-alert-liveness.sh is what makes it fail closed."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-14
+    name: alert bound to the wrong subject
+    kind: detection_defect
+    locator: "infra/monitoring/prometheus/alerts.yml:96"
+    what_stops: "core-java heap exhaustion and GC storms are unobserved. HighMemoryUsage (:96) and FrequentGarbageCollection (:111) both carry service: core-java but their jvm_* selectors are unqualified, so while core-java's target was down they bound to the only JVM Prometheus could see — Keycloak's. They are worse than dataless: a naive 'selector matches >= 1 series' liveness check reports them GREEN."
+    owner: maintainer
+    detection:
+      signal: 'count(jvm_memory_used_bytes{job="core-java"}) > 0'
+      alert: null
+    runbook: "docs/runbooks/terminal-states.md#ts-14"
+    operator_action: "Run count(jvm_memory_used_bytes) by (job) and confirm a job=\"core-java\" row exists alongside job=\"keycloak\". Before 27-00 Task 1 only keycloak appeared (8 series); after the scrape-port fix both appear. Any rule carrying a service: label must have its selector qualified by the matching job, or it silently watches whatever else exports that metric name."
+    related: ["baselines/B-7.txt"]
+    deferred:
+      reason: "The scrape-port fix (27-00 Task 1) restored the core-java series so the rules can now see their subject, but the SELECTORS are still unqualified — a second JVM appearing in the scrape set would re-bind them. 27-03 owns the rule fix; 27-00 Task 4's L-2b subject-correctness check is what detects it."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-15
+    name: RedisDown watches the scrape target, not the exporter's upstream gauge
+    kind: detection_defect
+    discovered: "2026-07-27, while verifying 27-00 Task 1. Not in the F-9 planning census."
+    locator: "infra/monitoring/prometheus/alerts.yml:226"
+    what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluates up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — is live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stays inactive."
+    owner: maintainer
+    detection:
+      signal: 'redis_up{job="redis"}'
+      alert: RedisExporterBlind
+    runbook: "docs/runbooks/terminal-states.md#ts-15"
+    operator_action: "Compare redis_up against up{job=\"redis\"}, exactly as TS-13 does for pg_up. Both read 1 today, so this is a latent defect rather than an active outage — which is why it survived: the state that would expose it has not occurred yet."
+    related: ["TS-13", "baselines/B-6.txt"]
+    deferred:
+      reason: "Measured 2026-07-27: pg_up referenced by 0 rules, redis_up referenced by 0 rules, rabbitmq_up has no series at all. B-6 recorded ONE instance of this class; there are at least two, and the difference matters because 27-00 Task 4's AC-4.2 names only postgres. That criterion must generalise to every exporter publishing an upstream-health gauge, or the gate ships blind to half the class it exists to catch."
+      expires: 2026-09-30
+      tracked_by: "27-03"
+
+  - id: TS-16
+    name: running container config drifted from the compose file that defines it
+    kind: detection_defect
+    discovered: "2026-07-27, while auditing container health during 27-00 Task 1. Not in the F-9 planning census."
+    locator: "scripts/check-runtime-freshness.sh:89"
+    what_stops: "Nothing user-facing yet — but it is the detection gap that lets everything else in this register go stale unnoticed. check-runtime-freshness.sh compares BUILT services (core-java, frontend, edge-go, mcp-server) against the source they are built from. A service running a third-party image whose COMPOSE CONFIG changed is outside its scope entirely, so the running container can contradict the committed file indefinitely with both parity gates green."
+    owner: maintainer
+    detection:
+      signal: "per-service diff of docker inspect against docker compose config"
+      alert: null
+    runbook: "docs/runbooks/terminal-states.md#ts-16"
+    operator_action: "For each monitoring service compare the running container against the declared config, e.g. healthcheck: docker inspect jtoye-<svc> --format '{{json .Config.Healthcheck}}' vs the service block in infra/monitoring/docker-compose.monitoring.yml. Recreate with docker compose --env-file <repo-root>/.env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate <svc>. NOTE: a plain `restart` does NOT re-read the config, and the compose project directory is infra/monitoring/ which has no .env, so --env-file is required or interpolation fails."
+    related: ["baselines/B-6-CONTROL-DEFECT.md"]
+    deferred:
+      reason: "PROVEN INSTANCE, not hypothetical: jtoye-redis-exporter ran a wget-based healthcheck that its scratch-based image cannot execute, reporting 'unhealthy' for 20 days while working perfectly (redis_up=1, metrics flowing). The compose file had ALREADY removed that healthcheck, with a comment explaining this exact failure, in commit 7dcaf93 at 2026-07-07 22:47:55 UTC — the container was created at 2026-07-07 22:23:46 UTC, 84 minutes earlier, and was never recreated. The image itself declares no healthcheck (verified null), so the container was the only source. Content-based sweep of all five monitoring services found redis-exporter to be the sole mismatch. Timestamp comparison alone is NOT a sufficient detector: it flagged jtoye-prometheus as stale when that container was recreated an hour before the commit that touched its block, so any gate for this must compare CONTENT, not creation time."
+      expires: 2026-09-30
+      tracked_by: "27-06"
