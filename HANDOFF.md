@@ -1,4 +1,10 @@
-# Handoff: Phase 27 — 27-00 and 27-05 MERGED; 27-01 Tasks 1–2 of 6 done and pushed
+# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–3 of 6 done and pushed
+
+> **Update (same session, later):** PR #315 is **MERGED** (`9d6ce8c`) — `runcheck.sh` is now on
+> `main` at `.planning/phases/27-operational-maturity/baselines/runcheck.sh`. The branch was merged
+> up from `main` and is 0 behind. **27-01 Task 3 is COMPLETE** (commits `7d216c4`, `e99efb7`).
+> Resume at **Task 4** (plan line ~1284). Two items below need reading before you continue:
+> §3a (what Task 3 proved) and §3b (AC-3.6, the one Task 3 criterion still open).
 
 **Generated:** 2026-07-27 (session that merged #314, opened #315, and executed 27-01 Tasks 1–2).
 **Supersedes** the 27-00 handoff. Its §5/§7/§8/§9 content is still live and carried forward below —
@@ -85,16 +91,51 @@ Both checkboxes are ticked in #315.
 
 ---
 
-## 3. WHERE TO RESUME — 27-01 Task 3
+## 3a. Task 3 — DONE. What it proved, and two findings worth keeping
 
-Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines). Task 3 starts at
-**line 1033**. Remaining: Tasks 3, 4, 5, 6.
+Commits `7d216c4` (sweep + config + D-07 split) and `e99efb7` (AC-3.7/3.8).
 
-- **Task 3** — `MediaQuarantineRetentionSweep` (per-tenant, GUC-pinned, sentinel-stamped,
-  `/quarantine/` guard in **Java** not JPQL so guards 1/2 stay independently breakable) + the four
-  new `jtoye.media.*` keys in `application.yml` + the D-07 worker split
-  (`failRetainingBytes` vs `failAndDiscard`). Note `claim-lock-timeout-ms` **already exists** in
-  `MediaProperties` (added in Task 2) but is **not yet in `application.yml`** — Task 3 adds it there.
+`MediaQuarantineRetentionSweep` is now the ONLY component that reclaims quarantine bytes on a
+timeout-class path. It is deliberately unconditional — not gated on dispatch evidence or consumer
+liveness — which is what makes "reaper forever suspended" survivable. The delete sits BETWEEN two
+transactions so a rolled-back batch cannot leave objects deleted with rows still claiming them.
+
+**Finding 1 — the unit form of AC-3.2/3.3(a) was proven vacuous, not assumed.** The plan asserted a
+mocked repository never executes the JPQL. Measured: the same `@Query` break that turns the
+integration tests RED leaves the unit class **GREEN (rc=0)**. Guard 1 (`status <> ACTIVE`) and
+guard 3 (the sentinel) live in the `@Query` → Testcontainers. Guard 2 (`/quarantine/` path) lives in
+the sweep's Java → correctly a unit test. Do not "tidy" these back into one class.
+
+**Finding 2 — AC-3.8's break could not fail as written.** Moving the success stamp after
+`saveAndFlush` produced **rc=0**. Root cause read from source: `MediaAssetService.placeAsset`
+reaches the `@Modifying(clearAutomatically = true)` `repoint` ONLY when a slot already exists —
+`if (slot.isEmpty()) { attachPlacement(...); return; }`. The fixture seeded a fresh product, so the
+context clear never ran and a mis-ordered stamp survived to commit regardless. Fixed by seeding an
+existing ACTIVE primary so the placement DISPLACES it. Break now fires (rc=1); both directions of
+the fixture change are recorded in the commit message.
+
+**AC-3.5's two halves were cross-checked**: break 1 trips the env-contract gate but not the
+membership loop; break 2 trips membership but not the gate. They test different properties.
+
+## 3b. THE ONE TASK 3 CRITERION STILL OPEN — AC-3.6
+
+**`sweepIsTenantScopedUnderNosuperuser` is NOT written.** Everything else in Task 3 has a recorded
+RED. This one needs the NOSUPERUSER role downgrade (the `rls_test_role` pattern in
+`MediaProcessingWorkerIntegrationTest.java:68-90` is the template): seed reclaimable quarantine
+assets under tenants A and B, run the sweep as the downgraded role with the GUC pinned to A, assert
+B's rows are untouched.
+
+**Its break is the important half**: remove `pinTenantGuc(tenantId)` from the sweep's transaction
+callback and `findReclaimableQuarantine` returns ZERO rows under FORCE RLS — so the failure mode is
+"nothing to do", which is exactly why the pin must be asserted rather than assumed. A
+Testcontainers-**superuser** run passes vacuously (superusers bypass RLS), so this criterion is only
+meaningful under the downgrade.
+
+## 4. WHERE TO RESUME — 27-01 Task 4
+
+Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines). Task 4 starts at
+**line ~1284**. Remaining: Tasks 4, 5, 6 — plus AC-3.6 (§3b).
+
 - **Task 4** — `POST /api/v1/media/{assetId}/reprocess` + `delayed`/`redrivable` DTO bits +
   review-queue widening + OpenAPI snapshot.
 - **Task 5** — frontend DELAYED affordance (`asset-image.tsx`, `ReviewQueue.tsx`), 6 Jest blocks.
