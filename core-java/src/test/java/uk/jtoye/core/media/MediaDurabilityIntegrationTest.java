@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,8 @@ class MediaDurabilityIntegrationTest {
     @Autowired private TransactionTemplate txTemplate;
     @Autowired private MediaQuarantineRetentionSweep sweep;
     @Autowired private MediaProperties mediaProperties;
+    @Autowired private MediaProcessingWorker worker;
+    @Autowired private MediaAssetService mediaAssetService;
     @org.springframework.boot.test.mock.mockito.SpyBean private uk.jtoye.core.storage.StorageService storageService;
 
     private UUID tenant;
@@ -77,8 +80,12 @@ class MediaDurabilityIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // Order matters: product_media FKs media_asset, and markerLifecycle's successful worker
+        // run creates a product_media row via placeOnActive.
+        jdbc.update("DELETE FROM product_media WHERE tenant_id = ?", tenant);
         jdbc.update("DELETE FROM media_asset_aud WHERE tenant_id = ?", tenant);
         jdbc.update("DELETE FROM media_asset WHERE tenant_id = ?", tenant);
+        jdbc.update("DELETE FROM products WHERE tenant_id = ?", tenant);
         TenantContext.clear();
         Mockito.reset(storageService);
     }
@@ -299,7 +306,133 @@ class MediaDurabilityIntegrationTest {
                 .isNull();
     }
 
+    // ==================================================================
+    // AC-3.8 — the marker lifecycle: claimed on accept, closed on worker success.
+    // ==================================================================
+
+    @Test
+    void markerLifecycle() throws Exception {
+        UUID productId = seedProduct();
+        byte[] raw = jpegOf(800, 600);
+        Mockito.doReturn("http://minio/q").when(storageService)
+                .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
+
+        UUID assetId = txTemplate.execute(s -> {
+            TenantContext.set(tenant);
+            return UUID.fromString(mediaAssetService.acceptQuarantineAndQueue(
+                    productId, raw, randomSha(), null,
+                    new MediaAssetService.MediaPlacement(true, 0)).assetId().toString());
+        });
+
+        Map<String, Object> afterAccept = jdbc.queryForMap(
+                "SELECT created_at, quarantine_expires_at, quarantine_reclaimed_at "
+                        + "FROM media_asset WHERE id = ?", assetId);
+        OffsetDateTime created = ((java.sql.Timestamp) afterAccept.get("created_at"))
+                .toInstant().atOffset(OffsetDateTime.now().getOffset());
+        OffsetDateTime expires = ((java.sql.Timestamp) afterAccept.get("quarantine_expires_at"))
+                .toInstant().atOffset(OffsetDateTime.now().getOffset());
+
+        assertThat(java.time.Duration.between(created, expires).toHours())
+                .as("the bytes are claimed for the declared 72h horizon (D-08)")
+                .isBetween(71L, 73L);
+        assertThat(afterAccept.get("quarantine_reclaimed_at"))
+                .as("nothing has been deleted yet")
+                .isNull();
+
+        // DISPLACEMENT FIXTURE — load-bearing, and the reason this test can fail at all.
+        // MediaAssetService.placeAsset only reaches the @Modifying(clearAutomatically = true)
+        // `repoint` when a slot ALREADY exists; with a fresh product it takes attachPlacement and
+        // returns, the persistence context is never cleared, and a mis-ordered stamp would survive
+        // to commit anyway. Seeding an existing primary is what puts the repoint — and therefore
+        // the context clear — on the path.
+        UUID displaced = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO media_asset (id, tenant_id, object_key, sha256, content_type, status, flagged)
+                VALUES (?, ?, ?, ?, 'image/webp', 'ACTIVE', false)
+                """, displaced, tenant, tenant + "/media/" + displaced + ".webp", randomSha());
+        jdbc.update("""
+                INSERT INTO product_media (id, tenant_id, product_id, asset_id, is_primary, sort_order)
+                VALUES (?, ?, ?, ?, true, 0)
+                """, UUID.randomUUID(), tenant, productId, displaced);
+
+        // Now run the worker to success.
+        Mockito.doReturn(raw).when(storageService).getBytes(Mockito.anyString());
+        Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
+        worker.onMediaEvent(new MediaProcessingEvent(tenant, assetId));
+
+        Map<String, Object> afterWorker = jdbc.queryForMap(
+                "SELECT status, quarantine_reclaimed_at FROM media_asset WHERE id = ?", assetId);
+        assertThat(afterWorker.get("status")).isEqualTo("ACTIVE");
+        assertThat(afterWorker.get("quarantine_reclaimed_at"))
+                .as("""
+                        the quarantine object is deleted on success, so the sentinel closes. This \
+                        MUST be stamped before saveAndFlush — placeOnActive runs a \
+                        @Modifying(clearAutomatically = true) repoint that discards a later dirty \
+                        update, which would leave the asset advertising bytes that no longer exist.""")
+                .isNotNull();
+    }
+
+    // ==================================================================
+    // AC-3.7 — D-07: a read failure RETAINS bytes; a validation veto still discards.
+    // ==================================================================
+
+    @Test
+    void readFailureRetainsBytes() {
+        String key = tenant + "/quarantine/unreadable.jpg";
+        UUID assetId = seedReclaimable(key, "PENDING", OffsetDateTime.now().plusHours(72));
+        Mockito.doThrow(new RuntimeException("S3 blip")).when(storageService).getBytes(key);
+
+        worker.onMediaEvent(new MediaProcessingEvent(tenant, assetId));
+
+        Mockito.verify(storageService, Mockito.never()).deleteByKey(key);
+        MediaAsset after = mediaAssetRepository.findById(assetId).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(MediaAsset.Status.FAILED);
+        assertThat(after.getQuarantineReclaimedAt())
+                .as("a transient read failure must not destroy the vendor's only copy — the asset "
+                        + "stays re-drivable")
+                .isNull();
+        assertThat(after.getQuarantineExpiresAt()).isNotNull();
+    }
+
+    @Test
+    void validationVetoStillDiscards() {
+        String key = tenant + "/quarantine/spoofed.jpg";
+        UUID assetId = seedReclaimable(key, "PENDING", OffsetDateTime.now().plusHours(72));
+        byte[] notAnImage = "%PDF-1.7\n%definitely-not-an-image".getBytes(StandardCharsets.ISO_8859_1);
+        Mockito.doReturn(notAnImage).when(storageService).getBytes(key);
+        Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
+
+        worker.onMediaEvent(new MediaProcessingEvent(tenant, assetId));
+
+        Mockito.verify(storageService).deleteByKey(key);
+        MediaAsset after = mediaAssetRepository.findById(assetId).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(MediaAsset.Status.FAILED);
+        assertThat(after.getQuarantineReclaimedAt())
+                .as("these bytes are worthless and possibly hostile — discarding them is a Phase 24 "
+                        + "good this plan deliberately KEEPS")
+                .isNotNull();
+    }
+
     // ---- fixtures for the sweep criteria ----------------------------------
+
+    private UUID seedProduct() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO products (id, tenant_id, sku, title, ingredients_text) VALUES (?, ?, ?, ?, ?)",
+                id, tenant, "SKU-" + id.toString().substring(0, 8), "Product", "Yam (100%)");
+        return id;
+    }
+
+    private static byte[] jpegOf(int w, int h) throws Exception {
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setPaint(new java.awt.GradientPaint(0, 0, java.awt.Color.ORANGE, w, h, java.awt.Color.BLUE));
+        g.fillRect(0, 0, w, h);
+        g.dispose();
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "jpg", baos);
+        return baos.toByteArray();
+    }
 
     /** The real predicate, run under the tenant GUC — this is what AC-3.2(b) asserts on. */
     private List<UUID> reclaimableIds() {
