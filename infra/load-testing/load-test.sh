@@ -5,6 +5,24 @@
 #
 # Purpose: Establish capacity limits and performance baselines
 #
+# SEE ALSO: ./baseline.sh and ./README.md  (added by phase 27, plan 27-00 Task 6)
+#
+#   This script ASSERTS NO STATUS CODE. That matters more than it sounds: an
+#   unauthenticated GET /api/v1/shops returns 401, and a 401 flood was measured here
+#   at 3395 req/s. Read without checking the status distribution, that looks like an
+#   excellent throughput result. baseline.sh fails on any non-2xx for this reason.
+#
+#   Two further things measured 2026-07-27, both of which mean this script could not
+#   have produced a number on the dev host as written:
+#     - it requests a token with client_id=core-api and NO client secret, but core-api
+#       is a CONFIDENTIAL client, so Keycloak rejects every attempt;
+#     - no HTTP load tool (hey/ab/k6/wrk/vegeta) was installed at all, so check_tools
+#       exited 1 before any request was sent.
+#
+#   This file is deliberately left FUNCTIONALLY UNCHANGED — it is working prior art,
+#   and baseline.sh reuses its KC_SEED_USER_PASSWORD handling verbatim. Only comments
+#   were added.
+#
 
 set -e
 

@@ -141,6 +141,10 @@ edge-go/edge
 # Rendered Alertmanager config (phase 9 — entrypoint renders this at container start)
 infra/monitoring/alertmanager/alertmanager.yml
 
+# Rendered Prometheus config (phase 27 — entrypoint renders this from
+# prometheus.yml.tmpl at container start). Edit the .tmpl, never this file.
+infra/monitoring/prometheus/prometheus.yml
+
 # Rendered Keycloak realm import (issue #80 — envsubst renders this from
 # realm-export.template.json at container start; carries resolved secrets, NEVER commit)
 infra/keycloak/realm-export.json

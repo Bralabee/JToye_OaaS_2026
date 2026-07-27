@@ -411,7 +411,7 @@ bash scripts/check-branch-behind-base.sh \
 
 | Script | What it guarantees |
 |--------|--------------------|
-| `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. |
+| `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. **A built service that is missing or not `running` VOIDs the whole run (exit 2)** — see below. |
 | `check-branch-behind-base.sh` | `HEAD..<remote>/<default-branch>` is empty — this branch contains every commit already on its base. The base branch is **resolved** (`--base`, `$BASE_REF`, `$GITHUB_BASE_REF`, `refs/remotes/origin/HEAD`, then `git ls-remote --symref`), never hardcoded to `main`. Being *ahead* is normal and is not a finding; only being behind is. |
 
 **Why `.Metadata.LastTagTime` and not `.Created`.** Docker preserves the original
@@ -445,10 +445,21 @@ kind of gate that is green because it measures nothing. It belongs where a runti
 exists — local dev, before E2E, and at the end of any phase that hands a runtime
 back (`k8s/LOCAL.md` §10).
 
-**A stopped stack is VOID, not clean.** During a local-k8s rehearsal the four app
-containers are intentionally down; the freshness gate then reports every service
-UNVERIFIED and exits **2**. That is correct — a runtime that is not running cannot
-be proven fresh — and it is why "all services skipped" can never report `0`.
+**A stopped stack is VOID, not clean — and so is a stopped *service*.** During a
+local-k8s rehearsal the four app containers are intentionally down; the freshness
+gate then reports every service UNVERIFIED and exits **2**. That is correct: a
+runtime that is not running cannot be proven fresh.
+
+Tightened 2026-07-27 (plan 27-00 Task 6) to apply **per service**. The check
+previously fired only when *every* built service was unverifiable, so stopping one
+of four printed `PASS: 3 running built service(s) match the source tree
+(1 unverified)` and exited **0** — an unproven service reported inside a pass,
+where "we could not check it" was rendered indistinguishable from "we checked it
+and it was fine". Now **any** missing or non-`running` built service VOIDs the run.
+Drift still outranks VOID: a runtime *known* stale (exit 1) is a stronger statement
+than one that could not be evaluated. There is deliberately **no** bypass flag — an
+`--allow-unverified` switch is how a check earns a `|| true`; a deliberate subset
+run scopes itself with `--compose-file`.
 
 ### Golden-render workflow (required after any intentional `k8s/base` change)
 

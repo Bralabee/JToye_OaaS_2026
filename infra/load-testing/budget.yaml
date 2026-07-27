@@ -1,0 +1,94 @@
+# Load / throughput budget — J'Toye OaaS
+#
+# Read by infra/load-testing/baseline.sh, which compares each dated artifact against it.
+#
+# THE ONE RULE THIS FILE EXISTS TO ENFORCE: an inherited assumption is NEVER presented as a
+# measured number. Every entry carries a `source:` that is either
+#
+#   source: inherited-assumption   + `from:` the file:line the number was read out of
+#   source: measured               + `from:` the artifact filename that measured it
+#
+# Everything below starts as `inherited-assumption` / `status: unvalidated`, because the
+# numbers came from a prose "Performance targets" block in load-test.sh that no run has ever
+# confirmed — and from an architecture table that says "tens/sec" without units of measurement
+# attached to any observation. Baseline B-5 recorded WHY: no HTTP load-generation tool was
+# installed on this host at all, so `load-test.sh` could not have produced any of these.
+#
+# When a run validates an entry, flip `source:` to `measured`, point `from:` at the artifact,
+# and set `status: validated`. Do not edit the number without doing that — a number whose
+# provenance says "assumption" and whose value came from a run is the exact confusion this
+# file prevents.
+
+version: 1
+
+budgets:
+
+  - key: http.read.p95_ms
+    value: 200
+    unit: milliseconds
+    applies_to: "GET /api/v1/shops, GET /api/v1/products"
+    source: inherited-assumption
+    from: "infra/load-testing/load-test.sh:168"
+    status: unvalidated
+    note: >-
+      Quoted from the "Performance targets" prose block, which was printed as advice after a
+      run rather than asserted against one. No run had ever produced a p95 on this host.
+
+  - key: http.write.p95_ms
+    value: 500
+    unit: milliseconds
+    applies_to: "POST /api/v1/shops"
+    source: inherited-assumption
+    from: "infra/load-testing/load-test.sh:169"
+    status: unvalidated
+    note: >-
+      Arm A of baseline.sh is deliberately READ-ONLY: a write arm against the shared dev stack
+      would create rows that 27-01 and 27-03 then measure against. The budget is kept so the
+      number is not lost, and is marked unvalidated because nothing here exercises it.
+
+  - key: http.error_rate_pct
+    value: 0
+    unit: percent
+    applies_to: "every arm-A endpoint"
+    source: inherited-assumption
+    from: "infra/load-testing/load-test.sh:170"
+    status: unvalidated
+    note: >-
+      This is the one inherited target that baseline.sh turns into a HARD assertion rather
+      than a report. An unauthenticated GET /api/v1/shops returns 401 (measured), and a 401
+      flood produces excellent req/s — so a harness that does not assert status codes scores
+      rejection as throughput. That is the canonical vacuous baseline.
+
+  - key: http.throughput_rps_per_instance
+    value: 100
+    unit: requests_per_second
+    applies_to: "core-java, single instance"
+    source: inherited-assumption
+    from: "infra/load-testing/load-test.sh:171"
+    status: unvalidated
+
+  - key: amqp.order_events_per_sec
+    value: 10
+    unit: messages_per_second
+    applies_to: "order.state-changes"
+    source: inherited-assumption
+    from: ".planning/research/ARCHITECTURE.md:243"
+    status: unvalidated
+    note: >-
+      The architecture table says "RabbitMQ easily handles tens/sec" for order event
+      throughput. Ten is the bottom of "tens" and is recorded as the conservative reading.
+      This is a claim about the BROKER, not about this application's consumers, which is
+      exactly the gap arm B measures.
+
+  - key: amqp.media_process_per_sec_per_consumer
+    value: null
+    unit: messages_per_second_per_consumer
+    applies_to: "media.process"
+    source: inherited-assumption
+    from: "no source — this number does not exist anywhere in the repo"
+    status: unvalidated
+    note: >-
+      Deliberately null. 27-04 must set RabbitMQ prefetch and concurrentConsumers, and those
+      derive from messages/sec/consumer — a figure findings F-7/F-8 established exists nowhere
+      in this repo. Arm B produces it. A null here is honest; a guessed number would be the
+      thing this whole file is built to stop.

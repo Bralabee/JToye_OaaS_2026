@@ -83,6 +83,13 @@
 #   inspected, an unparseable timestamp, an unsupported Dockerfile COPY form, or
 #   an empty git result all exit 2 (VOID), never 0.
 #
+#   PER SERVICE, NOT JUST IN AGGREGATE. If ANY built service cannot be verified —
+#   no container, or a container not in state 'running' — the whole run is VOID
+#   (exit 2). Until 2026-07-27 this fired only when EVERY service was
+#   unverifiable, so stopping one of four printed `PASS: 3 ... (1 unverified)`
+#   and exited 0. A green exit from this gate now means every built service was
+#   checked, which is what its name has always implied.
+#
 # Requires: bash, git, docker (with the compose plugin), jq, awk, date (GNU).
 # Reads only. Never stops, starts, builds, tags or removes anything.
 #
@@ -429,6 +436,32 @@ fi
 
 if [ "$VERIFIED" -eq 0 ] && [ "$DRIFTED" -eq 0 ]; then
     parse_fail "not one built service was verifiable — $SKIPPED skipped, 0 checked. A runtime that is not running cannot be proven fresh, so this assertion is VOID, not passing."
+fi
+
+# FAIL CLOSED PER SERVICE, not just in aggregate (27-00 Task 6, AC-6.12).
+#
+# This block previously fired only when ZERO built services were verifiable. Stop ONE of four
+# and the gate printed `PASS: 3 ... match (1 unverified)` and exited 0 — measured 2026-07-27 by
+# stopping the core-java container. That is the exact shape this gate exists to kill: an
+# unproven service reported inside a pass, where "we could not check it" is rendered
+# indistinguishable from "we checked it and it was fine". The header two hundred lines above
+# already promised "found nothing IS NEVER clean"; per service, it was not true.
+#
+# A skipped service is not a failure (nothing proves it stale) and not a pass (nothing proves it
+# fresh) — it is precisely VOID, so it exits 2. Drift still takes precedence: a runtime KNOWN to
+# be stale is a stronger statement than one that could not be evaluated, so exit 1 wins below.
+#
+# No bypass flag is offered on purpose. A `--allow-unverified` switch is how a check earns a
+# `|| true`. If you are deliberately running a subset of the stack, scope the gate to what you
+# are running with --compose-file; otherwise VOID is the honest answer.
+#
+# Verified safe to tighten: on a healthy full stack SKIPPED is 0 (4 built services, all
+# running), so this does NOT turn a correct tree red — checked before the change, because an
+# expected-0 that is 1 on a correct tree is how a "fix" causes an outage. The runtime half of
+# this pair is deliberately not wired into CI (a runner has no containers), so nothing in
+# .github/workflows changes behaviour either.
+if [ "$SKIPPED" -gt 0 ] && [ "$DRIFTED" -eq 0 ]; then
+    parse_fail "$SKIPPED of $((VERIFIED + SKIPPED)) built service(s) could not be verified$SKIP_SUFFIX — $VERIFIED checked. A service that is not running cannot be proven fresh, so this assertion is VOID, not passing. Start the missing service(s), or scope the gate with --compose-file if you are deliberately running a subset."
 fi
 
 if [ "$DRIFTED" -gt 0 ]; then

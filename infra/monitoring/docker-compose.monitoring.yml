@@ -7,14 +7,30 @@ services:
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: jtoye-prometheus
+    # Shell wrapper renders prometheus.yml.tmpl -> prometheus.yml at start, because
+    # Prometheus has no native env-var substitution in scrape configs. Same idiom as
+    # alertmanager below. The flags stay in `command:` and the entrypoint forwards
+    # them via "$@", so they remain visible and editable here.
+    entrypoint:
+      - /bin/sh
+      - /etc/prometheus/entrypoint.sh
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
+    environment:
+      # The core-java actuator port differs by runtime: 9091 in prod/k8s (separate
+      # management port) vs the app port in dev/compose. This Prometheus serves the
+      # compose runtime, hence the 9090 default. See prometheus/entrypoint.sh.
+      - CORE_JAVA_METRICS_PORT=${CORE_JAVA_METRICS_PORT:-9090}
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Only the template and the wrapper are mounted. The rendered prometheus.yml is
+      # written into the container's own /etc/prometheus, which is writable by the
+      # image's `nobody` user — mounting the rendered path would shadow it read-only.
+      - ./prometheus/prometheus.yml.tmpl:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./prometheus/entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
@@ -74,6 +90,13 @@ services:
       - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-alerts@jtoye.local}
       - ALERTMANAGER_SMTP_TO=${ALERTMANAGER_SMTP_TO:-ops@jtoye.local}
       - ALERTMANAGER_SMTP_REQUIRE_TLS=${ALERTMANAGER_SMTP_REQUIRE_TLS:-false}
+      # Slack (phase 27, additive — email remains the default route). WITHOUT
+      # THESE TWO LINES the template and entrypoint changes are completely
+      # INERT: verified before the fix, the container received only the four
+      # ALERTMANAGER_SMTP_* vars, so a fully-configured .env reached nothing.
+      # A placeholder-shaped URL is treated as unset by entrypoint.sh.
+      - ALERTMANAGER_SLACK_WEBHOOK_URL=${ALERTMANAGER_SLACK_WEBHOOK_URL:-}
+      - ALERTMANAGER_SLACK_CHANNEL=${ALERTMANAGER_SLACK_CHANNEL:-}
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
       - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
