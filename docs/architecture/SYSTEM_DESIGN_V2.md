@@ -35,8 +35,13 @@
 The picture below is the **live local/compose topology**, read off
 `docker-compose.full-stack.yml` and the source files listed in §1.4 — not a design
 intention. Host ports are shown; container-internal ports differ where noted. The same
-service graph is deployed by the k8s kustomize overlays (`k8s/base` + `staging|production`),
-which swap host ports for cluster Services and add the ingress.
+service graph is deployed by the k8s kustomize overlays (`k8s/base` + `local|staging|production`),
+which swap host ports for cluster Services and add the ingress. Phase 26 (#267) added the
+`local` overlay and a golden-manifest layer — `k8s/goldens/{staging,production}.yaml` rendered
+baselines plus the `render-golden`, `check-render-invariants` and `check-env-contract` scripts
+— that guards the rendered output and its env contract against drift. That is *deployment*
+architecture (how this graph is rolled out and verified), not a change to the communication
+graph drawn here: the compose service set, its ports and the AMQP exchanges are unchanged.
 
 ```
    ┌──────────────┐   ┌───────────────────┐   ┌──────────────┐
