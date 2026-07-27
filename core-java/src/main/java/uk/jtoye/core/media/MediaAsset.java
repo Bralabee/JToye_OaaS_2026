@@ -100,6 +100,50 @@ public class MediaAsset {
     private OffsetDateTime createdAt;
 
     /**
+     * Count of HUMAN-INITIATED re-drives (V60, 27-01 / D-04). Incremented only by
+     * {@code MediaAssetService.redriveFromQuarantine} and bounded by
+     * {@code jtoye.media.max-process-attempts}, so a vendor cannot loop a permanently-broken
+     * asset through the pipeline (T-27-03).
+     *
+     * <p>Deliberately NOT a publish-attempt counter — {@code media_event_outbox.attempts} is that —
+     * and deliberately not {@code COUNT(*)} of outbox rows, which the WR-01 re-upload path also
+     * increments. No scheduled component ever touches it: the reaper cannot enqueue (D-04), so
+     * every increment corresponds to a real human pressing Re-process.
+     */
+    @Column(name = "process_attempts", nullable = false)
+    private int processAttempts = 0;
+
+    /**
+     * When the retained raw quarantine bytes become reclaimable (V60, 27-01 / D-03, D-08).
+     * NULL means "no retained raw bytes were ever claimed" — which is CORRECT for every
+     * pre-V60 row, since V53-backfilled ACTIVE assets have no quarantine object at all.
+     *
+     * <p>Set at accept time to {@code now + jtoye.media.quarantine-retention-ms} (72 h default).
+     * This is what converts the old <em>unbounded loss at 15 minutes</em> into
+     * <em>bounded loss at 72 hours</em>.
+     */
+    @Column(name = "quarantine_expires_at")
+    private OffsetDateTime quarantineExpiresAt;
+
+    /**
+     * THE SENTINEL (V60, 27-01 / D-03 M1). NON-NULL means "the quarantine object for this asset is
+     * gone". Stamped by {@code MediaQuarantineRetentionSweep} only on a CONFIRMED delete
+     * ({@code StorageService.deleteByKeyChecked} returning true), by the worker on success, and by
+     * the worker's validation-veto discard.
+     *
+     * <p>It is a NEW column rather than "null out {@link #quarantineExpiresAt}" for a load-bearing
+     * reason: the sweep's legacy arm selects rows whose {@code quarantineExpiresAt} is ALREADY
+     * null, so nulling it would be a no-op and the same rows would be re-selected on every tick
+     * forever — silently, because {@code deleteByKey} swallows every exception. No selection
+     * predicate can already satisfy this column, so stamping it genuinely terminates the row.
+     *
+     * <p>It is also the negation of the {@code redrivable} DTO bit: bytes are recoverable iff
+     * {@code quarantineExpiresAt IS NOT NULL AND quarantineReclaimedAt IS NULL}.
+     */
+    @Column(name = "quarantine_reclaimed_at")
+    private OffsetDateTime quarantineReclaimedAt;
+
+    /**
      * Optimistic-lock version (WR-02, V59). Guards the reaper/worker race so a stale reaper
      * write (PENDING -> FAILED) against a row the worker already advanced to ACTIVE fails fast
      * with an optimistic-lock exception instead of silently clobbering the live image. JPA-managed;
@@ -155,6 +199,15 @@ public class MediaAsset {
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
+
+    public int getProcessAttempts() { return processAttempts; }
+    public void setProcessAttempts(int processAttempts) { this.processAttempts = processAttempts; }
+
+    public OffsetDateTime getQuarantineExpiresAt() { return quarantineExpiresAt; }
+    public void setQuarantineExpiresAt(OffsetDateTime quarantineExpiresAt) { this.quarantineExpiresAt = quarantineExpiresAt; }
+
+    public OffsetDateTime getQuarantineReclaimedAt() { return quarantineReclaimedAt; }
+    public void setQuarantineReclaimedAt(OffsetDateTime quarantineReclaimedAt) { this.quarantineReclaimedAt = quarantineReclaimedAt; }
 
     /** JPA-managed optimistic lock version (WR-02). Null until the entity is first flushed. */
     public Long getVersion() { return version; }
