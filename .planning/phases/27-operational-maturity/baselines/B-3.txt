@@ -1,0 +1,46 @@
+BASELINE: B-3
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-3.6
+NOTE_ON_CLOSED_BY: AC-3.6 exists in THIS plan and is expected-RED here by design — 27-03 owns
+  docs/runbooks/alerts.md and writes all four missing sections (D-B). This plan ships the gate that
+  fails while they are missing.
+SUBJECT: Alert/runbook drift (F-5). alerts.yml defines 14 LIVE alerts; docs/runbooks/alerts.md has
+  10 `## ` sections. Four alerts have no runbook section. The two DiskSpace* rules at alerts.yml:182
+  and :197 are commented out with a stated reason (node-exporter is not deployed) and MUST be
+  excluded — an extractor that counts them demands 16 and over-demands on 27-03's tree.
+COMMAND: grep -E '^[[:space:]]*- alert:' infra/monitoring/prometheus/alerts.yml | sed 's/.*- alert:[[:space:]]*//' | sort > /tmp/al.txt; grep -E '^## ' docs/runbooks/alerts.md | sed 's/^## //' | sort > /tmp/rb.txt; comm -23 /tmp/al.txt /tmp/rb.txt
+EXIT: 0
+--- OUTPUT ---
+KeycloakDown
+PaymentFailureSpike
+RedisDown
+StompBrokerLag
+
+live alert count: 14
+heading count:    10
+missing:           4
+
+14 live alerts extracted:
+DatabaseConnectionPoolExhausted  DatabaseDown  FrequentGarbageCollection  HighErrorRate
+HighMemoryUsage  HighResponseTime  KeycloakDown  NoOrdersCreated  PaymentFailureSpike
+RedisDown  ServiceDown  StompBrokerLag  TenantIsolationFailure  TooManyDatabaseConnections
+
+commented-out alert lines correctly excluded by the '^[[:space:]]*- alert:' anchor:
+182:      # - alert: DiskSpaceLow
+197:      # - alert: DiskSpaceCritical
+--- CONTROL COMMAND ---
+comm -12 /tmp/al.txt /tmp/rb.txt
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+DatabaseConnectionPoolExhausted DatabaseDown FrequentGarbageCollection HighErrorRate HighMemoryUsage HighResponseTime NoOrdersCreated ServiceDown TenantIsolationFailure TooManyDatabaseConnections
+matched=10
+--- WHY THIS CONTROL ---
+`comm -23` returning four names is also what a totally broken matcher would produce (e.g. a name
+extractor emitting trailing whitespace would report all 14 as missing). The control runs the
+complementary `comm -12` and returns exactly 10 matches, proving the matcher pairs names correctly
+and that the four are genuinely absent rather than an artefact of extraction.
+--- ENVIRONMENT HAZARD ---
+`grep` in this shell is a bash function resolving to ugrep 7.5.0, not GNU grep; it omits the ./
+prefix GNU emits. Explicit relative paths are used above and no path-exclusion regex is relied on.
+`grep -c` returning 0 exits 1 — this capture does not run under `set -e`.

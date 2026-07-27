@@ -1,0 +1,41 @@
+BASELINE: B-2
+CAPTURED: 2026-07-27T12:02:15+00:00
+TREE: 1499494b5535e35ea02a16cab9f7ca4a665298a6  clean=yes
+CLOSED_BY: AC-4.4
+NOTE_ON_CLOSED_BY: AC-4.4 exists in THIS plan but is expected-RED here by design. 27-03 adds the
+  /metrics/detailed rabbitmq-queues job and fixes the rule; this plan only proves the RED. The
+  AC-0.2 check is that the pointer resolves, not that it resolves green in this plan.
+SUBJECT: StompBrokerLag (alerts.yml:243-253) is structurally incapable of firing (F-1). The broker's
+  Prometheus endpoint is in aggregated mode and emits ONE series with no `queue` label at all, while
+  the rule selects {queue=~"stomp-subscription.*|amq[.]gen-.*"}. Live rule state is health=ok,
+  state=inactive — healthy and permanently inactive.
+COMMAND: curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"})' | jq -c '.status, .data.result'
+EXIT: 0
+--- OUTPUT ---
+"success"
+[]
+--- SUPPORTING PROBES (same tree, same instant) ---
+$ curl -sG .../query --data-urlencode 'query=count(rabbitmq_queue_messages_ready{queue!=""})' | jq -c '.data.result'
+[]                       # no series carries ANY queue label
+
+$ curl -sG .../series --data-urlencode 'match[]=rabbitmq_queue_messages_ready' | jq -c '.data'
+[{"__name__":"rabbitmq_queue_messages_ready","component":"messaging","instance":"jtoye-rabbitmq:15692","job":"rabbitmq","service":"rabbitmq"}]
+                         # exactly one series; labels are component/instance/job/service — no `queue`
+
+$ curl -s .../rules | jq -c '.data.groups[].rules[] | select(.name=="StompBrokerLag") | {name,health,state,alerts:(.alerts|length),query}'
+{"name":"StompBrokerLag","health":"ok","state":"inactive","alerts":0,"query":"sum(rabbitmq_queue_messages_ready{queue=~\"stomp-subscription.*|amq[.]gen-.*\"}) > 0"}
+--- CONTROL COMMAND ---
+curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=sum(rabbitmq_queue_messages_ready)' | jq -c '.data.result'  ;  curl -sG http://localhost:9091/api/v1/series --data-urlencode 'match[]=up' | jq -r '.data | length'
+CONTROL_EXIT: 0
+--- CONTROL OUTPUT ---
+[{"metric":{},"value":[1785153639.199,"9"]}]
+7
+--- WHY THIS CONTROL ---
+Two things could produce an empty result: the metric is absent, or the selector matches nothing.
+Control arm 1 removes the selector and returns 9 — the metric exists and is carrying the nine dead
+webhook messages. Control arm 2 proves the /api/v1/series endpoint itself returns data (7 `up`
+series), so the single-series answer above is a real measurement and not a broken endpoint.
+--- NOT USABLE AS EVIDENCE ---
+promtool is NOT installed on this host and `docker run prom/prometheus promtool` exits 1 (the image
+ENTRYPOINT is /bin/prometheus). Do not cite promtool. The live evaluator reporting health=ok on a
+rule that matches nothing is the stronger form of the same point, and is what is recorded above.
