@@ -1,8 +1,10 @@
 package uk.jtoye.core.media;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.product.dto.ProductDto;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MediaAssetDtoMappingTest {
 
+    /**
+     * A cutoff far in the past, so no fixture is incidentally {@code delayed} — the delayed
+     * boundary is exercised deliberately in its own two tests below, never as a side effect.
+     */
+    private static final OffsetDateTime NO_DELAY_CUTOFF = OffsetDateTime.now().minusYears(1);
+
     private MediaAsset asset(MediaAsset.Status status, boolean flagged, String failureReason) {
         MediaAsset a = new MediaAsset();
         a.setId(UUID.randomUUID());
@@ -31,9 +39,16 @@ class MediaAssetDtoMappingTest {
         return a;
     }
 
+    /** {@code createdAt} is {@code @CreationTimestamp} with no setter — set it directly for the fixture. */
+    private MediaAsset createdAt(MediaAsset a, OffsetDateTime when) {
+        ReflectionTestUtils.setField(a, "createdAt", when);
+        return a;
+    }
+
     @Test
     void pendingAssetMapsProcessingStatus() {
-        MediaAssetDto dto = MediaAssetDto.from(asset(MediaAsset.Status.PENDING, false, null), null, null);
+        MediaAssetDto dto = MediaAssetDto.from(
+                asset(MediaAsset.Status.PENDING, false, null), null, null, NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.PENDING);
         assertThat(dto.flagged()).isFalse();
         assertThat(dto.failureReason()).isNull();
@@ -43,9 +58,49 @@ class MediaAssetDtoMappingTest {
     @Test
     void failedAssetCarriesFailureReason() {
         MediaAssetDto dto = MediaAssetDto.from(
-                asset(MediaAsset.Status.FAILED, false, "could not decode image"), null, null);
+                asset(MediaAsset.Status.FAILED, false, "could not decode image"), null, null, NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.FAILED);
         assertThat(dto.failureReason()).isEqualTo("could not decode image");
+    }
+
+    // --- 27-01 / D-10: the two DERIVED bits, at their exact boundaries ----------------------
+
+    @Test
+    void redrivableIsTrueOnlyWhileTheQuarantineBytesAreStillRetained() {
+        // Claimed and not yet reclaimed -> the bytes are on disk, Re-process can work.
+        MediaAsset retained = asset(MediaAsset.Status.FAILED, false, "dispatch stalled");
+        retained.setQuarantineExpiresAt(OffsetDateTime.now().plusHours(72));
+        assertThat(MediaAssetDto.from(retained, null, null, NO_DELAY_CUTOFF).redrivable())
+                .as("retained bytes are re-drivable").isTrue();
+
+        // Reclaimed (swept, or discarded by a worker validation veto) -> nothing left to re-process.
+        MediaAsset reclaimed = asset(MediaAsset.Status.FAILED, false, "not an image");
+        reclaimed.setQuarantineExpiresAt(OffsetDateTime.now().plusHours(72));
+        reclaimed.setQuarantineReclaimedAt(OffsetDateTime.now());
+        assertThat(MediaAssetDto.from(reclaimed, null, null, NO_DELAY_CUTOFF).redrivable())
+                .as("the sentinel is the negation of redrivable").isFalse();
+
+        // Never claimed (every pre-V60 row, and every V53-backfilled ACTIVE asset).
+        assertThat(MediaAssetDto.from(asset(MediaAsset.Status.FAILED, false, "old"), null, null, NO_DELAY_CUTOFF)
+                .redrivable()).as("a never-claimed asset has no retained bytes").isFalse();
+    }
+
+    @Test
+    void delayedIsTrueOnlyForAPendingAssetOlderThanTheCutoff() {
+        OffsetDateTime cutoff = OffsetDateTime.now().minusMinutes(15);
+
+        MediaAsset stalled = createdAt(asset(MediaAsset.Status.PENDING, false, null), cutoff.minusMinutes(1));
+        assertThat(MediaAssetDto.from(stalled, null, null, cutoff).delayed())
+                .as("a PENDING asset older than the cutoff has visibly stalled").isTrue();
+
+        MediaAsset fresh = createdAt(asset(MediaAsset.Status.PENDING, false, null), cutoff.plusMinutes(1));
+        assertThat(MediaAssetDto.from(fresh, null, null, cutoff).delayed())
+                .as("a PENDING asset inside the grace is still legitimately in flight").isFalse();
+
+        // Status is load-bearing too: an OLD failure is not "taking longer than usual".
+        MediaAsset oldFailure = createdAt(asset(MediaAsset.Status.FAILED, false, "veto"), cutoff.minusHours(4));
+        assertThat(MediaAssetDto.from(oldFailure, null, null, cutoff).delayed())
+                .as("only PENDING can be delayed — a FAILED asset is terminal, not slow").isFalse();
     }
 
     @Test
@@ -53,7 +108,8 @@ class MediaAssetDtoMappingTest {
         MediaAssetDto dto = MediaAssetDto.from(
                 asset(MediaAsset.Status.ACTIVE, true, null),
                 "http://minio/jtoye-images/t/media/x.webp",
-                "http://minio/jtoye-images/t/media/x_thumb.webp");
+                "http://minio/jtoye-images/t/media/x_thumb.webp",
+                NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.ACTIVE);
         assertThat(dto.flagged()).as("flagged-ACTIVE surfaces the needs-review bit").isTrue();
         assertThat(dto.url()).isEqualTo("http://minio/jtoye-images/t/media/x.webp");
@@ -66,7 +122,7 @@ class MediaAssetDtoMappingTest {
     void cleanActiveAssetMapsActiveUnflagged() {
         MediaAssetDto dto = MediaAssetDto.from(
                 asset(MediaAsset.Status.ACTIVE, false, null),
-                "http://minio/.../x.webp", "http://minio/.../x_thumb.webp");
+                "http://minio/.../x.webp", "http://minio/.../x_thumb.webp", NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.ACTIVE);
         assertThat(dto.flagged()).isFalse();
     }
@@ -76,7 +132,7 @@ class MediaAssetDtoMappingTest {
         // IMG-04 contract: the product DTO exposes the per-entry media list AND keeps the
         // legacy flat imageUrl/imageUrls during the dual-read window (D-03a — no removal this phase).
         MediaAssetDto primary = MediaAssetDto.from(asset(MediaAsset.Status.ACTIVE, false, null),
-                "http://minio/.../p.webp", "http://minio/.../p_thumb.webp");
+                "http://minio/.../p.webp", "http://minio/.../p_thumb.webp", NO_DELAY_CUTOFF);
         ProductDto product = new ProductDto();
         product.setImageUrl("http://minio/.../flat.jpg");
         product.setAdditionalImageUrls(List.of("http://minio/.../g1.jpg"));

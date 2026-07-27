@@ -37,18 +37,27 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     List<MediaAsset> findStalePending(@Param("cutoff") OffsetDateTime cutoff);
 
     /**
-     * The vendor review/rejection queue selection (IMG-03, 24-05): the assets that need
-     * vendor attention — a {@code FAILED} upload (rejection reason + re-upload) OR a
-     * {@code flagged} {@code ACTIVE} asset (content-relevance review: Keep/Replace) —
-     * newest first. In-flight {@code PENDING} and clean {@code ACTIVE} assets are
-     * excluded (nothing to review). Tenant-scoped by the RLS wall (the request thread
-     * pins the tenant GUC), so another tenant's rows are invisible.
+     * The vendor review/rejection queue selection (IMG-03, 24-05; widened by 27-01 / D-10): the
+     * assets that need vendor attention — a {@code FAILED} upload (rejection reason + re-upload),
+     * a {@code flagged} {@code ACTIVE} asset (content-relevance review: Keep/Replace), OR a
+     * {@code PENDING} asset older than {@code delayCutoff} — newest first. Clean {@code ACTIVE}
+     * and freshly-{@code PENDING} assets are excluded (nothing to review yet). Tenant-scoped by
+     * the RLS wall (the request thread pins the tenant GUC), so another tenant's rows are invisible.
+     *
+     * <p>The third disjunct is the D-10 widening. A stalled upload used to be visible ONLY as an
+     * inline spinner on the one product page it was uploaded from — so a vendor whose dispatch path
+     * was unhealthy had no surface that said so. It now appears in the queue alongside the failures.
+     * {@code delayCutoff} is {@code now - jtoye.media.reaper-grace-ms}: the same threshold the
+     * reaper uses to call a PENDING row stalled, so the queue and the reaper agree on "stalled".
+     *
+     * @param delayCutoff PENDING assets created before this instant are stalled and included
      */
     @Query("SELECT a FROM MediaAsset a "
             + "WHERE a.status = uk.jtoye.core.media.MediaAsset.Status.FAILED "
             + "OR (a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE AND a.flagged = true) "
+            + "OR (a.status = uk.jtoye.core.media.MediaAsset.Status.PENDING AND a.createdAt < :delayCutoff) "
             + "ORDER BY a.createdAt DESC")
-    List<MediaAsset> findReviewQueue();
+    List<MediaAsset> findReviewQueue(@Param("delayCutoff") OffsetDateTime delayCutoff);
 
     /**
      * The retention sweep's candidate selection (V60, 27-01 / D-03) — quarantine objects whose
