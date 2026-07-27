@@ -61,17 +61,26 @@ findings, the four plan defects, and the open finding below.
 
 ---
 
-## 3. IMMEDIATE NEXT STEPS
+## 3. STATE: PR OPEN, AWAITING MERGE
 
-1. **Commit `27-00-SUMMARY.md` and this HANDOFF.md** (they are the only dirty files).
-2. **Decide on the PR.** Nothing is pushed. `.planning/` commits should be filtered out of the
-   PR branch — use `/gsd-pr-branch`. Note §7: `main`'s CI is **already red** on a cause
-   unrelated to this branch, so a PR opened now will show red until the two CI variables are set.
-3. **Decide the open finding in §4** — it is a real fail-open in a gate this project relies on.
-4. Then Phase 27 continues by wave: `27-01` media durability (wave 1, the P0 upload-loss defect)
-   · `27-04` throughput + guards (wave 2, now unblocked — it has its msg/s/consumer number)
+**PR #314** — https://github.com/Bralabee/JToye_OaaS_2026/pull/314
+Head `feature/27-00-ops-spine-pr` (the `.planning/`-filtered branch), base `main`.
+**CI fully green**: 13 pass, 4 skipped (deploy/build jobs do not run on PRs, which is why the
+§7 frontend blocker did not fire here). 21 files, +3668 / −259.
+
+Both branches are pushed. `feature/27-00-ops-spine` is the full history including `.planning/`;
+`-pr` is the filtered branch built by cherry-pick, verified to have **0** planning files and a
+**0-line** non-planning diff against the source branch.
+
+### Next
+
+1. **Merge #314 when ready** — `gh pr merge 314 --squash --delete-branch`. Left deliberately to
+   a human. After merging, delete the local `-pr` branch too.
+2. Phase 27 continues by wave: `27-01` media durability (wave 1, the P0 upload-loss defect)
+   · `27-04` throughput + guards (wave 2, **now unblocked** — it has its msg/s/consumer number)
    · `27-03` failure visibility (wave 3 — **turns both red gates green**) · `27-02` broker
    upgrade + `27-06` CI wiring (wave 4).
+3. Still open and independent of Phase 27: §7 (the CI variables + the domain decision) and §8.
 
 ---
 
