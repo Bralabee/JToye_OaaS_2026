@@ -1,17 +1,27 @@
-# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–4 of 6 done and pushed
+# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–5 of 6 done and pushed
 
-> **Update (new session, 2026-07-27 evening): 27-01 Task 4 is COMPLETE and pushed.**
-> Commits `a94ce77` (implementation), `fbfedb9` (AC-4.5 test rewrite), `9501630` (OpenAPI snapshot),
-> `17dca23` (the arms record). Branch is **0 behind** `origin/main` (`9d6ce8c`), tree clean.
-> **Resume at Task 5** (plan line ~1420) — the frontend DELAYED affordance.
-> Read **§3c** below first: Task 4 produced three findings, one of which (AC-4.3) withdrew a
-> criterion the plan stated but that is not implementable.
+> **Update (2026-07-27 evening): 27-01 Tasks 4 AND 5 are COMPLETE and pushed** (`c78072d`).
+> Branch is **0 behind** `origin/main` (`9d6ce8c`), 20 ahead, tree clean.
+> **ONLY TASK 6 REMAINS** (plan line ~1514) — metrics reconcile, full Java suite, terminal-states
+> rows, runtime parity.
+>
+> | Task | Commits |
+> |---|---|
+> | 4 | `a94ce77` impl, `fbfedb9` AC-4.5 rewrite, `9501630` OpenAPI snapshot, `17dca23` arms |
+> | 5 | `3c23bb7` impl, `033e162` AC-5.5 browser spec, `c78072d` arms |
+>
+> Read **§3c** (Task 4) and **§3d** (Task 5) before continuing — between them they withdrew or
+> corrected **four** criteria the plan states but that cannot fail as written.
+>
+> **The stack was rebuilt during Task 5** and runtime parity is currently GREEN
+> (`check-runtime-freshness.sh` → `PASS: 4 running built service(s) match the source tree`).
+> Task 6 must re-run it after any further source change.
 >
 > Earlier in this handoff: PR #315 is MERGED (`9d6ce8c`) — `runcheck.sh` is on `main` at
 > `.planning/phases/27-operational-maturity/baselines/runcheck.sh`. Task 3 is COMPLETE
 > (`7d216c4`, `e99efb7`, `c69f373`, `fb4b77d`); §3a/§3b still worth reading.
 
-**Generated:** 2026-07-27; last updated by the session that executed 27-01 **Task 4**.
+**Generated:** 2026-07-27; last updated by the session that executed 27-01 **Tasks 4 and 5**.
 **Supersedes** the 27-00 handoff. Its §5/§7/§8/§9 content is still live and carried forward below —
 do not lose it.
 
@@ -22,7 +32,7 @@ do not lose it.
 | | |
 |---|---|
 | Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | **`feature/27-01-media-durability`** — **0 behind** `origin/main` (`9d6ce8c`); 16 ahead as of `17dca23`, **pushed** |
+| Branch | **`feature/27-01-media-durability`** — **0 behind** `origin/main` (`9d6ce8c`); 20 ahead as of `c78072d`, **pushed** |
 | Working tree | clean |
 | Other branch | `docs/27-00-planning-artifacts` → PR #315 **MERGED** |
 | Stack | Compose up, healthy (`jtoye-redis-exporter` unhealthy — pre-existing, unrelated) |
@@ -34,38 +44,25 @@ cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git switch feature/27-01-media-durability
 ```
 
-### Gate state at handoff (real output, measured at close of Task 4)
+### Gate state at handoff (real output, measured at close of Task 5)
 
 ```
-scripts/check-branch-behind-base.sh   rc=0   16 ahead, 0 behind (base 9d6ce8c) at 17dca23
+scripts/check-branch-behind-base.sh   rc=0   20 ahead, 0 behind (base 9d6ce8c) at c78072d
 scripts/docs-freshness.sh             rc=1   <- EXPECTED MID-PLAN. Task 6 owns metrics.json.
-scripts/check-runtime-freshness.sh    rc=1   <- EXPECTED MID-PLAN. See below.
+scripts/check-runtime-freshness.sh    rc=0   <- GREEN: Task 5 rebuilt core-java + frontend
 scripts/check-terminal-states.sh      rc=1   <- still correct until 27-03
 scripts/check-alert-liveness.sh       rc=1   <- still correct until 27-03
 ```
 
-**All four rc=1 are correct right now. None is a regression. Do not "fix" any of them.**
+**The three remaining rc=1 are correct right now. None is a regression. Do not "fix" any of them.**
 
-- `docs-freshness` — `metrics.json` is deliberately NOT updated mid-plan; Task 5 will move the
-  numbers again. **Task 6 writes it once.** Baseline to compute deltas from is the REAL
-  `origin/main`: **1765 / 1182 / 207**, *not* the plan's stale `1759 / 1176 / 206`.
-  Measured drift after Task 4 (`docs-freshness.sh` output, verbatim):
-  ```
-  manifest:  java_test_methods 1182  java_test_files 207  schema_version 59  total 1765
-  computed:  java_test_methods 1226  java_test_files 212  schema_version 60  total 1809
-  ```
-  i.e. **+44 Java methods / +5 files** across Tasks 1–4, and `schema_version` already reads V60.
-  The plan's Task 6 table predicted `+28 / +3`; state the ACTUALS and let `--write` arbitrate.
-- `check-runtime-freshness` — verbatim:
-  ```
-  core-java  DRIFT  [image-not-rebuilt]  image tagged 2026-07-27 11:07:34 UTC
-                    / newest build-input commit fb4b77d (2026-07-27 17:20:51 UTC)
-  ```
-  This is the gate doing its job: Java source changed and the container was not rebuilt. **Task 6
-  owns the rebuild + parity proof** (`docker compose ... up -d --build core-java` — `start` does not
-  rebuild — then read the value out of the running fat jar, not the filesystem).
+- `docs-freshness` — `metrics.json` is deliberately NOT updated mid-plan. **Task 6 writes it once**;
+  the full measured table (manifest vs computed vs what the plan predicted) is in §4 below.
+- `check-runtime-freshness` is now **rc=0**: Task 5 rebuilt `core-java` and `frontend` because
+  AC-5.5 needed a real browser against real code. Parity was proven BY CONTENT, not by timestamp —
+  see §4. It will go stale again the moment Task 6 changes source.
 
-### Test state at close of Task 4 (counts read from `build-local/test-results/`, not from "BUILD SUCCESSFUL")
+### Test state at close of Task 5 (counts read from `build-local/test-results/`, not from "BUILD SUCCESSFUL")
 
 ```
 ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.media.*'
@@ -77,14 +74,24 @@ scripts/check-alert-liveness.sh       rc=1   <- still correct until 27-03
 ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
     --tests 'uk.jtoye.core.security.*' --tests '*ScopedCatalogAccess*' --tests '*GateStrictness*'
   -> classes=22  tests=118 failures=0 errors=0 skipped=0
+
+cd frontend && npx jest --ci
+  -> Test Suites: 62 passed, 62 total   Tests: 419 passed, 419 total
+
+cd frontend && npm run build
+  -> ✓ Compiled successfully   (rc 0)
+
+cd frontend && npx playwright test --project=mobile media-review-320.spec
+  -> 1 passed   (AC-5.5, against the REBUILT stack)
 ```
 
-The third run was deliberate: `trap_scope_gate_integrationtest_regression` says a new
+The security run was deliberate: `trap_scope_gate_integrationtest_regression` says a new
 `@PreAuthorize` gate has repeatedly broken *existing* integrationTests, and Task 4 adds one
 (`POST /{assetId}/reprocess`). **It did not fire this time.** That is NOT a substitute for Task 6's
 full-suite run — it covers the auth surface only.
 
-**The FULL suite has still NOT been run since Task 1.** Task 6 owns it.
+**The FULL Java suite has still NOT been run since Task 1.** Task 6 owns it. The frontend suite HAS
+been run in full (above).
 
 ---
 
@@ -231,7 +238,53 @@ goal ("so the mapping stays testable"): the derivation is a pure, Spring-free tr
 the exact boundary by `MediaAssetDtoMappingTest`, rather than only end-to-end. AC-4.8's break
 ("hardcode `redrivable` to `false`") applies one file over and was run — RED at **both** layers.
 
-## 4. WHERE TO RESUME — 27-01 Task 5
+## 3d. Task 5 — DONE. Two criteria were found VACUOUS and corrected before being trusted
+
+Full record: **`.planning/phases/27-operational-maturity/baselines/AC-5-TASK5-ARMS.md`**
+(screenshots in `baselines/ac55-screenshots/`). Commits `3c23bb7`, `033e162`, `c78072d`.
+
+**Finding 1 — AC-5.5's stated assertion cannot detect the defect it guards.** The plan specifies
+`document.documentElement.scrollWidth <= 320` and predicts `≈380` under the break. Measured under the
+break: **`scrollWidth` is 320** — it *passes* on a visibly clipped layout. The dashboard shell nests
+content in `overflow-y-auto` inside `overflow-hidden`, and those absorb the overflow before it
+reaches the document element:
+```
+PROBE docEl.scrollWidth  = 320                  <-- the plan's assertion, GREEN on a broken page
+PROBE row overflow       = { scrollWidth: 408, clientWidth: 238 }
+PROBE re-process box     = { x: 249, width: 200 }   -> right edge 449, far past the 320 viewport
+PROBE clipping ancestors = [ MAIN overflowX=auto, DIV overflowX=hidden ]
+```
+The check that actually fires is **per-control**: each action's `x + width <= 320`, which reported
+`449`. Both are kept (whole-page overflow is a different, real defect) but the per-control one is
+load-bearing and the plan did not specify it. **Generalise: in this app shell, never assert layout
+overflow via `documentElement.scrollWidth` — measure the control's own box.**
+
+**Finding 2 — the first AC-5.5 break arm was a FALSE GREEN, and its confirming marker was vacuous.**
+`docker compose up -d --build frontend` leaves the OLD container running **and healthy** while the
+new image builds, so a wait-loop polling `Health=healthy` returns immediately and the test runs
+against the pre-break image (rc=0). The marker used to "confirm" the rebuild —
+`grep -rl 'flex-nowrap' /app/.next` — matched in **both** directions, because Tailwind emits that
+utility class regardless of whether the component uses it. Fixed by polling on a marker present
+**only** in the broken build (`min-w-[200px]`, asserted to be 0 files on the restored image).
+
+**Finding 3 — AC-5.4's "`tsc --noEmit` count unchanged" clause is unsatisfiable.** jest-dom's type
+augmentation is not wired into `tsconfig.json`, so every `expect(...).toBeInTheDocument()` counts as
+one error: 368 → 378, **all ten in the identical pre-existing class**, no new class. The count is a
+monotonic function of how many jest-dom assertions exist, so it can only stay "unchanged" if a task
+adds zero test assertions. Recorded, not silently substituted; the load-bearing half (`npm run build`
+exits 0, **proven capable of failing** — `next.config.mjs` carries no `ignoreBuildErrors`) is green.
+Wiring jest-dom into `tsconfig` would make this a real gate and is a flagged follow-up.
+
+**Finding 4 — `git stash -u` is unsafe in this repo.** Used for a baseline measurement, it
+half-failed on root-owned untracked paths under `infra/monitoring/` (`Permission denied`): the stash
+entry was created but the checkout never completed, and `git stash pop` then refused with *"local
+changes would be overwritten"*. The tree was left holding the edits beside a duplicate stash — one
+step from `trap_break_arm_revert_eats_fixes`. Resolved by diffing `git diff` against
+`git stash show -p` (byte-identical → redundant), then committing and dropping.
+**Use `git worktree add --detach <path> <ref>` for baseline measurements** (symlink
+`frontend/node_modules` in so `tsc` runs).
+
+## 4. WHERE TO RESUME — 27-01 Task 6 (the last task)
 
 ### Do this first (2 minutes, expected outcomes stated)
 
@@ -244,42 +297,65 @@ If it reports *behind*, `git merge origin/main --no-edit` before doing anything 
 behind its base ships a runtime missing already-merged work and no rebuild fixes it.
 
 Then read, in this order:
-1. `.planning/phases/27-operational-maturity/27-01-PLAN.md` **lines 1420–1512** (Task 5 only).
-2. §3c above, then §3a/§3b — the findings that change how you write criteria in this codebase.
+1. `.planning/phases/27-operational-maturity/27-01-PLAN.md` **lines 1514–1665** (Task 6 only).
+2. §3c and §3d above — four withdrawn/corrected criteria you must not re-derive.
 3. §5 traps, especially trap 1 (it cost three fixes in this plan).
 
-### The wire contract Task 5 consumes (shipped and proven — do not re-derive it)
+### Numbers Task 6 needs — MEASURED, not predicted
 
-`MediaAssetDto` now ends with two derived booleans. Both are in `docs/api/openapi-snapshot.json`.
+`docs-freshness.sh` computed-from-source at the close of Task 5 (manifest still un-written; the
+gate is correctly rc=1 until Task 6 runs `--write`):
 
-| field | true when | UI meaning |
-|---|---|---|
-| `redrivable` | `quarantine_expires_at IS NOT NULL AND quarantine_reclaimed_at IS NULL` | the original bytes are still on disk → offer **Re-process** |
-| `delayed` | `status == PENDING` and older than `jtoye.media.reaper-grace-ms` (15 min) | the upload has visibly stalled → replace the spinner |
+```
+                        origin/main   computed now    plan predicted
+java_test_methods            1182          1226          1204
+java_test_files               207           212           209
+jest_blocks                   416           424           422
+playwright_blocks              42            43            (not in the plan)
+playwright_specs               12            13            (not in the plan)
+schema_version                 59            60            60
+total_logical_invocations    1765          1818          1793
+```
 
-- `POST /api/v1/media/{assetId}/reprocess` → **202** `{assetId, status}`. Requires an
-  `Idempotency-Key` header (reuse `ImageUploader`'s generator — do not re-implement).
-- The three 409s carry a machine-parseable `code`, which Task 5's error toast must surface
-  verbatim rather than a generic message: `media.quarantine_not_retained`, `media.already_active`,
-  `media.redrive_budget_exhausted`.
-- `GET /api/v1/media/review-queue` now also returns stalled PENDING rows (D-10), so `ReviewQueue.tsx`
-  will receive a status it has never rendered before. That is the M4 surface.
+**The plan's predicted deltas are all short.** State the ACTUALS and let `docs-freshness.sh --write`
+arbitrate — do NOT try to reconcile to the plan's table. Two notes:
+- `playwright_blocks`/`specs` moved because Task 5 added `frontend/e2e/media-review-320.spec.ts`;
+  the plan's Task 6 table does not mention Playwright at all.
+- `jest_blocks` **424** ≠ jest's runtime `419 tests`. The gate counts literal `it(`/`test(` tokens
+  (`trap_docs_freshness_block_counter`), which is not the number executed. Both are recorded.
+- `CLAUDE.md:15` and `AGENTS.md:15` quote the totals and must change in the SAME commit.
 
-### Task 5 in one paragraph
+### Runtime parity is currently GREEN — but it will go stale if you touch source
 
-`frontend/types/api.ts` gains `redrivable`/`delayed` on `MediaAsset`; `frontend/lib/media-api.ts`
-gains `reprocessAsset(assetId)`. `asset-image.tsx`'s PENDING branch splits: `!delayed` keeps the
-existing spinner **byte-for-byte**, `delayed` renders an amber `role="status"` card ("Taking longer
-than usual" + a **Check again** control). Its FAILED branch keeps **Re-upload** unchanged
-(Incremental Betterment — it is the working good) and adds **Re-process** as a secondary action only
-when `redrivable`. `ReviewQueue.tsx` gets the same treatment plus optimistic removal and a 409 toast
-carrying the RFC 7807 `code`. AC-5.5 requires a **real browser at 320 px against the running Compose
-stack** — the plan explicitly REMOVED the "if the stack is unavailable, mark DEFERRED" escape, so if
-the stack is down that criterion is **VOID (exit 2) and the plan is not done**.
+Task 5 rebuilt `core-java` and `frontend`. Verified BY CONTENT, not by timestamp:
 
-Remaining after Task 5: **Task 6** — metrics reconcile, full suite, terminal-states rows, runtime
-parity. Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines); Task 5 at
-**line ~1420**, Task 6 at **line ~1514**.
+```
+check-runtime-freshness.sh -> PASS: 4 running built service(s) match the source tree (0 unverified)
+unzip -p /app/app.jar BOOT-INF/classes/uk/jtoye/core/media/MediaController.class | strings | grep -c reprocess  -> 4
+unzip -p /app/app.jar BOOT-INF/classes/application.yml | grep -c quarantine-retention-ms                        -> 2
+curl -s localhost:9090/v3/api-docs | grep -c 'media/{assetId}/reprocess'                                        -> 1
+```
+AC-6.5 can be discharged against this — **re-run it, do not assume it**, and note the container name
+is `jtoye_oaas_2026-core-java-1` (resolve with `ps -q core-java`, never hardcode).
+
+### AC-5.5's dev-DB fixtures are still seeded — leave them or the spec cannot re-run
+
+Three rows keyed `…/quarantine/ac55-fixture-*` in the demo tenant
+(`00000000-0000-0000-0000-000000000001`). The seeding SQL is in `AC-5-TASK5-ARMS.md`. There is also a
+**pre-existing** real FAILED `.gif` in that tenant with no retained bytes — the AC-5.5 spec derives
+its counts from the page precisely so that unrelated dev data cannot break it.
+
+### What Task 6 still owes
+
+- `docs-freshness.sh --write` + `CLAUDE.md`/`AGENTS.md` counts, in one commit.
+- The **full** Java suite (`cleanTest`/`cleanIntegrationTest` are load-bearing — read counts from
+  `build-local/test-results/`, never `core-java/build/`). Only the media package + the auth surface
+  have been run so far.
+- AC-6.3 (Go asserted not-run), AC-6.4 (branch not behind base), AC-6.5 (runtime parity),
+  AC-6.7 (terminal-states register rows — **VOID if 27-00's `docs/ops/terminal-states.yaml` is
+  absent**; it landed, so it should be checkable).
+- The plan says `./gradlew :core-java:updateOpenApiSnapshot` again — Task 4 already regenerated and
+  committed it (`9501630`). Re-run to confirm it is still clean rather than assuming.
 
 ### Task 6 correction you must carry
 
