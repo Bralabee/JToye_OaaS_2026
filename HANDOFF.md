@@ -75,22 +75,25 @@ findings, the four plan defects, and the open finding below.
 
 ---
 
-## 4. OPEN FINDING — fail-open in `check-runtime-freshness.sh` (needs a decision)
+## 4. FIXED — fail-open in `check-runtime-freshness.sh`
 
-The gate VOIDs only when **zero** built services are verifiable (`:431`). Stop one of four and
-the stopped, unproven service is reported as `1 unverified` **inside a PASS** (`:445`). Measured:
+Found by AC-6.12, fixed on user direction as a scope extension. The gate used to VOID only when
+**zero** built services were verifiable, so stopping one of four printed `PASS: 3 … match
+(1 unverified)` and exited **0**. It now VOIDs when **any** built service is unverifiable.
 
 ```
-docker stop jtoye-prometheus             -> rc=0   (not a BUILT service — out of scope entirely)
-docker stop <core-java container>        -> rc=0   PASS: 3 ... match (1 unverified)
---compose-file w/ no running container   -> rc=2   VOID, not passing     <- the branch does work
+correct, fully-running tree     -> rc=0   PASS: 4 ... (0 unverified)
+docker stop jtoye-mcp-server    -> rc=2   1 of 4 could not be verified — VOID, not passing
+CONTROL: VERIFIED=3 SKIPPED=1   -> the old condition (VERIFIED==0) was false, so the old code
+                                   took the PASS branch and exited 0 on that exact state
+restored                        -> rc=0
 ```
 
-This contradicts the project's own rule that these gates "fail closed … on a stopped stack —
-'found nothing' is never 'clean'". Per-service, it does not. **Recorded, deliberately NOT
-changed** — it is a Phase-26 deliverable and changing a CI gate's exit semantics was outside
-Task 6's scope. Either make it VOID when *any* built service is unverifiable, or say in the
-header that the guarantee is only "at least one built service was checked".
+Also worth keeping: `docker stop jtoye-prometheus` still exits 0 — prometheus is **not a built
+service** and this gate scopes to built services, so the plan's named break arm was always
+vacuous. Drift still outranks VOID (a runtime known stale beats one that could not be
+evaluated). **No bypass flag** was added; a deliberate subset run scopes itself with
+`--compose-file`.
 
 ---
 
