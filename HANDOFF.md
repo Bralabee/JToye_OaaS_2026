@@ -53,6 +53,30 @@ Two flagged follow-ups from Task 6, neither blocking:
   passing spec. Fix by removing the hardcoded port from the prose, not by swapping the literal.
 - Wire jest-dom into `tsconfig.json` so AC-5.4's type-error count becomes a real gate.
 
+### Housekeeping addendum (2026-07-27, ~21:30) — one REAL defect found after the PR was opened
+
+**`npm run lint` was failing (rc=1) with a `react-hooks/rules-of-hooks` ERROR introduced by Task 5**,
+and it would have failed the CI **Lint** job on PR #316. Fixed in **`38cfb3e`**, pushed.
+
+```
+before: 29 problems (1 error,  28 warnings)  rc=1
+after:  28 problems (0 errors, 28 warnings)  rc=0     <- warnings unchanged; nothing suppressed
+```
+
+**Why every gate this plan ran stayed green through it:** `npm run build` (tsc) does not run eslint,
+and neither does jest. Build rc=0 and 419/419 passing were both true while a CI-only gate was red.
+Task 5 verified with build + jest and never replayed `npm run lint`. **Add `npm run lint` to the
+per-task frontend verification** — it is the only gate that catches this class.
+
+Also this session, outside the repo:
+- **Three abandoned `until ! pgrep -f "X"` shells** were found alive after ~20 h — each matched its
+  own command line so could never exit. Killed. Now blocked at source by
+  `~/.claude/hooks/block-unbounded-waitloop.sh` (+ `reap-stale-shells.sh` for strays), backed up in
+  **dotfiles PR #42**. Recorded in memory as `trap-pgrep-self-match-waitloop`.
+- **Toolchain drift surfaced, deliberately NOT applied** (housekeeping surfaces, it does not
+  converge): `conda 26.1.1 → 26.5.3`, `ms-fabric-cli 1.2.0 → 1.6.1`; `antigravity` is **UNKNOWN**
+  (manual channel — unanswerable by probe, which is *not* a pass and needs a manual check).
+
 **Generated:** 2026-07-27; last updated by the session that executed 27-01 **Tasks 4 and 5**.
 **Supersedes** the 27-00 handoff. Its §5/§7/§8/§9 content is still live and carried forward below —
 do not lose it.
