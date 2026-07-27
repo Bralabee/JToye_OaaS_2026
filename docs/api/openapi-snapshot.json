@@ -1794,6 +1794,9 @@
             "format" : "uuid",
             "type" : "string"
           },
+          "delayed" : {
+            "type" : "boolean"
+          },
           "failureReason" : {
             "type" : "string"
           },
@@ -1803,6 +1806,9 @@
           "height" : {
             "format" : "int32",
             "type" : "integer"
+          },
+          "redrivable" : {
+            "type" : "boolean"
           },
           "status" : {
             "enum" : [
@@ -5467,6 +5473,106 @@
           }
         ],
         "summary" : "Keep a flagged asset (dismiss the content flag)",
+        "tags" : [
+          "Media Review"
+        ]
+      }
+    },
+    "/api/v1/media/{assetId}/reprocess" : {
+      "post" : {
+        "description" : "Re-runs the normalization pipeline over the RAW bytes the vendor already uploaded — offered while media_asset.redrivable is true (the quarantine object is still retained, within jtoye.media.quarantine-retention-ms). Returns 202 with the asset back in PENDING; the client polls for PENDING -> ACTIVE/FAILED. This is NOT Replace: different bytes are a re-upload through POST /api/v1/products/{id}/image. Carries the uniform Idempotency-Key contract, so a retried click never enqueues twice. Tenant-scoped: a foreign assetId is 404, never 403 (no cross-tenant oracle).",
+        "operationId" : "reprocess",
+        "parameters" : [
+          {
+            "description" : "Media asset ID",
+            "in" : "path",
+            "name" : "assetId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "202" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Accepted — the asset is back in PENDING and re-queued"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Missing Idempotency-Key or malformed request"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Missing catalog:write scope or shop-role access"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Asset not found in the caller's tenant"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Bytes no longer retained (media.quarantine_not_retained), the asset is already ACTIVE (media.already_active), the re-process budget is exhausted (media.redrive_budget_exhausted), or an Idempotency-Key request is still in progress"
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different body"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Re-process a stalled or failed upload from its retained bytes",
         "tags" : [
           "Media Review"
         ]
