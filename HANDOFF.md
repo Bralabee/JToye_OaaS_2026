@@ -1,7 +1,8 @@
-# Handoff: Phase 27 (Operational Maturity) — 7 plans written, audited twice, fixed; ready to register & execute
+# Handoff: Phase 27 (Operational Maturity) — planning MERGED, 27-05 EXECUTED & MERGED; 6 plans remain
 
-**Generated:** 2026-07-27 · Supersedes the 2026-07-26 handoff; its still-valid content is preserved
-in §7–§9. **Nothing is committed.**
+**Generated:** 2026-07-27 (updated after the 27-05 execution session) · Supersedes the earlier
+"ready to register & execute" handoff; its still-valid content is preserved throughout.
+**Everything described here is committed and merged to `main`.**
 
 ---
 
@@ -10,20 +11,26 @@ in §7–§9. **Nothing is committed.**
 | | |
 |---|---|
 | Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | `feature/phase-26-local-k8s-overlay` @ `78eaa99` — **merged, dead, 6 behind** |
-| `origin/main` | `213e06f` |
-| Uncommitted | `M docs/DOCUMENTATION_INDEX.md`, `M docs/analysis/README.md`; untracked: `.planning/phases/27-operational-maturity/`, `HANDOFF.md`, `docs/analysis/MESSAGING-BROKER-EVALUATION-2026-07-26.md`, `docs/architecture/decisions/ADR-0003-messaging-broker-selection.md` |
-| Stack | 16 `jtoye-*` containers up; broker `3.12.14`; Prometheus host port **9091** |
+| Branch | `main` — the Phase 27 branches were merged and **deleted** |
+| `origin/main` | `2d5486d` (planning #309) on top of `2f8eeca` (27-05 fix #310) |
+| Uncommitted | none — working tree clean |
+| Stack | Compose up and **runtime-fresh** (all 4 built services PASS `check-runtime-freshness.sh`); broker `3.12.14`; Prometheus host port **9091** |
 | minikube `jtoye` | **Stopped, not deleted.** compose XOR k8s — never both (shared dev DB) |
-| Metrics | `origin/main` = **1759 / 1176 / V59**. This branch = 1736 / 1157 (stale) |
+| Metrics | `origin/main` = **1765 / 1182 / V59** (rebaselined by 27-05's guard suite) |
 
 ```bash
-git fetch origin && git switch -c feature/phase-27-operational-maturity origin/main
+git fetch origin && git switch -c feature/<next-plan> origin/main
 ```
 
-**Verified: the 6 unmerged commits touch nothing Phase 27 depends on** (`git diff --stat
-HEAD..origin/main` over media/, `RabbitMQConfig.java`, `OrderStateChangeListener.java`,
-`core-java/src/main/resources/`, `infra/monitoring/`, compose, `k8s/` → **empty**).
+**Phase 27 status: 1 of 7 plans executed.**
+
+| Plan | Wave | State |
+|---|---|---|
+| **27-05** webhook converter | 1 | ✅ **MERGED** — `2f8eeca` (#310) |
+| 27-00 spine · 27-01 media durability | 1 | not started |
+| 27-04 throughput + guards | 2 | not started |
+| 27-03 failure visibility | 3 | not started — **unblocked by 27-05** |
+| 27-02 broker upgrade · 27-06 CI wiring | 4 | not started — **unblocked by 27-05** |
 
 ---
 
@@ -60,8 +67,8 @@ for f in 27-0*-PLAN.md; do k=${f:0:5}; for x in $(grep -m1 '^depends_on:' "$f"|g
 
 | # | Defect | Proof |
 |---|---|---|
-| 1 | **Outbound webhooks have NEVER worked.** `RabbitMQConfig.java:385-387` builds `new Jackson2JsonMessageConverter()` with no trusted packages, so `DefaultJackson2JavaTypeMapper` rejects `uk.jtoye.core.*`. It bites only `WebhookFanoutListener` — the sole class-level `@RabbitListener` + `@RabbitHandler` listener, where multi-method dispatch **must** resolve `__TypeId__`. **100% of outbound webhooks dead-lettered since Phase 22.** Owned by **27-05** | `docker logs`: `IllegalArgumentException: … not in the trusted packages: [java.util, java.lang]` |
-| 2 | **The producer is LIVE.** `webhook.deliveries.dlq` depth 9; oldest x-death `2026-07-15T11:46:18Z`, newest `2026-07-26T15:33:51Z`; ~5 arrivals/day. **Never assert depth == 9** | mgmt API peek, `ackmode=reject_requeue_true`, depth re-asserted after |
+| 1 | ~~**Outbound webhooks have NEVER worked.**~~ ✅ **FIXED — `2f8eeca` (#310).** Cause was `new Jackson2JsonMessageConverter()` with no trusted packages, biting only `WebhookFanoutListener` (the sole class-level `@RabbitListener` + `@RabbitHandler`, where dispatch **must** resolve `__TypeId__`). **Trap for anyone touching this:** Spring AMQP matches trusted packages by exact `String.equals` on the package name — `"uk.jtoye.core"` does **NOT** cover `uk.jtoye.core.order`, and `"uk.jtoye.core.*"` matches nothing. Packages are allowlisted individually in `RabbitMQConfig.TRUSTED_PAYLOAD_PACKAGES`, guarded by `RabbitMQConfigMessageConverterTest` | Verified both directions on the running stack: DLQ delta **0** with the fix, **+1** with it reverted and rebuilt |
+| 2 | **The producer is LIVE, and the 9 dead letters are still there — deliberately.** `webhook.deliveries.dlq` depth **9**, left byte-identical by 27-05 (payloads, `x-death`, `__TypeId__` all preserved). **27-03 archives them; 27-02 adjudicates replay-vs-discard.** New events no longer dead-letter, so the queue should now be **static**, not growing. **Never assert depth == 9** — assert the delta | mgmt API peek, `ackmode=reject_requeue_true`, depth re-asserted after |
 | 3 | **Database monitoring is blind.** `DatabaseDown` uses `up{job="postgres"}` = **1**; `pg_up` = **0** and is referenced by no rule. **Two faults**: `show ssl` → `off` while the DSN at `docker-compose.monitoring.yml:118` is `sslmode=…:-require` (deterministic, confirmed); DNS is **unproven** (the 2026-05-05 log lines predate the current run — `StartedAt=2026-07-25`, `logs --since 30m` empty). Fix sslmode first, then re-read `pg_up` | live query |
 | 4 | **11 of 14 alerts defective**: 6 dataless (scrape targets `core-java:9091`, dev serves `${SERVER_PORT:9090}`), 2 evaluating **Keycloak's** JVM while labelled `service: core-java`, 1 dataless from `pg_up`, 1 reporting healthy on a blind signal. Includes `TenantIsolationFailure` | targets API; `count by (job)(jvm_memory_used_bytes)` → keycloak only |
 | 5 | **`ServiceDown` fired 32+ h and nobody knew** — `activeAt 2026-07-25T13:01:41.425388701Z`, delivered to `ops@jtoye.local` via **Mailhog**, a dev sink. `.env` Slack keys are **PLACEHOLDER**, and never reach the container (`environment:` block has no SLACK entry) | `/api/v1/alerts` |
@@ -164,9 +171,13 @@ docker exec jtoye_oaas_2026-core-java-1 sh -c \
 shop-gate — 27-04), **#304**, **#205** (webhooks — **27-05 owns the comment; do not post a diagnosis
 from any other plan**), **#209**.
 
-**Suites at last full local run** (on the #308 branch, now `main`): `:core-java:test` 111/**792** ·
-`:core-java:integrationTest` 98/**392**/1 skip (39m56s) · jest 62/**411** · `npm run build` exit 0 ·
-`docs-freshness` exit 0 at **1759**. Not re-run this session.
+**Suites at last full local run** (2026-07-27, during the 27-05 execution, on what is now `main`):
+`:core-java:test` 112/**798** 0 fail · `:core-java:integrationTest` 98/**392**/1 skip (38m40s) 0 fail ·
+`npm run lint` **0 errors** (29 warnings, pre-existing baseline) · `edge-go` `go test -race ./...`
+all pass · `docs-freshness` exit 0 at **1765**. Both runtime-parity gates PASS.
+
+**`cleanTest` is load-bearing** — a run without it reported `BUILD SUCCESSFUL in 1s` while executing
+nothing. Always `:core-java:cleanTest :core-java:test`, and confirm the result-XML mtimes advanced.
 
 ---
 
@@ -184,16 +195,23 @@ from any other plan**), **#209**.
 
 ## 9. Resume instructions
 
-1. `git fetch origin && git switch -c feature/phase-27-operational-maturity origin/main`
-2. Re-apply the four doc changes (§1 uncommitted list). Expect `docs-freshness.sh` exit 0 at **1759**.
+1. `git fetch origin && git switch -c feature/<next-plan> origin/main`. **Do NOT recreate
+   `feature/phase-27-operational-maturity`** — it was merged and deleted; an earlier version of this
+   file told you to create it, and following that now would redo merged work.
+2. Expect `docs-freshness.sh` exit **0 at 1765** (not 1759 — 27-05's guard suite rebaselined it).
 3. Read `.planning/phases/27-operational-maturity/drafts/REVISION-BRIEF.md` — binding, and it records
-   six places where the brief itself was wrong.
-4. **Capture the RED baselines BEFORE any edit** (§3 rows 1–6, plus the 4 missing runbook headings and
-   the 6 EOL pins). Unreproducible afterwards without deliberately re-breaking the tree.
-5. Register the phase: **`/gsd-phase`** — `.planning/ROADMAP.md` has no Phase 27 entry, and the
-   requirement IDs must come from registration (every plan ships `requirements: []` deliberately).
-6. Execute by wave (§2). 27-05 first within wave 1 if you want the webhook outage closed soonest.
+   six places where the brief itself was wrong. Read `27-05-EVIDENCE.md` too: it records **three
+   defects in 27-05's own plan** found by running the fail direction, including a prescribed fix that
+   did not work. Expect the same class of problem in the remaining plans.
+4. **Capture the RED baselines BEFORE any edit** (§3 rows 3–6, plus the 4 missing runbook headings and
+   the 6 EOL pins). Unreproducible afterwards without deliberately re-breaking the tree. Row 1 is
+   done; row 2's baseline is now "depth 9, static".
+5. ~~Register the phase~~ — **done** (`eb5c8c6`, OPS-01..OPS-05 in `.planning/ROADMAP.md`).
+6. Execute the remaining 6 plans by wave (§2). Wave 1 remainder: 27-00, 27-01.
 7. Decide Phase 27 vs `/qa-council` ordering (§7).
+
+**Sequencing note for 27-03:** its `DeadLetterQueueNonEmpty` baseline is **9 and static**, not 0 and
+growing. The alert must not be written assuming an empty queue until 27-02 disposes of the batch.
 
 **Do not** hand-run `state.record-session` (recorded trap: corrupts `STATE.md` mid-plan). `STATE.md`
 still reads `status: phase-complete`, v2.3 6/6 — untouched by this session.
