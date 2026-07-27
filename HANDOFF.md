@@ -34,30 +34,33 @@ git fetch origin && git switch -c feature/<next-plan> origin/main
 | 27-03 failure visibility | 3 | not started — **unblocked by 27-05** |
 | 27-02 broker upgrade · 27-06 CI wiring | 4 | not started — **unblocked by 27-05** |
 
-### 1a. Environment breakage found by housekeeping — NOT fixed, deliberately
+### 1a. Environment: `gsd-sdk` was broken — now FIXED (2026-07-27)
 
-**`gsd-sdk` is broken on this machine.** `~/.npm/_npx/` was pruned, so the global link
-`$(npm root -g)/@gsd-build/sdk` → `~/.npm/_npx/4db0de1f85c3165e/.../get-shit-done-cc/sdk` is a
-**dangling symlink**. `gsd-sdk` is not on PATH, and `doctor.sh` reports it permanently `UNKNOWN`
-(its `npx-linked` probe `readlink -f`s the link, so the path degrades to `/../package.json`).
+`~/.npm/_npx/` had been pruned, leaving the global link `$(npm root -g)/@gsd-build/sdk` **dangling**,
+so `gsd-sdk` was off PATH and `doctor.sh` reported `get-shit-done-cc` permanently `UNKNOWN`.
+Repaired with `npx -y get-shit-done-cc@latest --global`. Now: `gsd-sdk v1.42.3` on PATH, doctor
+reports **OK**, unanswerable rows 2 → 1 (the remaining one is `antigravity`, `channel: manual`,
+UNKNOWN by design). Recorded in dotfiles `cac3956` (#40) and `1039ffe` (#41).
 
-*Not* repaired inside housekeeping, on purpose. The documented fix
-(`npx -y get-shit-done-cc@latest --global`, per `~/dotfiles/CLAUDE_TROUBLESHOOTING.md` §5) installs
-**@latest** — an upgrade, not a repair — and `~/dotfiles/claude/.claude/gsd-patches/` holds **4
-patches + `reapply.sh`** that an upgrade would clobber. Sequence when you do it:
+**The repair was a reinstall, not an upgrade** — hooks and all 67 skills were already at 1.42.3.
+Verified byte-identical to a pre-install backup afterwards.
 
-```bash
-npx -y get-shit-done-cc@latest --global     # upgrades 67 skills
-~/dotfiles/claude/.claude/gsd-patches/reapply.sh
-~/dotfiles/toolchain/doctor.sh --write-lock  # then commit the lock on a feature branch → PR
-```
+Three things it taught, all of which will recur:
 
-**Impact is small**: the 67 `gsd-*` skills are standalone files and work fine, and this project
-already has `context_window: 1000000` in `.planning/config.json` — the one thing `gsd-sdk` is
-documented for. It only bites when setting up a **new** GSD project.
+1. **A GSD reinstall overwrites `~/.claude/get-shit-done/workflows/`.** `execute-phase.md` and
+   `execute-plan.md` carry local `runtime_parity_gate` and `falsifiability_requirement` steps that
+   exist nowhere upstream — the rules that make phase gates catch anything. The reinstall wiped
+   them; the installer saved them to `~/.claude/gsd-local-patches/` and printed a warning that is
+   easy to miss. **They are now tracked in `~/dotfiles/claude/.claude/get-shit-done/workflows/`.**
+2. **The installer pins hook commands to an exact nvm node path** (`v22.23.1`, upstream #2979).
+   **Any nvm node upgrade silently kills every GSD hook** — re-run the install after a node bump.
+   `sync-claude` templates `$HOME` but cannot de-pin a version.
+3. **The 4 `gsd-patches` were obsolete and are gone** (`1039ffe`). Upstream 1.42.3 added
+   `# gsd-hook-version:` headers to the three `.sh` hooks and rewrote the stale-check out of
+   `gsd-check-update.js` entirely. All 4 had stopped applying in either direction.
 
-Other toolchain drift, report-only: conda `26.1.1`→`26.5.3`, ms-fabric-cli `1.2.0`→`1.6.1` (the
-latter belongs to the AIMS project, not this one).
+Remaining toolchain drift, report-only and untouched: conda `26.1.1`→`26.5.3`, ms-fabric-cli
+`1.2.0`→`1.6.1` (the latter belongs to the AIMS project, not this one).
 
 ---
 
