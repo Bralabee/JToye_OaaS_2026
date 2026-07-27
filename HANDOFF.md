@@ -29,19 +29,43 @@ cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git switch feature/27-01-media-durability
 ```
 
-### Gate state at handoff (real output)
+### Gate state at handoff (real output, measured at close)
 
 ```
-scripts/check-branch-behind-base.sh   rc=0   3 ahead, 0 behind
+scripts/check-branch-behind-base.sh   rc=0   11 ahead, 0 behind (base 9d6ce8c)
 scripts/docs-freshness.sh             rc=1   <- EXPECTED MID-PLAN. Task 6 owns metrics.json.
-                                             committed 1182/207/59/1765
-                                             computed  1206/210/60/1789
+scripts/check-runtime-freshness.sh    rc=1   <- EXPECTED MID-PLAN. See below.
 scripts/check-terminal-states.sh      rc=1   <- still correct until 27-03
 scripts/check-alert-liveness.sh       rc=1   <- still correct until 27-03
 ```
 
-**Do not "fix" `docs-freshness` by running `--write` and committing on its own.** It is Task 6's
-job, and Tasks 3–5 will move the numbers again.
+**All four rc=1 are correct right now. None is a regression. Do not "fix" any of them.**
+
+- `docs-freshness` — `metrics.json` is deliberately NOT updated mid-plan; Tasks 4–5 will move the
+  numbers again. **Task 6 writes it once.** Baseline to compute deltas from is the REAL
+  `origin/main`: **1765 / 1182 / 207**, *not* the plan's stale `1759 / 1176 / 206`.
+- `check-runtime-freshness` — verbatim:
+  ```
+  core-java  DRIFT  [image-not-rebuilt]  image tagged 2026-07-27 11:07:34 UTC
+                    / newest build-input commit fb4b77d (2026-07-27 17:20:51 UTC)
+  ```
+  This is the gate doing its job: Java source changed and the container was not rebuilt. **Task 6
+  owns the rebuild + parity proof** (`docker compose ... up -d --build core-java` — `start` does not
+  rebuild — then read the value out of the running fat jar, not the filesystem).
+
+### Test state at close (real output)
+
+```
+./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.media.*'
+  -> BUILD SUCCESSFUL   unit media:  tests=36 failures=0 errors=0
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.media.*'
+  -> BUILD SUCCESSFUL   integ media: tests=56 failures=0 errors=0
+```
+
+**The FULL suite has NOT been run since Task 1** — only the media package. Task 6 must run the whole
+thing, because `trap_scope_gate_integrationtest_regression` says a new `@PreAuthorize` gate has
+repeatedly broken *existing* integrationTests, and Task 4 adds one.
 
 ---
 
@@ -147,6 +171,47 @@ the VOID arm then fires with `VOID: the app datasource is not the downgraded rol
 arm on every guard you write.**
 
 ## 4. WHERE TO RESUME — 27-01 Task 4
+
+### Do this first (2 minutes, expected outcomes stated)
+
+```bash
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+git switch feature/27-01-media-durability     # expect: clean tree, 0 unpushed
+git fetch origin && bash scripts/check-branch-behind-base.sh   # expect rc=0, 0 behind
+```
+If it reports *behind*, `git merge origin/main --no-edit` before doing anything else — a branch
+behind its base ships a runtime missing already-merged work and no rebuild fixes it.
+
+Then read, in this order:
+1. `.planning/phases/27-operational-maturity/27-01-PLAN.md` **lines 1284–1418** (Task 4 only).
+2. §3a and §3b above — three findings that change how you write criteria in this codebase.
+3. §5 traps, especially trap 1 (it cost three fixes in this plan).
+
+### Task 4 in one paragraph
+
+`POST /api/v1/media/{assetId}/reprocess` → `202` + `MediaAcceptDto`. Requires retained bytes
+(`quarantine_expires_at IS NOT NULL AND quarantine_reclaimed_at IS NULL`), `status <> ACTIVE`, and
+`process_attempts < max-process-attempts` (the property already exists, default 3). Sets
+`status → PENDING`, `process_attempts += 1`, `failure_reason → NULL`, `flagged → false`, and inserts
+a fresh outbox row **in the same tx**. Mirror `MediaController.keep` exactly for authorization:
+`@PreAuthorize("hasAuthority('SCOPE_catalog:write')")` **plus** the VSA-02
+`shopAccessService.require(resolveOwningShopId(asset), SHOP_MANAGER)` applied **after** the RLS
+`findById`, so a foreign asset is a 404 and never a 403 oracle. Carries the uniform
+`Idempotency-Key` contract via `IdempotencyService.execute("media.reprocess", …)` and RFC 7807
+errors. Plus the derived `delayed`/`redrivable` DTO bits and the review-queue widening (D-10), and
+regenerate `docs/api/openapi-snapshot.json`.
+
+### Groundwork Task 4 can rely on (already shipped and proven)
+
+| Thing | Where | State |
+|---|---|---|
+| `process_attempts`, `quarantine_expires_at`, `quarantine_reclaimed_at` | V60 | applied, Envers-mirrored |
+| `maxProcessAttempts` / `quarantineRetentionMs` / `retentionIntervalMs` / `claimLockTimeoutMs` | `MediaProperties` + `application.yml` | 5 keys, env-contract gate green |
+| `redrivable` semantics | `expires_at IS NOT NULL AND reclaimed_at IS NULL` | one column pair, three writers, all proven |
+| worker claim lock | `lockForProcessing` + `SET LOCAL lock_timeout` | makes the manual re-drive safe (D-04) |
+| `failRetainingBytes` vs `failAndDiscard` | `MediaProcessingWorker` | D-07 split, both proven |
+
+
 
 Plan: `.planning/phases/27-operational-maturity/27-01-PLAN.md` (1926 lines). Task 4 starts at
 **line ~1284**. Remaining: Tasks 4, 5, 6 — plus AC-3.6 (§3b).
