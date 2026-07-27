@@ -95,6 +95,12 @@ states:
     name: payment_event_outbox poison
     kind: outbox_poison
     locator: "core-java/src/main/resources/db/migration/V46__outbox_reliability.sql:24"
+    covers:
+      # The poison FLAG is defined in the migration (the locator); the terminal
+      # FAILED status it pairs with lives on the entity. D-3 discovers the entity
+      # constant, so the row must account for that file too or X-1 reports an
+      # undetected terminal state that is in fact this one.
+      - "core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutbox.java#FAILED"
     what_stops: "A payment event that failed to publish enough times to be marked poison. It will never be retried, so the same ledger divergence as TS-02 occurs — but silently inside Postgres, with no queue to inspect."
     owner: maintainer
     detection:
@@ -111,6 +117,8 @@ states:
     name: media_event_outbox poison
     kind: outbox_poison
     locator: "core-java/src/main/resources/db/migration/V58__media_event_outbox.sql:29"
+    covers:
+      - "core-java/src/main/java/uk/jtoye/core/media/MediaEventOutbox.java#FAILED"
     what_stops: "A media event that failed to publish enough times to be marked poison. The upload pipeline never starts for that asset, so the vendor's image is stuck exactly as in TS-04 — with no queue entry to find it by."
     owner: maintainer
     detection:
@@ -127,6 +135,8 @@ states:
     name: media_asset FAILED
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java:44"
+    covers:
+      - "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java#FAILED"
     what_stops: "A vendor's uploaded image, permanently. UNRECOVERABLE BY RETRY: the reaper deletes the quarantined object from storage BEFORE flipping the row to FAILED (MediaPendingReaper.java:79 calls storageService.deleteByKey, then sets FAILED), so the bytes are gone. A broker outage longer than reaperGraceMs (900_000 ms) destroys every upload in flight, and the vendor is told only that processing failed."
     owner: maintainer
     detection:
@@ -144,6 +154,8 @@ states:
     name: webhook_delivery FAILED
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:43"
+    covers:
+      - "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java#FAILED"
     what_stops: "One outbound webhook delivery, terminally. The vendor's system never learns that this specific order, refund or status change happened — and because delivery is per-event, their data diverges from the platform's by exactly the events that failed."
     owner: maintainer
     detection:
@@ -161,6 +173,8 @@ states:
     name: webhook_subscription AUTO_PAUSED
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookSubscription.java:46"
+    covers:
+      - "core-java/src/main/java/uk/jtoye/core/webhook/WebhookSubscription.java#AUTO_PAUSED"
     what_stops: "EVERY future event for one vendor subscription, not just the failed one. The worker flips the subscription to AUTO_PAUSED after sustained delivery failure (WebhookDeliveryWorker.java:229) and nothing tells the vendor. Their integration goes permanently quiet and they discover it from missing data, not from an error."
     owner: maintainer
     detection:
