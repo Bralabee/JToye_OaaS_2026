@@ -66,6 +66,22 @@ public class MediaProperties {
     private long reaperGraceMs = 900_000;
 
     /**
+     * How long a {@link MediaProcessingWorker} waits to acquire the {@code SELECT … FOR UPDATE}
+     * claim on an asset row before giving up, in milliseconds (27-01 / D-04a). Applied as
+     * {@code SET LOCAL lock_timeout} on the worker transaction's own connection.
+     *
+     * <p>Bounds the resources a BLOCKED loser holds — an AMQP consumer thread and a Hikari
+     * connection (prod {@code maximum-pool-size: 10}) — for the duration of the winner's whole
+     * pipeline. A timed-out loser dead-letters a no-op message, because the winner's committed row
+     * makes it a {@code not_pending} skip anyway.
+     *
+     * <p>Not {@code NOWAIT} (0): that would convert every benign same-asset redelivery race into an
+     * immediate exception, removing the small legitimate window in which a loser would have
+     * acquired and cleanly skipped. 10 s absorbs that window; 0 s does not.
+     */
+    private long claimLockTimeoutMs = 10_000;
+
+    /**
      * Advisory vision (content-relevance) stage config (IMG-03). Disabled by
      * default — the Ollama provider is unreliable, so the pipeline ships behind
      * this advisory flag (SPEC / CONTEXT D-04, stage 6).
@@ -95,6 +111,9 @@ public class MediaProperties {
 
     public long getReaperGraceMs() { return reaperGraceMs; }
     public void setReaperGraceMs(long reaperGraceMs) { this.reaperGraceMs = reaperGraceMs; }
+
+    public long getClaimLockTimeoutMs() { return claimLockTimeoutMs; }
+    public void setClaimLockTimeoutMs(long claimLockTimeoutMs) { this.claimLockTimeoutMs = claimLockTimeoutMs; }
 
     public Vision getVision() { return vision; }
     public void setVision(Vision vision) { this.vision = vision; }

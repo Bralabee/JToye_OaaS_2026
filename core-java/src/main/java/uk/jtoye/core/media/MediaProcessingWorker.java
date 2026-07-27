@@ -39,6 +39,37 @@ import java.util.UUID;
  * table). The worker re-reads the asset by id and SKIPs if it is no longer
  * {@code PENDING} — a redelivered event on an already-ACTIVE/FAILED asset is a no-op.
  *
+ * <p><b>Claim lock (27-01 / D-04).</b> That re-read is now a CLAIM:
+ * {@link MediaAssetRepository#lockForProcessing} takes {@code SELECT … FOR UPDATE} on the asset
+ * row. A second worker on the same asset <em>blocks</em>, then re-reads the first worker's
+ * COMMITTED row, sees {@code ACTIVE}/{@code FAILED} and takes the {@code not_pending} skip — so
+ * exactly one worker ever runs the pipeline for one asset. Without it, the only interlock was the
+ * status check, which an in-flight worker has not yet invalidated: both workers would
+ * {@code putBytes} the same derivative key and both run {@code placeAsset}, whose
+ * {@code releaseAsset} physically deletes the displaced asset at ref-count 0, and the loser of the
+ * {@code @Version} race (V59) would escape as {@code ObjectOptimisticLockingFailureException} into
+ * the retry advice and on to {@code media.process.dlq}.
+ *
+ * <p>This is correct <b>only under READ COMMITTED</b> — Spring's default, and a load-bearing
+ * dependency. Under REPEATABLE READ the loser would instead abort with a serialization failure:
+ * also safe, but a different outcome, so do not raise the isolation level without revisiting this.
+ * The claim also makes the D-06 human re-drive safe, closing the window where the reaper flips
+ * FAILED, the vendor presses Re-process, and a slow original worker still finds the row PENDING.
+ *
+ * <p><b>The claim wait is BOUNDED (D-04a).</b> {@code SET LOCAL lock_timeout =
+ * jtoye.media.claim-lock-timeout-ms} (default 10 s) is issued on this transaction's own connection
+ * immediately before the claim. Worst-case hold by the WINNER, at shipped defaults: one S3/MinIO
+ * GET (&le; 5 MB), one CPU-bound normalize (sniff, bomb guard, decode, EXIF strip, resize, WebP
+ * encode), two S3/MinIO PUTs, a DB flush and one S3 DELETE — seconds, not minutes; plus 30 s when
+ * {@code MEDIA_VISION_ENABLED=true}, bounded only by Ollama's explicit reactive timeout. A blocked
+ * loser holds BOTH an AMQP consumer thread and a Hikari connection (prod
+ * {@code maximum-pool-size: 10}) for that whole duration — unreachable in-process at today's
+ * concurrency 1, but 27-04 raises {@code media.process} concurrency onto that same scarce pool,
+ * which is why the bound is declared rather than merely described. A timed-out loser fails with
+ * Postgres {@code 55P03}, exhausts the retry advice and dead-letters — and that is a <b>no-op
+ * message, not lost work</b>, because by then the winner's committed row makes it a
+ * {@code not_pending} skip anyway.
+ *
  * <p><b>Pipeline stages (RESEARCH diagram a-j):</b> (a) read the quarantine bytes;
  * (b-e) {@link MediaNormalizer#normalize} sniffs the magic bytes, header-guards the
  * decompression bomb, decode-verifies, strips EXIF via re-decode and resizes;
@@ -99,10 +130,19 @@ public class MediaProcessingWorker {
                 stmt.setString(1, event.tenantId().toString());
                 stmt.execute();
             }
+            // D-04a: bound the claim wait on THIS transaction's own connection — the same
+            // session.doWork seam that pins the tenant GUC, so SET LOCAL dies with the
+            // transaction exactly as the GUC pin does. Issued BEFORE the claim below.
+            // Deliberately not a JPA @QueryHint: Postgres has no `FOR UPDATE WAIT n`, the
+            // dialect honours only NOWAIT/SKIP LOCKED, so a hint would be silently ignored.
+            try (var stmt = connection.createStatement()) {
+                stmt.execute("SET LOCAL lock_timeout = " + mediaProperties.getClaimLockTimeoutMs());
+            }
         });
 
         try {
-            MediaAsset asset = mediaAssetRepository.findById(event.assetId()).orElse(null);
+            // D-04 CLAIM: SELECT ... FOR UPDATE, not a plain findById. See the class javadoc.
+            MediaAsset asset = mediaAssetRepository.lockForProcessing(event.assetId()).orElse(null);
             if (asset == null) {
                 log.warn("event=media_process_skipped reason=asset_not_visible asset={} tenant={}",
                         event.assetId(), event.tenantId());
