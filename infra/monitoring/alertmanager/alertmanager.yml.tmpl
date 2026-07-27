@@ -23,6 +23,7 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
+__SLACK_ROUTE_BLOCK__
 
 receivers:
   - name: email-default
@@ -41,5 +42,6 @@ receivers:
           <p><b>Service:</b> {{ .Labels.service }}</p>
           <p><b>Started:</b> {{ .StartsAt }}</p>
           {{ end }}
+__SLACK_RECEIVER_BLOCK__
 
 inhibit_rules: []

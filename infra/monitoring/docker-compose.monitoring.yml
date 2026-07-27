@@ -90,6 +90,13 @@ services:
       - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-alerts@jtoye.local}
       - ALERTMANAGER_SMTP_TO=${ALERTMANAGER_SMTP_TO:-ops@jtoye.local}
       - ALERTMANAGER_SMTP_REQUIRE_TLS=${ALERTMANAGER_SMTP_REQUIRE_TLS:-false}
+      # Slack (phase 27, additive — email remains the default route). WITHOUT
+      # THESE TWO LINES the template and entrypoint changes are completely
+      # INERT: verified before the fix, the container received only the four
+      # ALERTMANAGER_SMTP_* vars, so a fully-configured .env reached nothing.
+      # A placeholder-shaped URL is treated as unset by entrypoint.sh.
+      - ALERTMANAGER_SLACK_WEBHOOK_URL=${ALERTMANAGER_SLACK_WEBHOOK_URL:-}
+      - ALERTMANAGER_SLACK_CHANNEL=${ALERTMANAGER_SLACK_CHANNEL:-}
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
       - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
