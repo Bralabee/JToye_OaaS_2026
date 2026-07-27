@@ -31,7 +31,21 @@ FROM eclipse-temurin:21-jre-alpine
 # are glibc-linked and will NOT exec on this Alpine (musl) image — the apk
 # package is musl-native. The JVM is pointed at it via the
 # -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin flag in JAVA_OPTS below.
-RUN apk add --no-cache curl libwebp-tools
+#
+# The `apk upgrade` of libexpat + p11-kit is a security fix, not a convenience.
+# eclipse-temurin:21-jre-alpine ships Alpine 3.23 packages predating their fixes,
+# which the CI Trivy image gate (.github/workflows/ci-cd.yaml, fail on fixable
+# CRITICAL/HIGH) rejects:
+#   libexpat      2.8.1-r0  -> 2.8.2-r0   CVE-2026-56131, CVE-2026-56407, CVE-2026-56408
+#   p11-kit(-trust) 0.25.5-r2 -> 0.26.2-r0  CVE-2026-2100
+# Both fixed versions were confirmed available in the Alpine 3.23 `main` repo
+# before this was written. The packages are NAMED deliberately — a blanket
+# `apk upgrade` would silently move all ~85 packages on every rebuild, making the
+# image non-reproducible and any future CVE regression untraceable. When the
+# Temurin base is respun with these fixes this line becomes a cheap no-op; drop
+# it only after confirming the base image ships >= the versions above.
+RUN apk add --no-cache curl libwebp-tools \
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust
 
 WORKDIR /app
 
