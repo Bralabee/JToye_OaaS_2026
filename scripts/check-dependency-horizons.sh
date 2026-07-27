@@ -316,6 +316,13 @@ for r in rows:
     elif owner == "UNASSIGNED" and not mrev:
         fails.append("H-4 %s: owner is UNASSIGNED with no manual_review — an unowned row must at least be a dated one" % rid)
 
+    # H-1, the direction discovery cannot cover. `out_of_repo` is the ONLY kind allowed to
+    # declare no site, because it is the only one that has no site to declare. Any other row
+    # with empty sites is invisible to BOTH H-1 (nothing discovers it) and H-5 (nothing to
+    # drift-check), which is exactly how a row goes on describing a pin that was deleted.
+    if kind != "out_of_repo" and not (r.get("sites") or []):
+        fails.append("H-1 %s: kind=%s declares NO sites, so neither coverage nor drift can see it — use kind: out_of_repo if it is genuinely not deployed from this repo" % (rid, kind))
+
     mrev_ok = False
     if mrev:
         mexp = parse_date(mrev.get("expires"))
