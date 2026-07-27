@@ -381,9 +381,41 @@ public class RabbitMQConfig {
                 .to(mediaDeadLetterExchange);
     }
 
+    /**
+     * Packages whose types may be resolved from an inbound {@code __TypeId__} header.
+     *
+     * <p><b>These are matched by exact equality, NOT by prefix.</b> Spring AMQP's
+     * {@code DefaultJackson2JavaTypeMapper.isTrustedPackage} compares the payload's package name
+     * with {@code String.equals} against each entry, so {@code "uk.jtoye.core"} would NOT trust
+     * {@code uk.jtoye.core.order.OrderStateChangeEvent}, and {@code "uk.jtoye.core.*"} matches
+     * nothing at all. Every package contributing a {@code @RabbitHandler} payload type must be
+     * listed individually. {@code RabbitMQConfigMessageConverterTest} fails the build if a new one
+     * is introduced without being added here — do not rely on catching this at runtime, because
+     * the runtime symptom is a silent dead-letter.
+     */
+    static final String[] TRUSTED_PAYLOAD_PACKAGES = {
+            "uk.jtoye.core.order",
+            "uk.jtoye.core.payment",
+            "uk.jtoye.core.onboarding",
+    };
+
+    /**
+     * The trusted-package allowlist is load-bearing, not decorative.
+     *
+     * <p>{@code DefaultJackson2JavaTypeMapper} defaults to {@code [java.util, java.lang]}, so
+     * resolving a {@code __TypeId__} header to an application class is rejected. That is invisible
+     * for a single-method {@code @RabbitListener} with a typed parameter — Spring infers the target
+     * type from the method signature and never consults the mapper — but fatal for a class-level
+     * {@code @RabbitListener} + {@code @RabbitHandler} listener, which MUST resolve the type to
+     * select a handler. {@link uk.jtoye.core.webhook.WebhookFanoutListener} is the only such
+     * listener, and every message routed to it dead-lettered from the day it shipped.
+     *
+     * <p>Scoped deliberately: trust-all ({@code "*"}) clears the allowlist entirely and would
+     * restore a deserialization-gadget surface on a broker carrying tenant data.
+     */
     @Bean
     public MessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter();
+        return new Jackson2JsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES);
     }
 
     @Bean

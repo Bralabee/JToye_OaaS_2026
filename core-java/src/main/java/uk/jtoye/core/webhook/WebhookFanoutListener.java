@@ -102,7 +102,16 @@ public class WebhookFanoutListener {
                 event.occurredAt(), event);
     }
 
-    /** Any unexpected payload type is ignored (no dead-letter — this queue has no DLX). */
+    /**
+     * Any unexpected payload type is acknowledged and dropped here, deliberately.
+     *
+     * <p>This queue DOES have a dead-letter exchange ({@link RabbitMQConfig#WEBHOOK_DELIVERIES_DLX}
+     * → {@link RabbitMQConfig#WEBHOOK_DELIVERIES_DLQ}); an earlier version of this comment claimed
+     * it did not, which is how a converter defect that dead-lettered every single message went
+     * unexamined for weeks. Reaching this handler is a no-op by choice — an unrecognised but
+     * well-formed payload is not worth a dead letter — but a payload the converter cannot
+     * deserialize at all never reaches any handler and DOES dead-letter.
+     */
     @RabbitHandler(isDefault = true)
     public void onOther(Object event) {
         log.debug("event=webhook_fanout_ignored type={}",
