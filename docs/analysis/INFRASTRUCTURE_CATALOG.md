@@ -84,11 +84,11 @@ Pre-configured realm (`jtoye-dev`) with:
 - Resource requests and limits
 
 ### Ingress Configuration
-- Hosts: `api.jtoye.co.uk`, `app.jtoye.co.uk`, `auth.jtoye.co.uk`
+- Hosts: `api.olajay.co.uk`, `app.olajay.co.uk`, `auth.olajay.co.uk`
 - TLS: cert-manager + Let's Encrypt
 - Rate limiting: 100 RPS per IP, 5x burst, 50 concurrent connections
 - Security headers: HSTS, X-Frame-Options (DENY), X-Content-Type-Options (nosniff), CSP, Referrer-Policy
-- CORS: Enabled for app.jtoye.co.uk
+- CORS: Enabled for app.olajay.co.uk
 - Timeouts: 60s (connect, send, read)
 
 ### Environment Overlays

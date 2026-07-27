@@ -311,8 +311,8 @@ services:
         # so they must be baked at build time (the runtime `environment:` block below
         # cannot reach the client bundle). Dev defaults keep the REJECTED/SUSPENDED
         # support exit working out-of-the-box; override in `.env` per environment.
-        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@jtoye.co.uk}
-        NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL:-https://help.jtoye.co.uk/onboarding}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@olajay.co.uk}
+        NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL:-https://help.olajay.co.uk/onboarding}
         NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS: ${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS:-2}
     container_name: jtoye-frontend
     restart: unless-stopped

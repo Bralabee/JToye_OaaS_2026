@@ -1,0 +1,19 @@
+# Staging hostname for the SSE Ingress. Companion to ingress-hosts-patch.yaml —
+# see that file for the full defect writeup and for why these are JSON6902 ops
+# rather than a strategic merge patch (IngressSpec.rules has no patchMergeKey, so a
+# merge would replace the list and drop the backends).
+#
+# The SSE Ingress publishes only the API host; it shares the staging TLS secret with
+# the main Ingress, exactly as base shares one secret between its two Ingresses.
+- op: replace
+  path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
+  value: "https://app-staging.olajay.co.uk"
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: api-staging.olajay.co.uk
+- op: replace
+  path: /spec/tls/0/secretName
+  value: jtoye-staging-tls
+- op: replace
+  path: /spec/rules/0/host
+  value: api-staging.olajay.co.uk

@@ -57,7 +57,7 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
-    # Public 443 for Keycloak (auth.jtoye.co.uk) + image CDNs + S3 public URLs
+    # Public 443 for Keycloak (auth.olajay.co.uk) + image CDNs + S3 public URLs
     # See 15-RESEARCH.md §4 — Stripe CIDR tradeoff; we use 0.0.0.0/0 with narrow
     # port scoping. A future egress-proxy pod is the defense-in-depth option.
     - to:

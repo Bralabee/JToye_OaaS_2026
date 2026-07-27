@@ -480,7 +480,7 @@ spec:
               name: postgres-credentials
               key: password
         - name: KC_ISSUER_URI
-          value: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+          value: "https://auth.olajay.co.uk/realms/jtoye-prod"
         - name: REDIS_HOST
           value: "redis-cluster.jtoye-infrastructure.svc.cluster.local"
         - name: RABBITMQ_HOST
@@ -603,17 +603,17 @@ metadata:
     nginx.ingress.kubernetes.io/rate-limit: "100"  # 100 req/min per IP
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.jtoye.co.uk"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.olajay.co.uk"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - api.jtoye.co.uk
-    - app.jtoye.co.uk
-    - auth.jtoye.co.uk
+    - api.olajay.co.uk
+    - app.olajay.co.uk
+    - auth.olajay.co.uk
     secretName: jtoye-tls
   rules:
-  - host: api.jtoye.co.uk
+  - host: api.olajay.co.uk
     http:
       paths:
       - path: /
@@ -623,7 +623,7 @@ spec:
             name: core-java
             port:
               number: 9090
-  - host: app.jtoye.co.uk
+  - host: app.olajay.co.uk
     http:
       paths:
       - path: /
@@ -633,7 +633,7 @@ spec:
             name: frontend
             port:
               number: 3000
-  - host: auth.jtoye.co.uk
+  - host: auth.olajay.co.uk
     http:
       paths:
       - path: /
@@ -770,7 +770,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          ./scripts/smoke-test.sh https://api.jtoye.co.uk
+          ./scripts/smoke-test.sh https://api.olajay.co.uk
 
       - name: Rollback on failure
         if: failure()
@@ -1542,7 +1542,7 @@ export let options = {
 
 export default function () {
   // Test: Get shops
-  let res = http.get('https://api.jtoye.co.uk/shops', {
+  let res = http.get('https://api.olajay.co.uk/shops', {
     headers: { 'Authorization': `Bearer ${__ENV.JWT_TOKEN}` },
   });
   check(res, {
@@ -1631,4 +1631,4 @@ export default function () {
 
 **Document Approved By:** [Pending]
 **Next Review:** Q2 2026
-**Contact:** architecture@jtoye.co.uk
+**Contact:** architecture@olajay.co.uk
