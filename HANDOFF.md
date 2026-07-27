@@ -1,25 +1,57 @@
-# Handoff: Phase 27 — 27-00, 27-05 and #315 MERGED; 27-01 Tasks 1–5 of 6 done and pushed
+# Handoff: Phase 27 — 27-00, 27-05, #315 MERGED; **27-01 COMPLETE (all 6 tasks), pushed, no PR yet**
 
-> **Update (2026-07-27 evening): 27-01 Tasks 4 AND 5 are COMPLETE and pushed** (`c78072d`).
-> Branch is **0 behind** `origin/main` (`9d6ce8c`), 21 ahead at `c3b3300`, tree clean, pushed.
-> **ONLY TASK 6 REMAINS** (plan line ~1514) — metrics reconcile, full Java suite, terminal-states
-> rows, runtime parity.
+> **Update (2026-07-27, ~20:55): 27-01 TASK 6 IS COMPLETE. The whole plan is done.**
+> Branch `feature/27-01-media-durability` at **`afd4458`** — **0 behind** `origin/main` (`9d6ce8c`),
+> 25 ahead, tree clean, **pushed**. **No PR has been opened** — that is the next decision, see below.
 >
 > | Task | Commits |
 > |---|---|
 > | 4 | `a94ce77` impl, `fbfedb9` AC-4.5 rewrite, `9501630` OpenAPI snapshot, `17dca23` arms |
 > | 5 | `3c23bb7` impl, `033e162` AC-5.5 browser spec, `c78072d` arms |
+> | 6 | `2ca4a2a` metrics, `20374c0` TS-07/TS-17, `afd4458` arms + **`27-01-SUMMARY.md`** |
 >
-> Read **§3c** (Task 4) and **§3d** (Task 5) before continuing — between them they withdrew or
-> corrected **four** criteria the plan states but that cannot fail as written.
+> **Final gate sweep — every one re-run on the finished tree, all MATCH expected:**
+> ```
+> docs-freshness           rc=0   (1818, written + hand-reconciled)
+> check-branch-behind-base rc=0   (0 behind 9d6ce8c)   <- re-run immediately before any PR
+> check-runtime-freshness  rc=0   (4 built services FRESH, 0 unverified)
+> check-env-contract       rc=0
+> check-render-invariants  rc=0
+> check-terminal-states    rc=1   <- X-3 only, 27-03 owns it. NOT a regression, do NOT "fix".
+> check-alert-liveness     rc=1   <- correct until 27-03. NOT a regression, do NOT "fix".
+> ```
 >
-> **The stack was rebuilt during Task 5** and runtime parity is currently GREEN
-> (`check-runtime-freshness.sh` → `PASS: 4 running built service(s) match the source tree`).
-> Task 6 must re-run it after any further source change.
+> **Full suite, counts read from `build-local/test-results/`:** unit **114 classes / 820 tests**,
+> integration **102 / 414**, both 0 failures 0 errors (40m 05s); jest **62 suites / 419**;
+> `npm run build` rc=0; AC-5.5 Playwright **1 passed** in a real browser against the running stack.
+> Both Java suites BEAT the plan's floor (~104/767, ~98/392).
 >
-> Earlier in this handoff: PR #315 is MERGED (`9d6ce8c`) — `runcheck.sh` is on `main` at
-> `.planning/phases/27-operational-maturity/baselines/runcheck.sh`. Task 3 is COMPLETE
-> (`7d216c4`, `e99efb7`, `c69f373`, `fb4b77d`); §3a/§3b still worth reading.
+> **Read `.planning/phases/27-operational-maturity/27-01-SUMMARY.md` first** — it supersedes §3a–§3d
+> below and lists **eight** criteria across the plan that could not fail as written, four of them
+> found in Task 6 alone.
+>
+> Earlier: PR #315 MERGED (`9d6ce8c`); `runcheck.sh` is on `main`.
+
+---
+
+## 0. WHERE TO RESUME — the PR decision, then 27-02/27-03
+
+**27-01 needs nothing further.** The next action is a judgement call that was deliberately left open:
+
+1. **Open the PR for 27-01?** Not done, because `main`'s pipeline is **already red** for an unrelated
+   reason (§7: the frontend image build refuses to build with empty `NEXT_PUBLIC_*` build-args, and
+   `gh variable list` is still empty). A PR opened now will go red on a blocker this plan did not
+   cause and cannot fix. Either set the two CI variables first (§7 — needs the **domain decision**,
+   `jtoye.co.uk` is NXDOMAIN) or open the PR knowing that check will fail.
+2. `.planning/` filtering: PR #314 shipped 27-00's code but **none** of its execution record, which is
+   what #315 had to repair. If the same filtered-PR workflow is used here, **`27-01-SUMMARY.md` and
+   `baselines/AC-6-TASK6-ARMS.md` will be dropped again.** Carry them deliberately.
+
+Two flagged follow-ups from Task 6, neither blocking:
+- `frontend/e2e/media-review-320.spec.ts:23` documents `PLAYWRIGHT_BASE_URL=http://localhost:3100`;
+  this stack publishes the frontend on **3000**. Following the comment produces a **false RED** on a
+  passing spec. Fix by removing the hardcoded port from the prose, not by swapping the literal.
+- Wire jest-dom into `tsconfig.json` so AC-5.4's type-error count becomes a real gate.
 
 **Generated:** 2026-07-27; last updated by the session that executed 27-01 **Tasks 4 and 5**.
 **Supersedes** the 27-00 handoff. Its §5/§7/§8/§9 content is still live and carried forward below —
