@@ -1,275 +1,218 @@
-# Handoff: 27-04 — AC-10 written and GREEN, but NOT YET FALSIFIED
+# Handoff: 27-04 COMPLETE — AC-10 falsified, full suite green, runtime fresh
 
-> **UPDATE 2026-07-28 ~18:30 BST — supersedes section 0 below.**
->
-> **Branch:** `feature/27-04-consumer-concurrency` @ `a1c7ad8`, clean, pushed.
-> **It is now ~13 commits BEHIND `origin/main`** (main absorbed #317, #318, #321 and 12 dependabot
-> merges today). Run `git merge origin/main` first; expect conflicts ONLY in `k8s/goldens/*` —
-> those are generated, so resolve with `bash k8s/scripts/render-golden.sh --write`, never by hand.
->
-> **AC-10 now EXISTS** —
-> `core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java`
-> (commit `7b470f2`). It PASSES. **It is not yet evidence, and AC-10 must NOT be marked satisfied.**
-> Three break arms were run and the test passed through all three:
->
-> 1. **Omit the explicit `session.doWork` GUC pin** — the break the plan PRESCRIBES. GREEN.
->    `TenantSetLocalAspect` pins the GUC from `TenantContext` before every repository call, so the
->    explicit pin is redundant. *The plan's own prescribed break arm is vacuous in this codebase.*
-> 2. **`TenantContext.set(randomUUID())`** — GREEN. The explicit `set_config` pins
->    `event.tenantId()` DIRECTLY, not `TenantContext.get()`.
-> 3. **Both pins broken at once** — STILL GREEN. This locates the fault in the harness.
->
-> **NEXT STEP (leading hypothesis):** `ALTER ROLE ... NOSUPERUSER` applies to NEW sessions only, and
-> Hikari has already established its connections — so the workers keep superuser attributes and
-> bypass FORCE RLS, making assertion (a) vacuous. Force the pool to re-establish after the
-> downgrade (evict / soft-evict, or downgrade before the context's first connection), then re-run
-> break arm 3 and **require RED**. Only then is AC-10 satisfied.
->
-> **Genuine finding worth keeping either way:** the worker has **two independent tenant pins** (the
-> aspect via `TenantContext`, and the explicit `set_config` via `event.tenantId()`), so a
-> single-point regression is already tolerated — a stronger property than 27-04's threat model
-> assumed, and why arms 1 and 2 could not fail.
->
-> **Also still required before the PR:** a full `./gradlew :core-java:cleanIntegrationTest
-> :core-java:integrationTest` (~40 min) — it has never run end-to-end on this tree.
->
-> Metrics 1832. All static gates green at handoff.
+**Generated:** 2026-07-28 ~22:50 BST. Supersedes the "AC-10 not yet falsified" handoff.
 
-
-**Generated:** 2026-07-28 ~13:00 BST. Supersedes the 27-01-era handoff that was on this branch.
-NOTE: a *newer* handoff also exists on `feature/domain-olajay` (PR #317) covering the domain move
-and the AKS scoping; its still-open items are carried forward in §7 below.
+**Branch:** `feature/27-04-consumer-concurrency` @ `1c1aeaf` — clean, **0 behind** `origin/main`
+(merged `4774528`, no conflicts). Plan **27-04 is 8/8**.
 
 ---
 
-## 0. WHERE TO RESUME — one thing
+## 0. WHERE TO RESUME
 
-**Write AC-10, the tenant-isolation-under-concurrency test.** It is the only outstanding piece of
-plan 27-04 and it is the plan's *load-bearing security proof* (threat T-27-01, issue **#284**).
-Everything else is done, committed, pushed and proven in both directions.
+**Push and open the PR** (nothing is blocking it), then move to **27-03** (wave 3).
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git switch feature/27-04-consumer-concurrency
-git fetch origin && bash scripts/check-branch-behind-base.sh   # expect rc=0
+git push -u origin feature/27-04-consumer-concurrency
 ```
 
-Spec: `.planning/phases/27-operational-maturity/27-04-PLAN.md` — read **AC-10** and the **T8** block.
-Short version:
-
-- Two tenants' media events interleaved across **concurrent** consumers, Postgres role downgraded
-  `NOSUPERUSER` so RLS is genuinely enforced (see the RLS caveat in
-  `core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java`).
-- Assert **both** halves; (b) is what makes it capable of failing:
-  - (a) no asset is written or read under the wrong tenant;
-  - (b) at the **start of each worker transaction**, on a connection known to have been reused from
-    the Hikari pool, `SELECT current_setting('app.current_tenant_id', true)` returns **empty**.
-- **Break arm = OMIT THE PIN ENTIRELY** on one of the two interleaved consumers (delete its
-  `session.doWork(...)` block in `MediaProcessingWorker`). Do **NOT** use the draft's break of
-  flipping `is_local` to `false`: every worker re-pins before use, so the test passes with `false`
-  and the criterion is vacuous.
-- Missing tooling / unparseable / **EMPTY** result set → exit **2 (VOID)**, never 0.
-
-Why it matters now: before 27-04 a weakened pin would leak on one thread; after it, on N.
+⚠ **`origin/main` is currently RED** and it is **not** caused by this branch — see §5.
 
 ---
 
-## 1. Git & environment
+## 1. What closed this session: AC-10
 
-| | |
+AC-10 is 27-04's load-bearing security proof (T-27-01, issue **#284**). It went from
+"written, green, and worthless" to falsified. Full record:
+`.planning/phases/27-operational-maturity/27-04-EVIDENCE.md`.
+
+### The defect in the test
+
+The previous handoff's leading hypothesis — that `ALTER ROLE … NOSUPERUSER` misses Hikari's
+established sessions, leaving the workers superuser and *bypassing* FORCE RLS — is **REFUTED**. The
+truth was the opposite, and more dangerous: **RLS was working, and its working is what hid the
+evidence.**
+
+`MediaProcessingWorker` returns *without throwing* when RLS hides its row
+(`reason=asset_not_visible`, a WARN and a `return`), so an isolation failure surfaces **only** as a
+row left `PENDING`. The terminal `stillPending` count ran on an **untransacted** connection with no
+tenant GUC — under the downgraded role `current_tenant_id()` is NULL, the policy filters every row,
+and the count is structurally 0. Measured with a probe placed right after the downgrade, when all 12
+seeded assets are provably PENDING and no worker has run:
+
+```
+[VACUITY PROBE: all 12 seeded assets are PENDING and no worker has run]
+expected: 12
+ but was: 0
+```
+
+**Fix:** read back through the tenant-pinned path, per tenant, carrying `status`. The probe is kept
+as a **permanent non-vacuity guard on the instrument** — it must SEE the PENDING rows before the
+test is allowed to conclude anything from their absence.
+
+### The arm matrix — all four run on the real tree
+
+| arm | `TenantContext` | explicit `set_config` | result |
+|---|---|---|---|
+| pass | correct | present | **GREEN** |
+| 1 — *the break the plan prescribes* | correct | **DELETED** | **GREEN** |
+| 2 | **wrong** | present | **RED** |
+| 3 | **wrong** | **DELETED** | **RED** |
+
+Both RED arms fail on the isolation assertion itself, naming all 6 of a tenant's assets.
+
+### Three claims this refutes — do not re-assert them
+
+1. **"Two independent tenant pins."** No. `TenantSetLocalAspect` re-pins from `TenantContext`
+   before every repository call, so it is the **last writer** and **overwrites** a correct explicit
+   pin with a wrong ThreadLocal (arm 2 RED). The pins are **ordered, not redundant**;
+   `TenantContext.set` is the single dominant control. `MediaProcessingWorker`'s javadoc asserted
+   the opposite and is corrected in `0a0b306`.
+2. **The plan's prescribed break arm** ("omit the `session.doWork` pin") is **vacuous** — measured
+   GREEN. Recorded, not silently substituted.
+3. **The plan's expected-RED prediction** that "assertion (b) fails independently" — it did **not**
+   fire in either RED arm. (b) checks `is_local` scoping, which is unaffected by *which* tenant is
+   pinned. Only assertion (a)'s status half fired.
+
+---
+
+## 2. Verification state — all real output, rc captured on its own line
+
+```
+docs-freshness                 rc=0        check-consumer-thread-budget   rc=0
+check-branch-behind-base       rc=0        check-connection-math          rc=0
+check-no-measured-placeholders rc=0        check-env-contract             rc=0
+check-runtime-freshness        rc=0        check-render-invariants        rc=0
+check-no-plaintext-secrets     rc=0        render-golden                  rc=0
+```
+
+| suite | result |
 |---|---|
-| Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | **`feature/27-04-consumer-concurrency`** @ `8416539` — clean, pushed, **0 behind** `origin/main` |
-| Commits | 9 ahead of main (includes one merge of `origin/main` for #319) |
-| `main` | `33ef87c` |
-| Open PRs | **#317** (domain -> olajay.co.uk) and **#318** (Trivy fix) — both OPEN, both green, no failing checks. 23 dependabot PRs untouched. |
-| Stack | Compose UP and healthy; `core-java` rebuilt at handoff; all 4 services FRESH |
-| Java | JDK 21, `./gradlew` from repo root |
+| `:core-java:cleanTest test` | **116 classes / 832 tests / 0 fail / 0 err / 1 skip** (42s) |
+| `:core-java:cleanIntegrationTest integrationTest` | **104 classes / 416 tests / 0 fail / 0 err / 1 skip** (42m29s) |
 
-### Gate state at handoff (real output, rc captured correctly)
+**This is the first end-to-end `integrationTest` run on this tree** — the previous handoff's open
+item. It also covers the three **major** dependency bumps the merge brought (spring-statemachine
+3.2.1→4.0.2, stripe-java 28.2.0→33.1.1, awssdk bom 2.47.6→2.49.2).
+
+Delta vs the recorded 102/414 T7 baseline is **+2 classes / +2 tests, and is explained**: exactly
+two `@Tag("testcontainers")` classes were added since `92fd370` —
+`MediaListenerConcurrencyIntegrationTest` and `MediaTenantIsolationUnderConcurrencyIntegrationTest`.
+`RabbitListenerContainerFactoryTest` is untagged and lands in the unit suite. Counts read from
+`core-java/build-local/` — **never** `core-java/build/`, which is a stale 2025-12-27 artifact
+reporting a false RED.
+
+### Runtime parity — proven by content, not status
+
+All 4 built services rebuilt and recreated, `check-runtime-freshness.sh` **rc=0, 0 unverified**.
+The merge made edge-go and frontend stale (`go.mod`, `package.json`) and the AC-10 javadoc made
+core-java stale; all three were rebuilt with `up -d --build`. Read out of the running artifact:
 
 ```
-docs-freshness                 rc=0   (1831)
-check-branch-behind-base       rc=0
-check-no-measured-placeholders rc=0
-check-consumer-thread-budget   rc=0   <- was rc=1 BEFORE this plan
-check-connection-math          rc=0
-check-env-contract             rc=0
-check-render-invariants        rc=0
-render-golden                  rc=0
-check-no-plaintext-secrets     rc=0
-check-runtime-freshness        rc=0   (all 4 services FRESH)
+inside /app/app.jar : media-prefetch: ${JTOYE_RABBIT_MEDIA_PREFETCH:2}
+                      media-concurrency: ${…:1}   media-max-concurrency: ${…:2}
+running broker      : media.process  consumers=1
+fresh container log : event=rabbit_factory_configured factory=media   configurerPresent=true prefetch=2   concurrency=1 maxConcurrency=2
+                      event=rabbit_factory_configured factory=default configurerPresent=true prefetch=250 concurrency=1 maxConcurrency=1
 ```
 
-Unit suite: **116 classes / 832 tests / 0 failures / 0 errors / 1 skipped.**
-
-**`integrationTest` has NOT been run end-to-end on the final tree.** It ran three times during T7,
-but the last full green run (arm A: 2337s, 102 classes / 414 tests / 0 fail) predates T6 and T8.
-Run `./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest` (~40 min) before the PR.
+Matches the recorded AC-2 PASS arm exactly.
 
 ---
 
-## 2. What 27-04 delivered
+## 3. Acceptance criteria
 
-| task | state | commit |
-|---|---|---|
-| T1 media-process timer | done | `3d450a8` |
-| T5.1 consumer-thread budget gate | done | `ecef0ae` |
-| T2 harness + Arm A | done | `febfe70` |
-| T3 factory repair + media container | done | `841e487` |
-| T4 config layer + pool 10->12 + T5.2 gate | done | `922a69f` |
-| T2 Arm B + budget provenance | done | `bfa2d0d` |
-| T6 STOMP construction-time guard | done | `98c66bf` |
-| T7 forkEvery decision + evidence | done | `92fd370` |
-| T8 factory + concurrency tests | **partial** | `8416539` |
-| T8 **AC-10** | **NOT DONE** | — |
+| proven both directions | pass direction only |
+|---|---|
+| AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, **AC-10**, AC-11, AC-12 | AC-3 (break arm Case B), AC-9 (break arms), AC-1 (set-wise assertion), AC-13 |
 
-### The core fix
+---
 
-`RabbitMQConfig` declared a bean named `rabbitListenerContainerFactory`; Boot's factory is
-`@ConditionalOnMissingBean(name = "rabbitListenerContainerFactory")`, so Boot backed off and
+## 4. What 27-04 delivered
+
+The core fix: `RabbitMQConfig` declared a bean named `rabbitListenerContainerFactory`; Boot's factory
+is `@ConditionalOnMissingBean(name = …)`, so Boot backed off and
 `SimpleRabbitListenerContainerFactoryConfigurer` — the ONLY consumer of
-`spring.rabbitmq.listener.simple.*` — never ran. That whole family was a silent no-op, including
-the `auto-startup=false` that **22 test files** register.
+`spring.rabbitmq.listener.simple.*` — never ran. That whole family was a silent no-op, including the
+`auto-startup=false` that **22 test files** register.
 
-**AC-2 proven both directions on the running system:**
+Shipped: `mediaConcurrency=1`, `mediaMaxConcurrency=2`, `mediaPrefetch=2`, `DB_POOL_SIZE 10→12`.
+Both budget walls independently land on 2.
 
-```
-FAIL arm (factory reverted to hand-built, yml left in place):
-  yml inside the running jar : media-prefetch: ${JTOYE_RABBIT_MEDIA_PREFETCH:2}
-  the running broker         : {"consumers":1,"prefetch":[250]}
-  factory startup lines      : 0
+**Measurement findings that should shape future work** (artifacts in
+`infra/load-testing/baselines/2026-07-28-media-{A-baseline,B-candidate}.md`):
 
-PASS arm:
-  the running broker         : {"consumers":1,"prefetch":[2]}
-  event=rabbit_factory_configured factory=media   configurerPresent=true prefetch=2   concurrency=1 maxConcurrency=2
-  event=rabbit_factory_configured factory=default configurerPresent=true prefetch=250 concurrency=1 maxConcurrency=1
-```
-
-### Shipped numbers
-
-`mediaConcurrency=1`, `mediaMaxConcurrency=2`, `mediaPrefetch=2`, `DB_POOL_SIZE 10->12`
-(user-approved 2026-07-28). Both budget walls independently land on 2: concurrency 3 breaks
-`check-consumer-thread-budget.sh` against a pool of 12, and raising the pool to 13 to fit it breaks
-`check-connection-math.sh` at 166 > 157.
+1. **The pipeline is outbox-paced, not queue-paced** — `media.outbox.flush-interval-ms` is 5000, so
+   depth stayed 0 even under an 8-way burst. Depth 0 does NOT mean idle, and raising concurrency
+   cannot help without a backlog.
+2. **One consumer already saturates one core** (97.8% under a 1-CPU pin). prefetch 250→2 cost ~3%,
+   inside the run-to-run spread — the fairness fix is effectively free.
+3. **D-11 is REFUTED and this is recorded in `build.gradle.kts`.** The repair did NOT make
+   `forkEvery` removable — there were TWO causes and 27-04 fixed one. Post-fix the OOM lands on
+   `HttpClient-N-SelectorManager` + `idle-connection-reaper` (reactive WebClient + AWS SDK v2).
+   **Do not remove `forkEvery(4)` on the reasoning that the listener bug is fixed.**
 
 ---
 
-## 3. Measurement results — read before changing any number
+## 5. ⚠ `origin/main` is RED, and it is not this branch
 
-Artifacts: `infra/load-testing/baselines/2026-07-28-media-{A-baseline,B-candidate}.md` and
-`.planning/phases/27-operational-maturity/baselines/T7-*`.
+`CI/CD Pipeline` **failed on `main` @ `1500f22`** — job **Integration Tests (Testcontainers RLS)**,
+with Postgres containers refusing connections on every mapped port (`Connection to localhost:32771
+refused`, then 32772, 32773 …) and Hikari timing out at `total=0, active=0, idle=0`.
 
-**Media pipeline (1-CPU pin, 200/200 accepted 202):**
+**Evidence it is an infrastructure flake, not a code regression:** `1500f22` touched **only**
+`.github/dependabot.yml`. The three major dependency bumps landed *earlier* (`e9ae960`, `f8ab847`,
+`6c2f2c9`) and every one of those runs was **green**. The same suite is green locally on this branch
+at 104/416. A re-run of that workflow is the likely fix; do not chase a code cause first.
 
-```
-arm A (prefetch 250)  606.0 ms/msg  1.650 msg/s/consumer  peak CPU 97.8%
-arm B (prefetch 2)    627.2 ms/msg  1.594 msg/s/consumer  peak CPU 96.9%
-peak queue depth 0 and peak unacked 0 in BOTH arms
-```
-
-Two findings that should shape future work here:
-
-1. **The pipeline is outbox-paced, not queue-paced.** `media.outbox.flush-interval-ms` is 5000, so
-   arrival is batched and one consumer drains a batch inside the interval. Depth stayed 0 even under
-   an 8-way concurrent burst. A depth of 0 does NOT mean idle, and raising concurrency cannot help
-   without a backlog. See `docs/runbooks/messaging.md` section 4.
-2. **One consumer already saturates one core** (97.8% under a 1000m-equivalent pin). Dropping
-   prefetch 250->2 cost ~3%, inside the run-to-run spread — the fairness fix is effectively free.
-
-**T7 forkEvery (three arms, same 88 tagged classes):**
-
-```
-forkEvery(4), post-fix  2337s  peak 209 threads (median 80)    SUCCESS 102/414
-forkEvery(0), post-fix  3601s  peak 859 threads (median 820)   OOM, hit the 1h ceiling
-forkEvery(0), PRE-fix    937s  peak 1880 threads (median 1543) OOM, died before its ceiling
-```
-
-**The plan's D-11 hypothesis is REFUTED, and this is now recorded in `build.gradle.kts`.** The
-repair did NOT make `forkEvery` removable. There were TWO causes and 27-04 fixed one: pre-fix the
-OOM lands on `RabbitListenerEndpointContainer#7-37`; post-fix it lands on
-`HttpClient-N-SelectorManager` and `idle-connection-reaper` (reactive WebClient + AWS SDK v2).
-**Do not remove `forkEvery(4)` on the reasoning that the listener bug is fixed.**
+(The same startup-race signature appeared briefly in the local run and Testcontainers retried
+through it — `scripts/fix-bridge-network.sh` / `fix-testcontainers-docker.sh` exist for this.)
 
 ---
 
-## 4. Traps found THIS session — each cost real time
+## 6. Traps confirmed this session
 
-- **`docker update --cpus=0` does not release a CPU pin** on Docker 29.6.2 (exits 0, changes
-  nothing). Use `--cpu-quota=-1`. And **`docker inspect .HostConfig.NanoCpus` is stale metadata** —
-  it read `1000000000` in all three states (released/pinned/released), so it cannot discriminate,
-  and the plan's AC-5 written on it can never reach its pass direction. Assert the container's own
-  `/sys/fs/cgroup/cpu.max` (`max <period>` = released). Memory: `trap_docker_cpu_pin_release`.
-- **`echo "$(basename $g) rc=$?"` reports the SUBSHELL's status, not the command's.** A 10-gate
-  sweep printed rc=0 for everything, including a genuinely red gate. Capture `rc=$?` on its own line.
-- **`[ "$x" = "y" ] && VAR=...` as a function's last command returns 1 when the test fails**, and
-  `set -e` turns that into a silent abort. Survived two smoke runs because every upload was 202.
-- **`grep` exits 1 on zero matches**; under `set -o pipefail` that killed a new gate silently on the
-  clean tree. Use `{ grep ... || true; } | wc -l`.
-- **A 200-upload run outlives the access token** — the first clean run returned `[401]=26`. Refresh
-  on an interval and always assert the status distribution.
-- **Adding a `@Tag("testcontainers")` class mid-measurement invalidates the comparison.** The two T8
-  test files had to be held out of the tree so all three T7 arms ran the same 88 tagged classes.
-- **`SimpleMessageListenerContainer.getConcurrentConsumers()` / `getMaxConcurrentConsumers()` are
-  not public, and `getAdviceChain()` is protected** — read them via `ReflectionTestUtils.getField`.
+- **RLS blinds the verification query.** Under a `NOSUPERUSER` downgrade an *unpinned* query returns
+  0 rows on a full table, so `assertThat(count).isZero()` is structurally satisfied and survives
+  every break arm. It fails in the *safe-looking* direction and breaking the production code does
+  not un-blind it. **Prove the instrument can SEE the rows before trusting its silence.**
+- **The tenant pin sits under a global aspect** — recorded from 27-01, and it **recurred here with
+  the plan prescribing the vacuous break**. New detail: the aspect does not merely supply a missing
+  pin, it *overwrites a correct one*.
+- A worker that **returns without throwing** on the failure path removes the test's only exception
+  signal — the row's state becomes the sole observable, so blinding one query kills the whole test.
+- Restores after a break arm were verified **by token** (`break_tokens=0`, the pin line present,
+  `dirty=0`), never by `git diff --stat`.
 
-Standing traps still live: `grep` is a bash function -> use `command grep` in scripts; the repo
-squash-merges so ancestry lies; read counts from `core-java/build-local/`, NEVER `core-java/build/`;
-`cleanTest`/`cleanIntegrationTest` are load-bearing (see section 5); `docs/metrics.json` is a
-cross-branch conflict hotspot and `CLAUDE.md:15` + `AGENTS.md:15` quote the totals and must change
-in the SAME commit; a second session may share this checkout, so stage by explicit path and never
-`git add -A`; `git stash -u` is unsafe here (root-owned untracked paths under `infra/monitoring/`).
-
----
-
-## 5. Evidence that the harness itself can fail (AC-8)
-
-```
-run 1 (with cleanTest):       > Task :core-java:integrationTest             BUILD SUCCESSFUL in 54s
-run 2 (identical, no clean):  > Task :core-java:integrationTest UP-TO-DATE  BUILD SUCCESSFUL in 5s
-```
-
-Success while executing ZERO tests. Every T7 arm ran `cleanIntegrationTest` first for this reason.
-A first attempt used a class that is not `@Tag("testcontainers")`, so the task found no tests and
-FAILED — and a failed task is never UP-TO-DATE, so it proved nothing.
-
----
-
-## 6. Acceptance criteria status
-
-| proven both directions | not yet |
-|---|---|
-| AC-2 (the key one), AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-12 | **AC-10** |
-| AC-3 pass direction (both instruments); AC-9 pass direction (7/7 green) | AC-3 break arm (Case B); AC-9 break arms; AC-1 set-wise assertion; AC-13 |
-
-AC-9's recorded observation confirmed finding B empirically:
-`ClassLoader.getResource("application-test.yml")` -> `build-local/resources/test/application-test.yml`,
-i.e. the test-resources file shadows the main-resources `RabbitAutoConfiguration` exclusion. That
-accident is exactly why `ObjectProvider` is used rather than a hard parameter.
+Standing traps still live: `grep` is a bash function → `command grep` in scripts;
+`cleanTest`/`cleanIntegrationTest` are load-bearing (without them the task reports UP-TO-DATE while
+executing NOTHING); the repo squash-merges so ancestry lies; `docs/metrics.json` is a cross-branch
+conflict hotspot and `CLAUDE.md:15` + `AGENTS.md:15` quote the totals; a second session may share
+this checkout, so stage by explicit path and never `git add -A`; `git stash -u` is unsafe here
+(root-owned untracked paths under `infra/monitoring/`).
 
 ---
 
 ## 7. Carried forward (not 27-04)
 
-- [ ] **PR #317** and **PR #318** — both green, ready to merge. #318 turns `main` green again
-      (12 fixable Trivy HIGHs on the core-java image — an earlier handoff said 2; it was 12).
-- [ ] **Phase 27 remaining:** 27-03 (wave 3, depends on 27-04 — it rebases onto this plan's
+- [ ] **Phase 27 remaining:** 27-03 (wave 3, depends on this plan — it rebases onto this
       `RabbitMQConfig` signature and must replace its diff-scan T5.5 with the behavioural assertion
-      supplied in `RabbitListenerContainerFactoryTest`), then 27-02 and 27-06 (wave 4).
+      in `RabbitListenerContainerFactoryTest`), then 27-02 and 27-06 (wave 4).
+- [ ] **`main` is red** — see §5. Re-run the workflow.
 - [ ] **AKS deployment** — decided, scoped, NOT started. Blocking: Keycloak hosting decision; no
-      `jtoye-infrastructure` manifests exist in this repo; 25 secret keys; no DNS A records on
-      `olajay.co.uk` (NS1, not Azure DNS). Detail is in the handoff on `feature/domain-olajay`.
-- [ ] 23 dependabot PRs — triage, do not bulk-merge (several violate the pinned stack).
+      `jtoye-infrastructure` manifests in this repo; 25 secret keys; no DNS A records on
+      `olajay.co.uk` (NS1, not Azure DNS).
+- [ ] Dependabot PRs — triage, do not bulk-merge (several violate the pinned stack). Note the merge
+      already brought **three major bumps** onto this branch: spring-statemachine 4.0.2,
+      stripe-java 33.1.1, awssdk bom 2.49.2. `CLAUDE.md` still records "Stripe Java SDK 28.2.0" and
+      is now stale on that line.
 - [ ] **Evidence row L6** — a KDS client receiving a relayed order event through a real broker has
       still never been captured. #266 fixed but unproven.
 - [ ] #274 gitleaks allowlists inert; #276 matrix `fail-fast: false`.
 - [ ] Wire jest-dom into `tsconfig.json` so the type-error count becomes a real gate.
 
----
+## 8. Residue
 
-## 8. Residue from this session
-
-- ~400 media uploads were driven through the dev stack across the two measurement arms. The CoW
-  ref-counting cleaned up after itself: **one** live `media_asset` remains, not 400.
-- The CPU pin **is released** — verified `cpu.max = max 100000` at handoff.
-- Compose stack left UP and healthy, `core-java` rebuilt so all four services are FRESH.
+- Compose stack UP and healthy; all 4 built services FRESH and recreated from this tree.
+- No CPU pin is in place (this session set none).
