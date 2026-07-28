@@ -1,4 +1,40 @@
-# Handoff: 27-04 is 7/8 done — only T8's AC-10 (tenant isolation under concurrency) remains
+# Handoff: 27-04 — AC-10 written and GREEN, but NOT YET FALSIFIED
+
+> **UPDATE 2026-07-28 ~18:30 BST — supersedes section 0 below.**
+>
+> **Branch:** `feature/27-04-consumer-concurrency` @ `a1c7ad8`, clean, pushed.
+> **It is now ~13 commits BEHIND `origin/main`** (main absorbed #317, #318, #321 and 12 dependabot
+> merges today). Run `git merge origin/main` first; expect conflicts ONLY in `k8s/goldens/*` —
+> those are generated, so resolve with `bash k8s/scripts/render-golden.sh --write`, never by hand.
+>
+> **AC-10 now EXISTS** —
+> `core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java`
+> (commit `7b470f2`). It PASSES. **It is not yet evidence, and AC-10 must NOT be marked satisfied.**
+> Three break arms were run and the test passed through all three:
+>
+> 1. **Omit the explicit `session.doWork` GUC pin** — the break the plan PRESCRIBES. GREEN.
+>    `TenantSetLocalAspect` pins the GUC from `TenantContext` before every repository call, so the
+>    explicit pin is redundant. *The plan's own prescribed break arm is vacuous in this codebase.*
+> 2. **`TenantContext.set(randomUUID())`** — GREEN. The explicit `set_config` pins
+>    `event.tenantId()` DIRECTLY, not `TenantContext.get()`.
+> 3. **Both pins broken at once** — STILL GREEN. This locates the fault in the harness.
+>
+> **NEXT STEP (leading hypothesis):** `ALTER ROLE ... NOSUPERUSER` applies to NEW sessions only, and
+> Hikari has already established its connections — so the workers keep superuser attributes and
+> bypass FORCE RLS, making assertion (a) vacuous. Force the pool to re-establish after the
+> downgrade (evict / soft-evict, or downgrade before the context's first connection), then re-run
+> break arm 3 and **require RED**. Only then is AC-10 satisfied.
+>
+> **Genuine finding worth keeping either way:** the worker has **two independent tenant pins** (the
+> aspect via `TenantContext`, and the explicit `set_config` via `event.tenantId()`), so a
+> single-point regression is already tolerated — a stronger property than 27-04's threat model
+> assumed, and why arms 1 and 2 could not fail.
+>
+> **Also still required before the PR:** a full `./gradlew :core-java:cleanIntegrationTest
+> :core-java:integrationTest` (~40 min) — it has never run end-to-end on this tree.
+>
+> Metrics 1832. All static gates green at handoff.
+
 
 **Generated:** 2026-07-28 ~13:00 BST. Supersedes the 27-01-era handoff that was on this branch.
 NOTE: a *newer* handoff also exists on `feature/domain-olajay` (PR #317) covering the domain move
