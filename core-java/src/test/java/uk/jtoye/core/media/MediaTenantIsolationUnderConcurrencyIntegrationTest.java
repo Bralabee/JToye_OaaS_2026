@@ -208,6 +208,22 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
         // running the break arm — which is the entire reason the break arm is mandatory.
         jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER");
 
+        // ---- NON-VACUITY GUARD ON THE READ-BACK INSTRUMENT ITSELF -----------------------------
+        // Every seeded asset is PENDING at this instant and no worker has run, so the instrument
+        // used for the terminal assertion MUST see PER_TENANT PENDING rows per tenant right here.
+        // If it cannot see them now, a later "nothing is PENDING" reading is blindness, not
+        // success. This guard exists because the original terminal check was exactly that blind:
+        // it counted PENDING rows on an UNTRANSACTED connection with no tenant GUC pinned, so once
+        // the role above is downgraded RLS filters every row and the count is structurally 0.
+        // Measured on the real tree: `expected: 12 but was: 0` with all 12 assets PENDING.
+        for (UUID t : List.of(tenantA, tenantB)) {
+            assertThat(visibleAssetsAsTenant(t))
+                    .as("read-back instrument must SEE tenant %s's %d PENDING assets before any "
+                            + "worker runs — otherwise the terminal assertion cannot fail", t, PER_TENANT)
+                    .hasSize(PER_TENANT)
+                    .allSatisfy(r -> assertThat(r.status()).isEqualTo("PENDING"));
+        }
+
         // 2 threads = the shipped maxConcurrentConsumers ceiling.
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -251,34 +267,33 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
                         + "Hikari connection into this one — the exact leak set_config(..., true) prevents")
                 .allSatisfy(v -> assertThat(v).isEmpty());
 
-        // ---- assertion (a): no asset crossed the tenant wall ----------------------------------
-        // Read back under the DOWNGRADED role so RLS is enforced, once per tenant.
+        // ---- assertion (a): no asset crossed the tenant wall, and every one WAS processed ------
+        // Read back under the DOWNGRADED role so RLS is enforced, once per tenant, THROUGH THE
+        // TENANT-PINNED PATH — the same instrument the guard above proved can see PENDING rows.
         for (UUID t : List.of(tenantA, tenantB)) {
-            List<UUID> visible = visibleAssetIdsAsRlsRole(t);
+            List<AssetRow> visible = visibleAssetsAsTenant(t);
             assertThat(visible)
                     .as("tenant %s must see exactly its own %d assets under NOBYPASSRLS", t, PER_TENANT)
                     .hasSize(PER_TENANT);
-            for (UUID seen : visible) {
-                assertThat(ownerByAsset.get(seen))
-                        .as("asset %s surfaced for tenant %s but belongs to another tenant", seen, t)
+            for (AssetRow seen : visible) {
+                assertThat(ownerByAsset.get(seen.id()))
+                        .as("asset %s surfaced for tenant %s but belongs to another tenant", seen.id(), t)
                         .isEqualTo(t);
             }
-        }
 
-        // Every asset must have been processed under its OWN tenant: an asset processed under the
-        // wrong tenant would not have been visible to the worker at all (RLS), so it would still
-        // be PENDING. A terminal status therefore proves it was handled by the right tenant.
-        // Scoped by tenant rather than `id = ANY(?)`: JdbcTemplate treats a UUID[] as the VARARGS
-        // parameter list, so the array is expanded into N parameters against a 1-parameter
-        // statement ("The column index is out of range: 2, number of columns: 1").
-        // These two tenants own only the assets seeded above, so this is equivalent.
-        Integer stillPending = jdbc.queryForObject(
-                "SELECT count(*) FROM media_asset WHERE tenant_id IN (?, ?) AND status = 'PENDING'",
-                Integer.class, tenantA, tenantB);
-        assertThat(stillPending)
-                .as("an asset left PENDING means its worker could not see it — i.e. it ran under the "
-                        + "wrong tenant, which is the isolation failure this test exists to catch")
-                .isZero();
+            // The processing-sensitive half, and the only part of this test that a broken pin can
+            // move. An asset processed under the WRONG tenant is invisible to its worker (RLS), so
+            // MediaProcessingWorker takes the `asset_not_visible` early return — it logs a WARN and
+            // returns without throwing, leaving the row PENDING. Nothing else in this test observes
+            // that: the worker never rewrites tenant_id, so the ownership loop above holds either
+            // way, and no exception reaches `failures`. A terminal status is therefore the evidence
+            // that the asset was handled under its own tenant.
+            assertThat(visible.stream().filter(r -> "PENDING".equals(r.status())).map(AssetRow::id).toList())
+                    .as("these assets of tenant %s are still PENDING — their workers could not SEE "
+                            + "them, i.e. ran under the wrong tenant. That is the isolation failure "
+                            + "this test exists to catch", t)
+                    .isEmpty();
+        }
     }
 
     // ---- helpers ---------------------------------------------------------------------------
@@ -304,8 +319,16 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
                 .hasSize(PER_TENANT * 2);
     }
 
-    /** Reads the asset ids visible to {@code tenant} with the role downgraded so RLS applies. */
-    private List<UUID> visibleAssetIdsAsRlsRole(UUID tenant) {
+    /** One {@code media_asset} row as the tenant-scoped read-back sees it. */
+    private record AssetRow(UUID id, String status) {}
+
+    /**
+     * Reads the assets visible to {@code tenant} with the role downgraded so RLS applies, WITH the
+     * tenant GUC pinned for the read. The pin is not optional bookkeeping: without it
+     * {@code current_tenant_id()} is NULL and the policy filters every row, so an unpinned read
+     * returns zero rows and cannot distinguish "clean" from "blind".
+     */
+    private List<AssetRow> visibleAssetsAsTenant(UUID tenant) {
         return new org.springframework.transaction.support.TransactionTemplate(
                 new org.springframework.jdbc.datasource.DataSourceTransactionManager(
                         java.util.Objects.requireNonNull(jdbc.getDataSource())))
@@ -323,7 +346,8 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
                     // expected". The worker uses PreparedStatement.execute(), which tolerates both.
                     jdbc.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)",
                             String.class, tenant.toString());
-                    return jdbc.queryForList("SELECT id FROM media_asset", UUID.class);
+                    return jdbc.query("SELECT id, status FROM media_asset",
+                            (rs, i) -> new AssetRow(rs.getObject("id", UUID.class), rs.getString("status")));
                 });
     }
 
