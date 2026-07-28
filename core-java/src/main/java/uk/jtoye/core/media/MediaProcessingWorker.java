@@ -48,8 +48,19 @@ import java.util.UUID;
  * ride a recycled Hikari connection into another tenant's thread. Raising concurrency therefore
  * multiplies independent instances of a safe pattern rather than creating a shared one.
  * <b>The residual risk is a future edit weakening or removing a pin</b>: before 27-04 that would
- * leak on one thread, after it on N. That is why the pin's removal — not a change to its
- * {@code is_local} flag — is the break arm of the two-tenant isolation test.
+ * leak on one thread, after it on N.
+ *
+ * <p><b>Which pin actually carries that risk was MEASURED, and it is not the one below (27-04
+ * AC-10).</b> {@link uk.jtoye.core.security.TenantSetLocalAspect} re-pins the GUC from
+ * {@link TenantContext} before every repository call, so the aspect — not this method — is the
+ * last writer before the claim query. {@code MediaTenantIsolationUnderConcurrencyIntegrationTest}
+ * ran all four arms: deleting the {@code session.doWork} pin below while {@code TenantContext} is
+ * correct leaves the suite GREEN (the aspect re-establishes it), whereas a wrong
+ * {@code TenantContext} goes RED <em>even with the explicit pin intact</em> (the aspect overwrites
+ * it). <b>{@code TenantContext.set} on the first line is therefore the dominant control and the
+ * test's break arm</b>; the explicit {@code set_config} is defence-in-depth against a future
+ * change to the aspect's applicability, not an independent second wall today. Do not read the two
+ * as redundant — they are ordered, and the aspect wins.
  *
  * <p><b>Idempotent redelivery:</b> the DB is the source of truth (no {@code processed_*}
  * table). The worker re-reads the asset by id and SKIPs if it is no longer

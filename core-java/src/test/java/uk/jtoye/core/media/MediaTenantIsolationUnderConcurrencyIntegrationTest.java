@@ -67,46 +67,51 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       passes even with a session-scoped pin, because every worker re-pins before it reads.</li>
  * </ol>
  *
- * <p><b>The break arm is an OMITTED pin, not a flipped {@code is_local}.</b> The draft criterion
- * proposed flipping the pin to {@code is_local = false} — but the worker re-pins unconditionally
- * before any query, so a leaked session value is overwritten before it can be read and the test
- * passes with {@code false}. That criterion could not fail. Deleting the {@code session.doWork(...)}
- * block on one of the two interleaved consumers is what actually breaks isolation.
+ * <p><b>The break arm is a WRONG {@link TenantContext}, not an omitted pin and not a flipped
+ * {@code is_local}.</b> Both earlier candidates were measured and both are vacuous here:
+ * flipping to {@code is_local = false} is overwritten before it can be read, and deleting the
+ * worker's {@code session.doWork(...)} pin entirely leaves the test GREEN. See the arm matrix
+ * below for why.
  *
  * <p><b>Fail-closed.</b> An empty result set is VOID, never clean: if the probe collects no
  * transaction-start readings at all, {@link #assertProbeNonVacuous} fails rather than letting
  * "found nothing" read as "found nothing wrong".
  *
- * <h2>STATUS: PASSES, BUT NOT YET FALSIFIED — DO NOT TREAT AC-10 AS SATISFIED</h2>
+ * <h2>FALSIFIED — the arm matrix, all four run on the real tree</h2>
  *
- * <p>This test is green, and it must not be trusted on that basis. <b>Three successive break arms
- * were run and the test passed through all three</b>, which means it cannot presently fail and is
- * therefore not yet evidence of anything:
+ * <table border="1">
+ *   <caption>Break-arm matrix</caption>
+ *   <tr><th>arm</th><th>{@code TenantContext}</th><th>explicit {@code set_config}</th><th>result</th></tr>
+ *   <tr><td>pass</td><td>correct</td><td>present</td><td>GREEN</td></tr>
+ *   <tr><td>1</td><td>correct</td><td>DELETED</td><td>GREEN</td></tr>
+ *   <tr><td>2</td><td>WRONG (random UUID)</td><td>present</td><td><b>RED</b></td></tr>
+ *   <tr><td>3</td><td>WRONG (random UUID)</td><td>DELETED</td><td><b>RED</b></td></tr>
+ * </table>
  *
- * <ol>
- *   <li><b>Omit the explicit {@code session.doWork} GUC pin</b> — the break the 27-04 plan
- *       prescribes. Still GREEN. Cause: {@code TenantSetLocalAspect} pins the GUC from
- *       {@link TenantContext} before every repository call, so the explicit pin is redundant and
- *       removing it changes nothing. The plan's prescribed break arm is itself vacuous here.</li>
- *   <li><b>Set {@link TenantContext} to a random UUID</b> — still GREEN. Cause: the explicit
- *       {@code set_config} pins {@code event.tenantId()} <em>directly</em>, not
- *       {@code TenantContext.get()}, so it re-establishes the correct tenant regardless.</li>
- *   <li><b>Break BOTH pins at once</b> — still GREEN. This is the one that proves the problem is
- *       in the harness, not the worker.</li>
- * </ol>
+ * <p>Both RED arms fail on the still-PENDING assertion below, naming all {@code PER_TENANT} of a
+ * tenant's assets — the isolation assertion itself, not a harness accident.
  *
- * <p><b>Leading hypothesis for (3):</b> {@code ALTER ROLE … NOSUPERUSER} applies to <em>new</em>
- * sessions; the Hikari pool has already established its connections, and those sessions keep
- * superuser attributes for their lifetime. So the workers very likely still bypass FORCE RLS and
- * assertion (a) is passing vacuously. Next step is to force the pool to re-establish connections
- * after the downgrade (evict/soft-evict, or downgrade before the context's first connection), then
- * re-run break arm (3) and require RED.
+ * <p><b>What the matrix says about the worker, and it is not what 27-04 assumed.</b> The two pins
+ * are <em>not</em> independent redundant controls. {@link uk.jtoye.core.security.TenantSetLocalAspect}
+ * re-pins the GUC from {@link TenantContext} before <em>every</em> repository call, so it is the
+ * LAST writer before the claim query and it overwrites whatever the worker pinned explicitly.
+ * Hence: the explicit {@code set_config} is redundant while {@code TenantContext} is correct
+ * (arm 1 GREEN), and powerless to save anything when {@code TenantContext} is wrong (arm 2 RED).
+ * <b>{@code TenantContext} is the single dominant control</b>, and that — not the explicit pin —
+ * is what this test actually guards.
  *
- * <p>Worth keeping regardless of that outcome: the worker has <b>two independent tenant pins</b>
- * (the aspect via {@code TenantContext}, and the explicit {@code set_config} via
- * {@code event.tenantId()}). A single-point regression in either is already tolerated — which is a
- * stronger safety property than 27-04's threat model assumed, and is why break arms (1) and (2)
- * could not fail.
+ * <p><b>Why an earlier revision of this test could not fail.</b> It was green through arms 1–3.
+ * The recorded hypothesis was that {@code ALTER ROLE … NOSUPERUSER} does not reach Hikari's
+ * already-established sessions, leaving the workers superuser and bypassing FORCE RLS. That is
+ * <b>refuted</b>: RLS is genuinely enforced on those connections, and its enforcement was itself
+ * the defect. The terminal check counted PENDING rows on an <em>untransacted</em> connection with
+ * no tenant GUC pinned — under the downgraded role {@code current_tenant_id()} is NULL, the policy
+ * filters every row, and the count is structurally 0. Measured with a probe placed immediately
+ * after the downgrade, when all 12 seeded assets are provably PENDING and no worker has run:
+ * {@code expected: 12 but was: 0}. Nothing else in the test was processing-sensitive — the worker
+ * never rewrites {@code tenant_id}, so the ownership loop holds either way, and the
+ * {@code asset_not_visible} path returns without throwing so {@code failures} stays empty. That
+ * probe is now a permanent non-vacuity guard on the read-back instrument.
  */
 @SpringBootTest
 @Testcontainers
