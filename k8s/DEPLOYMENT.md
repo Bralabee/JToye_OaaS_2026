@@ -10,6 +10,14 @@ This guide provides comprehensive instructions for deploying the JToye OaaS plat
 > local run does **not** exercise (no TLS/cert-manager, no nginx security-header snippet, no
 > NetworkPolicy enforcement), and carries the rehearsal-evidence template.
 
+### Architecture diagrams
+Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../docs/architecture/SYSTEM_DESIGN_V2.md) and kept honest against this tree:
+
+- **[Deployment Topology](https://claude.ai/code/artifact/6b995fb5-84f8-4725-8446-79cea792f55e)** — the Kustomize `base` → `local` / `staging` / `production` overlay tree, the base resource inventory (three app tiers, two Ingresses, the pg-backup CronJob, six NetworkPolicies, zero committed Secrets), and the render-verification gate suite. All six gates — `render-golden`, `check-render-invariants`, `check-env-contract`, `check-connection-math`, `check-no-plaintext-secrets`, `validate-networkpolicies.py` — are enforced in CI and were confirmed green (with a fail-direction check) against `main`.
+- **[Backend Communication Topology](https://claude.ai/code/artifact/b45c4f2b-367d-4ee4-8d55-23100bf7a8de)** — how the services actually talk (sync REST, async AMQP / STOMP / SSE, OIDC auth), with the async-plane defect ledger (#266 relay, #310 webhook).
+
+> These are internal claude.ai artifacts; the links resolve for teammates the artifacts have been shared with.
+
 ## Prerequisites
 
 ### Required Tools
