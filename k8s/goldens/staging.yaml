@@ -22,8 +22,21 @@ data:
   keycloak.public.issuer.uri: https://auth-staging.jtoye.co.uk/realms/jtoye-staging
   log.level: DEBUG
   log.path: /var/log/jtoye
+  media.outbox.backoff.base.ms: "5000"
+  media.outbox.backoff.cap.ms: "300000"
+  media.outbox.flush.interval.ms: "5000"
+  media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app-staging.jtoye.co.uk
   notification.unsubscribe.base-url: https://app-staging.jtoye.co.uk
+  payment.outbox.backoff.base.ms: "5000"
+  payment.outbox.backoff.cap.ms: "300000"
+  payment.outbox.flush.interval.ms: "5000"
+  payment.outbox.resurrect.interval.ms: "300000"
+  rabbit.default.concurrency: "1"
+  rabbit.default.prefetch: "250"
+  rabbit.media.concurrency: "1"
+  rabbit.media.max.concurrency: "2"
+  rabbit.media.prefetch: "2"
   rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
@@ -230,7 +243,72 @@ spec:
               key: password
               name: postgres-credentials
         - name: DB_POOL_SIZE
-          value: "10"
+          value: "12"
+        - name: JTOYE_RABBIT_DEFAULT_PREFETCH
+          valueFrom:
+            configMapKeyRef:
+              key: rabbit.default.prefetch
+              name: app-config
+        - name: JTOYE_RABBIT_DEFAULT_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              key: rabbit.default.concurrency
+              name: app-config
+        - name: JTOYE_RABBIT_MEDIA_PREFETCH
+          valueFrom:
+            configMapKeyRef:
+              key: rabbit.media.prefetch
+              name: app-config
+        - name: JTOYE_RABBIT_MEDIA_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              key: rabbit.media.concurrency
+              name: app-config
+        - name: JTOYE_RABBIT_MEDIA_MAX_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              key: rabbit.media.max.concurrency
+              name: app-config
+        - name: PAYMENT_OUTBOX_FLUSH_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              key: payment.outbox.flush.interval.ms
+              name: app-config
+        - name: PAYMENT_OUTBOX_RESURRECT_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              key: payment.outbox.resurrect.interval.ms
+              name: app-config
+        - name: PAYMENT_OUTBOX_BACKOFF_BASE_MS
+          valueFrom:
+            configMapKeyRef:
+              key: payment.outbox.backoff.base.ms
+              name: app-config
+        - name: PAYMENT_OUTBOX_BACKOFF_CAP_MS
+          valueFrom:
+            configMapKeyRef:
+              key: payment.outbox.backoff.cap.ms
+              name: app-config
+        - name: MEDIA_OUTBOX_FLUSH_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              key: media.outbox.flush.interval.ms
+              name: app-config
+        - name: MEDIA_OUTBOX_RESURRECT_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              key: media.outbox.resurrect.interval.ms
+              name: app-config
+        - name: MEDIA_OUTBOX_BACKOFF_BASE_MS
+          valueFrom:
+            configMapKeyRef:
+              key: media.outbox.backoff.base.ms
+              name: app-config
+        - name: MEDIA_OUTBOX_BACKOFF_CAP_MS
+          valueFrom:
+            configMapKeyRef:
+              key: media.outbox.backoff.cap.ms
+              name: app-config
         - name: KC_ISSUER_URI
           valueFrom:
             configMapKeyRef:

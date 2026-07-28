@@ -11,7 +11,7 @@ spring:
       # Postgres max_connections=200 (superuser reserves 3) → ~32% headroom.
       # Per-pod 10 also matches HikariCP guidance (cores×2; pod CPU limit is 1).
       # Enforced by k8s/scripts/check-connection-math.sh (CI k8s-validate job).
-      maximum-pool-size: ${DB_POOL_SIZE:10}
+      maximum-pool-size: ${DB_POOL_SIZE:12}
       minimum-idle: ${DB_POOL_MIN_IDLE:5}
       connection-timeout: 30000
       idle-timeout: 600000
