@@ -1,16 +1,17 @@
 # J'Toye OaaS - System Design V2 (Target: 10/10)
 
-**Document Version:** 2.1
-**Date:** 2025-12-30 · **§1 re-verified against the codebase 2026-07-25**
+**Document Version:** 2.2
+**Date:** 2025-12-30 · **§1 re-verified against the codebase 2026-07-25; async-plane records (§1.4.2 media durability, §1.6 webhook converter) added 2026-07-28**
 **Status:** Design Phase (§§2-10) · §1 describes the *as-built* system
 **Target:** Production-ready multi-tenant SaaS platform for UK retail
 
 > **How to read this document.** §1 (Architecture Overview) is **verified fact** — every
-> claim in §1.1, §1.3, §1.4 and §1.5 was checked against the tree on 2026-07-25 and cites
-> the file that proves it. §1.2 (Target Architecture) and §§2-10 remain **design intent**
-> from the original 2025-12-30 draft and have *not* been re-verified; treat them as a plan,
-> not a description. Section 1 is the source the published "Backend Communication Topology"
-> diagram is regenerated from — update it here first.
+> claim in §1.1, §1.3, §1.4, §1.5 and §1.6 was checked against the tree and cites the file
+> that proves it (the topology on 2026-07-25; the §1.4.2 media-durability note and the §1.6
+> webhook-converter record on 2026-07-28). §1.2 (Target Architecture) and §§2-10 remain
+> **design intent** from the original 2025-12-30 draft and have *not* been re-verified; treat
+> them as a plan, not a description. Section 1 is the source the published "Backend
+> Communication Topology" diagram is regenerated from — update it here first.
 
 ---
 
@@ -34,8 +35,13 @@
 The picture below is the **live local/compose topology**, read off
 `docker-compose.full-stack.yml` and the source files listed in §1.4 — not a design
 intention. Host ports are shown; container-internal ports differ where noted. The same
-service graph is deployed by the k8s kustomize overlays (`k8s/base` + `staging|production`),
-which swap host ports for cluster Services and add the ingress.
+service graph is deployed by the k8s kustomize overlays (`k8s/base` + `local|staging|production`),
+which swap host ports for cluster Services and add the ingress. Phase 26 (#267) added the
+`local` overlay and a golden-manifest layer — `k8s/goldens/{staging,production}.yaml` rendered
+baselines plus the `render-golden`, `check-render-invariants` and `check-env-contract` scripts
+— that guards the rendered output and its env contract against drift. That is *deployment*
+architecture (how this graph is rolled out and verified), not a change to the communication
+graph drawn here: the compose service set, its ports and the AMQP exchanges are unchanged.
 
 ```
    ┌──────────────┐   ┌───────────────────┐   ┌──────────────┐
@@ -212,19 +218,37 @@ and paths are built from allow-listed templates — the caller can never steer t
 | `payment.events` | `payment.events`, `payment.notifications`, `refund.notifications` | `PaymentEventAuditListener`, `FinancialNotificationListener` |
 | `onboarding.events` | `onboarding.notifications` | `OnboardingNotificationListener` |
 | `media.events` | `media.process` | `MediaProcessingWorker` |
-| webhook deliveries | `webhook.deliveries` | `WebhookFanoutListener` → `WebhookDeliveryWorker` |
+| webhook deliveries | `webhook.deliveries` | `WebhookFanoutListener` → `WebhookDeliveryWorker` (dead-lettered every delivery from the day it shipped until #310 — see §1.6) |
 
 Two independent transactional outboxes feed these: `PaymentEventOutboxFlusher` (shared
 `payment_event_outbox`) and `MediaEventOutboxFlusher` (dedicated `media_event_outbox`).
 A `@RabbitListener` thread carries no tenant context, so every listener pins the tenant
 GUC before touching RLS-scoped tables.
 
+**Media quarantine durability (V60, #316).** The media outbox above protects the *event*;
+until V60 nothing protected the *object*. `MediaPendingReaper` selected quarantined uploads on
+status alone and then permanently deleted their source bytes, so a broker/outbox outage longer
+than the ~15-minute reap cutoff destroyed vendor uploads whose dispatch had provably not
+happened (the outbox row was still `PENDING`). `V60__media_quarantine_durability.sql` adds
+`process_attempts`, `quarantine_expires_at` and a `quarantine_reclaimed_at` **sentinel** (a new
+column, because the sweep's legacy arm already selects rows whose `quarantine_expires_at` is
+null); the reaper now spares rows whose dispatch is unproven, and `MediaQuarantineRetentionSweep`
+reclaims only rows past `quarantine_expires_at` that carry the non-null sentinel.
+
 **Outbound webhook egress** is the only path where core initiates a connection to an
 address a tenant controls. It is hardened accordingly: a dedicated `WebClient` whose Netty
 `HttpClient` resolves through `SsrfGuardAddressResolverGroup` (validated-IP resolver — closes
 the DNS-rebinding hole), and three signed headers on every POST:
 `X-JToye-Event-Id`, `X-JToye-Event-Type`, and
-`X-JToye-Signature: t=<ts>,v1=<hex-hmac-sha256>` (default tolerance 300s).
+`X-JToye-Signature: t=<ts>,v1=<hex-hmac-sha256>` (default tolerance 300s). This hardening is
+genuine but, until #310, unreached: the `WebhookFanoutListener` that drives it dead-lettered
+every event at the message converter from the day it shipped — see §1.6.
+
+**Broker choice, settled (ADR-0003).** The async plane above is RabbitMQ by decision, not by
+default: `docs/architecture/decisions/ADR-0003-messaging-broker-selection.md` (Accepted
+2026-07-26) records remaining on RabbitMQ after an external analysis recommended migrating to
+NATS on the false premise that edge-go uses a broker — `edge-go/go.mod` has no broker
+dependency and never has.
 
 #### 1.4.3 Authentication plane
 
@@ -283,6 +307,43 @@ measured at 14 WebSocket opens and 24 REST calls with zero MESSAGE frames in a 3
 window. That is accidental polling wearing realtime's clothes. The honest signal is the
 connection dot on `/dashboard/kitchen`: **green = relay working, amber ("Reconnecting…") =
 subscriptions are being rejected.**
+
+---
+
+### 1.6 The webhook fan-out converter defect (#310)
+
+> **Status: FIXED 2026-07-27 (#310).** Proven both directions on the running stack and closed
+> by allow-listing each event payload package individually, guarded by a build-failing test.
+> Kept in full because the *class* of bug is subtle and recurs: publisher and subscriber agreed
+> with each other while nothing asserted that the wire type could actually be resolved.
+
+**What was broken.** Every event routed to `webhook.deliveries` failed `__TypeId__`
+deserialization and dead-lettered — silently, from the day the fan-out shipped (Phase 22,
+#205). `RabbitMQConfig.jsonMessageConverter()` was a bare `Jackson2JsonMessageConverter` whose
+`DefaultJackson2JavaTypeMapper` trusts only `[java.util, java.lang]`, so resolving an inbound
+`__TypeId__` header to an application class was rejected outright.
+
+**Why only this one listener.** A single-method `@RabbitListener` with a typed parameter never
+consults the type mapper — Spring infers the target type from the method signature — so those
+were unaffected. `WebhookFanoutListener` is the *only* class-level `@RabbitListener` with
+`@RabbitHandler` methods, which **must** resolve the type to select a handler, so it alone hit
+the wall. Phase 22's suite stayed green because it invokes the listener directly rather than
+through the converter.
+
+**The trap in the obvious fix.** Spring AMQP matches trusted packages by exact `String.equals`
+on the package name, **not by prefix** — so allow-listing the parent `uk.jtoye.core` silently
+does nothing while every test still passes. The fix therefore lists each contributing package
+individually in `RabbitMQConfig.TRUSTED_PAYLOAD_PACKAGES` (`uk.jtoye.core.order`,
+`uk.jtoye.core.payment`, `uk.jtoye.core.onboarding`), scoped deliberately — trust-all (`"*"`)
+would clear the allowlist and restore a deserialization-gadget surface on a broker carrying
+tenant data. `RabbitMQConfigMessageConverterTest` fails the build if a new `@RabbitHandler`
+payload package is added unlisted.
+
+**Proven both directions.** With the fix, DLQ delta 0 and a `webhook_delivery` row is created;
+with it reverted and rebuilt, DLQ +1 and the deserialization exception reappears verbatim.
+Source of truth: `config/RabbitMQConfig.java`, `webhook/WebhookFanoutListener.java`,
+`config/RabbitMQConfigMessageConverterTest.java`. Wider context: ADR-0003 and the Phase 27
+operational-maturity plan (#309), which flagged this as its most serious finding.
 
 ---
 
