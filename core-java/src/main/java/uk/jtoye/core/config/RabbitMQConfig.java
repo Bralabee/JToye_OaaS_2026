@@ -5,6 +5,9 @@ import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFacto
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.slf4j.Logger;
@@ -12,7 +15,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.retry.interceptor.RetryInterceptorBuilder;
 import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 
+// This project has no @ConfigurationPropertiesScan, so each @ConfigurationProperties bean is
+// registered explicitly — the same idiom as MediaConfig and StorageConfig.
 @Configuration
+@EnableConfigurationProperties(RabbitListenerProperties.class)
 public class RabbitMQConfig {
     private static final Logger log = LoggerFactory.getLogger(RabbitMQConfig.class);
 
@@ -431,14 +437,111 @@ public class RabbitMQConfig {
                 .build();
     }
 
-    @Bean
-    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
-            ConnectionFactory connectionFactory, MessageConverter jsonMessageConverter) {
+    /**
+     * Stable, assertable text for the configurer-absent path. A test asserts on this message
+     * (27-04 AC-9), so do not reword it casually — and it deliberately names both the missing
+     * bean and the auto-configuration whose exclusion is the likely cause, because that is the
+     * one thing an operator reading this line at 3am needs in order to act on it.
+     */
+    static final String CONFIGURER_ABSENT_WARN =
+            "SimpleRabbitListenerContainerFactoryConfigurer is not available — "
+            + "spring.rabbitmq.listener.simple.* will NOT be applied. This usually means "
+            + "RabbitAutoConfiguration is excluded on the active profile. Falling back to the "
+            + "hand-built container configuration (jtoye.rabbit.* still applies).";
+
+    /**
+     * Applies Boot's configurer when it exists, then re-asserts this project's three deliberate
+     * overrides on top of it, then the {@code jtoye.rabbit.*} tunables.
+     *
+     * <p><b>Order is load-bearing.</b> The configurer runs FIRST because it would otherwise
+     * overwrite the overrides that follow it; the overrides run before the prefetch/concurrency
+     * assignment for the same reason.
+     *
+     * <p><b>Why {@link ObjectProvider} rather than a hard parameter (D-01).</b> On today's Gradle
+     * test classpath the bean does exist — but only because {@code src/test/resources/application-test.yml}
+     * shadows the {@code src/main/resources} one that excludes {@code RabbitAutoConfiguration}
+     * (both land on the classpath under the same name; Gradle puts test resources first, and
+     * {@code ClassLoader.getResource} returns the first match only). That shadowing is
+     * undocumented, one rename away from reversing, and the symptom of its reversal is a context
+     * that will not start. The guard costs three lines and is correct under both classpath orders.
+     */
+    private SimpleRabbitListenerContainerFactory buildFactory(
+            String factoryName,
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter,
+            ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            int prefetch,
+            int concurrency,
+            int maxConcurrency) {
+
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+
+        SimpleRabbitListenerContainerFactoryConfigurer configurer = configurerProvider.getIfAvailable();
+        boolean configurerPresent = configurer != null;
+        if (configurerPresent) {
+            configurer.configure(factory, connectionFactory);
+        } else {
+            log.warn(CONFIGURER_ABSENT_WARN);
+        }
+
+        // The connection factory is set unconditionally: in the configurer-absent path nothing
+        // else would set it, and in the present path this is the same instance the configurer used.
         factory.setConnectionFactory(connectionFactory);
+
+        // The three deliberate overrides, re-applied AFTER the configurer so it cannot undo them.
+        // setDefaultRequeueRejected(false) + the retry advice chain are the DLQ routing contract:
+        // 3 attempts, then AmqpRejectAndDontRequeueException, then the dead-letter exchange.
+        // Dropping either would silently turn a dead-letter into an infinite requeue loop.
         factory.setMessageConverter(jsonMessageConverter);
         factory.setAdviceChain(retryInterceptor());
         factory.setDefaultRequeueRejected(false);
+
+        // Finally the config layer — the whole point of the repair above.
+        factory.setPrefetchCount(prefetch);
+        factory.setConcurrentConsumers(concurrency);
+        if (maxConcurrency > concurrency) {
+            factory.setMaxConcurrentConsumers(maxConcurrency);
+        }
+
+        // Runtime-readable proof of the EFFECTIVE values (27-04 AC-3). A correct application.yml
+        // over a stale image is indistinguishable from a working change unless the running
+        // process says what it actually bound.
+        log.info("event=rabbit_factory_configured factory={} configurerPresent={} prefetch={} concurrency={} maxConcurrency={}",
+                factoryName, configurerPresent, prefetch, concurrency, maxConcurrency);
+
         return factory;
+    }
+
+    /**
+     * The default factory for the eight non-media endpoints.
+     *
+     * <p>The bean NAME is load-bearing and must not be changed: Boot's
+     * {@code simpleRabbitListenerContainerFactory} is {@code @ConditionalOnMissingBean(name =
+     * "rabbitListenerContainerFactory")}, so renaming this would un-back-off Boot's factory and
+     * leave the application with two.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter,
+            ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            RabbitListenerProperties props) {
+        return buildFactory("default", connectionFactory, jsonMessageConverter, configurerProvider,
+                props.getDefaultPrefetch(), props.getDefaultConcurrency(), props.getDefaultConcurrency());
+    }
+
+    /**
+     * The dedicated container for {@code media.process} — the only CPU-bound consumer (two WebP
+     * encodes per message). Referenced by name from
+     * {@code MediaProcessingWorker}'s {@code @RabbitListener(containerFactory = ...)}.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory mediaRabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter,
+            ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            RabbitListenerProperties props) {
+        return buildFactory("media", connectionFactory, jsonMessageConverter, configurerProvider,
+                props.getMediaPrefetch(), props.getMediaConcurrency(), props.getMediaMaxConcurrency());
     }
 }

@@ -36,6 +36,21 @@ import java.util.UUID;
  * BEFORE any read/write of {@code media_asset}/{@code product_media}, and clears the
  * ThreadLocal in a {@code finally}.
  *
+ * <p><b>That pin is now exercised CONCURRENTLY (27-04), and it is safe by construction —
+ * recorded because the conclusion is not self-evident (#284, T-27-01).</b> This listener runs on
+ * its own {@code mediaRabbitListenerContainerFactory}, which may run up to
+ * {@code jtoye.rabbit.media-max-concurrency} consumers in ONE JVM. Three facts make that safe,
+ * and all three must hold: (1) {@code TenantContext} is a {@code ThreadLocal}, so N consumer
+ * threads hold N independent values; (2) each {@code @Transactional} invocation binds its own
+ * {@code EntityManager} and therefore its own pooled connection, so the {@code session.doWork}
+ * below pins THAT connection only; (3) the pin uses {@code set_config(..., true)} — {@code
+ * is_local = true}, i.e. TRANSACTION-scoped — so the value is discarded at commit and cannot
+ * ride a recycled Hikari connection into another tenant's thread. Raising concurrency therefore
+ * multiplies independent instances of a safe pattern rather than creating a shared one.
+ * <b>The residual risk is a future edit weakening or removing a pin</b>: before 27-04 that would
+ * leak on one thread, after it on N. That is why the pin's removal — not a change to its
+ * {@code is_local} flag — is the break arm of the two-tenant isolation test.
+ *
  * <p><b>Idempotent redelivery:</b> the DB is the source of truth (no {@code processed_*}
  * table). The worker re-reads the asset by id and SKIPs if it is no longer
  * {@code PENDING} — a redelivered event on an already-ACTIVE/FAILED asset is a no-op.
@@ -121,7 +136,8 @@ public class MediaProcessingWorker {
         this.metrics = metrics;
     }
 
-    @RabbitListener(queues = RabbitMQConfig.MEDIA_EVENTS_QUEUE)
+    @RabbitListener(queues = RabbitMQConfig.MEDIA_EVENTS_QUEUE,
+                    containerFactory = "mediaRabbitListenerContainerFactory")
     @Transactional
     public void onMediaEvent(MediaProcessingEvent event) {
         // Tenant context FIRST — ThreadLocal AND DB session GUC. The worker runs off the
