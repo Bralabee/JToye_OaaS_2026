@@ -7,15 +7,22 @@
 version: 2
 updates:
   # --- Java / Spring Boot (Gradle) ---
-  - package-ecosystem: "gradle"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      minor-and-patch:
-        update-types: ["minor", "patch"]
-
+  #
+  # There is deliberately only ONE gradle entry, scoped to /core-java.
+  #
+  # A second entry at `directory: "/"` used to sit here and produced an exact DUPLICATE
+  # of every Gradle PR: dependabot's gradle scanner walks subprojects from the root, and
+  # the root build.gradle.kts declares NO dependencies block of its own (only plugins and
+  # allprojects/subprojects config). So both entries resolved the same coordinates in the
+  # same file — core-java/build.gradle.kts — and opened two PRs for each bump.
+  #
+  # Measured on 2026-07-28: of 22 open dependabot PRs, four were pure duplicate pairs
+  # (awssdk #235/#238, stripe-java #236/#240, Spring Boot #237/#242, springdoc #241/#246),
+  # i.e. ~18% of the backlog was the same work proposed twice. Reviewing a duplicate costs
+  # the same as reviewing a real one, and merging one silently strands its twin.
+  #
+  # If a future root-level Gradle dependency is ever declared, re-add the "/" entry AND
+  # scope both with `exclude-paths` so they cannot overlap again.
   - package-ecosystem: "gradle"
     directory: "/core-java"
     schedule:
