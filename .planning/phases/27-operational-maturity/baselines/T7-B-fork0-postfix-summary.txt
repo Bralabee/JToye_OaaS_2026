@@ -1,0 +1,9 @@
+arm            : B-fork0-postfix
+gradle rc      : 124
+wall clock     : 3601s
+deadline       : 3600s (CEILING HIT)
+peak threads   : 859 (at 243s, across worker JVMs)
+samples        : 1181
+result classes : 0
+counts         : tests=0 skipped=0 failures=0 errors=0
+OOM/native-thread lines in log: 23

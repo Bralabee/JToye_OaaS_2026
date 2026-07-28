@@ -1,0 +1,9 @@
+arm            : C-fork0-prefix
+gradle rc      : 1
+wall clock     : 937s
+deadline       : 1200s (not hit)
+peak threads   : 1880 (at 454s, across worker JVMs)
+samples        : 306
+result classes : 0
+counts         : tests=0 skipped=0 failures=0 errors=0
+OOM/native-thread lines in log: 2

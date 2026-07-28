@@ -1,0 +1,9 @@
+arm            : A-fork4-postfix
+gradle rc      : 0
+wall clock     : 2337s
+deadline       : 3000s (not hit)
+peak threads   : 209 (at 1421s, across worker JVMs)
+samples        : 771
+result classes : 102
+counts         : tests=414 skipped=1 failures=0 errors=0
+OOM/native-thread lines in log: 0
