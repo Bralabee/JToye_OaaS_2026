@@ -58,6 +58,19 @@ images:
 # behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
 patches:
   - path: configmap-patch.yaml
+  # Ingress hostnames. WITHOUT these two, staging rendered the PRODUCTION hosts
+  # (api./app.) inside namespace jtoye-staging while configmap-patch.yaml told the
+  # app it lived at api-staging./app-staging. — so the app was configured for hosts
+  # nothing served, and staging contended with production for the same names and
+  # TLS SAN list. See ingress-hosts-patch.yaml for the full writeup.
+  - path: ingress-hosts-patch.yaml
+    target:
+      kind: Ingress
+      name: jtoye-ingress
+  - path: sse-ingress-hosts-patch.yaml
+    target:
+      kind: Ingress
+      name: jtoye-sse-ingress
 
 # Staging replicas (reduced for cost savings)
 replicas:

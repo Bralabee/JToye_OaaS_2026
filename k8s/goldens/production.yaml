@@ -10,20 +10,20 @@ metadata:
 ---
 apiVersion: v1
 data:
-  api.url: https://api.jtoye.co.uk
-  cors.allowed-origins: https://app.jtoye.co.uk
-  frontend.url: https://app.jtoye.co.uk
+  api.url: https://api.olajay.co.uk
+  cors.allowed-origins: https://app.olajay.co.uk
+  frontend.url: https://app.olajay.co.uk
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.client-id: frontend
-  keycloak.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
-  keycloak.public.issuer.uri: https://auth.jtoye.co.uk/realms/jtoye-prod
+  keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
+  keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   log.level: INFO
   log.path: /var/log/jtoye
-  notification.email.tracking-base-url: https://app.jtoye.co.uk
-  notification.unsubscribe.base-url: https://app.jtoye.co.uk
+  notification.email.tracking-base-url: https://app.olajay.co.uk
+  notification.unsubscribe.base-url: https://app.olajay.co.uk
   rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
@@ -44,8 +44,8 @@ data:
   stomp.broker.mode: relay
   stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   stomp.broker.relay-port: "61613"
-  stripe.connect.refresh-url: https://app.jtoye.co.uk/dashboard/payments/connect/refresh
-  stripe.connect.return-url: https://app.jtoye.co.uk/dashboard/payments/connect/return
+  stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
+  stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
   webhook.delivery.max-attempts: "8"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
@@ -1053,7 +1053,7 @@ metadata:
     nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, POST, PUT, DELETE, OPTIONS,
       PATCH
-    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.jtoye.co.uk
+    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
@@ -1076,7 +1076,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: api.jtoye.co.uk
+  - host: api.olajay.co.uk
     http:
       paths:
       - backend:
@@ -1086,7 +1086,7 @@ spec:
               number: 9090
         path: /
         pathType: Prefix
-  - host: app.jtoye.co.uk
+  - host: app.olajay.co.uk
     http:
       paths:
       - backend:
@@ -1098,8 +1098,8 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - api.jtoye.co.uk
-    - app.jtoye.co.uk
+    - api.olajay.co.uk
+    - app.olajay.co.uk
     secretName: jtoye-tls
 ---
 apiVersion: networking.k8s.io/v1
@@ -1113,7 +1113,7 @@ metadata:
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
     nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, OPTIONS
-    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.jtoye.co.uk
+    nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
@@ -1132,7 +1132,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: api.jtoye.co.uk
+  - host: api.olajay.co.uk
     http:
       paths:
       - backend:
@@ -1144,7 +1144,7 @@ spec:
         pathType: Exact
   tls:
   - hosts:
-    - api.jtoye.co.uk
+    - api.olajay.co.uk
     secretName: jtoye-tls
 ---
 apiVersion: networking.k8s.io/v1

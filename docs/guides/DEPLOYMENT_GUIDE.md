@@ -453,20 +453,20 @@ kubectl rollout status deployment/core-java -n jtoye-production
 
 ```bash
 # Application health
-curl https://api.jtoye.co.uk/actuator/health
+curl https://api.olajay.co.uk/actuator/health
 
 # Expected output:
 # {"status":"UP","groups":["liveness","readiness"]}
 
 # Detailed health (requires authentication)
-curl https://api.jtoye.co.uk/actuator/health/readiness
+curl https://api.olajay.co.uk/actuator/health/readiness
 ```
 
 ### 7.2 Smoke Tests
 
 ```bash
 # Run smoke tests against production
-./scripts/smoke-test.sh https://api.jtoye.co.uk
+./scripts/smoke-test.sh https://api.olajay.co.uk
 
 # Expected: 8/8 tests passing
 ```
@@ -637,10 +637,10 @@ kubectl scale deployment/core-java --replicas=3 -n jtoye-production
 **Documentation:**
 - System Design: `../architecture/SYSTEM_DESIGN_V2.md`
 - Security Audit: `../reports/SECURITY_AUDIT_REPORT.md`
-- API Docs: https://api.jtoye.co.uk/swagger-ui.html
+- API Docs: https://api.olajay.co.uk/swagger-ui.html
 
 **Support:**
-- Email: devops@jtoye.co.uk
+- Email: devops@olajay.co.uk
 - Slack: #jtoye-oaas-support
 - On-call: PagerDuty integration
 

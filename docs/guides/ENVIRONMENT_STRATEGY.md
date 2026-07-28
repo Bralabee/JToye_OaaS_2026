@@ -64,7 +64,7 @@ localhost:6379    → Redis (Docker)
 **Characteristics:**
 - ✅ Production-like environment
 - ✅ Uses Kubernetes Secrets/ConfigMaps
-- ✅ Real DNS names (`staging.jtoye.co.uk`)
+- ✅ Real DNS names (`app-staging.olajay.co.uk`)
 - ✅ TLS certificates (Let's Encrypt)
 - ✅ Production realm (`jtoye-prod`) but separate data
 - ⚠️ Swagger UI enabled (protected)
@@ -75,10 +75,10 @@ localhost:6379    → Redis (Docker)
 
 **Infrastructure:**
 ```
-https://app-staging.jtoye.co.uk     → Frontend
-https://api-staging.jtoye.co.uk     → Core API
-https://edge-staging.jtoye.co.uk    → Edge Gateway
-https://auth-staging.jtoye.co.uk    → Keycloak
+https://app-staging.olajay.co.uk     → Frontend
+https://api-staging.olajay.co.uk     → Core API
+https://edge-staging.olajay.co.uk    → Edge Gateway
+https://auth-staging.olajay.co.uk    → Keycloak
 
 Kubernetes Cluster (staging namespace)
 - PostgreSQL: Cloud DB (staging instance)
@@ -100,7 +100,7 @@ Kubernetes Cluster (staging namespace)
 **Characteristics:**
 - ✅ Maximum security and reliability
 - ✅ Kubernetes Secrets/ConfigMaps ONLY
-- ✅ Real DNS (`app.jtoye.co.uk`, `api.jtoye.co.uk`)
+- ✅ Real DNS (`app.olajay.co.uk`, `api.olajay.co.uk`)
 - ✅ TLS with proper certificates
 - ✅ Production Keycloak realm
 - ❌ Swagger UI disabled
@@ -114,10 +114,10 @@ Kubernetes Cluster (staging namespace)
 
 **Infrastructure:**
 ```
-https://app.jtoye.co.uk      → Frontend (CDN)
-https://api.jtoye.co.uk      → Core API (Ingress → K8s)
-https://edge.jtoye.co.uk     → Edge Gateway
-https://auth.jtoye.co.uk     → Keycloak
+https://app.olajay.co.uk      → Frontend (CDN)
+https://api.olajay.co.uk      → Core API (Ingress → K8s)
+https://edge.olajay.co.uk     → Edge Gateway
+https://auth.olajay.co.uk     → Keycloak
 
 Kubernetes Cluster (production namespace)
 - PostgreSQL: Cloud DB with replicas (AWS RDS, GCP CloudSQL)
@@ -175,7 +175,7 @@ DB_PORT=5432
 | `DB_PORT` | `5433` | `5432` | `5432` | Database port |
 | `DB_USER` | `jtoye` | `jtoye_app` | `jtoye_app` | DB user |
 | `DB_PASSWORD` | `secret` | K8s Secret | K8s Secret | **Never hardcode!** |
-| `KC_ISSUER_URI` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.jtoye.co.uk/realms/jtoye-prod` | `https://auth.jtoye.co.uk/realms/jtoye-prod` | Keycloak issuer |
+| `KC_ISSUER_URI` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.olajay.co.uk/realms/jtoye-prod` | `https://auth.olajay.co.uk/realms/jtoye-prod` | Keycloak issuer |
 | `LOG_LEVEL` | `INFO` | `INFO` | `WARN` | Application logging |
 | `SWAGGER_ENABLED` | `true` | `true` (protected) | `false` | Swagger UI |
 
@@ -184,10 +184,10 @@ DB_PORT=5432
 | Variable | Dev | Staging | Production | Notes |
 |----------|-----|---------|------------|-------|
 | `NODE_ENV` | `development` | `production` | `production` | Node environment |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:9090` | `https://api-staging.jtoye.co.uk` | `https://api.jtoye.co.uk` | Backend API |
-| `NEXTAUTH_URL` | `http://localhost:3000` | `https://app-staging.jtoye.co.uk` | `https://app.jtoye.co.uk` | NextAuth base URL |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:9090` | `https://api-staging.olajay.co.uk` | `https://api.olajay.co.uk` | Backend API |
+| `NEXTAUTH_URL` | `http://localhost:3000` | `https://app-staging.olajay.co.uk` | `https://app.olajay.co.uk` | NextAuth base URL |
 | `NEXTAUTH_SECRET` | Dev random | K8s Secret | K8s Secret | **32+ chars random** |
-| `KEYCLOAK_ISSUER` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.jtoye.co.uk/realms/jtoye-prod` | `https://auth.jtoye.co.uk/realms/jtoye-prod` | Must match token issuer |
+| `KEYCLOAK_ISSUER` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.olajay.co.uk/realms/jtoye-prod` | `https://auth.olajay.co.uk/realms/jtoye-prod` | Must match token issuer |
 | `KEYCLOAK_CLIENT_SECRET` | `core-api-secret-2026` | K8s Secret | K8s Secret | From Keycloak |
 
 #### **Edge Go (API Gateway)**
@@ -195,7 +195,7 @@ DB_PORT=5432
 | Variable | Dev | Staging | Production | Notes |
 |----------|-----|---------|------------|-------|
 | `CORE_API_URL` | `http://localhost:9090` | `http://core-java:9090` | `http://core-java:9090` | Internal K8s service |
-| `KC_ISSUER_URI` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.jtoye.co.uk/realms/jtoye-prod` | `https://auth.jtoye.co.uk/realms/jtoye-prod` | JWT validation |
+| `KC_ISSUER_URI` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.olajay.co.uk/realms/jtoye-prod` | `https://auth.olajay.co.uk/realms/jtoye-prod` | JWT validation |
 | `PORT` | `8080` | `8080` | `8080` | Internal port |
 
 ---
@@ -240,7 +240,7 @@ data:
   DB_NAME: "jtoye_staging"
 
   # Keycloak
-  KC_ISSUER_URI: "https://auth-staging.jtoye.co.uk/realms/jtoye-prod"
+  KC_ISSUER_URI: "https://auth-staging.olajay.co.uk/realms/jtoye-prod"
 
   # Logging
   LOG_LEVEL: "INFO"
@@ -283,7 +283,7 @@ data:
   DB_NAME: "jtoye_production"
 
   # Keycloak
-  KC_ISSUER_URI: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+  KC_ISSUER_URI: "https://auth.olajay.co.uk/realms/jtoye-prod"
 
   # Logging
   LOG_LEVEL: "WARN"
@@ -418,7 +418,7 @@ kubectl -n jtoye-staging get pods
 kubectl -n jtoye-staging logs -f deployment/core-java
 
 # 4. Run smoke tests
-./scripts/smoke-test.sh https://api-staging.jtoye.co.uk
+./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 ```
 
 #### **To Production:**
@@ -446,7 +446,7 @@ kubectl -n jtoye-production rollout status deployment/core-java
 kubectl -n jtoye-production get pods -w
 
 # 4. Smoke test
-./scripts/smoke-test.sh https://api.jtoye.co.uk
+./scripts/smoke-test.sh https://api.olajay.co.uk
 
 # 5. Monitor metrics
 # - Check Grafana dashboards
@@ -498,11 +498,11 @@ curl http://localhost:9090/actuator/health
 #### **Staging:**
 ```bash
 # Automated smoke tests
-./scripts/smoke-test.sh https://api-staging.jtoye.co.uk
+./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
 # Load tests
 cd infra/load-testing
-./load-test.sh https://api-staging.jtoye.co.uk
+./load-test.sh https://api-staging.olajay.co.uk
 
 # Security scan
 trivy image ghcr.io/jtoye/core-java:v0.8.0-rc1
@@ -517,7 +517,7 @@ trivy image ghcr.io/jtoye/core-java:v0.8.0-rc1
 #### **Production:**
 ```bash
 # Pre-deployment checks
-./scripts/smoke-test.sh https://api.jtoye.co.uk
+./scripts/smoke-test.sh https://api.olajay.co.uk
 
 # Post-deployment monitoring
 # - Watch Grafana dashboards (5 minutes)
@@ -535,15 +535,15 @@ trivy image ghcr.io/jtoye/core-java:v0.8.0-rc1
 
 ```bash
 # Backend health
-curl https://api.{env}.jtoye.co.uk/actuator/health
+curl https://api.{env}.olajay.co.uk/actuator/health
 # Expected: {"status":"UP"}
 
 # Frontend health
-curl https://app.{env}.jtoye.co.uk/api/health
+curl https://app.{env}.olajay.co.uk/api/health
 # Expected: 200 OK
 
 # Database connectivity
-curl https://api.{env}.jtoye.co.uk/actuator/health/db
+curl https://api.{env}.olajay.co.uk/actuator/health/db
 # Expected: {"status":"UP"}
 ```
 
@@ -578,7 +578,7 @@ cd frontend && npm run dev
 
 **Symptom:**
 ```
-JWT issuer mismatch: expected https://auth-staging.jtoye.co.uk/realms/jtoye-prod,
+JWT issuer mismatch: expected https://auth-staging.olajay.co.uk/realms/jtoye-prod,
 got http://localhost:8085/realms/jtoye-dev
 ```
 

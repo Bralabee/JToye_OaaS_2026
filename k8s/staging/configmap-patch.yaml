@@ -8,9 +8,9 @@ data:
   sql.log.level: "DEBUG"
 
   # Staging URLs
-  keycloak.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
-  api.url: "https://api-staging.jtoye.co.uk"
-  frontend.url: "https://app-staging.jtoye.co.uk"
+  keycloak.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
+  api.url: "https://api-staging.olajay.co.uk"
+  frontend.url: "https://app-staging.olajay.co.uk"
 
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
@@ -28,7 +28,7 @@ data:
   # D-13 split-horizon: in staging one host serves both roles today, so this is
   # byte-identical to keycloak.issuer.uri above — the key exists so the two can
   # diverge without a manifest edit.
-  keycloak.public.issuer.uri: "https://auth-staging.jtoye.co.uk/realms/jtoye-staging"
+  keycloak.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
 
   # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
   # value is the byte-identical string `frontend` that used to be hardcoded in
@@ -41,13 +41,13 @@ data:
 
   # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
-  cors.allowed-origins: "https://app-staging.jtoye.co.uk"
+  cors.allowed-origins: "https://app-staging.olajay.co.uk"
 
   # D-19: unsubscribe + email open/click tracking links in staging notifications.
-  notification.email.tracking-base-url: "https://app-staging.jtoye.co.uk"
-  notification.unsubscribe.base-url: "https://app-staging.jtoye.co.uk"
+  notification.email.tracking-base-url: "https://app-staging.olajay.co.uk"
+  notification.unsubscribe.base-url: "https://app-staging.olajay.co.uk"
 
   # D-19: where Stripe returns a vendor after Connect onboarding. Paths match the
   # application.yml defaults; only the origin is staging-specific.
-  stripe.connect.return-url: "https://app-staging.jtoye.co.uk/dashboard/payments/connect/return"
-  stripe.connect.refresh-url: "https://app-staging.jtoye.co.uk/dashboard/payments/connect/refresh"
+  stripe.connect.return-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh"

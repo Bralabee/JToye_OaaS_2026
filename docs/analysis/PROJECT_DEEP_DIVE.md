@@ -196,7 +196,7 @@ Kustomize-based with base + staging/production overlays:
 - HPA: core-java (3-10), edge-go (5-20), frontend (3-10)
 - PDB: min 2-3 pods available
 - NGINX Ingress with TLS (cert-manager + Let's Encrypt)
-- Domains: `api.jtoye.co.uk`, `app.jtoye.co.uk`, `auth.jtoye.co.uk`
+- Domains: `api.olajay.co.uk`, `app.olajay.co.uk`, `auth.olajay.co.uk`
 - Security headers: HSTS, X-Frame-Options, CSP, Referrer-Policy
 
 ### CI/CD (GitHub Actions)

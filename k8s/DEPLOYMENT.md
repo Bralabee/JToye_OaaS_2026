@@ -78,7 +78,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: devops@jtoye.co.uk
+    email: devops@olajay.co.uk
     privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
@@ -184,9 +184,9 @@ helm install external-secrets external-secrets/external-secrets \
 
 ### 4. DNS Configuration
 Configure DNS records for your domains:
-- `api.jtoye.co.uk` → Ingress LoadBalancer IP
-- `app.jtoye.co.uk` → Ingress LoadBalancer IP
-- `auth.jtoye.co.uk` → Keycloak LoadBalancer IP
+- `api.olajay.co.uk` → Ingress LoadBalancer IP
+- `app.olajay.co.uk` → Ingress LoadBalancer IP
+- `auth.olajay.co.uk` → Keycloak LoadBalancer IP
 
 Get the LoadBalancer IP:
 ```bash
@@ -670,7 +670,7 @@ Ensure the `core-java` startupProbe allows sufficient time (5 minutes configured
 
 ## Support and Contact
 For issues or questions:
-- Technical Lead: devops@jtoye.co.uk
+- Technical Lead: devops@olajay.co.uk
 - On-Call: Use PagerDuty/OpsGenie
 - Documentation: https://github.com/jtoye/oaas-platform/wiki
 

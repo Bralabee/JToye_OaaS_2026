@@ -11,7 +11,7 @@
  *
  * Or in staging (Task 12-02-07 manual gate, step 2):
  *
- *   PLAYWRIGHT_BASE_URL=https://staging.jtoye.co.uk \
+ *   PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk \
  *     npx playwright test e2e/csp-no-violations.spec.ts
  *
  * The spec requires the Next.js app to be running and a live storefront
