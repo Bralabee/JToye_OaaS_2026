@@ -72,7 +72,7 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
-    # Public 443 for Keycloak JWKS only (auth.jtoye.co.uk)
+    # Public 443 for Keycloak JWKS only (auth.olajay.co.uk)
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -748,7 +748,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
     environment:
       name: staging
-      url: https://staging.jtoye.co.uk
+      url: https://app-staging.olajay.co.uk
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -788,8 +788,8 @@ jobs:
       # runtime env, which is the DEF-4/DEF-6 "config that reaches nothing" shape.
       #
       # EXPECTED CONSEQUENCE, stated plainly: k8s/staging api.url is
-      # https://api-staging.jtoye.co.uk and k8s/production api.url is
-      # https://api.jtoye.co.uk, so with one image and one FRONTEND_PUBLIC_API_URL
+      # https://api-staging.olajay.co.uk and k8s/production api.url is
+      # https://api.olajay.co.uk, so with one image and one FRONTEND_PUBLIC_API_URL
       # only ONE of the two deploys can pass this gate. That is the honest state of
       # a single-image pipeline, and failing loudly here is the point. The durable
       # fix is per-environment frontend images (or a genuinely runtime CSP origin);
@@ -870,7 +870,7 @@ jobs:
         # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
         run: |
           chmod +x ./scripts/smoke-test.sh
-          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://staging-api.jtoye.co.uk
+          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
       - name: Rollback on failure
         if: failure()
@@ -892,7 +892,7 @@ jobs:
     if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
       name: production
-      url: https://app.jtoye.co.uk
+      url: https://app.olajay.co.uk
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -994,7 +994,7 @@ jobs:
       - name: Run comprehensive smoke tests
         run: |
           chmod +x ./scripts/smoke-test.sh
-          ./scripts/smoke-test.sh https://api.jtoye.co.uk
+          ./scripts/smoke-test.sh https://api.olajay.co.uk
 
       - name: Notify Slack on success
         if: success()
@@ -1009,7 +1009,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Production Deployment Successful*\n\nCommit: `${{ github.sha }}`\nActor: ${{ github.actor }}\nURL: https://app.jtoye.co.uk"
+                    "text": "*Production Deployment Successful*\n\nCommit: `${{ github.sha }}`\nActor: ${{ github.actor }}\nURL: https://app.olajay.co.uk"
                   }
                 }
               ]

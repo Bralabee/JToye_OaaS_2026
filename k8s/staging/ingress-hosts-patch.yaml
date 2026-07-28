@@ -1,0 +1,49 @@
+# Staging hostnames for the main Ingress — the patch that was MISSING.
+#
+# THE DEFECT (found 2026-07-27 while migrating jtoye.co.uk -> olajay.co.uk).
+# k8s/staging/kustomization.yaml patched the ConfigMap and image names but NOT the
+# Ingresses, so the rendered staging manifest published the PRODUCTION hostnames
+# inside namespace `jtoye-staging`:
+#
+#     k8s/goldens/staging.yaml   - host: api.jtoye.co.uk    <- production host
+#                                - host: app.jtoye.co.uk    <- production host
+#                                  secretName: jtoye-tls    <- production cert
+#
+# while configmap-patch.yaml simultaneously told the app it lived at
+# app-staging./api-staging. — hosts nothing served. Silent consequences:
+#   1. CORS/CSP/OAuth redirects computed from a host the ingress never published.
+#   2. Staging and production Ingresses claimed the SAME hostnames; in one cluster
+#      that is an nginx conflict and two cert-manager Certificates racing for one
+#      SAN list — the class already recorded in check-render-invariants.sh's header.
+#   3. CI smoke-tested a THIRD name (staging-api.), matching neither.
+# The goldens faithfully recorded the wrong output, so nothing caught it.
+#
+# WHY JSON6902 AND NOT A STRATEGIC MERGE PATCH. IngressSpec.rules carries no
+# patchMergeKey, so a strategic merge REPLACES the whole list — which would silently
+# drop every `http.paths` backend and render an Ingress that routes nothing. These
+# ops touch only the host strings, leaving the backends untouched.
+#
+# Index-coupled by necessity (rules[0]=api, rules[1]=app in k8s/base/ingress.yaml).
+# If the base reorders or adds a rule, `kustomize build` FAILS LOUDLY on a missing
+# path rather than silently mis-patching — which is the behaviour we want.
+#
+# The secret NAME keeps its `jtoye-` prefix: that is the product identifier
+# (J'TOYE DIGITAL LTD), not the domain. Only hostnames moved.
+- op: replace
+  path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
+  value: "https://app-staging.olajay.co.uk"
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: api-staging.olajay.co.uk
+- op: replace
+  path: /spec/tls/0/hosts/1
+  value: app-staging.olajay.co.uk
+- op: replace
+  path: /spec/tls/0/secretName
+  value: jtoye-staging-tls
+- op: replace
+  path: /spec/rules/0/host
+  value: api-staging.olajay.co.uk
+- op: replace
+  path: /spec/rules/1/host
+  value: app-staging.olajay.co.uk

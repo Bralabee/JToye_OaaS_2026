@@ -52,7 +52,7 @@ the full threat model, flow matrix, and design decisions that drove this.
 
 Public 443/TCP egress uses `ipBlock: 0.0.0.0/0` with cluster-private CIDRs in
 the `except:` list (SSRF-pivot defense). We accept the broader public surface
-because Stripe does not publish a stable IP allowlist, Keycloak auth.jtoye.co.uk
+because Stripe does not publish a stable IP allowlist, Keycloak auth.olajay.co.uk
 is typically behind a CDN with rotating IPs, and image CDNs similarly rotate.
 
 **Defense-in-depth option (NOT applied here, flagged as future work):**

@@ -8,9 +8,9 @@ data:
   sql.log.level: "WARN"
 
   # Production URLs
-  keycloak.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
-  api.url: "https://api.jtoye.co.uk"
-  frontend.url: "https://app.jtoye.co.uk"
+  keycloak.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-prod"
+  api.url: "https://api.olajay.co.uk"
+  frontend.url: "https://app.olajay.co.uk"
 
   # Keycloak deprovisioning realm (issue #102 remainder) — production realm.
   keycloak.admin.realms: "jtoye-prod"
@@ -30,7 +30,7 @@ data:
   # D-13 split-horizon: production serves both roles from one public host, so the
   # stamped issuer equals the JWKS host. The key exists so that stays a stated
   # fact rather than an assumption.
-  keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+  keycloak.public.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-prod"
 
   # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08), and this
   # is the ONE exception to this overlay's state-it-explicitly convention above.
@@ -45,15 +45,15 @@ data:
 
   # Single production platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
-  cors.allowed-origins: "https://app.jtoye.co.uk"
+  cors.allowed-origins: "https://app.olajay.co.uk"
 
   # D-19: these two defaulted to a loopback dev origin, so every production
   # notification email shipped an unsubscribe link and a tracking URL pointing at
   # the recipient's own machine.
-  notification.email.tracking-base-url: "https://app.jtoye.co.uk"
-  notification.unsubscribe.base-url: "https://app.jtoye.co.uk"
+  notification.email.tracking-base-url: "https://app.olajay.co.uk"
+  notification.unsubscribe.base-url: "https://app.olajay.co.uk"
 
   # D-19: a vendor finishing Stripe Connect onboarding was being returned to a
   # loopback dev origin, stranding MARKETPLACE payout setup at the last step.
-  stripe.connect.return-url: "https://app.jtoye.co.uk/dashboard/payments/connect/return"
-  stripe.connect.refresh-url: "https://app.jtoye.co.uk/dashboard/payments/connect/refresh"
+  stripe.connect.return-url: "https://app.olajay.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app.olajay.co.uk/dashboard/payments/connect/refresh"

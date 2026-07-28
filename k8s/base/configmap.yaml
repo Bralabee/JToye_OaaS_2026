@@ -5,7 +5,7 @@ metadata:
   name: app-config
 data:
   # Keycloak configuration
-  keycloak.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+  keycloak.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-prod"
 
   # Keycloak user deprovisioning on tenant offboard (issue #102 remainder).
   # OFF by default. base-url is the IN-CLUSTER admin host (NOT the public
@@ -17,8 +17,8 @@ data:
   keycloak.admin.realms: "jtoye-prod"
 
   # API URLs
-  api.url: "https://api.jtoye.co.uk"
-  frontend.url: "https://app.jtoye.co.uk"
+  api.url: "https://api.olajay.co.uk"
+  frontend.url: "https://app.olajay.co.uk"
   
   # Redis configuration
   redis.host: "redis-cluster.jtoye-infrastructure.svc.cluster.local"
@@ -103,7 +103,7 @@ data:
   # production behaviour is unchanged; the local overlay patches it to the
   # browser-reachable half. Consumed as core JWT_EXPECTED_ISSUER, edge
   # JWT_EXPECTED_ISSUER and frontend KEYCLOAK_ISSUER.
-  keycloak.public.issuer.uri: "https://auth.jtoye.co.uk/realms/jtoye-prod"
+  keycloak.public.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-prod"
 
   # --- Frontend OIDC client id (Phase 26 / plan 26-08) -----------------------
   # This key exists because k8s/base/frontend-deployment.yaml hardcoded the
@@ -136,7 +136,7 @@ data:
   # value silently allowed only the dev-default origin for both.
   # SOURCE: the existing frontend.url key above (each overlay patches it to its
   # own frontend.url).
-  cors.allowed-origins: "https://app.jtoye.co.uk"
+  cors.allowed-origins: "https://app.olajay.co.uk"
   # SOURCE: application.yml `${JWT_EXPECTED_AUDIENCE:core-api}` — identical, so
   # validation neither loosens nor tightens. AudienceValidator throws at
   # construction on a blank value, so this key can never silently no-op.
@@ -183,8 +183,8 @@ data:
   # tracking URL pointing at the recipient's own machine — a dead link for the
   # customer and, for unsubscribe, a GDPR/PECR-relevant broken opt-out.
   # SOURCE: the existing frontend.url key above (overlays patch per env).
-  notification.email.tracking-base-url: "https://app.jtoye.co.uk"
-  notification.unsubscribe.base-url: "https://app.jtoye.co.uk"
+  notification.email.tracking-base-url: "https://app.olajay.co.uk"
+  notification.unsubscribe.base-url: "https://app.olajay.co.uk"
 
   # --- D-19 Stripe Connect return origins (production-affecting) -------------
   # Same defect class: a vendor completing Stripe Connect onboarding was
@@ -194,8 +194,8 @@ data:
   # `${STRIPE_CONNECT_RETURN_URL:...}` / `${STRIPE_CONNECT_REFRESH_URL:...}`
   # defaults. The Stripe API key and webhook secret are NOT here — they come
   # from the OPTIONAL stripe-credentials Secret.
-  stripe.connect.return-url: "https://app.jtoye.co.uk/dashboard/payments/connect/return"
-  stripe.connect.refresh-url: "https://app.jtoye.co.uk/dashboard/payments/connect/refresh"
+  stripe.connect.return-url: "https://app.olajay.co.uk/dashboard/payments/connect/return"
+  stripe.connect.refresh-url: "https://app.olajay.co.uk/dashboard/payments/connect/refresh"
 
   # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
   # SOURCE: all three byte-identical to their application.yml defaults

@@ -225,8 +225,8 @@ curl http://localhost:9090/actuator/health
 # Get ingress IP
 export INGRESS_IP=$(kubectl get svc nginx-ingress-ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo "Configure these DNS records:"
-echo "api.jtoye.co.uk    A    $INGRESS_IP"
-echo "app.jtoye.co.uk    A    $INGRESS_IP"
+echo "api.olajay.co.uk    A    $INGRESS_IP"
+echo "app.olajay.co.uk    A    $INGRESS_IP"
 ```
 
 ---
@@ -237,8 +237,8 @@ echo "app.jtoye.co.uk    A    $INGRESS_IP"
 kubectl get certificate -n jtoye-production -w
 
 # Once ready, test
-curl -I https://api.jtoye.co.uk
-curl -I https://app.jtoye.co.uk
+curl -I https://api.olajay.co.uk
+curl -I https://app.olajay.co.uk
 ```
 
 ---
@@ -321,7 +321,7 @@ For comprehensive guide, see:
 ---
 
 ## Emergency Contacts
-- Technical Lead: devops@jtoye.co.uk
+- Technical Lead: devops@olajay.co.uk
 - On-Call: Use PagerDuty/OpsGenie
 - Documentation: https://github.com/jtoye/oaas-platform/wiki
 

@@ -14,6 +14,20 @@ java {
 // (which is sometimes created/owned by root in this environment).
 layout.buildDirectory.set(file("build-local"))
 
+// Override the netty version managed by Spring Boot 3.5.16's BOM. Netty is not
+// declared below — it arrives transitively via reactor-netty (starter-webflux)
+// and software.amazon.awssdk:netty-nio-client, and every artifact is pinned by
+// io.spring.dependency-management ("selected by rule" in dependencyInsight).
+// Boot's documented override is this property, which re-points the imported
+// netty-bom so the whole netty family moves together; forcing the two flagged
+// artifacts alone would leave them out of step with their siblings.
+//
+// 4.1.136.Final is the exact fixed version for the Trivy image-gate findings
+// CVE-2026-59901 (netty-codec, Bzip2Decoder infinite loop) and CVE-2026-55831 /
+// CVE-2026-55833 / CVE-2026-56745 (netty-codec-http). Staying on 4.1.x keeps us
+// on the line Boot 3.5.16 already manages — 4.2.x would be an unrequested jump.
+extra["netty.version"] = "4.1.136.Final"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -77,7 +91,15 @@ dependencies {
 
     // Use Spring Boot managed Hibernate ORM version to avoid mismatch
     implementation("org.hibernate.orm:hibernate-envers")
-    implementation("net.sf.jasperreports:jasperreports:6.21.3")
+    // net.sf.jasperreports was REMOVED (2026-07-27). It was never used: zero
+    // imports in core-java/src, zero .jrxml/.jasper templates in the repo, and
+    // docs/status/SYSTEMS_ENGINEERING_REVIEW.md already listed it as an unused
+    // dependency. It was also the SOLE source of commons-beanutils (directly and
+    // via commons-digester), so removing it clears three Trivy image-gate HIGHs
+    // — CVE-2025-48734 (beanutils), CVE-2025-10492 and CVE-2026-6009 (jasper) —
+    // without bumping an unused library into JasperReports 7.x, which changes
+    // artifact coordinates and licensing for no benefit. PDF generation is
+    // OpenPDF (see com.github.librepdf:openpdf above), not JasperReports.
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.13")

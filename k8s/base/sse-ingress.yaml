@@ -18,10 +18,10 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
-    # CORS must mirror jtoye-ingress: the dashboard at app.jtoye.co.uk opens
+    # CORS must mirror jtoye-ingress: the dashboard at app.olajay.co.uk opens
     # the stream cross-origin with an Authorization header.
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.jtoye.co.uk"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.olajay.co.uk"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
@@ -47,10 +47,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - api.jtoye.co.uk
+    - api.olajay.co.uk
     secretName: jtoye-tls
   rules:
-  - host: api.jtoye.co.uk
+  - host: api.olajay.co.uk
     http:
       paths:
       - path: /api/v1/orders/stream

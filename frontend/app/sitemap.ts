@@ -7,7 +7,7 @@ import type { MetadataRoute } from "next"
 // audience-classified inventory (all 22 pages, incl. dashboard) lives in
 // docs/SITEMAP.md — keep both in sync when adding pages.
 // Base URL is environment-injected (never hardcoded): set NEXT_PUBLIC_SITE_URL
-// in production (e.g. https://jtoye.co.uk); the fallback matches local compose.
+// in production (e.g. https://olajay.co.uk); the fallback matches local compose.
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100"
 
 export default function sitemap(): MetadataRoute.Sitemap {
