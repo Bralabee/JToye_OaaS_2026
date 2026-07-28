@@ -76,6 +76,37 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Fail-closed.</b> An empty result set is VOID, never clean: if the probe collects no
  * transaction-start readings at all, {@link #assertProbeNonVacuous} fails rather than letting
  * "found nothing" read as "found nothing wrong".
+ *
+ * <h2>STATUS: PASSES, BUT NOT YET FALSIFIED — DO NOT TREAT AC-10 AS SATISFIED</h2>
+ *
+ * <p>This test is green, and it must not be trusted on that basis. <b>Three successive break arms
+ * were run and the test passed through all three</b>, which means it cannot presently fail and is
+ * therefore not yet evidence of anything:
+ *
+ * <ol>
+ *   <li><b>Omit the explicit {@code session.doWork} GUC pin</b> — the break the 27-04 plan
+ *       prescribes. Still GREEN. Cause: {@code TenantSetLocalAspect} pins the GUC from
+ *       {@link TenantContext} before every repository call, so the explicit pin is redundant and
+ *       removing it changes nothing. The plan's prescribed break arm is itself vacuous here.</li>
+ *   <li><b>Set {@link TenantContext} to a random UUID</b> — still GREEN. Cause: the explicit
+ *       {@code set_config} pins {@code event.tenantId()} <em>directly</em>, not
+ *       {@code TenantContext.get()}, so it re-establishes the correct tenant regardless.</li>
+ *   <li><b>Break BOTH pins at once</b> — still GREEN. This is the one that proves the problem is
+ *       in the harness, not the worker.</li>
+ * </ol>
+ *
+ * <p><b>Leading hypothesis for (3):</b> {@code ALTER ROLE … NOSUPERUSER} applies to <em>new</em>
+ * sessions; the Hikari pool has already established its connections, and those sessions keep
+ * superuser attributes for their lifetime. So the workers very likely still bypass FORCE RLS and
+ * assertion (a) is passing vacuously. Next step is to force the pool to re-establish connections
+ * after the downgrade (evict/soft-evict, or downgrade before the context's first connection), then
+ * re-run break arm (3) and require RED.
+ *
+ * <p>Worth keeping regardless of that outcome: the worker has <b>two independent tenant pins</b>
+ * (the aspect via {@code TenantContext}, and the explicit {@code set_config} via
+ * {@code event.tenantId()}). A single-point regression in either is already tolerated — which is a
+ * stronger safety property than 27-04's threat model assumed, and is why break arms (1) and (2)
+ * could not fail.
  */
 @SpringBootTest
 @Testcontainers
@@ -136,6 +167,13 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
     @AfterEach
     void clear() {
         TenantContext.clear();
+        // Restore superuser so the next test class in this fork can seed. The container is
+        // per-class static but the ROLE change is global to the database.
+        try {
+            jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" SUPERUSER");
+        } catch (RuntimeException ignored) {
+            // Already superuser, or the test failed before the downgrade — neither is a problem.
+        }
     }
 
     @Test
@@ -159,6 +197,16 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
         List<java.util.Map.Entry<UUID, UUID>> interleaved = new ArrayList<>(ownerByAsset.entrySet());
         interleaved.sort((x, y) -> 0); // stable; the alternation comes from the shuffle below
         java.util.Collections.shuffle(interleaved, new java.util.Random(42));
+
+        // DOWNGRADE THE WORKERS' OWN ROLE — seeding is done, so RLS can now bite.
+        //
+        // This line is what makes assertion (a) mean anything, and it was missing in the first
+        // draft: the Testcontainers bootstrap role is a Postgres SUPERUSER, which bypasses even
+        // FORCE ROW LEVEL SECURITY. Creating rls_test_role and using it only for the read-back
+        // left the WORKERS running as superuser, so they saw every tenant's rows regardless of
+        // the GUC and the test passed even with the tenant pin deliberately broken. Caught by
+        // running the break arm — which is the entire reason the break arm is mandatory.
+        jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER");
 
         // 2 threads = the shipped maxConcurrentConsumers ceiling.
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -262,7 +310,14 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
                 new org.springframework.jdbc.datasource.DataSourceTransactionManager(
                         java.util.Objects.requireNonNull(jdbc.getDataSource())))
                 .execute(status -> {
-                    jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
+                    // No `SET LOCAL ROLE` here. The datasource role itself was downgraded to
+                    // NOSUPERUSER before the workers ran, so RLS already applies to this
+                    // connection. An earlier draft did SET LOCAL ROLE to a separate rls_test_role
+                    // and broke: once "test" is NOSUPERUSER it is not a member of that role, so
+                    // the statement fails with BadSqlGrammarException — and the break arm then
+                    // went RED for a HARNESS reason instead of the isolation assertion, which is
+                    // not evidence of anything.
+                    //
                     // queryForObject, NOT update(): `SELECT set_config(...)` RETURNS a row, and
                     // JdbcTemplate.update rejects that with "A result was returned when none was
                     // expected". The worker uses PreparedStatement.execute(), which tolerates both.
