@@ -733,3 +733,90 @@ Every live rule has now been observed firing **and** resolving; the dormant rule
 expression has been observed evaluating `> 0`. **Task 8 remains blocked on 27-02 (wave 4)**, so this
 plan is still not complete and no SUMMARY.md is written — writing one now would assert a completion
 that has not happened.
+
+---
+
+## 14. Task 8 — the live gate re-run after 27-02 replaced the broker
+
+Run 2026-07-29T12:55–12:58Z, against the **live 4.3.4** broker. 27-02 is complete (7/7, PR #335) but
+**not yet merged**, so this branch's `docker-compose.full-stack.yml` still pins 3.12 while the running
+broker is 4.3.4. That mismatch is deliberate and harmless here — every gate below reads the **live
+runtime**, not the compose file. No `docker compose up` was run on this branch; doing so would have
+downgraded the broker back to 3.12.
+
+### The delta (T8.4)
+
+| | Before — 3.12.14 | After — 4.3.4 |
+|---|---|---|
+| `check-alert-metrics.sh` | rc **0** — 19 live rules / 24 selectors / 3 dormant | rc **0** — **19 / 24 / 3, identical** |
+| `check-alert-rules.sh` (static) | rc **0** | rc **0** |
+| `dlq-inspect.sh --summary` | rc **1** — 9 parked | rc **0** — 0 parked |
+| family names | `queue_coarse_metrics`, `queue_consumer_count` | **unchanged** |
+| `rabbitmq_detailed_` prefix | present | **unchanged** |
+| rules edited by this task | — | **none** |
+
+**The alert layer survived a major version change with no edit at all.** That was not assumed: the
+`/metrics/detailed` contract was re-measured before any rule was trusted (predicted effect 2), and
+the family names and prefix are 3.12 facts that the plan explicitly refused to assume would survive.
+
+### T8.2 — the `/metrics/detailed` contract on 4.3, with its break arm
+
+| Arm | `rabbitmq_detailed_queue_*` lines |
+|---|---|
+| PASS — `family=queue_coarse_metrics&family=queue_consumer_count` | **78** |
+| BREAK — `family=zz_not_a_family` | **0**, from a **15-line** response |
+
+All four I-1 names present, 13 series each: `rabbitmq_detailed_queue_messages`,
+`..._messages_ready`, `..._messages_unacked`, `..._consumers`. The break arm matters twice over: it
+returns 0 matching lines **from a non-empty response**, so the assertion discriminates on content
+rather than merely observing a dead endpoint.
+
+### T8.1 — the intermediate RED was NOT captured, and a stronger substitute was run
+
+**Stated plainly rather than claimed.** The transient RED window is the gap between the volume being
+destroyed and core-java redeclaring its topology. That happened during **27-02's** execution, on the
+27-02 branch, before this gate existed in the working tree — and in the event the window was near
+zero anyway, because core-java's `CachingConnectionFactory` auto-reconnected and redeclared before
+the deliberate `compose restart core-java` (measured: 14 rows already present *before* the restart).
+It cannot be recovered retroactively, and re-creating it would mean destroying the volume a second
+time on a shared stack.
+
+The criterion's *purpose* is to show the gate is sensitive to a genuinely empty selector. That was
+proven directly, without an outage, by inserting a temporary rule whose selector cannot match on any
+healthy broker:
+
+| Arm | Result |
+|---|---|
+| BREAK — `ZZProbe27EmptySelector` on `queue="zz-queue-that-does-not-exist-27"` | **rc=1**, `FAIL: M-1 rule 'ZZProbe27EmptySelector' selector matches ZERO series — this rule can never fire`; 20 live rules / 25 selectors |
+| RESTORED | **rc=0**, 19 / 24 / 3 |
+
+Restore verified **by content**: `cmp -s` against the backup returns identical, and the probe token
+count is **0**. This is a substitution, recorded as one — not the criterion as written.
+
+### T8.3 — the DLQs are empty and STAY empty
+
+`dlq-inspect.sh --summary` rc **0**, all four DLQs at `msgs=0`, **93 minutes** after the fresh
+install (requirement: ≥ 60). The 9 messages were destroyed with the volume under 27-02's Task-3
+checkpoint, whose recorded decision was **discard** — authorised because no tenant holds any webhook
+subscription at all (0 rows across 6 tenants, proven *sighted* against a connection that sees 6
+tenants and 22 orders).
+
+**The stronger proof that 27-05 removed the producer is the arrival rate, not the 93 minutes.**
+Newest death in the export is `2026-07-26T15:33:51Z`; depth read **9** at 27-03's archive, **9** at
+27-02's snapshot and **9** at the purge — zero arrivals across ~3 days. At the pre-27-05 rate of 5
+in ~25 h (one per ~5 h) that window should have produced roughly 14 new dead letters. A refill here
+would be a **27-05 regression**, and there is none.
+
+### T8.5 — the static gate is unmoved
+
+`check-alert-rules.sh` rc **0**. It is version-independent, so this confirms the upgrade changed
+nothing in `alerts.yml` — which nothing should have, and nothing did.
+
+### One hazard found while running this task
+
+**`.evidence/` is NOT gitignored on this branch.** `git check-ignore` exits **1** here: the ignore
+entry is 27-02 Task 1's change and is unmerged. The directory currently holds **13 files, including 2
+full RabbitMQ volume tarballs and the dead-letter export** (tenant payloads). Everything in this task
+was staged by explicit path, so nothing leaked — but until 27-02 merges, a blanket `git add` on this
+branch would commit broker data and tenant payloads. Recorded here so the next session does not
+discover it the hard way.
