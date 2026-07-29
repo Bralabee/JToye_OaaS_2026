@@ -234,7 +234,20 @@ unknown exporter, which is correct behaviour — it VOIDs rather than silently p
 **Not fixed here, by design (D-08).** `scripts/check-alert-liveness.sh` is in
 `files_NOT_modified_by_design`. A gate that must change to be usable is a **finding about the gate**,
 reported rather than absorbed. Owner: **27-00** (the script and its data block) with **27-03** as the
-change that outdated it. The fix is one row in the exporter→gauge table, or a `DIRECT_JOBS` entry.
+change that outdated it.
+
+**Filed as [#339](https://github.com/Bralabee/JToye_OaaS_2026/issues/339)** (`bug`/`ci`/`P2`).
+
+**The fix is a `DIRECT_JOBS` entry, not an `EXPORTER_GAUGES` row** — verified rather than assumed:
+`rabbitmq` and `rabbitmq-queues` target the **identical** endpoint `jtoye-rabbitmq:15692`, differing
+only by `metrics_path` (`/metrics` vs `/metrics/detailed`). It is the broker's own plugin on a second
+path, not a sidecar exporter fronting a separate upstream, so it has no meaningful self-reported
+upstream-health gauge — that concept exists for `postgres`→`pg_up` and `redis`→`redis_up`, where an
+exporter can answer while the thing behind it is dead.
+
+The issue's acceptance carries the **fail direction as a requirement**: adding a fictitious ninth
+scrape job must still VOID at exit 2. A "fix" that made the gate green by teaching it to ignore
+unknown jobs would be strictly worse than the current red.
 
 ---
 
@@ -336,9 +349,10 @@ Two of my **own** probes were also vacuous and were fixed rather than accepted:
 - [ ] **Make `ops-contracts` a required status check** — branch protection is a repo-settings act,
       not a file edit, so it cannot be done in this PR. Until it is, the job runs and reports but
       cannot block a merge. **Owner: maintainer.**
-- [ ] **`check-alert-liveness.sh` VOIDs at exit 2** — one missing row for the `rabbitmq-queues` job.
-      **Owner: 27-00** (script), surfaced by 27-03's new scrape job. §8. Not filed as an issue —
-      raise if it should be scheduled rather than carried here.
+- [ ] **`check-alert-liveness.sh` VOIDs at exit 2** — one missing `DIRECT_JOBS` entry for the
+      `rabbitmq-queues` job. Filed as **#339** (`bug`/`ci`/`P2`) so it is scheduled work rather than
+      a note inside a finished phase directory. **Owner: 27-00** (script), surfaced by 27-03's new
+      scrape job. §8.
 - [ ] **#337** — edge↔core contract check + dependency-down fault test in CI. **Owner: unassigned.**
 - [ ] **#115 stays OPEN** until #337 lands. **Owner: unassigned.**
 - [ ] **Horizon dates**: this job goes amber ~**2026-09-01** and red **2026-12-01** with no commit in
