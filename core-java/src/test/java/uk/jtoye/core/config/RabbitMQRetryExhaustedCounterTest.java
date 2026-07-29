@@ -61,6 +61,31 @@ class RabbitMQRetryExhaustedCounterTest {
     }
 
     /**
+     * The arguments the retry advice is ACTUALLY invoked with in production — measured on the
+     * running stack, not assumed.
+     *
+     * <p>Spring AMQP does not proxy {@code MessageListener.onMessage(Message)}. It applies the
+     * advice chain to {@code AbstractMessageListenerContainer}'s internal {@code ContainerDelegate},
+     * whose signature is {@code invokeListener(Channel, Object)} — so the array has length 2 and
+     * <b>element 0 is a Channel proxy, not the Message</b>:
+     *
+     * <pre>DIAG args=2 c0=jdk.proxy2.$Proxy293 q=not-a-Message</pre>
+     *
+     * <p><b>This helper exists because the first version of this test did not have it.</b> It
+     * passed {@code new Object[]{message}}, which is a shape production never produces, so the test
+     * was green while every real increment landed on {@code queue="unknown"} — a fixture that
+     * encoded the author's assumption rather than the runtime, and therefore could not fail on the
+     * defect. The live end-to-end proof is what caught it. Keep the Channel stand-in in position 0.
+     */
+    private static Object[] containerDelegateArgs(Object payload) {
+        Object channelStandIn = java.lang.reflect.Proxy.newProxyInstance(
+                RabbitMQRetryExhaustedCounterTest.class.getClassLoader(),
+                new Class<?>[]{java.io.Closeable.class},
+                (proxy, method, methodArgs) -> null);
+        return new Object[]{channelStandIn, payload};
+    }
+
+    /**
      * Reaches the recoverer the builder installed. {@code RetryInterceptorBuilder.stateless()}
      * wraps the lambda in a {@link RecoveryCallback} held on the interceptor, so there is no public
      * accessor; the field is read reflectively and the callback invoked with the arguments Spring
@@ -135,7 +160,7 @@ class RabbitMQRetryExhaustedCounterTest {
                 .isNull();
 
         assertThatThrownBy(() ->
-                invokeRecoverer(interceptor, new Object[]{messageFromQueue("onboarding.notifications")}))
+                invokeRecoverer(interceptor, containerDelegateArgs(messageFromQueue("onboarding.notifications"))))
                 .as("THE RETHROW IS THE DEAD-LETTER MECHANISM. AmqpRejectAndDontRequeueException "
                         + "plus setDefaultRequeueRejected(false) is what routes a message to the "
                         + "DLX; swallowing it silently disables all four dead-letter queues.")
@@ -156,7 +181,7 @@ class RabbitMQRetryExhaustedCounterTest {
         RetryOperationsInterceptor interceptor = config.retryInterceptor(providerOf(registry));
         String randomName = RabbitMQConfig.ORDER_EVENTS_FANOUT_QUEUE_PREFIX + "kP5foIsLRpyX0fWkNqTBGw";
 
-        assertThatThrownBy(() -> invokeRecoverer(interceptor, new Object[]{messageFromQueue(randomName)}))
+        assertThatThrownBy(() -> invokeRecoverer(interceptor, containerDelegateArgs(messageFromQueue(randomName))))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
         assertThat(registry.get(RabbitMQConfig.RETRIES_EXHAUSTED_METRIC)
@@ -173,7 +198,7 @@ class RabbitMQRetryExhaustedCounterTest {
         MeterRegistry registry = new SimpleMeterRegistry();
         RetryOperationsInterceptor interceptor = config.retryInterceptor(providerOf(registry));
 
-        assertThatThrownBy(() -> invokeRecoverer(interceptor, new Object[]{"not a Message"}))
+        assertThatThrownBy(() -> invokeRecoverer(interceptor, containerDelegateArgs("not a Message")))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
         assertThat(registry.get(RabbitMQConfig.RETRIES_EXHAUSTED_METRIC)
                 .tag("queue", "unknown").counter().count()).isEqualTo(1.0d);
@@ -187,9 +212,56 @@ class RabbitMQRetryExhaustedCounterTest {
         assertThat(interceptor).isNotNull();
 
         assertThatThrownBy(() ->
-                invokeRecoverer(interceptor, new Object[]{messageFromQueue("media.process")}))
+                invokeRecoverer(interceptor, containerDelegateArgs(messageFromQueue("media.process"))))
                 .as("no registry must not turn a dead-letter into an NPE, and must not turn it "
                         + "into a silent success either")
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
+    }
+
+    // =====================================================================================
+    // THE ARGUMENT SHAPE ITSELF. This is the assertion whose absence let the defect ship.
+    // =====================================================================================
+
+    @Test
+    @DisplayName("findMessage scans past the Channel — args[0] is NEVER the Message in production")
+    void findMessageScansPastTheChannelArgument() {
+        Message msg = messageFromQueue("media.process");
+        Object[] real = containerDelegateArgs(msg);
+
+        assertThat(real[0])
+                .as("position 0 must NOT be a Message — if this ever becomes one, the fixture has "
+                        + "drifted back to the assumed shape and stops testing anything")
+                .isNotInstanceOf(Message.class);
+        assertThat(RabbitMQConfig.findMessage(real))
+                .as("the recoverer must find the Message wherever it sits in the argument list; "
+                        + "an args[0] test returns null here and every increment lands on 'unknown'")
+                .isSameAs(msg);
+
+        // Batch listeners deliver a List<Message>.
+        assertThat(RabbitMQConfig.findMessage(new Object[]{new Object(), java.util.List.of(msg)}))
+                .isSameAs(msg);
+        // And it degrades safely rather than throwing.
+        assertThat(RabbitMQConfig.findMessage(null)).isNull();
+        assertThat(RabbitMQConfig.findMessage(new Object[]{})).isNull();
+        assertThat(RabbitMQConfig.findMessage(new Object[]{"x", java.util.List.of()})).isNull();
+    }
+
+    @Test
+    @DisplayName("end-to-end shape: the counter is tagged with the REAL queue, not 'unknown'")
+    void counterIsTaggedWithTheRealQueueUnderTheProductionArgumentShape() throws Throwable {
+        MeterRegistry registry = new SimpleMeterRegistry();
+        RetryOperationsInterceptor interceptor = config.retryInterceptor(providerOf(registry));
+
+        assertThatThrownBy(() ->
+                invokeRecoverer(interceptor, containerDelegateArgs(messageFromQueue("media.process"))))
+                .isInstanceOf(AmqpRejectAndDontRequeueException.class);
+
+        assertThat(registry.get(RabbitMQConfig.RETRIES_EXHAUSTED_METRIC)
+                .tag("queue", "media.process").counter().count()).isEqualTo(1.0d);
+        assertThat(registry.find(RabbitMQConfig.RETRIES_EXHAUSTED_METRIC)
+                .tag("queue", "unknown").counter())
+                .as("'unknown' is the value the pre-fix implementation produced for EVERY message; "
+                        + "seeing it here means per-queue attribution is gone again")
+                .isNull();
     }
 }

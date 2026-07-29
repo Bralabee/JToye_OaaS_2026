@@ -444,6 +444,41 @@ public class RabbitMQConfig {
      * @param queue the raw {@code getConsumerQueue()} value, possibly null
      * @return the queue name, the collapsed SSE literal, or {@code "unknown"}
      */
+    /**
+     * Finds the {@link Message} among the arguments the retry advice was invoked with.
+     *
+     * <p><b>Do not replace this with {@code args[0]}.</b> Measured on the running stack: the
+     * advice chain does NOT proxy {@code MessageListener.onMessage(Message)}. Spring AMQP applies
+     * it to {@code AbstractMessageListenerContainer}'s internal {@code ContainerDelegate}, whose
+     * signature is {@code invokeListener(Channel, Object)} — so {@code args} has length 2 and
+     * {@code args[0]} is a JDK dynamic proxy for the Channel:
+     *
+     * <pre>DIAG args=2 c0=jdk.proxy2.$Proxy293 q=not-a-Message</pre>
+     *
+     * An {@code args[0] instanceof Message} test therefore NEVER matches in production, and every
+     * increment lands on {@code queue="unknown"} — a metric that passes every unit test written
+     * against a hand-built {@code new Object[]{message}} fixture while carrying no per-queue
+     * attribution at all. Scanning is also correct for a batch listener, where the message arrives
+     * inside a {@code List}.
+     *
+     * @param args the recoverer's arguments, possibly null
+     * @return the message, or null if none of the arguments is one
+     */
+    static Message findMessage(Object[] args) {
+        if (args == null) {
+            return null;
+        }
+        for (Object arg : args) {
+            if (arg instanceof Message m) {
+                return m;
+            }
+            if (arg instanceof java.util.List<?> list && !list.isEmpty() && list.get(0) instanceof Message m) {
+                return m;   // batch listener: attribute to the first message in the batch
+            }
+        }
+        return null;
+    }
+
     static String normaliseQueueTag(String queue) {
         if (queue == null || queue.isBlank()) {
             return "unknown";
@@ -485,10 +520,8 @@ public class RabbitMQConfig {
                 .backOffOptions(1000, 2.0, 10000)
                 .recoverer((args, cause) -> {
                     if (registry != null) {
-                        String queue = null;
-                        if (args != null && args.length > 0 && args[0] instanceof Message m) {
-                            queue = m.getMessageProperties().getConsumerQueue();
-                        }
+                        Message message = findMessage(args);
+                        String queue = message == null ? null : message.getMessageProperties().getConsumerQueue();
                         Counter.builder(RETRIES_EXHAUSTED_METRIC)
                                 .description("Messages that exhausted the AMQP retry policy and were rejected without requeue")
                                 .tag("queue", normaliseQueueTag(queue))
