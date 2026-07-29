@@ -49,7 +49,7 @@ jobs:
           # (was 1.22) made GOTOOLCHAIN auto-download 1.25 mid-build, and that
           # switched toolchain broke `go tool covdata` during coverage
           # ("no such tool covdata"). Install 1.25 natively so covdata exists.
-          go-version: '1.25'
+          go-version: '1.26'
           cache-dependency-path: edge-go/go.sum
 
       - name: Set up Node.js 20
@@ -664,7 +664,7 @@ jobs:
       - name: Set up Go 1.25
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache-dependency-path: edge-go/go.sum
 
       - name: Check edge-go formatting (gofmt)
