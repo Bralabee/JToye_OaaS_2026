@@ -115,7 +115,14 @@ class MediaListenerConcurrencyIntegrationTest {
         props.setMediaMaxConcurrency(CONCURRENCY);
 
         RabbitAdmin admin = new RabbitAdmin(connectionFactory);
-        admin.declareQueue(new Queue(QUEUE, false, false, true));
+        // DURABLE, not transient. RabbitMQ 4.x refuses a transient NON-EXCLUSIVE queue outright:
+        // "INTERNAL_ERROR - Feature `transient_nonexcl_queues` is deprecated." The old
+        // (durable=false, exclusive=false) shape declared fine on 3.12 and fails on 4.3.4, which
+        // is what the broker upgrade surfaced. Durability is incidental to what this test proves
+        // (that the media factory runs more than one consumer), and durable matches the shape of
+        // the real media.process queue. The SSE AnonymousQueue stays transient legally because it
+        // is EXCLUSIVE — it is the non-exclusive combination that 4.x removed.
+        admin.declareQueue(new Queue(QUEUE, true, false, true));
 
         SimpleMessageListenerContainer container = config
                 .mediaRabbitListenerContainerFactory(

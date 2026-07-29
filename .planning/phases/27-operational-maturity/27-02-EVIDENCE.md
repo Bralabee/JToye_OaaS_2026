@@ -423,3 +423,105 @@ regex used to parse node dirs matters:
 
 4.3 still stores under the directory name `mnesia/` even though Khepri has replaced Mnesia
 underneath — worth knowing before anyone greps for a `khepri/` path that does not exist.
+
+---
+
+## Task 5 — the runtime re-proved on 4.3.4
+
+### AC-1 — version read from the RUNNING broker
+`rabbitmqctl version` → **4.3.4**; container `.Image` == tag `.Id` == `sha256:09b39ca8a3e8…`, so the
+running broker *is* the tag. PIT-2 stands: RabbitMQ is a **pulled** image, so
+`check-runtime-freshness.sh` (which discovers only services with a `build:` stanza) structurally
+cannot cover it — this read is the only proof.
+
+### AC-3 — plugin/listener SETS and STOMP identity
+
+| Set | 3.12 baseline | 4.3.4 | diff rc |
+|---|---|---|---|
+| plugins (5) | `management, management_agent, prometheus, stomp, web_dispatch` | identical | **0** |
+| listeners (5) | `amqp, clustering, http, http/prometheus, stomp` | identical | **0** |
+
+`web_stomp` absent (D-06/T-27-05). Identity inside a live STOMP session: `auth_login=jtoye` (CLI),
+`user=jtoye protocol=STOMP 1.2` (management API), with a **non-vacuity control** — connections
+matching `MQTT` = **0**, proving the filter selects rather than passing everything.
+
+**D-09 confirmed empirically.** `list_stomp_connections user` is *still* rejected on 4.3 (rc 64), so
+PIT-1's source-pinned prediction — `v4.3.x`'s `rabbit_stomp.hrl` is byte-identical to `v3.12.x` and
+carries no `user` key — holds, and `k8s/LOCAL.md:1403`'s recipe survives unchanged.
+
+### AC-4 — no quorum queues, and the check DISCRIMINATES
+Both arms inside `trap restore_vhost_defaults EXIT INT TERM` (D-04); the restored state is asserted.
+
+| Arm | `default_queue_type` | Result |
+|---|---|---|
+| CLEAN | `classic` | 0 quorum queues; sse **1** == replicas **1** |
+| BREAK | `quorum` | a queue declared with **no explicit type** comes out `type=quorum` → count **1** |
+| RESTORED | `classic` | 0 quorum queues, **0** probe residue |
+
+**A first break attempt did NOT test what it claimed, and is recorded rather than quietly replaced.**
+Declaring `durable=false, exclusive=false` under the quorum default returned HTTP 400 — but for
+`transient_nonexcl_queues is deprecated`, *not* the quorum override. Rewritten to the form above,
+which discriminates for the intended reason.
+
+### AC-9 — the metrics delta, handed to 27-03 as measured data
+
+| Family | 3.12 | 4.3.4 | D-07 predicted |
+|---|---|---|---|
+| `erlang_mnesia_*` | **11** | **0 — all vanished** | "all 11 must VANISH" ✅ |
+| `rabbitmq_raft_*` | **6, all `0`** | **60, non-zero** (`commit_index 222`) | live under Khepri ✅ |
+| distinct series | 198 | 250 | — |
+
+Aggregated mode preserved (`rabbitmq_queue_messages_ready` still label-free), so 27-03's
+`/metrics/detailed` job is unaffected.
+
+**Bigger than predicted — 37 removed, 89 added.** Beyond the 11 `erlang_mnesia_*`, many
+`erlang_vm_*` series were **renamed** to Prometheus conventions (`erlang_vm_atom_count` →
+`erlang_vm_atoms`, `..._bytes_total` → `..._bytes`, `erlang_vm_process_count` →
+`erlang_vm_processes`, `..._context_switches` → `..._context_switches_total`), and
+`rabbitmq_raft_term_total` no longer exists unlabelled — the raft family now carries
+`{module="rabbit_khepri",ra_system="coordination"}`.
+
+**Any alert rule naming a removed series is now permanently silent — the OPS-01 failure this phase
+exists to prevent.** Checked: `infra/monitoring/prometheus/alerts.yml` references **0** removed
+series, with the grep proven able to fire (it found `rabbitmq_queue_messages_ready`, which
+survives). Lists at `.evidence/after/series-{removed,added}.txt`.
+
+**Hand-off to 27-03's blocked Task 8:** its `rabbitmq-queues` job scrapes `/metrics/detailed`, and
+all three families survive with 13 series each and the `queue=` label intact, all four DLQs included.
+
+### AC-11 — the #266/#269 single-segment constraint STILL holds on 4.3.4
+
+| Arm | Destination | Frame |
+|---|---|---|
+| A — dotted single segment (#269's fix) | `/topic/kitchen.aaa.bbb` | `RECEIPT receipt-id:rA` |
+| B — slashed multi-segment (#266's defect) | `/topic/kitchen/aaa/bbb` | `ERROR — '/kitchen/aaa/bbb' is not a valid topic destination` |
+
+`CONNECTED server:RabbitMQ/4.3.4` on both. **Arm A is load-bearing** — it proves credentials and
+listener are fine, isolating B's failure to the destination *shape*. #269 was not made redundant.
+
+### AC-13 — the rollback, proven twice
+Rehearsed against the live volume, then **fired for real** during the aborted first recreate,
+restoring 3.12.14 and all 9 messages unattended. Break arm: same tarball, wrong hostname → absent.
+
+### D7 — the upgrade broke a test, and only RUNNING it found that
+
+`MediaListenerConcurrencyIntegrationTest.java:118` declared `new Queue(QUEUE, false, false, true)`
+— durable=false, exclusive=false. 4.x refuses it: `INTERNAL_ERROR - Feature
+`transient_nonexcl_queues` is deprecated.` Fine on 3.12, fatal on 4.3.4. Fixed to `durable=true`.
+
+**Blast radius audited, not assumed.** All 10 production declarations use `QueueBuilder.durable(...)`,
+and the transient SSE `AnonymousQueue` is legal because it is **EXCLUSIVE** (measured
+`durable=false exclusive=true auto_delete=true`) — it is the *non-exclusive* combination 4.x removed.
+That fixture was the only offending declaration in the codebase.
+
+| Run | Result |
+|---|---|
+| before the fix | `BUILD FAILED`, `GRADLE_RC=1`, MediaListenerConcurrency **1 failure** |
+| after the fix | `BUILD SUCCESSFUL`, `GRADLE_RC=0`, both classes **1 test / 0 failures** |
+
+Read from `core-java/build-local/` (PIT-6), `cleanTest` + `test` shown **executed** not `UP-TO-DATE`,
+with `rabbitmq:4.3.4-management-alpine` read out of the result XML to prove which broker they hit.
+
+**A background-task notification reported "exit code 0" for the FAILING run** — that is the wrapper's
+trailing `echo`, not Gradle (`trap_exit_code_read_after_echo`). The real result came from `GRADLE_RC`
+inside the log and from the JUnit XML.
