@@ -121,7 +121,7 @@ Infrastructure:
 
 ## Constraints
 
-- **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16.2.2, Go 1.25, PostgreSQL 15
+- **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16.2.11, Go 1.25, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext; new tables ENABLE+FORCE RLS tenant-scoped, proven under the NOSUPERUSER role-downgrade (RlsContractTest pattern); new public endpoints tenant-scoped by slug
 - **Migration numbering**: shop_staff = V52, media_asset = V53 (shop_staff first); onboarding-blocker path is zero-migration

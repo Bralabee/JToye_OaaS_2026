@@ -5,8 +5,8 @@
 ## Languages
 
 **Primary:**
-- Java 21 - Core API (Spring Boot 3.4.2) — toolchain pinned in `core-java/build.gradle.kts:7-11`
-- TypeScript 5 - Frontend (Next.js 16.2.2, React 19) — `frontend/package.json:58`
+- Java 21 - Core API (Spring Boot 3.5.16) — toolchain pinned in `core-java/build.gradle.kts:7-11`
+- TypeScript 5 - Frontend (Next.js 16.2.11, React 19) — `frontend/package.json:58`
 - Go 1.22 - Edge API gateway (Gin) — `edge-go/go.mod:3`
 
 **Secondary:**
@@ -37,7 +37,7 @@
 ## Frameworks
 
 **Core (Backend):**
-- Spring Boot 3.4.2 (`core-java/build.gradle.kts:2`) - Web framework, DI, auto-configuration
+- Spring Boot 3.5.16 (`core-java/build.gradle.kts:2`) - Web framework, DI, auto-configuration
 - Spring Data JPA - ORM and database abstraction
 - Spring Security - Authentication/authorization
 - Spring OAuth2 Resource Server - JWT validation against Keycloak JWKS
@@ -55,20 +55,20 @@
 - Micrometer Tracing (Brave) + Zipkin Reporter - Distributed tracing (`build.gradle.kts:53-54`)
 
 **Frontend:**
-- Next.js 16.2.2 - React framework, file-based routing, standalone output
+- Next.js 16.2.11 - React framework, file-based routing, standalone output
 - React 19 + React DOM 19
-- React Hook Form 7.69.0 + @hookform/resolvers 5.2.2
-- Next-Auth 5.0.0-beta.30 - Keycloak OIDC session handling
+- React Hook Form 7.82.0 + @hookform/resolvers 5.2.2
+- Next-Auth 5.0.0-beta.32 - Keycloak OIDC session handling
 - TailwindCSS 3.4.1 + tailwind-merge 3.4.0 + tailwindcss-animate 1.0.7
 - Radix UI primitives (alert-dialog, dialog, dropdown-menu, label, select, slot, tabs, toast)
-- Zod 4.2.1 - Schema validation
+- Zod 4.4.3 - Schema validation
 - @stomp/stompjs 7.3.0 - Browser STOMP client for KDS WebSocket (added in v2.1)
-- Framer Motion 12.23.26 - Animations
-- Recharts 3.8.1 - Admin dashboard charts
+- Framer Motion 12.42.2 - Animations
+- Recharts 3.10.0 - Admin dashboard charts
 - date-fns 4.1.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 0.562.0
 
 **Edge Gateway:**
-- Gin v1.10.0 - HTTP routing and middleware (`edge-go/go.mod:6`)
+- Gin v1.12.0 - HTTP routing and middleware (`edge-go/go.mod:6`)
 - golang-jwt/jwt v5 (v5.2.1) - JWT validation against Keycloak JWKS
 - uber/zap v1.27.0 - Structured logging
 - sony/gobreaker v1.0.0 - Circuit breaker pattern fronting Core API
@@ -77,32 +77,32 @@
 **Testing:**
 - JUnit 5 (spring-boot-starter-test) - Java unit/integration tests
 - Spring Security Test - `@WithMockUser`, security-aware MockMvc
-- Testcontainers 1.21.3 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`build.gradle.kts:85-97`)
+- Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`build.gradle.kts:85-97`)
 - H2 - Lightweight in-memory JPA tests
 - Jest 29.7.0 + jest-environment-jsdom 30.3.0 - JS test runner
 - @testing-library/react 16.3.0, @testing-library/jest-dom 6.1.5, @testing-library/user-event 14.5.1
-- @playwright/test 1.59.1 - E2E browser automation
+- @playwright/test 1.61.1 - E2E browser automation
 - Go `testing` stdlib + table-driven tests
 
 **Build & Development:**
-- Spring Boot Gradle Plugin 3.4.2 + io.spring.dependency-management 1.1.7
+- Spring Boot Gradle Plugin 3.5.16 + io.spring.dependency-management 1.1.7
 - Build output redirected to `build-local/` to avoid root-owned `build/` permission issues (`core-java/build.gradle.kts:15`)
 - Flyway core + flyway-database-postgresql - DB migrations
 - Lombok + lombok-mapstruct-binding 0.2.0 - Boilerplate reduction
-- MapStruct 1.5.5.Final - Compile-time DTO ↔ entity mapping
+- MapStruct 1.6.3 - Compile-time DTO ↔ entity mapping
 
 ## Key Dependencies
 
 **Critical (Backend):**
-- PostgreSQL JDBC 42.7.3 (`build.gradle.kts:70`)
+- PostgreSQL JDBC 42.7.13 (`build.gradle.kts:70`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
-- AWS SDK v2 BOM 2.25.60 + `software.amazon.awssdk:s3` (`build.gradle.kts:45-46`)
-- Stripe Java SDK 28.2.0 (`build.gradle.kts:60`)
+- AWS SDK v2 BOM 2.49.2 + `software.amazon.awssdk:s3` (`build.gradle.kts:45-46`)
+- Stripe Java SDK 33.1.1 (`build.gradle.kts:60`)
 - OpenPDF 2.0.3 - Allergen label PDF generation (`build.gradle.kts:63`)
 - JasperReports 6.21.3 - Reporting (`build.gradle.kts:67`)
 
 **Resilience & Rate Limiting:**
-- Resilience4j Spring Boot 3 Starter 2.2.0 - Circuit breakers for stripe/email/ai
+- Resilience4j Spring Boot 3 Starter 2.4.0 - Circuit breakers for stripe/email/ai
 - Bucket4j core 8.10.1 + bucket4j-redis 8.10.1 - Token bucket rate limiting backed by Redis
 
 **Critical (Frontend):**
@@ -176,7 +176,7 @@
 - Prometheus + Alertmanager + Grafana stack
 
 **Container/Image Versions (source of truth):**
-- Spring Boot 3.4.2 on Java 21 — `core-java/build.gradle.kts:2,9`
+- Spring Boot 3.5.16 on Java 21 — `core-java/build.gradle.kts:2,9`
 - postgres:15-alpine — `docker-compose.full-stack.yml:14`
 - keycloak:24.0.5 — `docker-compose.full-stack.yml:35`
 - redis:7-alpine — `docker-compose.full-stack.yml:71`
@@ -185,7 +185,7 @@
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:8`
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:34`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:66`
-- Next.js 16.2.2 — `frontend/package.json:33`
+- Next.js 16.2.11 — `frontend/package.json:33`
 - Go 1.22 — `edge-go/go.mod:3`
 
 ## Test Suite
