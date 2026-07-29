@@ -20,3 +20,8 @@ jobs:
           fetch-depth: 0
       - name: Verify documentation metrics match source
         run: bash scripts/docs-freshness.sh
+      # Runs even when the metrics check above fails, so one PR reports BOTH
+      # kinds of doc drift instead of hiding the second behind the first.
+      - name: Verify documented dependency versions match the build files
+        if: always()
+        run: bash scripts/check-doc-versions.sh

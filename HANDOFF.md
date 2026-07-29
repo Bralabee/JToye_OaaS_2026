@@ -102,10 +102,16 @@ Any delta must be **explained**, not waved through: the last +2/+2 was traced to
 - [ ] Dependabot PRs — triage, do not bulk-merge (several violate the pinned stack). Note main
       already carries three **major** bumps: spring-statemachine 4.0.2, stripe-java 33.1.1,
       awssdk bom 2.49.2.
-- [ ] **Doc version drift recurs on every dependabot merge.** This handoff's companion change fixed
-      15 stale version claims in `CLAUDE.md` and 16 in `AGENTS.md` (the two files had also drifted
-      *apart* — AGENTS.md claimed Spring Boot 3.4.2 vs the real 3.5.16). There is **no gate** on
-      this; a `check-doc-versions.sh` in the `docs-freshness` mould is the obvious durable fix.
+- [x] **Doc version drift** — FIXED and now GATED. `scripts/check-doc-versions.sh` compares every
+      documented version against `build.gradle.kts` / `package.json` / `go.mod` and runs in the
+      `docs-freshness` workflow. It covers `.planning/codebase/STACK.md` as well as `CLAUDE.md` and
+      `AGENTS.md`, because STACK.md is the **generated-from source** for the stack section — gating
+      only the derived files would let the next GSD regeneration copy stale versions back in.
+      `.planning/PROJECT.md` is deliberately **not** gated: its line ~113 is a dated historical
+      record ("Spring Boot 3.4.2 … Verified 2026-04-18 post-v2.1") that is correct as history.
+      Note the gate checks **all** occurrences, not the first — the drift included a stale
+      "Spring Boot Gradle Plugin 3.4.2" sitting below a correct "Spring Boot 3.5.16", which a
+      first-match check calls clean (it slipped past two of my own passes before the gate caught it).
 - [ ] **Evidence row L6** — a KDS client receiving a relayed order event through a real broker has
       still never been captured. #266 fixed but unproven.
 - [ ] #274 gitleaks allowlists inert; #276 matrix `fail-fast: false`.
