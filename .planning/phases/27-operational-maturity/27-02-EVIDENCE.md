@@ -525,3 +525,47 @@ with `rabbitmq:4.3.4-management-alpine` read out of the result XML to prove whic
 **A background-task notification reported "exit code 0" for the FAILING run** — that is the wrapper's
 trailing `echo`, not Gradle (`trap_exit_code_read_after_echo`). The real result came from `GRADLE_RC`
 inside the log and from the JUnit XML.
+
+---
+
+## Task 6 — the rabbitmq horizon rows handed to 27-00
+
+Ownership boundary honoured (D-B): only the `rabbitmq` row changed. `scripts/check-dependency-horizons.sh`,
+the schema and the CI wiring are untouched.
+
+**No BLOCK was needed.** The plan says to stop if 27-00 has not landed `kind: out_of_repo`, `owner`
+and `manual_review`. All three are present and read by the gate (6 / 9 / 7 references), and 27-00 had
+**already created the `rabbitmq-k8s` row** (line 468) with `owner: UNASSIGNED` and a dated
+`manual_review` expiring 2026-10-26 — so the plan's item 3 was already done.
+
+### The vendor_override rule was ALSO already implemented — the plan's hand-off is a no-op
+
+D-10 item 2 / D-H.5 asks that the rule be *handed to* 27-00 as a change its gate must honour.
+Measured: 27-00's gate already implements exactly it. Header line 24 — "Catalogue `false` WITH a
+vendor_eol present -> FAIL" — and `H-2b` at line 399 emits precisely that finding. `eol_source` is a
+supported key (`catalogue` | `vendor`) that selects the effective horizon.
+
+**This corrected the row shape, and the correction matters.** `eol_date` is a *cache mirror of the
+catalogue fetch*, not the horizon — setting it to the vendor date makes H-2 fail as a stale cache.
+The horizon comes from `eol_source: vendor` + `vendor_eol`.
+
+| Row state | Gate |
+|---|---|
+| pin bumped, manifest not yet updated | **rc=2 VOID** — `H-5 rabbitmq: declared pin 'rabbitmq:3.12-management-alpine' NOT FOUND … (declared site docker-compose.full-stack.yml:144)` |
+| `eol_date: "2026-11-30"` (vendor date in the cache field) | **rc=1** — `H-2 … cached eol_date 2026-11-30 disagrees with fetched false` |
+| **corrected**: `eol_date: "false"`, `eol_source: vendor`, `vendor_eol: "2026-11-30"` | **rc=0 OK** |
+| **FAIL ARM**: `eol_source` removed | **rc=1** — `H-2b rabbitmq: catalogue reports no horizon (eol: false) for rabbitmq/4.3 but the VENDOR dates it 2026-11-30 — a missing horizon on an adopted pin` |
+
+The fail arm is the one that matters: it proves the catalogue's `"eol": false` on the exact pin this
+plan adopts would otherwise hide the real 2026-11-30 horizon, and that the gate refuses to let it.
+Restore verified **by content** (`grep -c 'eol_source: vendor'` = 1), not by `git diff --stat` —
+`trap_break_arm_revert_eats_fixes`.
+
+The `sites:` line number was updated `144` → **`149`**: the compose comments this plan added shifted
+the pin. H-5 caught that drift on its own, which is the rule doing exactly its job.
+
+**27-00's past-horizon exemption was REMOVED, not re-dated** — H-4 fails an exemption on a row that
+is no longer past horizon, so keeping it would itself be a violation. Today (2026-07-29) is 124 days
+from the 4.3 horizon, outside `HORIZON_WARN_DAYS=90`, so the row passes on its merits. It goes AMBER
+~2026-09-01 and RED on 2026-12-01 **with no commit in between** — stated in the manifest header
+before it happens, and intended.

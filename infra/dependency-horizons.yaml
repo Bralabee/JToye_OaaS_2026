@@ -142,28 +142,38 @@ dependencies:
     eol_date: "false"
 
   - id: rabbitmq
-    pin: "rabbitmq:3.12-management-alpine"
-    sites: ["docker-compose.full-stack.yml:144"]
+    pin: "rabbitmq:4.3.4-management-alpine"
+    sites: ["docker-compose.full-stack.yml:149"]
     kind: image
     owner: maintainer
     eol_slug: rabbitmq
-    eol_cycle: "3.12"
-    eol_date: "2024-02-21"
-    vendor_eol: "2024-02-29"
+    eol_cycle: "4.3"
+    eol_date: "false"
+    eol_source: vendor
+    vendor_eol: "2026-11-30"
     vendor_source: "https://www.rabbitmq.com/release-information"
-    exemption:
-      reason: >-
-        RabbitMQ 3.12 community support ended 2024-02-29 (vendor) / 2024-02-21 (catalogue);
-        commercial support ended 2025-06-30. THE TARGET IS 4.3, AND THE REASON IS DATED:
-        4.1 EOL 2026-01-30 (already past), 4.2 EOL 2026-07-31 (four days after this row was
-        written), 4.3 carries catalogue `eol: false` but vendor community support ending
-        2026-11-30. So 4.3 is the ONLY viable series and its own horizon is under five months
-        away — upgrading to 4.2 would land on a series that dies within the week. 27-02 owns
-        the upgrade and reads this row rather than re-deriving it. ORDERING HAZARD recorded
-        with it: destroying the broker before 27-01 lands drops in-flight media.process
-        messages.
-      expires: "2026-11-30"
-      tracked_by: "27-02"
+    note: >-
+      UPGRADED BY 27-02 (2026-07-29): 3.12.14 -> 4.3.4, by FRESH INSTALL. There is no in-place
+      3.12 -> 4.x path (the chain is 3.12 -> 3.13 -> 4.2 -> 4.3) and 4.3 has no Mnesia reader
+      at all, so the volume was snapshotted, destroyed and recreated; the topology is code
+      (RabbitAdmin re-declares from RabbitMQConfig), not data. Procedure and rollback:
+      docs/runbooks/rabbitmq-broker-upgrade.md. 27-00's past-horizon exemption is REMOVED, not
+      re-dated: H-4 fails an exemption on a row that is no longer past horizon, so leaving it
+      would itself be a violation.
+
+      VENDOR OVERRIDE, AND IT IS LOAD-BEARING — HANDED TO 27-00 (D-10 item 2 / D-H.5).
+      `eol_date` here is the VENDOR date. The endoflife.date catalogue returns
+      `"eol": false` and `"extendedSupport": true` for cycle 4.3 — verified live, on the exact
+      pin this row adopts — while the vendor publishes community support ending 2026-11-30.
+      Under a rule that treats catalogue-vs-vendor disagreement as always a NOTE, this gate
+      stays green straight through 2026-11-30 with no code change: the gate reporting clean on
+      a finding. The rule 27-00's gate must honour is narrower: both concrete dates -> NOTE
+      (the old 3.12 case, 2024-02-21 vs 2024-02-29); catalogue `false`/`null`/boolean where the
+      vendor publishes a DATE -> FAIL (exit 1), naming the row and both values.
+
+      4.3's community window closes 2026-11-30, so at HORIZON_WARN_DAYS=90 this row goes AMBER
+      ~2026-09-01 and RED on 2026-12-01 with no commit in between. Intended, and already stated
+      in this file's header. It is a treadmill, and the mechanism is what makes it survivable.
 
   - id: minio
     pin: "minio/minio:${MINIO_IMAGE_TAG:-latest}"
