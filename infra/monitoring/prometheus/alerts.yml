@@ -282,9 +282,25 @@ groups:
           summary: "Keycloak identity provider is down"
           description: "Keycloak has been unreachable for more than 2 minutes — all authentication will fail"
 
-      # Redis down
+      # Redis down.
+      #
+      # TS-15 (docs/ops/terminal-states.yaml), issue #342 item 5. Identical defect to
+      # DatabaseDown/D-11 above, in a second metric: `up{job="redis"}` is the health of
+      # the EXPORTER, and `redis_up` — the exporter's own report of whether it can reach
+      # Redis — was live and referenced by NO rule (`grep -c redis_up alerts.yml` -> 0).
+      #
+      # Unlike the postgres case this was LATENT, never observed failing, which is why it
+      # survived a review that fixed its twin. So it was induced rather than argued.
+      # Measured 2026-07-29 with jtoye-redis stopped and jtoye-redis-exporter left running:
+      #     up{job="redis"} = 1     <- the exporter still answers, so the OLD rule is blind
+      #     redis_up        = 0     <- Redis is actually unreachable
+      #     up{job="redis"} == 0                    -> 0 samples  (would NOT have fired)
+      #     up{job="redis"} == 0 or redis_up == 0   -> 1 sample   (fires)
+      # and on restore both return 0 samples, so this does not page in steady state.
+      #
+      # A total loss of the cache would have alerted nobody.
       - alert: RedisDown
-        expr: up{job="redis"} == 0
+        expr: up{job="redis"} == 0 or redis_up == 0
         for: 1m
         labels:
           severity: critical
