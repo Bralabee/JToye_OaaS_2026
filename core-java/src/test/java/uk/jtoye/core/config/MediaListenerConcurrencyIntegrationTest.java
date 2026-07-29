@@ -56,9 +56,12 @@ class MediaListenerConcurrencyIntegrationTest {
     private static final int MESSAGES = 40;
     private static final String QUEUE = "media.process.concurrency-probe";
 
+    // Image string only: the Testcontainers library stays at 1.21.4 (D-05). This file arrived
+    // with 27-04 after 27-02 was written, so it is absent from the plan's files_modified —
+    // AC-2's git-sourced discovery caught it (evidence D2).
     @Container
     static final RabbitMQContainer RABBIT = new RabbitMQContainer(
-            DockerImageName.parse("rabbitmq:3.12-management-alpine"));
+            DockerImageName.parse("rabbitmq:4.3.4-management-alpine"));
 
     private final RabbitMQConfig config = new RabbitMQConfig();
 

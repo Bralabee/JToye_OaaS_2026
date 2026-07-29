@@ -268,3 +268,158 @@ boots empty, healthy, and on the right version.
 `--quiet` suppresses the *banner* but not the *column header*. The real census is 13 / 1 SSE / 1
 replica, unchanged. AC-4 should count from the management API's JSON (`jq length`), not from a
 `wc -l` over CLI output.
+
+---
+
+## Task 3 — the checkpoint: adjudicated, gated, purged
+
+### Step 1 — export, re-taken at the instant of destruction
+
+An archive taken in a different plan on a different day is not evidence of what is in the queue when
+it dies, so the batch was re-exported independently. `DEPTH_NOW` **9**, exported objects **9**, depth
+after the peek **9** — non-destructive, as `ackmode: ack_requeue_true` promises. Re-derived
+characterisation matches 27-03 §11 exactly: 5 `order.state.*` routing keys, one `__TypeId__`
+(`OrderStateChangeEvent`), source `webhook.deliveries` / `order.events`, reason `rejected`,
+`x-death[0].count == 1` on all nine. Retained at `.evidence/webhook-dlq-export.json`.
+
+### Step 2 — the facts put to the human, each re-measured
+
+| # | Fact | Measured 2026-07-29T11:11Z |
+|---|---|---|
+| a | ACTIVE `ORDER_STATE_CHANGED` subscription? | **NO — `webhook_subscription` 0 rows, all 6 tenants.** 27-05 did *not* seed one |
+| b | `webhook_delivery` rows | **0** |
+| e | Age span | oldest `2026-07-15T11:46:18Z`, newest `2026-07-26T15:33:51Z` — 3 days stale |
+| f | Producing fault still live? | **NO.** `DEPTH_NOW 9 == ARCHIVED_N 9`; ~5/day before, zero since. **27-05 held** |
+| h | Three counts | `ARCHIVED_N` 9 = `SNAP_DEPTH` 9 = `DEPTH_NOW` 9 — no divergence |
+
+**Fact (a) is a 0, so it needed a non-vacuity control.** The same superuser connection sees
+**6 tenants** and **22 orders**. The read is therefore proven *sighted*, and the 0 is real absence
+rather than a filtered read — the exact trap recorded in `trap_rls_blinds_the_verification_query`.
+
+**Human decision: (b) DISCARD.** Verbatim reason: no tenant holds any webhook subscription at all,
+so a replay would fan out to zero subscribers and change nothing observable; per fact (g) the
+`x-death` history resets on republish regardless; the payloads survive in the export.
+
+### Step 3 — the M15 gate went RED, and was adjudicated rather than overridden
+
+```
+media_asset PENDING : 1     (gate demands 0)
+media.process depth : 0
+```
+
+Reads proven sighted: 16 assets total — `PENDING=1 FAILED=3 ACTIVE=12`.
+
+The row is `9dc42623-ae9e-4088-81d9-1836a8d8c9ca`, object key
+`…/quarantine/ac55-fixture-delayed.jpg`, created `2026-07-27 18:12:39+00`. `ac55` is **27-01's own
+AC-5.5 label** (`27-01-SUMMARY.md:37`, `baselines/ac55-screenshots/`) — a leftover fixture from a
+merged plan, not a real vendor upload.
+
+**The hazard the gate protects against is provably absent.** It has **no `media_event_outbox` row at
+all** (confirmed by a direct `asset_id` lookup, and the lookup is proven capable of returning
+non-zero — ACTIVE and FAILED assets each have one). No outbox row ⇒ never dispatched ⇒ no in-flight
+`media.process` message to strand. Per 27-01's own contract such an asset "is never flipped and
+never touched", so it is inert; its quarantine expires 2026-07-30.
+
+**Human decision: adjudicate and proceed, leaving the row untouched.** Deleting a row to turn a gate
+green is the green-by-construction move this phase exists to prevent. Recorded RED-but-inert, not
+reclassified.
+
+### The rollback path was falsified BEFORE the volume was destroyed — and then fired for real
+
+**Rehearsal.** `resurrect_312` invoked by hand against the live volume: restored to depth **9**,
+node `rabbit@53955960a605`, version 3.12.14.
+
+**Break arm**, same tarball / same image / same volume contents, different node identity:
+
+| Arm | Node | DLQ depth |
+|---|---|---|
+| PASS — tarball's own hostname | `rabbit@53955960a605` | **9** |
+| BREAK — `--hostname wrong-host-1785323984` | `rabbit@wrong-host-1785323984` | **absent** |
+
+The two arms genuinely discriminate, which the draft's version could not. Probe container and
+volume both removed (0 remaining).
+
+**Then it fired for real.** The first destroy→recreate run aborted on D6 below; the trap restored
+3.12.14 from the tarball unattended and the queue census came back **13 with the DLQ at 9**. The
+safety net is proven twice — once rehearsed, once under genuine unplanned-abort conditions. That is
+considerably stronger than a rehearsal alone.
+
+### D6 — two real 3.12→4.3 behavioural differences that make correct states read as failures
+
+**(a) `node()` is a QUOTED atom on 4.3.** Measured: 3.12 → `rabbit@53955960a605`; 4.3 →
+`'rabbit@jtoye-rabbitmq'` **with single quotes**, because the pinned hostname contains a hyphen and
+so requires quoting as an Erlang atom. The container-id hostname never did. The plan's literal
+`[ "$n" = "rabbit@jtoye-rabbitmq" ]` therefore **fails on a correct pin** — it is what aborted the
+first run and triggered the rollback. Comparison normalised with `tr -d "'"`.
+
+**(b) health and `ping` go green before queue recovery completes.** A depth assertion gated on
+`rabbitmq-diagnostics ping` reads *empty*, which is indistinguishable from PIT-12's "booted empty"
+failure. In a real rollback that reads as the recovery having failed when it succeeded — inviting
+destructive correction. Every depth assertion now polls until the queue list is **populated**, not
+until ping succeeds. Both belong in the Task 7 runbook.
+
+---
+
+## Task 4 — 4.3.4 as a fresh install
+
+### The guarded window
+
+Destroy and recreate ran as **one** sequence under `trap resurrect_312 EXIT INT TERM`, never two
+steps a session could be abandoned between. Compose validity (`config` rc=0) and all three source
+edits were verified *before* the window opened — a YAML error found after `volume rm` is the worst
+possible moment.
+
+```
+volume removed        : 0 remaining
+image                 : rabbitmq:4.3.4-management-alpine (pulled)
+healthy after         : 7 polls
+version               : 4.3.4
+node                  : 'rabbit@jtoye-rabbitmq'  -> the pin taking effect on FIRST boot
+WINDOW CLOSED CLEANLY — trap cleared, rollback override removed
+```
+
+**Runtime parity by identity:** container `.Image` == tag `.Id` ==
+`sha256:09b39ca8a3e8…`, so the running broker *is* the 4.3.4 tag, not a survivor of a `start`.
+
+### Topology re-declared by code, not restored from data (D-02)
+
+| Check | 3.12 baseline | 4.3.4 | |
+|---|---|---|---|
+| total queues | 13 | **13** | ✅ |
+| classic AND durable | 12 | **12** | ✅ |
+| SSE `AnonymousQueue` | 1 | **1** | ✅ |
+| running replicas | 1 | **1** | ✅ — count *derived*, per PIT-7 |
+| quorum queues | 0 | **0** | ✅ D-03 |
+| distinct types | `["classic"]` | `["classic"]` | ✅ |
+
+The SSE queue is exclusive+auto-delete, so it died with the old connection and was re-declared on
+reconnect; it was polled for rather than assumed. core-java healthy after `compose restart
+core-java` (the service name — `docker exec jtoye-core-java` does not exist, PIT-7).
+
+### The purge, executed
+
+`webhook.deliveries.dlq` depth **0** (was 9). The volume destruction *was* the purge, per the human's
+(b) answer. The nine payloads survive in `.evidence/webhook-dlq-export.json`.
+
+### Step 7 — the post-pin snapshot, where the pin starts paying for itself
+
+`rabbitmq_data-4.3.4-20260729T112413Z.tar.gz`, sidecar `.node-host` = **`jtoye-rabbitmq`** (asserted),
+so the *next* rollback needs no hostname override at all.
+
+| | pre-pin snapshot | post-pin snapshot |
+|---|---|---|
+| base node dirs | **10** (9 orphaned + 1 live) | **1** |
+
+That contrast is the pin's whole value: every past `--force-recreate` had been silently orphaning a
+node directory, and nothing ever asserted message survival to notice.
+
+**PIT-13 demonstrated live rather than quoted.** The pinned node name *contains a hyphen*, so the
+regex used to parse node dirs matters:
+
+| Pattern | Matches `rabbit@jtoye-rabbitmq` |
+|---|---|
+| `[^/]*` (correct) | **1** |
+| `[^/-]*` (the trap) | **0** — the hyphen defeats it, and the pinned node vanishes from its own count |
+
+4.3 still stores under the directory name `mnesia/` even though Khepri has replaced Mnesia
+underneath — worth knowing before anyone greps for a `khepri/` path that does not exist.

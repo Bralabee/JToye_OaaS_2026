@@ -141,8 +141,22 @@ services:
 
   # RabbitMQ Message Queue
   rabbitmq:
-    image: rabbitmq:3.12-management-alpine
+    # 4.3 series — community support ends 2026-11-30. The horizon is tracked in
+    # infra/dependency-horizons.yaml and 27-00's gate fails the build before it lapses.
+    # There is no in-place 3.12 -> 4.x path (3.12 -> 3.13 -> 4.2 -> 4.3, and 4.3 has no
+    # Mnesia reader at all), so this moved by fresh install; see
+    # docs/runbooks/rabbitmq-broker-upgrade.md.
+    image: rabbitmq:4.3.4-management-alpine
     container_name: jtoye-rabbitmq
+    hostname: jtoye-rabbitmq   # RabbitMQ keys its data dir by rabbit@$(hostname). Without this,
+                               # every --force-recreate gets a new container-id hostname, orphans
+                               # the previous node directory and boots EMPTY but healthy. Before
+                               # this line existed the volume had accumulated TEN node dirs —
+                               # NINE orphaned plus the one live — from past recreates, and nobody
+                               # noticed, because nothing ever asserted message survival.
+                               # NOTE: a tarball restores under the hostname it was TAKEN under.
+                               # Snapshots predating this line need an override (see
+                               # docs/runbooks/rabbitmq-broker-upgrade.md); later ones do not.
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
