@@ -43,16 +43,16 @@
 - Spring OAuth2 Resource Server - JWT validation against Keycloak JWKS
 - Spring AOP - Aspect-oriented programming (`@Cacheable`, tenant guards)
 - Spring Cache - Redis-backed distributed cache
-- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `build.gradle.kts:32`)
-- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `build.gradle.kts:35`)
-- Spring WebFlux - Non-blocking WebClient for Claude/Ollama AI calls (`build.gradle.kts:49`)
-- Spring Statemachine 3.2.1 - Order lifecycle state machine (`build.gradle.kts:25`)
+- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `build.gradle.kts:47`)
+- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `build.gradle.kts:50`)
+- Spring WebFlux - Non-blocking WebClient for Claude/Ollama AI calls (`build.gradle.kts:76`)
+- Spring Statemachine 4.0.2 - Order lifecycle state machine (`build.gradle.kts:40`)
 
 **API & Observability:**
 - Spring Actuator - `/actuator/health`, `/actuator/prometheus`
-- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`build.gradle.kts:71`)
+- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`build.gradle.kts:106`)
 - Micrometer Prometheus - Metrics export (`io.micrometer:micrometer-registry-prometheus`)
-- Micrometer Tracing (Brave) + Zipkin Reporter - Distributed tracing (`build.gradle.kts:53-54`)
+- Micrometer Tracing (Brave) + Zipkin Reporter - Distributed tracing (`build.gradle.kts:80`)
 
 **Frontend:**
 - Next.js 16.2.11 - React framework, file-based routing, standalone output
@@ -94,12 +94,12 @@
 ## Key Dependencies
 
 **Critical (Backend):**
-- PostgreSQL JDBC 42.7.13 (`build.gradle.kts:70`)
+- PostgreSQL JDBC 42.7.13 (`build.gradle.kts:105`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
 - AWS SDK v2 BOM 2.49.2 + `software.amazon.awssdk:s3` (`build.gradle.kts:45-46`)
-- Stripe Java SDK 33.1.1 (`build.gradle.kts:60`)
-- OpenPDF 2.0.3 - Allergen label PDF generation (`build.gradle.kts:63`)
-- JasperReports 6.21.3 - Reporting (`build.gradle.kts:67`)
+- Stripe Java SDK 33.1.1 (`build.gradle.kts:87`)
+- OpenPDF 2.0.3 - Allergen label PDF generation (`build.gradle.kts:90`)
+- ~~JasperReports~~ — **REMOVED 2026-07-27** (`build.gradle.kts:94`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
 
 **Resilience & Rate Limiting:**
 - Resilience4j Spring Boot 3 Starter 2.4.0 - Circuit breakers for stripe/email/ai
