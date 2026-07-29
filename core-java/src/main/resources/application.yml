@@ -361,6 +361,37 @@ management:
     metrics:
       export:
         enabled: true
+  # issue #342: HighResponseTime could NEVER FIRE. It computes
+  # histogram_quantile(0.95, ... http_server_requests_seconds_bucket ...), and
+  # that bucket family did not exist: measured 2026-07-29, `_bucket` had 0 series
+  # while `_count`, `_sum` and `_max` each had 78. Micrometer only emits `_bucket`
+  # when a distribution histogram is switched on, and it was configured nowhere.
+  #
+  # PROPERTY NAME VERIFIED, NOT ASSUMED. This repo's recorded BOOT-3 trap is a
+  # Boot-2 property that silently no-ops under Boot 3 (see the comment above about
+  # management.metrics.export.prometheus.enabled leaving the registry uncreated).
+  # `management.metrics.distribution.*` was read out of
+  # spring-boot-actuator-autoconfigure-3.5.16.jar's own
+  # META-INF/spring-configuration-metadata.json, which lists
+  # percentiles-histogram, minimum-expected-value and maximum-expected-value under
+  # exactly this prefix. Only the EXPORT properties moved in Boot 3, not these.
+  #
+  # THE RANGE IS BOUNDED ON PURPOSE — it is the difference between a ~29% and a
+  # ~81% increase in total series. Measured budget before this change: 6699 series
+  # total, 78 distinct uri/method/status combinations. Micrometer's DEFAULT
+  # (unbounded) histogram emits ~70 buckets per combination, i.e. ~5460 new series.
+  # Clamping to 10ms..2s emits roughly 25, i.e. ~1950 new series. 2s is chosen
+  # because the alert threshold is 1s: the bucket boundaries only need to bracket
+  # the threshold for histogram_quantile to interpolate a useful p95 around it.
+  # Raising the ceiling buys precision the alert cannot use and costs series.
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      minimum-expected-value:
+        http.server.requests: 10ms
+      maximum-expected-value:
+        http.server.requests: 2s
   tracing:
     sampling:
       probability: ${TRACING_PROBABILITY:0.1}  # Sample 10% of requests (increase in staging/dev)

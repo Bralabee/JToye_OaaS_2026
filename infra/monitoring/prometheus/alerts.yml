@@ -157,10 +157,37 @@ groups:
     interval: 30s
     rules:
       # No orders created recently (potential issue)
+      #
+      # THE SELECTOR MUST NAME BOTH CREATE PATHS, AND IT DID NOT (issue #342).
+      # Measured 2026-07-29: the old selector `uri=~"/orders|/api/v[0-9]+/orders"`
+      # matched ZERO series while the same metric without labels matched 78.
+      # Prometheus `=~` is FULLY ANCHORED, so `/orders` matches only the exact
+      # string `/orders`, and neither alternative matches a `/public/...` path.
+      # Every URI that actually returns POST 201 was:
+      #   /api/v1/admin/tenants  /api/v1/customers  /api/v1/products
+      #   /api/v1/shops          /public/shops/{slug}/orders   <-- orders
+      # Orders are created by the STOREFRONT CHECKOUT
+      # (PublicStorefrontController:99), and by the vendor-side
+      # OrderController:63 (`POST /api/v1/orders`) which simply had no traffic in
+      # the measured environment. Both are legitimate; both are matched now.
+      #
+      # WHY THIS WAS WORSE THAN "DATALESS": the expression fires when orders STOP
+      # (`< 1`). Over an EMPTY selector it returns the empty vector, so a total
+      # outage of order creation produced NO alert — the exact inverse of intent.
+      #
+      # `[^/]+` not `.*` for the slug: Micrometer emits the URI TEMPLATE, so the
+      # literal text is `{slug}`, which contains no `/`. Braces are regex
+      # metacharacters and would need escaping; a negated character class avoids
+      # that entirely and cannot over-match across path segments.
+      #
+      # RESIDUAL LIMIT, stated rather than hidden: `increase()` needs the series to
+      # EXIST. On a deployment where no order has ever been created the series is
+      # absent and this rule still cannot fire. Covering that needs an `absent()`
+      # arm, which would page on every fresh environment — deliberately not added.
       - alert: NoOrdersCreated
         expr: |
           (
-            increase(http_server_requests_seconds_count{uri=~"/orders|/api/v[0-9]+/orders",method="POST",status="201"}[30m]) < 1
+            increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1
           )
         for: 30m
         labels:
