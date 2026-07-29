@@ -482,6 +482,93 @@ jobs:
         run: npx vitest run
         working-directory: mcp-server
 
+  # Job 1f: Operational contracts (Phase 27 / OPS-01, OPS-02).
+  # Three STATIC gates. None needs a running stack; all three run in seconds.
+  # Full local run + rationale for each: k8s/DEPLOYMENT.md "Operational contracts".
+  #
+  #   1. check-terminal-states.sh — 27-00 F-9. Pins the chain
+  #      discovery -> register -> alert -> runbook across docs/ops/terminal-states.yaml.
+  #      A new DLQ constant, poison-outbox migration or terminal FAILED enum constant
+  #      that has no register row fails the build, as does a register row naming an
+  #      alert that does not exist, an EXPIRED dated deferral, or a live alert with no
+  #      runbook section. This is what stops a terminal failure state from being
+  #      silently unowned.
+  #   2. check-dependency-horizons.sh — 27-00 F-6. Every pinned image and toolchain
+  #      carries a support horizon. Past horizon, inside the 90-day warn window, a
+  #      stale cache, a wrong eol slug, a catalogue-`false`-vs-vendor-date conflict,
+  #      manifest<->source pin drift in EITHER direction, and an UNKNOWN row whose
+  #      dated `manual_review` has lapsed all fail.
+  #   3. check-alert-rules.sh — 27-03 F-8, whose measurement was blunt: "there is no
+  #      CI validation of alerts.yml at all". Runs `promtool check rules`, then asserts
+  #      every live rule carries its labels and annotations and has a matching
+  #      `## <AlertName>` section in docs/runbooks/alerts.md. THIS GATE WAS ORPHANED:
+  #      27-03 dropped CI wiring to its brief, 27-00 never picked it up, and each
+  #      believed the other owned it. It is wired here.
+  #
+  # EXIT CONVENTION, shared by all three: 0 = clean · 1 = violation · 2 = VOID.
+  # **EXIT 2 FAILS THIS JOB.** A missing tool, an unreachable endoflife.date, an absent
+  # docker or an empty discovery result turns this job RED — never silently green,
+  # because "could not check" is never "clean". Do not add `continue-on-error`,
+  # `|| true` or `if: always()` to any step here; that would invert the one property
+  # these gates exist to have.
+  #
+  # DELIBERATELY ABSENT, and the absence is the point:
+  #   - scripts/check-alert-liveness.sh (27-00) and scripts/check-alert-metrics.sh
+  #     (27-03) are RUNTIME gates. Same reasoning already recorded above for
+  #     check-runtime-freshness.sh: a runner has no Prometheus and no running
+  #     containers, so they could only ever exit 2 (VOID) here, and a permanently-VOID
+  #     job invites a `|| true` that would turn it into a gate that passes because it
+  #     measures nothing. They run where a runtime exists, and every phase SUMMARY
+  #     records check-alert-liveness.sh's exit code and timestamp instead.
+  #   - infra/load-testing/baseline.sh is out for a different reason (27-00 D-11): a
+  #     shared runner's throughput numbers are noise, and a noisy gate gets disabled.
+  #
+  # TWO OUTBOUND DEPENDENCIES, accepted deliberately:
+  #   - check-dependency-horizons.sh fetches endoflife.date;
+  #   - check-alert-rules.sh pulls prom/prometheus:v2.48.0 to run promtool (promtool
+  #     is not installed on runners, and the image's ENTRYPOINT is /bin/prometheus, so
+  #     the call must use --entrypoint=promtool).
+  # An outage of either fails this job at exit 2. Treating an unreachable source as
+  # clean is the exact inversion this phase exists to prevent.
+  #
+  # THIS JOB GOES AMBER AND RED ON DATES, WITH NO CODE CHANGE. RabbitMQ 4.3's vendor
+  # horizon is 2026-11-30 against a 90-day warn window, so expect:
+  #   ~2026-09-01  amber — inside the warn window, gate still exits 0
+  #    2026-12-01  RED   — past horizon; resolve by upgrading the pin or re-dating the
+  #                        exemption in infra/dependency-horizons.yaml, NEVER by
+  #                        weakening this job.
+  # Without this note the first horizon-driven red reads as a broken gate.
+  #
+  # NO JOB-LEVEL `if:` — AND IT MUST NEVER GAIN ONE. This job is eligible for a deploy
+  # `needs:` list precisely because it cannot skip (see the comment above
+  # build-and-push: a SKIPPED `needs:` entry silently blocks every deploy). It is not
+  # in that list today — see 27-06-SUMMARY.md for the dated reason and its trigger.
+  ops-contracts:
+    name: Operational Contracts
+    runs-on: ubuntu-latest
+    # Explicit because the repo's default GITHUB_TOKEN is restricted. No gate here
+    # writes to the repo, opens a PR, or needs a package scope — read is sufficient.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Assert every terminal failure state has a detection path (27-00 F-9)
+        run: |
+          chmod +x ./scripts/check-terminal-states.sh
+          ./scripts/check-terminal-states.sh
+
+      - name: Assert every pinned dependency has a live support horizon (27-00 F-6)
+        run: |
+          chmod +x ./scripts/check-dependency-horizons.sh
+          ./scripts/check-dependency-horizons.sh
+
+      - name: Assert every alert rule is valid, labelled and documented (27-03 F-8)
+        run: |
+          chmod +x ./scripts/check-alert-rules.sh
+          ./scripts/check-alert-rules.sh
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan

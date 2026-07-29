@@ -1,0 +1,152 @@
+BASELINE: B-8
+CAPTURED: 2026-07-29T14:37:06+00:00
+TREE: 3442ccb82a08d037e5bead6f39879597bae0ec2f  clean=yes
+CLOSED_BY: AC-0.1, AC-0.2, AC-0.3, AC-1.3 (extractor control)
+SUBJECT: Pre-wiring state of the three STATIC gates 27-06 wires into the new `ops-contracts` CI job.
+  This is the only chance to record "what did the gates say before CI enforced them" — after this
+  plan lands, that state is unrecoverable. All three are GREEN at wiring time, which is the
+  precondition for wiring them at all: landing a knowingly-red gate on main is how a gate earns a
+  `|| true`. check-terminal-states.sh X-3 is 0 because 27-03 landed the four missing runbook
+  sections; it was 1 for 27-00.
+  Also records the awk-extractor measurement that forces AC-1.3's flag form over the drafted range
+  form, and TWO plan assertions falsified against this tree (see FINDINGS).
+
+--- (a) SCRIPT PRESENCE / EXECUTABILITY ---
+scripts/check-terminal-states.sh  exists=yes  exec=yes
+scripts/check-dependency-horizons.sh  exists=yes  exec=yes
+scripts/check-alert-rules.sh  exists=yes  exec=yes
+
+--- (b) 27-03 MERGE, RECORDED BY SHA NOT BELIEF ---
+COMMAND: git log --oneline origin/main -- scripts/check-alert-rules.sh | tail -1
+3442ccb feat(27-03): failure visibility — live-proven alert rules, DLQ triage and the messaging runbook (#336)
+MERGED_AT: 2026-07-29T15:32:13+01:00
+CONTROL (AC-0.2) — the command must distinguish merged from never-committed:
+COMMAND: git log --oneline origin/main -- scripts/check-does-not-exist.sh
+OUTPUT: <empty>  lines=0
+
+--- (c) GATE 1 ---
+COMMAND: bash scripts/check-terminal-states.sh
+EXIT: 0
+--- OUTPUT ---
+terminal-states classification summary
+  discovery   D-1 dlq=4  D-2 poison-migrations=2  D-3 entity-statuses=5  D-4 scrape-jobs=8
+  register    rows=17  with-alert=14  deferred=16
+  alerts.yml  live-alerts=19 (DiskSpace* skip=1)   runbook sections=23
+  pending     X-2 alert named but not yet built (dated deferral)=9  <-- NOT coverage
+  violations  X-1 missing-row=0  X-2 missing-alert=0 expired-deferral=0  X-3 missing-runbook=0
+PASS: 4 DLQ(s), 2 poison outbox migration(s), 5 terminal entity status(es) and 8 scrape job(s) all map to 17 register rows (16 dated deferral(s), 0 expired); every named alert exists in infra/monitoring/prometheus/alerts.yml and every live alert has a runbook section.
+
+--- (c) GATE 2 ---
+COMMAND: bash scripts/check-dependency-horizons.sh
+EXIT: 0
+--- OUTPUT ---
+H-3 EXEMPT alpine: alpine-linux/3.20 PAST EOL 2026-04-01 (catalogue, 119 days) until 2026-11-30 [DEFERRED-27]
+H-3 EXEMPT keycloak: keycloak/24.0 PAST EOL 2024-06-10 (catalogue, 779 days) until 2026-12-31 [DEFERRED-27]
+H-3 redis: redis/7.4 has no declared horizon (eol: false) — nothing to breach today
+H-3 EXEMPT prometheus: prometheus/2.48 PAST EOL 2023-12-28 (catalogue, 944 days) until 2026-12-31 [DEFERRED-27]
+H-3 EXEMPT grafana: grafana/10.2 PAST EOL 2024-07-24 (catalogue, 735 days) until 2026-12-31 [DEFERRED-27]
+H-3 golang: go/1.25 has no declared horizon (eol: false) — nothing to breach today
+H-3 EXEMPT node: nodejs/20 PAST EOL 2026-04-30 (catalogue, 90 days) until 2026-11-30 [DEFERRED-27]
+H-3 go-toolchain: go/1.25 has no declared horizon (eol: false) — nothing to breach today
+H-3 gradle: gradle/8 has no declared horizon (eol: false) — nothing to breach today
+  NOTE minio: pin not at docker-compose.full-stack.yml:393; found at line(s) 407 (run --refresh)
+  NOTE minio-mc: pin not at docker-compose.full-stack.yml:415; found at line(s) 429 (run --refresh)
+  NOTE ollama: pin not at docker-compose.full-stack.yml:435; found at line(s) 449,474 (run --refresh)
+  NOTE ollama: pin not at docker-compose.full-stack.yml:460; found at line(s) 449,474 (run --refresh)
+  NOTE mailhog: pin not at docker-compose.full-stack.yml:476; found at line(s) 490 (run --refresh)
+UNKNOWN minio: endoflife.date has no `minio` product (404, measured 2026-07-27), and the pin is a floatin owner=maintainer review-expires=2027-01-27
+UNKNOWN minio-mc: Same 404 + floating-tag position as `minio`. Separate row because it is a separate pinned  owner=maintainer review-expires=2027-01-27
+UNKNOWN ollama: endoflife.date 404 (measured 2026-07-27), floating `:latest`. Pinned at TWO sites — the mo owner=maintainer review-expires=2027-01-27
+UNKNOWN mailhog: endoflife.date 404 (measured 2026-07-27). MailHog is archived upstream and receives no rel owner=maintainer review-expires=2027-01-27
+UNKNOWN alertmanager: endoflife.date has no `alertmanager` product (404 on `alertmanager` and on `prometheus-ale owner=maintainer review-expires=2027-01-27
+UNKNOWN redis-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). See docs/ops/terminal-stat owner=maintainer review-expires=2027-01-27
+UNKNOWN postgres-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault (regi owner=maintainer review-expires=2027-01-27
+UNKNOWN rabbitmq-k8s: The staging/production broker is not deployed from this repo. MEASURED 2026-07-26: `grep - owner=UNASSIGNED review-expires=2026-10-26
+dependency-horizons summary
+  manifest    rows=27  discovered-pins=23
+  H-1 coverage   missing-row=0
+  H-5 drift      pin-not-at-site=0          (VOID class)
+  H-2/H-3        violations=0  active-exemptions=5
+  H-6 UNKNOWN    rows=8  (printed above; each passes only while its review is unexpired)
+  warn window    HORIZON_WARN_DAYS=90
+OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+
+--- (c) GATE 3 ---
+COMMAND: bash scripts/check-alert-rules.sh
+EXIT: 0
+--- OUTPUT ---
+check-alert-rules  (2026-07-29T14:36:17Z)
+  rules   : /home/sanmi/IdeaProjects/JToye_OaaS_2026/infra/monitoring/prometheus/alerts.yml
+  runbook : /home/sanmi/IdeaProjects/JToye_OaaS_2026/docs/runbooks/alerts.md
+  promtool: rc=0, 19 rules found
+  extracted: 19 live rule(s), 3 commented-out '- alert:' block(s) skipped by the comment rule
+  exemptions: 2 LABEL_EXEMPT, 3 DORMANT_RULES
+PASS: 19 live rule(s) valid, labelled, annotated and documented; 3 dormant rule(s) documented; 3 commented block(s) correctly skipped.
+
+--- BREAK ARM (AC-0.1): the precondition check must be able to FAIL ---
+COMMAND: mv scripts/check-alert-rules.sh away; re-run the presence loop
+BREAK_EXIT: 2
+--- BREAK OUTPUT ---
+VOID: scripts/check-alert-rules.sh missing — its owning plan (27-03) has not merged
+RESTORE: sha256 ff12a640137ae4bb0f9faa5ca8a592d893b95a6b965ec728eb71f160754bb3b4 before AND after
+         (verified by checksum, not by eye — `git checkout` is NOT used, per the recorded
+         break-arm-revert trap where checkout restores from the INDEX and eats later edits)
+TREE AFTER RESTORE: clean, 0 porcelain lines
+
+--- AWK EXTRACTOR MEASUREMENT (forces AC-1.3's flag form; control for the == 3 assertion) ---
+COMMAND: both forms over four real jobs of the same shape
+--- OUTPUT ---
+JOB              | OLD range form         | NEW flag form
+-----------------|------------------------|------------------------
+branch-parity    |  1 lines, 0 chmod      | 35 lines, 1 chmod
+openapi-compat   |  1 lines, 0 chmod      | 43 lines, 1 chmod
+security-scan    |  1 lines, 0 chmod      | 55 lines, 0 chmod
+k8s-validate     | 59 lines, 5 chmod      | 57 lines, 5 chmod
+
+  The OLD range form collapses to ONE line for three of the four jobs, because the start line
+  itself matches the range's END pattern. k8s-validate escapes only because the digit `8` fails
+  `[a-z-]+`. On a correct tree the drafted assertion returns 0, and `grep -c` printing 0 EXITS 1,
+  killing the harness under `set -e`. The stated "returns 2" was never reachable — it could
+  neither pass nor fail for the stated reason. This measurement reproduces the plan's authored
+  table EXACTLY on this tree.
+  MANDATORY CONTROL for AC-1.3: k8s-validate -> 5 under the flag form. Without it, an extractor
+  that returned 0 for everything would satisfy a `== 3` assertion by accident.
+
+--- FINDINGS: PLAN ASSERTIONS FALSIFIED AGAINST THIS TREE ---
+Recorded here rather than silently satisfied. Each was measured BEFORE any edit.
+
+F-1  AC-1.9 asserts the horizon gate's "summary reports `unknown=1`".
+     MEASURED: `H-6 UNKNOWN rows=8`. The gate prints EIGHT UNKNOWN rows (minio, minio-mc,
+     ollama, mailhog, alertmanager, redis-exporter, postgres-exporter, rabbitmq-k8s).
+     The literal `unknown=1` is FALSE on a CORRECT tree — the same trap class the plan itself
+     documents for 27-00's step count ("an expected-N that is actually different on the correct
+     tree"). The MEANINGFUL half of AC-1.9 holds exactly as written and is what will be asserted:
+       - exit 0, AND
+       - a printed line beginning `UNKNOWN rabbitmq-k8s:` carrying `owner=UNASSIGNED` and
+         `review-expires=2026-10-26`.
+     RESTATED FORM (strictly stronger than a bare count, and scoped to the row that matters):
+       exit==0 AND the rabbitmq-k8s UNKNOWN line is present with an unexpired review-expires.
+     A bare `unknown=1` would have had to be made true by DELETING seven legitimate rows.
+
+F-2  AC-3.5 hardcodes the origin/main metrics baseline as
+     `total_logical_invocations==1759 and java_test_methods==1176`.
+     MEASURED on origin/main @3442ccb: total=1851  java_test_methods=1259.
+     The plan anticipates this in its own note ("if it differs, the SUMMARY records the delta and
+     which plan produced it"). The delta is the phase's Java-touching plans landing after 27-06
+     was authored: 27-05, 27-04, 27-01 and the 27-02/27-03 merges. 1759 -> 1851 = +92.
+     The assertion executed will read the value at execution time from origin/main and record it.
+
+F-3  Line references in the plan have SHIFTED (27-00/27-04 merged after authoring). Anchor on
+     CONTENT, never on these numbers:
+       plan says k8s-validate 296-357   -> actually 321-378
+       plan says branch-parity 358-414  -> actually 379-414
+       plan says needs: comment 596-605 -> comment 596-605 holds; needs: list at 608
+     The plan's own <context> warns preconditions are checkable facts, not hopes; the same applies
+     to its line numbers.
+
+--- CONTROLS PROVEN WORKING BEFORE ANY EDIT ---
+k8s-validate chmod (AC-1.3 control)                          = 5
+branch-parity job-level `if:` (AC-1.6 control)               = 1
+check-env-contract.sh present (AC-1.4 control target)        = ci-cd.yaml:345
+runtime gates absent from CI (AC-1.2 expected-0 baseline)    = check-alert-liveness 0 / check-alert-metrics 0 / baseline.sh 0
+ops-contracts present on origin/main (must be 0 pre-wiring)  = 0

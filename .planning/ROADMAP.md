@@ -332,7 +332,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 **Goal**: Every terminal failure state in the system has a detection path a human is actually told about, every pinned dependency has a support horizon that fails before it lapses, and the capacity claims have a measured baseline. Messaging is the first instance of each — not the scope. Comes out of the ADR-0003 investigation, which found the architecture sound for correctness and unsound for failure visibility and lifecycle.
 **Depends on**: Nothing structural. Best sequenced **before** `/qa-council`, which would otherwise audit a runtime whose monitoring is blind (11 of 14 alerts defective at time of planning).
 **Requirements**: OPS-01, OPS-02, OPS-03, OPS-04, OPS-05
-**Plans:** 5/7 plans executed
+**Plans:** 7/7 plans complete
 
 | Req | What must become true | Plans |
 |---|---|---|
@@ -350,6 +350,6 @@ Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 - [x] 27-04-PLAN.md (Wave 2) — Throughput + guards: `spring.rabbitmq.listener.simple.*` is inert via a bean-name collision; media container factory; publish-side destination guard — **merged PR #331** (`9858370`)
 - [x] 27-03-PLAN.md (Wave 3) — Failure visibility: all `alerts.yml` rule content, four missing runbook sections, `check-alert-metrics.sh`, DLQ archive — **COMPLETE 9/9**. `DeadLetterQueueNonEmpty` observed **firing on the real batch**, closing the H-1 signal-regression window. Task 8 re-ran the live gate on the replaced broker and found the alert layer survived the major version change **with no edit**: 19 live rules / 24 selectors / 3 dormant, identical to 3.12; `/metrics/detailed` families unchanged; `dlq-inspect --summary` flipped 1 → 0. Evidence in `27-03-EVIDENCE.md` §14 — **PR #336**
 - [x] 27-02-PLAN.md (Wave 4) — Broker upgrade: 3.12 → 4.3.4 fresh install (no direct upgrade path exists), volume snapshot + rollback, DLQ purge and disposition — **merged PR #335** (`b51c82f`); rollback proven twice, once by firing for real
-- [ ] 27-06-PLAN.md (Wave 4) — CI wiring: the `ops-contracts` job — three static gates
+- [x] 27-06-PLAN.md (Wave 4) — CI wiring: the `ops-contracts` job — three static gates
 
 **Planning note**: plans were written, audited by five independent passes (correctness ×2, falsifiability ×2, regression-by-omission ×1), and fixed *before* registration. `drafts/REVISION-BRIEF.md` is binding and records where the brief itself was wrong. Registered via `/gsd-phase`; the SDK derived Phase **28** because the phase directory already existed, and was corrected to 27 by hand.
