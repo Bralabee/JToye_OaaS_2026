@@ -106,7 +106,7 @@
               │                 │                  │
               ▼                 ▼                  ▼
      ┌────────────────┐  ┌───────────┐   ┌─────────────────────────┐
-     │ PostgreSQL 15  │  │  Redis 7  │   │      RabbitMQ 3.12      │
+     │ PostgreSQL 15  │  │  Redis 7  │   │     RabbitMQ 4.3.4      │
      │  RLS policies  │  │  (cache)  │   │  AMQP + STOMP (:61613)  │
      │  Envers audit  │  │           │   │     plugin: stomp       │
      └────────────────┘  └───────────┘   └─────────────────────────┘

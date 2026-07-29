@@ -51,9 +51,11 @@ class OrderEventFanoutTopologyIntegrationTest {
 
     private static final int REPLICAS = 3;
 
+    // Image string only: the Testcontainers library stays at 1.21.4 (D-05). It has no version
+    // coupling to the broker, and bumping both at once would make a failure here ambiguous.
     @Container
     static final RabbitMQContainer RABBIT = new RabbitMQContainer(
-            DockerImageName.parse("rabbitmq:3.12-management-alpine"));
+            DockerImageName.parse("rabbitmq:4.3.4-management-alpine"));
 
     private final RabbitMQConfig config = new RabbitMQConfig();
 

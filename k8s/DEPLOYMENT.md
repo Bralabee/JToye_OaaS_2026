@@ -30,7 +30,7 @@ Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../do
 1. **Kubernetes Cluster**: v1.27+ (tested on EKS, GKE, AKS)
 2. **Database**: PostgreSQL 15+ (managed service recommended)
 3. **Cache**: Redis 7+ (managed service recommended)
-4. **Message Queue**: RabbitMQ 3.12+
+4. **Message Queue**: RabbitMQ **3.13+** minimum, 4.3 recommended (dev/compose pins 4.3.4). The deployed broker's version is unverified from this repo — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 5. **Identity Provider**: Keycloak 22+ deployment
 6. **DNS**: Configured for your domains
 7. **TLS Certificates**: cert-manager with Let's Encrypt
@@ -421,6 +421,19 @@ bash scripts/check-branch-behind-base.sh \
 |--------|--------------------|
 | `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. **A built service that is missing or not `running` VOIDs the whole run (exit 2)** — see below. |
 | `check-branch-behind-base.sh` | `HEAD..<remote>/<default-branch>` is empty — this branch contains every commit already on its base. The base branch is **resolved** (`--base`, `$BASE_REF`, `$GITHUB_BASE_REF`, `refs/remotes/origin/HEAD`, then `git ls-remote --symref`), never hardcoded to `main`. Being *ahead* is normal and is not a finding; only being behind is. |
+
+**A third gate covers a hazard neither of the two above can see: a pinned dependency that is
+*current* in the tree and *out of support* in the world.** `scripts/check-dependency-horizons.sh`
+(plan **27-00**, not this section's pair) fails the build before a pin's support horizon lapses.
+Runtime-parity asks "is the running thing the branch?"; the horizon gate asks "should the branch
+still be running that at all?" — a broker can be perfectly fresh by `.Metadata.LastTagTime` and two
+years past its last security patch, which is exactly what was found for RabbitMQ 3.12 (last patched
+2024-05-06, discovered 2026-07-27).
+
+Note it **cannot** see the staging/production RabbitMQ broker: that broker is provisioned outside
+this repository and carries no manifest here, so its row is `pin: unknown` / `owner: UNASSIGNED`
+with a dated `manual_review`. See [`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md)
+§7 for the operator action and ADR-0002 for the open ownership question.
 
 **Why `.Metadata.LastTagTime` and not `.Created`.** Docker preserves the original
 `.Created` across a fully-cached rebuild and across a `docker pull`. Measured on

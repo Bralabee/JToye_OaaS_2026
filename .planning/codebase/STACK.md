@@ -22,7 +22,7 @@
 - Go 1.22 runtime - Edge gateway
 - PostgreSQL 15-alpine - Database (shared with Keycloak; separate DB)
 - Redis 7-alpine - Cache + STOMP user destination resolution support
-- RabbitMQ 3.12-management-alpine - AMQP + STOMP relay
+- RabbitMQ 4.3.4-management-alpine - AMQP + STOMP relay
 
 **Package Manager:**
 - Gradle 8.10+ (Kotlin DSL) - Java build (`settings.gradle.kts`, `core-java/build.gradle.kts`)
@@ -115,7 +115,7 @@
 - postgres:15-alpine
 - quay.io/keycloak/keycloak:24.0.5
 - redis:7-alpine
-- rabbitmq:3.12-management-alpine — ports 5672 (AMQP), 15672 (mgmt UI), 61613 (STOMP, v2.1) — plugins `rabbitmq_management`, `rabbitmq_management_agent`, `rabbitmq_prometheus`, `rabbitmq_stomp` (`infra/rabbitmq/enabled_plugins`)
+- rabbitmq:4.3.4-management-alpine — ports 5672 (AMQP), 15672 (mgmt UI), 61613 (STOMP, v2.1) — plugins `rabbitmq_management`, `rabbitmq_management_agent`, `rabbitmq_prometheus`, `rabbitmq_stomp` (`infra/rabbitmq/enabled_plugins`)
 - minio/minio:latest + minio/mc:latest (init sidecar with public-read policy on `jtoye-images`)
 - ollama/ollama:latest (NVIDIA GPU reservation, `gemma3:12b` pulled by sidecar)
 - mailhog/mailhog:v1.0.1 — SMTP 1025, Web UI 8025
@@ -170,7 +170,7 @@
 
 **Runtime (Production):**
 - Kubernetes (manifests in `k8s/`)
-- PostgreSQL 15+, Redis 7+, RabbitMQ 3.12+ (STOMP plugin required), Keycloak 24.0+
+- PostgreSQL 15+, Redis 7+, RabbitMQ **3.13+** minimum / 4.3 recommended (STOMP plugin required; deployed staging-prod version unverified from this repo — see `docs/runbooks/rabbitmq-broker-upgrade.md`), Keycloak 24.0+
 - S3 or S3-compatible storage (MinIO for dev)
 - SMTP relay (Mailhog dev; SendGrid/SES/etc. prod)
 - Prometheus + Alertmanager + Grafana stack
@@ -180,7 +180,7 @@
 - postgres:15-alpine — `docker-compose.full-stack.yml:14`
 - keycloak:24.0.5 — `docker-compose.full-stack.yml:35`
 - redis:7-alpine — `docker-compose.full-stack.yml:71`
-- rabbitmq:3.12-management-alpine — `docker-compose.full-stack.yml:88`
+- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:149`
 - mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:322`
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:8`
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:34`

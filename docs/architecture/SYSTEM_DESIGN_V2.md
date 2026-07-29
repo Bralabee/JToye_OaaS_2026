@@ -88,7 +88,7 @@ graph drawn here: the compose service set, its ports and the AMQP exchanges are 
          ┌────────────────────┴──────┬─────────────────┐
          │                           │                 │
    ┌─────▼──────────────┐   ┌────────▼────────┐   ┌────▼─────────────────┐
-   │   RabbitMQ 3.12    │   │  MinIO (S3)     │   │  Tenant webhook      │
+   │   RabbitMQ 4.3.4   │   │  MinIO (S3)     │   │  Tenant webhook      │
    │ :5672 AMQP         │   │ :9000 API       │   │  endpoints (external)│
    │ :61613 STOMP relay │   │ :9001 console   │   │  HTTPS + HMAC        │
    │ :15672 management  │   │ media assets    │   │  SSRF-guarded egress │
@@ -162,7 +162,7 @@ third, independent ingress that forwards an agent's Bearer to the same core REST
 | **keycloak** | Identity provider, SSO, user management | Keycloak 24 | Horizontal (2+ replicas) |
 | **postgresql** | Primary data store, RLS enforcement | PostgreSQL 15 | Vertical + read replicas |
 | **redis** | Cache, session storage, rate limit state | Redis 7 Cluster | Horizontal (cluster mode) |
-| **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 3.12 | Horizontal (HA queues) |
+| **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 4.3.4 | Horizontal (HA queues) |
 | **minio / S3** | Media assets — validated WebP derivatives + thumbnails | MinIO (S3 API) | Managed / horizontal |
 | **ollama** | Local LLM image analysis (`AI_PROVIDER=ollama`) | Ollama + `gemma3:12b` | Vertical (GPU-bound) |
 | **smtp** | Transactional email (Mailhog locally, SES/SMTP upstream) | Mailhog v1.0.1 / SES | Managed |
