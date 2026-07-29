@@ -6,8 +6,8 @@
 
 **Payment Processing:**
 - Stripe — Online card payments + COD fallback
-  - SDK: `com.stripe:stripe-java:28.2.0` (`core-java/build.gradle.kts:60`)
-  - Frontend: `@stripe/react-stripe-js 6.1.0`, `@stripe/stripe-js 9.0.1` (`frontend/package.json:25-26`)
+  - SDK: `com.stripe:stripe-java:33.1.1` (`core-java/build.gradle.kts:87`)
+  - Frontend: `@stripe/react-stripe-js` 6.8.0, `@stripe/stripe-js` 9.12.0 (`frontend/package.json:27-28`)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/payment/` (PaymentService, webhook controller)
   - Auth: `STRIPE_API_KEY` (sk_test_/sk_live_), `STRIPE_WEBHOOK_SECRET` (whsec_), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
   - Failure mode: Resilience4j circuit breaker (`resilience4j.circuitbreaker.instances.stripe`, 50% failure threshold, 30s wait)
@@ -19,7 +19,7 @@
   - Endpoint: `OLLAMA_URL` (default `http://ollama:11434`)
   - Model: `OLLAMA_MODEL` (default `gemma3:12b`, pulled by `ollama-init` sidecar)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/ai/` via Spring `WebClient` (WebFlux)
-  - GPU: NVIDIA device reservation in `docker-compose.full-stack.yml:294-301`
+  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:466-468`
   - Failure mode: Resilience4j circuit breaker (50% threshold, 60s wait, max 2 retries)
   - Fallback: Switch to Anthropic Claude via `AI_PROVIDER=anthropic`
 - Anthropic Claude — Cloud vision alternative
@@ -43,14 +43,14 @@
 - MinIO (S3-compatible, local dev) / AWS S3 (prod)
   - Endpoint: `S3_ENDPOINT` (`http://minio:9000` dev)
   - Credentials: `S3_ACCESS_KEY`, `S3_SECRET_KEY` (default `minioadmin`/`minioadmin`)
-  - Bucket: `S3_BUCKET` (`jtoye-images`), public-read policy applied by `minio-init` sidecar (`docker-compose.full-stack.yml:264-278`)
+  - Bucket: `S3_BUCKET` (`jtoye-images`), public-read policy applied by `minio-init` sidecar (`docker-compose.full-stack.yml:428-441`)
   - Public URL: `S3_PUBLIC_URL`
-  - SDK: AWS SDK v2 BOM 2.25.60 → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:45-46`)
+  - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:60-61`). Version is claimed once, in STACK.md, which the version gate checks.
   - Implementation: `core-java/src/main/java/uk/jtoye/core/storage/`
   - Constraints: max 5MB, allowed types `image/jpeg|png|webp|gif`
 
 **Caching:**
-- Redis 7-alpine (`docker-compose.full-stack.yml:71`)
+- Redis 7-alpine (`docker-compose.full-stack.yml:126`)
   - Connection: `REDIS_HOST:REDIS_PORT` (dev `redis:6379`)
   - Auth: `REDIS_PASSWORD` (required — compose passes `--requirepass`)
   - Client: Spring Data Redis (Lettuce) + Spring Cache
@@ -68,7 +68,7 @@
   - `rabbitmq_stomp` — **new in v2.1**, port 61613, backs Spring STOMP broker relay
 - Ports: 5672 (AMQP), 15672 (mgmt UI), 61613 (STOMP)
 - Auth: `RABBITMQ_USER` / `RABBITMQ_PASSWORD` (also reused as STOMP client/system login)
-- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:32`)
+- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:47`)
 - Use cases:
   - Order event publishing (`OrderEventPublisher`)
   - Email/notification async dispatch
@@ -81,7 +81,7 @@
   - `in-memory` (default) — SimpleBroker for single-replica dev
   - `relay` — `StompBrokerRelay` pointing at RabbitMQ port 61613 (required for horizontal scaling so all core-java replicas share KDS broadcasts)
 - JWT auth at STOMP CONNECT frame via `TenantChannelInterceptor` + `JwtHandshakeInterceptor`
-- Browser client: `@stomp/stompjs 7.3.0` (`frontend/package.json:24`)
+- Browser client: `@stomp/stompjs` 7.3.0 (`frontend/package.json:26`)
 
 ## Authentication & Identity
 
@@ -94,7 +94,7 @@
   - Health/metrics exposed (`KC_HEALTH_ENABLED=true`, `KC_METRICS_ENABLED=true`)
 
 **Backend (Spring Security):**
-- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:22`)
+- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:36`)
 - Config: `core-java/src/main/java/uk/jtoye/core/security/` (`SecurityConfig`, `JwtTenantFilter`, `TenantContext`)
 - Token validation: JWT signature + issuer check against Keycloak JWKS
 - Tenant extraction from JWT claim → `TenantContext` ThreadLocal → RLS `set_config` per request
@@ -127,7 +127,7 @@
 - Toggles: `NOTIFICATION_EMAIL_ENABLED`, tracking pixel via `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, sender `NOTIFICATION_EMAIL_FROM`
 
 **Mailhog (dev SMTP sink):**
-- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:322`)
+- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:490`)
 - SMTP at 1025, Web UI at 8025, no auth, no TLS — captures all outbound mail
 
 **Alertmanager email routing (new in v2.1 / phase 9):**
@@ -172,7 +172,7 @@
 - `/actuator/info`
 
 **Distributed Tracing:**
-- Micrometer Tracing with Brave bridge → Zipkin reporter (`core-java/build.gradle.kts:53-54`)
+- Micrometer Tracing with Brave bridge → Zipkin reporter (`micrometer-tracing-bridge-brave` in `core-java/build.gradle.kts:80`)
 - Endpoint: `ZIPKIN_ENDPOINT` (default `http://localhost:9411/api/v2/spans`)
 - Sampling: `TRACING_PROBABILITY=0.1`
 - Log correlation: `%X{traceId}`, `%X{spanId}` MDC fields
@@ -211,7 +211,7 @@
   - Persistence: `payment_event_outbox` table (V31, RLS fixed in V33) for idempotent replay
 
 - WhatsApp Cloud API webhook (gated, currently edge-only stub)
-  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:215`)
+  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:211`)
   - Signature: `X-Hub-Signature-256` HMAC-SHA256 verified against `WHATSAPP_APP_SECRET` (fail-closed — refuses webhook if secret unset; previously would silently skip, fixed in P1 audit)
   - Parser: `edge-go/internal/whatsapp/parser.go`
   - Default shop: `WHATSAPP_DEFAULT_SHOP_ID` (if unset, handler errors rather than fabricating tenant)
