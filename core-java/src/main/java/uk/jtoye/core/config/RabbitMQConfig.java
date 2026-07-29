@@ -1,5 +1,7 @@
 package uk.jtoye.core.config;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -424,12 +426,75 @@ public class RabbitMQConfig {
         return new Jackson2JsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES);
     }
 
+    /** Micrometer name for retry exhaustion; exported as {@code jtoye_amqp_retries_exhausted_total}. */
+    static final String RETRIES_EXHAUSTED_METRIC = "jtoye.amqp.retries_exhausted";
+
+    /**
+     * Collapses a consumer-queue name to a BOUNDED tag value.
+     *
+     * <p><b>Why this exists at all.</b> The SSE fan-out declares an {@link AnonymousQueue} per JVM
+     * ({@link #ORDER_EVENTS_FANOUT_QUEUE_PREFIX} + a random suffix), and the suffix changes on
+     * <em>every restart</em>. Tagging the counter with the raw name would leak one Micrometer
+     * series per restart, forever — an unbounded-cardinality leak in the metric added to make
+     * failures visible. Its Prometheus-side twin is the {@code metric_relabel_configs} drop on the
+     * {@code rabbitmq-queues} scrape job.
+     *
+     * <p>Package-private and static so it is unit-testable without a broker.
+     *
+     * @param queue the raw {@code getConsumerQueue()} value, possibly null
+     * @return the queue name, the collapsed SSE literal, or {@code "unknown"}
+     */
+    static String normaliseQueueTag(String queue) {
+        if (queue == null || queue.isBlank()) {
+            return "unknown";
+        }
+        if (queue.startsWith(ORDER_EVENTS_FANOUT_QUEUE_PREFIX)) {
+            // Trailing '.' trimmed: the tag is the queue FAMILY, not a prefix.
+            return ORDER_EVENTS_FANOUT_QUEUE_PREFIX.substring(0, ORDER_EVENTS_FANOUT_QUEUE_PREFIX.length() - 1);
+        }
+        return queue;
+    }
+
+    /**
+     * Three attempts with exponential backoff, then reject-without-requeue so the broker
+     * dead-letters the message.
+     *
+     * <p><b>The counter is the only visibility some queues have.</b> {@code x-dead-letter-exchange}
+     * is a queue ARGUMENT, and redeclaring an existing durable queue with different arguments
+     * returns {@code PRECONDITION_FAILED (406)} and kills the declaring channel — so a DLX cannot
+     * simply be added to {@code onboarding.notifications} without breaking startup against every
+     * broker that already has that queue. That queue therefore has no DLQ, and no queue-depth alert
+     * can ever see a message it drops. This counter can: it increments at the interceptor,
+     * regardless of whether a dead-letter exchange exists downstream.
+     *
+     * <p><b>The {@code log.error} and the rethrow are byte-identical to their previous form, and
+     * must stay that way.</b> The rethrow IS the dead-letter mechanism — {@code
+     * AmqpRejectAndDontRequeueException} combined with {@code setDefaultRequeueRejected(false)} is
+     * what routes the message to the DLX. Swallowing it, or replacing it with a plain return,
+     * silently disables all four dead-letter queues while every test still passes.
+     *
+     * <p>{@link ObjectProvider} rather than a hard parameter so the configuration still builds with
+     * no {@link MeterRegistry} on the context — same null-guard idiom as
+     * {@code PaymentEventOutboxFlusher}.
+     */
     @Bean
-    public RetryOperationsInterceptor retryInterceptor() {
+    public RetryOperationsInterceptor retryInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        MeterRegistry registry = meterRegistryProvider.getIfAvailable();
         return RetryInterceptorBuilder.stateless()
                 .maxAttempts(3)
                 .backOffOptions(1000, 2.0, 10000)
                 .recoverer((args, cause) -> {
+                    if (registry != null) {
+                        String queue = null;
+                        if (args != null && args.length > 0 && args[0] instanceof Message m) {
+                            queue = m.getMessageProperties().getConsumerQueue();
+                        }
+                        Counter.builder(RETRIES_EXHAUSTED_METRIC)
+                                .description("Messages that exhausted the AMQP retry policy and were rejected without requeue")
+                                .tag("queue", normaliseQueueTag(queue))
+                                .register(registry)
+                                .increment();
+                    }
                     log.error("RabbitMQ message processing failed after 3 retries: {}", cause.getMessage());
                     throw new org.springframework.amqp.AmqpRejectAndDontRequeueException(
                             "Exhausted retries — routing to DLQ", cause);
@@ -470,6 +535,7 @@ public class RabbitMQConfig {
             ConnectionFactory connectionFactory,
             MessageConverter jsonMessageConverter,
             ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            RetryOperationsInterceptor retryInterceptor,
             int prefetch,
             int concurrency,
             int maxConcurrency) {
@@ -493,7 +559,13 @@ public class RabbitMQConfig {
         // 3 attempts, then AmqpRejectAndDontRequeueException, then the dead-letter exchange.
         // Dropping either would silently turn a dead-letter into an infinite requeue loop.
         factory.setMessageConverter(jsonMessageConverter);
-        factory.setAdviceChain(retryInterceptor());
+        // The interceptor arrives as a PARAMETER, not as a self-invocation of retryInterceptor().
+        // Once that bean method took an ObjectProvider<MeterRegistry> argument, calling it here
+        // stopped compiling ("method retryInterceptor ... cannot be applied to given types").
+        // Injecting it is also strictly better than the @Configuration CGLIB self-call it replaces:
+        // it removes a hidden intra-class coupling, and it makes the SAME singleton — the one
+        // carrying the meter registry — provably the one on the chain.
+        factory.setAdviceChain(retryInterceptor);
         factory.setDefaultRequeueRejected(false);
 
         // Finally the config layer — the whole point of the repair above.
@@ -525,8 +597,10 @@ public class RabbitMQConfig {
             ConnectionFactory connectionFactory,
             MessageConverter jsonMessageConverter,
             ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            RetryOperationsInterceptor retryInterceptor,
             RabbitListenerProperties props) {
         return buildFactory("default", connectionFactory, jsonMessageConverter, configurerProvider,
+                retryInterceptor,
                 props.getDefaultPrefetch(), props.getDefaultConcurrency(), props.getDefaultConcurrency());
     }
 
@@ -540,8 +614,10 @@ public class RabbitMQConfig {
             ConnectionFactory connectionFactory,
             MessageConverter jsonMessageConverter,
             ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> configurerProvider,
+            RetryOperationsInterceptor retryInterceptor,
             RabbitListenerProperties props) {
         return buildFactory("media", connectionFactory, jsonMessageConverter, configurerProvider,
+                retryInterceptor,
                 props.getMediaPrefetch(), props.getMediaConcurrency(), props.getMediaMaxConcurrency());
     }
 }

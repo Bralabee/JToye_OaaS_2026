@@ -70,6 +70,36 @@ class MediaListenerConcurrencyIntegrationTest {
      * D-01 guard's fallback path — the factory must still apply {@code jtoye.rabbit.*} with no
      * configurer present, which is precisely what makes the guard safe rather than merely defensive.
      */
+    /**
+     * An empty {@link MeterRegistry} provider, for the same reason as {@link #noConfigurer()}:
+     * there is no Spring context here, so there is no registry bean. Exercises the null guard in
+     * {@code retryInterceptor(...)} — a missing registry must never stop the interceptor being
+     * built, because the interceptor is what dead-letters and the counter is only observation.
+     */
+    private static ObjectProvider<io.micrometer.core.instrument.MeterRegistry> noMeterRegistry() {
+        return new ObjectProvider<>() {
+            @Override
+            public io.micrometer.core.instrument.MeterRegistry getObject() {
+                throw new IllegalStateException("no MeterRegistry bean in this test");
+            }
+
+            @Override
+            public io.micrometer.core.instrument.MeterRegistry getObject(Object... args) {
+                return getObject();
+            }
+
+            @Override
+            public io.micrometer.core.instrument.MeterRegistry getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public io.micrometer.core.instrument.MeterRegistry getIfUnique() {
+                return null;
+            }
+        };
+    }
+
     private static ObjectProvider<SimpleRabbitListenerContainerFactoryConfigurer> noConfigurer() {
         return new ObjectProvider<>() {
             @Override
@@ -114,9 +144,15 @@ class MediaListenerConcurrencyIntegrationTest {
         RabbitAdmin admin = new RabbitAdmin(connectionFactory);
         admin.declareQueue(new Queue(QUEUE, false, false, true));
 
+        // The retry interceptor is now a bean-method PARAMETER rather than a self-invocation
+        // (27-03 D-05c: retryInterceptor() gained an ObjectProvider<MeterRegistry> for the
+        // jtoye.amqp.retries_exhausted counter, which made the old self-call fail to compile).
+        // Built here with an EMPTY provider, exercising the no-registry null guard on the way:
+        // this test is about consumer concurrency, not about metrics.
         SimpleMessageListenerContainer container = config
                 .mediaRabbitListenerContainerFactory(
-                        connectionFactory, config.jsonMessageConverter(), noConfigurer(), props)
+                        connectionFactory, config.jsonMessageConverter(), noConfigurer(),
+                        config.retryInterceptor(noMeterRegistry()), props)
                 .createListenerContainer();
         container.setQueueNames(QUEUE);
 
