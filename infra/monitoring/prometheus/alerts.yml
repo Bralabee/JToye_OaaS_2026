@@ -65,9 +65,24 @@ groups:
           summary: "Database connection pool near exhaustion"
           description: "Connection pool is {{ $value | humanizePercentage }} full (threshold: 90%)"
 
-      # Database down
+      # Database down.
+      #
+      # D-11 (phase 27, plan 27-03). `up{job="postgres"}` is the health of the EXPORTER,
+      # not of the database. Measured 2026-07-26 on this very stack:
+      #     up{job="postgres"} = 1     <- Prometheus scrapes the exporter fine
+      #     pg_up              = 0     <- the exporter cannot talk to the DATABASE
+      # so this rule reported healthy through a total loss of database visibility. The
+      # correct signal, `pg_up`, was present, was 0, and was referenced by NO rule
+      # (`grep -c pg_up alerts.yml` -> 0). Same contract failure as StompBrokerLag,
+      # different metric: an alert that is structurally incapable of firing.
+      #
+      # From Prometheus's seat an exporter that cannot reach the database is
+      # indistinguishable from a database that is down — and that is the point. The
+      # runbook's first-response step distinguishes them with
+      # `docker exec jtoye-postgres pg_isready` (the database) against
+      # `docker logs jtoye-postgres-exporter` (the exporter).
       - alert: DatabaseDown
-        expr: up{job="postgres"} == 0
+        expr: up{job="postgres"} == 0 or pg_up == 0
         for: 1m
         labels:
           severity: critical
@@ -92,7 +107,23 @@ groups:
   - name: resource_alerts
     interval: 30s
     rules:
-      # High memory usage
+      # High memory usage.
+      #
+      # D-11 (phase 27, plan 27-03) — the static `service: core-java` label is DELETED
+      # here, deliberately, and must not be re-added. A static rule label OVERRIDES the
+      # series' own label of the same name, so hard-coding it made this alert name the
+      # wrong JVM: the annotation interpolates {{ $labels.service }}, and until 27-00
+      # fixed the core-java scrape port the only JVM being scraped was Keycloak. The
+      # email would have read "High JVM heap memory usage on core-java" while describing
+      # Keycloak's heap. Measured 2026-07-29, with BOTH JVMs now scraped:
+      #     jvm_memory_used_bytes{area="heap"} -> service = "keycloak" and "core-api"
+      # so with the static label the alert is not merely wrong, it is ambiguous across
+      # two instances. The scrape jobs already set `service`; the expression is correct
+      # and is untouched. The LABEL was the defect.
+      #
+      # This rule is a deliberate `service`-label exemption in
+      # scripts/check-alert-rules.sh (LABEL_EXEMPT). Adding the label back turns that
+      # gate RED as a stale exemption.
       - alert: HighMemoryUsage
         expr: |
           (
@@ -102,19 +133,22 @@ groups:
         labels:
           severity: warning
           component: jvm
-          service: core-java
         annotations:
           summary: "High JVM heap memory usage on {{ $labels.service }}"
           description: "Heap memory is {{ $value | humanizePercentage }} full (threshold: 85%)"
 
-      # Frequent garbage collection
+      # Frequent garbage collection.
+      #
+      # D-11 (phase 27, plan 27-03) — same defect and same fix as HighMemoryUsage above:
+      # the static `service: core-java` label is DELETED so the series' own `service`
+      # survives into {{ $labels.service }} and the alert names the JVM it measured.
+      # Expression untouched. Also a LABEL_EXEMPT entry in check-alert-rules.sh.
       - alert: FrequentGarbageCollection
         expr: rate(jvm_gc_pause_seconds_count[5m]) > 50
         for: 5m
         labels:
           severity: warning
           component: jvm
-          service: core-java
         annotations:
           summary: "Frequent garbage collection on {{ $labels.service }}"
           description: "GC rate is {{ $value | humanize }} per second (threshold: 50/s)"
@@ -233,21 +267,256 @@ groups:
           summary: "Redis cache is down"
           description: "Redis has been unreachable for more than 1 minute — cache operations will fail"
 
+  # =====================================================================================
+  # messaging_alerts — rewritten by phase 27, plan 27-03.
+  #
+  # Until this rewrite this group held exactly ONE rule, StompBrokerLag, and that rule
+  # was incapable of firing from the day it was written (see its dormant block at the
+  # bottom). Meanwhile four dead-letter queues existed with zero consumers and NINE real
+  # tenant-bearing messages sat dead on webhook.deliveries.dlq — the oldest since
+  # 2026-07-15 — with no signal that would have said so.
+  #
+  # EVERY LIVE RULE BELOW IS ON A SERIES PROVEN TO EXIST, LABELS INCLUDED. That is
+  # enforced, not promised: scripts/check-alert-metrics.sh queries each rule's bare
+  # series SELECTOR (not the whole expression) against the live Prometheus and fails
+  # when it matches zero series. Checking the label set and not just the metric name is
+  # what catches the actual defect — `rabbitmq_queue_messages_ready` exists;
+  # `rabbitmq_queue_messages_ready{queue=~...}` does not.
+  #
+  # The rabbitmq_detailed_* series come from the `rabbitmq-queues` scrape job added in
+  # prometheus.yml.tmpl by the same plan. Without that job every rule here matches
+  # nothing.
+  #
+  # REGEX STYLE. Every regex uses the `[.]` character class for a literal dot. That is
+  # HOUSE STYLE, not a correctness fix: measured on this Prometheus, PromQL unescapes
+  # `\\` to `\` before RE2 sees it, so `\\.` is a literal dot too and matches
+  # identically. `[.]` is preferred only because it is byte-identical under block, plain
+  # and double-quoted YAML scalars and so cannot be broken by a later reformat.
+  # DO NOT "correct" `\\.` regexes elsewhere in this repo — they are right.
+  # The real hazard is a SINGLE backslash: `\.` is rejected at query time with
+  # `bad_data: unknown escape sequence`, i.e. it fails loudly rather than silently.
+  # =====================================================================================
   - name: messaging_alerts
     interval: 30s
     rules:
-      # STOMP broker relay lag -- undelivered messages in subscription queues
-      # Queue name regex is runtime-adjustable: after first relay-mode startup,
-      # verify actual queue names at http://localhost:15672/#/queues and adjust if needed.
-      # Default RabbitMQ 3.12 uses stomp-subscription-<random>; some configs use amq.gen-<random>.
-      - alert: StompBrokerLag
-        expr: |
-          sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
-        for: 30s
+      # ---------------------------------------------------------------------------
+      # 1. The broker itself.
+      #
+      # Mirrors RedisDown. Deliberately scoped to job="rabbitmq" and NOT
+      # job=~"rabbitmq|rabbitmq-queues": the second scrape job hits the SAME broker on
+      # the same port, so its outage is the same outage, and ServiceDown (up == 0,
+      # unscoped) already covers it. "Completing" this regex to include both jobs would
+      # buy nothing and double-page. Leave it.
+      # ---------------------------------------------------------------------------
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          service: rabbitmq
+        annotations:
+          summary: "RabbitMQ broker is down"
+          description: >-
+            RabbitMQ has been unreachable for more than 1 minute. Verified blast radius:
+            the transactional outbox flushers stop draining (rows accumulate PENDING,
+            exponential backoff engages, and payment_outbox_dead_letter_total /
+            media_outbox_dead_letter_total start rising once attempts reach 10);
+            kitchen-display broadcasts stop; outbound webhook fan-out stops; media
+            processing stops. core-java's compose healthcheck will flip to unhealthy and
+            NOTHING restarts it — `restart: unless-stopped` does not act on health.
+
+      # ---------------------------------------------------------------------------
+      # 2. Payment dead letters get their own critical rule, because a lost payment
+      #    event is money. Excluded from the generic rule below so the two can never
+      #    double-page for one incident.
+      # ---------------------------------------------------------------------------
+      - alert: PaymentDeadLetterQueueNonEmpty
+        expr: rabbitmq_detailed_queue_messages{queue="payment.events.dlq"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          service: rabbitmq
+        annotations:
+          summary: "Payment events are dead-lettered ({{ $value }} on payment.events.dlq)"
+          description: >-
+            {{ $value }} message(s) are parked on payment.events.dlq, which has no
+            consumer by design. Each one is a payment event the platform failed to
+            process three times. Do NOT purge before archiving — the payload is the only
+            remaining copy of the event. See docs/runbooks/alerts.md
+            (## PaymentDeadLetterQueueNonEmpty) and `scripts/dlq-inspect.sh --peek`.
+
+      # ---------------------------------------------------------------------------
+      # 3. Every other dead-letter queue, PER QUEUE so the email names it.
+      #
+      # WHY THIS IS A SIGNAL AND NOT A PERMANENT PAGE (plan 27-03, M1). This rule fires
+      # at depth >= 1 on queues that have NO consumer, so it fires and does not resolve
+      # until a human acts. That is only acceptable because plan 27-05 removed the
+      # PRODUCING fault — a Jackson2JsonMessageConverter built with no trusted packages,
+      # which dead-lettered 100% of outbound webhooks from the day Phase 22 shipped.
+      # THE POST-27-05 STEADY-STATE BASELINE FOR webhook.deliveries.dlq IS 0, NOT 9.
+      #
+      # Consequently: a DeadLetterQueueNonEmpty{queue="webhook.deliveries.dlq"} still
+      # firing after 27-05 has landed AND 27-02 has disposed of the historic batch is a
+      # REAL REGRESSION, not the known state — it means the converter fix did not take,
+      # or a second producer exists. Do not learn to ignore it.
+      #
+      # Shipping this rule into a tree where the producer was still live would have
+      # manufactured exactly the alert fatigue this work exists to remove.
+      # ---------------------------------------------------------------------------
+      - alert: DeadLetterQueueNonEmpty
+        expr: rabbitmq_detailed_queue_messages{queue=~".*[.]dlq", queue!="payment.events.dlq"} > 0
+        for: 5m
         labels:
           severity: warning
           component: messaging
           service: rabbitmq
         annotations:
-          summary: "STOMP broker message lag detected"
-          description: "Undelivered messages in STOMP subscription queues: {{ $value }}. Kitchen display clients may experience delayed order updates."
+          summary: "Dead letters parked on {{ $labels.queue }} ({{ $value }})"
+          description: >-
+            {{ $value }} message(s) are parked on {{ $labels.queue }}. Dead-letter queues
+            have no consumer by design, so this will not clear itself. Peek
+            non-destructively with `scripts/dlq-inspect.sh --peek {{ $labels.queue }}`,
+            read x-death[0] for the reason and the original exchange, then decide
+            fix-then-redrive vs discard. Archive before any purge — the payload is the
+            only remaining copy of the event, and it carries tenant data.
+
+      # ---------------------------------------------------------------------------
+      # 4. Live-queue backlog.
+      #
+      # Negative selector, not an allowlist of today's queues: a queue added in a later
+      # phase is covered the day it exists. An allowlist would rot silently, which is the
+      # same defect class this group was rewritten to remove.
+      #
+      # The SSE arm of the regex is REDUNDANT BY DESIGN — prometheus.yml.tmpl's
+      # metric_relabel_configs already drops those series before they are stored, so
+      # there is nothing here for it to exclude. It is kept as defence in depth, and it
+      # is provable rather than decorative: comment out the drop rule, restart
+      # Prometheus, and the raw series family gains the SSE queue while THIS selector
+      # still excludes it (27-03 T2.6). An unprovable defence-in-depth guard is a trap
+      # this project has already been bitten by.
+      # ---------------------------------------------------------------------------
+      - alert: DomainQueueBacklog
+        expr: rabbitmq_detailed_queue_messages_ready{queue!~".*[.]dlq|order[.]state-changes[.]sse[.].*"} > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: messaging
+          service: rabbitmq
+        annotations:
+          summary: "Queue backlog on {{ $labels.queue }} ({{ $value }} ready)"
+          description: >-
+            {{ $labels.queue }} has {{ $value }} messages ready for more than 10 minutes.
+            The consumer is alive but not keeping up. Check MessagingConsumerMissing
+            first (a dead consumer is a different fault), then core-java thread and
+            database saturation — DatabaseConnectionPoolExhausted is the usual upstream.
+
+      # ---------------------------------------------------------------------------
+      # 5. The "everything is UP and nothing is working" alert.
+      #
+      # No depth alert can catch this: core-java UP, broker UP, but a listener container
+      # died or lost its channel, so events land in a queue nobody reads. for: 5m absorbs
+      # a normal restart.
+      #
+      # DLQs are excluded because zero consumers is their CORRECT AND PERMANENT state.
+      # All four sit at 0 consumers right now. Widening this selector to `.*` pages four
+      # times forever — do not "fix" it that way (27-03 T2.7 falsifies exactly that).
+      # ---------------------------------------------------------------------------
+      - alert: MessagingConsumerMissing
+        expr: rabbitmq_detailed_queue_consumers{queue!~".*[.]dlq"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: messaging
+          service: rabbitmq
+        annotations:
+          summary: "No consumer on {{ $labels.queue }}"
+          description: >-
+            {{ $labels.queue }} has had no consumer for 5 minutes while the broker is up.
+            Messages are accumulating with nothing to process them. Check core-java's log
+            for AMQP connection loss, then `rabbitmq-diagnostics list_connections`.
+
+      # ---------------------------------------------------------------------------
+      # 6. Outbox poison / exhaustion. Names verified in the live scrape.
+      #
+      # Two increment paths with COMPLETELY different operator responses, so the
+      # description must distinguish them:
+      #   - poison payload (JsonProcessingException) -> permanent, NEVER resurrected
+      #     (the resurrection queries carry `AND poison = FALSE`)
+      #   - attempts >= 10 -> the resurrection pass will re-lease it
+      # A poison row is visible ONLY in the database — no metric, no endpoint, no log
+      # line after the initial log.error. The runbook carries the query, including the
+      # RLS caveat that makes the naive form return zero rows and look reassuring.
+      # ---------------------------------------------------------------------------
+      - alert: OutboxDeadLetterRising
+        expr: increase(payment_outbox_dead_letter_total[15m]) > 0 or increase(media_outbox_dead_letter_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: messaging
+          service: core-java
+        annotations:
+          summary: "Transactional outbox is dead-lettering ({{ $value }} in 15m)"
+          description: >-
+            An outbox row was abandoned in the last 15 minutes. TWO causes, different
+            responses: a poison payload (JsonProcessingException) is permanent and is
+            NEVER resurrected; attempts >= 10 will be re-leased by the resurrection pass.
+            poison=true rows are visible ONLY in the database — see
+            docs/runbooks/alerts.md (## OutboxDeadLetterRising) for the query and its
+            RLS caveat.
+
+      # ---------------------------------------------------------------------------
+      # 7. StompBrokerLag — DORMANT. Follows the DiskSpaceLow precedent above.
+      #
+      # THE CORRECTED EXPRESSION, ready to uncomment verbatim:
+      #
+      #     sum(rabbitmq_detailed_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+      #
+      # WHY IT WAS BROKEN. As shipped this rule selected on
+      # `rabbitmq_queue_messages_ready`, which comes from the AGGREGATED /metrics
+      # endpoint and carries NO queue label at all. Measured 2026-07-29:
+      #     query=sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+      #       -> {"resultType":"vector","result":[]}
+      #     control query=rabbitmq_queue_messages_ready
+      #       -> one series, value 9, metric keys [__name__ component instance job service]
+      # The value was there; the label was not. This rule was VACUOUS FROM INTRODUCTION,
+      # and the nine dead messages it arguably would have caught are the proof.
+      #
+      # WHY IT SHIPS DORMANT RATHER THAN LIVE. The corrected expression still matches
+      # nothing here, and cannot be made to match by any user action:
+      #   - the canonical local runtime is STOMP_BROKER_MODE=in-memory, so nothing is
+      #     relayed to RabbitMQ and a subscribing client creates no broker queue at all;
+      #   - measured: zero STOMP connections to the broker (GET /api/connections shows
+      #     one AMQP 0-9-1 connection and nothing else);
+      #   - relay mode is a k8s-base setting, and k8s/ ships no Prometheus.
+      # The rule is inapplicable in BOTH runtimes today. A live rule that cannot fire is
+      # precisely the defect this group was rewritten to remove, so it is not shipped
+      # live merely to look complete.
+      #
+      # PROVEN CAPABLE OF FIRING. The corrected expression was observed evaluating > 0
+      # against a throwaway queue named stomp-subscription-probe27 (created via the
+      # management API, published to, then deleted). An alert never observed firing is
+      # not an alert; this observes the EXPRESSION firing without pretending the RULE is
+      # live.
+      #
+      # RE-ENABLE TRIGGER AND OWNER: issue #304 (rework frontend/e2e/stomp-relay.spec.ts
+      # to be ingress-capable). Whoever makes that spec establish a real SUBSCRIBE in
+      # relay mode is the person who should uncomment this rule.
+      #
+      # THIS DORMANCY CANNOT ROT. scripts/check-alert-metrics.sh carries a DORMANT_RULES
+      # entry for StompBrokerLag and FAILS when its selector STARTS returning series —
+      # "this rule now has data, re-enable it". The red is the instruction. Only a
+      # deliberate STOMP_BROKER_MODE=relay can produce it; no ordinary user action can.
+      #
+      # - alert: StompBrokerLag
+      #   expr: |
+      #     sum(rabbitmq_detailed_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+      #   for: 30s
+      #   labels:
+      #     severity: warning
+      #     component: messaging
+      #     service: rabbitmq
+      #   annotations:
+      #     summary: "STOMP broker message lag detected"
+      #     description: "Undelivered messages in STOMP subscription queues: {{ $value }}. Kitchen display clients may experience delayed order updates."

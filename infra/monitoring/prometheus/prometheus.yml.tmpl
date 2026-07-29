@@ -132,3 +132,69 @@ scrape_configs:
           service: 'rabbitmq'
           component: 'messaging'
     # RabbitMQ management plugin exposes Prometheus metrics on port 15692
+    #
+    # LEAVE THIS JOB ALONE. It supplies the node-level series and the `up` series
+    # RabbitMQDown depends on. The per-queue job below is ADDITIVE — see its header.
+
+  # RabbitMQ PER-QUEUE metrics (phase 27, plan 27-03, decision D-01).
+  #
+  # WHY A SECOND JOB EXISTS. The default /metrics endpoint above returns metrics
+  # AGGREGATED BY NAME — it carries no `queue` and no `vhost` label at all. Measured
+  # live 2026-07-29:
+  #
+  #   query=rabbitmq_queue_messages_ready
+  #     -> {__name__, component, instance, job, service} = 9      <- NO queue label
+  #
+  # That is why the repo's only messaging rule, StompBrokerLag, could never fire: its
+  # `queue=~"stomp-subscription.*|amq[.]gen-.*"` selector matched a series family that
+  # has no `queue` label, so it returned the empty vector from the day it was written
+  # while nine real dead messages sat unreported on webhook.deliveries.dlq. `promtool
+  # check rules` passed the file throughout — syntax validity is exactly the assurance
+  # that is worthless here.
+  #
+  # DISTINCT PREFIX, SO IT CANNOT COLLIDE. /metrics/detailed emits the
+  # `rabbitmq_detailed_` prefix, which the plugin designs for concurrent use with the
+  # aggregated endpoint. No existing expression changes meaning.
+  #
+  # THE TWO FAMILIES AND WHAT THEY YIELD (measured, not assumed):
+  #   queue_coarse_metrics  -> rabbitmq_detailed_queue_messages
+  #                            rabbitmq_detailed_queue_messages_ready
+  #                            rabbitmq_detailed_queue_messages_unacked
+  #                            rabbitmq_detailed_queue_process_reductions_total
+  #   queue_consumer_count  -> rabbitmq_detailed_queue_consumers
+  #
+  # COST, MEASURED RATHER THAN ASSERTED (2026-07-29, 13 queues):
+  #   /metrics/detailed?family=queue_coarse_metrics&family=queue_consumer_count   92 lines
+  #   /metrics/per-object                                                       3439 lines
+  #   /metrics (aggregated, the job above)                                      3135 lines
+  # per-object was rejected: it grows with connections and channels, and it REPLACES
+  # the aggregated series rather than adding to them.
+  #
+  # ACCEPTED COST: this adds a second `up{job="rabbitmq-queues"}` series, so one broker
+  # outage can be named by ServiceDown under either job. That is the same outage, not a
+  # new fault — the runbook says so, and RabbitMQDown is deliberately scoped to
+  # job="rabbitmq" only so the two can never double-page.
+  #
+  # /-/reload is NOT enabled (see the file header), so applying a change here needs
+  #   docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d \
+  #     --force-recreate prometheus
+  - job_name: 'rabbitmq-queues'
+    metrics_path: '/metrics/detailed'
+    params:
+      family: ['queue_coarse_metrics', 'queue_consumer_count']
+    static_configs:
+      - targets: ['jtoye-rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          component: 'messaging'
+    metric_relabel_configs:
+      # LOAD-BEARING, NOT DECORATIVE. The SSE fan-out declares an AnonymousQueue per
+      # JVM (RabbitMQConfig.ORDER_EVENTS_FANOUT_QUEUE_PREFIX ->
+      # order.state-changes.sse.<random>); the random suffix changes on EVERY restart,
+      # so keeping these series would leak one label value per restart, forever.
+      # Durable queues only. Proven load-bearing by its own control: comment this block
+      # out and `rabbitmq_detailed_queue_messages_ready{queue=~"order[.]state-changes[.]sse[.].*"}`
+      # goes from empty to >= 1 naming the live SSE queue (27-03 T1.4).
+      - source_labels: [queue]
+        regex: 'order[.]state-changes[.]sse[.].*'
+        action: drop
