@@ -236,7 +236,7 @@ states:
   - id: TS-13
     name: exporter up but blind
     kind: infra_exporter
-    locator: "infra/monitoring/docker-compose.monitoring.yml:134"
+    locator: "infra/monitoring/docker-compose.monitoring.yml:137"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
     resolved: "2026-07-29, alongside TS-15. The rule half landed with 27-03 (DatabaseDown became up{job=\"postgres\"} == 0 or pg_up == 0) but this row was left deferred, and its deferral reason — 'referenced by NO alert rule — verified: grep -c pg_up alerts.yml = 0' — has been FALSE since that merge: alerts.yml:85 reads pg_up. Nothing would have caught that until 2026-09-30, because a deferral is only ever re-examined on its expiry date. detection.alert was DatabaseExporterBlind, never built and no longer wanted, for the same reason given on TS-15."
@@ -251,7 +251,7 @@ states:
   - id: TS-14
     name: alert bound to the wrong subject
     kind: detection_defect
-    locator: "infra/monitoring/prometheus/alerts.yml:96"
+    locator: "infra/monitoring/prometheus/alerts.yml:127"
     what_stops: "core-java heap exhaustion and GC storms are unobserved. HighMemoryUsage (:96) and FrequentGarbageCollection (:111) both carry service: core-java but their jvm_* selectors are unqualified, so while core-java's target was down they bound to the only JVM Prometheus could see — Keycloak's. They are worse than dataless: a naive 'selector matches >= 1 series' liveness check reports them GREEN."
     owner: maintainer
     detection:

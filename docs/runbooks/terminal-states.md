@@ -267,7 +267,8 @@ note at the top of this file.
 ## TS-13 — exporter up but blind (PostgreSQL)
 
 **RESOLVED.** The rule half landed with 27-03 — `DatabaseDown` reads
-`up{job="postgres"} == 0 or pg_up == 0` (`alerts.yml:85`). The register row was left deferred until
+`up{job="postgres"} == 0 or pg_up == 0` (`infra/monitoring/prometheus/alerts.yml:85`). The register
+row was left deferred until
 2026-07-29 on a reason that had already become false, which is its own lesson: **a deferral is only
 re-read on its expiry date**, so this one would have sat stale until 2026-09-30. See TS-15.
 
@@ -293,7 +294,8 @@ nothing. Test over the container network. Do not stop at the first cause.
 ## TS-14 — alert bound to the wrong subject
 
 **What stopped.** core-java heap exhaustion and GC storms are unobserved. `HighMemoryUsage`
-(`alerts.yml:96`) and `FrequentGarbageCollection` (`:111`) carry `service: core-java` but their
+(`infra/monitoring/prometheus/alerts.yml:127`) and `FrequentGarbageCollection` (`:146`) carry
+`service: core-java` but their
 `jvm_*` selectors are unqualified, so while core-java's target was down they bound to the only JVM
 Prometheus could see — **Keycloak's**.
 
