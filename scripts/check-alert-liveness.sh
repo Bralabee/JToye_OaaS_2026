@@ -24,8 +24,12 @@
 #
 #   Each assertion below pins one of those.
 #
-# THE FIVE ASSERTIONS
+# THE SIX ASSERTIONS
 #
+#   L-0   SOURCE PARITY. The alerts file this gate reads is byte-identical to the
+#         one the running Prometheus is serving. Without this the gate mixes two
+#         sources — L-1b greps the FILE, L-2/L-2b query the running rules via the
+#         API — and can report a verdict that is true of neither. See below.
 #   L-1   Every scrape target reports health == "up".
 #   L-1b  For every exporter-backed job, its SELF-REPORTED upstream gauge is 1
 #         AND that gauge name appears in at least one alerts.yml expression.
@@ -75,6 +79,11 @@ PROM_URL="${PROM_URL:-http://localhost:9091}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093}"
 MAILHOG_URL="${MAILHOG_URL:-http://localhost:8025}"
 ALERTS="${ALERTS:-infra/monitoring/prometheus/alerts.yml}"
+# L-0 needs to read the file out of the running Prometheus. Both are overridable
+# because neither is a property of this script — a k8s Prometheus has a different
+# container name and a different in-container path.
+PROM_CONTAINER="${PROM_CONTAINER:-jtoye-prometheus}"
+PROM_ALERTS_PATH="${PROM_ALERTS_PATH:-/etc/prometheus/alerts.yml}"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 VIOLATIONS=0
@@ -145,6 +154,71 @@ done
 
 curl -sf --max-time 10 "$PROM_URL/-/healthy" >/dev/null 2>&1 \
   || void "Prometheus unreachable at $PROM_URL — a stopped stack is VOID, never clean"
+
+# ================================================================== L-0
+# SOURCE PARITY — the file this gate reads vs the file the running Prometheus serves.
+#
+# WHY (added 2026-07-29). $ALERTS is bind-mounted into the Prometheus container AS A
+# SINGLE FILE. A single-file bind mount is resolved to an inode at container start, so
+# ANY change of inode detaches it — editing the file, and `git switch` too. The container
+# then keeps serving the OLD content, and SIGHUP does not fix it: Prometheus logs
+# `Completed loading of configuration file` for the stale content, which reads exactly
+# like success.
+#
+# This gate is the one that mixes the two sources, so it is the one that must not be
+# fooled: L-1b greps the FILE for a gauge reference, while L-2 and L-2b evaluate the
+# rules the API reports. When those disagree the gate can return a verdict that is true
+# of neither tree nor runtime. Measured on this repo on 2026-07-29 mid-session: host
+# inode 18221918 vs container 18219239, different md5, the container serving the rules
+# of a branch that was not checked out — and the gate exited 0 by combining one branch's
+# file with another branch's runtime.
+#
+# It was documented as a manual pre-flight step in the session handoff ("ALWAYS check
+# before trusting any alert-rule verification"). It fired anyway, on the next session,
+# within the first ten minutes. A recurring failure that survives a written warning is
+# owed an executable check.
+#
+# BYTE-EXACT, deliberately. The obvious alternative — parse both sides and compare rule
+# names or normalised exprs — cannot be made reliable: the API returns Prometheus's own
+# re-rendering, which reorders label matchers, so any comparison needs a normaliser, and
+# a normaliser that is slightly wrong makes a REQUIRED phase-close gate cry wolf. A
+# checksum has no such failure mode. It also catches comment-only drift, which a
+# semantic compare would wave through even though it means the mount is detached and the
+# NEXT edit will be invisible too.
+#
+# VOID, not FAIL. A gate whose two inputs disagree has not detected a monitoring defect;
+# it has failed to evaluate. Recreating the container is the fix:
+#   docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml \
+#     up -d --force-recreate prometheus
+#
+# DO NOT REWRITE THIS WITH `docker cp`. It is the natural first reach and it CANNOT see
+# this drift. Measured on the drifted stack, same container, same path, same moment:
+#   docker cp   jtoye-prometheus:/etc/prometheus/alerts.yml -   md5 1cc20a85  <- the HOST file
+#   docker exec jtoye-prometheus md5sum /etc/prometheus/alerts.yml  md5 d25f3d10  <- what it SERVES
+# `docker cp` resolves the bind mount back to its source path on the host, so it reports
+# the current host inode and the two sides always agree. It would turn this assertion
+# into one that can never fail — the exact defect class the gate exists to catch.
+# `docker exec` runs inside the container's mount namespace and sees the attached inode,
+# which is what the Prometheus process actually reads. Use exec.
+command -v docker >/dev/null 2>&1 \
+  || void "L-0 docker not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_CONTAINER/PROM_ALERTS_PATH for a non-docker runtime."
+docker inspect "$PROM_CONTAINER" >/dev/null 2>&1 \
+  || void "L-0 container '$PROM_CONTAINER' not found — cannot compare the served alerts file against $ALERTS (override with PROM_CONTAINER)"
+
+HOST_SUM=$(md5sum "$ALERTS" | awk '{print $1}')
+CTR_SUM=$(docker exec "$PROM_CONTAINER" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
+  || void "L-0 cannot read $PROM_ALERTS_PATH inside '$PROM_CONTAINER'"
+[ -n "$CTR_SUM" ] \
+  || void "L-0 empty checksum from '$PROM_CONTAINER:$PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
+
+if [ "$HOST_SUM" != "$CTR_SUM" ]; then
+  void "L-0 SOURCE DRIFT — the running Prometheus is NOT serving the file this gate reads.
+       $ALERTS  md5=$HOST_SUM  inode=$(stat -c %i "$ALERTS")
+       $PROM_CONTAINER:$PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$(docker exec "$PROM_CONTAINER" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
+       The single-file bind mount has detached. Every result below would mix this tree's
+       file with a different tree's runtime. SIGHUP will NOT fix it — recreate:
+         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus"
+fi
 
 # ================================================================== L-1
 TARGETS=$(curl -sf --max-time 15 "$PROM_URL/api/v1/targets?state=any") \
