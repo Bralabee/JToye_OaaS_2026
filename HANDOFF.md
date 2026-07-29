@@ -5,8 +5,8 @@
 
 | | |
 |---|---|
-| `origin/main` | **`79a3a6a`** |
-| Checked out at handoff | **`docs/handoff-2026-07-29`** — 0 behind base, PR **#344** |
+| `origin/main` when written | **`79a3a6a`** — this file merged on top of it via PR **#344**, so `main` is one commit further on. `git log --oneline -3` beats this row. |
+| Last code change | **`79a3a6a`** (#345). Nothing after it is code. |
 | Phase 27 | CLOSED 7/7 |
 | Milestone v2.3 | build complete |
 | Issue #342 | **CLOSED.** Opened at 6 live detection defects; `check-alert-liveness.sh` now exits **0** |
