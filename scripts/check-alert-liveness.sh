@@ -92,7 +92,21 @@ EXPORTER_GAUGES=(
   "redis|redis_up"
 )
 # Jobs that are not exporter-fronted (they expose their own metrics directly).
-DIRECT_JOBS=("prometheus" "core-java" "edge-go" "keycloak" "rabbitmq")
+# `rabbitmq-queues` (plan 27-03) is DIRECT, not exporter-fronted, and that distinction is the
+# whole reason it belongs here rather than in EXPORTER_GAUGES above. Verified, not assumed: it
+# targets the IDENTICAL endpoint as `rabbitmq` — jtoye-rabbitmq:15692 — differing only by
+# metrics_path (`/metrics` vs `/metrics/detailed` with family params). It is the broker's own
+# Prometheus plugin on a second path, not a sidecar exporter in front of a separate upstream, so
+# there is no "self-reported upstream health" gauge for it to have. That concept earns its keep
+# for postgres->pg_up and redis->redis_up, where the exporter can answer 200 while the thing
+# behind it is dead; a second path on the same process cannot exhibit that failure.
+#
+# It was missing until 2026-07-29 (issue #339), so L-1b VOIDed on a correct tree and this gate
+# could not run at all. That is the mechanism working: it refuses to silently skip a job it does
+# not recognise. Do NOT "fix" a future VOID by teaching L-1b to ignore unknown jobs — that would
+# be strictly worse than the red, because the whole point is that a new exporter cannot slip in
+# unmapped.
+DIRECT_JOBS=("prometheus" "core-java" "edge-go" "keycloak" "rabbitmq" "rabbitmq-queues")
 
 # ---- data block: rule `service:` label -> Prometheus `job` --------------------
 # RULE-LABEL -> JOB, never label -> label. prometheus.yml labels the core-java
@@ -103,7 +117,15 @@ SERVICE_JOB_MAP=(
   "postgresql|postgres"
   "redis|redis"
   "keycloak|keycloak"
-  "rabbitmq|rabbitmq"
+  # COMMA-SEPARATED: one service may legitimately be scraped by MORE THAN ONE job.
+  # The broker is the live case — `rabbitmq` (node-level /metrics) and `rabbitmq-queues`
+  # (per-queue /metrics/detailed, added by 27-03) are the SAME process on the SAME
+  # endpoint, so a rule labelled service=rabbitmq is correct whichever of the two its
+  # selector lands on. Before this was a list, the four per-queue rules
+  # (PaymentDeadLetterQueueNonEmpty, DeadLetterQueueNonEmpty, DomainQueueBacklog,
+  # MessagingConsumerMissing) were ALL reported wrong-subject — a FALSE POSITIVE from
+  # the same root cause as #339: 27-00 data blocks predate 27-03 second scrape job.
+  "rabbitmq|rabbitmq,rabbitmq-queues"
   "platform|*"
 )
 
@@ -240,7 +262,7 @@ while IFS=$'\t' read -r name service query; do
       L2_EMPTY=$((L2_EMPTY + 1))
     elif [ "$mapped" != "*" ]; then
       hit=$(curl -sfG --max-time 15 "$PROM_URL/api/v1/series" --data-urlencode "match[]=$sel" \
-            | jq -r --arg j "$mapped" '[.data[] | select(.job==$j)] | length')
+            | jq -r --arg j "$mapped" '($j | split(",")) as $jobs | [.data[] | select(.job as $x | $jobs | index($x))] | length')
       [ "${hit:-0}" -gt 0 ] && rule_has_right_job=1
     fi
   done <<<"$sels"
