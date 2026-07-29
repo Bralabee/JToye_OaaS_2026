@@ -508,6 +508,110 @@ environment, including the additions and removals the edit did *not* intend.
 `k8s/goldens/` deliberately contains no `kustomization.yaml`, so it is never
 mistaken for a fourth overlay by the other gates' discovery loop.
 
+## Operational contracts
+
+The single inventory of **every** gate this repository runs, old and new. The two
+sections above ("K8s static gates", "Runtime-parity gates") remain the detailed
+reference for their own gates; this section is the map, plus the three gates Phase 27
+added and the two it deliberately left out of CI.
+
+**All of them share one exit-code convention.** It is stated once here and holds
+everywhere:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Clean — the assertion holds. |
+| `1` | Violation — a real defect. Fix the input, never the gate. |
+| `2` | **VOID** — could not evaluate: a missing tool, an unreachable source, an unparseable input, or an empty discovery result. A `2` is **not** a pass. "Could not check" is never "clean". |
+
+### The static set — runs in CI on every PR
+
+| Gate | Job | What it pins |
+|---|---|---|
+| `k8s/scripts/check-no-plaintext-secrets.sh` | `k8s-validate` | No plaintext Secret material in any kustomize build (#100). |
+| `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits `max_connections` with ≥20% headroom (#94). |
+| `k8s/scripts/check-env-contract.sh` | `k8s-validate` | The core-java env contract in both directions (D-07/D-08). |
+| `k8s/scripts/check-render-invariants.sh` | `k8s-validate` | Render-level invariants (DB port, kube-dns selector, no localhost literal, no DB superuser). |
+| `k8s/scripts/render-golden.sh` | `k8s-validate` | staging/production renders are byte-identical to their reviewed goldens. |
+| `scripts/check-branch-behind-base.sh` | `branch-parity` | This branch contains every commit already on its base. |
+| **`scripts/check-terminal-states.sh`** | **`ops-contracts`** | Every terminal failure state — DLQ, poison-outbox migration, terminal `FAILED` enum constant, scrape job — has a register row, a named alert and a runbook section. A new DLQ constant with no register row fails the build. Plan 27-00, finding F-9. |
+| **`scripts/check-dependency-horizons.sh`** | **`ops-contracts`** | Every pinned image and toolchain carries a live support horizon. Past horizon, inside the 90-day warn window, stale cache, wrong slug, catalogue-vs-vendor conflict, manifest↔source drift either way, or a lapsed `manual_review` all fail. Plan 27-00, finding F-6. |
+| **`scripts/check-alert-rules.sh`** | **`ops-contracts`** | `promtool check rules`, plus every live rule carrying its labels and annotations and having a `## <AlertName>` runbook heading. Plan 27-03, finding F-8: *"there is no CI validation of `alerts.yml` at all"*. |
+
+Run the whole static set locally before pushing:
+
+```bash
+# The complete static set — no cluster, no stack, seconds.
+bash k8s/scripts/check-no-plaintext-secrets.sh \
+  && bash k8s/scripts/check-connection-math.sh \
+  && bash k8s/scripts/check-env-contract.sh \
+  && bash k8s/scripts/check-render-invariants.sh \
+  && bash k8s/scripts/render-golden.sh \
+  && bash scripts/check-terminal-states.sh \
+  && bash scripts/check-dependency-horizons.sh \
+  && bash scripts/check-alert-rules.sh \
+  && echo ALL_STATIC_GATES_GREEN
+```
+
+`ops-contracts` has two outbound dependencies and they are accepted deliberately:
+`check-dependency-horizons.sh` fetches `endoflife.date`, and `check-alert-rules.sh` pulls
+`prom/prometheus:v2.48.0` to run `promtool` (it is not installed on hosts, and the image's
+ENTRYPOINT is `/bin/prometheus`, so the call must pass `--entrypoint=promtool`). An outage of
+either turns the job **red at exit 2**, never green.
+
+**This job reddens on dates, with no code change.** RabbitMQ 4.3's vendor horizon is
+2026-11-30 against a 90-day warn window, so expect amber around **2026-09-01** and red on
+**2026-12-01**. Resolve it by upgrading the pin or re-dating the exemption in the manifest —
+never by weakening the job.
+
+### The runtime set — deliberately NOT in CI
+
+| Gate | What it pins |
+|---|---|
+| `scripts/check-runtime-freshness.sh` | The running containers are built from this tree (see "Runtime-parity gates"). |
+| `scripts/check-alert-liveness.sh` | That the monitoring can **see and tell**: scrape targets are actually up, the thing behind a target is healthy (a target being UP is not evidence — `DatabaseDown` watched `up{job="postgres"}` which was 1 because the *exporter* answered while `pg_up` was 0), and Alertmanager actually delivers. Plan 27-00. |
+| `scripts/check-alert-metrics.sh` | That each live rule's **series selector** matches ≥1 real series. Plan 27-03. Its defect: `StompBrokerLag` selected on a `queue` label that the aggregated endpoint does not emit at all, so the rule could never fire and nine real dead messages sat unreported for eleven days — while `promtool check rules` passed the file throughout. |
+
+**Neither runtime alert gate subsumes the other.** Liveness asks *can the pipeline observe and
+deliver at all*; metrics asks *does this particular rule's selector match anything*. A rule can
+pass liveness (its target is up, Alertmanager delivers) and still be permanently blind because
+its selector names a label that does not exist — which is exactly what happened.
+
+They are absent from CI for the reason already recorded for `check-runtime-freshness.sh`: **a
+runner has no Prometheus and no running containers, so they could only ever exit 2 (VOID) there,
+and a permanently-VOID job invites a `|| true` that turns it into a gate that passes because it
+measures nothing.** `infra/load-testing/baseline.sh` is out for a different reason (27-00 D-11):
+a shared runner's throughput numbers are noise, and a noisy gate gets disabled.
+
+**Because CI cannot run them, a phase close must.** Every phase SUMMARY records the liveness
+gate's result in this literal form, next to its branch-parity and runtime-parity lines:
+
+```
+check-alert-liveness.sh: exit=<N> at <ISO-8601>
+```
+
+The literal form is the requirement, not a paraphrase of it — a requirement stated only in prose
+is satisfied by any prose, and a gate whose only enforcement is a human remembering is not a gate.
+
+**What the alert transport does NOT prove.** A green liveness run proves a message left
+Alertmanager and reached the configured sink. It does **not** prove a human reads that sink —
+today that sink is a Mailhog dev container with nobody behind it. Delivery is not receipt.
+
+### The two registers an operator maintains
+
+| Register | Maintained how |
+|---|---|
+| `docs/ops/terminal-states.yaml` | Add a row whenever a new DLQ, poison-outbox migration or terminal `FAILED` state appears: give it an `id`, the alert that detects it, and the runbook section an operator opens. `scripts/check-terminal-states.sh` fails the build if the code has a terminal state the register does not, or the register names an alert that does not exist. |
+| `infra/dependency-horizons.yaml` | One row per pinned image/toolchain. Refresh cached vendor dates and pin sites with `bash scripts/check-dependency-horizons.sh --refresh`, then commit the diff. |
+
+**An expired deferral, exemption or `manual_review` is a FAIL by design.** That is the whole
+mechanism: a gap is acknowledged, owned and *dated*, and the build goes red the day the date
+passes. Re-date it deliberately with a reason, or resolve it — never delete the row. The
+`rabbitmq-k8s` row is the live example: the staging/production broker is provisioned outside this
+repository, so its row is `pin: unknown` / `owner: UNASSIGNED` with a dated `manual_review`, it is
+printed on **every** run, and it goes red the day that review lapses. See
+[`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md) §7.
+
 ## Monitoring and Observability
 
 ### Prometheus Metrics
