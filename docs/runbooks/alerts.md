@@ -212,17 +212,19 @@ point at which working sessions start failing.
 
 ## RedisDown
 
-**Expression:** `up{job="redis"} == 0` · **for:** 1m · **severity:** critical
+**Expression:** `up{job="redis"} == 0 or redis_up == 0` · **for:** 1m · **severity:** critical
 
 ### What it means
 
-The redis-exporter target is unreachable.
+Either the redis-exporter target is unreachable, **or** the exporter is up and reporting that *it*
+cannot reach Redis. The two disjuncts are different failures and step 2 tells them apart.
 
-**Read this alert carefully:** it watches the *exporter*, not Redis. This is the same class of
-defect that `DatabaseDown` was corrected for on 2026-07-29 — `redis_up` exists in the scrape and is
-referenced by no rule, so an exporter that is up while Redis is unreachable currently reports
-healthy. Recorded in the phase's `deferred-items.md`; until it is fixed, do step 2 rather than
-trusting the alert's silence.
+**History — read this before you trust an old silence.** Until 2026-07-29 this rule watched only
+`up{job="redis"}`, which is the health of the *exporter*, not of Redis. `redis_up` was live in the
+scrape and referenced by no rule (`grep -c redis_up alerts.yml` → 0). Measured with `jtoye-redis`
+stopped and the exporter left running: `up{job="redis"}` read **1**, `redis_up` read **0**, and the
+old expression matched **0 samples** — a total loss of the cache would have paged nobody. Tracked as
+TS-15; fixed by issue #342 item 5, the Redis half of the `DatabaseDown`/D-11 correction.
 
 ### Expected impact
 
@@ -234,11 +236,19 @@ Cache misses fall through to PostgreSQL, so the platform stays *correct* and get
 1. ```bash
    docker ps --filter 'name=jtoye-redis' --format 'table {{.Names}}\t{{.Status}}'
    ```
-2. **Ask Redis directly**, rather than asking the exporter about Redis:
+2. **Find out which disjunct fired** — they mean different things:
+   ```bash
+   curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=up{job="redis"}'
+   curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=redis_up'
+   ```
+   `up`=0 → Prometheus cannot scrape the exporter (a metrics outage, possibly nothing more).
+   `up`=1 and `redis_up`=0 → the exporter is fine and **Redis itself is unreachable**. That is the
+   real service outage, and it is the one the old rule could not see.
+3. **Ask Redis directly**, rather than asking the exporter about Redis:
    ```bash
    docker exec jtoye-redis redis-cli PING
    ```
-3. If Redis is up and only the exporter is down, this is a metrics outage, not a service outage —
+4. If Redis is up and only the exporter is down, this is a metrics outage, not a service outage —
    downgrade the response accordingly and fix the exporter at leisure.
 
 ### Escalation

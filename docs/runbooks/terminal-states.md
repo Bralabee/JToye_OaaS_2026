@@ -266,9 +266,15 @@ note at the top of this file.
 
 ## TS-13 — exporter up but blind (PostgreSQL)
 
-**What stopped.** Every PostgreSQL metric. `DatabaseDown` watches `up{job="postgres"}`, which is 1
-because the *exporter's* HTTP endpoint answers, so the database reports healthy while nothing about
-it is measured. `TooManyDatabaseConnections` matches zero series for the same reason.
+**RESOLVED.** The rule half landed with 27-03 — `DatabaseDown` reads
+`up{job="postgres"} == 0 or pg_up == 0` (`infra/monitoring/prometheus/alerts.yml:85`). The register
+row was left deferred until
+2026-07-29 on a reason that had already become false, which is its own lesson: **a deferral is only
+re-read on its expiry date**, so this one would have sat stale until 2026-09-30. See TS-15.
+
+**What stopped.** Every PostgreSQL metric. `DatabaseDown` watched `up{job="postgres"}`, which is 1
+because the *exporter's* HTTP endpoint answers, so the database reported healthy while nothing about
+it was measured. `TooManyDatabaseConnections` matched zero series for the same reason.
 
 **How to see it.** The disagreement between these two **is** the state:
 ```bash
@@ -288,7 +294,8 @@ nothing. Test over the container network. Do not stop at the first cause.
 ## TS-14 — alert bound to the wrong subject
 
 **What stopped.** core-java heap exhaustion and GC storms are unobserved. `HighMemoryUsage`
-(`alerts.yml:96`) and `FrequentGarbageCollection` (`:111`) carry `service: core-java` but their
+(`infra/monitoring/prometheus/alerts.yml:127`) and `FrequentGarbageCollection` (`:146`) carry
+`service: core-java` but their
 `jvm_*` selectors are unqualified, so while core-java's target was down they bound to the only JVM
 Prometheus could see — **Keycloak's**.
 
@@ -307,24 +314,41 @@ exactly the check these two rules pass while watching the wrong process.
 
 ## TS-15 — RedisDown watches the scrape target, not the exporter gauge
 
-**What stopped.** Nothing yet — this is **latent**, which is why it survived planning. `RedisDown`
-evaluates `up{job="redis"} == 0`, which only proves the exporter answers. `redis_up`, the exporter's
-own upstream-health gauge, is live and referenced by **no rule**. Sessions and cache could be
-entirely unreachable while `RedisDown` stays inactive.
+**RESOLVED 2026-07-29** (issue #342 item 5). `RedisDown` now evaluates
+`up{job="redis"} == 0 or redis_up == 0`. Kept here because the *state* still exists — only the
+blindness to it is gone — and because how it was proven is the reusable part.
 
-**How to see it.** Same shape as TS-13:
+**What stopped.** Nothing ever, observably — this was **latent**, which is why it outlived the
+review that fixed its postgres twin. `RedisDown` evaluated `up{job="redis"} == 0`, which only proves
+the exporter answers. `redis_up`, the exporter's own upstream-health gauge, was live and referenced
+by **no rule**. Sessions and cache could have been entirely unreachable while `RedisDown` stayed
+inactive.
+
+**How to see it.** Same shape as TS-13 — the disagreement between the two IS the state:
 ```bash
 curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=redis_up'
 curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=up{job="redis"}'
-grep -c redis_up infra/monitoring/prometheus/alerts.yml    # 0 today
+grep -c redis_up infra/monitoring/prometheus/alerts.yml    # >= 1 since the fix; was 0
 ```
 
-**What to do.** 27-03 adds a rule reading `redis_up`. `check-alert-liveness.sh` L-1b already fails
-until it exists.
+**How it was proven — induce it, do not argue it.** A latent defect cannot be verified by observing
+the healthy state, and both gauges read 1 in steady state, so the fix and the bug are
+indistinguishable there. Stop Redis and leave the exporter up:
+```bash
+docker stop jtoye-redis        # exporter keeps answering; this is the state that matters
+# wait for one scrape, then:
+curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=up{job="redis"} == 0'
+curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=up{job="redis"} == 0 or redis_up == 0'
+docker start jtoye-redis
+```
+Measured 2026-07-29: `up{job="redis"}`=**1**, `redis_up`=**0**, old expression **0 samples**, new
+expression **1 sample**; both 0 again after restore. Without the down-arm the two expressions are
+identical, so a verification run only in the healthy state proves nothing at all.
 
 **What NOT to do.** Do not treat this as postgres-specific. Measured 2026-07-27: `pg_up` 0 rule
 references, `redis_up` 0, `rabbitmq_up` no series at all. Any gate written for one exporter must
-generalise to all of them.
+generalise to all of them — `check-alert-liveness.sh` L-1b VOIDs on an exporter job it has no gauge
+mapping for, which is what keeps that generalisation from rotting.
 
 ## TS-16 — running container config drifted from the compose file
 

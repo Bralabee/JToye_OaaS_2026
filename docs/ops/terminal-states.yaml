@@ -236,24 +236,22 @@ states:
   - id: TS-13
     name: exporter up but blind
     kind: infra_exporter
-    locator: "infra/monitoring/docker-compose.monitoring.yml:134"
+    locator: "infra/monitoring/docker-compose.monitoring.yml:137"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
+    resolved: "2026-07-29, alongside TS-15. The rule half landed with 27-03 (DatabaseDown became up{job=\"postgres\"} == 0 or pg_up == 0) but this row was left deferred, and its deferral reason — 'referenced by NO alert rule — verified: grep -c pg_up alerts.yml = 0' — has been FALSE since that merge: alerts.yml:85 reads pg_up. Nothing would have caught that until 2026-09-30, because a deferral is only ever re-examined on its expiry date. detection.alert was DatabaseExporterBlind, never built and no longer wanted, for the same reason given on TS-15."
     detection:
       signal: 'pg_up{job="postgres"}'
-      alert: DatabaseExporterBlind
+      alert: DatabaseDown
     runbook: "docs/runbooks/terminal-states.md#ts-13"
     operator_action: "Compare the two queries — they disagree, and that disagreement IS the state: pg_up{job=\"postgres\"} vs up{job=\"postgres\"}. Then read docker logs jtoye-postgres-exporter for the underlying error. Two causes were found stacked here: sslmode=require against a server with ssl=off, and a POSTGRES_EXPORTER_PASSWORD that never matched the database. TLS negotiation precedes authentication, so the first masked the second entirely. Fixing one and re-testing is not enough — assert pg_up == 1."
-    related: ["baselines/B-6.txt", "baselines/B-6-CONTROL-DEFECT.md"]
-    deferred:
-      reason: "pg_up is live and correct but referenced by NO alert rule — verified: grep -c pg_up alerts.yml = 0. A fresh clone still reproduces pg_up=0 behind a green up target, because .env.example ships POSTGRES_EXPORTER_PASSWORD=CHANGE_ME by design and cannot carry the fix. 27-03 owns rule content; 27-00 Task 4's check-alert-liveness.sh is what makes it fail closed."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+    related: ["baselines/B-6.txt", "baselines/B-6-CONTROL-DEFECT.md", "TS-15"]
+    residual_risk: "A fresh clone still reproduces pg_up=0 behind a green up target, because .env.example ships POSTGRES_EXPORTER_PASSWORD=CHANGE_ME by design and cannot carry the fix. That is an environment-setup issue, not a detection gap: DatabaseDown now fires on it, which is the whole point."
 
   - id: TS-14
     name: alert bound to the wrong subject
     kind: detection_defect
-    locator: "infra/monitoring/prometheus/alerts.yml:96"
+    locator: "infra/monitoring/prometheus/alerts.yml:127"
     what_stops: "core-java heap exhaustion and GC storms are unobserved. HighMemoryUsage (:96) and FrequentGarbageCollection (:111) both carry service: core-java but their jvm_* selectors are unqualified, so while core-java's target was down they bound to the only JVM Prometheus could see — Keycloak's. They are worse than dataless: a naive 'selector matches >= 1 series' liveness check reports them GREEN."
     owner: maintainer
     detection:
@@ -271,19 +269,17 @@ states:
     name: RedisDown watches the scrape target, not the exporter's upstream gauge
     kind: detection_defect
     discovered: "2026-07-27, while verifying 27-00 Task 1. Not in the F-9 planning census."
-    locator: "infra/monitoring/prometheus/alerts.yml:226"
-    what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluates up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — is live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stays inactive."
+    locator: "infra/monitoring/prometheus/alerts.yml:302"
+    what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluated up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — was live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stayed inactive."
     owner: maintainer
+    resolved: "2026-07-29, issue #342 item 5. RedisDown now evaluates up{job=\"redis\"} == 0 or redis_up == 0 — the same shape 27-03 gave DatabaseDown. detection.alert was RedisExporterBlind, a separate alert that was never built and is no longer wanted: folding the gauge into the existing rule is strictly better than a second rule for the same outage, because it cannot be silenced independently of the thing it is about."
     detection:
       signal: 'redis_up{job="redis"}'
-      alert: RedisExporterBlind
+      alert: RedisDown
     runbook: "docs/runbooks/terminal-states.md#ts-15"
-    operator_action: "Compare redis_up against up{job=\"redis\"}, exactly as TS-13 does for pg_up. Both read 1 today, so this is a latent defect rather than an active outage — which is why it survived: the state that would expose it has not occurred yet."
+    operator_action: "Compare redis_up against up{job=\"redis\"} — the disagreement IS the state, exactly as TS-13 does for pg_up. up=1 with redis_up=0 means the exporter is healthy and Redis is not; that is the case the old rule could not see."
     related: ["TS-13", "baselines/B-6.txt"]
-    deferred:
-      reason: "Measured 2026-07-27: pg_up referenced by 0 rules, redis_up referenced by 0 rules, rabbitmq_up has no series at all. B-6 recorded ONE instance of this class; there are at least two, and the difference matters because 27-00 Task 4's AC-4.2 names only postgres. That criterion must generalise to every exporter publishing an upstream-health gauge, or the gate ships blind to half the class it exists to catch."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+    verification: "Falsified before being trusted, because this was LATENT — it had never been observed failing, which is why it outlived the review that fixed its postgres twin. Induced 2026-07-29 by stopping jtoye-redis while leaving jtoye-redis-exporter running: up{job=\"redis\"}=1, redis_up=0, OLD expression 0 samples (would NOT have fired through a total cache outage), NEW expression 1 sample. On restore both return 0 samples, so it does not page in steady state."
 
   - id: TS-16
     name: running container config drifted from the compose file that defines it

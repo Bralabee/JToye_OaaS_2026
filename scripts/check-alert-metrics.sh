@@ -84,15 +84,38 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 # with a dataless selector is a hard violation — which is the assertion this gate exists
 # for.
 #
-# All three entries below are PRE-EXISTING defects of the same class as StompBrokerLag,
-# found by this gate on its first run, in rules plan 27-03 is explicitly forbidden to
-# edit ("do not touch any other rule in the file"). They are recorded here rather than
-# silently exempted, and are logged in the phase's deferred-items.md.
+# These entries are PRE-EXISTING defects of the same class as StompBrokerLag, found by
+# this gate on its first run, in rules plan 27-03 was explicitly forbidden to edit ("do
+# not touch any other rule in the file"). They are recorded here rather than silently
+# exempted, and are logged in the phase's deferred-items.md.
+#
+# TWO WERE REMOVED ON 2026-07-29, and the gate is what said so. Both went STALE the
+# moment the thing they described stopped being true, and the red carried the
+# instruction:
+#
+#   HighResponseTime  PR #343 enabled management.metrics.distribution.percentiles-
+#                     histogram, so http_server_requests_seconds_bucket went 0 -> 74
+#                     series. #343 fixed the data and left the exemption, so this gate
+#                     was red on main from the moment it merged. It is NOT in CI (it
+#                     needs a live Prometheus), so nothing in the pipeline noticed.
+#   NoOrdersCreated   #343 corrected the selector to include /public/shops/{slug}/orders
+#                     — the reason text above still quoted the OLD selector, which no
+#                     longer existed in the file — and a guest order was then placed
+#                     (ORD-00000000-20260729-63EB83BC), so the series is live.
+#
+# This is the documented lifecycle, not an exception to it: the HighErrorRate entry
+# below states it outright — "Remove this entry the first time a 5xx is served: the rule
+# then has data and needs no exemption." HighErrorRate stays because no 5xx has been
+# served yet.
+#
+# CONSEQUENCE, RECORDED RATHER THAN HIDDEN: NoOrdersCreated is now covered by M-1 on its
+# own merits, so a stack on which NO order has ever been created will fail M-1 for it.
+# That is the intended trade — this gate grades a LIVE runtime, and "no order has ever
+# been placed here" is a fact about that runtime worth surfacing rather than exempting
+# in perpetuity. Re-adding an entry is the wrong fix; placing an order is the right one.
 # ---------------------------------------------------------------------------------
 KNOWN_DATALESS=(
-  "HighResponseTime|http_server_requests_seconds_bucket matches ZERO series: this Spring Boot deployment publishes the requests timer as _count/_sum only, with no histogram buckets, so histogram_quantile has nothing to read and the rule is structurally incapable of firing. Fixing it means enabling management.metrics.distribution.percentiles-histogram, which is an application-config change outside plan 27-03's scope (Task 2(c): do not touch any other rule).|Phase 27 deferred-items.md — pre-existing, same class as F-3."
-  "HighErrorRate|http_server_requests_seconds_count{status=~\"5..\"} matches zero series because no 5xx has been recorded on this stack yet. Unlike HighResponseTime the metric family and the status label BOTH exist, so this is a condition that has not occurred rather than a structural defect — but a selector matching nothing still cannot fire, so it is recorded rather than waved through. Remove this entry the first time a 5xx is served: the rule then has data and needs no exemption.|Phase 27 deferred-items.md — pre-existing."
-  "NoOrdersCreated|http_server_requests_seconds_count{uri=~\"/orders|/api/v[0-9]+/orders\",method=\"POST\",status=\"201\"} matches zero series because no order has been created through this stack since the last core-java restart. Same shape as HighErrorRate: family and labels exist, the value has not occurred. Note the rule's own logic (increase(...) < 1) means it can NEVER fire while the series is absent, which is the opposite of what its author intended — an absence alert built on a counter that does not exist yet.|Phase 27 deferred-items.md — pre-existing."
+  "HighErrorRate|http_server_requests_seconds_count{status=~\"5..\"} matches zero series because no 5xx has been recorded on this stack yet. Unlike the removed HighResponseTime entry the metric family and the status label BOTH exist, so this is a condition that has not occurred rather than a structural defect — but a selector matching nothing still cannot fire, so it is recorded rather than waved through. Remove this entry the first time a 5xx is served: the rule then has data and needs no exemption.|Phase 27 deferred-items.md — pre-existing."
 )
 
 # ---------------------------------------------------------------------------------
