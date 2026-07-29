@@ -137,7 +137,22 @@ line ~113 is dated history).
 
 ## 6. Carried forward
 
-- [ ] **27-02** (wave 4) → unblocks 27-03 Task 8 → then 27-06.
+- [ ] **27-02** (wave 4) → unblocks 27-03 Task 8 → then 27-06. **Before executing it:**
+      `27-02-PLAN.md:141` cites `infra/monitoring/prometheus/prometheus.yml:92-98` in its fact
+      table. That file does **not** exist (27-00 replaced it with `prometheus.yml.tmpl` +
+      `entrypoint.sh`), so the path and line numbers are both stale. It is a *citation*, not a
+      `files_modified` entry, so it will not cause a phantom edit — but do not trust that row.
+      The live codebase doc carrying the same error is fixed in PR **#334**.
+- [ ] **Local branch cleanup is pending a decision.** Three merged branches survive locally because
+      the repo squash-merges, so `git branch -d` refuses them ("not fully merged") even though all
+      three are verified merged by content *and* PR state: `feature/27-04-consumer-concurrency`
+      (#331), `chore/docs-version-drift` (#332), `chore/phase27-summaries` (#333). Removing them
+      needs `git branch -D`, which discards — left for the user rather than done automatically.
+- [ ] **Toolchain drift surfaced, not applied** (`~/dotfiles/toolchain/doctor.sh --check`, exit 1):
+      conda `26.1.1 → 26.5.3`, `@google/gemini-cli` `0.52.0 → 0.53.0`, `ms-fabric-cli` `1.2.0 →
+      1.6.1`. One UNKNOWN row — `antigravity`, policy `manual`, which has no probeable channel by
+      design. Toolchain changes get their own session (`update.sh --tier N`, dry run first), never a
+      housekeeping run.
 - [ ] **Write `27-04-SUMMARY.md` and `27-05-SUMMARY.md`** from their EVIDENCE files — closes the
       re-execution hazard in §0 permanently.
 - [ ] **`.planning/STATE.md`** was stale for the whole phase (it still read "Phase 26 CLOSED") and was
