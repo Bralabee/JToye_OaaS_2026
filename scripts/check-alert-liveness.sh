@@ -284,19 +284,74 @@ curl -sf --max-time 10 "$ALERTMANAGER_URL/-/healthy" >/dev/null 2>&1 \
 curl -sf --max-time 10 "$MAILHOG_URL/api/v2/messages?limit=1" >/dev/null 2>&1 \
   || void "destination (Mailhog at $MAILHOG_URL) is not inspectable — an unverifiable transport is VOID, never clean"
 
-amq() { curl -sf --max-time 10 "$ALERTMANAGER_URL/metrics" | command grep -E "^alertmanager_notifications_failed_total\{integration=\"email\"" | awk '{s+=$2} END {print s+0}'; }
-FAILED_BEFORE=$(amq)
+# TWO counters, not one. `_failed_total` alone cannot tell "Alertmanager tried and
+# the SMTP hop failed" apart from "Alertmanager never tried at all" — BOTH leave it
+# flat. That ambiguity is precisely what made issue #342 item 6 read as a flaky
+# probe for two days: every observation was `0 -> 0`, which was reported as a
+# delivery failure when in fact no delivery had ever been attempted.
+#
+# NOT a pipe into grep. `curl | grep -E ...` returns grep's exit status under
+# `set -o pipefail`, so an Alertmanager that has not yet registered the email
+# integration would abort the whole gate at the assignment with no message and no
+# VOID. awk over a here-string with index()==1 (a literal prefix match, no regex
+# escaping to get wrong) has neither failure mode.
+am_counter() { # am_counter <metric name> -> value summed over email label sets, 0 if absent
+  local out
+  out=$(curl -sf --max-time 10 "$ALERTMANAGER_URL/metrics") || return 1
+  awk -v m="$1" 'index($0, m "{integration=\"email\"") == 1 {s += $2} END {print s+0}' <<<"$out"
+}
+SENT_BEFORE=$(am_counter alertmanager_notifications_total) \
+  || void "cannot read $ALERTMANAGER_URL/metrics"
+FAILED_BEFORE=$(am_counter alertmanager_notifications_failed_total) \
+  || void "cannot read $ALERTMANAGER_URL/metrics"
 
-PROBE="SyntheticDeliveryProbe"
-PROBE_ID="probe-$(jq -rn 'now|floor|tostring')-$$"
+L3_TRIES=40
+L3_SLEEP=3
+L3_TIMEOUT=$((L3_TRIES * L3_SLEEP))
 
-# The search MUST key on the per-run PROBE_ID, not on the alertname. Searching
-# for the constant name matches probe emails from EVERY PREVIOUS RUN still
-# sitting in the sink, so once any probe has ever been delivered L-3 passes
-# forever regardless of whether this one arrived. Measured: with SMTP pointed at
-# an unroutable host (192.0.2.1) the name-based search still reported
-# delivered=1. A permanently-green transport check is exactly the defect class
-# this gate exists to catch, and it was in the gate.
+PROBE_BASE="SyntheticDeliveryProbe"
+RUN_TOKEN="$(jq -rn 'now|floor|tostring')-$$"
+PROBE="${PROBE_BASE}-${RUN_TOKEN}"
+PROBE_ID="probe-${RUN_TOKEN}"
+
+# WHY THE ALERTNAME IS UNIQUE PER RUN (issue #342 item 6)
+#
+#   It was the constant "SyntheticDeliveryProbe" until 2026-07-29, and that made
+#   this assertion report a delivery failure on every re-run inside five minutes.
+#   Filed as "confirmed flaky". It is not flaky — it is deterministic, and the
+#   mechanism is Alertmanager's dispatcher, not the transport:
+#
+#     route.group_by is ['alertname', 'service'] and the probe posts a constant
+#     alertname with service=platform, so EVERY run lands in the SAME aggregation
+#     group. A group notifies at group_wait (30s) when it is created, and after
+#     that only on a group_interval (5m) tick. The per-run probe_id label does not
+#     help: it is not in group_by, so it does not open a new group.
+#
+#   Measured on this stack, two runs back to back (scratch harness, both arms in
+#   one execution so the stack state is identical):
+#
+#     CONSTANT alertname   run 1 delivered=1 after 30s | run 2 delivered=0 after 120s
+#     UNIQUE   alertname   run 1 delivered=1 after 30s | run 2 delivered=1 after 30s
+#
+#   `notifications_failed_total{email}` was 0 -> 0 in all four, which is the whole
+#   reason the diagnostic above had to become two counters.
+#
+#   This does NOT weaken the assertion. The probe still traverses the default
+#   route, the same receiver, the same template and the same SMTP hop that real
+#   alerts use; only the grouping key differs, and grouping is not what L-3
+#   claims to prove. Fixing it in the Alertmanager config instead — a probe-only
+#   route with group_wait 0s — was rejected for the opposite reason: it would make
+#   the probe bypass the route real alerts take, proving less while looking like
+#   it proved more.
+#
+# The SEARCH still keys on the per-run PROBE_ID, not on the alertname — and would
+# still have to even now the alertname is unique. Searching for a constant name
+# matches probe emails from EVERY PREVIOUS RUN still sitting in the sink, so once
+# any probe has ever been delivered L-3 would pass forever regardless of whether
+# this one arrived. Measured: with SMTP pointed at an unroutable host (192.0.2.1)
+# the name-based search still reported delivered=1. A permanently-green transport
+# check is exactly the defect class this gate exists to catch, and it was in the
+# gate.
 #
 # The id goes in the ANNOTATIONS, not only in a label: the email template renders
 # .Annotations.summary / .Annotations.description but not arbitrary labels, so a
@@ -307,16 +362,24 @@ curl -sf --max-time 10 -X POST "$ALERTMANAGER_URL/api/v2/alerts" -H 'Content-Typ
   >/dev/null || void "cannot POST the synthetic alert to $ALERTMANAGER_URL"
 
 FOUND=0
-for _ in $(seq 1 40); do
+for _ in $(seq 1 "$L3_TRIES"); do
   hits=$(curl -sfG --max-time 10 "$MAILHOG_URL/api/v2/search" --data-urlencode "kind=containing" --data-urlencode "query=$PROBE_ID" \
          | jq -r '.total // 0')
   [ "${hits:-0}" -gt 0 ] && { FOUND=1; break; }
-  sleep 3
+  sleep "$L3_SLEEP"
 done
 
-FAILED_AFTER=$(amq)
-if [ "$FOUND" -ne 1 ]; then
-  violation "L-3 synthetic alert '$PROBE' never reached the destination within the timeout (notifications_failed_total email: $FAILED_BEFORE -> $FAILED_AFTER)"
+SENT_AFTER=$(am_counter alertmanager_notifications_total) \
+  || void "cannot read $ALERTMANAGER_URL/metrics"
+FAILED_AFTER=$(am_counter alertmanager_notifications_failed_total) \
+  || void "cannot read $ALERTMANAGER_URL/metrics"
+
+# Three outcomes, deliberately distinguished. Collapsing the first two into one
+# message is what cost two days on #342 item 6.
+if [ "$FOUND" -ne 1 ] && [ "$SENT_AFTER" = "$SENT_BEFORE" ]; then
+  violation "L-3 Alertmanager never ATTEMPTED a notification for '$PROBE' within ${L3_TIMEOUT}s — notifications_total{email} did not move ($SENT_BEFORE -> $SENT_AFTER). This is a DISPATCH fault (routing, grouping, an active silence, an inhibit rule), NOT a transport one: the SMTP hop was never exercised, so a flat failed_total here means nothing. Inspect: curl -s $ALERTMANAGER_URL/api/v2/alerts/groups | jq · curl -s $ALERTMANAGER_URL/api/v2/silences | jq"
+elif [ "$FOUND" -ne 1 ]; then
+  violation "L-3 Alertmanager ATTEMPTED delivery (notifications_total{email} $SENT_BEFORE -> $SENT_AFTER) but probe '$PROBE_ID' never arrived at the destination within ${L3_TIMEOUT}s (failed_total{email} $FAILED_BEFORE -> $FAILED_AFTER). The transport WAS exercised and the message did not land."
 elif [ "$FAILED_AFTER" != "$FAILED_BEFORE" ]; then
   violation "L-3 delivery reported but alertmanager_notifications_failed_total{email} increased $FAILED_BEFORE -> $FAILED_AFTER"
 fi
@@ -332,7 +395,7 @@ echo "  L-1   targets=$TARGET_N  down=$L1_DOWN"
 echo "  L-1b  exporter-jobs=${#EXPORTER_GAUGES[@]}  blind=$L1B_BLIND  gauge-read-by-no-rule=$L1B_UNREAD"
 echo "  L-2   rules=$RULE_N  selectors-matching-0-series=$L2_EMPTY"
 echo "  L-2b  wrong-subject=$L2B_WRONG"
-echo "  L-3   probe delivered=$FOUND  notifications_failed_total{email} $FAILED_BEFORE -> $FAILED_AFTER"
+echo "  L-3   probe delivered=$FOUND  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER"
 echo "  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink."
 echo "        It does NOT prove a human reads that sink. Today that sink is Mailhog with no human behind it."
 
