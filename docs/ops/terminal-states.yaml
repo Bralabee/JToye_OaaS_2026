@@ -269,7 +269,7 @@ states:
     name: RedisDown watches the scrape target, not the exporter's upstream gauge
     kind: detection_defect
     discovered: "2026-07-27, while verifying 27-00 Task 1. Not in the F-9 planning census."
-    locator: "infra/monitoring/prometheus/alerts.yml:258"
+    locator: "infra/monitoring/prometheus/alerts.yml:302"
     what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluated up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — was live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stayed inactive."
     owner: maintainer
     resolved: "2026-07-29, issue #342 item 5. RedisDown now evaluates up{job=\"redis\"} == 0 or redis_up == 0 — the same shape 27-03 gave DatabaseDown. detection.alert was RedisExporterBlind, a separate alert that was never built and is no longer wanted: folding the gauge into the existing rule is strictly better than a second rule for the same outage, because it cannot be silenced independently of the thing it is about."
