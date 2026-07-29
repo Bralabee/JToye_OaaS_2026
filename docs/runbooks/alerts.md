@@ -474,14 +474,24 @@ or a second producer exists. Do not learn to ignore it.
    - `rejected` — the handler failed three times, or a conversion error was fatal. Normal.
    - `expired` / `maxlen` — **neither TTL nor a length limit is configured on any queue here**, so
      seeing one of these means the topology changed. Investigate that before the message.
-3. **Correlate `died_at` with core-java's log** at that timestamp. The exception class is what tells
-   you which of the two dead-letter paths you are on:
-   - a `MessageConversionException` is fatal on first delivery;
-   - a retry exhaustion also increments `jtoye_amqp_retries_exhausted_total{queue="..."}`.
+3. **Correlate `died_at` with core-java's log** at that timestamp. **The exception class is the ONLY
+   thing that distinguishes the two dead-letter paths** — neither counter nor `x-death` does:
+   - `MessageConversionException` — the payload or `__TypeId__` cannot be deserialized. Redriving it
+     unchanged will fail again; fix the producer or discard.
+   - any other listener exception — the handler failed. A redrive may succeed once the cause is fixed.
 
-   `x-death[0].count` does **not** distinguish them: it counts dead-letterings, not delivery
-   attempts, and the retry interceptor retries in-process — so both paths read `count: 1`. Measured
-   twice, independently, on the real batch. Do not read a `1` there as "it was never retried".
+   **Two things that look like they distinguish these paths, and do not:**
+
+   - **`jtoye_amqp_retries_exhausted_total{queue="..."}` increments on BOTH.** The message converter
+     runs inside `MessagingMessageListenerAdapter`, which is *wrapped by the advice chain*, so a
+     conversion failure is retried exactly like a handler failure and reaches the same recoverer.
+     Measured in the 27-03 Task 7 drill: one malformed publish to `media.events` took the counter
+     `1 -> 2` on `queue="media.process"`, with the log reading
+     `MessageConversionException -> ListenerExecutionFailedException -> "after 3 retries"`.
+     Do **not** read "the counter did not move" as "it was a conversion failure".
+   - **`x-death[0].count` reads `1` on both.** It counts dead-letterings, not delivery attempts, and
+     the retry interceptor retries in-process. Measured twice independently on the real batch.
+     Do not read a `1` there as "it was never retried".
 4. **Decide: fix-then-redrive, or discard.** **Archive before any purge.** The payload is the only
    remaining copy of the event.
 

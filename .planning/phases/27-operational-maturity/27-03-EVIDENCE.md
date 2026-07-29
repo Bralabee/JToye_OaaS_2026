@@ -637,3 +637,99 @@ replay harness that found 4 of 22 blocks and passed its own consistency check, a
 break-arm restore that **ate the entire uncommitted Task 4** — the recorded
 `trap_break_arm_revert_eats_fixes`, live. Every subsequent break arm was run only after committing,
 or reverted via a file copy rather than a checkout.
+
+---
+
+## 14. Task 7 — the fire drills (human-action checkpoint, approved and executed 2026-07-29)
+
+Approved by the operator after confirming no second session owned the stack. Independently checked
+before asking: the co-hosted OlaJay `infrastructure` stack has its own postgres/redis/redpanda and
+**no** container references `jtoye-rabbitmq` or `jtoye-postgres`, so the Group B stops could not
+reach it.
+
+### T7.7 BREAK ARM FIRST — the trap proven before anything relied on it
+
+A cleanup that has only ever run on the happy path is not proven, so the SIGINT arm was run **before**
+the drills, not after:
+
+```
+zz.drill27.dlq depth=3          <- queue exists, carrying the drill's messages
+--- SIGINT to the drill pid ---
+  [08:40:44Z] TRAP: deleting zz.drill27.dlq
+zz.drill27.dlq HTTP 404         <- trap deleted it on the interrupt path
+```
+
+**The arm also found a real defect in the harness.** An `INT` trap that does not `exit` *resumes*
+the script: cleanup ran, then the drill carried on and left a stray process (`pgrep -af "[d]rills.sh"`
+found it alive). Fixed to `trap cleanup EXIT; trap 'cleanup; exit 130' INT TERM` before any further
+drill ran. Had the arm been run last, every drill would have executed against a harness whose
+interrupt path silently kept running.
+
+### Group A — manufactured, non-invasive
+
+| criterion | observed |
+|---|---|
+| **T7.1** | `DeadLetterQueueNonEmpty` **firing** `zz.drill27.dlq` severity `warning`, `activeAt=08:44:07Z`, detected 08:49:11Z (330s ≈ `for: 5m`) → queue deleted → **resolved** within 30s. The firing→resolved transition of record. |
+| **T7.2** | Precondition recorded **before** the publish: `payment.events.dlq depth = 0`. Then **firing** severity `critical`, `activeAt=08:50:07Z`, detected after 90s (`for: 1m`) → purged → **resolved** within 30s. **No skip arm was used or needed.** |
+| **T7.3** | `x-death[0].count = 1`, `x-first-death-reason = rejected`, `x-first-death-queue = media.process`. Blast radius at peak: exactly **one** DLQ non-empty besides `webhook.deliveries.dlq`, confirming the single-queue exchange choice. Firing → resolved. **The counter half is REFUTED — see below.** |
+| **T7.4** | Executed earlier as T3.6 (§ Task 3) — corrected `StompBrokerLag` expression observed `> 0`, gate 1 → 0, probe queue deleted. |
+
+### T7.3's distinguishing test FAILS ON A CORRECT TREE — recorded, not substituted
+
+The plan requires the fatal-conversion path to be distinguished from T5.6's retry-exhaustion path by
+`jtoye_amqp_retries_exhausted_total` **not** incrementing. Measured, it **does** increment:
+
+```
+retries_exhausted_total BEFORE = 1
+retries_exhausted_total AFTER  = 2      on queue="media.process" (this drill's own message)
+
+core-java log:
+  MessageConversionException -> ListenerExecutionFailedException -> "after 3 retries"
+  Caused by: JsonParseException: Unrecognized token 'NOT_JSON'
+```
+
+**Cause.** The message converter runs inside `MessagingMessageListenerAdapter`, which is *wrapped by
+the advice chain*. A conversion failure is therefore retried exactly like a handler failure and
+reaches the same recoverer. This is the same in-process retry that makes `x-death[0].count == 1` for
+both paths — which the plan had already established. The plan corrected the `x-death` half of the
+claim and left the counter half standing; both halves fail for the same reason.
+
+**Strictly stronger replacement:** the **exception class** is the only discriminator. Both paths
+increment the counter and both read `x-death[0].count == 1`; only the log distinguishes
+`MessageConversionException` (redriving unchanged will fail again) from a handler exception (a
+redrive may succeed).
+
+**This was an operator-facing defect, not just a plan defect.** `docs/runbooks/alerts.md` carried the
+same wrong claim — "a `MessageConversionException` is fatal on first delivery; a retry exhaustion
+*also* increments `jtoye_amqp_retries_exhausted_total`" — which would have led an on-call engineer to
+read a moved counter as "not a conversion failure". Corrected in the same commit as this entry, with
+the measurement quoted inline.
+
+A methodological note: the first attempt to read the exception class returned **nothing**, because
+`docker logs --since 3m` was issued ~5.5 minutes after the publish and the window had already closed.
+An empty grep was one careless step from being recorded as "no conversion exception occurred", which
+would have *confirmed* the plan's wrong claim. Widening the window produced the evidence above.
+
+### Group B — shared-service stops
+
+| criterion | observed |
+|---|---|
+| **T7.5** | `RabbitMQDown` **firing** severity `critical`, `activeAt=09:00:07Z`, detected after 90s (`for: 1m`) → `start` → **resolved** within 30s. core-java reconnection lines = **221** (needs ≥ 1). `start` was correct here, not a rebuild: **no source changed during the drill** — stated per the project runtime rule. |
+| **T7.6** | `MessagingConsumerMissing` **firing** severity `critical`, `activeAt=09:02:37Z`, detected after 320s (`for: 5m`), naming **8** domain queues — `media.process`, `onboarding.notifications`, `order.notifications`, `order.state-changes`, `payment.events`, `payment.notifications`, `refund.notifications`, `webhook.deliveries` (needs ≥ 4). `ServiceDown` co-fired as expected, not a defect. Restarted with **`up -d --build`** because Task 5 changed Java source → **resolved** within 60s. |
+
+### T7.7 / T7.8 — the stack is exactly as it was found
+
+```
+dlq-inspect --list        13 queue(s)          rc=0
+drill-queue survivors     0                    (no zz.drill27.*, no stomp-subscription-probe27)
+webhook.deliveries.dlq    msgs=9               (floor >= N; the real nine, never consumed)
+compose ps                all running+healthy
+check-runtime-freshness   rc=0                 PASS: 4 running built service(s) match the tree
+```
+
+### Status after Task 7
+
+Every live rule has now been observed firing **and** resolving; the dormant rule's corrected
+expression has been observed evaluating `> 0`. **Task 8 remains blocked on 27-02 (wave 4)**, so this
+plan is still not complete and no SUMMARY.md is written — writing one now would assert a completion
+that has not happened.
