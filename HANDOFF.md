@@ -1,191 +1,234 @@
-# Handoff: 27-02 and 27-03 are BOTH complete and in review — next is 27-06
+# Handoff: Phase 27 CLOSED 7/7 · 5 PRs merged · one PR awaiting CI · #342 half-fixed
 
-**Generated:** 2026-07-29 ~13:10 BST. Supersedes the "27-03 is 8/9 (Task 8 blocked) — next is 27-02"
+**Generated:** 2026-07-29 ~21:05 BST. Supersedes the "27-02 and 27-03 both complete — next is 27-06"
 handoff.
 
 | | |
 |---|---|
-| `origin/main` | **`268366a`** |
-| Checked out at handoff | **`feature/27-02-broker-upgrade`** — clean, pushed, **PR #335 open** |
-| Also open | **`feature/27-03-alerting-dlq-runbook`** — clean, pushed, **PR #336 open** |
-| Phase 27 | 27-00 ✅ 27-01 ✅ 27-04 ✅ 27-05 ✅ (merged) · **27-02 ✅ 27-03 ✅ (in review)** · **27-06 = next** |
-| Live broker | **RabbitMQ 4.3.4**, node `rabbit@jtoye-rabbitmq`, 13 queues, 0 quorum, all DLQs empty |
-| Stack | Compose UP, all services healthy, 4/4 built images FRESH |
+| `origin/main` | **`15871d3`** |
+| Checked out at handoff | **`fix/342-blind-alerts`** — clean, pushed as `09d70a6`, **0 behind base** |
+| Open PR of mine | **#343** — CI running at handoff, merge when green |
+| Phase 27 | **CLOSED 7/7.** 27-06 merged as `1545d4f` (PR #338) |
+| Milestone v2.3 | build complete |
+| Branch protection | **LIVE on `main`** — 13 required checks, PR required, `enforce_admins: false` |
+| Live stack | Compose UP; broker RabbitMQ 4.3.4; core-java rebuilt 20:50Z; Prometheus recreated 20:56Z |
+| Conda env | **none needed** — Java 21 + Gradle wrapper only |
 
 ---
 
-## 0. ⚠ READ THIS FIRST — MERGE ORDER IS NOT OPTIONAL
+## 0. ⚠ READ FIRST — two traps that will silently invalidate your verification
 
-**#335 (27-02) must merge BEFORE #336 (27-03).**
+### 0.1 A single-file bind mount detaches on ANY inode change — including `git switch`
 
-Both branches are 0 behind `main`, so both *look* mergeable in either order. They are not:
+`infra/monitoring/prometheus/alerts.yml` is bind-mounted **as a file** into `jtoye-prometheus`.
+Editing it *or switching branches* replaces the inode, and the container keeps serving the **old**
+content. `SIGHUP` then logs `Completed loading of configuration file` — **for stale content.**
 
-- 27-02 changes `docker-compose.full-stack.yml` to `rabbitmq:4.3.4-management-alpine` and adds the
-  permanent `hostname: jtoye-rabbitmq` pin.
-- 27-03 does **not** carry that change, so its compose still reflects main's **3.12** pin — while its
-  alert rules were proven against the **live 4.3.4** broker.
+Measured twice today: host inode `18222075` vs container `18219239`, and again reversed after a
+branch switch.
 
-After #335 merges, **#336 needs `git merge origin/main` before it merges**, or it ships a compose
-that contradicts the broker its own gates were validated against.
+```bash
+# ALWAYS check before trusting any alert-rule verification:
+echo "host: $(stat -c %i infra/monitoring/prometheus/alerts.yml)"
+docker exec jtoye-prometheus stat -c %i /etc/prometheus/alerts.yml
+# If they differ, the container is stale. SIGHUP will NOT fix it:
+docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml \
+  up -d --force-recreate prometheus
+```
 
-**Never run `docker compose up` / `scripts/start-dev.sh` while `feature/27-03-alerting-dlq-runbook`
-is checked out.** Its compose pins 3.12; doing so recreates the broker on 3.12 and destroys the
-4.3.4 volume. Every Task-8 gate deliberately read the **live runtime**, not the compose file.
+**Prometheus is NOT in `docker-compose.full-stack.yml`.** It lives in
+`infra/monitoring/docker-compose.monitoring.yml`, and that file needs `--env-file .env` or it dies
+with `required variable REDIS_PASSWORD is missing a value`.
 
-**The previous handoff's `--wave 4` advice is WRONG — see §3.1.** It matches nothing and exits
-"No matching incomplete plans", which reads like success.
+### 0.2 A freshly recreated Prometheus reports every target `health=unknown`
+
+Not a defect — no scrape has completed yet. It makes `check-alert-liveness.sh` report
+`targets=8 down=7`. Wait for scrapes before believing any L-1 result:
+
+```bash
+until [ "$(curl -sf 'http://localhost:9091/api/v1/targets?state=any' \
+  | jq -r '[.data.activeTargets[]|select(.health=="unknown")]|length')" = "0" ]; do sleep 10; done
+```
 
 ---
 
-## 1. WHERE TO RESUME — 27-06, the last plan in Phase 27
+## 1. WHERE TO RESUME
 
-`.planning/phases/27-operational-maturity/27-06-PLAN.md` (4 tasks, `autonomous: true`,
-`depends_on: [27-00, 27-03]` — both now satisfied). It wires the **`ops-contracts` CI job** over
-three static gates.
+### 1.1 Merge #343 (small, do this first)
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-git fetch origin
-# ONLY after #335 and #336 have merged:
-git switch -c feature/27-06-ops-contracts origin/main
-bash scripts/check-branch-behind-base.sh          # expect rc=0
+gh pr checks 343                      # expect 14 pass / 4 skipping / 0 fail
+git log --oneline $(gh pr view 343 --json headRefOid --jq .headRefOid)..origin/main | wc -l   # expect 0
+gh pr merge 343 --squash --delete-branch
 ```
 
-**Verify 27-06's preconditions against the tree before starting — do not trust `files_modified`.**
-That hazard fired twice this session: 27-03's plan named a `prometheus.yml` that 27-00 had already
-replaced with a template (editing it would have been a silent no-op the running Prometheus ignores),
-and 27-02's plan omitted `MediaListenerConcurrencyIntegrationTest.java`, which AC-2's git-sourced
-discovery caught — it would have failed the plan's own final gate.
+The 4 skips are always `Trivy`, `Build and Push Images`, `Deploy to Staging`, `Deploy to
+Production` — that set is normal on a PR. **Any other skip is a lost gate, not a pass.**
 
-**27-06 must honour `manual_review`.** `infra/dependency-horizons.yaml` carries a `rabbitmq-k8s` row
-with `owner: UNASSIGNED` and `manual_review.expires: 2026-10-26`; it is exit 0 only while unexpired.
-Do **not** ship `ops-contracts` red-by-construction — a permanently red required check earns a
-`|| true` and takes every other row down with it.
+### 1.2 Then #342 items 5 and 6 (the remaining two liveness defects)
 
----
+`bash scripts/check-alert-liveness.sh` → **exit 1, 2 defects** on a settled stack. Both are in
+**#342**; items 1–4 are fixed by #343.
 
-## 2. What landed this session
+**Item 5 — `redis_up` read by no rule (register row TS-15).** One-line fix mirroring 27-03's
+`DatabaseDown` correction:
 
-### 27-02 — RabbitMQ 3.12.14 → 4.3.4 (PR #335, 7 commits `963611e`..`48d2e29`)
+```
+- alert: RedisDown
+  expr: up{job="redis"} == 0 or redis_up == 0
+```
+Today `RedisDown` watches only `up{job="redis"}`, which is the **exporter's** health — the exact
+F-3b defect 27-00 documented. `grep -c redis_up infra/monitoring/prometheus/alerts.yml` → **0**.
 
-Fresh install: there is no in-place 3.12 → 4.x path, and 4.3 has no Mnesia reader at all. Topology is
-code (`RabbitAdmin` re-declares from `RabbitMQConfig`), so it came back identical; the messages are
-not, which is what the checkpoint existed for.
+**Item 6 — the L-3 delivery probe is CONFIRMED flaky.** Two runs minutes apart on an unchanged
+stack: `probe delivered=1` then `probe delivered=0`, with `notifications_failed_total{email}` at
+`0 -> 0` both times. Alertmanager reports no failure either way, so it is the probe's own timing.
+This matters more than its severity suggests: **a flaky arm makes this gate's exit code unreliable
+as the phase-close signal PR #338 made mandatory.**
 
-**Checkpoint decisions (the user's):** (1) **discard** the nine dead letters — no tenant holds any
-webhook subscription at all (0 rows across 6 tenants, proven *sighted* against a connection that sees
-6 tenants / 22 orders), so a replay would fan out to zero subscribers; (2) the M15 gate went RED on
-27-01's leftover `ac55` fixture and was **adjudicated, not overridden** — it has no
-`media_event_outbox` row, so it was never dispatched and nothing was in flight.
+### 1.3 Then the 9 dependabot PRs — do NOT bulk-merge
 
-**The rollback is real and was proven twice** — rehearsed against the live volume, then it **fired
-for real** when the first recreate aborted, restoring 3.12.14 and all 9 messages unattended.
+All rebased and CI-run today. **#234 and #326 are two halves of ONE invariant** and merging either
+alone breaks it:
 
-### 27-03 — failure visibility (PR #336, closed at 9/9 by Task 8)
+`edge-go/Dockerfile:5-6` states the Go version must match `go.mod`'s go directive **and** the CI
+`setup-go` pin — bump all three in lockstep. #234 bumps only the Dockerfile (`1.25→1.26-alpine`),
+#326 bumps only `setup-go` (5→7). **#234 legitimately FAILS `Operational Contracts`**, and that is
+the gate catching the invariant your own held-review comment described:
 
-Task 8 re-ran the live gate on 4.3.4. **The alert layer survived a major version change with no
-edit**: `check-alert-metrics` rc=0 at 19 live rules / 24 selectors / 3 dormant — identical to the
-3.12 figures; `/metrics/detailed` families and the `rabbitmq_detailed_` prefix unchanged;
-`dlq-inspect --summary` flipped **1 → 0**.
+```
+VOID (H-5 drift): declared pin 'golang:1.25-alpine' NOT FOUND on any non-comment line
+                  of edge-go/Dockerfile (declared site edge-go/Dockerfile:7)
+FAIL: H-1 golang:1.26-alpine is pinned in the declared source surface but has NO horizon row
+```
+A correct fix moves all three **plus** a `golang` row in `infra/dependency-horizons.yaml`.
 
-Full records: `27-02-EVIDENCE.md` (660 lines), `27-03-EVIDENCE.md` §14, and both `SUMMARY.md` files.
+Major-version bumps needing judgement: `eslint 9→10` (#330), `@types/node 20→26` (#328),
+`jest-dom 6→7` (#329), `setup-node 4→7` (#324), `build-push-action 5→7` (#325).
+`@types/node` is the risky one — `npx tsc --noEmit` is **already red at 366 pre-existing errors**
+(all jest-dom matcher typings in test files `next build` never checks), so a regression there will
+NOT be obvious from the count. The honest assertion is *count-unchanged*, not exit 0.
 
----
-
-## 3. Traps confirmed or newly found this session
-
-1. **The GSD SDK ignores the declared `wave:` field and recomputes waves from `depends_on`.** Its
-   numbering was 1={27-00,27-01,27-04,27-05}, 2={27-03}, 3={27-02,27-06}; the plans and ROADMAP number
-   the same DAG 1–4. **`--wave 4` matched nothing and exits "No matching incomplete plans" — a silent
-   no-op that reads like success.** `--wave 3` then trips the wave-safety gate, because 27-03 sat in
-   SDK-wave 2 and was incomplete. That deadlock is unrepresentable in the tool (27-03's Task 8 needed
-   27-02's broker), so 27-02 ran **inline, Pattern C** — which `execute-plan.md` prescribes anyway for
-   a plan carrying a `checkpoint:human-action`.
-2. **RabbitMQ 4.x: `node()` is a QUOTED atom** when the hostname contains a hyphen
-   (`'rabbit@jtoye-rabbitmq'`); 3.12's container-id hostname needed no quoting. A literal equality
-   check **fails on a correct pin** — it aborted the first recreate and triggered the rollback.
-   Normalise with `tr -d "'"`.
-3. **Health and `rabbitmq-diagnostics ping` go green BEFORE queue recovery finishes.** A depth
-   assertion gated on ping reads *empty* — indistinguishable from the node-name "booted empty"
-   failure, and it invites destructive correction of a rollback that actually worked. Poll until the
-   queue list is populated.
-4. **RabbitMQ 4.x refuses transient NON-EXCLUSIVE queues** (`INTERNAL_ERROR - Feature
-   'transient_nonexcl_queues' is deprecated`). It broke a test that passed on 3.12. All 10 production
-   queues use `QueueBuilder.durable`; the SSE `AnonymousQueue` is legal only because it is
-   **exclusive**.
-5. **A compressed-artifact guard carrying an uncompressed expectation fails on a correct tree.** The
-   plan's `bytes > 100000` on a `.tar.gz` VOIDed a perfectly good snapshot — mnesia compresses ~17:1
-   (2.3 MB volume → 68 KB tarball).
-6. **`rabbitmqctl list_queues --quiet` suppresses the banner but NOT the column header**, so a naive
-   `wc -l` is off by one. Count from the management API's JSON.
-7. **The `secret`-as-a-common-word false positive recurred** (26-09 saw it as `DB_PASSWORD`). The dev
-   Postgres password is a 6-letter English word, so a literal sweep hits ordinary prose — it
-   pre-exists on `main` in 11 files including `.gitignore`. Use the credential-**shape** form, and
-   **make it case-insensitive**: the first version missed `POSTGRES_PASSWORD=<value>` because
-   `grep -E` is case-sensitive, which is the likeliest leak shape in this repo.
-8. **A background-task notification reported "exit code 0" for a FAILING Gradle run** — that is the
-   wrapper's trailing `echo`, not Gradle (`trap_exit_code_read_after_echo`). Read `GRADLE_RC` from the
-   log and the JUnit XML.
+**#322 and #327 are no longer Dependabot-managed** — they carry my commits, so
+`@dependabot rebase` would **discard** them. Update those branches by hand.
 
 ---
 
-## 4. Environment state
+## 2. What landed today (5 PRs, all verified on `main` by content)
 
-- **Branches:** `feature/27-02-broker-upgrade` (checked out, clean) and
-  `feature/27-03-alerting-dlq-runbook` (clean). Both pushed.
-- **No conda env needed** for this work — Java 21 + the Gradle wrapper only.
-- **Live broker:** 4.3.4, `rabbit@jtoye-rabbitmq`, 13 queues (12 durable classic + 1 SSE), 0 quorum,
-  all four DLQs `msgs=0`.
-- **Gates on 27-02's branch:** `check-branch-behind-base` 0 · `check-runtime-freshness` **0 (4/4
-  FRESH)** · `check-dependency-horizons` 0 · `docs-freshness` 0 (1832) · `render-golden` 0.
-- **Gates on 27-03's branch:** `check-alert-rules` 0 · `check-alert-metrics` 0 (19/24/3) ·
-  `dlq-inspect --summary` 0 · `docs-freshness` 0 (1851).
-- **Tests:** `OrderEventFanoutTopologyIntegrationTest` and `MediaListenerConcurrencyIntegrationTest`
-  both 1 test / 0 failures against 4.3.4, read from `core-java/build-local` (**not**
-  `core-java/build`, a stale 2025-12-27 artifact reporting a FALSE RED).
-- **CI at handoff:** both PRs **12 SUCCESS / 1 NEUTRAL (Trivy skipping) / 1 IN_PROGRESS**
-  (`Integration Tests (Testcontainers RLS)`). **No failures.** Re-confirm before merging.
+| PR | Merge | What |
+|---|---|---|
+| #336 | `3442ccb` | 27-03 failure visibility |
+| #335 | `b51c82f` | 27-02 broker 3.12.14 → 4.3.4 |
+| **#338** | **`1545d4f`** | **27-06 `ops-contracts` CI job — closes Phase 27 at 7/7** |
+| #340 | `faefe05` | all 45 doc citations fixed + `check-doc-citations.sh` gate |
+| #322 | `6063306` | AWS SDK 2.49.5, scrimage 4.6.7 |
+| #341 | `15871d3` | #339 — `rabbitmq-queues` mapping, liveness gate runs again |
+
+**`ops-contracts` now runs 4 static gates on every PR**, all required:
+`check-terminal-states.sh` · `check-dependency-horizons.sh` · `check-alert-rules.sh` ·
+`check-doc-citations.sh`. Runs in ~12s. Exit 2 (VOID) fails the build by design.
+
+Branch protection was created from scratch today (`main` had **none**). `enforce_admins: false`
+deliberately — an admin escape hatch, because a gate that breaks *on main* would otherwise leave
+nobody able to fix it. Flip with
+`gh api -X PUT repos/Bralabee/JToye_OaaS_2026/branches/main/protection/enforce_admins`.
+
+---
+
+## 3. Traps and defects found today (all by RUNNING things, none by reading)
+
+1. **`gsd-sdk query state.begin-phase` corrupts `.planning/STATE.md`** — and the
+   `gsd-execute-phase` workflow calls it in its own `validate_phase` step, so following the
+   workflow verbatim destroys the file. It wiped ~17 KB of narrative (183727→166515 bytes),
+   rewrote the counters onto a different denominator (phases 6→7, plans 48→56, percent 100→71),
+   flattened `last_activity` to a bare date, and regressed `stopped_at` to a **stale Phase-26
+   message** while the session was starting 27-06. Snapshot + `cmp`-verified restore. The memory
+   entry `trap_gsd_state_record_session` was widened to cover the family.
+   **`roadmap.update-plan-progress` remains safe** (clean two-line diff, verified again).
+2. **`grep -q` under `pipefail` inverts on match** — hit while writing `check-doc-citations.sh`:
+   `printf | grep -qE` gave **44 false violations** on the first run, because grep exits on match,
+   printf takes SIGPIPE→141, and pipefail reports failure *because it matched*. Use bash `=~`.
+3. **A weak-token fallback was a false-PASS path** — its own break arm caught it: a wrong citation
+   still exited 0, because `"spring"` matches `spring-boot-starter-web`.
+4. **Exit-code precedence matters** — testing "nothing verified → VOID" before "violations → 1"
+   made an all-wrong document exit **2 instead of 1**, downgrading the loudest signal.
+5. **A root `build.gradle.kts` (22 lines) exists** alongside `core-java/build.gradle.kts` (226).
+   STACK.md used the bare path 12×, all resolving to the wrong file. Always qualify.
+6. **The single-file bind-mount trap** — §0.1.
+7. **`check-doc-versions.sh` only reads 3 docs and only its own claim list** — which is why Spring
+   Statemachine drifted 3.2.1→4.0.2 unnoticed and JasperReports stayed documented after removal.
+   Its output says so explicitly: `(not claimed in this doc: Spring StateMachine)`.
+
+**Two alerts were structurally incapable of firing** (fixed in #343, proof in §4):
+`NoOrdersCreated` watched `/orders|/api/v[0-9]+/orders` while orders are created at
+`/public/shops/{slug}/orders` — and because its expression is `increase(...) < 1`, **a total outage
+of order creation raised no alert**. `HighResponseTime` needed `_bucket`, which had 0 series
+because no histogram was configured.
 
 ---
 
-## 5. Carried forward — open items
+## 4. Evidence for #343 (already posted to the PR)
 
-- [ ] **Merge #335, then merge `main` into #336, then merge #336.** See §0.
-- [ ] **Then 27-06** — the last plan in Phase 27.
-- [ ] **`.evidence/` is NOT gitignored on `feature/27-03-alerting-dlq-runbook`** (the ignore entry is
-      27-02 Task 1's, unmerged). It holds **2 RabbitMQ volume tarballs and the dead-letter export with
-      tenant payloads**. Verified absent from PR #336 (0 paths, 0 tracked, 0 tarballs). **A blanket
-      `git add` on that branch would commit broker data.** Resolved the moment #335 merges.
-- [ ] **`.planning/STATE.md` diverges across branches.** On `main` it still describes **Phase 26**;
-      the Phase 27 narrative exists only on the 27-03 branch; 27-02 added its own note about the
-      divergence. Reconcile after both merge. `state.record-session` **corrupts** this file —
-      hand-edit; `roadmap.update-plan-progress` is safe.
-- [ ] **Evidence row L6** — a KDS client receiving a relayed order event end-to-end has still never
-      been captured. 27-02 proved the relay at the **broker** over a raw socket
-      (`server:RabbitMQ/4.3.4`, `auth_login=jtoye`, and #266/#269's single-segment rule still
-      enforced — dotted gets a RECEIPT, slashed gets `not a valid topic destination`), but not a
-      browser receiving a MESSAGE frame.
-- [ ] **4.3's community support ends 2026-11-30.** The horizon row goes AMBER ~2026-09-01 and RED
-      2026-12-01 **with no commit in between**. Intended, documented in the manifest header before it
-      happens — do not treat it as a break.
-- [ ] **The staging/production broker is still unknown and unowned** — no manifest in this repo, no
-      declared version, `rabbitmq-k8s` row `manual_review` expires **2026-10-26**. Operator action in
-      `docs/runbooks/rabbitmq-broker-upgrade.md` §7; the ADR-0002 open question is dated but
-      **unsigned** (Status deliberately unchanged — that needs an owner, not an agent).
-- [ ] Dependabot PRs (#322–#330, #243) — triage, do not bulk-merge.
-- [ ] Toolchain drift carried from the previous session (conda, gemini-cli, ms-fabric-cli) — its own
-      session, dry run first.
+Measured on a stack carrying both #341 and #343, after scrapes settled:
+
+```
+                              before   after
+L-2  selectors-matching-0-series   2  ->   0
+L-2b wrong-subject                 6  ->   0
+L-1  targets=8 down                0  ->   0
+     TOTAL defects                 6  ->   2
+```
+
+`HighResponseTime` is proven **in the delivered runtime**: `_bucket` 0 → **74 series**, read three
+ways — via Prometheus, from the running container's own `/actuator/prometheus`, and from
+`BOOT-INF/classes/application.yml` **inside the running jar**.
+
+**`NoOrdersCreated` firing is NOT proven, and #343 does not claim it.** The selector is proven
+correct (matches `POST 201 /public/shops/{slug}/orders` in the series index; the old one matches
+**0**), but Micrometer creates that timer **lazily on first request** and core-java restarted, so
+the counter does not currently exist. **To close this gap:** place one guest order, then
+
+```bash
+curl -sfG http://localhost:9091/api/v1/query --data-urlencode \
+ 'query=increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1'
+# expect a NON-EMPTY result (the rule fires when orders stop)
+```
+
+I attempted this and **stopped after two failed DB-credential guesses** rather than dig —
+`psql -U postgres` fails with `role "postgres" does not exist`; the real user is in `.env`
+(`DB_USER`, default `jtoye_app`). The endpoint is
+`POST /public/shops/{slug}/orders` (`PublicStorefrontController:99`) taking a `GuestOrderRequest`:
+`customerName`, `customerEmail`, `customerPhone`, `fulfilmentType` all `@NotBlank`, plus `items`.
 
 ---
+
+## 5. Open items
+
+- [ ] **Merge #343.** §1.1. **Owner: next session.**
+- [ ] **#342 items 5–6** — `redis_up` unread (TS-15) and the confirmed-flaky L-3 probe. §1.2.
+      **Owner: unassigned.**
+- [ ] **9 dependabot PRs**, #234+#326 coupled. §1.3. **Owner: maintainer (judgement needed).**
+- [ ] **#337 / #115** — load-test baseline part-satisfied; edge↔core contract check and a
+      dependency-down fault test outstanding. **Owner: unassigned.**
+- [ ] **`check-doc-citations.sh` UNCHECKABLE path** — a claim with no backticked identifier is
+      reported, not verified. Deliberate, but it is the seam where citation drift can still hide.
+      **Owner: unassigned.**
+- [ ] **`rabbitmq-k8s` horizon row** — `owner: UNASSIGNED`, `manual_review.expires: 2026-10-26`.
+      The staging/prod broker is still undeclared. **Owner: UNASSIGNED (that is the finding).**
+- [ ] **RabbitMQ 4.3 community support ends 2026-11-30** — `ops-contracts` goes amber ~2026-09-01
+      and RED 2026-12-01 **with no commit in between**. Documented in the job header; do not read
+      it as a broken gate. **Owner: maintainer.**
+- [ ] **`.evidence/` holds the 3.12.14 tarball** — the only rollback path from 4.3.4. Untracked;
+      do not delete yet. **Owner: maintainer.**
 
 ## 6. Residue
 
-- Compose stack UP and healthy; broker on 4.3.4 with an empty DLQ set.
-- `.evidence/` holds 13 files: the **3.12.14 pre-upgrade tarball — the only rollback path from
-  4.3.4** — the 4.3.4 post-pin tarball, both `.node-host`/`.depth` sidecars, the 9-message dead-letter
-  export, and the before/after metrics captures. **Do not delete the 3.12.14 tarball** until 4.3.4 has
-  been stable for a while.
-- No probe containers, volumes, policies or drill queues survive; `/tmp/docker-compose.rollback.yml`
-  was removed; the vhost `default_queue_type` is back to `classic` with 0 quorum queues.
-- One background shell may still be polling CI for #335/#336. It has a hard 55-minute deadline and
-  exits on its own — no action needed.
+- Stack UP. `core-java` rebuilt+recreated 20:50Z (carries the histogram config); `jtoye-prometheus`
+  recreated 20:56Z (re-bound mount). All 8 scrape targets healthy.
+- **A fictitious `zz-fictitious-probe` scrape job was injected into the LIVE Prometheus config and
+  removed again** — verified gone (`8 job_name` entries, targets back to 8). The repo template was
+  never touched.
+- `main` is clean; only `fix/342-blind-alerts` exists locally besides it.
+- One background shell may still be polling #343's CI; it has a deadline and exits on its own.
