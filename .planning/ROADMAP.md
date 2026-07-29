@@ -332,7 +332,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 **Goal**: Every terminal failure state in the system has a detection path a human is actually told about, every pinned dependency has a support horizon that fails before it lapses, and the capacity claims have a measured baseline. Messaging is the first instance of each — not the scope. Comes out of the ADR-0003 investigation, which found the architecture sound for correctness and unsound for failure visibility and lifecycle.
 **Depends on**: Nothing structural. Best sequenced **before** `/qa-council`, which would otherwise audit a runtime whose monitoring is blind (11 of 14 alerts defective at time of planning).
 **Requirements**: OPS-01, OPS-02, OPS-03, OPS-04, OPS-05
-**Plans:** 7 plans (written and audited twice before registration; DAG verified)
+**Plans:** 5/7 plans executed
 
 | Req | What must become true | Plans |
 |---|---|---|
@@ -345,10 +345,10 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 
 - [x] 27-00-PLAN.md (Wave 1) — Spine: terminal-states register, alert-liveness mechanism, dependency-horizon manifest + gate, load-baseline harness, the `core-java` scrape-port fix — **merged PR #314** (`60cb641`)
-- [ ] 27-01-PLAN.md (Wave 1) — Media durability: the P0 in which a broker outage >15 min deletes quarantined uploads; adds a reclaim sentinel and a claim lock
+- [x] 27-01-PLAN.md (Wave 1) — Media durability: the P0 in which a broker outage >15 min deletes quarantined uploads; adds a reclaim sentinel and a claim lock
 - [x] 27-05-PLAN.md (Wave 1) — Webhook fan-out: the trusted-packages converter defect; the only plan in the phase that closes a *live* outage — **merged PR #310**; fix verified in the delivered runtime (3 trusted-package literals read from inside the running `app.jar`), DLQ left at 9 for 27-03/27-02
 - [x] 27-04-PLAN.md (Wave 2) — Throughput + guards: `spring.rabbitmq.listener.simple.*` is inert via a bean-name collision; media container factory; publish-side destination guard — **merged PR #331** (`9858370`)
-- [ ] 27-03-PLAN.md (Wave 3) — Failure visibility: all `alerts.yml` rule content, four missing runbook sections, `check-alert-metrics.sh`, DLQ archive — **Tasks 0–6 DONE** on `feature/27-03-alerting-dlq-runbook` (`322f546`..`2ca16a3`); evidence in `27-03-EVIDENCE.md`. `DeadLetterQueueNonEmpty` observed **firing on the real batch**, so the H-1 signal-regression window is closed. **NOT complete:** Task 7 is a `checkpoint:human-action` (its Group B drills stop rabbitmq ~2 min and core-java ≥5 min on a shared stack), and Task 8 re-runs the live gate **after 27-02** replaces the broker — an exit criterion of the phase, not a follow-up
+- [x] 27-03-PLAN.md (Wave 3) — Failure visibility: all `alerts.yml` rule content, four missing runbook sections, `check-alert-metrics.sh`, DLQ archive — **Tasks 0–6 DONE** on `feature/27-03-alerting-dlq-runbook` (`322f546`..`2ca16a3`); evidence in `27-03-EVIDENCE.md`. `DeadLetterQueueNonEmpty` observed **firing on the real batch**, so the H-1 signal-regression window is closed. **NOT complete:** Task 7 is a `checkpoint:human-action` (its Group B drills stop rabbitmq ~2 min and core-java ≥5 min on a shared stack), and Task 8 re-runs the live gate **after 27-02** replaces the broker — an exit criterion of the phase, not a follow-up
 - [ ] 27-02-PLAN.md (Wave 4) — Broker upgrade: 3.12 → 4.3.4 fresh install (no direct upgrade path exists), volume snapshot + rollback, DLQ purge and disposition
 - [ ] 27-06-PLAN.md (Wave 4) — CI wiring: the `ops-contracts` job — three static gates
 
