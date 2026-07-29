@@ -1,176 +1,191 @@
-# Handoff: 27-03 is 8/9 (Task 8 blocked) — next is 27-02
+# Handoff: 27-02 and 27-03 are BOTH complete and in review — next is 27-06
 
-**Generated:** 2026-07-29 ~10:15 BST. Supersedes the "27-04 merged, 27-03 next" handoff.
+**Generated:** 2026-07-29 ~13:10 BST. Supersedes the "27-03 is 8/9 (Task 8 blocked) — next is 27-02"
+handoff.
 
 | | |
 |---|---|
-| `origin/main` | **`9da0761`** — CI green |
-| Working branch | **`feature/27-03-alerting-dlq-runbook`** — 10 commits, clean, **0 behind**, pushed, **no PR yet** (deliberate, see §2) |
-| Phase 27 | 27-00 ✅ 27-01 ✅ **27-05 ✅ 27-04 ✅** (both MERGED) · 27-03 **8/9** · **27-02 next** · 27-06 after |
-| Stack | Compose UP, all services running; all 4 built services FRESH; 13 queues; the real nine dead letters untouched at `msgs=9` |
+| `origin/main` | **`268366a`** |
+| Checked out at handoff | **`feature/27-02-broker-upgrade`** — clean, pushed, **PR #335 open** |
+| Also open | **`feature/27-03-alerting-dlq-runbook`** — clean, pushed, **PR #336 open** |
+| Phase 27 | 27-00 ✅ 27-01 ✅ 27-04 ✅ 27-05 ✅ (merged) · **27-02 ✅ 27-03 ✅ (in review)** · **27-06 = next** |
+| Live broker | **RabbitMQ 4.3.4**, node `rabbit@jtoye-rabbitmq`, 13 queues, 0 quorum, all DLQs empty |
+| Stack | Compose UP, all services healthy, 4/4 built images FRESH |
 
 ---
 
-## 0. ⚠ READ THIS FIRST — 27-04 IS DONE. DO NOT RE-EXECUTE IT.
+## 0. ⚠ READ THIS FIRST — MERGE ORDER IS NOT OPTIONAL
 
-**27-04 and 27-05 are COMPLETE and MERGED to `main`.** 27-04 landed as PR **#331** → `9858370`;
-27-05 landed as PR **#310**. Verified by content on `origin/main`, not by ancestry (the repo
-squash-merges, so their original SHAs are not ancestors).
+**#335 (27-02) must merge BEFORE #336 (27-03).**
 
-**The GSD SDK will tell you otherwise, and it is wrong.** `gsd-sdk query init.execute-phase 27`
-reports `incomplete_plans: [27-02, 27-03, 27-04, 27-05, 27-06]` because it uses **`SUMMARY.md`
-presence** as the completion marker — and 27-04/27-05 shipped with `EVIDENCE.md` instead. Running
-`/gsd-execute-phase 27` with no wave filter would **re-execute work already on main**.
+Both branches are 0 behind `main`, so both *look* mergeable in either order. They are not:
 
-Two ways to stay safe, use either:
-- scope with the wave filter — `/gsd-execute-phase 27 --wave 4` (27-02 and 27-06 are the only
-  wave-4 plans; 27-03 is wave 3, 27-04 wave 2, 27-05 wave 1); or
-- write the two missing `SUMMARY.md` files from their `EVIDENCE.md` files first, which closes the
-  hole permanently. **Still open — nobody has done this.**
+- 27-02 changes `docker-compose.full-stack.yml` to `rabbitmq:4.3.4-management-alpine` and adds the
+  permanent `hostname: jtoye-rabbitmq` pin.
+- 27-03 does **not** carry that change, so its compose still reflects main's **3.12** pin — while its
+  alert rules were proven against the **live 4.3.4** broker.
+
+After #335 merges, **#336 needs `git merge origin/main` before it merges**, or it ships a compose
+that contradicts the broker its own gates were validated against.
+
+**Never run `docker compose up` / `scripts/start-dev.sh` while `feature/27-03-alerting-dlq-runbook`
+is checked out.** Its compose pins 3.12; doing so recreates the broker on 3.12 and destroys the
+4.3.4 volume. Every Task-8 gate deliberately read the **live runtime**, not the compose file.
+
+**The previous handoff's `--wave 4` advice is WRONG — see §3.1.** It matches nothing and exits
+"No matching incomplete plans", which reads like success.
 
 ---
 
-## 1. WHERE TO RESUME — 27-02
+## 1. WHERE TO RESUME — 27-06, the last plan in Phase 27
 
-`.planning/phases/27-operational-maturity/27-02-PLAN.md` (wave 4, 171KB).
-
-It is the only thing standing between 27-03 and completion, **and** it owns disposing of the nine
-dead letters that 27-03 archived and handed over.
+`.planning/phases/27-operational-maturity/27-06-PLAN.md` (4 tasks, `autonomous: true`,
+`depends_on: [27-00, 27-03]` — both now satisfied). It wires the **`ops-contracts` CI job** over
+three static gates.
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-git fetch origin && git switch -c feature/27-02-<name> origin/main
+git fetch origin
+# ONLY after #335 and #336 have merged:
+git switch -c feature/27-06-ops-contracts origin/main
 bash scripts/check-branch-behind-base.sh          # expect rc=0
 ```
 
-**Verify 27-02's own preconditions against the tree before starting** — do not trust a plan's
-`files_modified`. 27-03's plan named `infra/monitoring/prometheus/prometheus.yml`, which 27-00 had
-already replaced with `prometheus.yml.tmpl` + `entrypoint.sh`; editing the name as written would
-have created a file the running Prometheus ignores — a silent no-op behind green gates.
+**Verify 27-06's preconditions against the tree before starting — do not trust `files_modified`.**
+That hazard fired twice this session: 27-03's plan named a `prometheus.yml` that 27-00 had already
+replaced with a template (editing it would have been a silent no-op the running Prometheus ignores),
+and 27-02's plan omitted `MediaListenerConcurrencyIntegrationTest.java`, which AC-2's git-sourced
+discovery caught — it would have failed the plan's own final gate.
 
-27-02 is `autonomous: false` with a `checkpoint:human-action` on Task 2 (it replaces the broker), so
-expect it to stop for approval the same way 27-03 did.
-
----
-
-## 2. 27-03 state — 8 of 9 tasks, and why there is no SUMMARY.md
-
-Tasks 0–7 are done, committed and evidenced. **Task 8 re-runs the live alert gate AFTER 27-02
-replaces the broker** and records the delta. It is an exit criterion of the plan, not a follow-up.
-
-No `SUMMARY.md` is written and **no PR is open**, deliberately: both would assert a completion that
-has not happened. Full record: `.planning/phases/27-operational-maturity/27-03-EVIDENCE.md` (735
-lines, every criterion in both directions).
-
-Delivered: a `rabbitmq-queues` scrape job, six live alert rules + one deliberately dormant, two
-executable alert gates (`scripts/check-alert-rules.sh`, `scripts/check-alert-metrics.sh`), 13 runbook
-sections, `scripts/dlq-inspect.sh`, a retry-exhaustion counter, and the F-9 listener-factory
-signature fix layered on 27-04's.
-
-**Open the PR only after Task 8 runs.** Until then the branch is pushed and safe.
+**27-06 must honour `manual_review`.** `infra/dependency-horizons.yaml` carries a `rabbitmq-k8s` row
+with `owner: UNASSIGNED` and `manual_review.expires: 2026-10-26`; it is exit 0 only while unexpired.
+Do **not** ship `ops-contracts` red-by-construction — a permanently red required check earns a
+`|| true` and takes every other row down with it.
 
 ---
 
-## 3. Three defects found this session that no test caught
+## 2. What landed this session
 
-1. **AC-10's terminal assertion was blind (27-04).** It counted PENDING rows on an *untransacted*
-   connection with no tenant GUC; under the `NOSUPERUSER` downgrade RLS filtered every row, so the
-   count was structurally 0 and the test survived three break arms. Probe: `expected: 12 but was: 0`
-   with all 12 rows provably PENDING. **Prove an instrument can SEE the rows before trusting its
-   silence.**
-2. **The retry counter tagged every message `queue="unknown"` (27-03 T5).** Spring AMQP proxies
-   `invokeListener(Channel, Object)`, so `args[0]` is a Channel, never the Message — but the test
-   fixture built `new Object[]{message}`, a shape production never produces. Green throughout while
-   the metric was useless. Only the live run could falsify it.
-3. **The runbook's dead-letter discriminator was wrong (27-03 T7).** It told on-call that
-   `MessageConversionException` is "fatal on first delivery" and that retry exhaustion "also"
-   increments `jtoye_amqp_retries_exhausted_total`. Measured: the counter increments on **both**
-   paths (`1 -> 2` on `queue="media.process"` from one malformed publish), because the converter runs
-   inside `MessagingMessageListenerAdapter`, which is *wrapped by the advice chain*. `x-death[0].count`
-   reads `1` on both too. **Only the exception class discriminates.** Runbook corrected.
+### 27-02 — RabbitMQ 3.12.14 → 4.3.4 (PR #335, 7 commits `963611e`..`48d2e29`)
 
----
+Fresh install: there is no in-place 3.12 → 4.x path, and 4.3 has no Mnesia reader at all. Topology is
+code (`RabbitAdmin` re-declares from `RabbitMQConfig`), so it came back identical; the messages are
+not, which is what the checkpoint existed for.
 
-## 4. Traps confirmed this session
+**Checkpoint decisions (the user's):** (1) **discard** the nine dead letters — no tenant holds any
+webhook subscription at all (0 rows across 6 tenants, proven *sighted* against a connection that sees
+6 tenants / 22 orders), so a replay would fan out to zero subscribers; (2) the M15 gate went RED on
+27-01's leftover `ac55` fixture and was **adjudicated, not overridden** — it has no
+`media_event_outbox` row, so it was never dispatched and nothing was in flight.
 
-- **An `INT`/`TERM` trap that does not `exit` RESUMES the script.** The 27-03 drill harness ran its
-  cleanup on SIGINT and then *carried on*, leaking a stray process. Use
-  `trap cleanup EXIT; trap 'cleanup; exit 130' INT TERM`. Found only because the break arm was run
-  **before** the drills rather than after.
-- **A `docker logs --since Nm` window can close before you read it.** The first read of the
-  conversion exception returned nothing because the grep ran 5.5 min after a 3-min window. An empty
-  grep was one step from being recorded as "no exception occurred" — which would have *confirmed* a
-  wrong claim rather than refuting it.
-- **RLS blinds a verification query** — see §3.1. Recorded as a memory.
-- **The tenant pin sits under a global aspect**, and the aspect *overwrites* a correct explicit pin.
-  `TenantContext.set` is the dominant control, not the explicit `set_config`.
-- **The Testcontainers-startup flake reads as a code failure.** `main` went red at `1500f22` on
-  *Integration Tests*; a re-run of the identical SHA went green. Re-run before diagnosing.
+**The rollback is real and was proven twice** — rehearsed against the live volume, then it **fired
+for real** when the first recreate aborted, restoring 3.12.14 and all 9 messages unattended.
 
-Standing: `grep` is a shell function → `command grep` in scripts; `cmd | grep -q X` under `pipefail`
-INVERTS on match; capture `rc=$?` on its own line; `cleanTest`/`cleanIntegrationTest` are load-bearing
-(without them the task reports UP-TO-DATE while executing NOTHING); counts come from
-`core-java/build-local/`, never `core-java/build/`; the repo squash-merges so verify merges **by
-content**; stage by explicit path, never `git add -A`; `git stash -u` is unsafe here.
+### 27-03 — failure visibility (PR #336, closed at 9/9 by Task 8)
+
+Task 8 re-ran the live gate on 4.3.4. **The alert layer survived a major version change with no
+edit**: `check-alert-metrics` rc=0 at 19 live rules / 24 selectors / 3 dormant — identical to the
+3.12 figures; `/metrics/detailed` families and the `rabbitmq_detailed_` prefix unchanged;
+`dlq-inspect --summary` flipped **1 → 0**.
+
+Full records: `27-02-EVIDENCE.md` (660 lines), `27-03-EVIDENCE.md` §14, and both `SUMMARY.md` files.
 
 ---
 
-## 5. Baselines and gates
+## 3. Traps confirmed or newly found this session
 
-| suite | last green |
-|---|---|
-| `:core-java:cleanTest test` | **119 classes / 851 tests / 0 fail / 0 err / 1 skip** (+3/+19 vs the 116/832 baseline = exactly the 3 new `RabbitMQ*Test` classes, 7+9+3) |
-| `:core-java:cleanIntegrationTest integrationTest` | 104 classes / 416 tests / 0 fail (~42 min local, ~48 min CI) — **not re-run since 27-03's Java change; run it before the 27-03 PR** |
-
-All green at handoff: `docs-freshness`, `check-doc-versions`, `check-branch-behind-base`,
-`check-alert-rules`, `check-alert-metrics`, `check-runtime-freshness` (4/4 services FRESH).
-Expected non-zero: 27-00's `check-alert-liveness` (rc=1, its designed pre-close state) and
-`dlq-inspect --summary` (rc=1 — the nine parked messages, which 27-02 owns).
-
-**New gate as of today:** `scripts/check-doc-versions.sh` compares documented dependency versions in
-`CLAUDE.md`, `AGENTS.md` and `.planning/codebase/STACK.md` against `build.gradle.kts` /
-`package.json` / `go.mod`, and runs in the `docs-freshness` workflow. If you bump a dependency,
-update those three docs in the same commit. `.planning/PROJECT.md` is deliberately not gated (its
-line ~113 is dated history).
+1. **The GSD SDK ignores the declared `wave:` field and recomputes waves from `depends_on`.** Its
+   numbering was 1={27-00,27-01,27-04,27-05}, 2={27-03}, 3={27-02,27-06}; the plans and ROADMAP number
+   the same DAG 1–4. **`--wave 4` matched nothing and exits "No matching incomplete plans" — a silent
+   no-op that reads like success.** `--wave 3` then trips the wave-safety gate, because 27-03 sat in
+   SDK-wave 2 and was incomplete. That deadlock is unrepresentable in the tool (27-03's Task 8 needed
+   27-02's broker), so 27-02 ran **inline, Pattern C** — which `execute-plan.md` prescribes anyway for
+   a plan carrying a `checkpoint:human-action`.
+2. **RabbitMQ 4.x: `node()` is a QUOTED atom** when the hostname contains a hyphen
+   (`'rabbit@jtoye-rabbitmq'`); 3.12's container-id hostname needed no quoting. A literal equality
+   check **fails on a correct pin** — it aborted the first recreate and triggered the rollback.
+   Normalise with `tr -d "'"`.
+3. **Health and `rabbitmq-diagnostics ping` go green BEFORE queue recovery finishes.** A depth
+   assertion gated on ping reads *empty* — indistinguishable from the node-name "booted empty"
+   failure, and it invites destructive correction of a rollback that actually worked. Poll until the
+   queue list is populated.
+4. **RabbitMQ 4.x refuses transient NON-EXCLUSIVE queues** (`INTERNAL_ERROR - Feature
+   'transient_nonexcl_queues' is deprecated`). It broke a test that passed on 3.12. All 10 production
+   queues use `QueueBuilder.durable`; the SSE `AnonymousQueue` is legal only because it is
+   **exclusive**.
+5. **A compressed-artifact guard carrying an uncompressed expectation fails on a correct tree.** The
+   plan's `bytes > 100000` on a `.tar.gz` VOIDed a perfectly good snapshot — mnesia compresses ~17:1
+   (2.3 MB volume → 68 KB tarball).
+6. **`rabbitmqctl list_queues --quiet` suppresses the banner but NOT the column header**, so a naive
+   `wc -l` is off by one. Count from the management API's JSON.
+7. **The `secret`-as-a-common-word false positive recurred** (26-09 saw it as `DB_PASSWORD`). The dev
+   Postgres password is a 6-letter English word, so a literal sweep hits ordinary prose — it
+   pre-exists on `main` in 11 files including `.gitignore`. Use the credential-**shape** form, and
+   **make it case-insensitive**: the first version missed `POSTGRES_PASSWORD=<value>` because
+   `grep -E` is case-sensitive, which is the likeliest leak shape in this repo.
+8. **A background-task notification reported "exit code 0" for a FAILING Gradle run** — that is the
+   wrapper's trailing `echo`, not Gradle (`trap_exit_code_read_after_echo`). Read `GRADLE_RC` from the
+   log and the JUnit XML.
 
 ---
 
-## 6. Carried forward
+## 4. Environment state
 
-- [ ] **27-02** (wave 4) → unblocks 27-03 Task 8 → then 27-06. **Before executing it:**
-      `27-02-PLAN.md:141` cites `infra/monitoring/prometheus/prometheus.yml:92-98` in its fact
-      table. That file does **not** exist (27-00 replaced it with `prometheus.yml.tmpl` +
-      `entrypoint.sh`), so the path and line numbers are both stale. It is a *citation*, not a
-      `files_modified` entry, so it will not cause a phantom edit — but do not trust that row.
-      The live codebase doc carrying the same error is fixed in PR **#334**.
-- [ ] **Local branch cleanup is pending a decision.** Three merged branches survive locally because
-      the repo squash-merges, so `git branch -d` refuses them ("not fully merged") even though all
-      three are verified merged by content *and* PR state: `feature/27-04-consumer-concurrency`
-      (#331), `chore/docs-version-drift` (#332), `chore/phase27-summaries` (#333). Removing them
-      needs `git branch -D`, which discards — left for the user rather than done automatically.
-- [ ] **Toolchain drift surfaced, not applied** (`~/dotfiles/toolchain/doctor.sh --check`, exit 1):
-      conda `26.1.1 → 26.5.3`, `@google/gemini-cli` `0.52.0 → 0.53.0`, `ms-fabric-cli` `1.2.0 →
-      1.6.1`. One UNKNOWN row — `antigravity`, policy `manual`, which has no probeable channel by
-      design. Toolchain changes get their own session (`update.sh --tier N`, dry run first), never a
-      housekeeping run.
-- [ ] **Write `27-04-SUMMARY.md` and `27-05-SUMMARY.md`** from their EVIDENCE files — closes the
-      re-execution hazard in §0 permanently.
-- [ ] **`.planning/STATE.md`** was stale for the whole phase (it still read "Phase 26 CLOSED") and was
-      hand-edited by 27-03. Note `state.record-session` CORRUPTS it; hand-edit,
-      `roadmap.update-plan-progress` is safe.
-- [ ] Run the full `integrationTest` before opening the 27-03 PR.
-- [ ] **AKS deployment** — decided, scoped, NOT started. Blocking: Keycloak hosting decision; no
-      `jtoye-infrastructure` manifests; 25 secret keys; no DNS A records on `olajay.co.uk`.
-- [ ] Dependabot PRs — triage, do not bulk-merge. `main` already carries three **major** bumps
-      (spring-statemachine 4.0.2, stripe-java 33.1.1, awssdk bom 2.49.2).
-- [ ] **Evidence row L6** — a KDS client receiving a relayed order event through a real broker has
-      still never been captured. #266 fixed but unproven.
-- [ ] #274 gitleaks allowlists inert; #276 matrix `fail-fast: false`.
-- [ ] Wire jest-dom into `tsconfig.json` so the type-error count becomes a real gate.
+- **Branches:** `feature/27-02-broker-upgrade` (checked out, clean) and
+  `feature/27-03-alerting-dlq-runbook` (clean). Both pushed.
+- **No conda env needed** for this work — Java 21 + the Gradle wrapper only.
+- **Live broker:** 4.3.4, `rabbit@jtoye-rabbitmq`, 13 queues (12 durable classic + 1 SSE), 0 quorum,
+  all four DLQs `msgs=0`.
+- **Gates on 27-02's branch:** `check-branch-behind-base` 0 · `check-runtime-freshness` **0 (4/4
+  FRESH)** · `check-dependency-horizons` 0 · `docs-freshness` 0 (1832) · `render-golden` 0.
+- **Gates on 27-03's branch:** `check-alert-rules` 0 · `check-alert-metrics` 0 (19/24/3) ·
+  `dlq-inspect --summary` 0 · `docs-freshness` 0 (1851).
+- **Tests:** `OrderEventFanoutTopologyIntegrationTest` and `MediaListenerConcurrencyIntegrationTest`
+  both 1 test / 0 failures against 4.3.4, read from `core-java/build-local` (**not**
+  `core-java/build`, a stale 2025-12-27 artifact reporting a FALSE RED).
+- **CI at handoff:** both PRs **12 SUCCESS / 1 NEUTRAL (Trivy skipping) / 1 IN_PROGRESS**
+  (`Integration Tests (Testcontainers RLS)`). **No failures.** Re-confirm before merging.
 
-## 7. Residue
+---
 
-- Compose stack UP, all services running/healthy, all 4 built images FRESH.
-- 13 queues, no drill queues survive, the nine real dead letters untouched at `msgs=9`, archived
-  off-repo at `…/scratchpad/27-03/webhook-dlq-archive-2026-07-29.json`.
-- No stray drill processes. No CPU pins set this session.
+## 5. Carried forward — open items
+
+- [ ] **Merge #335, then merge `main` into #336, then merge #336.** See §0.
+- [ ] **Then 27-06** — the last plan in Phase 27.
+- [ ] **`.evidence/` is NOT gitignored on `feature/27-03-alerting-dlq-runbook`** (the ignore entry is
+      27-02 Task 1's, unmerged). It holds **2 RabbitMQ volume tarballs and the dead-letter export with
+      tenant payloads**. Verified absent from PR #336 (0 paths, 0 tracked, 0 tarballs). **A blanket
+      `git add` on that branch would commit broker data.** Resolved the moment #335 merges.
+- [ ] **`.planning/STATE.md` diverges across branches.** On `main` it still describes **Phase 26**;
+      the Phase 27 narrative exists only on the 27-03 branch; 27-02 added its own note about the
+      divergence. Reconcile after both merge. `state.record-session` **corrupts** this file —
+      hand-edit; `roadmap.update-plan-progress` is safe.
+- [ ] **Evidence row L6** — a KDS client receiving a relayed order event end-to-end has still never
+      been captured. 27-02 proved the relay at the **broker** over a raw socket
+      (`server:RabbitMQ/4.3.4`, `auth_login=jtoye`, and #266/#269's single-segment rule still
+      enforced — dotted gets a RECEIPT, slashed gets `not a valid topic destination`), but not a
+      browser receiving a MESSAGE frame.
+- [ ] **4.3's community support ends 2026-11-30.** The horizon row goes AMBER ~2026-09-01 and RED
+      2026-12-01 **with no commit in between**. Intended, documented in the manifest header before it
+      happens — do not treat it as a break.
+- [ ] **The staging/production broker is still unknown and unowned** — no manifest in this repo, no
+      declared version, `rabbitmq-k8s` row `manual_review` expires **2026-10-26**. Operator action in
+      `docs/runbooks/rabbitmq-broker-upgrade.md` §7; the ADR-0002 open question is dated but
+      **unsigned** (Status deliberately unchanged — that needs an owner, not an agent).
+- [ ] Dependabot PRs (#322–#330, #243) — triage, do not bulk-merge.
+- [ ] Toolchain drift carried from the previous session (conda, gemini-cli, ms-fabric-cli) — its own
+      session, dry run first.
+
+---
+
+## 6. Residue
+
+- Compose stack UP and healthy; broker on 4.3.4 with an empty DLQ set.
+- `.evidence/` holds 13 files: the **3.12.14 pre-upgrade tarball — the only rollback path from
+  4.3.4** — the 4.3.4 post-pin tarball, both `.node-host`/`.depth` sidecars, the 9-message dead-letter
+  export, and the before/after metrics captures. **Do not delete the 3.12.14 tarball** until 4.3.4 has
+  been stable for a while.
+- No probe containers, volumes, policies or drill queues survive; `/tmp/docker-compose.rollback.yml`
+  was removed; the vhost `default_queue_type` is back to `classic` with 0 quorum queues.
+- One background shell may still be polling CI for #335/#336. It has a hard 55-minute deadline and
+  exits on its own — no action needed.
