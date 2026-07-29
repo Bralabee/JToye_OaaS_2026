@@ -1,118 +1,161 @@
-# Handoff: 27-04 MERGED — next is 27-03 (wave 3)
+# Handoff: 27-03 is 8/9 (Task 8 blocked) — next is 27-02
 
-**Generated:** 2026-07-29 ~03:40 BST. Supersedes the "27-04 is 8/8, open the PR" handoff.
+**Generated:** 2026-07-29 ~10:15 BST. Supersedes the "27-04 merged, 27-03 next" handoff.
 
 | | |
 |---|---|
-| `origin/main` | **`9858370`** — 27-04 merged via PR **#331** (squash), CI **green** |
-| Phase 27 | 27-00, 27-01, 27-04 **done**; **27-03 next** (wave 3), then 27-02 + 27-06 (wave 4) |
-| Stack | Compose UP; all 4 built services rebuilt and FRESH as of the 27-04 close |
+| `origin/main` | **`9da0761`** — CI green |
+| Working branch | **`feature/27-03-alerting-dlq-runbook`** — 10 commits, clean, **0 behind**, pushed, **no PR yet** (deliberate, see §2) |
+| Phase 27 | 27-00 ✅ 27-01 ✅ **27-05 ✅ 27-04 ✅** (both MERGED) · 27-03 **8/9** · **27-02 next** · 27-06 after |
+| Stack | Compose UP, all services running; all 4 built services FRESH; 13 queues; the real nine dead letters untouched at `msgs=9` |
 
 ---
 
-## 0. WHERE TO RESUME
+## 0. ⚠ READ THIS FIRST — 27-04 IS DONE. DO NOT RE-EXECUTE IT.
 
-**Plan 27-03 (wave 3).** Two things it must inherit from 27-04:
+**27-04 and 27-05 are COMPLETE and MERGED to `main`.** 27-04 landed as PR **#331** → `9858370`;
+27-05 landed as PR **#310**. Verified by content on `origin/main`, not by ancestry (the repo
+squash-merges, so their original SHAs are not ancestors).
 
-1. It **rebases onto the `RabbitMQConfig` signature that just landed on main** — the bean is no
-   longer named `rabbitListenerContainerFactory`, and there is now a dedicated
-   `mediaRabbitListenerContainerFactory`.
-2. It must **replace its diff-scan T5.5 with the behavioural assertion** already provided in
-   `core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java`.
+**The GSD SDK will tell you otherwise, and it is wrong.** `gsd-sdk query init.execute-phase 27`
+reports `incomplete_plans: [27-02, 27-03, 27-04, 27-05, 27-06]` because it uses **`SUMMARY.md`
+presence** as the completion marker — and 27-04/27-05 shipped with `EVIDENCE.md` instead. Running
+`/gsd-execute-phase 27` with no wave filter would **re-execute work already on main**.
+
+Two ways to stay safe, use either:
+- scope with the wave filter — `/gsd-execute-phase 27 --wave 4` (27-02 and 27-06 are the only
+  wave-4 plans; 27-03 is wave 3, 27-04 wave 2, 27-05 wave 1); or
+- write the two missing `SUMMARY.md` files from their `EVIDENCE.md` files first, which closes the
+  hole permanently. **Still open — nobody has done this.**
+
+---
+
+## 1. WHERE TO RESUME — 27-02
+
+`.planning/phases/27-operational-maturity/27-02-PLAN.md` (wave 4, 171KB).
+
+It is the only thing standing between 27-03 and completion, **and** it owns disposing of the nine
+dead letters that 27-03 archived and handed over.
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-git fetch origin && git switch -c feature/27-03-<name> origin/main
+git fetch origin && git switch -c feature/27-02-<name> origin/main
+bash scripts/check-branch-behind-base.sh          # expect rc=0
 ```
 
----
+**Verify 27-02's own preconditions against the tree before starting** — do not trust a plan's
+`files_modified`. 27-03's plan named `infra/monitoring/prometheus/prometheus.yml`, which 27-00 had
+already replaced with `prometheus.yml.tmpl` + `entrypoint.sh`; editing the name as written would
+have created a file the running Prometheus ignores — a silent no-op behind green gates.
 
-## 1. What 27-04 shipped (merged, `9858370`)
-
-`RabbitMQConfig` declared a bean named `rabbitListenerContainerFactory`; Boot's factory is
-`@ConditionalOnMissingBean(name = …)`, so Boot backed off and
-`SimpleRabbitListenerContainerFactoryConfigurer` — the **only** consumer of
-`spring.rabbitmq.listener.simple.*` — never ran. That whole family was a silent no-op, including
-the `auto-startup=false` that **22 test files** register.
-
-Shipped: `mediaConcurrency=1`, `mediaMaxConcurrency=2`, `mediaPrefetch=2`, `DB_POOL_SIZE 10→12`.
-
-Full AC-10 record: `.planning/phases/27-operational-maturity/27-04-EVIDENCE.md`.
-
-### Three conclusions that must not be re-asserted
-
-1. **`TenantContext` is the single dominant tenant pin — the two pins are NOT independent.**
-   `TenantSetLocalAspect` re-pins from `TenantContext` before every repository call, so it is the
-   **last writer** and **overwrites** a correct explicit `set_config` with a wrong ThreadLocal.
-   Measured: explicit pin deleted + context correct → GREEN; context wrong + explicit pin intact →
-   **RED**.
-2. **`forkEvery(4)` must stay.** D-11 is refuted and recorded in `build.gradle.kts`. There were TWO
-   OOM causes and 27-04 fixed one; post-fix it lands on `HttpClient-N-SelectorManager` +
-   `idle-connection-reaper` (reactive WebClient + AWS SDK v2).
-3. **The media pipeline is outbox-paced, not queue-paced** (`media.outbox.flush-interval-ms` 5000).
-   Queue depth stayed 0 even under an 8-way burst — depth 0 ≠ idle, and raising concurrency cannot
-   help without a backlog. One consumer already saturates one core (97.8% under a 1-CPU pin).
+27-02 is `autonomous: false` with a `checkpoint:human-action` on Task 2 (it replaces the broker), so
+expect it to stop for approval the same way 27-03 did.
 
 ---
 
-## 2. Traps confirmed in the 27-04 close
+## 2. 27-03 state — 8 of 9 tasks, and why there is no SUMMARY.md
 
-- **RLS blinds the verification query.** Under a `NOSUPERUSER` downgrade an *unpinned* query returns
-  0 rows on a full table, so `assertThat(count).isZero()` is structurally satisfied and survives
-  every break arm. It fails in the *safe-looking* direction, and breaking production code does not
-  un-blind it. **Prove the instrument can SEE the rows before trusting its silence** — the AC-10
-  probe read `expected: 12 but was: 0` with all 12 rows provably PENDING.
-- A worker that **returns without throwing** on its failure path (`asset_not_visible`) removes the
-  test's only exception signal, leaving the row's state as the sole observable.
-- **The Testcontainers-startup flake is real and it reads as a code failure.** `main` went red at
-  `1500f22` on *Integration Tests (Testcontainers RLS)* — Postgres containers refusing connections
-  on every mapped port, Hikari at `total=0, active=0, idle=0`. A re-run of the **identical SHA**
-  went green. Before chasing a code cause, re-run; `scripts/fix-bridge-network.sh` and
-  `fix-testcontainers-docker.sh` exist for this.
-- Restores after a break arm must be verified **by token**, never by `git diff --stat`.
+Tasks 0–7 are done, committed and evidenced. **Task 8 re-runs the live alert gate AFTER 27-02
+replaces the broker** and records the delta. It is an exit criterion of the plan, not a follow-up.
 
-Standing traps: `grep` is a bash function → `command grep` in scripts; `cleanTest` /
-`cleanIntegrationTest` are load-bearing (without them the task reports UP-TO-DATE while executing
-NOTHING); counts come from `core-java/build-local/`, **never** `core-java/build/` (a stale
-2025-12-27 artifact reporting a false RED); the repo squash-merges so ancestry lies — verify a merge
-**by content**; `docs/metrics.json` is a cross-branch conflict hotspot; a second session may share
-this checkout, so stage by explicit path and never `git add -A`; `git stash -u` is unsafe here
-(root-owned untracked paths under `infra/monitoring/`).
+No `SUMMARY.md` is written and **no PR is open**, deliberately: both would assert a completion that
+has not happened. Full record: `.planning/phases/27-operational-maturity/27-03-EVIDENCE.md` (735
+lines, every criterion in both directions).
+
+Delivered: a `rabbitmq-queues` scrape job, six live alert rules + one deliberately dormant, two
+executable alert gates (`scripts/check-alert-rules.sh`, `scripts/check-alert-metrics.sh`), 13 runbook
+sections, `scripts/dlq-inspect.sh`, a retry-exhaustion counter, and the F-9 listener-factory
+signature fix layered on 27-04's.
+
+**Open the PR only after Task 8 runs.** Until then the branch is pushed and safe.
 
 ---
 
-## 3. Baselines to measure against
+## 3. Three defects found this session that no test caught
 
-| suite | last full green |
+1. **AC-10's terminal assertion was blind (27-04).** It counted PENDING rows on an *untransacted*
+   connection with no tenant GUC; under the `NOSUPERUSER` downgrade RLS filtered every row, so the
+   count was structurally 0 and the test survived three break arms. Probe: `expected: 12 but was: 0`
+   with all 12 rows provably PENDING. **Prove an instrument can SEE the rows before trusting its
+   silence.**
+2. **The retry counter tagged every message `queue="unknown"` (27-03 T5).** Spring AMQP proxies
+   `invokeListener(Channel, Object)`, so `args[0]` is a Channel, never the Message — but the test
+   fixture built `new Object[]{message}`, a shape production never produces. Green throughout while
+   the metric was useless. Only the live run could falsify it.
+3. **The runbook's dead-letter discriminator was wrong (27-03 T7).** It told on-call that
+   `MessageConversionException` is "fatal on first delivery" and that retry exhaustion "also"
+   increments `jtoye_amqp_retries_exhausted_total`. Measured: the counter increments on **both**
+   paths (`1 -> 2` on `queue="media.process"` from one malformed publish), because the converter runs
+   inside `MessagingMessageListenerAdapter`, which is *wrapped by the advice chain*. `x-death[0].count`
+   reads `1` on both too. **Only the exception class discriminates.** Runbook corrected.
+
+---
+
+## 4. Traps confirmed this session
+
+- **An `INT`/`TERM` trap that does not `exit` RESUMES the script.** The 27-03 drill harness ran its
+  cleanup on SIGINT and then *carried on*, leaking a stray process. Use
+  `trap cleanup EXIT; trap 'cleanup; exit 130' INT TERM`. Found only because the break arm was run
+  **before** the drills rather than after.
+- **A `docker logs --since Nm` window can close before you read it.** The first read of the
+  conversion exception returned nothing because the grep ran 5.5 min after a 3-min window. An empty
+  grep was one step from being recorded as "no exception occurred" — which would have *confirmed* a
+  wrong claim rather than refuting it.
+- **RLS blinds a verification query** — see §3.1. Recorded as a memory.
+- **The tenant pin sits under a global aspect**, and the aspect *overwrites* a correct explicit pin.
+  `TenantContext.set` is the dominant control, not the explicit `set_config`.
+- **The Testcontainers-startup flake reads as a code failure.** `main` went red at `1500f22` on
+  *Integration Tests*; a re-run of the identical SHA went green. Re-run before diagnosing.
+
+Standing: `grep` is a shell function → `command grep` in scripts; `cmd | grep -q X` under `pipefail`
+INVERTS on match; capture `rc=$?` on its own line; `cleanTest`/`cleanIntegrationTest` are load-bearing
+(without them the task reports UP-TO-DATE while executing NOTHING); counts come from
+`core-java/build-local/`, never `core-java/build/`; the repo squash-merges so verify merges **by
+content**; stage by explicit path, never `git add -A`; `git stash -u` is unsafe here.
+
+---
+
+## 5. Baselines and gates
+
+| suite | last green |
 |---|---|
-| `:core-java:cleanTest test` | 116 classes / 832 tests / 0 fail / 0 err / 1 skip |
-| `:core-java:cleanIntegrationTest integrationTest` | 104 classes / 416 tests / 0 fail / 0 err / 1 skip (~42 min local, ~48 min CI) |
+| `:core-java:cleanTest test` | **119 classes / 851 tests / 0 fail / 0 err / 1 skip** (+3/+19 vs the 116/832 baseline = exactly the 3 new `RabbitMQ*Test` classes, 7+9+3) |
+| `:core-java:cleanIntegrationTest integrationTest` | 104 classes / 416 tests / 0 fail (~42 min local, ~48 min CI) — **not re-run since 27-03's Java change; run it before the 27-03 PR** |
 
-Any delta must be **explained**, not waved through: the last +2/+2 was traced to exactly two new
-`@Tag("testcontainers")` classes.
+All green at handoff: `docs-freshness`, `check-doc-versions`, `check-branch-behind-base`,
+`check-alert-rules`, `check-alert-metrics`, `check-runtime-freshness` (4/4 services FRESH).
+Expected non-zero: 27-00's `check-alert-liveness` (rc=1, its designed pre-close state) and
+`dlq-inspect --summary` (rc=1 — the nine parked messages, which 27-02 owns).
+
+**New gate as of today:** `scripts/check-doc-versions.sh` compares documented dependency versions in
+`CLAUDE.md`, `AGENTS.md` and `.planning/codebase/STACK.md` against `build.gradle.kts` /
+`package.json` / `go.mod`, and runs in the `docs-freshness` workflow. If you bump a dependency,
+update those three docs in the same commit. `.planning/PROJECT.md` is deliberately not gated (its
+line ~113 is dated history).
 
 ---
 
-## 4. Carried forward
+## 6. Carried forward
 
-- [ ] **27-03**, then 27-02 + 27-06.
+- [ ] **27-02** (wave 4) → unblocks 27-03 Task 8 → then 27-06.
+- [ ] **Write `27-04-SUMMARY.md` and `27-05-SUMMARY.md`** from their EVIDENCE files — closes the
+      re-execution hazard in §0 permanently.
+- [ ] **`.planning/STATE.md`** was stale for the whole phase (it still read "Phase 26 CLOSED") and was
+      hand-edited by 27-03. Note `state.record-session` CORRUPTS it; hand-edit,
+      `roadmap.update-plan-progress` is safe.
+- [ ] Run the full `integrationTest` before opening the 27-03 PR.
 - [ ] **AKS deployment** — decided, scoped, NOT started. Blocking: Keycloak hosting decision; no
-      `jtoye-infrastructure` manifests in this repo; 25 secret keys; no DNS A records on
-      `olajay.co.uk` (NS1, not Azure DNS).
-- [ ] Dependabot PRs — triage, do not bulk-merge (several violate the pinned stack). Note main
-      already carries three **major** bumps: spring-statemachine 4.0.2, stripe-java 33.1.1,
-      awssdk bom 2.49.2.
-- [x] **Doc version drift** — FIXED and now GATED. `scripts/check-doc-versions.sh` compares every
-      documented version against `build.gradle.kts` / `package.json` / `go.mod` and runs in the
-      `docs-freshness` workflow. It covers `.planning/codebase/STACK.md` as well as `CLAUDE.md` and
-      `AGENTS.md`, because STACK.md is the **generated-from source** for the stack section — gating
-      only the derived files would let the next GSD regeneration copy stale versions back in.
-      `.planning/PROJECT.md` is deliberately **not** gated: its line ~113 is a dated historical
-      record ("Spring Boot 3.4.2 … Verified 2026-04-18 post-v2.1") that is correct as history.
-      Note the gate checks **all** occurrences, not the first — the drift included a stale
-      "Spring Boot Gradle Plugin 3.4.2" sitting below a correct "Spring Boot 3.5.16", which a
-      first-match check calls clean (it slipped past two of my own passes before the gate caught it).
+      `jtoye-infrastructure` manifests; 25 secret keys; no DNS A records on `olajay.co.uk`.
+- [ ] Dependabot PRs — triage, do not bulk-merge. `main` already carries three **major** bumps
+      (spring-statemachine 4.0.2, stripe-java 33.1.1, awssdk bom 2.49.2).
 - [ ] **Evidence row L6** — a KDS client receiving a relayed order event through a real broker has
       still never been captured. #266 fixed but unproven.
 - [ ] #274 gitleaks allowlists inert; #276 matrix `fail-fast: false`.
 - [ ] Wire jest-dom into `tsconfig.json` so the type-error count becomes a real gate.
+
+## 7. Residue
+
+- Compose stack UP, all services running/healthy, all 4 built images FRESH.
+- 13 queues, no drill queues survive, the nine real dead letters untouched at `msgs=9`, archived
+  off-repo at `…/scratchpad/27-03/webhook-dlq-archive-2026-07-29.json`.
+- No stray drill processes. No CPU pins set this session.
