@@ -22,7 +22,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 21 - Core API (Spring Boot 3.5.16)
-- TypeScript 5 - Frontend (Next.js 16.2.2, React 19)
+- TypeScript 5 - Frontend (Next.js 16.2.11, React 19)
 - Go 1.25 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -49,45 +49,45 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
-- Next.js 16.2.2 - React framework with file-based routing
+- Next.js 16.2.11 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.69.0 - Form state management
-- Next-Auth 5.0.0-beta.30 - Authentication middleware
+- React Hook Form 7.82.0 - Form state management
+- Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 3.4.1 - Utility-first CSS framework
 - Radix UI - Headless component library
-- Zod 4.2.1 - Schema validation
-- Gin v1.10.0 - HTTP routing and middleware
+- Zod 4.4.3 - Schema validation
+- Gin v1.12.0 - HTTP routing and middleware
 - golang-jwt/jwt v5 - JWT validation
 - uber/zap - Structured logging
 - sony/gobreaker - Circuit breaker pattern
 - JUnit 5 - Java test framework
-- Testcontainers 1.21.3 - Docker-based integration testing
+- Testcontainers 1.21.4 - Docker-based integration testing
 - Spring Boot Test - Testing utilities and test containers
 - Jest 29.7.0 - JavaScript test runner
 - @testing-library/react - React component testing
-- @playwright/test 1.59.1 - E2E browser automation
+- @playwright/test 1.61.1 - E2E browser automation
 - Spring Boot Gradle Plugin 3.5.16 - JAR packaging
 - Flyway - Database migration management
 - Lombok - Boilerplate reduction (code generation)
-- MapStruct 1.5.5 - Type-safe DTO mapping
+- MapStruct 1.6.3 - Type-safe DTO mapping
 ## Key Dependencies
-- PostgreSQL JDBC Driver 42.7.3 - Database connectivity
+- PostgreSQL JDBC Driver 42.7.13 - Database connectivity
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
-- AWS SDK v2 (2.25.60) - S3 API for image storage
-- Stripe React/JS 6.1.0, 9.0.1 - Payment processing UI integration
-- Axios 1.13.2 - HTTP client for API calls
-- Framer Motion 12.23.26 - Animation library
-- Recharts 3.8.1 - Charts and data visualization
+- AWS SDK v2 (2.49.2) - S3 API for image storage
+- Stripe React/JS 6.8.0, 9.12.0 - Payment processing UI integration
+- Axios 1.15.0 - HTTP client for API calls
+- Framer Motion 12.42.2 - Animation library
+- Recharts 3.10.0 - Charts and data visualization
 - Redis 7 - Session and cache store
 - RabbitMQ 3.12 - Message queue (AMQP)
 - Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
 - MinIO (latest) - S3-compatible object storage for images
 - Ollama (latest) - Local LLM for image analysis
 - Mailhog v1.0.1 - Local SMTP for email testing
-- Resilience4j 2.2.0 - Circuit breakers and retry logic
+- Resilience4j 2.4.0 - Circuit breakers and retry logic
 - Bucket4j 8.10.1 - Token bucket rate limiting
-- Stripe Java SDK 28.2.0 - Payment intent creation and webhook handling
+- Stripe Java SDK 33.1.1 - Payment intent creation and webhook handling
 - OpenPDF 2.0.3 - PDF generation for allergen labels
 - Spring Data Redis (Lettuce) - Redis connection pooling
 ## Configuration
@@ -137,7 +137,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - MinIO: latest
 - Go: 1.25-alpine
 - Node.js: 20+
-- Next.js: 16.2.2
+- Next.js: 16.2.11
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)
