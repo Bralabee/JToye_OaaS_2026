@@ -146,7 +146,10 @@
 
 **Prometheus (`prom/prometheus:v2.48.0`):**
 - Host port 9091 (container 9090)
-- Config: `infra/monitoring/prometheus/prometheus.yml` + `alerts.yml`
+- Config: `infra/monitoring/prometheus/prometheus.yml.tmpl` + `alerts.yml`. **The `.tmpl` is the
+  source**; `entrypoint.sh` renders it to `/etc/prometheus/prometheus.yml` at container start
+  (27-00). There is no checked-in `prometheus.yml` — editing that path creates a file the running
+  Prometheus ignores.
 - 30d TSDB retention
 - Scrape targets: core-java (`/actuator/prometheus`), redis-exporter:9121, postgres-exporter:9187, RabbitMQ Prometheus plugin
 
