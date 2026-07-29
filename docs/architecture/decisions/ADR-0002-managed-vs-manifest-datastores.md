@@ -46,3 +46,33 @@ have to come from somewhere, and the choice shapes all of #101's remaining work.
 - Local dev is unaffected — docker-compose remains the dev stack.
 - SYSTEM_DESIGN_V2 §3.2's Patroni/PgBouncer TARGET diagram is superseded if this
   ADR is accepted.
+
+## 2026-07-29 — Open question (Phase 27, plan 27-02)
+
+**The staging/production RabbitMQ broker's version is unverifiable from this repository, and nobody
+owns it.** Recorded here rather than silently fixed, because plan 27-02 could not fix it and will
+not pretend otherwise.
+
+Measured 2026-07-29:
+
+- `k8s/base/configmap.yaml` points the application at
+  `rabbitmq.jtoye-infrastructure.svc.cluster.local`, but **there is no RabbitMQ manifest anywhere
+  under `k8s/`** — only a host, a port and a `rabbitmq-credentials` secret reference. The broker is
+  provisioned outside this repository.
+- Its **version is therefore unknown and unknowable from this checkout**. No file declares it, no
+  gate reads it, and `scripts/check-runtime-freshness.sh` structurally cannot see it (it discovers
+  only compose services with a `build:` stanza).
+- The dev/compose broker moved **3.12.14 → 4.3.4** on 2026-07-29 by fresh install. That path
+  destroys every queued message and is **not** available for a broker holding real traffic; the
+  supported chain is 3.12 → 3.13 → 4.2 → 4.3. See
+  [`docs/runbooks/rabbitmq-broker-upgrade.md`](../../runbooks/rabbitmq-broker-upgrade.md) §2 and §7.
+- The in-cluster RabbitMQ **cluster-operator option proposed in this ADR on 2026-07-12 remains
+  unsigned** and was never built.
+
+Tracked as the `rabbitmq-k8s` row in `infra/dependency-horizons.yaml`: `pin: unknown`,
+`owner: UNASSIGNED`, with a dated `manual_review` that **expires 2026-10-26**. That expiry is the
+mechanism — the horizon gate turns this from a note nobody reads into a finding that fires on its
+own if the question is still open by then.
+
+**Status deliberately unchanged.** Resolving the operator question needs owner sign-off, which is a
+human decision and not an agent's to record.

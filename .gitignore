@@ -166,3 +166,8 @@ k8s/goldens/.pre/
 
 # Playwright screenshot output from e2e/media-review-320.spec.ts (evidence copies live in .planning)
 e2e-artifacts/
+
+# Phase 27 execution evidence (plan 27-02 and after). Carries tenant data and, during the
+# broker migration, a full tar of the RabbitMQ data directory — a dead-letter export holds
+# real webhook payloads and the volume snapshot holds every queued message. Never committed.
+.evidence/
