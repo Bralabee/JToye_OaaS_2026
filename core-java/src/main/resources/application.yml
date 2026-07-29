@@ -236,6 +236,64 @@ jtoye:
       enabled: ${MEDIA_VISION_ENABLED:false}
       min-confidence: ${MEDIA_VISION_MIN_CONFIDENCE:0.35}
 
+  # Phase 27 / 27-04 — RabbitMQ listener tunables. Bound by RabbitListenerProperties.
+  #
+  # These are NOT spring.rabbitmq.listener.simple.* because that family was INERT: this
+  # project declares a bean named `rabbitListenerContainerFactory`, and Boot's own factory is
+  # @ConditionalOnMissingBean(name = "rabbitListenerContainerFactory"), so Boot backed off and
+  # SimpleRabbitListenerContainerFactoryConfigurer — the only consumer of those properties —
+  # never ran. RabbitMQConfig now applies the configurer explicitly and layers these on top.
+  #
+  # default-* govern the eight non-media endpoints. Concurrency stays 1 deliberately: raising it
+  # globally would lose per-order ordering on order.state-changes (its processed_order_events
+  # dedup key prevents repeats, not reordering) and churn UI ordering on the SSE fan-out queue.
+  # default-prefetch is today's EFFECTIVE value (the container default of 250), declared rather
+  # than changed, so repairing the factory is provably behaviour-preserving for those eight.
+  rabbit:
+    default-prefetch: ${JTOYE_RABBIT_DEFAULT_PREFETCH:250}
+    default-concurrency: ${JTOYE_RABBIT_DEFAULT_CONCURRENCY:1}
+    # media.process only — the one CPU-bound consumer (two WebP encodes per message).
+    # MEASURED, not guessed: infra/load-testing/baselines/2026-07-28-media-A-baseline.md.
+    #   prefetch 2  — low by intent. At 250 the defect is unfair distribution ACROSS REPLICAS
+    #                 (worse at the production 3), not head-of-line blocking within one. 2 hides
+    #                 fetch latency at a measured 606 ms/message while leaving the rest of a
+    #                 burst available to other replicas.
+    #   concurrency 1 — Arm A measured peak container CPU 97.8% at concurrency 1 under a 1-CPU
+    #                 pin, and the pod limit is 1000m: one consumer already saturates one core.
+    #                 Peak queue depth was 0 across all 197 samples because
+    #                 media.outbox.flush-interval-ms (5000) paces this pipeline in batches one
+    #                 consumer drains inside the interval — there is no steady-state backlog.
+    #   max 2       — a ceiling for bursts, and the most BOTH budget walls allow: 3 breaches the
+    #                 intra-pod budget (check-consumer-thread-budget.sh), and raising DB_POOL_SIZE
+    #                 to fit 3 breaches the cluster-wide one (check-connection-math.sh, 166 > 157).
+    media-prefetch: ${JTOYE_RABBIT_MEDIA_PREFETCH:2}
+    media-concurrency: ${JTOYE_RABBIT_MEDIA_CONCURRENCY:1}
+    media-max-concurrency: ${JTOYE_RABBIT_MEDIA_MAX_CONCURRENCY:2}
+
+# Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
+# these eight keys were bound by @Value/@Scheduled inline defaults and appeared in NO yml, env
+# file, k8s manifest or script — so the only way to change a flush interval in production was to
+# rebuild the image. Every value below is byte-identical to the inline default it surfaces, so
+# this is purely a visibility change. check-env-contract.sh could never have caught them: it
+# compares UPPERCASE ${} placeholders, and a lowercase Spring property with an inline default is
+# invisible to both of its directions.
+#
+# media.outbox.flush-interval-ms is the pacing element of the whole media pipeline — Arm A showed
+# the queue depth stays 0 because this interval, not consumer count, governs arrival.
+payment:
+  outbox:
+    flush-interval-ms: ${PAYMENT_OUTBOX_FLUSH_INTERVAL_MS:5000}
+    resurrect-interval-ms: ${PAYMENT_OUTBOX_RESURRECT_INTERVAL_MS:300000}
+    backoff-base-ms: ${PAYMENT_OUTBOX_BACKOFF_BASE_MS:5000}
+    backoff-cap-ms: ${PAYMENT_OUTBOX_BACKOFF_CAP_MS:300000}
+
+media:
+  outbox:
+    flush-interval-ms: ${MEDIA_OUTBOX_FLUSH_INTERVAL_MS:5000}
+    resurrect-interval-ms: ${MEDIA_OUTBOX_RESURRECT_INTERVAL_MS:300000}
+    backoff-base-ms: ${MEDIA_OUTBOX_BACKOFF_BASE_MS:5000}
+    backoff-cap-ms: ${MEDIA_OUTBOX_BACKOFF_CAP_MS:300000}
+
 stomp:
   broker:
     mode: ${STOMP_BROKER_MODE:in-memory}

@@ -27,6 +27,33 @@ data:
   # RabbitMQ configuration
   rabbitmq.host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
   rabbitmq.port: "5672"
+
+  # RabbitMQ listener tuning (Phase 27 / 27-04). Bound by RabbitListenerProperties under
+  # jtoye.rabbit.*; the numbers come from a recorded measurement, not from folklore —
+  # infra/load-testing/baselines/2026-07-28-media-A-baseline.md. See docs/runbooks/messaging.md.
+  # Deliberately NOT spring.rabbitmq.listener.simple.*: that family is inert here, because a bean
+  # named rabbitListenerContainerFactory makes Boot's own factory (and its configurer) back off.
+  rabbit.default.prefetch: "250"
+  rabbit.default.concurrency: "1"
+  rabbit.media.prefetch: "2"
+  rabbit.media.concurrency: "1"
+  # Ceiling, not headroom: 3 breaks check-consumer-thread-budget.sh against a pool of 12, and
+  # raising the pool to fit 3 breaks check-connection-math.sh at 166 > 157.
+  rabbit.media.max.concurrency: "2"
+
+  # Outbox flusher tuning (Phase 27 / 27-04). These eight keys previously existed ONLY as inline
+  # @Value defaults in Java, so a flush interval could not be changed without rebuilding the
+  # image. Values are identical to those defaults — a visibility fix, not a behaviour change.
+  payment.outbox.flush.interval.ms: "5000"
+  payment.outbox.resurrect.interval.ms: "300000"
+  payment.outbox.backoff.base.ms: "5000"
+  payment.outbox.backoff.cap.ms: "300000"
+  # This one paces the entire media pipeline: arrival at media.process is batched on it, which is
+  # why Arm A measured a peak queue depth of 0 at concurrency 1.
+  media.outbox.flush.interval.ms: "5000"
+  media.outbox.resurrect.interval.ms: "300000"
+  media.outbox.backoff.base.ms: "5000"
+  media.outbox.backoff.cap.ms: "300000"
   
   # Application settings
   log.level: "INFO"

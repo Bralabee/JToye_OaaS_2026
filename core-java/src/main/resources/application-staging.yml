@@ -8,7 +8,7 @@ spring:
       # Issue #94 [P2-3]: the base HPA (3→10 replicas) applies to the staging
       # overlay too, so staging must obey the same replica-ceiling math as prod
       # (see application-prod.yml). 30 × 10 replicas would blow max_connections.
-      maximum-pool-size: ${DB_POOL_SIZE:10}
+      maximum-pool-size: ${DB_POOL_SIZE:12}
       minimum-idle: ${DB_POOL_MIN_IDLE:5}
       connection-timeout: 30000
       idle-timeout: 600000

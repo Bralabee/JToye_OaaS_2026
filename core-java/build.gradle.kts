@@ -155,14 +155,38 @@ tasks.register<Test>("integrationTest") {
     }
     environment("DOCKER_API_VERSION", "1.45")
     systemProperty("api.version", "1.45")
-    // Recycle the forked test JVM every few classes. Each Testcontainers class boots
-    // a distinct Spring Boot context (many pin unique @MockBean/@SpyBean configs) whose
-    // RabbitMQ listener + reactive HttpClient selector threads are not all reclaimed
-    // between classes; run in ONE fork the whole 24-class suite accumulates enough live
-    // threads to hit a native-thread OutOfMemoryError. Recycling bounds live threads to
-    // a handful of classes' worth without changing any test's behaviour (containers are
-    // per-class static; tests use fresh random tenants, so there is no cross-class JVM
-    // state to preserve).
+    // Recycle the forked test JVM every few classes. Each Testcontainers class boots a distinct
+    // Spring Boot context (many pin unique @MockBean/@SpyBean configs) whose threads are not all
+    // reclaimed between classes; run in ONE fork, the suite accumulates enough live threads to hit
+    // a native-thread OutOfMemoryError. Recycling bounds live threads to a handful of classes'
+    // worth without changing any test's behaviour (containers are per-class static; tests use
+    // fresh random tenants, so there is no cross-class JVM state to preserve).
+    //
+    // KEPT ON MEASUREMENT, NOT ON FAITH — 27-04 T7, three arms, same 88 tagged classes:
+    //
+    //   forkEvery(4), post-fix   2337s   peak 209 threads (median 80)    SUCCESS 102/414, 0 fail
+    //   forkEvery(0), post-fix   3601s   peak 859 threads (median 820)   OOM, hit the 1h ceiling
+    //   forkEvery(0), PRE-fix     937s   peak 1880 threads (median 1543) OOM, died before ceiling
+    //
+    // 27-04 expected the repaired listener factory to make this setting removable, because until
+    // then `spring.rabbitmq.listener.simple.auto-startup=false` (registered by 22 test files) was
+    // INERT: a bean named rabbitListenerContainerFactory made Boot's factory — and its configurer,
+    // the only consumer of that property family — back off. THAT EXPECTATION IS REFUTED. The
+    // repair helped a great deal but did not remove the need to recycle:
+    //
+    //   - Pre-fix, the OOM lands on `RabbitListenerEndpointContainer#7-37` — listener threads
+    //     really were accumulating, exactly as this comment used to claim.
+    //   - Post-fix, listener threads are gone from the picture: peak drops 1880 -> 859 (-54%),
+    //     time-to-500-threads moves 0s -> 100s, and the OOM instead lands on
+    //     `HttpClient-N-SelectorManager` and `idle-connection-reaper` — the reactive WebClient's
+    //     selector pool and AWS SDK v2's S3/MinIO connection reaper.
+    //
+    // So the accumulation had TWO causes; 27-04 fixed one. Until the WebClient/AWS-SDK clients are
+    // shared or shut down per context, forkEvery must stay. Do not "simplify" it away on the
+    // reasoning that the listener bug is fixed — that is the specific wrong conclusion this block
+    // exists to prevent, and re-deriving it costs an hour of wall clock.
+    //
+    // Raw series: .planning/phases/27-operational-maturity/baselines/ (T7 arms A/B/C).
     setForkEvery(4)
     shouldRunAfter(tasks.test)
 }

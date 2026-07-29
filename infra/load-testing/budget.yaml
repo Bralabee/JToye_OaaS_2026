@@ -81,14 +81,56 @@ budgets:
       exactly the gap arm B measures.
 
   - key: amqp.media_process_per_sec_per_consumer
-    value: null
+    value: 1.59
     unit: messages_per_second_per_consumer
     applies_to: "media.process"
-    source: inherited-assumption
-    from: "no source — this number does not exist anywhere in the repo"
-    status: unvalidated
+    source: measured
+    from: "baselines/2026-07-28-media-B-candidate.md"
+    status: validated
     note: >-
-      Deliberately null. 27-04 must set RabbitMQ prefetch and concurrentConsumers, and those
-      derive from messages/sec/consumer — a figure findings F-7/F-8 established exists nowhere
-      in this repo. Arm B produces it. A null here is honest; a guessed number would be the
-      thing this whole file is built to stop.
+      Was deliberately null until 27-04 measured it. 200 real JPEG uploads (~1.5 MB, mixed
+      dimensions) through POST /api/v1/products/{id}/image, container pinned to 1 CPU to match
+      the 1000m pod limit, 200/200 accepted 202. Control arm (2026-07-28-media-A-baseline.md,
+      prefetch 250) measured 1.65 — so dropping prefetch to 2 cost ~3%, inside the run-to-run
+      spread of the mean service time (606.0 ms vs 627.2 ms). The fairness fix is effectively free.
+
+  # --- media_pipeline (27-04) -------------------------------------------------------------
+  # The IMG-04 vendor UI renders PENDING -> processing while this queue drains, so time-to-ACTIVE
+  # is a real perceived-performance budget rather than a backend curiosity.
+
+  - key: media_pipeline.process_mean_ms
+    value: 627
+    unit: milliseconds
+    applies_to: "media.process, per message, 1 CPU"
+    source: measured
+    from: "baselines/2026-07-28-media-B-candidate.md"
+    status: validated
+    note: >-
+      Mean of jtoye.media.process{outcome="active"} over 183 messages. Two WebP encodes per
+      message via a forked native cwebp. Control arm measured 606 ms at prefetch 250.
+
+  - key: media_pipeline.peak_cpu_pct_at_concurrency_1
+    value: 97
+    unit: percent
+    applies_to: "core-java container, 1 CPU pin"
+    source: measured
+    from: "baselines/2026-07-28-media-B-candidate.md"
+    status: validated
+    note: >-
+      96.9% (control arm 97.8%). This is the number that settled media-concurrency at 1: one
+      consumer already saturates one core, and the k8s pod limit is 1000m. A second consumer
+      competes for a core with no headroom.
+
+  - key: media_pipeline.peak_queue_depth
+    value: 0
+    unit: messages
+    applies_to: "media.process"
+    source: measured
+    from: "baselines/2026-07-28-media-A-baseline.md and -B-candidate.md"
+    status: validated
+    note: >-
+      Zero across ALL samples in BOTH arms, under a sequential driver and an 8-way concurrent
+      burst. Not a harness failure — media.outbox.flush-interval-ms (5000) paces this pipeline,
+      so arrival is batched and one consumer drains a batch inside the interval. Consequence for
+      operators: a depth of 0 does not mean idle, and raising concurrency cannot help without a
+      backlog. Documented in docs/runbooks/messaging.md section 4.

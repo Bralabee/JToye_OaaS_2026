@@ -106,14 +106,95 @@ spec:
               name: postgres-credentials
               key: password
         # Issue #94 [P2-3]: Hikari pool sized against the HPA replica CEILING.
-        # (maxReplicas 10 + surge 1) × 10 + Keycloak 20 + pg-backup 1 +
-        # exporter 2 = 133 ≤ 0.8 × (max_connections 200 − 3 reserved).
+        # (maxReplicas 10 + surge 1) × 12 + Keycloak 20 + pg-backup 1 +
+        # exporter 2 = 155 ≤ 0.8 × (max_connections 200 − 3 reserved) = 157.
         # Must match the application-prod.yml default — CI enforces both via
         # k8s/scripts/check-connection-math.sh. The shared Postgres in
         # jtoye-infrastructure MUST run with max_connections=200 (see
         # k8s/DEPLOYMENT.md "Database Connection Budget").
+        #
+        # RAISED 10 -> 12 by Phase 27 / 27-04, and 12 is a CEILING, not headroom.
+        # Two gates bound it from opposite sides and both are tight:
+        #   - below 12, k8s/scripts/check-consumer-thread-budget.sh FAILS. Nine
+        #     @RabbitListener endpoints + 2 reserved for HTTP = 11 > a pool of 10,
+        #     which left ~1 connection for request handling at saturation. That
+        #     was a PRE-EXISTING defect, not one 27-04 introduced.
+        #   - above 12, the equation above breaks: 11 × 13 + 23 = 166 > 157.
+        # So do NOT raise this to buy more consumer concurrency. Raising media
+        # concurrency past 2 requires lowering maxReplicas or raising
+        # max_connections everywhere it is set — a deliberate, separate change.
         - name: DB_POOL_SIZE
-          value: "10"
+          value: "12"
+        # Phase 27 / 27-04 — RabbitMQ listener tunables (jtoye.rabbit.*). Non-secret,
+        # so they live in app-config rather than a Secret. Injected under the exact
+        # uppercase names application.yml reads, which is what lets
+        # k8s/scripts/check-env-contract.sh direction (a) match them.
+        - name: JTOYE_RABBIT_DEFAULT_PREFETCH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbit.default.prefetch
+        - name: JTOYE_RABBIT_DEFAULT_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbit.default.concurrency
+        - name: JTOYE_RABBIT_MEDIA_PREFETCH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbit.media.prefetch
+        - name: JTOYE_RABBIT_MEDIA_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbit.media.concurrency
+        - name: JTOYE_RABBIT_MEDIA_MAX_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbit.media.max.concurrency
+        # Outbox flusher tunables — previously unreachable without an image rebuild.
+        - name: PAYMENT_OUTBOX_FLUSH_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: payment.outbox.flush.interval.ms
+        - name: PAYMENT_OUTBOX_RESURRECT_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: payment.outbox.resurrect.interval.ms
+        - name: PAYMENT_OUTBOX_BACKOFF_BASE_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: payment.outbox.backoff.base.ms
+        - name: PAYMENT_OUTBOX_BACKOFF_CAP_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: payment.outbox.backoff.cap.ms
+        - name: MEDIA_OUTBOX_FLUSH_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: media.outbox.flush.interval.ms
+        - name: MEDIA_OUTBOX_RESURRECT_INTERVAL_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: media.outbox.resurrect.interval.ms
+        - name: MEDIA_OUTBOX_BACKOFF_BASE_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: media.outbox.backoff.base.ms
+        - name: MEDIA_OUTBOX_BACKOFF_CAP_MS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: media.outbox.backoff.cap.ms
         - name: KC_ISSUER_URI
           valueFrom:
             configMapKeyRef:

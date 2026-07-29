@@ -1,286 +1,218 @@
-# Handoff: 27-01 MERGED to main · domain moved to olajay.co.uk (PR #317 open) · AKS deploy planned, not started
+# Handoff: 27-04 COMPLETE — AC-10 falsified, full suite green, runtime fresh
 
-**Generated:** 2026-07-27 ~22:30 BST. Supersedes the previous handoff (27-01 Task 6), whose content
-is now closed — 27-01 is merged.
+**Generated:** 2026-07-28 ~22:50 BST. Supersedes the "AC-10 not yet falsified" handoff.
+
+**Branch:** `feature/27-04-consumer-concurrency` @ `1c1aeaf` — clean, **0 behind** `origin/main`
+(merged `4774528`, no conflicts). Plan **27-04 is 8/8**.
 
 ---
 
-## 0. WHERE TO RESUME — three things, in this order
+## 0. WHERE TO RESUME
 
-1. **Review + merge PR #317** (`feature/domain-olajay`) — hostnames moved to `olajay.co.uk` AND a
-   real pre-existing defect fixed (staging was publishing production hostnames). All gates green.
-2. **Fix the two Trivy findings blocking `Build and Push Images (core-java)`** on `main` — see §4.
-   Frontend and edge-go images already publish fine.
-3. **The AKS deployment** — decided, scoped, deliberately NOT started. See §5. It is a multi-day
-   phase with a real gap, not a "create a cluster and apply" task.
+**Push and open the PR** (nothing is blocking it), then move to **27-03** (wave 3).
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-git switch feature/domain-olajay      # or: git switch main
-git fetch origin && bash scripts/check-branch-behind-base.sh   # expect rc=0
+git switch feature/27-04-consumer-concurrency
+git push -u origin feature/27-04-consumer-concurrency
 ```
+
+⚠ **`origin/main` is currently RED** and it is **not** caused by this branch — see §5.
 
 ---
 
-## 1. Git & environment
+## 1. What closed this session: AC-10
 
-| | |
+AC-10 is 27-04's load-bearing security proof (T-27-01, issue **#284**). It went from
+"written, green, and worthless" to falsified. Full record:
+`.planning/phases/27-operational-maturity/27-04-EVIDENCE.md`.
+
+### The defect in the test
+
+The previous handoff's leading hypothesis — that `ALTER ROLE … NOSUPERUSER` misses Hikari's
+established sessions, leaving the workers superuser and *bypassing* FORCE RLS — is **REFUTED**. The
+truth was the opposite, and more dangerous: **RLS was working, and its working is what hid the
+evidence.**
+
+`MediaProcessingWorker` returns *without throwing* when RLS hides its row
+(`reason=asset_not_visible`, a WARN and a `return`), so an isolation failure surfaces **only** as a
+row left `PENDING`. The terminal `stillPending` count ran on an **untransacted** connection with no
+tenant GUC — under the downgraded role `current_tenant_id()` is NULL, the policy filters every row,
+and the count is structurally 0. Measured with a probe placed right after the downgrade, when all 12
+seeded assets are provably PENDING and no worker has run:
+
+```
+[VACUITY PROBE: all 12 seeded assets are PENDING and no worker has run]
+expected: 12
+ but was: 0
+```
+
+**Fix:** read back through the tenant-pinned path, per tenant, carrying `status`. The probe is kept
+as a **permanent non-vacuity guard on the instrument** — it must SEE the PENDING rows before the
+test is allowed to conclude anything from their absence.
+
+### The arm matrix — all four run on the real tree
+
+| arm | `TenantContext` | explicit `set_config` | result |
+|---|---|---|---|
+| pass | correct | present | **GREEN** |
+| 1 — *the break the plan prescribes* | correct | **DELETED** | **GREEN** |
+| 2 | **wrong** | present | **RED** |
+| 3 | **wrong** | **DELETED** | **RED** |
+
+Both RED arms fail on the isolation assertion itself, naming all 6 of a tenant's assets.
+
+### Three claims this refutes — do not re-assert them
+
+1. **"Two independent tenant pins."** No. `TenantSetLocalAspect` re-pins from `TenantContext`
+   before every repository call, so it is the **last writer** and **overwrites** a correct explicit
+   pin with a wrong ThreadLocal (arm 2 RED). The pins are **ordered, not redundant**;
+   `TenantContext.set` is the single dominant control. `MediaProcessingWorker`'s javadoc asserted
+   the opposite and is corrected in `0a0b306`.
+2. **The plan's prescribed break arm** ("omit the `session.doWork` pin") is **vacuous** — measured
+   GREEN. Recorded, not silently substituted.
+3. **The plan's expected-RED prediction** that "assertion (b) fails independently" — it did **not**
+   fire in either RED arm. (b) checks `is_local` scoping, which is unaffected by *which* tenant is
+   pinned. Only assertion (a)'s status half fired.
+
+---
+
+## 2. Verification state — all real output, rc captured on its own line
+
+```
+docs-freshness                 rc=0        check-consumer-thread-budget   rc=0
+check-branch-behind-base       rc=0        check-connection-math          rc=0
+check-no-measured-placeholders rc=0        check-env-contract             rc=0
+check-runtime-freshness        rc=0        check-render-invariants        rc=0
+check-no-plaintext-secrets     rc=0        render-golden                  rc=0
+```
+
+| suite | result |
 |---|---|
-| Checkout | `/home/sanmi/IdeaProjects/JToye_OaaS_2026` |
-| Branch | **`feature/domain-olajay`** @ `0188d36` — clean, pushed, 0 behind `origin/main` |
-| `main` | `4da6e0f` — **27-01 MERGED** (PR #316) |
-| Local branches | `feature/domain-olajay`, `main` (27-00/27-01 branches deleted; merged by content) |
-| Open PR | **#317** domain move · plus **23 dependabot PRs** (#234–#259) untouched |
-| Stack | Compose up. `core-java` + `frontend` show **DRIFT** — explained in §3, not a defect to chase |
-| minikube `jtoye` | Stopped. Compose XOR k8s locally. |
-| Azure | default sub = **`Azure subscription 1`** `c483d353-…` (`admin@jtoyedigital.co.uk`) — **yours**. `Prod - HS2 Ltd` `8d1c4578-…` is the **employer's — DO NOT TOUCH** |
+| `:core-java:cleanTest test` | **116 classes / 832 tests / 0 fail / 0 err / 1 skip** (42s) |
+| `:core-java:cleanIntegrationTest integrationTest` | **104 classes / 416 tests / 0 fail / 0 err / 1 skip** (42m29s) |
 
-### Gate state at handoff (real output, on `feature/domain-olajay`)
+**This is the first end-to-end `integrationTest` run on this tree** — the previous handoff's open
+item. It also covers the three **major** dependency bumps the merge brought (spring-statemachine
+3.2.1→4.0.2, stripe-java 28.2.0→33.1.1, awssdk bom 2.47.6→2.49.2).
+
+Delta vs the recorded 102/414 T7 baseline is **+2 classes / +2 tests, and is explained**: exactly
+two `@Tag("testcontainers")` classes were added since `92fd370` —
+`MediaListenerConcurrencyIntegrationTest` and `MediaTenantIsolationUnderConcurrencyIntegrationTest`.
+`RabbitListenerContainerFactoryTest` is untagged and lands in the unit suite. Counts read from
+`core-java/build-local/` — **never** `core-java/build/`, which is a stale 2025-12-27 artifact
+reporting a false RED.
+
+### Runtime parity — proven by content, not status
+
+All 4 built services rebuilt and recreated, `check-runtime-freshness.sh` **rc=0, 0 unverified**.
+The merge made edge-go and frontend stale (`go.mod`, `package.json`) and the AC-10 javadoc made
+core-java stale; all three were rebuilt with `up -d --build`. Read out of the running artifact:
 
 ```
-docs-freshness              rc=0   (1818)
-check-branch-behind-base    rc=0
-check-render-invariants     rc=0
-check-env-contract          rc=0
-check-terminal-states       rc=1   <- X-3 only, 27-03 owns it. NOT a regression.
-check-alert-liveness        rc=1   <- correct until 27-03. NOT a regression.
-check-runtime-freshness     rc=1   <- see §3; both DRIFTs explained, neither is stale CODE
+inside /app/app.jar : media-prefetch: ${JTOYE_RABBIT_MEDIA_PREFETCH:2}
+                      media-concurrency: ${…:1}   media-max-concurrency: ${…:2}
+running broker      : media.process  consumers=1
+fresh container log : event=rabbit_factory_configured factory=media   configurerPresent=true prefetch=2   concurrency=1 maxConcurrency=2
+                      event=rabbit_factory_configured factory=default configurerPresent=true prefetch=250 concurrency=1 maxConcurrency=1
 ```
+
+Matches the recorded AC-2 PASS arm exactly.
 
 ---
 
-## 2. What shipped this session
+## 3. Acceptance criteria
 
-| PR | State | What |
-|---|---|---|
-| **#316** JToye | **MERGED** `4da6e0f` | Phase 27-01 media durability (V60) — a broker outage no longer destroys vendor uploads |
-| **#317** JToye | **OPEN** | hostnames → `olajay.co.uk` + staging-publishes-prod-hosts fix |
-| **#42** dotfiles | **MERGED** `9a30b0a` | wait-loop guard hooks |
-
-**27-01 Task 6** completed the phase: metrics `1765 → 1818` (hand-enumerated to match), full suite
-green (**unit 114 classes/820 tests, integration 102/414, jest 62/419**, all 0 failures), runtime
-parity proven against two real pre-27-01 images, terminal-states TS-07 corrected + TS-17 added.
-Full record: `.planning/phases/27-operational-maturity/27-01-SUMMARY.md` and
-`baselines/AC-6-TASK6-ARMS.md`.
-
-### Two defects found by process, not by tests
-
-1. **`npm run lint` was failing (rc=1)** with a `react-hooks/rules-of-hooks` ERROR introduced in
-   Task 5 — it would have failed CI's Lint job. Fixed in `38cfb3e` (29 problems/1 error → 28/0
-   errors; warnings unchanged at 28, nothing suppressed). **`npm run build` and jest both stay green
-   through this class — add `npm run lint` to per-task frontend verification.**
-2. **The staging overlay published production hostnames** — see §6.
+| proven both directions | pass direction only |
+|---|---|
+| AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, **AC-10**, AC-11, AC-12 | AC-3 (break arm Case B), AC-9 (break arms), AC-1 (set-wise assertion), AC-13 |
 
 ---
 
-## 3. The two runtime DRIFTs are explained — do not chase them
+## 4. What 27-04 delivered
 
-```
-core-java  DRIFT  image 20:22:54Z / newest build-input commit 4da6e0f (20:29:58Z)
-frontend   DRIFT  image 20:23:18Z / newest build-input commit 0188d36 (22:19:39Z)
-```
+The core fix: `RabbitMQConfig` declared a bean named `rabbitListenerContainerFactory`; Boot's factory
+is `@ConditionalOnMissingBean(name = …)`, so Boot backed off and
+`SimpleRabbitListenerContainerFactoryConfigurer` — the ONLY consumer of
+`spring.rabbitmq.listener.simple.*` — never ran. That whole family was a silent no-op, including the
+`auto-startup=false` that **22 test files** register.
 
-- **core-java** — `4da6e0f` is the **squash-merge commit** of 27-01. The repo squash-merges, so the
-  merge stamps a NEW commit time after the image was built. The image's *content* is the 27-01 code
-  (verified earlier by reading `quarantine-retention-ms` = 2 and 4 `reprocess` symbols from inside
-  the running jar). No code changed; only a timestamp moved.
-- **frontend** — `0188d36` is the domain commit, which touched `docker-compose.full-stack.yml` (a
-  frontend build path) to change a `NEXT_PUBLIC_SUPPORT_EMAIL` default.
+Shipped: `mediaConcurrency=1`, `mediaMaxConcurrency=2`, `mediaPrefetch=2`, `DB_POOL_SIZE 10→12`.
+Both budget walls independently land on 2.
 
-Both clear with `docker compose -f docker-compose.full-stack.yml up -d --build core-java frontend`.
-The gate is right by its own contract — record it, don't "fix" the gate.
+**Measurement findings that should shape future work** (artifacts in
+`infra/load-testing/baselines/2026-07-28-media-{A-baseline,B-candidate}.md`):
 
----
-
-## 4. `main` CI is RED on ONE job — and it is not from this session's code
-
-`CI/CD Pipeline` on `4da6e0f`: everything green except **`Build and Push Images (core-java)`**.
-Frontend and edge-go images **build and publish fine** (verified in the registry: newest
-`jtoye-frontend` version tagged `4da6e0f50f…`, `main`, `latest`).
-
-The core-java image **builds and pushes successfully**; the post-push **Trivy gate** fails on 2
-fixable findings — the `trap_trivy_daily_db_timebomb` pattern, unrelated to any code change here:
-
-| package | CVE | installed | fixed in | fix |
-|---|---|---|---|---|
-| `libexpat` | CVE-2026-56131 | 2.8.1-r0 | 2.8.2-r0 | Alpine pkg from `eclipse-temurin:21-jre-alpine` → refresh base image, or targeted `apk upgrade libexpat` in `core-java/Dockerfile` |
-| `commons-beanutils` | CVE-2025-48734 | 1.9.4 | 1.11.0 | **transitive** (not in `build.gradle.kts`) → add an explicit resolution constraint. Bump the EXACT flagged dep, not a broad upgrade |
-
-`Deploy to Staging/Production` stayed **skipped** (`DEPLOY_*_ENABLED` unset), so nothing shipped.
-
-**Also proven this session (issue #276):** the frontend leg failing **cancelled** the core-java and
-edge-go legs. `fail-fast: false` on that matrix would let the healthy images publish.
+1. **The pipeline is outbox-paced, not queue-paced** — `media.outbox.flush-interval-ms` is 5000, so
+   depth stayed 0 even under an 8-way burst. Depth 0 does NOT mean idle, and raising concurrency
+   cannot help without a backlog.
+2. **One consumer already saturates one core** (97.8% under a 1-CPU pin). prefetch 250→2 cost ~3%,
+   inside the run-to-run spread — the fairness fix is effectively free.
+3. **D-11 is REFUTED and this is recorded in `build.gradle.kts`.** The repair did NOT make
+   `forkEvery` removable — there were TWO causes and 27-04 fixed one. Post-fix the OOM lands on
+   `HttpClient-N-SelectorManager` + `idle-connection-reaper` (reactive WebClient + AWS SDK v2).
+   **Do not remove `forkEvery(4)` on the reasoning that the listener bug is fixed.**
 
 ---
 
-## 5. AKS deployment — DECIDED, SCOPED, NOT STARTED
+## 5. ⚠ `origin/main` is RED, and it is not this branch
 
-**Decision: provision AKS and use the repo's kustomize overlays as designed** (chosen over reusing
-the existing Container Apps, and over a hybrid).
+`CI/CD Pipeline` **failed on `main` @ `1500f22`** — job **Integration Tests (Testcontainers RLS)**,
+with Postgres containers refusing connections on every mapped port (`Connection to localhost:32771
+refused`, then 32772, 32773 …) and Hikari timing out at `total=0, active=0, idle=0`.
 
-### What already exists in YOUR Azure sub (`c483d353-…`, rg `jtoye-rg`, uksouth)
+**Evidence it is an infrastructure flake, not a code regression:** `1500f22` touched **only**
+`.github/dependabot.yml`. The three major dependency bumps landed *earlier* (`e9ae960`, `f8ab847`,
+`6c2f2c9`) and every one of those runs was **green**. The same suite is green locally on this branch
+at 104/416. A re-run of that workflow is the likely fix; do not chase a code cause first.
 
-A **live, running** earlier incarnation of this same product on **Azure Container Apps**:
-
-```
-snackpass-env            Microsoft.App/managedEnvironments
-snackpass-webapp         Running  public    ghcr.io/bralabee/snackpass-webapp:deploy
-snackpass-go-edge        Running  public    ghcr.io/bralabee/snackpass-go-edge:deploy
-snackpass-java-core      Running  internal  ghcr.io/bralabee/snackpass-java-core:deploy
-snackpass-redis          Running  internal  redis:7-alpine
-snackpass-minio          Running  public    minio/minio
-snackpass-python-vision  Running  internal
-snackpass-pg             Microsoft.DBforPostgreSQL/flexibleServers   <- MANAGED POSTGRES, reuse this
-jtoye-bootcamp           Microsoft.Web/staticSites
-```
-
-`java-core`/`go-edge`/`webapp` map exactly onto `core-java`/`edge-go`/`frontend`.
-
-### THE GAP — why this is a phase, not an afternoon
-
-**The repo deploys only 3 Deployments** (`core-java`, `edge-go`, `frontend`) and **expects** four
-dependencies it provides **no manifests for**:
-
-```
-keycloak.jtoye-infrastructure.svc.cluster.local
-rabbitmq.jtoye-infrastructure.svc.cluster.local
-redis-cluster.jtoye-infrastructure.svc.cluster.local
-+ Postgres (host supplied via secret)
-```
-
-There is **no `jtoye-infrastructure` namespace in this repo.** `kubectl apply -k k8s/production` on a
-fresh AKS would start three pods that immediately fail to reach anything. **Keycloak hosting is an
-unmade decision** — it is an external IdP, not deployed here, and Phase 26 deliberately removed a
-dangling `auth.*` ingress rule (production renders only `api.` and `app.`).
-
-### Prerequisites measured
-
-- `Microsoft.ContainerService` = **NotRegistered** on the subscription (free to register).
-- **8 Secrets / 25 keys** required before pods can start:
-  `postgres-credentials` (host, port, database, username, password, backup-username, backup-password) ·
-  `keycloak-credentials` (admin-username, admin-password, frontend-client-secret) ·
-  `rabbitmq-credentials` (username, password, stomp-login, stomp-passcode) ·
-  `stripe-credentials` (api-key, webhook-secret) · `s3-media-credentials` (access-key, secret-key) ·
-  `s3-backup-credentials` (access-key, secret-key) · `smtp-credentials` (username, password) ·
-  `redis-credentials` (password) · `nextauth-secret` (secret) ·
-  `notification-credentials` (unsubscribe-signing-secret).
-  Repo has only `k8s/base/secrets-template.yaml.example` + `k8s/scripts/seal-secrets.sh`.
-- `az vm list-usage -l uksouth` returned **empty** — vCPU quota UNVERIFIED. Check before sizing.
-
-### DNS — registered, delegated, NOT pointing anywhere
-
-`olajay.co.uk` NS = `dns1-4.p05.nsone.net` (**NS1**, not Azure DNS — records are made in NS1, not
-via `az network dns`). **No A records** exist for apex, `api.`, `app.`, `auth.` (verified by `dig`).
-
-Order matters: cluster → nginx ingress LB IP → **then** A records → **then** cert-manager HTTP-01
-can solve. Requesting a cert for a non-resolving host is the documented failure mode.
-
-### Suggested task order
-
-1. Register `Microsoft.ContainerService`; verify vCPU quota in uksouth; price the SKU.
-2. Decide Keycloak hosting (in-cluster vs Azure Container Apps vs managed) — **blocking**.
-3. Author the missing `jtoye-infrastructure` layer (Keycloak, RabbitMQ, Redis).
-4. Reuse `snackpass-pg` as the database; wire the 25 secret values via `seal-secrets.sh`.
-5. AKS → nginx ingress → cert-manager + `letsencrypt-prod` ClusterIssuer.
-6. NS1 A records → `api.`/`app.` (+ `-staging`) → LB IP.
-7. `kubectl apply -k k8s/production`, then verify in a real browser.
+(The same startup-race signature appeared briefly in the local run and Testcontainers retried
+through it — `scripts/fix-bridge-network.sh` / `fix-testcontainers-docker.sh` exist for this.)
 
 ---
 
-## 6. PR #317 — the domain move, and the defect it uncovered
+## 6. Traps confirmed this session
 
-Only **hostnames** moved (58 functional refs). **Identity untouched on purpose**: `uk.jtoye` Java
-packages (1801), Keycloak realms (713), DB/container `jtoye_` (682), image names (210).
-**Zero source files hardcode the domain** (core-java 0, edge-go 0, frontend 0) — the config-injection
-design meant no application change at all.
+- **RLS blinds the verification query.** Under a `NOSUPERUSER` downgrade an *unpinned* query returns
+  0 rows on a full table, so `assertThat(count).isZero()` is structurally satisfied and survives
+  every break arm. It fails in the *safe-looking* direction and breaking the production code does
+  not un-blind it. **Prove the instrument can SEE the rows before trusting its silence.**
+- **The tenant pin sits under a global aspect** — recorded from 27-01, and it **recurred here with
+  the plan prescribing the vacuous break**. New detail: the aspect does not merely supply a missing
+  pin, it *overwrites a correct one*.
+- A worker that **returns without throwing** on the failure path removes the test's only exception
+  signal — the row's state becomes the sole observable, so blinding one query kills the whole test.
+- Restores after a break arm were verified **by token** (`break_tokens=0`, the pin line present,
+  `dirty=0`), never by `git diff --stat`.
 
-**The defect:** `k8s/staging/kustomization.yaml` patched the ConfigMap and images but **not the
-Ingresses**, so staging rendered the **production** hostnames inside `jtoye-staging` — the two
-goldens were *identical* — while its ConfigMap claimed `app-staging.`/`api-staging.`, which nothing
-served. Consequences: CORS/CSP/OAuth computed from an unpublished host; staging and prod contending
-for the same names and one TLS SAN list; CI smoke-testing a third name.
-
-Fixed with two **JSON6902** patches (`k8s/staging/ingress-hosts-patch.yaml`,
-`sse-ingress-hosts-patch.yaml`) — **not** strategic-merge, because `IngressSpec.rules` has no
-`patchMergeKey` and a merge would silently drop every `http.paths` backend. Verified 3 `pathType`
-entries survive in both renders. Staging now has its own `jtoye-staging-tls`.
-
-**Deliberately unchanged:** `jtoye.co.uk/placeholder` and `/notes` in `50-observability.yaml` are
-Kubernetes **annotation key namespaces**, not hostnames (`check-render-invariants.sh` has an explicit
-exclusion for them). `.planning/**` and `docs/{archive,audit,reports}` are the historical record.
-
-**Follow-up not in the PR:** no invariant asserts "a non-production overlay must not publish
-production hostnames". Adding **INV-7** to the 1063-line `check-render-invariants.sh` deserves its
-own change with its own falsification against the pre-fix tree.
+Standing traps still live: `grep` is a bash function → `command grep` in scripts;
+`cleanTest`/`cleanIntegrationTest` are load-bearing (without them the task reports UP-TO-DATE while
+executing NOTHING); the repo squash-merges so ancestry lies; `docs/metrics.json` is a cross-branch
+conflict hotspot and `CLAUDE.md:15` + `AGENTS.md:15` quote the totals; a second session may share
+this checkout, so stage by explicit path and never `git add -A`; `git stash -u` is unsafe here
+(root-owned untracked paths under `infra/monitoring/`).
 
 ---
 
-## 7. CI variables — set, with a live obligation
+## 7. Carried forward (not 27-04)
 
-```
-FRONTEND_PUBLIC_API_URL                = https://api.olajay.co.uk
-FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL  = https://auth.olajay.co.uk/realms/jtoye-customers
-DEPLOY_ENABLED / DEPLOY_STAGING_ENABLED = UNSET  (verified 0 — nothing auto-deploys)
-```
-
-**⚠ The realm is a trap.** k8s only defines `jtoye-prod`, but that is the **staff/API** realm. The
-customer variable must use **`jtoye-customers`** (own export at
-`infra/keycloak/realm-export-customers.json`); `frontend/lib/customer-auth.ts` warns *"never fall
-back to jtoye-dev (staff realm)"*. Copying the k8s value would be a security-relevant error.
-
-**⚠ Do not set `DEPLOY_*_ENABLED` until DNS resolves.** These values are inlined by `next build` and
-cannot be corrected at runtime; deploying before DNS gives a pod that passes every readiness probe
-while the browser cannot reach the API.
-
----
-
-## 8. New this session: the wait-loop guard (global, already merged)
-
-Three abandoned `until ! pgrep -f "X"` shells were found alive after **~20 h** — `pgrep -f` matches
-full command lines, so each matched **itself** and could never exit. All three waited on the same
-gradle run; each was a retry of the last, because the failure is silent and looks exactly like
-"still running".
-
-Now blocked at source by `~/.claude/hooks/block-unbounded-waitloop.sh` (PreToolUse/Bash), with
-`reap-stale-shells.sh` for strays. Merged in dotfiles **PR #42**.
-
-**Practical note:** the guard will block a command that merely *quotes* the bad pattern inline
-(it blocked its own commit once). Heredoc bodies are exempt unless piped to a shell — to test it,
-put the payload in a file.
-
----
-
-## 9. Standing traps (carried forward, all still live)
-
-- **`grep` here is a bash function → ugrep.** Use `command grep` in scripts.
-- **`grep -c` returning 0 exits 1** — under `set -e` an expected-0 kills its own harness.
-- **`cmd | grep -q X` under `pipefail` INVERTS on match** (SIGPIPE→141). Use here-strings.
-- **Capture exit codes on the same line**: `out=$(cmd 2>&1); rc=$?`.
-- **`cleanTest`/`cleanIntegrationTest` are load-bearing** — proven again: `:core-java:test` twice
-  without them prints `UP-TO-DATE` + `BUILD SUCCESSFUL in 1s` while executing **zero** tests.
-- **Read counts from `core-java/build-local/test-results/`**, never `core-java/build/` (stale).
-- **`docs/metrics.json` is a cross-branch conflict hotspot** — `docs-freshness.sh --write` is the
-  arbiter; `CLAUDE.md:15` and `AGENTS.md:15` quote the totals and change in the SAME commit.
-- **The repo squash-merges**, so ancestry lies — verify merged-ness by content or PR state.
-- **eslint's last line is the FIXABLE count**, not the verdict — compare BOTH numbers.
-- **A second Claude session may share this checkout.** Stage by explicit path; `git add -A` unsafe.
-- **Do not add `Co-Authored-By` trailers.** Do not hand-run `state.record-session`.
-- **`git stash -u` is unsafe here** (root-owned untracked paths under `infra/monitoring/`) — use
-  `git worktree add --detach` for baselines.
-- **`frontend/e2e/media-review-320.spec.ts:23` documents port 3100; this stack serves 3000.**
-  Following the comment produces a false RED on a passing spec. Playwright specs also need
-  `E2E_VENDOR_PASSWORD` (from `.env` `KC_SEED_USER_PASSWORD`).
-
----
-
-## 10. Open, independent of the above
-
-- [ ] **23 dependabot PRs** (#234–#259) — triage, do not bulk-merge. Several majors violate the
-      pinned stack (Spring Boot 4.1.0, tailwind 4, eslint 10, testcontainers 2.0.5).
-- [ ] **#274** gitleaks allowlists inert · **#276** matrix `fail-fast: false` (now *proven*).
+- [ ] **Phase 27 remaining:** 27-03 (wave 3, depends on this plan — it rebases onto this
+      `RabbitMQConfig` signature and must replace its diff-scan T5.5 with the behavioural assertion
+      in `RabbitListenerContainerFactoryTest`), then 27-02 and 27-06 (wave 4).
+- [ ] **`main` is red** — see §5. Re-run the workflow.
+- [ ] **AKS deployment** — decided, scoped, NOT started. Blocking: Keycloak hosting decision; no
+      `jtoye-infrastructure` manifests in this repo; 25 secret keys; no DNS A records on
+      `olajay.co.uk` (NS1, not Azure DNS).
+- [ ] Dependabot PRs — triage, do not bulk-merge (several violate the pinned stack). Note the merge
+      already brought **three major bumps** onto this branch: spring-statemachine 4.0.2,
+      stripe-java 33.1.1, awssdk bom 2.49.2. `CLAUDE.md` still records "Stripe Java SDK 28.2.0" and
+      is now stale on that line.
 - [ ] **Evidence row L6** — a KDS client receiving a relayed order event through a real broker has
-      still never been captured. #266 fixed (`d964a85`) but unproven.
-- [ ] 6 open security + 7 code-review warnings from Phase 26 — `deferred-items.md`.
-- [ ] **Phase 27 remaining:** 27-02, 27-03 (owns the 4 X-3 runbook sections + the alert rules behind
-      `MediaStallFailures` / `MediaReaperSuspended`), 27-04, 27-06.
-- [ ] Wire jest-dom into `tsconfig.json` so AC-5.4's type-error count becomes a real gate.
+      still never been captured. #266 fixed but unproven.
+- [ ] #274 gitleaks allowlists inert; #276 matrix `fail-fast: false`.
+- [ ] Wire jest-dom into `tsconfig.json` so the type-error count becomes a real gate.
+
+## 8. Residue
+
+- Compose stack UP and healthy; all 4 built services FRESH and recreated from this tree.
+- No CPU pin is in place (this session set none).

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Guards the broker constraint behind #266 at its source.
@@ -54,5 +56,60 @@ class StompDestinationsTest {
         // A UUID is hex + '-', never '.', so the word indices above cannot drift with values.
         assertThat(TENANT.toString()).doesNotContain(StompDestinations.SEPARATOR);
         assertThat(SHOP.toString()).doesNotContain(StompDestinations.SEPARATOR);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // 27-04 T6 — the construction-time guard, both arms.
+    //
+    // The reject arm calls assertPublishable DIRECTLY, which is why that method is
+    // package-private. Driving only the public kitchen(UUID, UUID) API could never reach
+    // it: a UUID's toString() cannot contain '/', so the guard would be observed passing
+    // and never proven capable of failing — the exact vacuity this phase exists to catch.
+    // ---------------------------------------------------------------------------------
+
+    @Test
+    void assertPublishableAcceptsTheShapeTheBuilderProduces() {
+        String built = StompDestinations.kitchen(TENANT, SHOP);
+
+        assertThatCode(() -> StompDestinations.assertPublishable(built))
+                .as("the builder's own output must survive its own guard")
+                .doesNotThrowAnyException();
+        assertThat(StompDestinations.assertPublishable(built))
+                .as("the guard returns the destination so it can wrap the return expression")
+                .isEqualTo(built);
+    }
+
+    @Test
+    void assertPublishableRejectsASlashedRoutingKeyAndNamesIt() {
+        // This is the pre-#266 shape, verbatim: it is what the relay answered with
+        // "ERROR: Invalid destination" on the live broker.
+        String slashed = StompDestinations.TOPIC_PREFIX
+                + StompDestinations.KITCHEN_FEATURE + "/" + TENANT + "/" + SHOP;
+
+        assertThatThrownBy(() -> StompDestinations.assertPublishable(slashed))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("single dot-separated segment")
+                .as("the message must NAME the offending destination, or it cannot be acted on")
+                .hasMessageContaining(slashed);
+    }
+
+    @Test
+    void assertPublishableRejectsADestinationOutsideTheTopicPrefix() {
+        assertThatThrownBy(() -> StompDestinations.assertPublishable("/queue/kitchen.x"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(StompDestinations.TOPIC_PREFIX);
+    }
+
+    @Test
+    void rejectionWordingMatchesTheSubscribeSideWallVerbatim() {
+        // The publish-side guard and TenantChannelInterceptor's SUBSCRIBE-side rejection must
+        // stay worded identically, so an operator grepping logs for one finds the other. If
+        // someone reworders either, this fails and forces the pair to be updated together.
+        String slashed = StompDestinations.TOPIC_PREFIX + "kitchen/" + TENANT;
+
+        assertThatThrownBy(() -> StompDestinations.assertPublishable(slashed))
+                .hasMessageContaining(
+                        "Topic destinations must be a single dot-separated segment; "
+                                + "'/' is not a valid routing-key character: ");
     }
 }

@@ -36,6 +36,32 @@ import java.util.UUID;
  * BEFORE any read/write of {@code media_asset}/{@code product_media}, and clears the
  * ThreadLocal in a {@code finally}.
  *
+ * <p><b>That pin is now exercised CONCURRENTLY (27-04), and it is safe by construction —
+ * recorded because the conclusion is not self-evident (#284, T-27-01).</b> This listener runs on
+ * its own {@code mediaRabbitListenerContainerFactory}, which may run up to
+ * {@code jtoye.rabbit.media-max-concurrency} consumers in ONE JVM. Three facts make that safe,
+ * and all three must hold: (1) {@code TenantContext} is a {@code ThreadLocal}, so N consumer
+ * threads hold N independent values; (2) each {@code @Transactional} invocation binds its own
+ * {@code EntityManager} and therefore its own pooled connection, so the {@code session.doWork}
+ * below pins THAT connection only; (3) the pin uses {@code set_config(..., true)} — {@code
+ * is_local = true}, i.e. TRANSACTION-scoped — so the value is discarded at commit and cannot
+ * ride a recycled Hikari connection into another tenant's thread. Raising concurrency therefore
+ * multiplies independent instances of a safe pattern rather than creating a shared one.
+ * <b>The residual risk is a future edit weakening or removing a pin</b>: before 27-04 that would
+ * leak on one thread, after it on N.
+ *
+ * <p><b>Which pin actually carries that risk was MEASURED, and it is not the one below (27-04
+ * AC-10).</b> {@link uk.jtoye.core.security.TenantSetLocalAspect} re-pins the GUC from
+ * {@link TenantContext} before every repository call, so the aspect — not this method — is the
+ * last writer before the claim query. {@code MediaTenantIsolationUnderConcurrencyIntegrationTest}
+ * ran all four arms: deleting the {@code session.doWork} pin below while {@code TenantContext} is
+ * correct leaves the suite GREEN (the aspect re-establishes it), whereas a wrong
+ * {@code TenantContext} goes RED <em>even with the explicit pin intact</em> (the aspect overwrites
+ * it). <b>{@code TenantContext.set} on the first line is therefore the dominant control and the
+ * test's break arm</b>; the explicit {@code set_config} is defence-in-depth against a future
+ * change to the aspect's applicability, not an independent second wall today. Do not read the two
+ * as redundant — they are ordered, and the aspect wins.
+ *
  * <p><b>Idempotent redelivery:</b> the DB is the source of truth (no {@code processed_*}
  * table). The worker re-reads the asset by id and SKIPs if it is no longer
  * {@code PENDING} — a redelivered event on an already-ACTIVE/FAILED asset is a no-op.
@@ -101,6 +127,7 @@ public class MediaProcessingWorker {
     private final ImageAnalysisService imageAnalysisService;
     private final MediaProperties mediaProperties;
     private final EntityManager entityManager;
+    private final MediaProcessingMetrics metrics;
 
     public MediaProcessingWorker(MediaAssetRepository mediaAssetRepository,
                                  MediaAssetService mediaAssetService,
@@ -108,7 +135,8 @@ public class MediaProcessingWorker {
                                  StorageService storageService,
                                  ImageAnalysisService imageAnalysisService,
                                  MediaProperties mediaProperties,
-                                 EntityManager entityManager) {
+                                 EntityManager entityManager,
+                                 MediaProcessingMetrics metrics) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.mediaAssetService = mediaAssetService;
         this.mediaNormalizer = mediaNormalizer;
@@ -116,9 +144,11 @@ public class MediaProcessingWorker {
         this.imageAnalysisService = imageAnalysisService;
         this.mediaProperties = mediaProperties;
         this.entityManager = entityManager;
+        this.metrics = metrics;
     }
 
-    @RabbitListener(queues = RabbitMQConfig.MEDIA_EVENTS_QUEUE)
+    @RabbitListener(queues = RabbitMQConfig.MEDIA_EVENTS_QUEUE,
+                    containerFactory = "mediaRabbitListenerContainerFactory")
     @Transactional
     public void onMediaEvent(MediaProcessingEvent event) {
         // Tenant context FIRST — ThreadLocal AND DB session GUC. The worker runs off the
@@ -141,6 +171,13 @@ public class MediaProcessingWorker {
             }
         });
 
+        // 27-04 T1: the sample starts HERE, after the GUC pin, because the pin is the worker's own
+        // setup (connection acquisition + two round trips) rather than image-processing service
+        // time; folding it in would blend Hikari contention into the latency budget this timer
+        // exists to express. It stops in the finally below, so every exit path is recorded exactly
+        // once — including the two skips and an exception on its way to the retry advice.
+        long startNanos = System.nanoTime();
+        String outcome = "skipped";
         try {
             // D-04 CLAIM: SELECT ... FOR UPDATE, not a plain findById. See the class javadoc.
             MediaAsset asset = mediaAssetRepository.lockForProcessing(event.assetId()).orElse(null);
@@ -156,7 +193,16 @@ public class MediaProcessingWorker {
                 return;
             }
             process(asset);
+            outcome = asset.getStatus() == MediaAsset.Status.FAILED ? "failed" : "active";
+        } catch (RuntimeException e) {
+            // An escaped exception (e.g. the D-04a 55P03 lock timeout) is on its way to the retry
+            // advice and then media.process.dlq. Rethrown UNCHANGED — this catch only attributes
+            // the sample, because leaving it tagged `skipped` would hide dead-lettering work
+            // inside the no-op bucket, which is the one bucket nobody investigates.
+            outcome = "failed";
+            throw e;
         } finally {
+            metrics.record(outcome, System.nanoTime() - startNanos);
             TenantContext.clear();
         }
     }
