@@ -537,6 +537,7 @@ everywhere:
 | **`scripts/check-terminal-states.sh`** | **`ops-contracts`** | Every terminal failure state — DLQ, poison-outbox migration, terminal `FAILED` enum constant, scrape job — has a register row, a named alert and a runbook section. A new DLQ constant with no register row fails the build. Plan 27-00, finding F-9. |
 | **`scripts/check-dependency-horizons.sh`** | **`ops-contracts`** | Every pinned image and toolchain carries a live support horizon. Past horizon, inside the 90-day warn window, stale cache, wrong slug, catalogue-vs-vendor conflict, manifest↔source drift either way, or a lapsed `manual_review` all fail. Plan 27-00, finding F-6. |
 | **`scripts/check-alert-rules.sh`** | **`ops-contracts`** | `promtool check rules`, plus every live rule carrying its labels and annotations and having a `## <AlertName>` runbook heading. Plan 27-03, finding F-8: *"there is no CI validation of `alerts.yml` at all"*. |
+| **`scripts/check-doc-citations.sh`** | **`ops-contracts`** | Every `` `file:line` `` citation in a **live** doc resolves to a line that says what the doc claims. Measured before it existed: **1 of 11** STACK.md dependency citations was still correct, and 12 more used a bare `build.gradle.kts` that resolves to the 22-line **root** file rather than core-java's. `check-doc-versions.sh` cannot see this — it compares version *strings* and has no notion of where a claim points. Scans live-claim docs only (override with `CITATION_DOCS`); historical records under `.planning/phases/**` are excluded by design, since validating them would force a choice between a red gate and rewriting the record. |
 
 Run the whole static set locally before pushing:
 
@@ -550,6 +551,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
   && bash scripts/check-terminal-states.sh \
   && bash scripts/check-dependency-horizons.sh \
   && bash scripts/check-alert-rules.sh \
+  && bash scripts/check-doc-citations.sh \
   && echo ALL_STATIC_GATES_GREEN
 ```
 

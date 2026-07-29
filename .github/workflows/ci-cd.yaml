@@ -504,6 +504,14 @@ jobs:
   #      `## <AlertName>` section in docs/runbooks/alerts.md. THIS GATE WAS ORPHANED:
   #      27-03 dropped CI wiring to its brief, 27-00 never picked it up, and each
   #      believed the other owned it. It is wired here.
+  #   4. check-doc-citations.sh — every `file:line` citation in a LIVE doc resolves to
+  #      a line that says what the doc claims. Measured before it existed: of 11
+  #      dependency citations in STACK.md exactly ONE was still correct, and 12 more
+  #      used a bare `build.gradle.kts` that resolves to the 22-line ROOT file rather
+  #      than core-java's. check-doc-versions.sh cannot see this — it compares version
+  #      STRINGS and has no notion of where a claim points. Scans live-claim docs only;
+  #      historical records under .planning/phases/** are deliberately excluded, since
+  #      validating them would force a choice between a red gate and rewriting the record.
   #
   # EXIT CONVENTION, shared by all three: 0 = clean · 1 = violation · 2 = VOID.
   # **EXIT 2 FAILS THIS JOB.** A missing tool, an unreachable endoflife.date, an absent
@@ -568,6 +576,11 @@ jobs:
         run: |
           chmod +x ./scripts/check-alert-rules.sh
           ./scripts/check-alert-rules.sh
+
+      - name: Assert every doc citation resolves to what it claims
+        run: |
+          chmod +x ./scripts/check-doc-citations.sh
+          ./scripts/check-doc-citations.sh
 
   # Job 2: Security scanning
   security-scan:
