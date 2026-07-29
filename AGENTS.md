@@ -79,7 +79,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Framer Motion 12.42.2 - Animation library
 - Recharts 3.10.0 - Charts and data visualization
 - Redis 7 - Session and cache store
-- RabbitMQ 3.12 - Message queue (AMQP)
+- RabbitMQ 4.3.4 - Message queue (AMQP)
 - Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
 - MinIO (latest) - S3-compatible object storage for images
 - Ollama (latest) - Local LLM for image analysis
@@ -124,7 +124,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Docker container runtime
 - PostgreSQL 15+ database
 - Redis 7+ (external or managed service)
-- RabbitMQ 3.12+ (external or managed service)
+- RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.4). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 - Keycloak 24.0+ (external identity provider)
 - AWS S3 (or S3-compatible storage like MinIO)
 - SMTP server (SendGrid, AWS SES, etc.)
@@ -132,7 +132,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine
-- RabbitMQ: 3.12-management-alpine
+- RabbitMQ: 4.3.4-management-alpine
 - MinIO: latest
 - Go: 1.25-alpine
 - Node.js: 20+

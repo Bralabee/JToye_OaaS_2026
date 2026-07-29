@@ -1988,3 +1988,63 @@ either** — plan 26-09 owns that, and A3 is now an input to it.
 - `k8s/base/networkpolicies/README.md` — policy flow matrix, verification and rollback.
 - `docs/runbooks/backups.md` — backup mechanics, verification and the restore procedures §9 references.
 - `.env.example` — every `K8S_LOCAL_*` key with its consumer and provenance.
+
+#### 2026-07-29 — re-validated on RabbitMQ 4.3.4 (compose medium, Phase 27 / plan 27-02)
+
+The block above is a **dated measurement taken on the minikube medium against RabbitMQ 3.12.14** and
+is left byte-intact. This subsection appends the re-validation after the broker moved to **4.3.4**;
+it does not replace it. **Medium: docker-compose** (`docker-compose.full-stack.yml`), not minikube.
+
+**The `user` info key is still rejected on 4.3.4** — so the recipe above did not rot:
+
+```
+$ docker exec jtoye-rabbitmq rabbitmqctl list_stomp_connections user
+Usage
+rabbitmqctl [--node <node>] [--longnames] [--quiet] list_stomp_connections [<column> ...]
+   (rc=64)
+```
+
+**The working recipe, re-run on 4.3.4:**
+
+```
+$ docker exec jtoye-rabbitmq rabbitmqctl list_stomp_connections conn_name auth_login protocol
+Listing STOMP connections ...
+conn_name                              auth_login  protocol
+172.18.0.1:46902 -> 172.18.0.7:61613   jtoye       {'STOMP', 0}
+```
+
+and the management API view, which unlike `list_connections` does carry non-AMQP protocols:
+
+```
+STOMP connections: 1
+  user=jtoye protocol=STOMP 1.2
+NON-VACUITY control — connections matching startswith("MQTT"): 0
+```
+
+**The CONNECTED frame, delivered to a raw STOMP client on the compose medium**, naming the broker
+version directly:
+
+```
+CONNECTED
+server:RabbitMQ/4.3.4
+session:session-TGRQefHT4nOsaFLhMUB30w
+version:1.2
+```
+
+**The single-segment `/topic` constraint (#266 / #269) is UNCHANGED by 4.3 and still load-bearing.**
+Two arms, same broker, same port, same credentials:
+
+| Destination | Result |
+|---|---|
+| `/topic/kitchen.aaa.bbb` (dotted, one segment) | `RECEIPT receipt-id:rA` |
+| `/topic/kitchen/aaa/bbb` (slashed, multi-segment) | `ERROR — '/kitchen/aaa/bbb' is not a valid topic destination` |
+
+The dotted arm is load-bearing: it proves the credentials and the listener are healthy, so the
+slashed arm's failure isolates to the destination **shape** alone.
+
+> **Known expiry (PIT-1).** This recipe depends on `?INFO_ITEMS` in
+> `deps/rabbitmq_stomp/include/rabbit_stomp.hrl`, which on the `v4.3.x` release branch is
+> byte-identical to `v3.12.x` and contains no `user` key. Unreleased `main` **adds**
+> `user`/`name`/`connected_at`. So this recipe has a known expiry at the next major: when
+> `list_stomp_connections user` starts succeeding, this section — not the 3.12 block above — is the
+> one to rewrite.

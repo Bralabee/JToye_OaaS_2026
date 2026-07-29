@@ -60,8 +60,8 @@
 
 ## Message Queue
 
-**RabbitMQ 3.12 (AMQP + STOMP):**
-- Image: `rabbitmq:3.12-management-alpine` (`docker-compose.full-stack.yml:88`)
+**RabbitMQ 4.3.4 (AMQP + STOMP):**
+- Image: `rabbitmq:4.3.4-management-alpine` (`docker-compose.full-stack.yml:149`)
 - Plugins enabled (`infra/rabbitmq/enabled_plugins`):
   - `rabbitmq_management` + `rabbitmq_management_agent` — port 15672 UI
   - `rabbitmq_prometheus` — metrics scrape target

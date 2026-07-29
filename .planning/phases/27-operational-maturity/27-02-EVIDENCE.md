@@ -569,3 +569,92 @@ is no longer past horizon, so keeping it would itself be a violation. Today (202
 from the 4.3 horizon, outside `HORIZON_WARN_DAYS=90`, so the row passes on its merits. It goes AMBER
 ~2026-09-01 and RED on 2026-12-01 **with no commit in between** — stated in the manifest header
 before it happens, and intended.
+
+---
+
+## Task 7 — operator action, ADR follow-through, doc reconciliation
+
+### New artifact — `docs/runbooks/rabbitmq-broker-upgrade.md`
+
+Carries the 3.12 → **3.13** → 4.2 → 4.3 chain with the "enable all stable feature flags **before**
+each hop" gate, the mirroring-policy precondition (checked by `ha-*` policy count, because the
+command the plan named does not exist on 3.12 — D1), the OTP-27 requirement, the explicit statement
+that compose took the **fresh-install** path and that this is **not** available for a broker holding
+real messages, and the D-11 rollback verbatim including the `hostname:` requirement and the PIT-12
+explanation that *a restore verified by health check is not verified*.
+
+`3.13` appears 3× (the artifact contract), and `it(`/`test(` literals are **0** (PIT-8). The file is
+allowlisted from AC-2/AC-12 and **says so, with the reason**, in its own header — a rule that forbids
+the string it must carry is the vacuous shape D-H.2 names.
+
+It also documents the two D6 behaviours and the D7 deprecation, so the next operator meets them as
+documentation rather than as a false abort.
+
+### ADR-0002 — dated open question appended, Status untouched
+
+`## 2026-07-29 — Open question (Phase 27, plan 27-02)`: the staging/production broker has no manifest
+in this repo, its version is unknowable from this checkout, `check-runtime-freshness.sh` structurally
+cannot see it, and the cluster-operator option proposed 2026-07-12 is still unsigned. Links the
+runbook and the `rabbitmq-k8s` horizon row whose `manual_review` **expires 2026-10-26** — the expiry
+is what turns a note nobody reads into a finding that fires by itself. **Status deliberately
+unchanged**: that needs owner sign-off, not an agent.
+
+### AC-12 — 17 → 0, with dated records provably untouched
+
+All 8 in-scope files reconciled; `git diff --stat` is exactly **17 insertions / 17 deletions**,
+matching the 17 measured hits. Two edit classes, kept distinct:
+
+- **dev/compose pins → `4.3.4`** (11 hits), including two ASCII architecture boxes edited
+  **width-preserving** so the borders still line up;
+- **external-broker minimums → the honest form** (4 hits: `CLAUDE.md`, `AGENTS.md`, `STACK.md`,
+  `k8s/DEPLOYMENT.md`): *"RabbitMQ **3.13+** minimum (4.3 recommended…). The deployed
+  staging/production broker's version is **unverified from this repository**."* Writing "4.3+" would
+  assert something about a broker D-08 says we cannot observe. 3.13 is the real floor because it is
+  the only version from which a 4.x upgrade is possible.
+
+Stale pointer `docker-compose.full-stack.yml:88` → **`:149`** fixed in `STACK.md` and
+`INTEGRATIONS.md` (149, not the plan's 144 — this plan's own compose comments moved the line).
+
+`git diff --stat` over `.planning/phases .planning/milestones docs/analysis
+docs/architecture/decisions docs/planning k8s/PRODUCTION_READINESS_REPORT.md` shows **only** the
+ADR-0002 append this plan legitimately owns. Nothing dated was rewritten.
+
+### `k8s/LOCAL.md` — appended, and the 26-08 block proven byte-intact
+
+New dated subsection for the **compose** medium (the 26-08 block was minikube, and its medium is
+named rather than blurred): the fresh `user` rejection, the fresh working `auth_login` recipe, the
+`server:RabbitMQ/4.3.4` CONNECTED frame delivered to a real client, the two-arm #266/#269 table, and
+the PIT-1 known-expiry note. **Verified byte-intact** by diffing lines 1381–1440 before and after:
+identical.
+
+### AC-2 — 0, with all three break arms executed
+
+| Arm | hits |
+|---|---|
+| PASS, under **both** ugrep and GNU grep | **0** |
+| BREAK 1 — pin restored to the compose file | **1**, naming `docker-compose.full-stack.yml:149` |
+| BREAK 2 — a **new untracked** `zz-ac2-probe.yml` | **1** — discovery is broad, not an allowlist |
+| BREAK 3 — same pin inside an **excluded** dated record | **0** — the exclusion holds and does not leak |
+| final | **0** |
+
+`infra/rabbitmq/enabled_plugins` unchanged (D-06), `docs/metrics.json` unchanged (0 test blocks
+added or removed).
+
+### Final gate state
+
+| Gate | rc |
+|---|---|
+| `docs-freshness.sh` | **0** (1832) |
+| `check-branch-behind-base.sh` | **0** — 5 ahead, **0 behind** `origin/main` |
+| `check-dependency-horizons.sh` | **0** |
+| `render-golden.sh` | **0**, both `OK` lines |
+| `check-runtime-freshness.sh` | **0** — 4/4 FRESH, 0 unverified |
+
+**The runtime-parity gate FAILED first, and that is the point.** After committing the T5 test fix it
+reported `core-java DRIFT [image-not-rebuilt]` — the image was tagged 09:07:40 UTC while the newest
+build-input commit was 11:34:14 UTC, and `COPY core-java/src core-java/src` puts test sources in the
+image's build inputs. Resolved by `up -d --build core-java` (not `start`/`restart`, neither of which
+builds or replaces a container holding an older image ID), then re-verified: **4/4 FRESH**. Parity
+confirmed by **content**, reading `application.yml` out of the running `app.jar` rather than the
+filesystem, and the rebuilt jar re-declared the topology against 4.3.4: 13 queues / 0 quorum / 1 SSE
+/ 1 replica.
