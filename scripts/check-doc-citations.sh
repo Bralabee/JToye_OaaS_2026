@@ -98,10 +98,29 @@ tokens_for() {
   local stripped
   stripped="$(printf '%s' "$line" | sed -E 's/`[^`]*:[0-9]+([,-][0-9]+)*`//g')"
   if [ "$mode" = strong ]; then
-    {
-      printf '%s' "$stripped" | grep -oE '`[^`]+`' 2>/dev/null | tr -d '`'
-      printf '%s' "$stripped" | grep -oE '[A-Za-z0-9_]+[-.:][A-Za-z0-9_.:-]+' 2>/dev/null
-    } | sed -E 's/[[:punct:]]+$//' | awk 'length($0) >= 4' | sort -u
+    # BACKTICKED IDENTIFIERS WIN OUTRIGHT when the claim has any. A backticked span
+    # is the author explicitly naming the thing; prose around it is not. Deriving
+    # tokens from prose as well produced a FALSE VIOLATION on a CORRECT citation:
+    # "Spring WebFlux - Non-blocking WebClient for Claude/Ollama AI calls" yielded
+    # `Non-blocking` and `Claude/Ollama`, neither of which appears on the
+    # spring-boot-starter-webflux line it correctly cited. Prose is only consulted
+    # when the claim backticks nothing at all.
+    local ticked
+    ticked="$(printf '%s' "$stripped" | grep -oE '`[^`]+`' 2>/dev/null | tr -d '`')"
+    if [ -n "$ticked" ]; then
+      {
+        printf '%s\n' "$ticked"
+        # …and its whitespace-separated parts. A span like `POST /api/v1/webhooks/whatsapp`
+        # never appears verbatim in source (there it reads r.POST("/api/v1/…")), so
+        # matching only the whole span was itself a false-violation source.
+        # split on '=' too: `DOCKER_API_VERSION=1.45` is a standard doc idiom whose
+        # KEY is the identifier, while source reads environment("DOCKER_API_VERSION", "1.45").
+        printf '%s\n' "$ticked" | tr ' =' '\n\n'
+      } | sed -E 's/[[:punct:]]+$//' | awk 'length($0) >= 4' | sort -u
+    else
+      printf '%s' "$stripped" | grep -oE '[A-Za-z0-9_]+[-.:/][A-Za-z0-9_.:/-]+' 2>/dev/null \
+        | sed -E 's/[[:punct:]]+$//' | awk 'length($0) >= 4' | sort -u
+    fi
   else
     printf '%s' "$stripped" | grep -oE '[A-Za-z][A-Za-z0-9]{3,}' 2>/dev/null \
       | awk 'length($0) >= 4' | sort -u
