@@ -96,7 +96,7 @@
 **Critical (Backend):**
 - PostgreSQL JDBC 42.7.13 (`build.gradle.kts:70`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
-- AWS SDK v2 BOM 2.49.2 + `software.amazon.awssdk:s3` (`build.gradle.kts:45-46`)
+- AWS SDK v2 BOM 2.49.5 + `software.amazon.awssdk:s3` (`build.gradle.kts:45-46`)
 - Stripe Java SDK 33.1.1 (`build.gradle.kts:60`)
 - OpenPDF 2.0.3 - Allergen label PDF generation (`build.gradle.kts:63`)
 - JasperReports 6.21.3 - Reporting (`build.gradle.kts:67`)
