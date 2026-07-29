@@ -51,6 +51,33 @@ updates:
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # eslint 10 is BLOCKED UPSTREAM, not deferred by preference. Measured 2026-07-29
+      # on PR #330 (eslint 9.39.4 -> 10.8.0):
+      #
+      #   TypeError: Error while loading rule 'react/display-name':
+      #             contextOrFilename.getFilename is not a function
+      #     at resolveBasedir (eslint-plugin-react/lib/util/version.js:31)
+      #
+      # eslint 10 removed `context.getFilename()`; eslint-plugin-react still calls it.
+      # There is no version to bump TO:
+      #   - eslint-plugin-react latest published  = 7.37.5 (what we resolve to)
+      #   - its peer range                        = ^3 || ... || ^8 || ^9.7   <- no 10
+      #   - its only dist-tag besides latest      = next -> 7.8.0-rc.0, an OLDER line
+      #   - eslint-config-next@latest             = 16.2.12, peer eslint >=9.0.0,
+      #                                             depends on eslint-plugin-react ^7.37.0
+      # so the plugin arrives transitively and cannot be forward-bumped or overridden to
+      # anything that supports eslint 10.
+      #
+      # The only way to make eslint 10 lint clean today is to drop the react/* ruleset,
+      # which trades away working coverage for a version number. Not doing that.
+      #
+      # REMOVE THIS IGNORE when eslint-plugin-react publishes a release whose peer range
+      # includes eslint 10. One command decides it:
+      #     npm view eslint-plugin-react peerDependencies.eslint
+      # If the output contains `^10`, delete this block and let the bump through.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   # --- Container base images (Docker) ---
   - package-ecosystem: "docker"
