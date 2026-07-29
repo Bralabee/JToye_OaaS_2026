@@ -57,7 +57,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.49.2"))
+    implementation(platform("software.amazon.awssdk:bom:2.49.5"))
     implementation("software.amazon.awssdk:s3")
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
@@ -65,8 +65,8 @@ dependencies {
     // WebP derivative/thumbnail by delegating to a `cwebp` binary (bundled on
     // glibc hosts; the musl runtime image overrides to the system cwebp via
     // -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin — see Dockerfile).
-    implementation("com.sksamuel.scrimage:scrimage-core:4.6.6")
-    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.6")
+    implementation("com.sksamuel.scrimage:scrimage-core:4.6.7")
+    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.7")
     // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
     // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.14.0")
