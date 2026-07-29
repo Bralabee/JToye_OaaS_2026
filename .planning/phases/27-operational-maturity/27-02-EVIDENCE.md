@@ -173,3 +173,98 @@ plugin rows — `awk '/^\[/{print $2}'` — applied **identically to both sides*
 
 `.evidence/before/listeners-protos.txt` needed no correction: `grep -oE 'protocol: [a-z/]+'`
 already yields exactly the 5 protocol rows.
+
+---
+
+## Task 2 — the volume snapshot: the only way back from 4.3.4
+
+No repo edits (confirmed: `git status --porcelain` empty; compose line 144 still reads
+`rabbitmq:3.12-management-alpine` and `hostname: jtoye-rabbitmq` count is **0** — the pin correctly
+stays out until Task 4, per D-L).
+
+### Steps 1–2 — identity and depth
+
+| Item | Value | Cross-check |
+|---|---|---|
+| `SNAP_NODE_HOST` | `53955960a605` | read from `docker inspect`, **not** `exec` (the container is about to stop); agrees with Task 1's `rabbit@53955960a605` |
+| `SNAP_DEPTH` | `9` | live read |
+| `ARCHIVED_N` | `9` | 27-03-EVIDENCE.md §11, `jq '.messages\|length'` |
+
+**`SNAP_DEPTH == ARCHIVED_N`, and that is a finding, not bookkeeping.** Zero new dead letters have
+arrived since 27-03 archived (newest death `2026-07-26T15:33:51Z`, previously arriving at ~5/day).
+**27-05's converter fix is holding.** This is exactly the condition D-I wanted established before a
+human is asked to choose replay-vs-discard: the pipeline is fixed and the arrival rate is zero, so
+the decision is about a working consumer rather than one still emitting.
+
+### 27-03's archive file is GONE; its characterisation survives
+
+The archive was written to a **session-scratchpad** path, and that session's scratchpad no longer
+exists — `find` over `/tmp` and `/` returns nothing. `27-03-EVIDENCE.md` is also not on this branch
+(it is unmerged on `feature/27-03-alerting-dlq-runbook`), so it was read via
+`git show feature/27-03-alerting-dlq-runbook:…`.
+
+The **characterisation** is preserved there in full (§11) and is what Task 3's checkpoint needs. The
+raw payloads are not, so Task 3 re-exports them before the purge — D-02a's export is non-destructive
+(`ackmode: ack_requeue_true`), so this costs nothing and restores the artifact the purge decision is
+supposed to be made against.
+
+### Steps 3–5 — the snapshot, and a guard that was wrong on a correct tree
+
+Broker stopped for the tar (a live Mnesia directory is not consistent under `tar`), the whole run
+wrapped in `trap resurrect EXIT INT TERM` so an abandoned or crashed run cannot leave the shared
+stack brokerless. **The trap fired for real** on the VOID below and brought the broker back.
+
+| Artifact | Value |
+|---|---|
+| `SNAP` | `rabbitmq_data-3.12.14-20260729T110815Z.tar.gz` |
+| sidecars | `.node-host` = `53955960a605`, `.depth` = `9` |
+| entries under `mnesia/` | 487 |
+| live `rabbit@53955960a605/` entries | 60 |
+| base node dirs | **10** — 9 orphaned + 1 live, exactly as B4/D-11 predicted |
+
+### D5 — the snapshot size guard is miscalibrated and fires on a correct tree
+
+The plan asserts `bytes=$(stat -c%s …) -gt 100000` with the comment `~2.3M expected`. Measured:
+
+| | |
+|---|---|
+| volume on disk (uncompressed) | **2.3M** |
+| tarball, gzip-compressed | **67836 bytes** |
+| uncompressed size of the archive stream (`gzip -l`) | **1207808** |
+
+The check reads the size of a `.tar.**gz**` but its expectation is the **uncompressed** volume size.
+Mnesia compresses ~17:1, so a complete, correct snapshot fails the guard. It VOIDed the run on a
+perfectly good artifact — the "expected value that is wrong on a correct tree" shape, and the same
+class as the criteria this phase was built to catch.
+
+**Replaced with the content assertion the size was a proxy for**, plus an uncompressed-size floor:
+
+| Arm | Result |
+|---|---|
+| PASS — `gzip -l` uncompressed `1207808 > 1000000` | ✅ |
+| PASS — live node dir present, 60 entries | ✅ |
+| **BREAK A** — same check with `rabbit@deadbeefdead` | **0** → the `>= 1` is discriminating, not vacuous |
+| **BREAK B** — empty tarball through the corrected guard | uncompressed `10240` → **rejected** |
+
+Break B is the one that matters: it shows the corrected guard still catches the failure the original
+was aiming at, while no longer rejecting the real artifact.
+
+### Step 5 — restart by `start`, asserted by count
+
+`docker compose start rabbitmq` (**not** `up --force-recreate` — this is the one place in the plan
+where `start` is correct, since no image has changed and a recreate would mint a new container id,
+orphan the live node dir and boot empty).
+
+| Assertion | Result |
+|---|---|
+| DLQ depth after restart | **9** == `SNAP_DEPTH` ✅ |
+| `Config.Hostname` | `53955960a605` == `SNAP_NODE_HOST` ✅ |
+| `node()` | `rabbit@53955960a605` ✅ |
+
+Proven by **count**, never by health — PIT-12: a node whose data dir does not match its hostname
+boots empty, healthy, and on the right version.
+
+**Counting note for AC-4.** `rabbitmqctl list_queues … --quiet | wc -l` returns **14**, because
+`--quiet` suppresses the *banner* but not the *column header*. The real census is 13 / 1 SSE / 1
+replica, unchanged. AC-4 should count from the management API's JSON (`jq length`), not from a
+`wc -l` over CLI output.
