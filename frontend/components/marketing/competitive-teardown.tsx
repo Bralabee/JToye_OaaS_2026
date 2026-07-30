@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { m, MotionConfig } from "framer-motion"
+import { X } from "lucide-react"
 import { TEARDOWN_CHART } from "@/lib/competitive-teardown-colors"
 import {
   Legend,
@@ -441,9 +442,7 @@ export function CompetitiveTeardown() {
                   {...hover}
                   className="flex items-center gap-3 border-l-4 border-amber-500 bg-white p-4 text-base font-bold text-slate-800"
                 >
-                  <span aria-hidden="true" className="text-amber-600">
-                    ✕
-                  </span>
+                  <X aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
                   {gap}
                 </m.div>
               ))}
