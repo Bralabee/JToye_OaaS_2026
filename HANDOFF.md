@@ -7,15 +7,15 @@ residue that has since been deleted.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **6 PRs merged this session:** #367, #368, #369, #370, #371, #373. HEAD deliberately **not** quoted — see the note below |
+| `JToye_OaaS_2026` | **8 PRs merged this session:** #367, #368, #369, #370, #371, #373, #375, #376. HEAD deliberately **not** quoted — see the note below |
 | `dotfiles` | **1 PR:** #51. `master`, tree clean |
-| Open PRs | **#372 in JToye — NOT MINE.** A concurrent session's ADR-0004 knowledge-graph work. Read §0.1 before touching this checkout |
+| Open PRs | The concurrent session has `docs/adr-0004-accept` in flight. **§0.1 is not history — it captured one of my commits this session. Read it before you commit anything.** |
 | Open issues | **58** in JToye |
-| Live stack | Compose UP, **17** jtoye containers, all healthy |
+| Live stack | Compose UP, **17** jtoye containers, all healthy. **0 active alerts** |
 | Gates | **15/15 rc=0** — measured from the **main checkout**. From a worktree two VOID for a reason that is not a runtime fault; §6 explains it |
 | Runtime proof | `Implementation-Version: 2.3.0` read from inside the running `app.jar` · ollama `gemma3:12b 100% GPU UNTIL Forever` |
 | Project version | **2.3.0** (artifact, from `build.gradle.kts`). No `v2.3` tag — milestone in development |
-| Dev DB | **22 orders, 0 probe orders.** Synthetic residue cleared — §4 |
+| Dev DB | **23 orders, 1 probe order.** The residue was cleared (§4); the one remaining is the order that cleared `NoOrdersCreated` — §3.1, deliberate |
 | Conda env | **none needed** — Java 21 + Gradle wrapper, Go 1.26, Node 22. No Python *application* code (several `scripts/*.sh` do use `python3`) |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges — the
@@ -26,21 +26,56 @@ residue that has since been deleted.
 
 ## 0. ⚠ READ FIRST
 
-### 0.1 Another session is using this checkout
+### 0.1 A second session shares this checkout — and it captured one of my commits
 
-At the time of writing, `/home/sanmi/IdeaProjects/JToye_OaaS_2026` is checked out on
-**`docs/adr-0004-knowledge-graph-strategy`** (PR **#372**, OPEN), which is **not this session's
-work**. The branch switched underneath mid-session, with uncommitted files present.
+`/home/sanmi/IdeaProjects/JToye_OaaS_2026` is driven by **another session**. The branch switched
+underneath this one **twice**, and the second time did real damage before it was caught.
 
-**Do not `git switch` in this checkout, and do not delete that branch.** Everything below was
-authored from a **`git worktree`** so their tree was never disturbed — verified clean before and
-after. Do the same, and remove the worktree *from the main checkout directory*, never from inside it
-(a removed-worktree CWD silently produces a dirty PR with zero CI runs).
+**What happened, because it is the sharpest possible warning.** I created
+`docs/handoff-redis-and-seed-findings` off `main` and edited `HANDOFF.md`. Between the edit and the
+commit, the other session switched the checkout to **their** branch `docs/adr-0004-accept`, carrying
+my uncommitted change with it. My `git add && git commit` then landed **on top of their commit, on
+their branch**. The push "succeeded" against the *old* position of my branch, and `gh pr create`
+failed with the only visible symptom:
+
+```
+GraphQL: No commits between main and docs/handoff-redis-and-seed-findings
+```
+
+That error names a branch, not the actual problem, and nothing else went red.
+
+**It was recoverable only because of what had *not* happened yet:** my commit was **local-only** —
+`git ls-remote` showed their remote branch still at their own commit — and the two commits touched
+disjoint files (`HANDOFF.md` vs the ADR). Recovery: cherry-pick mine onto a worktree cut from
+`origin/main`, then `git reset --hard` their local branch back to the commit the **remote** already
+had, verified by comparing to `git ls-remote` and by grepping their ADR for content, not by
+`git diff --stat`. Had I force-pushed, or had both commits touched one file, this would have been a
+genuine loss of someone else's work.
+
+Keep every habit below, because the failure is silent:
+
+- **Do all work in a `git worktree`, from the start — not just when the checkout "looks" occupied.**
+  That is the only habit that would have prevented the capture above, because the switch happened
+  *between* my edit and my commit. Every other PR this session was authored that way and none was
+  affected.
+- **Check `git branch --show-current` immediately before `git add`/`git commit`, not only at the
+  start.** The window that matters is the one between editing and committing.
+- Never `git switch` a checkout you do not own.
+- **Before recovering anything, establish what the *remote* has** (`git ls-remote --heads origin`).
+  It is the only account of their work that your local repo cannot have corrupted, and it is what
+  makes a `reset --hard` on someone else's branch safe rather than destructive.
+- Remove a worktree *from the main checkout directory*, never from inside it — a removed-worktree
+  CWD silently produces a dirty PR with zero CI runs.
+- **A concurrent merge can put your branch behind mid-flight.** It happened on #376: the merge guard
+  reported `behind main : 1` after #372 landed. Rebase and re-run — and check whether the new commit
+  actually touches your files before assuming a conflict. `git diff --name-only HEAD..origin/main`
+  lists files that differ in *either* direction, so **your own** edited file appears there and looks
+  alarming; `git show --name-only <sha>` is the question you actually meant to ask.
 
 ### 0.2 The pattern that repeated all session: my own instruments were the defect
 
 The previous handoff's lesson was *"nearly every real defect found was a GREEN check."* This session
-extended it: **the checks I wrote to verify my own work were wrong five times**, and each failure
+extended it: **the checks I wrote to verify my own work were wrong seven times**, and each failure
 produced a *confident* answer rather than an obvious error.
 
 | what I measured with | what it actually did |
@@ -50,8 +85,10 @@ produced a *confident* answer rather than an obvious error.
 | `[ -f /dev/null ]` in a break arm | **False** — `/dev/null` is a character device, so the arm silently took the not-found branch and tested nothing |
 | `git branch -r` to count remote branches | A local cache. Listed branches the remote deleted long ago — **6 real branches looked like 13** until pruned |
 | predicting the dotfiles merge guard would VOID | It reported a real `failure` from `copilot-pull-request-reviewer`, whose body reads *"The job was not started because recent GitHub Actions payments have failed"* — the billing VOID wearing a verdict's clothing (§5 item 2) |
+| **saying `seed-order-metric.sh` clears `NoOrdersCreated`** | It does not. The script asks *does the series exist*; the alert asks *was there a recent order*. Both were true at once — gate green, alert firing — so it returned `PASS` **without placing an order**. Fixed in #376, not just retracted (§3.1) |
+| **repeating `deferred-items.md` §11 as an open item** | `RedisDown` had been fixed the previous day. The entry's own evidence, `grep -c redis_up alerts.yml -> 0`, returns **5**. I copied a planning file forward without running the one command it offered (§3.2) |
 
-**The habit that caught all five:** run the check against a deliberately broken input *first*, and
+**The habit that caught all seven:** run the check against a deliberately broken input *first*, and
 verify restores **by content**, with an instrument you have seen fire. Not one was caught by
 something going red.
 
@@ -66,7 +103,7 @@ copy repo → live, after which `--check` passes because they match.
 
 ## 1. What landed
 
-### JToye (6 PRs)
+### JToye (8 PRs)
 
 | PR | what |
 |---|---|
@@ -76,6 +113,8 @@ copy repo → live, after which `--check` passes because they match.
 | **#368** | the last emoji-scan finding (`✕` → lucide `<X />`), and a handoff that still self-staled |
 | **#369** | closed the glyph half of the old §4 item 4, with the two corrections it earned |
 | **#367** | recorded the merge-guard defect; stopped quoting HEADs that self-stale *(opened by the previous session, merged by this one)* |
+| **#375** | `RedisDown` needed no fix — the deferral describing it was the defect — **§3.2** |
+| **#376** | `seed-order-metric.sh` could not clear a firing `NoOrdersCreated` — **§3.1** |
 
 ### dotfiles (1 PR)
 
@@ -150,6 +189,62 @@ removed; **`KNOWN_DATALESS` is now empty** and the gate reports `0 reasoned exem
 the third exemption retired by the STALE arm rather than by review, which is the point of writing the
 trigger into the entry. `deferred-items.md` §10 is closed accordingly.
 
+### 3.1 The gate's question and the alert's question are different — #376
+
+`seed-order-metric.sh` **could not clear a firing `NoOrdersCreated`**, and I had said it would. Both
+of these were true at the same moment, and both were correct:
+
+| asks | reads | verdict |
+|---|---|---|
+| `check-alert-metrics` M-1 | *does the series **exist**?* | `series=1` → gate **GREEN** |
+| `NoOrdersCreated` | `increase(...[30m]) < 1` | `increase=0` → alert **FIRING** |
+
+So the script's early exit — *"the counter already exists, nothing to seed"* — was right for the gate
+and useless for the alert: it returned `PASS` **without placing an order**. The newest order in the
+DB was 2026-07-15, because §4 had deleted the probe orders.
+
+**#376 adds `FORCE=1`**, which places an order even when the series exists and asserts the **alert's**
+condition, `increase(<selector>[$ALERT_WINDOW]) >= 1` — not the gate's. Asserting series existence
+there would have "passed" while the alert kept firing, which is the wrong claim the option exists to
+prevent. The default path now prints the distinction and names the `FORCE=1` invocation.
+
+Verified against live Prometheus rather than the script's own `PASS`: `NoOrdersCreated` **RESOLVED**,
+`increase[30m] = 1.008`, alert expression **0 samples**.
+
+> **This alert will fire again ~30 minutes after the last order, and that is it working, not a
+> fault.** `bash scripts/seed-order-metric.sh` (no `FORCE`) is the right call when the *gate* is red;
+> `FORCE=1 bash scripts/seed-order-metric.sh` when the *alert* is firing and you want quiet. Each run
+> leaves one real `metric-seed@jtoye.local` order behind — that is why the dev DB shows 23/1 rather
+> than the 22/0 of §4.
+
+### 3.2 `RedisDown` needed no fix — the deferral describing it was the defect — #375
+
+Asked to fix `RedisDown`, and it was **already fixed**: #345 (`79a3a6a2`, 2026-07-29) shipped
+`expr: up{job="redis"} == 0 or redis_up == 0`, which is what `main` and the live Prometheus both
+carry. What was broken was `deferred-items.md` §11, still saying *"Not fixed here"* and proposing —
+as new work — the expression already in the file. Its load-bearing evidence,
+`grep -c redis_up alerts.yml -> 0`, returns **5**. I had copied that entry into this handoff's
+known-unfixed list without running its grep; §5 records that.
+
+Re-verified live rather than trusting #345's comment — Redis stopped with `jtoye-redis-exporter` left
+running, the exact condition the old rule was blind to:
+
+| | during outage | after restore |
+|---|---|---|
+| `up{job="redis"}` | **1** — the exporter still answers | 1 |
+| `redis_up` | **0** — Redis actually unreachable | 1 |
+| OLD `up{job="redis"} == 0` | **0 samples** — would not have fired | 0 |
+| NEW `… or redis_up == 0` | **1 sample** — fires | **0** — no steady-state page |
+
+**The general lesson, now in that file's header: nothing gates `deferred-items.md`.** Unlike
+`docs/ops/terminal-states.yaml`, no script checks it, so an entry whose *reason* stops being true
+survives silently until someone reaches its expiry date. Both closures dated 2026-07-30 (§10 and
+§11) were found by running an entry's own evidence, never by review. Audited the rest without
+over-claiming: **§5** (no k8s alerting, 0 manifests) and **§7** (`StompBrokerLag` dormant, 0 active
+rules) verified **still valid**; §8 and §9 hold measurements describing a state *at drafting* —
+historical records, correct as written. The test is whether an entry asserts something is *still*
+true.
+
 ---
 
 ## 4. Dev-DB cleanup
@@ -165,7 +260,9 @@ still at 1 series with the gate green afterwards.
 
 **Left deliberately:** 8 `@example.test` orders from the 2026-07-12/14 QA-council runs, 13
 `@test.com`/`uat-tester` demo + E2E seed orders that specs may depend on, 1 null-email order, and
-~40 `SyntheticDeliveryProbe-*` messages in **Mailhog** (not the DB). Orders went **26 → 22**.
+~40 `SyntheticDeliveryProbe-*` messages in **Mailhog** (not the DB). Orders went **26 → 22** here,
+and back to **23** when §3.1 placed one to clear `NoOrdersCreated` — that one is deliberate, not
+residue.
 
 ---
 
@@ -188,15 +285,10 @@ still at 1 series with the gate green afterwards.
 - **`financial_transactions.order_id` has no foreign key to `orders`**, and 3 rows from
   2026-07-09/11 already point at orders that no longer exist (verified to reference none of the ids
   deleted in §4). Dev-DB residue as it stands; the same shape in production is a ledger-integrity gap.
-- ~~**`RedisDown` watches the exporter, not Redis**~~ — **WRONG, and it was my error.** It was fixed
-  in **#345** (2026-07-29) and the rule on `main` already reads
-  `up{job="redis"} == 0 or redis_up == 0`. I copied `deferred-items.md` §11 forward into the list
-  above without running its own evidence: the entry claims `grep -c redis_up alerts.yml -> 0`, and
-  the answer is **5**. Re-verified live 2026-07-30 by stopping Redis with the exporter left running —
-  old expression **0 samples**, new expression **1 sample**, both **0** after restore. §11 now
-  records the closure. **The lesson is the general one: a deferral is only re-read on its expiry
-  date, so verify the reason before repeating it — including when the source is this project's own
-  planning file.**
+- ~~**`RedisDown` watches the exporter, not Redis**~~ — **NOT an open item; it was fixed in #345 the
+  day before, and I listed it here by copying `deferred-items.md` §11 without running its own
+  evidence.** Full account, including the live re-verification and the reason nothing catches a
+  stale deferral, is **§3.2**.
 - `order_items_aud`/`orders_aud` carry 97/117 orphans — **expected**, audit mirrors of legitimately
   deleted orders.
 
@@ -244,10 +336,17 @@ docker exec jtoye-mcp-server wget -q -T60 -O- \
 #    For dotfiles add: --allow-check copilot-pull-request-reviewer   (§0.2 — the job never starts)
 ```
 
-**If `check-alert-metrics` fails on `NoOrdersCreated`:** the stack was rebuilt and the request
-counter is gone. That is expected — and it means the alert is currently blind. Fix:
-`bash scripts/seed-order-metric.sh` (§3). Do **not** re-add a `KNOWN_DATALESS` entry; the gate's own
-header calls that the wrong fix.
+**`NoOrdersCreated` — two different symptoms, two different fixes. Do not confuse them (§3.1):**
+
+| symptom | what it means | fix |
+|---|---|---|
+| **`check-alert-metrics` fails** on it | the stack was rebuilt, the request counter is gone, and the alert is currently **blind** | `bash scripts/seed-order-metric.sh` |
+| **the alert is firing** in Prometheus | the counter exists but no order landed in the last 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` |
+
+The plain invocation **exits early and places no order** when the series already exists, so it will
+not silence a firing alert — it says so itself now. Either way, do **not** re-add a
+`KNOWN_DATALESS` entry; the gate's own header calls that the wrong fix. Each `FORCE=1` run leaves one
+real `metric-seed@jtoye.local` order in the dev DB.
 
 **If `check-runtime-freshness` or `check-container-config-drift` VOIDs (exit 2) — check *where* you
 ran it before you touch the stack.** Both VOID from a **worktree** even on a perfectly healthy
@@ -292,7 +391,10 @@ procedure (PR state, not `git branch --merged`).
   and `jtoye-market-intel`'s `feature/insights-report` (#24 CLOSED — deliberately kept, §2).
 - **Live stack:** 17 jtoye containers, all healthy. 4/4 built services FRESH; the running frontend
   and core-java image IDs were compared against their tags, which is what catches a `start`-only.
-- **Dev DB:** 22 orders, 0 probe orders.
+- **Dev DB:** 23 orders, 1 probe order — the `metric-seed@jtoye.local` order that cleared
+  `NoOrdersCreated` (§3.1). Deliberate, not residue.
+- **Alerts:** 0 active. `NoOrdersCreated` will re-fire ~30 min after the newest order; that is the
+  alert working.
 - **Test baseline:** `docs/metrics.json` — **1851** total logical invocations, enforced by two gates
   (`docs-freshness.sh` for the tree, `check-doc-metrics.sh` for the prose).
 - **Toolchain:** `doctor.sh --check` reports drift on several tools; **report-only, never converge
