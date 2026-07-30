@@ -1505,10 +1505,6 @@
             "minLength" : 0,
             "type" : "string"
           },
-          "customerAllergenMask" : {
-            "format" : "int32",
-            "type" : "integer"
-          },
           "customerEmail" : {
             "maxLength" : 255,
             "minLength" : 0,

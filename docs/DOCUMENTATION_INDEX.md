@@ -147,6 +147,7 @@ enforced by the `docs-freshness` CI gate)
 | [audit/sources/](audit/sources/) | 10 per-discipline source reports feeding the council audit |
 | [audit/remediation/](audit/remediation/) | 8 per-discipline remediation write-ups |
 | [legal/derivation-clause.md](legal/derivation-clause.md) | **DRAFT, not in force** — ToS + DPA data-derivation clause backing ADR-0004's Layer B, with the Article 9 exclusion and an effectiveness gate |
+| [legal/article-9-allergen-basis.md](legal/article-9-allergen-basis.md) | Article 9 determination for allergen data — vendor is controller / J'Toye processor; the unauthenticated guest intake removed; Art. 17+20 already met; consent record still to build |
 
 ## Troubleshooting
 

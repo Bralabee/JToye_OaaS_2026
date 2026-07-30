@@ -137,9 +137,12 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     // FSA 14-allergen bit positions — MUST match the shared mask convention
-    // (PublicStorefrontService.ALLERGEN_NAMES index i == bit i) used by the
-    // storefront allergen list, the dashboard allergen column and the
-    // customer allergen-warning check (QA-council FIX-7 / M4).
+    // (frontend/types/api.ts ALLERGENS: entry index i == bit i) used by the
+    // storefront allergen list and the dashboard allergen column.
+    // The backend's own copy of the name list (PublicStorefrontService.ALLERGEN_NAMES)
+    // was removed 2026-07-30 along with the customer allergen-warning check it fed —
+    // see docs/legal/article-9-allergen-basis.md. These bits describe PRODUCT
+    // allergens, which are product data, not personal data, and are unaffected.
     private static final int A_GLUTEN = 1;            // bit 0
     private static final int A_CRUSTACEANS = 1 << 1;  // crayfish, prawns
     private static final int A_EGGS = 1 << 2;
