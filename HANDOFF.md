@@ -1,6 +1,6 @@
 # Handoff: PR queue empty · #342 + #234 + #330 closed · every gate green on a verified runtime
 
-**Generated:** 2026-07-30 ~06:40 BST, §2 and §4 updated ~09:00 BST after #355. Supersedes the
+**Generated:** 2026-07-30 ~06:40 BST; §0/§2/§4 updated ~09:10 BST after #355 and #357. Supersedes the
 "#342 closed at zero defects" handoff
 (`dce03bd`), which was accurate at `79a3a6a` and is now stale on its whole dependabot section.
 
@@ -8,11 +8,11 @@
 |---|---|
 | `origin/main` when written | **`ef797adc`** — 15 commits on from `15871d3`. `git log --oneline -20` beats this row. |
 | Open PRs | **none, as of 05:35Z.** Dependabot regenerates — see §4. |
-| Issues opened here | **#347** TS-16 detector — still OPEN · #346 doc-gate coverage — CLOSED by #355 |
-| Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** · **#346** |
+| Issues opened here | #346 doc-gate coverage — CLOSED by #355 · #347 TS-16 detector — CLOSED by #357 |
+| Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** · **#346** · **#347** — **none left open** |
 | Working tree | clean, on `main`, no local branches besides `main` |
 | Live stack | Compose UP, 16 jtoye containers healthy, 8/8 scrape targets up |
-| Runtime parity | **`check-runtime-freshness.sh` exit 0 — 4/4 FRESH**, rebuilt 05:31–05:33Z |
+| Runtime parity | **`check-runtime-freshness.sh` 0 — 4/4 FRESH** (rebuilt 05:31–05:33Z) · **`check-container-config-drift.sh` 0 — 15 compared, 0 drift** (new, #357) |
 | Conda env | **none needed** — Java 21 + Gradle wrapper, Go 1.26.5, Node 22 |
 
 ---
@@ -38,6 +38,29 @@ twice for real (#243, #324) — the only reason neither merged on a stale signal
 **If you take one habit from this session:** check `check-runs` for the **specific head SHA**,
 not `gh pr checks`, and re-verify `behind == 0` immediately *before* merging, not once at the
 start.
+
+### 0.0b …and your own guard can invert on success
+
+`cmd | grep -q X` under `set -o pipefail` returns **141** when it MATCHES — grep exits at the
+first hit, the writer takes SIGPIPE, and pipefail promotes it. So `if ! cmd | grep -q X` fires on
+the *success* case. Measured on the #357 lander, whose guard checked that a hand-written commit
+survived a rebase:
+
+```
+git log --oneline -3 | grep -q 'a TS-16 detector'   -> rc=141   (the string IS there)
+grep -q 'a TS-16 detector' <<< "$(git log --oneline -3)"  -> rc=0
+```
+
+It declared `FATAL: the doc-sync commit did not survive the rebase` on a rebase that had
+succeeded. Two things make it worth repeating rather than filing away:
+
+- **It was LATENT.** The identical guard shipped in the #353, #355 and #356 landers and all three
+  passed — because none of those branches was ever behind, so the rebase block never executed.
+  #357 was the first time that path ran. A rarely-taken branch is where this hides.
+- **It failed SAFE this time** (refused to merge). That was luck, not design. The same inversion
+  once made a compose-XOR guard fail OPEN. Use here-strings; do not rely on which way it points.
+
+This is already documented in `check-alert-rules.sh`'s own header, and I wrote it anyway.
 
 ### 0.1 The bind-mount trap is executable now — L-0
 
@@ -104,6 +127,16 @@ core-java   unzip -l /app/app.jar | grep stripe        -> stripe-java-33.2.0.jar
 
 `check-alert-liveness.sh` exit 0: 8/8 targets, `gauge-read-by-no-rule=0`,
 `selectors-matching-0-series=0`, `wrong-subject=0`, probe delivered.
+
+**THREE gates are deliberately NOT in CI**, because a runner has no containers and no Prometheus,
+so each could only ever VOID there — and a permanently-VOID job trains people to add `|| true`.
+Run them against a live stack and put their exit codes in the phase-close record:
+
+```
+scripts/check-runtime-freshness.sh        image vs the source it builds from
+scripts/check-alert-liveness.sh           targets, gauges, selectors, transport
+scripts/check-container-config-drift.sh   running container vs its compose file   (new, #357)
+```
 
 ---
 
@@ -238,12 +271,23 @@ and force-push, and assert the commit survived before pushing.
 - [x] ~~**#346**~~ — CLOSED by #355. See §2 items 2 and 3. Two residuals were deliberately NOT
       taken and are unfiled: (a) `docs/runbooks/` is still outside `DEFAULT_DOCS` and adding it
       starts at 3 reds, all bare filenames (`WebhookDeliveryWorker.java`) rather than wrong
-      facts — whether runbook prose must carry full paths is a style call, not a defect;
-      (b) TS-16 remains the one register row with no `subject:`, so its locator is checked for
-      existence and range but not content. **Owner: unassigned, low priority.**
-- [ ] **#347** — a TS-16 container-config-drift detector. A working 30-line prototype is in the
-      issue, including the `docker inspect` nil-healthcheck trap that makes correct services read
-      as absent. **Owner: unassigned.**
+      facts — whether runbook prose must carry full paths is a style call, not a defect.
+      Residual (b) in an earlier revision said TS-16 was the one row with no `subject:`; #357
+      gave it one, so **all 17 register rows now declare a subject and verify.**
+      **Owner: unassigned, low priority.**
+- [x] ~~**#347**~~ — CLOSED by #357. `scripts/check-container-config-drift.sh` compares
+      healthcheck, restart policy and image (non-built services only) between
+      `docker compose config` and `docker inspect`. Clean run: **15 compared, 0 drift, 4
+      declared-but-not-running** (one-shot init containers — reported, never silently skipped).
+      Four break arms fail correctly, including re-declaring the historical `wget` healthcheck.
+      **It is the THIRD live gate deliberately kept out of CI** — a runner has no containers, so
+      it could only ever VOID there. Its exit code belongs in the phase-close record beside
+      `check-runtime-freshness.sh` and `check-alert-liveness.sh`.
+      **TS-16 keeps its `deferred:` block on purpose, and that is not an oversight:** the
+      DETECTOR shipped, the ALERT is what remains deferred. `detection.alert` stays null because
+      container config drift has no Prometheus series to alert on, and X-2 requires a named alert
+      or a dated deferral — inventing an alert name that will never exist would be the
+      fabrication the register forbids.
 - [ ] **Dependabot will refill the queue.** It regenerates continuously and *regroups*: #350 was
       closed and reborn as #353 mid-session, changing from 1 update to 2. "No open PRs" is true
       **as of 05:35Z**, not a steady state. A frontend or Gradle group bump will usually also
