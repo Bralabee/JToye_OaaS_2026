@@ -5,7 +5,9 @@
 #
 # ADDITIVE FOR NOW: this manifest runs the same 43 assertions as check-doc-metrics.sh
 # (37) + check-project-version.sh (6), which REMAIN in CI as a cross-check while the
-# engine earns trust. Consolidation is tracked in issue #362, which requires MOVING
+# engine earns trust. Consolidation is DEFERRED to a dated re-check (2026-09-30) in
+# .planning/phases/27-operational-maturity/deferred-items.md §13 — issue #362 was closed
+# in favour of it. It requires MOVING
 # their headers here rather than discarding them: they hold the measured evidence and
 # the reasons for what is deliberately NOT checked.
 # Engine canonical copy: ~/dotfiles/gates/  ·  refresh: ~/dotfiles/gates/install.sh <repo>

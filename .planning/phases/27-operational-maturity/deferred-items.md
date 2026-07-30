@@ -158,3 +158,47 @@ with `no configuration file provided`). They are templates rather than commands.
 The harness exempts them **structurally** (detected by shape, not hand-listed) with a reason each,
 so the exemption cannot quietly grow. Worth turning into runnable form with a concrete example
 service the next time that section is edited.
+
+## 13. Consolidating the two bespoke claim gates into the claim-gate manifest — DEFERRED to a dated re-check
+
+**Was GitHub issue #362, closed 2026-07-30 in favour of this dated entry.** Re-evaluate **on or
+after 2026-09-30**, or sooner once the trust condition below is genuinely met.
+
+`scripts/check-claims.sh` (the vendored claim-gate engine, canonical copy `~/dotfiles/gates/`) runs
+the **same 43 assertions** as `scripts/check-doc-metrics.sh` (37) and
+`scripts/check-project-version.sh` (6), from `scripts/gates/claims.manifest`. All three remain in
+`.github/workflows/docs-freshness.yml` on purpose.
+
+**Why not consolidated on 2026-07-30.** Equivalence is proven — engine and bespoke gates returned
+identical exit codes across **9 break arms** (clean, 6 drift/M-1 cases, a `jq:` lockfile skew, a
+VOID), restores verified by content. But the trust condition asked for the engine to have run green
+in CI on several PRs **and to have failed at least once for a real reason**, and at the time of
+deferral it had **2 green CI runs and 0 real CI failures**. It has never been observed failing *in
+CI* — only locally, in 9 equivalence arms plus the engine's own 19-arm selftest. That local evidence
+is substantial and arguably stronger than a run-count, which is why this is a dated deferral rather
+than a refusal.
+
+**What consolidation must do — it is not a delete.**
+
+1. Confirm the engine has real CI history: several green runs **and** at least one genuine failure,
+   so its CI behaviour is observed rather than assumed.
+2. **Move, do not discard, the headers.** `check-doc-metrics.sh` and `check-project-version.sh`
+   carry the measured evidence (README at `921` against a tree of `1851`; the version stuck at
+   `2.1.0` across two releases) and — more valuable — the reasons for what is deliberately *not*
+   checked. That is repo-resident knowledge which travels with a clone; deleting the scripts loses
+   it. It belongs in `claims.manifest` or a doc the manifest cites, **before** the scripts go.
+3. Remove the two CI steps and the two scripts in one change, and confirm the claim count stays
+   **43**. A silent drop to 37 or 6 is the regression-by-omission this repo's doctrine names.
+4. Re-run the 9 break arms against the engine alone.
+5. Re-run `check-doc-citations.sh` — removing files shifts line numbers, which broke citations
+   **twice on one branch** during Phase 27.
+
+**If the engine turns out to be the wrong abstraction,** that is a legitimate outcome — record why
+here rather than reverting silently, because this shape has now recurred four times in this repo.
+
+> ⚠ **This register is not gate-enforced.** Unlike `docs/ops/terminal-states.yaml` (checked by
+> `check-terminal-states.sh` for expired deferrals) and `infra/dependency-horizons.yaml`
+> (`check-dependency-horizons.sh`), nothing fails when a date here passes. The 2026-09-30 date is a
+> convention, not a guarantee. If this item matters enough to enforce, give it a row in
+> terminal-states.yaml instead — but note that register is scoped to *failure states*, which this
+> is not, so the honest options are "enforce it somewhere it fits" or "accept it is a reminder".
