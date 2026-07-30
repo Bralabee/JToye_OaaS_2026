@@ -1,128 +1,151 @@
-# Handoff: #342 closed at zero defects · #343 + #345 merged · dependabot is the next decision
+# Handoff: PR queue empty · #342 + #234 + #330 closed · every gate green on a verified runtime
 
-**Generated:** 2026-07-29 ~22:00 BST. Supersedes the "Phase 27 CLOSED 7/7, #343 pending" handoff
-(same branch, rewritten in place rather than merged stale).
+**Generated:** 2026-07-30 ~06:40 BST. Supersedes the "#342 closed at zero defects" handoff
+(`dce03bd`), which was accurate at `79a3a6a` and is now stale on its whole dependabot section.
 
 | | |
 |---|---|
-| `origin/main` when written | **`79a3a6a`** — this file merged on top of it via PR **#344**, so `main` is one commit further on. `git log --oneline -3` beats this row. |
-| Last code change | **`79a3a6a`** (#345). Nothing after it is code. |
-| Phase 27 | CLOSED 7/7 |
-| Milestone v2.3 | build complete |
-| Issue #342 | **CLOSED.** Opened at 6 live detection defects; `check-alert-liveness.sh` now exits **0** |
-| Open PRs | **#344** (this) + **9 dependabot** — none of the 9 is ready, see §3 |
-| New issues filed | **#346** citations-gate coverage · **#347** TS-16 detector |
-| Live stack | Compose UP. core-java 20:50Z · prometheus 21:42Z · redis-exporter 21:26Z |
-| Conda env | **none needed** — Java 21 + Gradle wrapper only |
+| `origin/main` when written | **`ef797adc`** — 15 commits on from `15871d3`. `git log --oneline -20` beats this row. |
+| Open PRs | **none, as of 05:35Z.** Dependabot regenerates — see §4. |
+| Open issues opened here | **#346** doc-gate coverage · **#347** TS-16 detector |
+| Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** |
+| Working tree | clean, on `main`, no local branches besides `main` |
+| Live stack | Compose UP, 16 jtoye containers healthy, 8/8 scrape targets up |
+| Runtime parity | **`check-runtime-freshness.sh` exit 0 — 4/4 FRESH**, rebuilt 05:31–05:33Z |
+| Conda env | **none needed** — Java 21 + Gradle wrapper, Go 1.26.5, Node 22 |
 
 ---
 
-## 0. ⚠ READ FIRST
+## 0. ⚠ READ FIRST — the one thing that cost the most time
 
-### 0.1 The bind-mount trap is now an executable check — do not re-add the manual step
+**A PR's green attests to whatever base it last ran against, and GitHub never re-runs a check
+when the base moves.** This is not a nuance; it produced four separate false signals tonight:
 
-The previous handoff opened with "ALWAYS check the inode before trusting any alert-rule
-verification". It fired anyway, on the next session, within ten minutes — and silently produced an
-**exit 0** by combining one branch's `alerts.yml` with another branch's running rules.
+- `mergeStateStatus: CLEAN` on #328 while it was a commit behind. Its `Branch Not Behind Base`
+  had run at `22:24:34Z`; #348 merged at `22:49:00Z`.
+- All ten dependabot PRs reporting a green `Operational Contracts` that had run **3 gates, not
+  4** — their branches predated #340, so `check-doc-citations.sh` was not in their workflow at
+  all. Verified by diffing the invoked gate set on #326's branch against `main`.
+- A `gh pr checks` read showing #243 green while those results predated a force-push by
+  minutes; the real run on the new head had only just started.
+- My own monitor printing `ALL REBASED` on an **empty** result, because the `case` catch-all
+  matched the empty string when transient `gh` calls failed.
 
-`check-alert-liveness.sh` now has **L-0**: it md5s `$ALERTS` against the file read from *inside*
-the Prometheus container and **VOIDs** on mismatch. You no longer need to remember. The fix when it
-VOIDs is in the message:
+The executable form of this is the **skip-if-behind guard** in the merge queue, and it fired
+twice for real (#243, #324) — the only reason neither merged on a stale signal.
+
+**If you take one habit from this session:** check `check-runs` for the **specific head SHA**,
+not `gh pr checks`, and re-verify `behind == 0` immediately *before* merging, not once at the
+start.
+
+### 0.1 The bind-mount trap is executable now — L-0
+
+`check-alert-liveness.sh` md5s `$ALERTS` against the file read from **inside** the Prometheus
+container and **VOIDs** on mismatch. The previous handoff warned about this in prose and it
+fired anyway within ten minutes. Fix when it VOIDs:
 
 ```bash
 docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml \
   up -d --force-recreate prometheus
 ```
 
-**`docker cp` cannot detect this drift.** It resolves the bind mount back to its host source path,
-so both sides always agree. Measured on a drifted stack, same container, same path, same moment:
-`docker cp` → `1cc20a85` (the host file), `docker exec md5sum` → `d25f3d10` (what Prometheus
-actually serves). Use `docker exec`. The script says so at the call site.
+**`docker cp` cannot see this drift** — it resolves the bind mount back to its host source path,
+so both sides always agree. Measured on a drifted stack, same container, same moment: `docker cp`
+→ `1cc20a85` (the host file), `docker exec md5sum` → `d25f3d10` (what Prometheus serves). Use
+`docker exec`.
 
-**Known limit, by design:** L-0 compares *content*. A `git switch` between two commits with an
-identical `alerts.yml` detaches the mount but leaves L-0 green — currently true on `main` (host
-inode `18219239`, container `18219194`, md5 identical). That is safe: you can never *grade* a
-mismatched runtime, and the moment content diverges L-0 catches it.
+L-0 compares **content**, so a `git switch` between two commits with an identical `alerts.yml`
+leaves it green while the mount is detached. That is safe — you can never *grade* a mismatched
+runtime — but it means an inode difference alone is not a failure.
 
-### 0.2 A freshly recreated Prometheus reports every target `health=unknown`
+### 0.2 `NoOrdersCreated` fires on a quiet dev stack, by design
 
-Unchanged from the last handoff. Not a defect — no scrape has completed. Wait before believing L-1:
-
-```bash
-until [ "$(curl -sf 'http://localhost:9091/api/v1/targets?state=any' \
-  | jq -r '[.data.activeTargets[]|select(.health=="unknown")]|length')" = "0" ]; do sleep 10; done
-```
-
-Prometheus lives in `infra/monitoring/docker-compose.monitoring.yml`, **not** the full-stack file,
-and that file needs `--env-file .env` or it dies on `REDIS_PASSWORD`.
-
-### 0.3 `NoOrdersCreated` is firing on this stack, and that is correct
-
-It fired at 21:55:12Z and will stay firing until another order is placed, because the counter is
-flat rather than absent. Do not "fix" it. `check-alert-liveness.sh` is unaffected — it grades
-selectors, targets and transport, not whether alerts are active.
-
-Related: `NoOrdersCreated` was removed from `KNOWN_DATALESS` in `check-alert-metrics.sh`, so **a
-stack where no order has ever been created will fail M-1 for it**. Placing an order is the fix;
-re-adding the exemption is not. See §1.3 for the recipe.
+Proven end-to-end 2026-07-29: order placed → series created → creation stopped → `pending`
+21:24:42Z → `firing` 21:55:12Z → **email delivered** 21:55:47Z, subject
+`[FIRING:1] NoOrdersCreated (core-java/info)`. It stays firing until another order is placed,
+because the counter is flat rather than absent. Do not "fix" it. To clear it, §3.2.
 
 ---
 
-## 1. What landed
-
-### 1.1 Two PRs merged
-
-| PR | Merge | What |
-|---|---|---|
-| #343 | `88698f3` | `NoOrdersCreated` selector + `HighResponseTime` histogram buckets |
-| **#345** | **`79a3a6a`** | **#342 items 5 & 6, + L-0, + stale-exemption cleanup, + 3 wrong locators** |
-
-`check-alert-liveness.sh` on merged `main`, against a runtime whose served `alerts.yml` is
-md5-identical to it (`7368261d`):
+## 1. What landed — 15 commits
 
 ```
-  L-1   targets=8  down=0
-  L-1b  exporter-jobs=2  blind=0  gauge-read-by-no-rule=0     <- was 1 (redis_up)
-  L-2   rules=19  selectors-matching-0-series=0
-  L-2b  wrong-subject=0
-  L-3   probe delivered=1  attempts{email} 28 -> 29  failed{email} 0 -> 0
-PASS  exit 0
+ef797adc  minor-and-patch: AWS SDK 2.49.6 + stripe-java 33.2.0   (#353)
+5d79249a  eslint 9.39.4 -> 9.39.5                                 (#351)
+39597f6b  actions/setup-node 4 -> 7                               (#324)
+155c8ee7  slackapi/slack-github-action 1.27.1 -> 4.0.0            (#243)
+9227b345  docker/build-push-action 5.4.0 -> 7.3.0                 (#325)
+37d4ea11  docker/metadata-action 5.10.0 -> 6.2.0                  (#323)
+b4a4e236  actions/setup-go 5 -> 7                                 (#326)
+3514246c  Go 1.25 -> 1.26 across all SIX pin sites  (#352, closed #234)
+e00f1788  ignore eslint majors — blocked upstream  (#349, closed #330)
+a77829a4  @testing-library/jest-dom 6 -> 7                        (#329)
+5e889542  @types/node 20 -> 26                                    (#328)
+f081c442  minor-and-patch, 18 frontend updates                    (#348)
+dce03bde  previous handoff                                        (#344)
+79a3a6a2  #342 items 5 & 6, L-0, stale exemptions, 3 locators     (#345)
+88698f3f  the two alerts that could never fire                    (#343)
 ```
 
-All gates green on `main`: `check-terminal-states` · `check-dependency-horizons` ·
-`check-alert-rules` · `check-doc-citations` · `check-alert-metrics` · `check-branch-behind-base` ·
-`check-alert-liveness` (**twice in a row** — that second run *is* the item-6 fix).
+### 1.1 Verification, on the delivered runtime
 
-### 1.2 #342 item 6 was misdiagnosed as flaky. It was deterministic.
+Every static gate exits 0 on `main`: `check-terminal-states` · `check-dependency-horizons` ·
+`check-alert-rules` · `check-doc-citations` · `check-doc-versions` · `docs-freshness` ·
+`check-branch-behind-base` · `check-alert-metrics` · `check-alert-liveness`.
 
-`route.group_by` is `['alertname','service']` and the probe posted a **constant** alertname, so
-every run joined the **same aggregation group** — which notifies at `group_wait` (30s) on creation
-and then only every `group_interval` (**5m**). Any second run inside five minutes was never
-dispatched. `probe_id` does not help; it is not in `group_by`.
+`check-runtime-freshness.sh` **exit 0, 4/4 FRESH** — and proven by content, not by tag:
 
-| | run 1 | run 2 (within 5 min) |
-|---|---|---|
-| committed script | exit 0, `delivered=1` | **exit 1, `delivered=0`** |
-| fixed script | exit 0, `delivered=1` | **exit 0, `delivered=1`** |
+```
+edge-go     go version -m /edge                        -> go1.26.5
+frontend    node_modules/next/package.json             -> 16.2.12
+core-java   unzip -l /app/app.jar | grep stripe        -> stripe-java-33.2.0.jar
+```
 
-Fixed by a unique alertname per run. L-3 also now reads `alertmanager_notifications_total`, so
-"never attempted" (a **dispatch** fault) can no longer masquerade as "delivery failed" — that
-ambiguity is what hid this for two days.
+`check-alert-liveness.sh` exit 0: 8/8 targets, `gauge-read-by-no-rule=0`,
+`selectors-matching-0-series=0`, `wrong-subject=0`, probe delivered.
 
-### 1.3 #342 item 5 was latent, so it was induced, not argued
+---
 
-In steady state both gauges read 1 and the old and new expressions are *indistinguishable*. Stop
-Redis, leave the exporter up:
+## 2. Three gate blind spots found — each by a break arm, not by reading
 
-|  | `up{job="redis"}` | `redis_up` | OLD expr | NEW expr |
-|---|---|---|---|---|
-| baseline | 1 | 1 | 0 samples | 0 samples |
-| **Redis down, exporter answering** | **1** | **0** | **0 samples** | **1 sample** |
-| restored | 1 | 1 | 0 samples | 0 samples |
+**1. The CI Go pin was enforced by nothing. FIXED in #352.**
+`edge-go/Dockerfile` declared a lockstep invariant in a comment. Only two of its limbs had
+horizon rows. With everything else at 1.26 and only the two `go-version:` pins reverted,
+`check-dependency-horizons` exited **0** — CI would have compiled and tested on Go 1.25 while
+production shipped 1.26, past a green board. A `go-ci-setup` row now covers both pin sites; the
+same arm returns exit 2.
 
-`RedisDown` is now `up{job="redis"} == 0 or redis_up == 0`. TS-15 and TS-13 both resolved.
+> The comment said "bump all three in lockstep". **There are six**: `Dockerfile:10`, `go.mod:3`,
+> `ci-cd.yaml:52`, `ci-cd.yaml:667`, and **two** horizons rows. Miscounting is how #234 happened.
 
-**To re-arm `NoOrdersCreated` on a stack (or clear an M-1 red):**
+**2. `check-doc-versions.sh` is case-sensitive on the package label. NOT FIXED — on #346.**
+`STACK.md` writes `axios` lowercase; the claim list has `Axios`. The gate prints
+`(not claimed in this doc: ... Axios)` and never checks it. That claim was genuinely stale.
+Break arm: plant `axios 9.9.9` and the gate still reports `drift=0`, `PASS`, exit 0.
+
+**3. `check-doc-citations.sh` does not scan the register or the runbooks. NOT FIXED — #346.**
+`DEFAULT_DOCS` is `CLAUDE.md`, `AGENTS.md`, three `.planning/codebase/*.md`, `k8s/DEPLOYMENT.md`.
+**Adding the register would be vacuous** — it reports `citations=0` there because the YAML
+`locator: "path:line"` form is not recognised. Needs a parser change, not a list entry.
+Three wrong locators were found and fixed in #345 that nothing would have caught.
+
+---
+
+## 3. Recipes you will want
+
+### 3.1 Reading a C-3 citation failure correctly
+
+```
+FAIL: C-3 STACK.md:100 cites core-java/build.gradle.kts:87, but that line says
+      nothing the claim names
+```
+
+This happened **three times** (#348, #352, #353) and every time the obvious reading was wrong.
+C-3 asserts the cited line *supports the claim*. A stale **version** in the claim breaks it
+exactly as a moved line would. Check the version first — acting on "the line moved" puts a
+wrong citation into a correct doc.
+
+### 3.2 Place a guest order (clears `NoOrdersCreated`, re-arms M-1)
 
 ```bash
 PID=$(curl -sf http://localhost:9090/public/shops/brixton-village-grill/products \
@@ -135,106 +158,83 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
        \"items\":[{\"productId\":\"$PID\",\"quantity\":3}]}"     # expect 201
 ```
 
-The core-java API is on **:9090** (same port as metrics). It is not on 8080/8081. The shop's
-`minimumOrderPennies` is 1000 and that product is 400p, hence quantity 3.
+The core-java API is on **:9090** (shared with metrics). Not 8080/8081. `minimumOrderPennies`
+is 1000 and that product is 400p, hence quantity 3. `NoOrdersCreated` was removed from
+`KNOWN_DATALESS`, so a stack where no order has ever been placed fails M-1 until you run this.
 
-### 1.4 `NoOrdersCreated` firing is now proven end to end
+### 3.3 The frontend typecheck baseline is **378**, not 366
 
-The residual #343 explicitly declined to claim. Order placed → series created → creation stopped →
-`pending` 21:24:42Z → `firing` 21:55:12Z → **email delivered** 21:55:47Z, subject
-`[FIRING:1] NoOrdersCreated (core-java/info)`. The firing alert carries
-`uri="/public/shops/{slug}/orders"` — the series **only the corrected selector matches**. Full
-evidence in the #342 comment thread.
+The previous handoff said 366; measured tonight it is **378** (377 × `TS2339` jest-dom matcher
+typings + 1 × `TS2503`), all in test files that `next build` never checks. `npx tsc --noEmit`
+is red by default. The honest assertion for a dependency bump is **error set unchanged**, and
+a matching *count* is the weak form — compare the sets:
 
----
-
-## 2. Found by running, not reading
-
-1. **`check-alert-metrics.sh` was red on `main` the moment #343 merged.** It enabled the histogram
-   buckets and corrected the selector but left both `KNOWN_DATALESS` entries, so the wake-up guard
-   fired on each. **That gate is deliberately not in CI** (it needs a live Prometheus), so nothing
-   in the pipeline would ever have said so. Cleared in #345.
-2. **TS-13's deferral had been false since 27-03 merged.** Its stated reason is
-   `grep -c pg_up alerts.yml = 0`; `alerts.yml:85` reads `pg_up`. Nothing would have re-examined it
-   before **2026-09-30** — a deferral is only re-read on its expiry date. That is a general hazard
-   in the register, not a one-off.
-3. **A live TS-16 instance** → issue **#347**. `jtoye-redis-exporter` ran a `wget` healthcheck its
-   scratch image cannot satisfy, failing streak **1367**. The compose file removed that healthcheck
-   on **2026-07-07**; the container started 2026-07-29 and still had it — `start`ed, never
-   recreated, so a three-week-old fix had never once been in effect. Recreated; drift sweep now
-   **5 MATCH / 0 DRIFT**. No repo change was needed, which is the point.
-4. **Three register/runbook locators pointed at the wrong line** → issue **#346**. Fixed in #345.
-   `check-doc-citations.sh` cannot see them, and **adding the register to `DEFAULT_DOCS` would be
-   vacuous** — it reports `citations=0` there, because the YAML `locator:` form is not recognised.
-   That needs a parser change, not a list entry.
-
----
-
-## 3. WHERE TO RESUME — the 9 dependabot PRs
-
-**Do not bulk-merge, and do not read their green as equivalent to main's.**
-
-**All 9 are 3 commits behind `main`** (now 5, after #343/#345). Their branches predate #340, so
-their `Operational Contracts` job ran **3 gates, not 4** — `check-doc-citations.sh` never ran on
-any of them. Verified:
-
-```
-gates on #326's branch          gates on main
-  check-alert-rules.sh            check-alert-rules.sh
-  check-branch-behind-base.sh     check-branch-behind-base.sh
-  check-dependency-horizons.sh    check-dependency-horizons.sh
-  check-terminal-states.sh        check-doc-citations.sh      <-- absent on the branch
-                                  check-terminal-states.sh
+```bash
+diff <(sort baseline.txt) <(sort candidate.txt)   # must be empty incl. line:col
 ```
 
-`Branch Not Behind Base` shows green on all of them only because it *ran before* those merges.
-Every one needs a rebase, which re-runs it against the full gate set.
+Verified this way for #328 (`@types/node` 20→26) and #329 (jest-dom 6→7): both **378 → 378,
+byte-identical including line:col**. The harness was shown able to fail first — a planted
+`TS2322` moved it to 379 and was named in the diff.
 
-| PR | State | Note |
-|---|---|---|
-| **#234** + **#326** | #234 **fails `Operational Contracts`** | **Two halves of ONE invariant.** `edge-go/Dockerfile:5-6` requires the Go version to match `go.mod` **and** the CI `setup-go` pin. #234 bumps only the Dockerfile (`1.25→1.26-alpine`), #326 only `setup-go` (5→7). The red is the gate catching it. A correct fix moves all three **plus** adds a `golang` row to `infra/dependency-horizons.yaml`. |
-| **#330** | **fails `Lint`** | eslint 9→10. `TypeError: Error while loading rule 'react/display-name': contextOrFilename.getFilename is not a function` — `eslint-plugin-react` is incompatible with eslint 10's API. Needs the plugin (and probably `eslint-config-next`) bumped in lockstep. Not a merge. |
-| **#327** | **fails `docs-freshness`** | 17-package group. **Not dependabot-managed** — carries manual commits, so `@dependabot rebase` would **discard** them. Update by hand; `docs-freshness.sh --write` is the arbiter. |
-| #328 | green (stale) | `@types/node` 20→26. **The risky one.** `npx tsc --noEmit` is already red at **366 pre-existing errors** (jest-dom matcher typings in test files `next build` never checks), so a regression will not be obvious from the count. The honest assertion is *count-unchanged*, not exit 0. |
-| #329 | green (stale) | `@testing-library/jest-dom` 6→7 — major. |
-| #324 | green (stale) | `actions/setup-node` 4→7 — major. |
-| #325 | green (stale) | `docker/build-push-action` 5.4→7.3 — major. |
-| #323 | green (stale) | `docker/metadata-action` 5.10→6.2 — major. |
-| #243 | green (stale) | `slackapi/slack-github-action` 1.27→4.0 — major, and the oldest. |
+### 3.4 Never `@dependabot rebase` a PR carrying a hand-written commit
+
+It discards it. Happened to #327 at `16:36Z` (rebase requested `16:32Z`), losing the doc fix and
+leaving it red all day until it was closed and reborn as #348. #348 and #353 both carry
+hand-written doc commits for exactly this reason. If such a PR falls behind: rebase **locally**
+and force-push, and assert the commit survived before pushing.
 
 ---
 
 ## 4. Open items
 
-- [ ] **9 dependabot PRs** — §3. **Owner: maintainer (judgement needed).**
-- [ ] **#346** — teach `check-doc-citations.sh` the YAML `locator:` form, *then* add the register.
-      Verify by breaking a locator; `citations=N > 0` is the minimum bar. **Owner: unassigned.**
-- [ ] **#347** — a TS-16 container-config-drift detector. Working 30-line prototype described in
-      the issue, including the `docker inspect` nil-healthcheck trap that makes correct services
-      read as absent. **Owner: unassigned.**
-- [ ] **PR #344** — this handoff. Merge when green.
+- [ ] **#346** — teach `check-doc-citations.sh` the YAML `locator:` form, *then* add the
+      register; verify by breaking a locator (`citations=N > 0` is the minimum bar). Separately,
+      `check-doc-versions.sh` case-sensitivity — prefer making an unclaimed label a first-class
+      failure over just lowering the match. **Owner: unassigned.**
+- [ ] **#347** — a TS-16 container-config-drift detector. A working 30-line prototype is in the
+      issue, including the `docker inspect` nil-healthcheck trap that makes correct services read
+      as absent. **Owner: unassigned.**
+- [ ] **Dependabot will refill the queue.** It regenerates continuously and *regroups*: #350 was
+      closed and reborn as #353 mid-session, changing from 1 update to 2. "No open PRs" is true
+      **as of 05:35Z**, not a steady state. A frontend or Gradle group bump will usually also
+      break `check-doc-versions` — expect to add a doc-sync commit on top, per §3.4.
+- [ ] **eslint 10** stays blocked until `npm view eslint-plugin-react peerDependencies.eslint`
+      contains `^10`. Today: `^3 || … || ^8 || ^9.7`. Then delete the ignore block in
+      `.github/dependabot.yml`. **Owner: maintainer.**
 - [ ] **#337 / #115** — load-test baseline part-satisfied; edge↔core contract check and a
       dependency-down fault test outstanding. **Owner: unassigned.**
-- [ ] **`check-doc-citations.sh` UNCHECKABLE path** — a claim with no backticked identifier is
-      reported, not verified. Deliberate, but it is where citation drift can still hide.
 - [ ] **`rabbitmq-k8s` horizon row** — `owner: UNASSIGNED`, `manual_review.expires: 2026-10-26`.
       The staging/prod broker is still undeclared. **Owner: UNASSIGNED (that is the finding).**
 - [ ] **RabbitMQ 4.3 community support ends 2026-11-30** — `ops-contracts` goes amber ~2026-09-01
-      and RED 2026-12-01 **with no commit in between**. Do not read it as a broken gate.
-- [ ] **`.evidence/` holds the 3.12.14 tarball** — the only rollback path from 4.3.4. Untracked; do
-      not delete.
-- [ ] **A general register hazard, from finding 2** — a `deferred` block is only re-read on its
-      expiry date, so a deferral whose *reason* stops being true survives silently until then.
-      TS-13 did, for weeks. Worth a gate that re-evaluates each stated reason, or at least shorter
-      expiries. **Owner: unassigned, not filed.**
+      and RED 2026-12-01 **with no commit in between**. Not a broken gate.
+- [ ] **`.evidence/` holds the 3.12.14 tarball** — the only rollback path from 4.3.4. Untracked.
+- [ ] **A register hazard, unfiled.** A `deferred:` block is only re-read on its `expires` date,
+      so a deferral whose stated *reason* becomes false survives silently. TS-13's did, for weeks:
+      its reason was `grep -c pg_up alerts.yml = 0` while `alerts.yml:85` reads `pg_up`. Nothing
+      would have looked before 2026-09-30. Worth a gate that re-evaluates reasons, or shorter
+      expiries. **Owner: unassigned.**
 
-## 5. Residue
+## 5. Corrections to the previous handoff
 
-- Stack UP, all 8 scrape targets healthy. `NoOrdersCreated` firing by design (§0.3).
-- One guest order exists on the dev DB: `ORD-00000000-20260729-63EB83BC`, customer
-  `liveness-probe@jtoye.local`, placed deliberately as alert evidence.
-- `jtoye-redis` was stopped and restarted during the TS-15 proof; `jtoye-redis-exporter` and
-  `jtoye-prometheus` were recreated. All verified back to healthy.
-- Mailhog holds several `SyntheticDeliveryProbe-*` messages and one `NoOrdersCreated` — all
-  expected.
-- Local branches: `main` and `docs/handoff-2026-07-29` only. `fix/342-*` branches deleted on merge.
+Recorded because each cost time before being caught:
+
+- **"#234 and #326 are two halves of ONE invariant."** They are not. #326 only bumps the
+  *action* version (`setup-go@v5→v7`); the invariant is about the Go *language* version. They
+  were always independently mergeable.
+- **"#327 carries my commits — `@dependabot rebase` would discard them."** Already discarded
+  when written. All ten PRs had exactly one dependabot commit; the rebase ran at `16:36:19Z`,
+  hours before the handoff. The *lesson* was right, the *state* was stale.
+- **"`npx tsc --noEmit` is red at 366."** It is **378**. See §3.3.
+
+## 6. Residue
+
+- Stack UP, 16 jtoye containers, 8/8 targets. `core-java`/`edge-go`/`frontend` rebuilt and
+  recreated 05:31–05:33Z; `mcp-server` correctly untouched (nothing it builds from changed).
+- `jtoye-redis-exporter` was recreated to drop a phantom `wget` healthcheck its scratch image
+  cannot satisfy (failing streak 1367; the compose file removed it 2026-07-07 and the container
+  had never been recreated). Monitoring healthcheck-drift sweep: 5 MATCH / 0 DRIFT.
+- Two synthetic orders exist on the dev DB from alert evidence, customer
+  `liveness-probe@jtoye.local` — e.g. `ORD-00000000-20260729-63EB83BC`.
+- Mailhog holds several `SyntheticDeliveryProbe-*` messages and a `NoOrdersCreated` — expected.
+- `jtoye-redis` was stopped/started during the TS-15 induced-outage proof; verified healthy.
