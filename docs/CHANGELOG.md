@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The ollama container could never bind its port, so it ran attached to no network — 2026-07-30
+
+Found while verifying a routine container rebuild. The AI image-analysis path had been dead behind a green stack for weeks.
+
+#### Fixed
+- **`jtoye-ollama` ran healthy, on no network, with an empty model volume.** A host-native `ollama serve` (systemd, `/usr/local/bin/ollama`) owns `127.0.0.1:11434`; the compose service published the same port, so Docker failed `bind host port 0.0.0.0:11434/tcp: address already in use`, aborted networking setup, and left the container with `.HostConfig.NetworkMode` **set** but `.NetworkSettings.Networks` **empty**. Measured consequences: `core-java` got `bad address 'ollama:11434'`; `ollama-init` exited 1 with `lookup ollama … server misbehaving`; the model volume held 24K with an empty `models/manifests` — `ollama pull` had **never once succeeded**. Nothing detected it, because the healthcheck is `ollama list` executed *inside* the container and never touches the network, and because the drift gate compared declared *fields* (all correct) rather than runtime *attachment*. The compose file was never wrong.
+- **The published port is now injected, not hardcoded** (GLOBAL_RULE_6): `${OLLAMA_HOST_PORT:-11435}`, defaulting to 11435 so the stack works beside a host ollama; set 11434 when none runs. This changes nothing for the application — `core-java` uses `OLLAMA_URL=http://ollama:11434` and `ollama-init` uses `OLLAMA_HOST=http://ollama:11434`, both service-name paths over the bridge network that ignore the published port, which exists only so a developer can curl the API from the host. Verified after the fix: `getent hosts ollama` → `172.18.0.16`, `wget http://ollama:11434/` → `Ollama is running`, `:11435` serves the container while `:11434` still serves the host service (`llava:7b`) with no collision, `gemma3:12b` (8.1 GB) pulled into the volume, and an end-to-end `/api/generate` call returned `READY` (`rc=0`, 72s, of which 71.9s was model load).
+
+#### Added
+- **`D-4` network-attachment comparison in `scripts/check-container-config-drift.sh`** — the second live instance this gate has found, and the first its existing checks could not see: `D-1`–`D-3` all reported `ollama MATCH` while it sat detached, because every compared field *was* correct. Every network a service declares must now actually be attached, compared by suffix since compose renders `jtoye-network` into `<project>_jtoye-network`. Falsified against the real state rather than a proxy: `docker network disconnect` reproduced `attachments=0` while `docker inspect` still reported `healthy`, and the gate went 0 → 1 naming the network, then back to 0 on reconnect. One implementation subtlety recorded in the script: `.strip()` on the inspect output would eat the fourth field precisely when a container is on no network — the state `D-4` exists to catch — converting a detection into a short-parts VOID; it `rstrip`s newlines and pads instead.
+
+#### Known limitation (reported, not fixed)
+- This host has an RTX 2080 Ti but Docker registers only the `runc` runtime, so the compose GPU reservation cannot be satisfied and the container runs **CPU-only**. Installing `nvidia-container-toolkit` is a root-level system change, deliberately out of scope.
+
 ### Project version bumped to 2.3.0, and gated (#360) — 2026-07-30
 
 The artifact version is now **2.3.0**. No `v2.3` git tag is cut — milestone v2.3 is in development, so this section stays under `[Unreleased]`; the latest release tag remains `v2.2`.
