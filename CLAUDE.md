@@ -74,7 +74,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL JDBC Driver 42.7.13 - Database connectivity
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
-- AWS SDK v2 (2.49.5) - S3 API for image storage
+- AWS SDK v2 (2.49.6) - S3 API for image storage
 - Stripe React/JS 6.8.0, 9.12.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 12.43.0 - Animation library
@@ -87,7 +87,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Mailhog v1.0.1 - Local SMTP for email testing
 - Resilience4j 2.4.0 - Circuit breakers and retry logic
 - Bucket4j 8.10.1 - Token bucket rate limiting
-- Stripe Java SDK 33.1.1 - Payment intent creation and webhook handling
+- Stripe Java SDK 33.2.0 - Payment intent creation and webhook handling
 - OpenPDF 2.0.3 - PDF generation for allergen labels
 - Spring Data Redis (Lettuce) - Redis connection pooling
 ## Configuration
