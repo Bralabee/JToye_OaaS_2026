@@ -13,10 +13,26 @@ describe('SignIn Page', () => {
     render(<SignInPage />)
 
     expect(screen.getByText("J'Toye")).toBeInTheDocument()
-    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    // Retitled from the persona-neutral "Welcome back". This page authenticates
+    // against the jtoye-dev STAFF realm only, so a shopper who arrives cannot sign
+    // in here at all — the heading has to say whose page it is.
+    expect(screen.getByText('Vendor sign in')).toBeInTheDocument()
     expect(
-      screen.getByText('Sign in to manage your shop, orders and kitchen.')
+      screen.getByText(
+        'For kitchen operators and staff — manage your shop, orders and fulfilment.'
+      )
     ).toBeInTheDocument()
+  })
+
+  // The persona cross-link. Customers and vendors are separate Keycloak realms, so
+  // arriving on the wrong page is unrecoverable without a visible route to the
+  // other one — the realm simply refuses an account it has never heard of, with no
+  // explanation the user can act on.
+  it('should offer customers a route to their own sign-in page', () => {
+    render(<SignInPage />)
+
+    const customerLink = screen.getByRole('link', { name: /customer sign in/i })
+    expect(customerLink).toHaveAttribute('href', '/shop/signin')
   })
 
   it('should link the brand wordmark to the public home page', () => {

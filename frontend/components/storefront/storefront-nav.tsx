@@ -8,7 +8,7 @@ import { User, LogOut, Package, MapPin, Menu, X, ShoppingBag } from "lucide-reac
 import { cn } from "@/lib/utils"
 import { springPop } from "@/lib/motion"
 import { useCartCount } from "@/hooks/use-cart-count"
-import { getCustomerSession, customerLogin, customerLogout } from "@/lib/customer-auth"
+import { getCustomerSession, customerLogout } from "@/lib/customer-auth"
 import {
   Sheet,
   SheetClose,
@@ -170,13 +170,18 @@ export function StorefrontNav() {
           </button>
         </div>
       ) : (
-        <button
-          onClick={() => customerLogin(typeof window !== "undefined" ? window.location.pathname : "/shop")}
+        // A Link to the sign-in page, not a button firing customerLogin() at
+        // Keycloak. The bare redirect left a shopper with no landing destination:
+        // nothing to bookmark, nothing to come back to when a session expired, and
+        // no visible route to the vendor page if they had guessed wrong. `pathname`
+        // comes from usePathname() rather than window so it is stable during SSR.
+        <Link
+          href={`/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`}
           className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
         >
           <User className="h-3 w-3" />
           Sign in
-        </button>
+        </Link>
       )}
 
       {/* Mobile hamburger (<sm) — same idiom as PublicHeader so every public

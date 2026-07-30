@@ -28,6 +28,14 @@ import {
  * The three public nav routes (/shop, /for-operators, /track) are rendered as
  * explicit <Link href="..."> literals (not a mapped array) so the link-graph
  * connectivity is greppable and each route reads as a first-class inbound link.
+ *
+ * Sign-in contract: the unqualified "Sign in" CTA is the CUSTOMER one and goes to
+ * /shop/signin. It used to point at /auth/signin — the OPERATOR page, on a
+ * different Keycloak realm — while the footer's "Vendor sign in" pointed at that
+ * same URL, so the two personas were literally indistinguishable and a shopper
+ * clicking the primary CTA landed in an identity pool their account is not in,
+ * with no route back. The vendor entry point stays in the footer and on
+ * /for-operators, where the audience is already self-selected.
  */
 export function PublicHeader() {
   const pathname = usePathname()
@@ -81,7 +89,7 @@ export function PublicHeader() {
               Track order
             </Link>
             <Link
-              href="/auth/signin"
+              href="/shop/signin"
               className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-oxblood-700"
             >
               <User className="h-3 w-3" />
@@ -133,7 +141,7 @@ export function PublicHeader() {
                 </SheetClose>
                 <SheetClose asChild>
                   <Link
-                    href="/auth/signin"
+                    href="/shop/signin"
                     className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-oxblood px-3 text-sm font-medium text-white transition-colors hover:bg-oxblood-700"
                   >
                     <User className="h-4 w-4" />

@@ -2,6 +2,7 @@ package uk.jtoye.core.shop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
@@ -34,6 +36,22 @@ public class ShopService {
     private final TenantCacheEvictor cacheEvictor;
     private final ShopAccessService shopAccessService;
     private final ShopCacheLoader shopCacheLoader;
+
+    /**
+     * Slugs that must never reach the {@code slug} column, because the storefront
+     * serves a STATIC route at {@code /shop/<segment>} and Next.js resolves a static
+     * segment before the dynamic {@code [slug]} one — so such a shop would be
+     * permanently unreachable at its own URL with nothing to say why.
+     *
+     * <p>Configured rather than hardcoded because the list is a function of the
+     * frontend route table, which changes as routes are added. Spring binds the
+     * comma-separated value to this set; the default names every static segment that
+     * exists under {@code frontend/app/shop/} today.
+     *
+     * <p>Compared case-insensitively after trimming — see {@link #assertSlugNotReserved}.
+     */
+    @Value("${jtoye.shop.reserved-slugs:auth,orders,signin}")
+    private Set<String> reservedSlugs;
 
     public ShopService(ShopRepository shopRepository,
                        ShopMapper shopMapper,
@@ -65,9 +83,13 @@ public class ShopService {
         Shop shop = shopMapper.toEntity(request);
         shop.setTenantId(tenantId);
 
-        // Auto-generate slug from name if not provided
+        // Auto-generate slug from name if not provided. A generated slug always carries
+        // a random 8-char suffix, so it can never collide with a static storefront
+        // segment; only an explicitly-supplied one can, hence the guard on that branch.
         if (shop.getSlug() == null || shop.getSlug().isBlank()) {
             shop.setSlug(generateSlug(request.getName()));
+        } else {
+            assertSlugNotReserved(shop.getSlug());
         }
 
         // Sole-writer invariant (threat T-18-05-T): a brand-new shop is NEVER born
@@ -184,9 +206,14 @@ public class ShopService {
         shopMapper.updateEntity(request, shop);
         shop.setPublished(publishedBeforeUpdate);
 
-        // Regenerate slug if name changed and no explicit slug provided
+        // Regenerate slug if name changed and no explicit slug provided. The explicit
+        // branch is guarded for the same reason as createShop: shopMapper.updateEntity
+        // has already copied request.getSlug() onto the entity by this point, so an
+        // unguarded update is just as capable of stranding a shop as an unguarded create.
         if (request.getSlug() == null || request.getSlug().isBlank()) {
             shop.setSlug(generateSlug(request.getName()));
+        } else {
+            assertSlugNotReserved(request.getSlug());
         }
 
         shop = shopRepository.saveAndFlush(shop);
@@ -314,6 +341,30 @@ public class ShopService {
     private UUID requireTenantId() {
         return TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+    }
+
+    /**
+     * Reject a vendor-supplied slug that collides with a STATIC storefront route
+     * segment. See {@link ReservedSlugException} for why this is a reachability bug
+     * rather than a naming preference.
+     *
+     * <p>Compared case-insensitively against a trimmed value, because the collision is
+     * decided by the URL path Next.js matches, and that match does not care how the
+     * vendor capitalised or padded the field.
+     */
+    private void assertSlugNotReserved(String slug) {
+        if (slug == null || reservedSlugs == null || reservedSlugs.isEmpty()) {
+            return;
+        }
+        String candidate = slug.trim().toLowerCase();
+        for (String reserved : reservedSlugs) {
+            if (reserved != null && candidate.equals(reserved.trim().toLowerCase())) {
+                throw new ReservedSlugException(
+                        "Shop slug '" + slug + "' is reserved by a storefront route and would make the shop "
+                                + "unreachable at /shop/" + candidate + ". Choose a different slug, or leave it "
+                                + "blank to have one generated.");
+            }
+        }
     }
 
     private String generateSlug(String name) {

@@ -443,4 +443,109 @@ class ShopServiceTest {
         assertNull(result.getAddress());
         verify(shopRepository).saveAndFlush(any(Shop.class));
     }
+
+    // =================================================================================
+    // Reserved slugs.
+    //
+    // The storefront routes shops at /shop/[slug] and Next.js resolves a STATIC segment
+    // before the dynamic one, so a shop whose slug equals a static segment is
+    // permanently unreachable at its own URL with nothing to say why. /shop/auth and
+    // /shop/orders have been static since Phase 18; /shop/signin is the customer
+    // sign-in page.
+    //
+    // The @Value field is null when ShopService is constructed directly, so each test
+    // sets it explicitly. That is deliberate: it means these tests fail if the guard
+    // stops reading the field, rather than passing because the list happened to be
+    // empty. The generated-slug test below is the one that must NOT set it, and says so.
+    // =================================================================================
+
+    @Test
+    @DisplayName("createShop - Rejects a vendor-supplied slug that shadows a storefront route")
+    void testCreateShop_RejectsReservedSlug() {
+        // Given
+        setField(shopService, "reservedSlugs", java.util.Set.of("auth", "orders", "signin"));
+        validRequest.setSlug("signin");
+
+        // When / Then
+        uk.jtoye.core.exception.ReservedSlugException ex = assertThrows(
+                uk.jtoye.core.exception.ReservedSlugException.class,
+                () -> shopService.createShop(validRequest));
+
+        assertTrue(ex.getMessage().contains("signin"), "message should name the offending slug");
+        // Nothing may be persisted — a rejected slug must not leave a half-created shop.
+        verify(shopRepository, never()).saveAndFlush(any(Shop.class));
+    }
+
+    @Test
+    @DisplayName("createShop - Reserved-slug match ignores case and surrounding whitespace")
+    void testCreateShop_ReservedSlugMatchIsCaseAndWhitespaceInsensitive() {
+        // The collision is decided by the URL path Next.js matches, which does not care
+        // how the vendor capitalised or padded the field. Without normalisation
+        // "  SignIn  " would sail past the guard and strand the shop anyway.
+        setField(shopService, "reservedSlugs", java.util.Set.of("auth", "orders", "signin"));
+        validRequest.setSlug("  SignIn  ");
+
+        assertThrows(uk.jtoye.core.exception.ReservedSlugException.class,
+                () -> shopService.createShop(validRequest));
+        verify(shopRepository, never()).saveAndFlush(any(Shop.class));
+    }
+
+    @Test
+    @DisplayName("createShop - Accepts a slug that merely starts with a reserved word")
+    void testCreateShop_AcceptsNonReservedSlug() {
+        // The guard is exact-match, not prefix-match. "signin-kitchen" collides with
+        // nothing, and rejecting it would be an invented restriction on real vendors.
+        setField(shopService, "reservedSlugs", java.util.Set.of("auth", "orders", "signin"));
+        validRequest.setSlug("signin-kitchen");
+        when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(invocation -> {
+            Shop shop = invocation.getArgument(0);
+            setField(shop, "id", shopId);
+            setField(shop, "createdAt", OffsetDateTime.now());
+            return shop;
+        });
+
+        ShopDto result = shopService.createShop(validRequest);
+
+        assertEquals("signin-kitchen", result.getSlug());
+        verify(shopRepository).saveAndFlush(any(Shop.class));
+    }
+
+    @Test
+    @DisplayName("createShop - A GENERATED slug can never collide, even when the name is a reserved word")
+    void testCreateShop_GeneratedSlugCannotCollide() {
+        // reservedSlugs is deliberately NOT set here. This test asserts the structural
+        // reason the generated branch needs no guard — the random 8-char suffix — so
+        // stubbing the list would hide exactly what it is meant to prove.
+        validRequest.setName("signin");
+        validRequest.setSlug(null);
+        when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(invocation -> {
+            Shop shop = invocation.getArgument(0);
+            setField(shop, "id", shopId);
+            setField(shop, "createdAt", OffsetDateTime.now());
+            return shop;
+        });
+
+        ShopDto result = shopService.createShop(validRequest);
+
+        assertNotEquals("signin", result.getSlug());
+        assertTrue(result.getSlug().startsWith("signin-"),
+                "generated slug should keep the readable base: " + result.getSlug());
+        assertEquals("signin".length() + 1 + 8, result.getSlug().length(),
+                "generated slug should carry the 8-char uniqueness suffix: " + result.getSlug());
+    }
+
+    @Test
+    @DisplayName("updateShop - Rejects a vendor-supplied slug that shadows a storefront route")
+    void testUpdateShop_RejectsReservedSlug() {
+        // updateShop is guarded for the same reason as createShop: shopMapper.updateEntity
+        // has already copied the request slug onto the entity by the time the guard runs,
+        // so an unguarded update strands a shop just as effectively as an unguarded create.
+        setField(shopService, "reservedSlugs", java.util.Set.of("auth", "orders", "signin"));
+        validRequest.setSlug("orders");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
+
+        assertThrows(uk.jtoye.core.exception.ReservedSlugException.class,
+                () -> shopService.updateShop(shopId, validRequest));
+        verify(shopRepository, never()).saveAndFlush(any(Shop.class));
+    }
 }

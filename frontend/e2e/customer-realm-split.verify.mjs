@@ -81,13 +81,35 @@ async function scenarioA() {
   const page = await context.newPage()
   let realmSeen = "none"
   try {
-    // 1) Land on a customer-auth-guarded storefront page; the RequireCustomerAuth
-    //    guard renders a real "Sign in" button that calls customerLogin().
+    // 1) Land on a customer-auth-guarded storefront page. The RequireCustomerAuth
+    //    guard renders a "Sign in" LINK to /shop/signin.
+    //
+    //    This used to be a BUTTON that fired customerLogin() straight at Keycloak,
+    //    and this script located it with getByRole("button"). The customer/vendor
+    //    sign-in split turned it into a real landing page, so the flow is now two
+    //    steps and the locator is role-correct for each. Keeping the old
+    //    single-step locator here would not have failed loudly — `.first()` on a
+    //    missing role simply times out — so the step is spelled out rather than
+    //    made permissive with a button-or-link matcher, which would have hidden
+    //    the regression it is meant to catch.
     await page.goto(`${BASE}/shop/orders`, { waitUntil: "domcontentloaded" })
-    const signIn = page.getByRole("button", { name: /sign in/i }).first()
-    await signIn.waitFor({ state: "visible", timeout: 20000 })
+    const signInLink = page.getByRole("link", { name: /sign in/i }).first()
+    await signInLink.waitFor({ state: "visible", timeout: 20000 })
 
-    // 2) Clicking "Sign in" must redirect the browser into a Keycloak realm.
+    await Promise.all([
+      page.waitForURL(/\/shop\/signin/, { timeout: 20000 }),
+      signInLink.click(),
+    ])
+
+    // 1b) The landing page must carry the CUSTOMER copy, not the vendor page's.
+    //     Asserted because the whole point of the split is that these two pages
+    //     are distinguishable; landing on the wrong one is the defect.
+    check("Storefront sign-in lands on the CUSTOMER page (/shop/signin)",
+      page.url().includes("/shop/signin"))
+
+    // 2) Clicking "Sign in" there must redirect the browser into a Keycloak realm.
+    const signIn = page.getByRole("button", { name: /^sign in$/i }).first()
+    await signIn.waitFor({ state: "visible", timeout: 20000 })
     await Promise.all([
       page.waitForURL(/\/realms\//, { timeout: 20000 }),
       signIn.click(),
