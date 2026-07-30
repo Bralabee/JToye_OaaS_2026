@@ -235,11 +235,13 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 
 ## 5. Environment state
 
-- **JToye:** `main` @ `901cfba3`, clean. No local branches besides `main`. The 264 orphaned
+- **JToye:** on its default branch, tree clean, nothing unmerged — asserted by §6 step 1, not quoted
+  here, for the reason under the header table. No local branches besides the default. The 264 orphaned
   `refs/remotes/pr/*` refs were deleted; restore via
   `awk '{print "update " $2 " " $1}' .git/pr-refs-backup-20260730.txt | git update-ref --stdin`
   (`update`, **not** `create` — `create` fails on an existing ref) until a `git gc` reclaims them.
-- **dotfiles:** `master` @ `1d149d9`, clean. `sync-claude.sh --check` clean.
+- **dotfiles:** same shape — default branch is **`master`**, not `main` (§3.2: a routine hardcoding
+  `main` commits to the wrong branch). `sync-claude.sh --check` clean.
 - **Live stack:** 17 jtoye containers, all healthy. 4/4 built services FRESH. Rebuilt ~11:38–11:39Z;
   `core-java-2.3.0.jar` carries `Implementation-Version: 2.3.0`.
 - **Toolchain:** 6 DRIFT surfaced by `doctor.sh --check` (conda, node, npm, gemini-cli, copilot,
@@ -251,9 +253,18 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 ## 6. Resume instructions
 
 ```bash
-# 1. Confirm both trees are where this handoff says
-cd /home/sanmi/IdeaProjects/JToye_OaaS_2026 && git log --oneline -1   # expect 901cfba3
-cd /home/sanmi/dotfiles && git log --oneline -1                       # expect 1d149d9
+# 1. Confirm both trees are clean and hold nothing unmerged.
+#    Asserted, never quoted: a HEAD written down here is stale at the next merge, and the
+#    default branch is NOT the same in both repos (main vs master) — so resolve it, don't type it.
+for r in /home/sanmi/IdeaProjects/JToye_OaaS_2026 /home/sanmi/dotfiles; do
+  git -C "$r" fetch -q origin || { echo "VOID $r: fetch failed"; continue; }
+  b=$(git -C "$r" symbolic-ref --quiet --short refs/remotes/origin/HEAD) || { echo "VOID $r: no origin/HEAD"; continue; }
+  dirty=$(git -C "$r" status --porcelain | wc -l)
+  ahead=$(git -C "$r" rev-list --count "$b"..HEAD)
+  behind=$(git -C "$r" rev-list --count HEAD.."$b")
+  echo "$r on $(git -C "$r" branch --show-current) vs $b: dirty=$dirty ahead=$ahead behind=$behind"
+done
+# expect, for both: dirty=0 ahead=0 behind=0. A VOID line is NOT a pass.
 
 # 2. Confirm the stack is still parity-clean (expect rc=0 on both)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
