@@ -1,4 +1,4 @@
-# Handoff: the gates are portable now · 11 PRs merged across two repos · every defect found was GREEN
+# Handoff: the gates are portable now · 13 PRs merged across two repos · every defect found was GREEN
 
 **Generated:** 2026-07-30 ~14:10 BST. Supersedes the "PR queue empty · #342 + #234 + #330 closed"
 handoff (`c43d4b98`), which was accurate at `c43d4b98` and is now stale on its whole header — it
@@ -6,10 +6,10 @@ still reports PR #359 as the open one and the working tree on a housekeeping bra
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **`ccb15e23`** on `main`, tree clean. 4 PRs merged today: #359, #360, #361, #363 |
-| `dotfiles` | **`1d149d9`** on `master`, tree clean. 6 PRs merged today: #43–#48 |
+| `JToye_OaaS_2026` | **`901cfba3`** on `main`, tree clean. 6 PRs this session: #359, #360, #361, #363, #364, #365 |
+| `dotfiles` | **`1f32f49`** on `master`, tree clean. 7 PRs this session: #43–#49 |
 | Open PRs | **none in either repo** |
-| Open issues | **59** in JToye; the one opened today is **#362** (gate consolidation, deliberately deferred) |
+| Open issues | **58** in JToye; the one opened today, **#362** (gate consolidation), was CLOSED in favour of a dated deferral — see §4 |
 | Live stack | Compose UP, **17** jtoye containers, all healthy/up |
 | Gates | **10/10 rc=0**: runtime-freshness · container-config-drift · claims · doc-metrics · project-version · doc-citations · docs-freshness · doc-versions · terminal-states · alert-rules |
 | Runtime proof | `Implementation-Version: 2.3.0` read from inside the running `app.jar` · ollama `gemma3:12b 100% GPU UNTIL Forever` |
@@ -56,9 +56,11 @@ when it was never written), and **commit before running arms**.
 
 ---
 
-## 1. What landed — JToye (4 PRs)
+## 1. What landed — JToye (6 PRs)
 
 ```
+901cfba3  docs: close #362 for a dated deferral, repoint the manifest at it     (#365)
+72befab8  docs(handoff): this document                                          (#364)
 ccb15e23  feat(gates): the claim-gate engine, 43 assertions from a rule table   (#363)
 ef794411  fix(ollama): could never bind its port, so it ran on NO network       (#361)
 a366da2a  chore(release): bump to 2.3.0, and gate it so it cannot drift again   (#360)
@@ -76,9 +78,10 @@ a366da2a  chore(release): bump to 2.3.0, and gate it so it cannot drift again   
 - **#361** ollama — see §2.
 - **#363** the engine — see §3.
 
-## 1.1 What landed — dotfiles (6 PRs)
+## 1.1 What landed — dotfiles (7 PRs)
 
 ```
+1f32f49  ci: stage a verify workflow — dormant until the billing clears     (#49)
 1d149d9  docs(claude): §1 — assert the clean state LAST as well as first    (#48)
 e96cddc  feat(git): pre-push verification — the CI this private repo lacks  (#47)
 fcf6a0a  refactor(carl): resolve the conda env per project                 (#46)
@@ -165,7 +168,7 @@ bash scripts/check-claims.sh                 # then add to CI
   across 9 break arms**. `43 = 37 + 6`.
 
 **Deliberately additive** — `check-doc-metrics.sh` and `check-project-version.sh` **stay in CI**
-alongside it (issue **#362**), because they cross-check the engine and their headers carry the measured
+alongside it (deferred-items.md §13; #362 closed), because they cross-check the engine and their headers carry the measured
 evidence and the reasons for what is *not* checked. That must be **moved, not discarded**.
 
 ### 3.1 Memory is siloed and it rots — confirmed live
@@ -190,10 +193,17 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 
 ## 4. Open items
 
-1. **JToye #362 — gate consolidation.** Deferred with executable conditions, not a comment that rots:
-   confirm the engine has run green in CI on several PRs *and failed once for a real reason*; **move**
-   the headers; confirm the claim count stays **43**; re-run the 9 arms; re-run `check-doc-citations.sh`
-   (removing files shifts line numbers — that broke citations **twice** on one branch today).
+1. **Gate consolidation — deferred to a dated re-check, #362 CLOSED.** The issue's own gating
+   condition was **not met** at closure: `check-claims` had **2 green CI runs and 0 real CI
+   failures**, against a bar asking for several PRs *and* one genuine failure. Consolidating anyway
+   would have overridden a bar set hours earlier; leaving it open indefinitely would have made it
+   another item nobody revisits. Now
+   `.planning/phases/27-operational-maturity/deferred-items.md` **§13**, re-check **2026-09-30**,
+   carrying the rationale, the evidence that *does* exist (9 equivalence break arms + a 19-arm
+   selftest), and the five things consolidation must do — point 2 load-bearing: **move** the
+   scripts' headers, do not discard them. ⚠ `deferred-items.md` is **not** gate-enforced, unlike
+   `terminal-states.yaml`; the date is a convention, not a guarantee. Both bespoke gates and the
+   engine stay in CI meanwhile, so nothing is unguarded.
 2. **dotfiles Actions billing — NOT fixed.** `dotfiles` is **PRIVATE** (paid minutes);
    `JToye_OaaS_2026` is **PUBLIC** (free) — that asymmetry is the entire explanation. Its only
    workflow has failed since 2026-07-26 with *"recent GitHub Actions payments have failed or your
@@ -214,7 +224,7 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 
 ## 5. Environment state
 
-- **JToye:** `main` @ `ccb15e23`, clean. No local branches besides `main`. The 264 orphaned
+- **JToye:** `main` @ `901cfba3`, clean. No local branches besides `main`. The 264 orphaned
   `refs/remotes/pr/*` refs were deleted; restore via
   `awk '{print "update " $2 " " $1}' .git/pr-refs-backup-20260730.txt | git update-ref --stdin`
   (`update`, **not** `create` — `create` fails on an existing ref) until a `git gc` reclaims them.
@@ -231,7 +241,7 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 
 ```bash
 # 1. Confirm both trees are where this handoff says
-cd /home/sanmi/IdeaProjects/JToye_OaaS_2026 && git log --oneline -1   # expect ccb15e23
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026 && git log --oneline -1   # expect 901cfba3
 cd /home/sanmi/dotfiles && git log --oneline -1                       # expect 1d149d9
 
 # 2. Confirm the stack is still parity-clean (expect rc=0 on both)
