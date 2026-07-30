@@ -2,9 +2,9 @@
 
 **Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
-[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.2-green.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-921%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-1851%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -221,18 +221,24 @@ CREATE POLICY tenant_isolation ON shops
 
 ## 📊 Status
 
-### Current Version: v2.1.0
+### Current Version: v2.2 (latest release tag) — milestone v2.3 in development
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 690 `@Test` methods across 113 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
-- Edge (Go): 75 `Test*` functions across 8 files ✅
-- Frontend (Jest): 130 `it/test` blocks across 22 files ✅
-- Frontend E2E (Playwright): 23 `test()` blocks across 5 specs ✅
-- **Total: 921 logical test invocations** ✅
+- Backend (Java): 1259 `@Test` methods across 219 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Edge (Go): 77 `Test*` functions across 9 files ✅
+- Frontend (Jest): 424 `it/test` blocks across 62 files ✅
+- Frontend E2E (Playwright): 43 `test()` blocks across 13 specs ✅
+- MCP server (vitest): 48 `it/test` blocks across 8 files ✅
+- **Total: 1851 logical test invocations** ✅
 
-> Documentation counts are guarded by the `docs-freshness` CI gate
-> (`.github/workflows/docs-freshness.yml`), which fails the build if these
-> numbers drift from the source tree.
+Database schema version: **V60** (Flyway).
+
+> These numbers are guarded end-to-end by two CI gates in
+> `.github/workflows/docs-freshness.yml`: `scripts/docs-freshness.sh` asserts
+> `docs/metrics.json` against the source tree, and `scripts/check-doc-metrics.sh`
+> asserts the numbers quoted *in this file* (and in `CLAUDE.md` / `AGENTS.md`)
+> against `docs/metrics.json`. Before the second gate existed this block had
+> drifted to `921` while the tree was at `1851` — the first gate never read it.
 
 **Production Readiness:** 100/100
 
