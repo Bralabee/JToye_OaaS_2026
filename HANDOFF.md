@@ -1,16 +1,17 @@
 # Handoff: PR queue empty · #342 + #234 + #330 closed · every gate green on a verified runtime
 
-**Generated:** 2026-07-30 ~06:40 BST; §0/§2/§4 updated ~09:10 BST after #355 and #357. Supersedes the
+**Generated:** 2026-07-30 ~06:40 BST; §0/§2/§4 updated ~09:10 BST after #355 and #357; header +§7
+updated ~10:35 BST after the housekeeping pass (#359). Supersedes the
 "#342 closed at zero defects" handoff
 (`dce03bd`), which was accurate at `79a3a6a` and is now stale on its whole dependabot section.
 
 | | |
 |---|---|
-| `origin/main` when written | **`ef797adc`** — 15 commits on from `15871d3`. `git log --oneline -20` beats this row. |
-| Open PRs | **none, as of 05:35Z.** Dependabot regenerates — see §4. |
+| `origin/main` when written | **`c43d4b98`** — `ef797adc` + #355/#356/#357/#358. `git log --oneline -20` beats this row. |
+| Open PRs | **#359 `chore/housekeeping-20260730`** — housekeeping, awaiting review/merge (see §7). Dependabot regenerates — see §4. |
 | Issues opened here | #346 doc-gate coverage — CLOSED by #355 · #347 TS-16 detector — CLOSED by #357 |
 | Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** · **#346** · **#347** — **none left open** |
-| Working tree | clean, on `main`, no local branches besides `main` |
+| Working tree | clean, on **`chore/housekeeping-20260730`** (2 commits ahead of `main`, 0 behind) |
 | Live stack | Compose UP, 16 jtoye containers healthy, 8/8 scrape targets up |
 | Runtime parity | **`check-runtime-freshness.sh` 0 — 4/4 FRESH** (rebuilt 05:31–05:33Z) · **`check-container-config-drift.sh` 0 — 15 compared, 0 drift** (new, #357) |
 | Conda env | **none needed** — Java 21 + Gradle wrapper, Go 1.26.5, Node 22 |
@@ -331,3 +332,85 @@ Recorded because each cost time before being caught:
   `liveness-probe@jtoye.local` — e.g. `ORD-00000000-20260729-63EB83BC`.
 - Mailhog holds several `SyntheticDeliveryProbe-*` messages and a `NoOrdersCreated` — expected.
 - `jtoye-redis` was stopped/started during the TS-15 induced-outage proof; verified healthy.
+
+---
+
+## 7. Housekeeping pass — PR #359 open, awaiting merge
+
+Ran the session housekeeping routine at ~09:20–10:35 BST on a clean `main` @ `c43d4b98`.
+Everything below is on branch `chore/housekeeping-20260730` (2 commits), **not yet merged**.
+
+### The finding worth carrying forward
+
+**A doc can name its own guardian and not have one.** `README.md` advertised
+`Total: 921 logical test invocations` and, in the very next block, that those counts were
+"guarded by the `docs-freshness` CI gate ... which fails the build if these numbers drift".
+The tree stood at **1851**. `docs-freshness.sh` was green on every commit in between —
+because it closes one half of the loop only (source tree → `docs/metrics.json`) and **never
+opens a doc**. Its own failure message ends *"...then update README/PROJECT.md and commit"*:
+a prose instruction, which is precisely the thing that fails. This is the same shape as §2's
+two blind spots, found the same way — by asking what the gate actually reads, not what it says.
+
+Every README sub-count was wrong (690/113 Java, 75/8 Go, 130/22 Jest, 23/5 Playwright) and the
+`mcp-server` vitest tier (48 blocks) was missing from README entirely.
+
+### What landed on the branch
+
+1. **`scripts/check-doc-metrics.sh`** — 37 declared `(doc, metric-key, pattern)` rules over
+   README/CLAUDE.md/AGENTS.md, asserted against `docs/metrics.json`. **M-1**: a rule matching
+   *nothing* FAILS, so deleting the sentence cannot dodge the gate. **M-2**: every captured
+   number must match. Fails **closed** at exit 2 on missing `jq`/manifest/doc, an absent or
+   non-numeric manifest key, a `grep -P` error, or zero claims compared. Wired into
+   `docs-freshness.yml` with `if: always()`, next to `check-doc-versions`.
+   **Proven to execute in CI, not skipped**: run `30530981230` logs
+   `rules: 37 across 3 doc(s) / claims: 37 extracted and compared`.
+2. **CLAUDE.md + AGENTS.md said schema V59; V60 shipped in #316.** Corrected with the
+   quarantine-durability rationale. The "enforced by" sentence in both now names *both* gates.
+3. **CHANGELOG stopped at #314.** 47 PRs had merged since; 43 had no entry. Four dated sections
+   added. The 4 left out are `docs(handoff)` artifacts (#344/#354/#356/#358) — continuity
+   documents, not project changes.
+
+### Break arms — all five run on the real tree, restores verified by content
+
+| arm | fault | expected | got |
+|---|---|---|---|
+| 1 | README total `1851 → 1850` | 1 | **1** `doc says 1850, docs/metrics.json says 1851` |
+| 2 | MCP claim sentence deleted | 1 | **1** `rule matched NOTHING — the claim was removed or reworded` |
+| 3 | CLAUDE.md `V60 → V59` | 1 | **1** `doc says 59, docs/metrics.json says 60` |
+| 4 | manifest key `mcp_test_blocks` removed | 2 | **2** VOID `key absent from docs/metrics.json` |
+| 5 | `docs/metrics.json` moved away | 2 | **2** VOID `docs/metrics.json is missing` |
+
+Restores checked with `grep -c` on unique tokens, **not** `git diff --stat` — per the
+break-arm-revert trap. Pass direction re-confirmed after restore.
+
+### Clean on everything else
+
+- Go: `gofmt -l` empty · `go vet` · `go build` · `go mod tidy` no drift · `go test -race ./...` all pass.
+- Frontend: `npm run lint` **0 errors / 28 pre-existing warnings** · `npm run build` (tsc) rc=0.
+- All repo gates green, including both runtime-parity gates against the live stack
+  (`4/4 FRESH`, `15 compared / 0 drift`) — my diff touches no service build path.
+- Breaking-change review vs merge-base: **zero** removed lines in `*.ts|tsx|go|java|sql`
+  and zero in workflows/configs.
+- Unpushed-branch audit: clean (no local branch held unpushed commits).
+
+### Two things left for a human, deliberately not actioned
+
+1. **264 orphaned `refs/remotes/pr/*` refs.** Left by `gh pr checkout`; no fetch refspec covers
+   them (`remote.origin.fetch = +refs/heads/*:refs/remotes/origin/*`), so `git fetch --prune`
+   can **never** remove them. 0 map to an open PR (there are none besides #359). They mirror
+   GitHub's `refs/pull/*/head`, which GitHub retains, so deleting them loses nothing:
+   `git for-each-ref --format='delete %(refname)' refs/remotes/pr/ | git update-ref --stdin`
+   Only 35 of 264 are ancestors of `origin/main` — the other 229 are the squash-merge
+   ancestry artefact, not evidence of unmerged work.
+2. **Artifact version vs release tag.** `build.gradle.kts` and `mcp-server/package.json` both
+   say `2.1.0`; the latest release tag is `v2.2` and the active milestone is v2.3. README now
+   states the tag and the milestone honestly rather than repeating `2.1.0`, but **bumping the
+   Gradle/npm artifact version is a release decision and was not made here.**
+
+### Toolchain drift (report only — never applied inside housekeeping)
+
+`~/dotfiles/toolchain/doctor.sh --check` → exit 1: **6 DRIFT** (conda 26.1.1→26.5.3,
+node v22.23.1→v22.23.2, npm 12.0.1→12.0.2, gemini-cli 0.52.0→0.53.0, copilot 1.0.75→1.0.76,
+ms-fabric-cli 1.2.0→1.6.1), **1 UNKNOWN** (`antigravity`, policy `manual` — the probe has no
+channel to query, which is its recorded state, not a gap). `~/dotfiles/sync-claude.sh --check`
+clean. Converge with `update.sh --tier N` in its own session, then `doctor.sh --write-lock`.

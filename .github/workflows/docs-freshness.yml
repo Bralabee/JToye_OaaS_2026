@@ -25,3 +25,11 @@ jobs:
       - name: Verify documented dependency versions match the build files
         if: always()
         run: bash scripts/check-doc-versions.sh
+      # The other half of the docs-freshness loop. docs-freshness.sh proves
+      # docs/metrics.json matches the source tree; this proves the numbers a
+      # human actually reads (README.md, CLAUDE.md, AGENTS.md) match
+      # docs/metrics.json. Without it README drifted to 921 against a tree of
+      # 1851 with docs-freshness.sh green throughout — it never opened the file.
+      - name: Verify prose metric claims match docs/metrics.json
+        if: always()
+        run: bash scripts/check-doc-metrics.sh
