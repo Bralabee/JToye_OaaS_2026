@@ -1,0 +1,63 @@
+# claims.manifest — J'Toye OaaS
+# Consumed by scripts/check-claims.sh (vendored gates/claim-gate.sh engine).
+# TAB-separated. Generated from the rule tables of check-doc-metrics.sh and
+# check-project-version.sh so the translation is mechanical, not retyped.
+#
+# ADDITIVE FOR NOW: this manifest runs the same 43 assertions as check-doc-metrics.sh
+# (37) + check-project-version.sh (6), which REMAIN in CI as a cross-check while the
+# engine earns trust. Consolidation is tracked in issue #362, which requires MOVING
+# their headers here rather than discarding them: they hold the measured evidence and
+# the reasons for what is deliberately NOT checked.
+# Engine canonical copy: ~/dotfiles/gates/  ·  refresh: ~/dotfiles/gates/install.sh <repo>
+
+source	metrics	json	docs/metrics.json	int
+source	gradle	regex	build.gradle.kts	semver	^\s*version\s*=\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")
+
+# ── test/schema metrics: docs/metrics.json -> the docs that quote it ──
+rule	metrics	total_logical_invocations	README.md	total_logical_invocations	tests-\K[0-9]+(?=%20logical%20invocations)
+rule	metrics	total_logical_invocations	README.md	total_logical_invocations	Total: \K[0-9]+(?= logical test invocations)
+rule	metrics	java_test_methods	README.md	java_test_methods	Backend \(Java\): \K[0-9]+(?= .@Test. methods across)
+rule	metrics	java_test_files	README.md	java_test_files	Backend \(Java\): [0-9]+ .@Test. methods across \K[0-9]+
+rule	metrics	go_test_funcs	README.md	go_test_funcs	Edge \(Go\): \K[0-9]+(?= .Test\*. functions across)
+rule	metrics	go_test_files	README.md	go_test_files	Edge \(Go\): [0-9]+ .Test\*. functions across \K[0-9]+
+rule	metrics	jest_blocks	README.md	jest_blocks	Frontend \(Jest\): \K[0-9]+(?= .it/test. blocks across)
+rule	metrics	jest_files	README.md	jest_files	Frontend \(Jest\): [0-9]+ .it/test. blocks across \K[0-9]+
+rule	metrics	playwright_blocks	README.md	playwright_blocks	Frontend E2E \(Playwright\): \K[0-9]+(?= .test\(\). blocks across)
+rule	metrics	playwright_specs	README.md	playwright_specs	Frontend E2E \(Playwright\): [0-9]+ .test\(\). blocks across \K[0-9]+
+rule	metrics	mcp_test_blocks	README.md	mcp_test_blocks	MCP server \(vitest\): \K[0-9]+(?= .it/test. blocks across)
+rule	metrics	mcp_test_files	README.md	mcp_test_files	MCP server \(vitest\): [0-9]+ .it/test. blocks across \K[0-9]+
+rule	metrics	schema_version	README.md	schema_version	Database schema version: \*\*V\K[0-9]+
+rule	metrics	schema_version	CLAUDE.md	schema_version	Current schema version: V\K[0-9]+
+rule	metrics	total_logical_invocations	CLAUDE.md	total_logical_invocations	project standard is \K[0-9]+(?= logical invocations)
+rule	metrics	java_test_methods	CLAUDE.md	java_test_methods	\K[0-9]+(?= Java .@Test. methods across)
+rule	metrics	java_test_files	CLAUDE.md	java_test_files	[0-9]+ Java .@Test. methods across \K[0-9]+
+rule	metrics	jest_blocks	CLAUDE.md	jest_blocks	\K[0-9]+(?= Jest .it/test. blocks across)
+rule	metrics	jest_files	CLAUDE.md	jest_files	[0-9]+ Jest .it/test. blocks across \K[0-9]+
+rule	metrics	go_test_funcs	CLAUDE.md	go_test_funcs	\K[0-9]+(?= top-level Go .Test\*. funcs across)
+rule	metrics	go_test_files	CLAUDE.md	go_test_files	top-level Go .Test\*. funcs across \K[0-9]+
+rule	metrics	playwright_blocks	CLAUDE.md	playwright_blocks	\K[0-9]+(?= Playwright .test\(\). blocks across)
+rule	metrics	playwright_specs	CLAUDE.md	playwright_specs	Playwright .test\(\). blocks across \K[0-9]+
+rule	metrics	mcp_test_blocks	CLAUDE.md	mcp_test_blocks	\K[0-9]+(?= MCP-server vitest .it/test. blocks across)
+rule	metrics	mcp_test_files	CLAUDE.md	mcp_test_files	MCP-server vitest .it/test. blocks across \K[0-9]+
+rule	metrics	schema_version	AGENTS.md	schema_version	Current schema version: V\K[0-9]+
+rule	metrics	total_logical_invocations	AGENTS.md	total_logical_invocations	project standard is \K[0-9]+(?= logical invocations)
+rule	metrics	java_test_methods	AGENTS.md	java_test_methods	\K[0-9]+(?= Java .@Test. methods across)
+rule	metrics	java_test_files	AGENTS.md	java_test_files	[0-9]+ Java .@Test. methods across \K[0-9]+
+rule	metrics	jest_blocks	AGENTS.md	jest_blocks	\K[0-9]+(?= Jest .it/test. blocks across)
+rule	metrics	jest_files	AGENTS.md	jest_files	[0-9]+ Jest .it/test. blocks across \K[0-9]+
+rule	metrics	go_test_funcs	AGENTS.md	go_test_funcs	\K[0-9]+(?= top-level Go .Test\*. funcs across)
+rule	metrics	go_test_files	AGENTS.md	go_test_files	top-level Go .Test\*. funcs across \K[0-9]+
+rule	metrics	playwright_blocks	AGENTS.md	playwright_blocks	\K[0-9]+(?= Playwright .test\(\). blocks across)
+rule	metrics	playwright_specs	AGENTS.md	playwright_specs	Playwright .test\(\). blocks across \K[0-9]+
+rule	metrics	mcp_test_blocks	AGENTS.md	mcp_test_blocks	\K[0-9]+(?= MCP-server vitest .it/test. blocks across)
+rule	metrics	mcp_test_files	AGENTS.md	mcp_test_files	MCP-server vitest .it/test. blocks across \K[0-9]+
+
+# ── project version: build.gradle.kts -> every site that claims it ──
+rule	gradle	-	frontend/package.json	npm package version	^\s*"version":\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")
+rule	gradle	-	README.md	version badge	badge/version-\K[0-9]+\.[0-9]+\.[0-9]+(?=(--dev)?-)
+rule	gradle	-	README.md	Current Version heading	### Current Version: \K[0-9]+\.[0-9]+\.[0-9]+
+rule	gradle	-	README.md	artifact-version sentence	artifact version \(`build\.gradle\.kts`, `frontend/package\.json`\) is \*\*\K[0-9]+\.[0-9]+\.[0-9]+
+# The lockfile records the version at TWO paths and also once per dependency, so
+# these MUST be addressed by jq path — a PCRE would match every dependency.
+rule	gradle	-	frontend/package-lock.json	lock root	jq:.version
+rule	gradle	-	frontend/package-lock.json	lock packages[""]	jq:.packages[""].version
