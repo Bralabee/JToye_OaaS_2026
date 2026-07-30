@@ -34,6 +34,10 @@
 #   D-1  healthcheck.test   the property that found the live instance
 #   D-2  restart policy     silent on drift, and decides whether an outage self-heals
 #   D-3  image reference    NON-BUILT services only (see below)
+#   D-4  network attachment the property that found the SECOND live instance —
+#                           jtoye-ollama running, healthy, and on NO network at all
+#                           (2026-07-30). D-1..D-3 all matched: every declared FIELD
+#                           was correct, and the fault was in the runtime attachment.
 #
 #   NOT compared, with reasons, so the next person does not have to rediscover them:
 #     environment  — `.Config.Env` merges the IMAGE's own ENV defaults with compose's,
@@ -140,7 +144,8 @@ if not services:
 
 INSPECT = ("{{if .Config.Healthcheck}}{{json .Config.Healthcheck.Test}}{{else}}null{{end}}\n"
            "{{.HostConfig.RestartPolicy.Name}}\n"
-           "{{.Config.Image}}")
+           "{{.Config.Image}}\n"
+           "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}")
 
 drift = match = absent = 0
 for name in sorted(services):
@@ -153,10 +158,16 @@ for name in sorted(services):
     r = subprocess.run(["docker","inspect",cid,"--format",INSPECT], capture_output=True, text=True)
     if r.returncode != 0:
         print("  %-30s NOT RUNNING (container id vanished)" % name); absent += 1; continue
-    parts = r.stdout.strip().split("\n")
+    # NOTE: .strip() would eat the 4th field entirely when a container is attached to NO
+    # network -- the exact state D-4 exists to catch -- so strip only the trailing newline
+    # and pad, rather than letting the empty field vanish into a short-parts sys.exit(3).
+    parts = r.stdout.rstrip("\n").split("\n")
     if len(parts) < 3:
         sys.stderr.write("inspect returned %d fields for %s\n" % (len(parts), name)); sys.exit(3)
-    run_hc, run_restart, run_image = parts[0], parts[1], parts[2]
+    while len(parts) < 4:
+        parts.append("")
+    run_hc, run_restart, run_image = parts[0].strip(), parts[1].strip(), parts[2].strip()
+    run_nets = parts[3].split()
 
     problems = []
 
@@ -181,6 +192,34 @@ for name in sorted(services):
         want_image = s.get("image")
         if want_image and want_image != run_image:
             problems.append(("image", want_image, run_image))
+
+    # D-4 network ATTACHMENT. Added 2026-07-30 after a live instance this gate reported
+    # as MATCH while the container sat on no network at all.
+    #
+    #   jtoye-ollama: compose declares `networks: [jtoye-network]` and .HostConfig
+    #   .NetworkMode was set to it, yet .NetworkSettings.Networks was EMPTY. Docker had
+    #   failed "bind host port 0.0.0.0:11434/tcp: address already in use" (a host-native
+    #   `ollama serve` owns 11434), aborted networking setup, and left the container
+    #   running-and-detached. Nothing detected it for weeks: `docker ps` said healthy
+    #   because the healthcheck is `ollama list` run INSIDE the container, which never
+    #   touches the network; D-1..D-3 all matched because every compared FIELD was
+    #   correct. The failure was in the runtime attachment, not in any declared value.
+    #   Consequence: core-java got `bad address 'ollama:11434'` and the model volume
+    #   stayed empty (24K, no manifests) -- an AI feature silently dead behind green.
+    #
+    # Compose renders each declared name into the project-prefixed real network, so
+    # compare by SUFFIX rather than demanding an exact string: a service declaring
+    # `jtoye-network` legitimately runs on `<project>_jtoye-network`.
+    want_nets = s.get("networks") or {}
+    want_names = list(want_nets.keys()) if isinstance(want_nets, dict) else list(want_nets)
+    if want_names:
+        if not run_nets:
+            problems.append(("networks", ",".join(want_names),
+                             "<NONE -- container is attached to no network>"))
+        else:
+            for wn in want_names:
+                if not any(rn == wn or rn.endswith("_" + wn) for rn in run_nets):
+                    problems.append(("networks", wn, ",".join(run_nets)))
 
     if problems:
         drift += 1

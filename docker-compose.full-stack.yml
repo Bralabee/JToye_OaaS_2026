@@ -450,7 +450,22 @@ services:
     container_name: jtoye-ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      # HOST-side port only. Nothing in the stack uses it: core-java reaches this
+      # container as OLLAMA_URL=http://ollama:11434 over the bridge network, and
+      # ollama-init uses OLLAMA_HOST=http://ollama:11434 — both service-name paths
+      # that ignore the published port entirely. It is published purely so a
+      # developer can curl the model API from the host.
+      #
+      # WHY IT IS INJECTED RATHER THAN 11434. A host-native `ollama serve`
+      # (systemd, /usr/local/bin/ollama) also binds 11434, and on a machine
+      # running one this container could NEVER start: measured 2026-07-30,
+      # `failed to bind host port 0.0.0.0:11434/tcp: address already in use`, so
+      # Docker aborted networking setup and left the container with
+      # NetworkMode set but attachments=0 — running-looking yet on no network.
+      # That is why its volume held no model for weeks (24K, empty manifests)
+      # while `ollama list` reported healthy: the healthcheck runs INSIDE the
+      # container and never touches the network, so nothing detected it.
+      - "${OLLAMA_HOST_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
