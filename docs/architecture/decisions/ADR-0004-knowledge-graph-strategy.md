@@ -1,6 +1,6 @@
 # ADR-0004: Knowledge-graph strategy — relational graph model in PostgreSQL, no graph datastore
 
-**Status:** Proposed (2026-07-30)
+**Status:** Accepted (2026-07-30)
 **Refs:** ADR-0002 (managed vs manifest datastores), ADR-0003 (broker selection — the precedent for
 rejecting a second datastore that dilutes the tenant wall), #207 (pgvector spike, open), V25
 (products FTS), V41 (PPDS/allergen columns), V52/V57 (shop_staff), `RlsContractTest`

@@ -51,7 +51,7 @@ enforced by the `docs-freshness` CI gate)
 | [ADR-0001](architecture/decisions/ADR-0001-onboarding-approval-and-stripe-money-flow.md) | Accepted | Onboarding approval gates + Stripe money flow (marketplace destination charges) |
 | [ADR-0002](architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md) | **Proposed** | Managed vs in-cluster manifests for stateful infra. Needs owner sign-off; the RabbitMQ half is still unbuilt |
 | [ADR-0003](architecture/decisions/ADR-0003-messaging-broker-selection.md) | Accepted | Remain on RabbitMQ — Redpanda and NATS assessed and rejected, with revisit triggers |
-| [ADR-0004](architecture/decisions/ADR-0004-knowledge-graph-strategy.md) | **Proposed** | Relational ingredient/entity graph in the existing Postgres — Apache AGE and Neo4j assessed and rejected on tenant-wall grounds, with revisit triggers |
+| [ADR-0004](architecture/decisions/ADR-0004-knowledge-graph-strategy.md) | Accepted | Relational ingredient/entity graph in the existing Postgres — Apache AGE and Neo4j assessed and rejected on tenant-wall grounds, with revisit triggers |
 
 ---
 
