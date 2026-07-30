@@ -1,4 +1,4 @@
-# Handoff: the gates are portable now · 13 PRs merged across two repos · every defect found was GREEN
+# Handoff: the gates are portable now · 15 PRs merged across two repos · every defect found was GREEN
 
 **Generated:** 2026-07-30 ~14:10 BST. Supersedes the "PR queue empty · #342 + #234 + #330 closed"
 handoff (`c43d4b98`), which was accurate at `c43d4b98` and is now stale on its whole header — it
@@ -6,8 +6,8 @@ still reports PR #359 as the open one and the working tree on a housekeeping bra
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **`901cfba3`** on `main`, tree clean. 6 PRs this session: #359, #360, #361, #363, #364, #365 |
-| `dotfiles` | **`1f32f49`** on `master`, tree clean. 7 PRs this session: #43–#49 |
+| `JToye_OaaS_2026` | `main`, tree clean. **7 PRs this session:** #359, #360, #361, #363, #364, #365, #367. HEAD deliberately **not** quoted — see the note under this table |
+| `dotfiles` | `master`, tree clean. **8 PRs this session:** #43–#50 |
 | Open PRs | **none in either repo** |
 | Open issues | **58** in JToye; the one opened today, **#362** (gate consolidation), was CLOSED in favour of a dated deferral — see §4 |
 | Live stack | Compose UP, **17** jtoye containers, all healthy/up |
@@ -15,6 +15,13 @@ still reports PR #359 as the open one and the working tree on a housekeeping bra
 | Runtime proof | `Implementation-Version: 2.3.0` read from inside the running `app.jar` · ollama `gemma3:12b 100% GPU UNTIL Forever` |
 | Project version | **2.3.0** (artifact). No `v2.3` tag — milestone in development, CHANGELOG stays `[Unreleased]` |
 | Conda env | **none needed here** — Java 21 + Gradle wrapper, Go 1.26, Node 22. This repo has no Python |
+
+> **Why no HEAD SHAs in that table.** This handoff went stale **twice within an hour** of being
+> written, both times because it transcribed a HEAD that the very next merge invalidated — including
+> a `§6` resume step reading `expect ccb15e23` that would have failed outright for the next reader.
+> A document quoting its own repo's HEAD is stale the moment it merges. Those facts have sources of
+> truth, so **run them, don't read them** — §6 pairs each command with what to expect. Same lesson as
+> everything else here: a hand-maintained number drifts; an asserted one cannot.
 
 ---
 
@@ -30,6 +37,7 @@ what it claims to cover.*
 | `check-doc-versions` green, 84 claims | the **project version** sat at `2.1.0` through the v2.1 AND v2.2 releases — nothing compared the sites to each other |
 | `docker ps` → `healthy`, `ollama MATCH` in the drift gate | the container was attached to **no network at all**; its healthcheck ran *inside* itself and never touched the network. The AI feature had been dead for weeks |
 | my own new emoji classifier | `'^\s*(//\|\*)'` **could never match** `grep -n` output (the line starts with `path:NN:`), so the comment class was silently always empty |
+| **my own merge guard, on all 12 merges** | `bad=$(gh api …/check-runs \| wc -l)` counts a **failed** API call as zero. On a TLS timeout it printed `non-green=0 pending=0 GO` — every number from a command that had failed — and proceeded to merge. Only GitHub's own timeout stopped it. See §7 |
 
 The corollary now in the Proof Standards: *"the gate I just added now passes" is not evidence.*
 
@@ -56,9 +64,11 @@ when it was never written), and **commit before running arms**.
 
 ---
 
-## 1. What landed — JToye (6 PRs)
+## 1. What landed — JToye (7 PRs)
 
 ```
+(this doc)  docs(handoff): record the merge-guard fix — §7                 (#367)
+111be083  docs(handoff): refresh the facts #365 and #49 invalidated       (#366)
 901cfba3  docs: close #362 for a dated deferral, repoint the manifest at it     (#365)
 72befab8  docs(handoff): this document                                          (#364)
 ccb15e23  feat(gates): the claim-gate engine, 43 assertions from a rule table   (#363)
@@ -78,9 +88,10 @@ a366da2a  chore(release): bump to 2.3.0, and gate it so it cannot drift again   
 - **#361** ollama — see §2.
 - **#363** the engine — see §3.
 
-## 1.1 What landed — dotfiles (7 PRs)
+## 1.1 What landed — dotfiles (8 PRs)
 
 ```
+8a69e4f  feat(gates): a fail-closed PR merge guard                       (#50)
 1f32f49  ci: stage a verify workflow — dormant until the billing clears     (#49)
 1d149d9  docs(claude): §1 — assert the clean state LAST as well as first    (#48)
 e96cddc  feat(git): pre-push verification — the CI this private repo lacks  (#47)
@@ -254,7 +265,11 @@ bash scripts/check-claims.sh;  echo "rc=$?"                  # expect 0, "43 cla
 bash ~/dotfiles/gates/install.sh --check-all; echo "rc=$?"   # expect 0, CURRENT (v1.0.0)
 bash ~/dotfiles/gates/selftest.sh | tail -2                  # expect "passed=19 failed=0"
 
-# 4. Confirm the AI path is live end-to-end (not just that the model file exists)
+# 4. Before merging ANY PR — never the inline gh-api-pipe-wc idiom (see §7)
+~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
+#    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
+
+# 5. Confirm the AI path is live end-to-end (not just that the model file exists)
 docker exec jtoye-ollama ollama ps                           # expect gemma3:12b ... 100% GPU ... Forever
 docker exec jtoye-mcp-server wget -q -T60 -O- \
   --post-data='{"model":"gemma3:12b","prompt":"Reply READY","stream":false}' \
@@ -269,3 +284,53 @@ VOID as a pass.
 If step 4's inference is slow (~72s rather than ~400ms), the model was evicted — check
 `OLLAMA_KEEP_ALIVE` survived in the running container:
 `docker exec jtoye-ollama env | grep KEEP_ALIVE` (expect `-1`).
+
+---
+
+## 7. The merge guard — it counted a failed API call as zero, on all 12 merges
+
+The check typed inline before every merge this session:
+
+```bash
+bad=$(gh api ".../check-runs" -q '...non-green...' | wc -l)
+if [ "$bad" -eq 0 ]; then gh pr merge ...; fi
+```
+
+When the network dropped, `gh` wrote nothing, `wc -l` returned `0`, and the guard concluded "zero
+failing checks". Measured 2026-07-30 on PR #366:
+
+```
+Get "https://api.github.com/.../check-runs": net/http: TLS handshake timeout
+behind=0 non-green=0 pending=0
+GO
+```
+
+**Every number came from a command that had failed**, and it proceeded to merge — only GitHub's own
+timeout stopped it. An empty result is the *absence* of a verdict, never a clean one.
+
+It hid because it needs a network fault to appear, and on every healthy run the numbers were real.
+The earlier twelve merges were almost certainly fine — the network was up and check counts non-zero
+each time — but that cannot be proven retroactively per-merge, and it is stated here rather than
+implying a rigour that was not there.
+
+**Fixed as `~/dotfiles/gates/pr-merge-guard.sh`** (dotfiles #50), because it lived in *no committed
+form at all* — retyped by hand each time, which is precisely why it could be wrong twelve times
+unnoticed.
+
+- **G-1** head still matches `--expect-head` (results predating a force-push are stale, and
+  `gh pr checks` shows them happily) · **G-2** every check-run on *that* head completed and
+  success/skipped/neutral · **G-3** head not behind base. Each from a **single captured response
+  whose exit status was checked**.
+- **VOID (exit 2, never 0)** on: missing `gh`/`jq`/`git`; any API or git call exiting non-zero; an
+  empty response; unparseable JSON; **zero check-runs** (a PR with no checks is unproven, not green);
+  an unreadable head or base.
+- `--allow-check <name>` exempts a check **and prints what it exempted**. The reflex it replaces —
+  widening a filter until the red disappears — is `|| true` in disguise, and I nearly did it when a
+  billing-blocked job made the guard stop.
+
+Falsified over **6 arms**: missing `--repo`/`--pr` → 2; nonexistent repo → 2; nonexistent PR → 2;
+`--expect-head` mismatch → 1; **a pending check → 1** (unplanned — it refused its own merge while
+GitGuardian was still running); GO → 0. Its first real use was verifying its own PR.
+
+`housekeeping.md` Phase 12 now points at it and states why the inline idiom is unsafe, so the habit
+is not re-derived from scratch next session.
