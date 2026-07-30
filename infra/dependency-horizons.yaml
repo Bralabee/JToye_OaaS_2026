@@ -139,7 +139,7 @@ dependencies:
       8.8, 8.6, 8.4, 8.2, 8.0, 7.4, 7.2, 7.0, 6.2, 6.0, 5.0). Resolved by reading the
       RUNNING container: `docker exec jtoye-redis redis-server --version` reports v=7.4.8,
       so 7.4 is the deployed series. Catalogue `eol: false` for 7.4.
-    eol_date: "false"
+    eol_date: "2029-12-01"
 
   - id: rabbitmq
     pin: "rabbitmq:4.3.4-management-alpine"
@@ -177,7 +177,7 @@ dependencies:
 
   - id: minio
     pin: "minio/minio:${MINIO_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:393"]
+    sites: ["docker-compose.full-stack.yml:407"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -192,7 +192,7 @@ dependencies:
 
   - id: minio-mc
     pin: "minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:415"]
+    sites: ["docker-compose.full-stack.yml:429"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -223,7 +223,7 @@ dependencies:
 
   - id: mailhog
     pin: "mailhog/mailhog:v1.0.1"
-    sites: ["docker-compose.full-stack.yml:476"]
+    sites: ["docker-compose.full-stack.yml:526"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -294,7 +294,7 @@ dependencies:
 
   - id: redis-exporter
     pin: "oliver006/redis_exporter:v1.58.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:118"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:129"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -310,7 +310,7 @@ dependencies:
 
   - id: postgres-exporter
     pin: "prometheuscommunity/postgres-exporter:v0.15.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:138"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:149"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -382,7 +382,7 @@ dependencies:
 
   - id: scratch
     pin: "scratch"
-    sites: ["edge-go/Dockerfile:30"]
+    sites: ["edge-go/Dockerfile:33"]
     kind: pseudo
     owner: maintainer
     eol_slug: null
