@@ -449,6 +449,27 @@ services:
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     container_name: jtoye-ollama
     restart: unless-stopped
+    environment:
+      # How long a model stays resident in VRAM after its last request.
+      #
+      # WHY THIS IS SET. ollama's default is 5m, and `ollama ps` was observed
+      # counting down "UNTIL 47 seconds from now" on the 12B vision model. Once
+      # evicted, the next request pays the full cold load again: MEASURED 2026-07-30,
+      # a cold /api/generate took 71 996ms of which 71 891ms was load_duration
+      # (8 GB disk -> VRAM) while the eval itself was 21ms. Warm, the same call is
+      # ~400ms. So on a stack where image analysis arrives in bursts separated by
+      # more than five minutes, essentially EVERY request paid ~72s.
+      #
+      # -1 keeps the model loaded indefinitely. The cost is honest and worth stating:
+      # it pins ~10 GB of VRAM (of 11 264 MiB on this box) for as long as the
+      # container runs, so a desktop sharing the GPU has little left. Set a duration
+      # instead ("30m", "2h") to release it after a quiet period, or "0" to unload
+      # immediately after each request.
+      #
+      # Server-side on purpose: it applies to every client. ImageAnalysisService
+      # builds its request body without a keep_alive field, so a per-request value
+      # would mean a Java change for something that is a deployment tunable.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
     ports:
       # HOST-side port only. Nothing in the stack uses it: core-java reaches this
       # container as OLLAMA_URL=http://ollama:11434 over the bridge network, and
