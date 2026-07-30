@@ -1,14 +1,15 @@
 # Handoff: PR queue empty · #342 + #234 + #330 closed · every gate green on a verified runtime
 
-**Generated:** 2026-07-30 ~06:40 BST. Supersedes the "#342 closed at zero defects" handoff
+**Generated:** 2026-07-30 ~06:40 BST, §2 and §4 updated ~09:00 BST after #355. Supersedes the
+"#342 closed at zero defects" handoff
 (`dce03bd`), which was accurate at `79a3a6a` and is now stale on its whole dependabot section.
 
 | | |
 |---|---|
 | `origin/main` when written | **`ef797adc`** — 15 commits on from `15871d3`. `git log --oneline -20` beats this row. |
 | Open PRs | **none, as of 05:35Z.** Dependabot regenerates — see §4. |
-| Open issues opened here | **#346** doc-gate coverage · **#347** TS-16 detector |
-| Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** |
+| Issues opened here | **#347** TS-16 detector — still OPEN · #346 doc-gate coverage — CLOSED by #355 |
+| Issues closed here | **#342** (6 live detection defects → 0) · **#234** · **#330** · **#346** |
 | Working tree | clean, on `main`, no local branches besides `main` |
 | Live stack | Compose UP, 16 jtoye containers healthy, 8/8 scrape targets up |
 | Runtime parity | **`check-runtime-freshness.sh` exit 0 — 4/4 FRESH**, rebuilt 05:31–05:33Z |
@@ -106,7 +107,7 @@ core-java   unzip -l /app/app.jar | grep stripe        -> stripe-java-33.2.0.jar
 
 ---
 
-## 2. Three gate blind spots found — each by a break arm, not by reading
+## 2. Three gate blind spots found — each by a break arm, not by reading. ALL THREE NOW FIXED.
 
 **1. The CI Go pin was enforced by nothing. FIXED in #352.**
 `edge-go/Dockerfile` declared a lockstep invariant in a comment. Only two of its limbs had
@@ -118,16 +119,62 @@ same arm returns exit 2.
 > The comment said "bump all three in lockstep". **There are six**: `Dockerfile:10`, `go.mod:3`,
 > `ci-cd.yaml:52`, `ci-cd.yaml:667`, and **two** horizons rows. Miscounting is how #234 happened.
 
-**2. `check-doc-versions.sh` is case-sensitive on the package label. NOT FIXED — on #346.**
-`STACK.md` writes `axios` lowercase; the claim list has `Axios`. The gate prints
-`(not claimed in this doc: ... Axios)` and never checks it. That claim was genuinely stale.
-Break arm: plant `axios 9.9.9` and the gate still reports `drift=0`, `PASS`, exit 0.
+**2. `check-doc-versions.sh` was case-sensitive on the package label. FIXED in #355.**
+`STACK.md` writes `axios` lowercase; the claim list had `Axios`, so the gate printed
+`(not claimed in this doc: ... Axios)` and never checked it — while enforcing the same fact in
+the two docs that capitalise it. Now `grep -oiE`.
 
-**3. `check-doc-citations.sh` does not scan the register or the runbooks. NOT FIXED — #346.**
-`DEFAULT_DOCS` is `CLAUDE.md`, `AGENTS.md`, three `.planning/codebase/*.md`, `k8s/DEPLOYMENT.md`.
-**Adding the register would be vacuous** — it reports `citations=0` there because the YAML
-`locator: "path:line"` form is not recognised. Needs a parser change, not a list entry.
-Three wrong locators were found and fixed in #345 that nothing would have caught.
+The widening was measured on an identical tree, and the prediction was **wrong**:
+`CLAUDE.md 28 → 28 · AGENTS.md 28 → 28 · STACK.md 25 → 28`. **Three** newly-visible claims, two
+of them stale — `recharts 3.8.1` (actual 3.10.1) sat 45 lines below a *correct*
+`Recharts 3.10.1`, so the doc contradicted itself and the gate could see only the right half.
+`framer-motion 12.23.26` needed more than `-i`: the doc uses the npm package name where the
+table carries the display name, so that row now accepts both forms.
+
+**3. `check-doc-citations.sh` did not scan the register. FIXED in #355 — and the obvious fix
+really was vacuous.** Adding `docs/ops/terminal-states.yaml` to `DEFAULT_DOCS` gave
+`citations=0` and a PASS, because the markdown extractor wants a backticked `` `path:N` `` and
+the register writes `locator: "path:N"`. It needed a YAML dialect.
+
+**The claim is the ROW, not the `locator:` line — and two reasonable-looking heuristics were
+measured and rejected first**, because each was red on a *correct* tree:
+
+| approach | result |
+|---|---|
+| claim = row prose, token match | 16 violations / 17 locators |
+| + CamelCase and UPPER_SNAKE tokens | 12 / 17 |
+| + "token exists elsewhere in the file" | 11 / 17, matching on `NEVER` `FROM` `EVERY` |
+
+The answer is the one this repo already uses for `eol_slug`: **declared, never inferred**. A row
+may declare `subject:`; if it does the locator is checked hard against it, and if it does not
+the citation is `UNCHECKABLE` — reported, never a pass. Not a loophole: 17 citations with zero
+subjects makes the script's own vacuity guard exit **2**.
+
+**It found four more wrong locators immediately** — all four DLQ rows, every one off by
+**exactly 8 lines**, because one insertion near the top of `RabbitMQConfig.java` invalidated all
+of them at once:
+
+```
+TS-01 order.state-changes.dlq  :27 -> :35   (:27 was ORDER_EVENTS_EXCHANGE)
+TS-02 payment.events.dlq       :32 -> :40   (:32 was ..._FANOUT_QUEUE_PREFIX)
+TS-03 webhook.deliveries.dlq   :62 -> :70   (:62 was ..._ROUTING_PATTERN)
+TS-04 media.process.dlq        :78 -> :86   (:78 was a javadoc comment)
+TS-08 webhook_delivery FAILED  :43 -> :47   (:43 was the enum header)
+```
+
+16 of 17 rows now verify. TS-16 declares no subject — it points at a comment with no identifier
+to name — and is reported `UNCHECKABLE` rather than quietly counted.
+
+**When you add a register row, declare `subject:`.** The gate will not force you, but it will
+not pretend to have checked either.
+
+> **A near-miss from that change, worth more than the fix.** Threading `subject` through as a
+> 4th TSV field silently reduced the markdown path from **45 verified to 0**, and the gate
+> **still exited 0**. Tab is IFS *whitespace*, so `read` collapses an empty field and the claim
+> lands in the wrong variable: `printf 'A\tB\t\tD' | IFS=$'\t' read w x y z` gives `y=D`,
+> `z=empty`. The separator is now `\x1f`. It was caught only by diffing the counts against
+> `main`, not by the exit code — so when you change a gate, **compare its counts, never just
+> its status**.
 
 ---
 
@@ -188,10 +235,12 @@ and force-push, and assert the commit survived before pushing.
 
 ## 4. Open items
 
-- [ ] **#346** — teach `check-doc-citations.sh` the YAML `locator:` form, *then* add the
-      register; verify by breaking a locator (`citations=N > 0` is the minimum bar). Separately,
-      `check-doc-versions.sh` case-sensitivity — prefer making an unclaimed label a first-class
-      failure over just lowering the match. **Owner: unassigned.**
+- [x] ~~**#346**~~ — CLOSED by #355. See §2 items 2 and 3. Two residuals were deliberately NOT
+      taken and are unfiled: (a) `docs/runbooks/` is still outside `DEFAULT_DOCS` and adding it
+      starts at 3 reds, all bare filenames (`WebhookDeliveryWorker.java`) rather than wrong
+      facts — whether runbook prose must carry full paths is a style call, not a defect;
+      (b) TS-16 remains the one register row with no `subject:`, so its locator is checked for
+      existence and range but not content. **Owner: unassigned, low priority.**
 - [ ] **#347** — a TS-16 container-config-drift detector. A working 30-line prototype is in the
       issue, including the `docker inspect` nil-healthcheck trap that makes correct services read
       as absent. **Owner: unassigned.**
