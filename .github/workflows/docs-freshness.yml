@@ -33,3 +33,10 @@ jobs:
       - name: Verify prose metric claims match docs/metrics.json
         if: always()
         run: bash scripts/check-doc-metrics.sh
+      # One project version across build.gradle.kts, frontend/package.json, its
+      # lockfile (both places npm records it) and the README claims. It sat at
+      # 2.1.0 through the v2.1 AND v2.2 releases because nothing compared the
+      # sites to each other — four different answers to one question.
+      - name: Verify the project version agrees across every site that claims it
+        if: always()
+        run: bash scripts/check-project-version.sh

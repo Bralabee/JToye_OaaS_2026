@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "2.1.0",
+  "version": "2.3.0",
   "private": true,
   "scripts": {
     "dev": "cross-env NEXTAUTH_URL=http://localhost:3100 next dev",

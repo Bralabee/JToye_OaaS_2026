@@ -12,7 +12,7 @@ java {
 
 allprojects {
     group = "uk.jtoye"
-    version = "2.1.0"
+    version = "2.3.0"
 }
 
 subprojects {
