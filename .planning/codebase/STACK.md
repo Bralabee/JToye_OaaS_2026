@@ -7,7 +7,7 @@
 **Primary:**
 - Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:8-9`
 - TypeScript 5 - Frontend (Next.js 16.2.12, React 19); `typescript` pinned in `frontend/package.json:62`
-- Go 1.25 - Edge API gateway (Gin) — `go 1.25.0` in `edge-go/go.mod:3`
+- Go 1.26 - Edge API gateway (Gin) — `go 1.26.0` in `edge-go/go.mod:3`
 
 **Secondary:**
 - SQL (PostgreSQL 15) - Schema evolution via Flyway migrations (`core-java/src/main/resources/db/migration/`)
@@ -186,7 +186,7 @@
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:50`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:81`
 - Next.js 16.2.12 — `frontend/package.json:36`
-- Go 1.25 (`go 1.25.0`) — `edge-go/go.mod:3`
+- Go 1.26 (`go 1.26.0`) — `edge-go/go.mod:3`
 
 ## Test Suite
 
