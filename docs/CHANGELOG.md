@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Project version bumped to 2.3.0, and gated (#360) — 2026-07-30
+
+The artifact version is now **2.3.0**. No `v2.3` git tag is cut — milestone v2.3 is in development, so this section stays under `[Unreleased]`; the latest release tag remains `v2.2`.
+
+#### Changed
+- **`build.gradle.kts`, `frontend/package.json` and `frontend/package-lock.json` bumped `2.1.0` → `2.3.0`**, plus the README badge and status block. The lockfile went through `npm version --no-git-tag-version` so both places npm records the version stay in sync; the lock diff is exactly 2 lines with zero dependency churn. Verified by content rather than filename: the built artifact is `core-java-2.3.0.jar` carrying `Implementation-Version: 2.3.0` inside its `MANIFEST.MF`. `core-java/Dockerfile:57` copies the jar by glob (`build-local/libs/*.jar` → `app.jar`), so the rename is safe.
+- **Deliberately not bumped**, each recorded rather than left implicit: the `:2.1.0` image tags in `k8s/base/*-deployment.yaml` (an inert placeholder — both deploy jobs re-pin to `:<github.sha>` and a premortem guard fails the job if that static default survives to `kubectl apply`, and `type=semver` only fires on a `v*` tag push, so no version-numbered image is ever pushed); `mcp-server/package.json` (`@jtoye/mcp-server` is a separate private `0.x` lineage that has never been 2.x); and edge-go's `// @version 1.0` (the OpenAPI spec version, not the product's).
+
+#### Added
+- **`scripts/check-project-version.sh`** — the version sat at `2.1.0` through the **v2.1 and v2.2 releases** and into the v2.3 milestone because nothing compared the sites to each other: `build.gradle.kts` `2.1.0`, `frontend/package.json` `2.1.0`, README badge `2.2`, README heading `v2.1.0`, latest tag `v2.2`, milestone `v2.3` — four different answers to one question. Same defect class as `check-doc-metrics.sh`, one layer over. `build.gradle.kts` is now the source of truth for 6 asserted claims: **V-1** a rule matching nothing FAILS (deleting the badge or heading cannot dodge the gate), **V-2** every captured version must match, **V-3** the lockfile must agree with `package.json` at both recorded sites or `npm ci` installs a different version than declared. Fails closed at exit 2 on a missing file, an unreadable or non-semver Gradle version, a `grep -P` error, or zero comparisons. Wired into `docs-freshness.yml`.
+
 ### Detection defects, doc-gate blind spots and container-config drift (#342, #346, #347) — 2026-07-29/30
 
 The gates 27-00/27-03/27-06 built were turned on themselves. Every finding below was a green gate that could not have failed.

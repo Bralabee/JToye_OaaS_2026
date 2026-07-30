@@ -2,7 +2,7 @@
 
 **Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
-[![Version](https://img.shields.io/badge/version-2.2-green.svg)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
 [![Tests](https://img.shields.io/badge/tests-1851%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -221,7 +221,13 @@ CREATE POLICY tenant_isolation ON shops
 
 ## 📊 Status
 
-### Current Version: v2.2 (latest release tag) — milestone v2.3 in development
+### Current Version: 2.3.0 (in development) — latest release tag `v2.2`
+
+The artifact version (`build.gradle.kts`, `frontend/package.json`) is **2.3.0**; milestone v2.3 is
+not yet released, so no `v2.3` git tag exists and `docs/CHANGELOG.md` keeps its work under
+`[Unreleased]`. The three `2.1.0` image tags in `k8s/base/*-deployment.yaml` are a deliberately
+inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard fails the job if
+that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
 - Backend (Java): 1259 `@Test` methods across 219 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
