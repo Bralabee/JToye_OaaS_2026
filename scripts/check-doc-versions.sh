@@ -102,7 +102,7 @@ SPECS=(
 	"Jest|Jest [0-9]+\.[0-9]+\.[0-9]+|$(n jest)"
 	"Playwright|@playwright/test [0-9]+\.[0-9]+\.[0-9]+|$(n '@playwright/test')"
 	"Axios|Axios [0-9]+\.[0-9]+\.[0-9]+|$(n axios)"
-	"Framer Motion|Framer Motion [0-9]+\.[0-9]+\.[0-9]+|$(n framer-motion)"
+	"Framer Motion|(Framer Motion|framer-motion) [0-9]+\.[0-9]+\.[0-9]+|$(n framer-motion)"
 	"Recharts|Recharts [0-9]+\.[0-9]+\.[0-9]+|$(n recharts)"
 	"Gin|Gin v[0-9]+\.[0-9]+\.[0-9]+|$(gin_version)"
 )
@@ -140,8 +140,36 @@ for doc in "${DOCS[@]}"; do
 		actual="${spec##*|}"
 
 		# ALL matches, not head -1. Normalise each to a bare version.
+		#
+		# CASE-INSENSITIVE (-i), issue #346. It was case-SENSITIVE until 2026-07-30,
+		# and that silently un-enforced a claim: .planning/codebase/STACK.md:110
+		# writes `axios 1.19.0` lowercase while this table says `Axios`, so the gate
+		# printed "(not claimed in this doc: … Axios)" and never checked it — while
+		# enforcing the identical fact in CLAUDE.md and AGENTS.md, which capitalise
+		# it. The unchecked claim was genuinely stale at 1.15.0.
+		#
+		# The "(not claimed…)" line is the gate honestly reporting a hole, and
+		# nothing acted on it. That is the shape of every blind spot found this week.
+		#
+		# WIDENING WAS MEASURED, NOT ASSUMED — -i widens every row at once, so the
+		# per-doc claim counts were compared before and after on an IDENTICAL tree:
+		#     CLAUDE.md 28 -> 28 · AGENTS.md 28 -> 28 · STACK.md 25 -> 28
+		#
+		# Three new claims in STACK.md, not the one I predicted, and predicting wrong
+		# is exactly why this is measured. All three were real and all three were
+		# unenforced:
+		#     :110  axios 1.19.0            lowercase label  (was stale at 1.15.0)
+		#     :112  recharts 3.8.1          lowercase label  — STALE, actual 3.10.1
+		#     :112  framer-motion 12.23.26  npm-name form    — STALE, actual 12.43.0
+		# The recharts claim sat four lines below a CORRECT `Recharts 3.10.1` at :67,
+		# so the doc contradicted itself and the gate could see only the right half.
+		#
+		# framer-motion needed more than -i: the doc writes the npm package name
+		# while this table carries the display name, so its row now accepts both.
+		# No other row matched anything it did not match before — a larger delta
+		# would have meant a rule had started matching prose.
 		mapfile -t claims < <(
-			command grep -oE "$claim_re" "$doc" 2>/dev/null |
+			command grep -oiE "$claim_re" "$doc" 2>/dev/null |
 				awk '{print $NF}' | sed -E 's/^[^0-9]*//'
 		)
 
