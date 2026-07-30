@@ -103,20 +103,32 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 #                     longer existed in the file — and a guest order was then placed
 #                     (ORD-00000000-20260729-63EB83BC), so the series is live.
 #
-# This is the documented lifecycle, not an exception to it: the HighErrorRate entry
-# below states it outright — "Remove this entry the first time a 5xx is served: the rule
-# then has data and needs no exemption." HighErrorRate stays because no 5xx has been
-# served yet.
+# A THIRD WAS REMOVED ON 2026-07-30, by its own written trigger:
+#
+#   HighErrorRate     the entry said "Remove this entry the first time a 5xx is served:
+#                     the rule then has data and needs no exemption." A 5xx was then
+#                     served — http_server_requests_seconds_count{status=~"5.."} matches
+#                     1 series, /actuator/health 503, recorded while core-java was
+#                     restarting during a frontend rebuild. So the entry was removed and
+#                     the rule now stands on M-1 on its own merits. The gate said so
+#                     itself, via the STALE arm, before anyone looked.
+#
+# All three removals came from the STALE arm rather than from review, which is the point
+# of writing the trigger INTO the entry: the exemption cannot outlive its reason.
 #
 # CONSEQUENCE, RECORDED RATHER THAN HIDDEN: NoOrdersCreated is now covered by M-1 on its
-# own merits, so a stack on which NO order has ever been created will fail M-1 for it.
-# That is the intended trade — this gate grades a LIVE runtime, and "no order has ever
-# been placed here" is a fact about that runtime worth surfacing rather than exempting
+# own merits, so a stack on which no order has been placed SINCE CORE-JAVA LAST STARTED
+# will fail M-1 for it. That is the intended trade — this gate grades a LIVE runtime, and
+# a blind order alert is a fact about that runtime worth surfacing rather than exempting
 # in perpetuity. Re-adding an entry is the wrong fix; placing an order is the right one.
+#
+# That fix is now committed rather than retyped: `scripts/seed-order-metric.sh` places one
+# real guest order through the public storefront path and waits for the scrape. The M-1
+# failure message names it, because the underlying cause is not guessable from the red —
+# the series is a *request* counter that does not survive a restart, so the alert is blind
+# after every rebuild until the first order, which is precisely when you would want it.
 # ---------------------------------------------------------------------------------
-KNOWN_DATALESS=(
-  "HighErrorRate|http_server_requests_seconds_count{status=~\"5..\"} matches zero series because no 5xx has been recorded on this stack yet. Unlike the removed HighResponseTime entry the metric family and the status label BOTH exist, so this is a condition that has not occurred rather than a structural defect — but a selector matching nothing still cannot fire, so it is recorded rather than waved through. Remove this entry the first time a 5xx is served: the rule then has data and needs no exemption.|Phase 27 deferred-items.md — pre-existing."
-)
+KNOWN_DATALESS=()
 
 # ---------------------------------------------------------------------------------
 # DORMANT_RULES — commented-out rules whose selector must stay EMPTY.
@@ -319,7 +331,17 @@ while IFS=$'\t' read -r rule sel; do
   if [ "$count" -lt 1 ]; then
     RULE_EMPTY["$rule"]="${RULE_EMPTY["$rule"]:-}${sel}"$'\n'
     if [ -z "${DATALESS_MAP[$rule]:-}" ]; then
-      violation "M-1 rule '$rule' selector matches ZERO series — this rule can never fire: $sel"
+      hint=""
+      # The commonest cause of this red, and the one whose fix is least obvious: a
+      # Micrometer *request* counter does not survive a restart, so after any rebuild
+      # the rule is blind until the first matching request. Name the remedy instead of
+      # leaving the next reader to re-derive it (or to re-add an exemption, which the
+      # KNOWN_DATALESS header explicitly calls the wrong fix).
+      case "$rule" in
+        NoOrdersCreated)
+          hint=$'\n       CAUSE: http_server_requests_seconds_count is created on the FIRST matching request and is destroyed when core-java restarts — so this is expected on a freshly rebuilt stack, and it means the alert is currently blind.\n       FIX:   bash scripts/seed-order-metric.sh   (places one real guest order and waits for the scrape)' ;;
+      esac
+      violation "M-1 rule '$rule' selector matches ZERO series — this rule can never fire: $sel$hint"
     fi
   fi
 done <<<"$EXTRACT"

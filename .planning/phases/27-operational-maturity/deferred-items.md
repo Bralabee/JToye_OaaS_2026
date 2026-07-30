@@ -123,10 +123,33 @@ ended the phase unclosed while every plan believed another had closed it. The sc
 names 27-06 as its CI owner, so the next dropped handover is visible in the artifact rather than
 only in a document nobody re-reads.
 
-## 10. Three pre-existing live rules whose selectors match zero series
+## 10. Three pre-existing live rules whose selectors match zero series — **ALL THREE CLOSED 2026-07-30**
+
+> **CLOSED.** `KNOWN_DATALESS` is now **empty**, and the gate passes with `0 reasoned exemption(s)`.
+> Every one of the three was removed by the gate's own STALE arm rather than by review, which is the
+> whole point of writing the removal trigger *into* the entry.
+>
+> | rule | closed | how |
+> |---|---|---|
+> | `HighResponseTime` | 2026-07-29 (#343) | enabled `percentiles-histogram`; `_bucket` went 0 → 74 series |
+> | `HighErrorRate` | 2026-07-30 | its own trigger fired — a 5xx was served (`/actuator/health` 503, during a core-java restart), so `status=~"5.."` matches 1 series and the exemption was removed |
+> | `NoOrdersCreated` | 2026-07-30 | no exemption re-added. The remedy the header prescribes is now **committed**: `scripts/seed-order-metric.sh` |
+>
+> **What the `NoOrdersCreated` row below got right, and what it missed.** It correctly called this
+> "worse than it looks" — an absence alert built on a counter that does not exist. What it did not
+> say is *why the counter goes missing*: `http_server_requests_seconds_count` is a Micrometer
+> **request** counter, created on the first matching request and **destroyed when core-java
+> restarts**. It is not a database fact, so seeding an order row does not create it. Measured
+> 2026-07-30: the series ran 10:00:10–11:35:10Z, vanished when core-java was rebuilt at ~11:38Z, and
+> a single `GET /api/v1/shops` then moved the total series count 3 → 4.
+>
+> Since this project mandates rebuilding all containers after any code change, **the alert is blind
+> after every rebuild until the first order** — precisely when you would most want it. Reproduced
+> deliberately: `docker compose restart core-java` → series `0` → gate `rc=1`; `seed-order-metric.sh`
+> → `201` → series `1` → gate `rc=0`. The rule itself is untouched and no gate was weakened.
 
 Found by `scripts/check-alert-metrics.sh` on its first run, in rules 27-03 was explicitly forbidden
-to edit ("do not touch any other rule in the file"). They are carried in that script's
+to edit ("do not touch any other rule in the file"). They were carried in that script's
 `KNOWN_DATALESS` list with a reason and an owner each, subject to stale-detection — an entry whose
 selectors start matching **fails the gate** so it cannot outlive its reason.
 
