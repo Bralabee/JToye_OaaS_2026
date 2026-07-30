@@ -32,6 +32,18 @@
 #   VERIFY          default 1                       0 = skip the Prometheus confirmation
 #   SERIES_TIMEOUT  default 90                      seconds to wait for the scrape
 #   MAX_QTY         default 50                      refuse absurd orders (see below)
+#   FORCE           default 0                       1 = place an order even if the series exists
+#   ALERT_WINDOW    default 30m                     must match NoOrdersCreated's increase() range
+#
+# TWO JOBS, AND THEY ARE NOT THE SAME — this distinction has already produced a wrong
+# claim, so it is stated here rather than left to be rediscovered:
+#
+#   default (FORCE=0)  satisfies `check-alert-metrics` M-1, which asks only whether the
+#                      series EXISTS. If it does, this exits immediately without ordering.
+#   FORCE=1            clears a FIRING `NoOrdersCreated`, which is a different condition:
+#                      `increase(...[30m]) < 1` needs a RECENT order. Measured 2026-07-30,
+#                      both true at once: series=1 (gate green) and increase[30m]=0 (alert
+#                      firing). FORCE=1 asserts the ALERT's condition, not the gate's.
 #
 # EXIT CODES — uniform with this repo's other gates
 #   0 = the counter series exists (already, or because this run created it)
@@ -47,6 +59,8 @@ PROM_URL="${PROM_URL:-http://localhost:9091}"
 VERIFY="${VERIFY:-1}"
 SERIES_TIMEOUT="${SERIES_TIMEOUT:-90}"
 MAX_QTY="${MAX_QTY:-50}"
+FORCE="${FORCE:-0}"
+ALERT_WINDOW="${ALERT_WINDOW:-30m}"   # must match NoOrdersCreated's increase() range
 RULES_FILE="${RULES_FILE:-infra/monitoring/prometheus/alerts.yml}"
 
 # Kept character-identical to the matcher in the alert rule. If they drift, this script
@@ -84,12 +98,32 @@ series_count() {
   jq -e -r 'select(.status=="success") | .data.result | length' <<< "$out" 2>/dev/null
 }
 
+# Counts samples for an arbitrary expression, so the FORCE path can assert the ALERT's
+# condition rather than merely the series' existence.
+expr_count() {
+  local out rc
+  out=$(curl -sfG --max-time 15 "$PROM_URL/api/v1/query" --data-urlencode "query=$1" 2>/dev/null); rc=$?
+  [ "$rc" -ne 0 ] && return 1
+  jq -e -r 'select(.status=="success") | .data.result | length' <<< "$out" 2>/dev/null
+}
+
 before=$(series_count) || void "cannot query Prometheus at $PROM_URL — an unreachable or unparseable Prometheus is a VOID, not a pass"
 echo "  series before : $before"
-if [ "$before" -gt 0 ]; then
+if [ "$before" -gt 0 ] && [ "$FORCE" != "1" ]; then
+  # DEFAULT PATH — satisfying check-alert-metrics M-1, which asks only "does the series
+  # EXIST". Exiting here is correct and cheap: the counter is there, the rule can fire.
+  #
+  # IT DOES NOT SILENCE THE ALERT, AND THE DIFFERENCE HAS ALREADY CAUSED A WRONG CLAIM.
+  # NoOrdersCreated fires on `increase(...[30m]) < 1` — it needs a RECENT order, not an
+  # existing series. Measured 2026-07-30: series=1 (gate green) while increase[30m]=0
+  # (alert firing) — both correct, simultaneously. Use FORCE=1 for that.
   echo "PASS: the counter already exists ($before series) — nothing to seed."
+  echo "NOTE: this does NOT clear a firing NoOrdersCreated. That alert needs a RECENT"
+  echo "      order (increase over 30m >= 1), not merely an existing series."
+  echo "      To place one anyway:  FORCE=1 bash scripts/seed-order-metric.sh"
   exit 0
 fi
+[ "$FORCE" = "1" ] && echo "  FORCE=1       : placing an order even though the series exists (target: clear NoOrdersCreated)"
 
 # --- 2. find a published shop with a purchasable product ----------------------------
 shops=$(curl -sf --max-time 15 "$CORE_URL/public/shops") \
@@ -171,15 +205,32 @@ if [ "$VERIFY" != "1" ]; then
   exit 0
 fi
 
+# Under FORCE the deliverable is not the series — it already existed — but the ALERT's
+# own condition. Assert that, or the run would "pass" while NoOrdersCreated kept firing,
+# which is exactly the wrong claim this option was added to stop.
+ALERT_CLEARED="increase($SELECTOR[$ALERT_WINDOW]) >= 1"
+
 deadline=$(( $(date +%s) + SERIES_TIMEOUT ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   now=$(series_count) || void "Prometheus became unreadable while waiting for the series"
   if [ "$now" -gt 0 ]; then
-    echo "  series after  : $now"
-    echo "PASS: the NoOrdersCreated counter now exists — the rule can fire."
-    exit 0
+    if [ "$FORCE" != "1" ]; then
+      echo "  series after  : $now"
+      echo "PASS: the NoOrdersCreated counter now exists — the rule can fire."
+      exit 0
+    fi
+    cleared=$(expr_count "$ALERT_CLEARED") || void "Prometheus became unreadable while waiting for the alert condition"
+    if [ "$cleared" -gt 0 ]; then
+      echo "  series after  : $now"
+      echo "  increase[$ALERT_WINDOW]  : >= 1 — NoOrdersCreated's condition is no longer met"
+      echo "PASS: an order was recorded inside the alert window; NoOrdersCreated will resolve."
+      exit 0
+    fi
   fi
   sleep 5
 done
 
+if [ "$FORCE" = "1" ]; then
+  violation "order ${order_no:-<unknown>} was accepted (201) but 'increase(...[$ALERT_WINDOW]) >= 1' still matches nothing after ${SERIES_TIMEOUT}s, so NoOrdersCreated would keep firing. increase() needs at least two scrapes inside the window to show a rise — if the counter was created by THIS order, allow a scrape interval and re-check before treating it as a fault."
+fi
 violation "order ${order_no:-<unknown>} was accepted (201) but the selector still matches ZERO series after ${SERIES_TIMEOUT}s. The order path works and the metric does not, so the alert stays blind — check Prometheus' scrape of core-java (target up, scrape_interval, metric_relabel_configs)."
