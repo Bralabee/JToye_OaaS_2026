@@ -251,8 +251,23 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 - **Toolchain:** 6 DRIFT surfaced by `doctor.sh --check` (conda, node, npm, gemini-cli, copilot,
   ms-fabric-cli), 1 UNKNOWN (`antigravity`, policy `manual` — its recorded state, not a gap).
   **Report-only; never converge inside a housekeeping run.**
-- **Synthetic test residue on the dev DB** (pre-existing, from earlier alert work): two orders for
-  `liveness-probe@jtoye.local`, several `SyntheticDeliveryProbe-*` messages in Mailhog.
+- **Synthetic order residue on the dev DB — CLEARED 2026-07-30.** The note this replaces said "two
+  orders for `liveness-probe@jtoye.local`"; there was **one**, and the count was never checked. All
+  four `*@jtoye.local` probe orders are now deleted (`liveness-probe`, `probe`, and the two
+  `metric-seed` ones this session's alert work created) — 20 rows across `orders`, `order_items`,
+  `order_items_aud`, `orders_aud` and `processed_order_events`, in one transaction that asserted
+  every count was exactly 4 and rolled back otherwise. The guard was then falsified by re-running it:
+  `ABORT: expected 4 rows in every table, got 0`, tree unchanged. Backed up to CSV first.
+  **Deliberately left:** 8 `@example.test` orders from the 2026-07-12/14 QA-council runs, 13
+  `@test.com`/`uat-tester` demo+E2E seed orders that specs may depend on, and 1 null-email order.
+  Orders went 26 → 22. Deleting rows does **not** affect `NoOrdersCreated` — that counter is a
+  *request* counter, and it was confirmed still at 1 series with the gate green afterwards.
+- **Still there, untouched:** ~40 of 54 `SyntheticDeliveryProbe-*` messages in Mailhog (not the DB).
+- **⚠ Pre-existing, NOT caused by that cleanup and NOT fixed:** `financial_transactions.order_id` has
+  **no foreign key** to `orders`, and 3 rows from 2026-07-09/11 already point at orders that no longer
+  exist. Verified unrelated to the deleted ids (0 references). On a dev DB that is residue; the same
+  shape in production is a ledger-integrity gap. `order_items_aud`/`orders_aud` likewise carry 97/117
+  pre-existing orphans, which is expected for audit mirrors of legitimately deleted orders.
 
 ## 6. Resume instructions
 
