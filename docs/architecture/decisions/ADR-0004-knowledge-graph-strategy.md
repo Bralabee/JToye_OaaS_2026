@@ -389,6 +389,12 @@ sprint, and it gates moat #3 plus the benchmarking surface outright — which is
 here from the follow-up list to a blocking condition on that part of the work. It does **not** gate
 the ingredient node, the three senses, or anything in Layer A.
 
+**Status (2026-07-30):** drafted at [`docs/legal/derivation-clause.md`](../../legal/derivation-clause.md)
+— ToS Part A, DPA Part B, the Article 9 exclusion, and the engineering invariants the wording commits
+us to. It is **not in force**: no ToS or DPA exists in this repository yet, and the draft carries an
+effectiveness gate requiring solicitor review and vendor acceptance. Until that gate is met, Layer B
+must hold no data derived from tenant data.
+
 ## Re-evaluation triggers
 
 This decision is revisited only on measured evidence, not on preference:
