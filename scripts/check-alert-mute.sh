@@ -149,10 +149,20 @@ RENDERED="$(docker exec "$AM_CONTAINER" cat /etc/alertmanager/alertmanager.yml 2
 # The mute route is identified by the receiver it names, not by position: a
 # position-based read would silently follow the wrong route the moment another
 # child route is added.
+#
+# Both the route boundary AND the matchers-key boundary are explicit. An earlier
+# draft terminated only on a sibling `- receiver:` line, which never appears in a
+# mute-only render — so the scan ran to end of file and reported the RECEIVERS
+# section as mute matchers ("name: email-default does not key on alertname"). It
+# failed loudly rather than silently, but only because it was actually run; the
+# same shape with a laxer M-1 would have passed over the wrong lines entirely.
 MUTE_MATCHERS="$(awk '
-  /^[[:space:]]*- receiver: mute-null[[:space:]]*$/ { inmute = 1; next }
-  inmute && /^[[:space:]]*- receiver: / { inmute = 0 }
-  inmute && /^[[:space:]]*- / && !/^[[:space:]]*- receiver: / { sub(/^[[:space:]]*-[[:space:]]*/, ""); print }
+  /^[[:space:]]*- receiver: mute-null[[:space:]]*$/ { inmute = 1; inmatch = 0; next }
+  inmute && /^[^[:space:]]/            { inmute = 0; inmatch = 0 }   # a top-level key ends the route list
+  inmute && /^[[:space:]]*- receiver: / { inmute = 0; inmatch = 0 }   # a sibling route ends this one
+  inmute && /^[[:space:]]*matchers:[[:space:]]*$/ { inmatch = 1; next }
+  inmute && inmatch && /^[[:space:]]*-[[:space:]]/ { sub(/^[[:space:]]*-[[:space:]]*/, ""); print; next }
+  inmute && inmatch && /^[[:space:]]*[A-Za-z_]+:/  { inmatch = 0 }    # another key ends the matchers list
 ' <<< "$RENDERED" || true)"
 
 if [ -z "$MUTE_MATCHERS" ]; then
@@ -162,18 +172,31 @@ if [ -z "$MUTE_MATCHERS" ]; then
   echo "  M-1..M-4  no mute route present in the rendered config (mute is UNSET — this is the default and is not a fault)"
   MUTED_NAMES=""
 else
+  # M-2 runs FIRST and over the WHOLE matcher set, deliberately.
+  #
+  # An earlier draft ran it per-matcher AFTER M-1, with a `continue` between them.
+  # In Alertmanager's `matchers:` list form each entry holds exactly one matcher,
+  # so a forbidden label is always its own entry — which M-1 rejects first, and the
+  # `continue` then skipped M-2 entirely. M-2 was therefore INCAPABLE OF FIRING:
+  # proven by the severity-keyed break arm, which reported only
+  #   "M-1 mute matcher 'severity=\"info\"' does not key on alertname".
+  # That is a true statement and the wrong diagnosis — it says nothing about the
+  # L-3 probe the operator is about to break. Scanning the set first makes M-2
+  # reachable and puts the explanation in front of the person who needs it.
+  FORBIDDEN="$(grep -E '(^|[^a-z_])(severity|component|service)[=~!]' <<< "$MUTE_MATCHERS" || true)"
+  if [ -n "$FORBIDDEN" ]; then
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      violation "M-2 mute matcher '$bad' references severity/component/service. scripts/check-alert-liveness.sh posts its L-3 transport probe with severity=\"info\", service=\"platform\" — this mute would swallow that probe and turn L-3 red, where its own failure text blames \"an active silence, an inhibit rule\" and so reads as a transport fault rather than as this config. Mute by alertname only."
+    done <<< "$FORBIDDEN"
+  fi
+
   MUTED_NAMES=""
   while IFS= read -r m; do
     [ -z "$m" ] && continue
     # M-1: must key on alertname.
     if ! grep -qE '^alertname[=~!]' <<< "$m"; then
       violation "M-1 mute matcher '$m' does not key on alertname"
-      continue
-    fi
-    # M-2: must not key on anything else. Checked on the raw matcher text so a
-    # compound matcher cannot smuggle a second label past the M-1 prefix check.
-    if grep -qE '(^|[^a-z_])(severity|component|service)[=~!]' <<< "$m"; then
-      violation "M-2 mute matcher '$m' references severity/component/service. check-alert-liveness.sh posts its L-3 probe with severity=\"info\", service=\"platform\" — this would swallow it and turn L-3 red as a phantom transport fault."
       continue
     fi
     # Extract the alternation body: alertname=~"^(A|B)$"  ->  A|B
