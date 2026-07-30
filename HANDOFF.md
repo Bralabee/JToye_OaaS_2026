@@ -226,14 +226,43 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
    `gates/install.sh --check-all`. It gated #48's own push. `--no-verify` bypasses, deliberately.
 3. **No `v2.3` git tag.** Artifact is `2.3.0`; the milestone is in development. Cutting the tag is
    also what would finally push a version-numbered image (`type=semver` only fires on `v*`).
-4. **Not started, from the portability plan:** running `/housekeeping` end-to-end (not just its
-   read-only phases) on a second repo. This is now the **only** remaining item here.
+4. ~~**Not started, from the portability plan**~~ — **BOTH HALVES NOW DONE. §4 has no open items
+   left except #1's dated deferral and #2's billing, neither of which is actionable here.**
    - ~~the `✕` glyph at `competitive-teardown.tsx:445`~~ — **DONE in #368.** Two corrections
      that item's own wording earned: it was **not a close button** (it is a decorative
      `aria-hidden` gap-marker in the "hard gaps" list), and the `shrink-0` added with the fix is
      **defensive, not load-bearing** — the break arm did not fire on any shipped `GAPS` string
      (`squashedAfter=0`), only under a longer label (16px → 11.27px). Both were caught by running
      the fail direction, which is the same lesson as §0.
+   - ~~running `/housekeeping` end-to-end on a second repo~~ — **DONE, and it found a real defect
+     in the routine: dotfiles #51.** The read-only phases had been tested (§3.2); phases 12–15 had
+     not, and **Phase 14 was broken**. `git branch --merged` is **blind to squash-merges**, and
+     Phase 12 of the same routine runs `gh pr merge --squash --delete-branch` — so the routine
+     manufactured exactly the case its own cleanup cannot see, then reported success having deleted
+     nothing. Both this repo and `jtoye-market-intel` squash-merge, so Phase 14 had only ever
+     cleaned branches that arrived some other way.
+
+     Proven in a throwaway repo **with a real-merge control arm**, so the test was shown able to
+     tell the two apart: the squashed work *was* in `main` by content, yet `git branch --merged`
+     listed only the true merge and `git branch -d` refused the squashed branch as "not fully
+     merged". Then confirmed live on this session's own PR: `-d` refused
+     `fix/phase14-squash-merge-blindness` (#51) while its content was demonstrably on `master`.
+
+     **The fix makes PR state the authority** and fails closed without `gh`; keeps `-d` first with
+     `-D` only where the forge *proved* the merge; refuses any branch with no PR (Phase 13's
+     business, which is why 13 runs first); refuses a branch checked out in another worktree or
+     session; and verifies against `git ls-remote`, not `git branch -r`.
+
+     **`MERGED` ≠ `CLOSED` is load-bearing, not pedantry.** Filtering on "has a PR" would have
+     deleted `jtoye-market-intel`'s `feature/insights-report` — `CLOSED, mergedAt=null`, work never
+     taken. The corrected run cleaned **4** merged branches across three repos and correctly kept
+     **2**: that one, and this repo's `docs/adr-0004-knowledge-graph-strategy` (**#372 OPEN**, a
+     concurrent session's live branch).
+
+     ⚠ Two measurement errors worth inheriting: `git branch -r` is a local cache and made 6 real
+     remote branches look like **13** until pruned (Phase 14 already prunes; the ad-hoc check did
+     not), and `sync-claude.sh` runs **live → repo**, so running it to clear the pre-push drift
+     would have **overwritten the fix with the old file**. The correct move was to copy repo → live.
 
 ---
 
