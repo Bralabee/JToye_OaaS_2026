@@ -72,7 +72,8 @@ AGENTS.md
 .planning/codebase/STACK.md
 .planning/codebase/ARCHITECTURE.md
 .planning/codebase/INTEGRATIONS.md
-k8s/DEPLOYMENT.md"
+k8s/DEPLOYMENT.md
+docs/ops/terminal-states.yaml"
 
 DOCS_RAW="${CITATION_DOCS:-$DEFAULT_DOCS}"
 
@@ -149,20 +150,126 @@ expand_spec() {
   done
 }
 
+# ---------------------------------------------------------------------------
+# CITATION EXTRACTION — two dialects, one record stream.
+#
+# Emits TSV: <doc-line-no>\t<path:spec>\t<declared subject or empty>\t<claim text>
+#
+# MARKDOWN dialect: a backticked `path.ext:N` span. The claim is the doc line
+# the span sits on, which is where the prose describing it lives.
+#
+# YAML dialect (issue #346): `locator: "path:N"` and `sites: ["path:N", ...]`.
+# These carried NO coverage at all until 2026-07-30, and the reason the obvious
+# fix does not work is worth stating: simply adding the register to DEFAULT_DOCS
+# leaves the markdown pattern matching nothing, so the gate reports
+# `citations=0` for it and PASSES — an already-0 grep, coverage in appearance
+# only. Measured before this parser existed:
+#     CITATION_DOCS="docs/ops/terminal-states.yaml" bash scripts/check-doc-citations.sh
+#     docs/ops/terminal-states.yaml   citations=0
+#
+# THE CLAIM IS THE WHOLE ROW, NOT THE `locator:` LINE. This is the part that
+# makes the check worth having. `locator: "…/alerts.yml:127"` contains no
+# assertion to test — the row's OTHER fields are what name the thing the line is
+# supposed to be. TS-14's row says `HighMemoryUsage`, so a locator pointing at
+# `- alert: TooManyDatabaseConnections` matches none of its tokens and fails.
+# C-1/C-2 alone would have caught neither of the two wrong locators found in
+# #345: both cited a line that EXISTS and is IN RANGE, just the wrong one.
+#
+# The citation-bearing keys are excluded from the claim text, or a locator would
+# count as its own evidence.
+CITE_KEYS_EXCLUDED_FROM_CLAIM="locator sites runbook related covers"
+
+yaml_citations() {
+  local doc="$1"
+  command -v python3 >/dev/null 2>&1 \
+    || void "python3 not on PATH — cannot parse the YAML citations in $doc"
+  python3 -c '
+import sys, re, yaml
+path = sys.argv[1]
+skip = set(sys.argv[2].split())
+try:
+    text = open(path).read()
+    doc  = yaml.safe_load(text)
+except ImportError:
+    sys.stderr.write("PyYAML not importable\n"); sys.exit(3)
+except Exception as e:
+    sys.stderr.write("unparseable: %s\n" % str(e).splitlines()[0]); sys.exit(3)
+lines = text.splitlines()
+
+# the first top-level key whose value is a non-empty list of mappings
+rows = None
+if isinstance(doc, dict):
+    for v in doc.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            rows = v; break
+if rows is None:
+    sys.exit(0)
+
+CITE = re.compile(r"^([A-Za-z0-9_./-]+\.[A-Za-z0-9]+):([0-9]+(?:[,-][0-9]+)*)$")
+
+def scalars(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in skip: continue
+            for s in scalars(v): yield s
+    elif isinstance(node, list):
+        for v in node:
+            for s in scalars(v): yield s
+    elif node is not None:
+        yield str(node)
+
+for r in rows:
+    rid = str(r.get("id", ""))
+    ln = 1
+    if rid:
+        pat = re.compile(r"^\s*-\s+id:\s*[\"\x27]?" + re.escape(rid) + r"[\"\x27]?\s*$")
+        for i, L in enumerate(lines, 1):
+            if pat.match(L): ln = i; break
+    claim = " ".join(scalars(r))
+    claim = re.sub(r"\s+", " ", claim)[:4000]
+    # The DECLARED subject. Tabs would corrupt the record; there is no legitimate
+    # tab in an identifier, so collapse rather than silently split the field.
+    subject = str(r.get("subject", "") or "").replace("\t", " ").strip()
+    cites = []
+    for key in skip:
+        v = r.get(key)
+        if isinstance(v, str): cites.append(v)
+        elif isinstance(v, list): cites += [x for x in v if isinstance(x, str)]
+    for c in cites:
+        if CITE.match(c.strip()):
+            print("%d\x1f%s\x1f%s\x1f%s" % (ln, c.strip(), subject, claim))
+' "$doc" "$CITE_KEYS_EXCLUDED_FROM_CLAIM" || void "cannot extract YAML citations from $doc (see message above)"
+}
+
+md_citations() {
+  local doc="$1" hit n line c
+  while IFS= read -r hit; do
+    [ -z "$hit" ] && continue
+    n="${hit%%:*}"; line="${hit#*:}"
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue
+      printf '%s\x1f%s\x1f\x1f%s\n' "$n" "$c" "$line"
+    done <<< "$(printf '%s' "$line" | grep -oE '`[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+([,-][0-9]+)*`' 2>/dev/null | tr -d '`')"
+  done <<< "$(grep -nE '`[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+([,-][0-9]+)*`' "$doc" 2>/dev/null || true)"
+}
+
+citations_in() {
+  case "$1" in
+    *.yaml|*.yml) yaml_citations "$1" ;;
+    *)            md_citations  "$1" ;;
+  esac
+}
+
 echo "check-doc-citations  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 echo "  docs: ${#DOCS[@]}"
 
 for doc in "${DOCS[@]}"; do
   [ -r "$doc" ] || void "$doc exists but is not readable"
   doc_cites=0
+  case "$doc" in *.yaml|*.yml) dialect=yaml ;; *) dialect=md ;; esac
 
-  # every `path:spec` citation, with the doc line it sits on
-  while IFS= read -r hit; do
-    [ -z "$hit" ] && continue
-    docline_no="${hit%%:*}"
-    docline="${hit#*:}"
-
-    while IFS= read -r cite; do
+  # every `path:spec` citation, with the doc line it sits on and its claim text
+  while IFS=$'\x1f' read -r docline_no cite subject docline; do
       [ -z "$cite" ] && continue
       path="${cite%:*}"
       spec="${cite##*:}"
@@ -233,13 +340,58 @@ for doc in "${DOCS[@]}"; do
 
       if [ "$matched" = 1 ]; then
         STRONG_OK=$((STRONG_OK + 1))
+      elif [ "$dialect" = yaml ]; then
+        # C-3 DOES NOT APPLY TO A REGISTER LOCATOR UNLESS THE ROW DECLARES ITS
+        # SUBJECT. This is the whole design decision of #346, so it is written down.
+        #
+        # A markdown citation QUOTES: "Next.js 16.2.12 — `package.json:36`" asserts
+        # that line 36 says exactly that, and token-matching verifies it. A register
+        # `locator:` POINTS: it means "the thing this row is about lives here". Many
+        # rows describe a CLASS of failure whose file never names them — TS-12 is
+        # about scrape targets generally and cites `prometheus.yml.tmpl:72`, one
+        # example job.
+        #
+        # Two heuristics were built and MEASURED against the real register before
+        # this was settled, because both looked reasonable on paper:
+        #   claim = all row prose, token match      -> 16 violations / 17 locators
+        #   + CamelCase and UPPER_SNAKE tokens      -> 12 violations / 17
+        #   + "token exists elsewhere in the file"  -> 11 violations / 17, and the
+        #     tokens doing the matching were NEVER, FROM, EVERY, FAILED, restart —
+        #     prose emphasis, not identifiers.
+        # Every one of those violations was on a locator that is CORRECT. A gate
+        # that is red on a correct tree gets switched off, and "fixing" it would
+        # have meant rewriting a dozen accurate locators to satisfy a heuristic.
+        #
+        # So the subject is DECLARED, never inferred — the same rule this repo
+        # already applies to `eol_slug` in infra/dependency-horizons.yaml, and for
+        # the same reason: the derived value looked obvious and was wrong.
+        #
+        #   subject: HighMemoryUsage      <- opt in, and the locator is checked hard
+        #   (absent)                      <- UNCHECKABLE, reported, never a pass
+        #
+        # A row that declares `subject:` gets the real drift check, which is the
+        # defect #345 actually found: TS-14 named HighMemoryUsage (alerts.yml:127)
+        # while its locator still pointed at :96, `- alert:
+        # TooManyDatabaseConnections` — same file, wrong line.
+        if [ -n "$subject" ]; then
+          if command grep -qiF -- "$subject" <<< "$cited"; then
+            STRONG_OK=$((STRONG_OK + 1))
+          else
+            found_at=$(command grep -niF -- "$subject" "$target" 2>/dev/null | head -1 | cut -d: -f1)
+            violation "C-3 $doc:$docline_no cites $path:$spec, but its declared subject '$subject' is not on that line${found_at:+ — it is at $path:$found_at}
+       cited: $(printf '%s' "$cited" | sed -E 's/^[[:space:]]+//' | cut -c1-92)"
+          fi
+        else
+          UNCHECKABLE=$((UNCHECKABLE + 1))
+          printf '  UNCHECKABLE %s:%s cites %s:%s — row declares no `subject:`, so the line cannot be checked against it\n' \
+            "$doc" "$docline_no" "$path" "$spec"
+        fi
       else
         violation "C-3 $doc:$docline_no cites $path:$spec, but that line says nothing the claim names
        claim: $(printf '%s' "$docline" | sed -E 's/^[[:space:]]*//' | cut -c1-92)
        cited: $(printf '%s' "$cited" | sed -E 's/^[[:space:]]+//' | cut -c1-92)"
       fi
-    done <<< "$(printf '%s' "$docline" | grep -oE '`[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+([,-][0-9]+)*`' 2>/dev/null | tr -d '`')"
-  done <<< "$(grep -nE '`[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+([,-][0-9]+)*`' "$doc" 2>/dev/null || true)"
+  done <<< "$(citations_in "$doc")"
 
   printf '  %-42s citations=%s\n' "$doc" "$doc_cites"
 done

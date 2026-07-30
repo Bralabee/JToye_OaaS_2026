@@ -29,7 +29,8 @@ states:
   - id: TS-01
     name: order.state-changes.dlq
     kind: amqp_dlq
-    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:27"
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:35"
+    subject: "DLQ_QUEUE"
     what_stops: "Order state-change events that exhausted retries. The kitchen display and the vendor's order list stop reflecting reality for those orders, and no customer-facing status ever updates again."
     owner: maintainer
     detection:
@@ -45,7 +46,8 @@ states:
   - id: TS-02
     name: payment.events.dlq
     kind: amqp_dlq
-    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:32"
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:40"
+    subject: "PAYMENT_EVENTS_DLQ"
     what_stops: "Payment events that exhausted retries. Money moved at Stripe but the platform's ledger never learns, so the vendor's revenue figures and the customer's receipt disagree with the card statement."
     owner: maintainer
     detection:
@@ -61,7 +63,8 @@ states:
   - id: TS-03
     name: webhook.deliveries.dlq
     kind: amqp_dlq
-    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:62"
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:70"
+    subject: "WEBHOOK_DELIVERIES_DLQ"
     what_stops: "Vendor webhook deliveries that exhausted retries. The vendor's integration silently stops receiving events — no error reaches them, their automation simply goes quiet."
     owner: maintainer
     detection:
@@ -78,7 +81,8 @@ states:
   - id: TS-04
     name: media.process.dlq
     kind: amqp_dlq
-    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:78"
+    locator: "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java:86"
+    subject: "MEDIA_EVENTS_DLQ"
     what_stops: "Image-processing jobs that exhausted retries. The vendor's uploaded photo stays stuck showing 'processing' forever, and the product it belongs to goes to market without an image."
     owner: maintainer
     detection:
@@ -95,6 +99,7 @@ states:
     name: payment_event_outbox poison
     kind: outbox_poison
     locator: "core-java/src/main/resources/db/migration/V46__outbox_reliability.sql:24"
+    subject: "poison"
     covers:
       # The poison FLAG is defined in the migration (the locator); the terminal
       # FAILED status it pairs with lives on the entity. D-3 discovers the entity
@@ -117,6 +122,7 @@ states:
     name: media_event_outbox poison
     kind: outbox_poison
     locator: "core-java/src/main/resources/db/migration/V58__media_event_outbox.sql:29"
+    subject: "poison"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/media/MediaEventOutbox.java#FAILED"
     what_stops: "A media event that failed to publish enough times to be marked poison. The upload pipeline never starts for that asset, so the vendor's image is stuck exactly as in TS-04 — with no queue entry to find it by."
@@ -135,6 +141,7 @@ states:
     name: media_asset FAILED
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java:44"
+    subject: "FAILED"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/media/MediaAsset.java#FAILED"
     what_stops: "A vendor image upload that never reached ACTIVE. Since 27-01 (V60) there are TWO sub-cases and they are NOT equally bad — distinguish them by quarantine_reclaimed_at before telling a vendor anything. (a) DISPATCH STALL: the reaper flipped a stale PENDING row whose event WAS dispatched, or was poison. It performs NO object delete — the original bytes are RETAINED and the asset is re-drivable via POST /api/v1/media/{assetId}/reprocess until quarantine_expires_at (72 h default). (b) WORKER VETO or EXPIRED: MediaProcessingWorker rejected the bytes on validation, or MediaQuarantineRetentionSweep reclaimed them at the retention horizon; quarantine_reclaimed_at is stamped and only a fresh upload can recover it. BEFORE 27-01 every FAILED asset had its bytes deleted first, so this state was unrecoverable by retry in ALL cases — a broker outage longer than reaperGraceMs (900_000 ms) destroyed every upload in flight."
@@ -153,7 +160,8 @@ states:
   - id: TS-08
     name: webhook_delivery FAILED
     kind: entity_status
-    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:43"
+    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:47"
+    subject: "FAILED"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java#FAILED"
     what_stops: "One outbound webhook delivery, terminally. The vendor's system never learns that this specific order, refund or status change happened — and because delivery is per-event, their data diverges from the platform's by exactly the events that failed."
@@ -173,6 +181,7 @@ states:
     name: webhook_subscription AUTO_PAUSED
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookSubscription.java:46"
+    subject: "AUTO_PAUSED"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/webhook/WebhookSubscription.java#AUTO_PAUSED"
     what_stops: "EVERY future event for one vendor subscription, not just the failed one. The worker flips the subscription to AUTO_PAUSED after sustained delivery failure (WebhookDeliveryWorker.java:229) and nothing tells the vendor. Their integration goes permanently quiet and they discover it from missing data, not from an error."
@@ -192,6 +201,7 @@ states:
     name: tenants.keycloak_deprovisioned_at NULL on an OFFBOARDED tenant
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/tenant/Tenant.java:76"
+    subject: "keycloak_deprovisioned_at"
     what_stops: "Identity-layer offboarding. The tenant is OFFBOARDED and TenantStatusInterceptor rejects their requests, but their Keycloak users were never disabled — so a stolen or cached token can still mint at the IdP. Deprovisioning runs best-effort after commit, so a Keycloak outage leaves this NULL with only an ERROR log."
     owner: maintainer
     detection:
@@ -208,6 +218,7 @@ states:
     name: onboarding stalled
     kind: entity_status
     locator: "core-java/src/main/java/uk/jtoye/core/onboarding/OnboardingEventPublisher.java:41"
+    subject: "ONBOARDING_STALLED"
     what_stops: "A vendor's application to join the platform. The ONBOARDING_STALLED event is published correctly and reaches the outbox — and then nobody receives it, because no cross-tenant operator identity exists in this system. A prospective vendor waits indefinitely and the business never learns it lost them."
     owner: UNASSIGNED
     detection:
@@ -224,6 +235,7 @@ states:
     name: scrape target down
     kind: infra_target
     locator: "infra/monitoring/prometheus/prometheus.yml.tmpl:72"
+    subject: "job_name"
     what_stops: "All observability for one service. Every alert whose selector depends on that target's metrics silently evaluates against zero series and stays inactive — the monitoring reports healthy precisely because it can see nothing."
     owner: maintainer
     detection:
@@ -237,6 +249,7 @@ states:
     name: exporter up but blind
     kind: infra_exporter
     locator: "infra/monitoring/docker-compose.monitoring.yml:137"
+    subject: "postgres-exporter"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
     resolved: "2026-07-29, alongside TS-15. The rule half landed with 27-03 (DatabaseDown became up{job=\"postgres\"} == 0 or pg_up == 0) but this row was left deferred, and its deferral reason — 'referenced by NO alert rule — verified: grep -c pg_up alerts.yml = 0' — has been FALSE since that merge: alerts.yml:85 reads pg_up. Nothing would have caught that until 2026-09-30, because a deferral is only ever re-examined on its expiry date. detection.alert was DatabaseExporterBlind, never built and no longer wanted, for the same reason given on TS-15."
@@ -252,6 +265,7 @@ states:
     name: alert bound to the wrong subject
     kind: detection_defect
     locator: "infra/monitoring/prometheus/alerts.yml:127"
+    subject: "HighMemoryUsage"
     what_stops: "core-java heap exhaustion and GC storms are unobserved. HighMemoryUsage (:96) and FrequentGarbageCollection (:111) both carry service: core-java but their jvm_* selectors are unqualified, so while core-java's target was down they bound to the only JVM Prometheus could see — Keycloak's. They are worse than dataless: a naive 'selector matches >= 1 series' liveness check reports them GREEN."
     owner: maintainer
     detection:
@@ -270,6 +284,7 @@ states:
     kind: detection_defect
     discovered: "2026-07-27, while verifying 27-00 Task 1. Not in the F-9 planning census."
     locator: "infra/monitoring/prometheus/alerts.yml:302"
+    subject: "RedisDown"
     what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluated up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — was live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stayed inactive."
     owner: maintainer
     resolved: "2026-07-29, issue #342 item 5. RedisDown now evaluates up{job=\"redis\"} == 0 or redis_up == 0 — the same shape 27-03 gave DatabaseDown. detection.alert was RedisExporterBlind, a separate alert that was never built and is no longer wanted: folding the gauge into the existing rule is strictly better than a second rule for the same outage, because it cannot be silenced independently of the thing it is about."
@@ -304,6 +319,7 @@ states:
     kind: detection_defect
     discovered: "2026-07-27, while executing 27-01 Task 6. The 27-01 plan specifies this row as 'TS-13'; that id was already taken by the PostgreSQL exporter row, so it is filed here as TS-17 — the number moved, the content did not."
     locator: "core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java:185"
+    subject: "media.reaper.suspended"
     what_stops: "Classification of EVERY stalled upload, platform-wide. The reaper could not show the dispatch path healthy from this JVM (broker admin absent, queue info threw or was null, zero consumers broker-wide, or the local media.process listener container is missing/stopped/unsubscribed — see the Liveness enum), so the whole tick returns before touching a single tenant. Fails CLOSED by design (D-05): while suspended, no PENDING asset can be wrongly flipped to FAILED, but none is classified either, so a vendor sees the DELAYED affordance indefinitely rather than a terminal state with a Re-process button. Bounded-growth is NOT affected — MediaQuarantineRetentionSweep is deliberately not gated on this and still reclaims bytes at the 72 h horizon. NOT OBSERVABLE FROM HERE: a remote replica's dead consumer; the probe only sees this JVM's own listener registry."
     owner: maintainer
     detection:
