@@ -5,6 +5,24 @@ Things this phase found, decided not to do, and wrote down with a **named trigge
 
 Opened by plan **27-03** (alerting / DLQ / runbook), 2026-07-29.
 
+> ## ⚠ Read an entry's evidence before repeating it — two here had already gone stale
+>
+> **Nothing gates this file.** Unlike `docs/ops/terminal-states.yaml`, no script checks these
+> entries, so an item whose *reason* stops being true survives silently until someone reaches its
+> expiry date. Both closures dated 2026-07-30 were found this way, and neither by review:
+>
+> - **§10** — all three "dataless" rules had acquired data or been fixed.
+> - **§11** — `RedisDown` had been **fixed in #345 the previous day**, while this file still said
+>   "Not fixed here". Its load-bearing evidence, `grep -c redis_up alerts.yml -> 0`, now returns
+>   **5**. The stale text was read as current and **copied forward into a handoff as an open item**
+>   before anyone ran the grep.
+>
+> So: **an entry states a measurement; re-run the measurement before acting on the entry.** Entries
+> whose numbers describe a *state at drafting* (§8's DSN key case, §9's 27-03-draft counts) are
+> historical records and are correct as written — the test is whether the entry claims something is
+> *still* true. Checked 2026-07-30: **§5** (no k8s alerting — 0 manifests) and **§7**
+> (`StompBrokerLag` still dormant — 0 active rules) both verified **still valid**.
+
 ---
 
 ## 1. DLQ redrive — deferred with a trigger, and it is the recommendation, not a compromise
@@ -159,17 +177,39 @@ selectors start matching **fails the gate** so it cannot outlive its reason.
 | `HighErrorRate` | `http_server_requests_seconds_count{status=~"5.."}` | **Conditional.** Family and `status` label both exist; no 5xx has been served yet. Remove the exemption the first time one is. |
 | `NoOrdersCreated` | `http_server_requests_seconds_count{uri=~…,method="POST",status="201"}` | **Conditional, and worse than it looks.** The rule's own logic is `increase(...) < 1`, so it can never fire while the series is absent — an absence alert built on a counter that does not exist yet, which is the opposite of what its author intended. |
 
-## 11. `RedisDown` watches the exporter, not Redis — the `DatabaseDown` defect in a second metric
+## 11. ~~`RedisDown` watches the exporter, not Redis~~ — **FIXED in #345, this entry was STALE**
 
-`RedisDown` alerts on `up{job="redis"} == 0`, which is the health of **redis-exporter**. The
-correct signal, `redis_up`, exists in the scrape and is **referenced by no rule** — flagged
-independently by 27-00's `check-alert-liveness.sh` as `L-1b`.
-
-This is exactly the defect 27-03 corrected in `DatabaseDown` (`up{job="postgres"} == 0 or
-pg_up == 0`), in a different metric. **Not fixed here** because Task 2's scope is explicit: do not
-touch any other rule in the file. The one-line fix is `up{job="redis"} == 0 or redis_up == 0`, and
-it should be made with the same falsification 27-03 ran for `DatabaseDown`: break the exporter's
-connection to Redis and confirm the corrected rule fires where the original stayed silent.
+> **CLOSED.** Fixed on 2026-07-29 by `79a3a6a2` (**#345**), *"the last two live detection defects —
+> RedisDown was blind to a total cache outage"*. The rule on `main` reads exactly the one-line fix
+> this entry proposed:
+>
+> ```yaml
+> - alert: RedisDown
+>   expr: up{job="redis"} == 0 or redis_up == 0
+> ```
+>
+> **This entry outlived its own reason and nobody noticed for a day.** Its load-bearing claim —
+> *"`redis_up` … is referenced by no rule"*, evidenced as `grep -c redis_up alerts.yml -> 0` — is
+> now **`5`**. The text was still being read as current on 2026-07-30 and was copied forward into a
+> handoff as an open item before anyone ran the grep. That is the failure mode this file has:
+> **a deferral is only re-read on its expiry date, so one whose reason becomes false in the meantime
+> survives silently.** Unlike `terminal-states.yaml`, nothing gates this file.
+>
+> **Re-verified live on 2026-07-30**, independently rather than by trusting #345's comment — Redis
+> stopped with `jtoye-redis-exporter` left running, which is the exact condition the old rule was
+> blind to:
+>
+> | | during the outage | after restore |
+> |---|---|---|
+> | `up{job="redis"}` | **1** — the exporter still answers | 1 |
+> | `redis_up` | **0** — Redis actually unreachable | 1 |
+> | OLD `up{job="redis"} == 0` | **0 samples** — would NOT have fired | 0 |
+> | NEW `… or redis_up == 0` | **1 sample** — fires | **0 samples** — no steady-state page |
+>
+> Both expressions return 0 samples in steady state, so the corrected rule does not page when
+> healthy. `check-alert-liveness` (which raised this as `L-1b`), `check-alert-metrics` and
+> `check-alert-rules` are all `rc=0` after the restore, and the stack came back to 17 healthy
+> containers with core-java and the storefront both serving 200.
 
 ## 12. Three runbook commands in the pre-existing `ServiceDown` section are not verbatim-runnable
 
