@@ -2,6 +2,13 @@
 # Consumed by scripts/check-claims.sh (vendored gates/claim-gate.sh engine).
 # TAB-separated. Generated from the rule tables of check-doc-metrics.sh and
 # check-project-version.sh so the translation is mechanical, not retyped.
+#
+# ADDITIVE FOR NOW: this manifest runs the same 43 assertions as check-doc-metrics.sh
+# (37) + check-project-version.sh (6), which REMAIN in CI as a cross-check while the
+# engine earns trust. Consolidation is tracked in issue #362, which requires MOVING
+# their headers here rather than discarding them: they hold the measured evidence and
+# the reasons for what is deliberately NOT checked.
+# Engine canonical copy: ~/dotfiles/gates/  ·  refresh: ~/dotfiles/gates/install.sh <repo>
 
 source	metrics	json	docs/metrics.json	int
 source	gradle	regex	build.gradle.kts	semver	^\s*version\s*=\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")

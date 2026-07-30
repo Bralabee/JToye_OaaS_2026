@@ -40,3 +40,13 @@ jobs:
       - name: Verify the project version agrees across every site that claims it
         if: always()
         run: bash scripts/check-project-version.sh
+      # The generic claim-gate engine, running the SAME 43 assertions as the two
+      # steps above (37 + 6) from a declarative rule table instead of bespoke bash.
+      # Deliberately additive for now: it cross-checks those two while the engine
+      # earns trust in CI, and they carry documentation the manifest does not yet.
+      # Consolidation is tracked as a real issue, not a comment that quietly rots —
+      # see scripts/gates/claims.manifest for the issue reference.
+      # Engine is vendored (scripts/gates/) because a runner has only this repo.
+      - name: Verify documented claims match their sources (claim-gate engine)
+        if: always()
+        run: bash scripts/check-claims.sh

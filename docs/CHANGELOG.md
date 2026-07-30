@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A reusable claim-gate engine — the same 43 assertions, from a rule table (#362) — 2026-07-30
+
+Four gates in this repo had independently converged on one shape: *assert every value a doc claims against its source of truth*. That shape is now an engine with a declarative rule table, so the next project — and the next repo on any machine — gets the gate by writing rows instead of a script.
+
+#### Added
+- **`scripts/gates/claim-gate.sh` + `scripts/gates/claims.manifest` + `scripts/check-claims.sh`.** 43 rules across 5 files, reproducing `check-doc-metrics.sh` (37) and `check-project-version.sh` (6) exactly: **43 = 37 + 6**. The manifest was generated *from those scripts' own rule tables* rather than retyped, so the translation is mechanical. Semantics carried over intact: **M-1** a rule matching nothing FAILS (deleting the sentence cannot dodge the gate — an already-zero grep is the classic vacuous check), **M-2** every captured value must equal its source, and fail-closed at exit **2** on missing `jq`/`grep -P`, an absent/empty/ruleless manifest, a missing source or consumer file, a wrong-shaped source value, a `grep`/`jq` error, or **zero comparisons performed**. Drift (1) outranks VOID (2) so a real disagreement is never masked by an unreadable file.
+- **`jq:<path>` consumers, which are necessary rather than convenient.** `frontend/package-lock.json` records the package's own version at **both** `.version` and `.packages[""].version` *and* carries a `version` per dependency. Measured on a 4-entry fixture, the PCRE `"version":\s*"\K[0-9.]+` returned `3.1.4 3.1.4 1.0.0 2.7.9` — two dependency versions that a pattern rule would report as drift. `jq:` rules still obey M-1: an absent or `null` path FAILS.
+- **Equivalence proven under break arms, not assumed.** Engine and bespoke gates returned **identical exit codes across 9 arms** — clean tree, README total drift, MCP claim deleted (M-1), CLAUDE schema stale, `package.json` drift, README badge drift, lockfile skew via the `jq:` path, metrics key absent (VOID), and clean tree again — with every restore verified by content rather than by `git diff --stat`. A matching claim count on a passing tree would have proven nothing.
+
+#### Changed
+- **`docs-freshness.yml` gains a fourth step, deliberately additive.** `check-claims.sh` runs *alongside* the two scripts it reproduces rather than replacing them, for two reasons recorded in **issue #362**: the engine has not yet earned trust in CI (so the bespoke gates cross-check it on every PR), and those scripts' headers hold the measured evidence and the reasons for what is deliberately *not* checked — repo-resident knowledge that travels with a clone and must be **moved, not discarded**, when they eventually go. Tracked as an issue rather than a code comment because a deferral whose reason quietly becomes false survives unnoticed until someone rereads it.
+- The engine is **vendored** into `scripts/gates/` rather than sourced from `~/dotfiles/gates/`, because CI runs in a fresh runner holding only this repository — an engine outside it could never run there, making it a local-only check of exactly the kind that drifts out of use. `~/dotfiles/gates/install.sh --check` detects a stale vendored copy by **content hash**, so an edited copy is caught even when its `VERSION` has not moved.
+
 ### The ollama container could never bind its port, so it ran attached to no network — 2026-07-30
 
 Found while verifying a routine container rebuild. The AI image-analysis path had been dead behind a green stack for weeks.
