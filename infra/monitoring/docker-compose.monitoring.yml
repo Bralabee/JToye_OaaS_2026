@@ -97,6 +97,17 @@ services:
       # A placeholder-shaped URL is treated as unset by entrypoint.sh.
       - ALERTMANAGER_SLACK_WEBHOOK_URL=${ALERTMANAGER_SLACK_WEBHOOK_URL:-}
       - ALERTMANAGER_SLACK_CHANNEL=${ALERTMANAGER_SLACK_CHANNEL:-}
+      # Environment-scoped NOTIFICATION mute — comma-separated alertnames, empty
+      # by default so this compose file is loud out of the box. It exists because
+      # NoOrdersCreated fires ~30 min after the last order and a quiet local stack
+      # therefore pages forever; the alert is correct and WANTED in production.
+      # Muting withholds the notification only — the rule still evaluates and the
+      # alert still shows as firing in Prometheus and the Alertmanager UI.
+      # This line is what makes the entrypoint's mute reachable at all: without it
+      # a fully-configured .env reaches nothing (see the Slack note directly above,
+      # which records that exact failure happening once already).
+      # Enforced local-only by scripts/check-alert-mute.sh (assertion M-5).
+      - ALERTMANAGER_MUTE_ALERTNAMES=${ALERTMANAGER_MUTE_ALERTNAMES:-}
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
       - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro

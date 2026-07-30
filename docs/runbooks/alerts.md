@@ -171,7 +171,62 @@ alert reports the JVM it measured rather than the one someone assumed.
 
 ## NoOrdersCreated
 
-<!-- TODO: fill in. Rule: increase(http_server_requests_seconds_count{uri=/orders,POST,201}[30m]) < 1. This is an info-severity business signal, not an outage. -->
+**Expression:** `increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1`
+· **for:** 30m · **severity:** info
+
+### What it means
+
+No order was successfully created in the last 30 minutes. This is a **business** signal, not an
+outage — nothing is down, and no page is warranted on its own.
+
+### The trap: this is a REQUEST counter, not a database fact
+
+`http_server_requests_seconds_count` is a Micrometer request counter. It is **created on the first
+matching request and destroyed when core-java restarts.** Two consequences that have each cost time
+already:
+
+- **Seeding an order row in the database does not create the series.** Neither does any read
+  endpoint. Only a real `POST` that returns `201` does.
+- **This project mandates rebuilding all containers after any code change**, so after every rebuild
+  the alert is *blind* until the first order — precisely when you would most want it.
+
+### Two different symptoms, two different fixes — do not confuse them
+
+| symptom | what it means | fix |
+|---|---|---|
+| `scripts/check-alert-metrics.sh` fails on it | the stack was rebuilt, the counter is gone, the alert is **blind** | `bash scripts/seed-order-metric.sh` |
+| the alert is **firing** in Prometheus | the counter exists, no order landed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` |
+
+The gate asks *does the series exist*; the alert asks *was there a recent order*. Both can be true at
+once, which is why the plain invocation exits early and places no order — it cannot silence a firing
+alert, and it says so itself.
+
+**Do not add a `KNOWN_DATALESS` entry for this.** That gate's own header calls it the wrong fix.
+
+### Silencing it locally
+
+On a quiet local stack this fires every 30 minutes forever, and the `FORCE=1` remedy above buys
+silence by writing a **real order row into the dev database on every run**. Prefer the mute:
+
+```bash
+# in .env — LOCAL ONLY
+ALERTMANAGER_MUTE_ALERTNAMES=NoOrdersCreated
+```
+
+then recreate Alertmanager (`docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d
+--force-recreate alertmanager`). The startup log will say so explicitly.
+
+This **withholds the notification only**. The rule keeps evaluating and the alert still shows as
+firing in Prometheus and in the Alertmanager UI — the mute cannot hide it from anyone looking at it.
+
+**It must never be set outside local development.** `scripts/check-alert-mute.sh` assertion M-5 fails
+if any file under `k8s/` sets the variable, and runs standalone via `MODE=static` so CI enforces that
+half without a running stack. Confirm the mute is absent from a given runtime by reading the config
+out of the container — never the host template, which is not what Alertmanager loaded:
+
+```bash
+docker exec jtoye-alertmanager cat /etc/alertmanager/alertmanager.yml | grep -A3 mute-null   # expect no output
+```
 
 ## TenantIsolationFailure
 
