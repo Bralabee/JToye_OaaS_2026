@@ -126,7 +126,7 @@ obtainable without leaning on consumer consent at all.
   identification is reasonably likely by any means reasonably likely to be used — which is why M.3
   carries operative guarantees rather than an assertion.
 - M.5 is the clause most likely to be dropped as boilerplate. It should not be.
-  the field `private Integer allergenRestrictions` already exists and defaults to 0 — `core-java/src/main/java/uk/jtoye/core/customer/Customer.java:58`
+  the field `allergenRestrictions` already exists — `core-java/src/main/java/uk/jtoye/core/customer/Customer.java:58`
   — and is populated in production. A **vendor cannot
   consent on its own customers' behalf** to Article 9 processing, so no ToS or DPA wording can make
   allergen data derivable. It requires explicit consent from the data subject, obtained separately.
