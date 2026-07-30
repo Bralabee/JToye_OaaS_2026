@@ -28,7 +28,11 @@ public class GuestOrderRequest {
     @Size(max = 64)
     private String idempotencyKey;
 
-    private Integer customerAllergenMask;
+    // NOTE: customerAllergenMask was removed 2026-07-30. It carried special-category
+    // health data (UK GDPR Art. 9) over an UNAUTHENTICATED endpoint, with no Art. 9(2)
+    // condition recorded and no consent capture anywhere in the flow — and no client
+    // ever sent it, so nothing was lost by removing it (data minimisation, Art. 5(1)(c)).
+    // See docs/legal/article-9-allergen-basis.md before reinstating any equivalent field.
 
     /**
      * How the order is fulfilled — the enum-string form of
@@ -69,8 +73,6 @@ public class GuestOrderRequest {
     public void setNotes(String notes) { this.notes = notes; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
-    public Integer getCustomerAllergenMask() { return customerAllergenMask; }
-    public void setCustomerAllergenMask(Integer customerAllergenMask) { this.customerAllergenMask = customerAllergenMask; }
     public String getFulfilmentType() { return fulfilmentType; }
     public void setFulfilmentType(String fulfilmentType) { this.fulfilmentType = fulfilmentType; }
     public String getAddressLine1() { return addressLine1; }

@@ -44,20 +44,26 @@ The absent node is **Ingredient**:
 
 ### The load-bearing observation
 
-On every guest checkout the storefront already runs `int conflict = customerAllergenMask & product.getAllergenMask();` — `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java:449`
+> **Amended 2026-07-30.** This section originally cited a guest-checkout cross-check,
+> `customerAllergenMask & product.getAllergenMask()`, as proof the safety chain was live. That code
+> has since been **removed** — it took special category data over an unauthenticated endpoint with no
+> Article 9 condition, and no client ever sent it. See
+> [`docs/legal/article-9-allergen-basis.md`](../../legal/article-9-allergen-basis.md). The observation
+> below is restated on the ground that survives, and the ADR's decision is unaffected.
 
-The allergen safety chain is therefore **live in production today**, and its integrity rests
-entirely on `allergenMask` — an integer a vendor hand-types into a CSV column whose template header
-is `title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask,shop_id` — `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java:60`
+Every allergen statement the platform makes to a consumer resolves to `allergen_mask` — an integer a
+vendor hand-types into a CSV column whose template header is
+`title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask,shop_id` — `core-java/src/main/java/uk/jtoye/core/product/BulkImportService.java:60`
 
 Nothing in the codebase ever reconciles that integer against the ingredients text sitting in the
-adjacent column.
+adjacent column. That is the load-bearing gap, and removing the guest cross-check did not narrow it:
+the written-allergen duty under distance selling is discharged from this same unverified field, and
+`hasAllergen(product.allergenMask, a.bit)` is what the storefront renders — `frontend/components/storefront/product-detail-modal.tsx:65`
 
-Two smaller verified gaps in the same path:
-
-- the mask is taken from the request, so a signed-in customer's stored
-  `Customer.allergenRestrictions` is never consulted at checkout;
-- a detected conflict produces a warning string, never a block.
+Both of the smaller gaps recorded here originally — that the mask came from the request rather than
+the stored customer profile, and that a conflict warned rather than blocked — described the removed
+guest cross-check and no longer exist as written. There is now **no consumer-allergen matching at
+checkout at all**, which is the correct position until a consented path exists.
 
 ### The regulatory frame (corrected)
 

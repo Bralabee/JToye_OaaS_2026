@@ -405,9 +405,16 @@ public class PublicStorefrontService {
             }
             // COLLECTION: no address persisted; the delivery fee is forced to £0 below.
 
-            // Add items with server-side price lookup + allergen cross-check
+            // Add items with server-side price lookup.
+            //
+            // allergenWarnings stays on the confirmation DTO and is always empty as of
+            // 2026-07-30: the customer-supplied allergen mask that populated it was
+            // special-category data (Art. 9) taken over an unauthenticated endpoint with
+            // no consent capture, and was removed. The field is retained as the seam a
+            // future *consented* warning path plugs into — the checkout UI already guards
+            // on length, so an empty list renders nothing. See
+            // docs/legal/article-9-allergen-basis.md.
             List<String> allergenWarnings = new ArrayList<>();
-            Integer customerAllergenMask = request.getCustomerAllergenMask();
             // Collect each line's VAT-inclusive gross + server-resolved rate so
             // the order's predominant liability can be computed (Issue #81 BUG 2).
             // The client cannot supply a rate (no rate field on the request) —
@@ -441,16 +448,6 @@ public class PublicStorefrontService {
                     throw new IllegalArgumentException(
                             "Insufficient stock for '" + product.getTitle() + "': requested "
                                     + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
-                }
-
-                // Cross-check allergens if customer provided restrictions
-                if (customerAllergenMask != null && customerAllergenMask != 0
-                        && product.getAllergenMask() != null && product.getAllergenMask() != 0) {
-                    int conflict = customerAllergenMask & product.getAllergenMask();
-                    if (conflict != 0) {
-                        allergenWarnings.add(product.getTitle() + " contains allergens you've flagged: "
-                                + describeAllergens(conflict));
-                    }
                 }
 
                 OrderItem item = new OrderItem(
@@ -672,20 +669,10 @@ public class PublicStorefrontService {
         return dto;
     }
 
-    private static final String[] ALLERGEN_NAMES = {
-            "Gluten", "Crustaceans", "Eggs", "Fish", "Peanuts", "Soybeans",
-            "Milk", "Nuts", "Celery", "Mustard", "Sesame", "Sulphites", "Lupin", "Molluscs"
-    };
-
-    private static String describeAllergens(int mask) {
-        List<String> names = new ArrayList<>();
-        for (int i = 0; i < ALLERGEN_NAMES.length; i++) {
-            if ((mask & (1 << i)) != 0) {
-                names.add(ALLERGEN_NAMES[i]);
-            }
-        }
-        return String.join(", ", names);
-    }
+    // ALLERGEN_NAMES / describeAllergens removed 2026-07-30 with the customer allergen
+    // mask they formatted — dead once the Art. 9 intake was withdrawn. The 14-allergen
+    // name list still lives on the frontend (ALLERGENS in frontend/types/api.ts) for
+    // PRODUCT allergen display, which is product data, not personal data.
 
     private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d{2}):(\\d{2})\\s*-\\s*(\\d{2}):(\\d{2})");
     private static final Map<DayOfWeek, String> DAY_KEYS = Map.of(

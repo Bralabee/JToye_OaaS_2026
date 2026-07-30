@@ -140,8 +140,11 @@ obtainable without leaning on consumer consent at all.
 Recorded explicitly so it is not assumed later:
 
 1. **Article 9 allergen data.** Excluded by M.5. The separate question of the lawful basis for
-   *storing and using* `Customer.allergenRestrictions` at checkout today is a live item and is
-   **not** resolved by this clause.
+   *storing and using* `Customer.allergenRestrictions` is answered in
+   [`article-9-allergen-basis.md`](article-9-allergen-basis.md) — the **vendor is the controller** and
+   must hold the Article 9(2)(a) condition; J'Toye is processor and cannot obtain it. That
+   determination does not change M.5: the exclusion stands precisely *because* a vendor cannot
+   consent on its customers' behalf.
 2. **Companies House data redistribution.** Governed by the Companies House API terms, which are a
    separate check.
 3. **Open Food Facts derived data.** Governed by ODbL share-alike, addressed architecturally in
