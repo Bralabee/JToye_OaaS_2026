@@ -6,7 +6,7 @@ still reports PR #359 as the open one and the working tree on a housekeeping bra
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | `main`, tree clean. **7 PRs this session:** #359, #360, #361, #363, #364, #365, #367. HEAD deliberately **not** quoted — see the note under this table |
+| `JToye_OaaS_2026` | `main`, tree clean. **9 PRs this session:** #359, #360, #361, #363, #364, #365, #367, #368, #369. HEAD deliberately **not** quoted — see the note under this table |
 | `dotfiles` | `master`, tree clean. **8 PRs this session:** #43–#50 |
 | Open PRs | **none in either repo** |
 | Open issues | **58** in JToye; the one opened today, **#362** (gate consolidation), was CLOSED in favour of a dated deferral — see §4 |
@@ -227,9 +227,13 @@ typography, not icons; console output is CLI UX, not iconography) and the Phase 
 3. **No `v2.3` git tag.** Artifact is `2.3.0`; the milestone is in development. Cutting the tag is
    also what would finally push a version-numbered image (`type=semver` only fires on `v*`).
 4. **Not started, from the portability plan:** running `/housekeeping` end-to-end (not just its
-   read-only phases) on a second repo, and the `✕` glyph at
-   `frontend/components/marketing/competitive-teardown.tsx:445` — a real close-button finding the
-   improved emoji scan isolated, unfixed.
+   read-only phases) on a second repo. This is now the **only** remaining item here.
+   - ~~the `✕` glyph at `competitive-teardown.tsx:445`~~ — **DONE in #368.** Two corrections
+     that item's own wording earned: it was **not a close button** (it is a decorative
+     `aria-hidden` gap-marker in the "hard gaps" list), and the `shrink-0` added with the fix is
+     **defensive, not load-bearing** — the break arm did not fire on any shipped `GAPS` string
+     (`squashedAfter=0`), only under a longer label (16px → 11.27px). Both were caught by running
+     the fail direction, which is the same lesson as §0.
 
 ---
 
