@@ -188,8 +188,15 @@ still at 1 series with the gate green afterwards.
 - **`financial_transactions.order_id` has no foreign key to `orders`**, and 3 rows from
   2026-07-09/11 already point at orders that no longer exist (verified to reference none of the ids
   deleted in §4). Dev-DB residue as it stands; the same shape in production is a ledger-integrity gap.
-- **`RedisDown` watches the exporter, not Redis** — `deferred-items.md` §11. The one-line fix is
-  `up{job="redis"} == 0 or redis_up == 0`, and it wants the same falsification `DatabaseDown` got.
+- ~~**`RedisDown` watches the exporter, not Redis**~~ — **WRONG, and it was my error.** It was fixed
+  in **#345** (2026-07-29) and the rule on `main` already reads
+  `up{job="redis"} == 0 or redis_up == 0`. I copied `deferred-items.md` §11 forward into the list
+  above without running its own evidence: the entry claims `grep -c redis_up alerts.yml -> 0`, and
+  the answer is **5**. Re-verified live 2026-07-30 by stopping Redis with the exporter left running —
+  old expression **0 samples**, new expression **1 sample**, both **0** after restore. §11 now
+  records the closure. **The lesson is the general one: a deferral is only re-read on its expiry
+  date, so verify the reason before repeating it — including when the source is this project's own
+  planning file.**
 - `order_items_aud`/`orders_aud` carry 97/117 orphans — **expected**, audit mirrors of legitimately
   deleted orders.
 
