@@ -15,6 +15,10 @@ That framing is structurally correct and worth stating precisely, because it is 
 opportunity is real: those are **three traversals of one node set**, not three products. A canonical
 Ingredient node serves menu compliance, recipe commerce, and grocery retail from the same table.
 
+The three senses are developed in full below (see *The three senses of a food item*). They are the
+origin of this ADR and its largest product opportunity; the compliance and identity material that
+follows is what makes them *safe* to build, not a replacement for them.
+
 ### What the codebase already has
 
 Most of the *edges* exist as shipped columns. Almost none of the *nodes* do.
@@ -231,6 +235,139 @@ consent basis before Layer A ships, not after.
   by the missing `tenant_id` column, and contractually by the ToS item below.
 - Vendor data-entry burden if quantities or lot numbers are ever required — see Retracted claims.
 
+## The three senses of a food item
+
+This is the question the ADR started from, and it is the largest product opportunity in it. An
+earlier draft acknowledged it in a paragraph and then drifted into compliance and vendor identity —
+that drift is corrected here.
+
+### The schema already supports two of the three
+
+Verified, not assumed:
+
+- `Product` carries `private Integer quantityInStock` where NULL means untracked/unlimited — `core-java/src/main/java/uk/jtoye/core/product/Product.java:82`
+- and `private String durabilityType` — `core-java/src/main/java/uk/jtoye/core/product/Product.java:111` — constrained to `CHECK (durability_type IN ('USE_BY', 'BEST_BEFORE'))` in V41.
+- `category` is a free string. **Nothing in the model forces a product to be a cooked dish.**
+
+`USE_BY` is the perishable-prepared-food durability; `BEST_BEFORE` is the shelf-stable one. So the
+distinction between a cooked dish and an ambient grocery item is *already representable*, and the
+shopping-basket sense needs **no schema change** — only an ingredient node to relate the two.
+
+The recipe sense has no representation at all: there is no Recipe concept anywhere in the tree.
+
+### Why the three senses are strategically different, not just three views
+
+They have different economics, and the difference is the actual finding:
+
+| Sense | Marginal cost | Perishable | Reach |
+|---|---|---|---|
+| Cooked dish | high (food + labour) | yes (`USE_BY`) | **delivery radius** |
+| Recipe | ~zero (content) | no | unbounded — organic search |
+| Shopping basket | stock cost | no (`BEST_BEFORE`) | **postable — escapes the radius** |
+
+**Cooked food is radius-bound; dry goods are postable.** That is the structural unlock. A Birmingham
+Caribbean kitchen cannot deliver jerk chicken to Glasgow, but it can post scotch bonnet sauce,
+allspice and ackee there — same vendor, same platform, same catalogue data, an addressable market
+that is no longer capped by drive time. Delivery radius is one of the reasons the standalone
+market analysis for this sector read pessimistically; this is the mechanism that relaxes it.
+
+The ingredient graph is precisely what converts an existing menu into a shoppable dry-goods
+inventory, because **the vendor has already declared the ingredients**. No new data-entry burden —
+which is exactly the wall that killed the COGS and traceability ideas (see *Retracted claims*).
+
+### The recipe sense is also the unmet SEO contract
+
+Verified: there is **no schema.org JSON-LD anywhere in the frontend source**, and no `robots.txt` /
+`app/robots.ts` (a `sitemap.ts` does exist). The standing cross-cutting contract in `CLAUDE.md`
+requires JSON-LD on public product/shop surfaces; it is currently unmet.
+
+That matters here because `schema.org/Recipe` is a first-class Google rich-result type. Recipe
+content derived from menu data the vendor has already entered is the cheapest organic-acquisition
+asset available to a food platform, and building it would discharge an existing contract rather
+than add a new obligation.
+
+> Caution: a recipe page asserts *how to make* something. Publishing derived recipes without vendor
+> review would be both a quality and a liability problem. Recipes are vendor-authored content the
+> graph *assists*, exactly as derived allergens are advisory rather than authoritative.
+
+### Which traversals actually need graph structure
+
+Honestly graded, because this is where the datastore decision could have been overturned:
+
+1. **dish → ingredients → which of those does this vendor also stock as goods?** Two hops. A join.
+2. **dish ↔ dish sharing ≥ N ingredients.** Co-occurrence aggregate. A join with `HAVING`.
+3. **ingredient → substitutes → dish variants** (vegan, gluten-free). Bounded closure. Recursive CTE.
+4. **basket ⊇ recipe.ingredients — "what can I cook from this?"** *This* is the genuinely
+   graph-shaped one: set containment over a bipartite graph, not a simple join.
+
+Even (4) is comfortably Postgres-expressible — a bridge table with `HAVING COUNT(*) = n`, or arrays
+with `@>` and a GIN index. **So restoring the origin question does not overturn the Decision above;
+it survives it.** That is worth recording: the rejection of a graph datastore is not an artifact of
+having drifted onto compliance, because the food traversals are depth-bounded and set-shaped too.
+
+### One node, three projections
+
+```
+                          ┌──────────────────────────┐
+                          │  ingredient (canonical)  │   Layer B — non-tenant
+                          └────────────┬─────────────┘
+                 used_in │        sold_as │        component_of │
+        ┌─────────────────┴──┐  ┌─────────┴────────┐  ┌─────────┴──────────┐
+        │ DISH               │  │ GOODS            │  │ RECIPE             │
+        │ Product            │  │ Product          │  │ vendor-authored    │
+        │ durability=USE_BY  │  │ =BEST_BEFORE     │  │ content, not sold  │
+        │ prep_time set      │  │ quantityInStock  │  │ public / SEO       │
+        │ radius-bound       │  │ postable         │  │ unbounded reach    │
+        └────────────────────┘  └──────────────────┘  └────────────────────┘
+                          Layer A — tenant-scoped, RLS unchanged
+```
+
+Dish and goods are the *same table* distinguished by durability. Recipe is new, tenant-owned (a
+vendor's recipe is their content), and is the only one of the three requiring new storage.
+
+## Commercial position
+
+ADR-0004 is not only a defensive decision about a datastore. It is also the enabling structure for
+several revenue surfaces, and the architecture above is what makes them reachable without
+weakening tenant isolation.
+
+### The reference plane is independently operable
+
+Layer B holds no tenant data and has no `tenant_id` column. That permits a second consumer —
+a reference API with its own database role holding **zero `GRANT`s on Layer A tables**. This is
+deliberately stronger than RLS for that consumer: RLS filters which rows a role may ask about; a
+missing grant means the question cannot be asked at all. A compromise of the reference API holds no
+credential that reaches a tenant table, so the reference plane can be operated, sold or spun out
+without touching the SaaS.
+
+### Revenue surfaces, mapped to substrate already captured
+
+| Surface | Runs on | Blocker |
+|---|---|---|
+| Catalogue expansion — menu → postable dry goods | `Product` as-is + ingredient node | ingredient node |
+| Recipe content / organic acquisition | recipe entity + JSON-LD | unmet SEO contract |
+| Compliance attestation (per site) | Layer A + ontology | ingredient node |
+| Verified-trust API | Layer B only | vendor coverage |
+| Embedded finance | resolved identity + ledger + Connect | FCA permissions / partner lender |
+| Insurance distribution | Layer B + attestation | underwriter appetite |
+| Benchmarking (anonymised cohorts) | aggregates, k-anonymous | **ToS/DPA clause absent** |
+
+### The identity graph is already being built and discarded
+
+`FhrsClient` resolves a shop's name and address to an FSA establishment;
+`VendorOnboarding.companyNumber` captures the legal entity; `VendorOnboardingGate.externalRef`
+documents itself as holding the "FHRS establishment id / CH number / Stripe acct"; and
+`Tenant.stripeAccountId` + `stripeConnectStatus` complete the path to money. The platform therefore
+performs **entity resolution over UK food SMEs once per vendor, at onboarding, and stores the answer
+as a gate audit field it never reads again**.
+
+FHRS is Open Government Licence and Companies House data is public, so the public data is not the
+asset — **the join is**. That resolution is also the precondition for underwriting, which is why the
+identity graph sits above cash-flow history in the moat ranking rather than beside it.
+
+*No revenue modelling underpins any of this and no figures are asserted; lending and insurance
+distribution carry regulatory scope that needs professional advice before either becomes a plan.*
+
 ## Moat — revised ranking
 
 1. **Verified vendor ↔ Companies House ↔ FHRS ↔ staff identity graph.** Strongest. Licence is clean
@@ -245,10 +382,12 @@ consent basis before Layer A ships, not after.
    not exist. Not bankable in this milestone.
 5. **Order-affinity graph.** Proprietary but decaying; a quality edge, not a wall.
 
-**Action independent of any code:** the right to derive aggregate and anonymised insight from tenant
-data must be in the ToS/DPA **now**. Retrofitting it after the graph is populated means re-consenting
-every vendor, and any refusals hole the asset permanently. This is a paragraph, not a sprint, and it
-gates moat #3 entirely.
+**PRECONDITION, not a follow-up:** the right to derive aggregate and anonymised insight from tenant
+data must be in the ToS/DPA **before Layer B accumulates data**. Retrofitting it afterwards means
+re-consenting every vendor, and any refusals hole the asset permanently. It is a paragraph, not a
+sprint, and it gates moat #3 plus the benchmarking surface outright — which is why it is promoted
+here from the follow-up list to a blocking condition on that part of the work. It does **not** gate
+the ingredient node, the three senses, or anything in Layer A.
 
 ## Re-evaluation triggers
 
@@ -293,8 +432,14 @@ Nothing in this ADR is a commitment to build. Suggested order when it is schedul
    unblocking stalled onboarding.
 2. **Layer B + Ingredient node + discrepancy queue.** The unlock for everything else; worth its own
    phase.
-3. **Substitution and dietary traversals; graph-backed MCP `find_products`.**
-4. Supply chain only if a vendor-side capture mechanism materialises.
+3. **The shopping-basket sense.** Needs no schema change — `durabilityType='BEST_BEFORE'` plus
+   `quantityInStock` already model an ambient grocery item. The work is UI, the ingredient links,
+   and fulfilment/postage; the reward is a vendor catalogue that is no longer capped by delivery
+   radius. This is the highest commercial return of any item on this list.
+4. **Substitution and dietary traversals; graph-backed MCP `find_products`.**
+5. **The recipe sense**, together with the unmet JSON-LD/`robots.txt` contract — vendor-authored,
+   graph-assisted, never auto-published.
+6. Supply chain only if a vendor-side capture mechanism materialises.
 
 ## Sources
 
