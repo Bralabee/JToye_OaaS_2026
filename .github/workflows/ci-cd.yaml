@@ -43,7 +43,7 @@ jobs:
           cache: 'gradle'
 
       - name: Set up Go 1.25
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Must match edge-go/go.mod (go 1.25.0). Pinning an older version
           # (was 1.22) made GOTOOLCHAIN auto-download 1.25 mid-build, and that
@@ -662,7 +662,7 @@ jobs:
         working-directory: frontend
 
       - name: Set up Go 1.25
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26'
           cache-dependency-path: edge-go/go.sum
