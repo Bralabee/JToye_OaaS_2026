@@ -207,8 +207,8 @@ dependencies:
   - id: ollama
     pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"
     sites:
-      - "docker-compose.full-stack.yml:435"
-      - "docker-compose.full-stack.yml:460"
+      - "docker-compose.full-stack.yml:449"
+      - "docker-compose.full-stack.yml:510"
     kind: image
     owner: maintainer
     eol_slug: null
@@ -408,7 +408,7 @@ dependencies:
 
   - id: go-ci-setup
     pin: "go-version: '1.26'"
-    sites: [".github/workflows/ci-cd.yaml:52", ".github/workflows/ci-cd.yaml:667"]
+    sites: [".github/workflows/ci-cd.yaml:52", ".github/workflows/ci-cd.yaml:686"]
     kind: toolchain
     owner: maintainer
     eol_slug: go
