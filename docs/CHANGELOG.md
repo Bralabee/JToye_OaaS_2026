@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The changelog is now gated — the one doc nothing read (#393) — 2026-07-31
+
+`docs/CHANGELOG.md` was the only documentation file in this repo that **nothing opened**. The four existing doc gates read CLAUDE.md, AGENTS.md, README.md, the `.planning/codebase` docs, `k8s/DEPLOYMENT.md` and `terminal-states.yaml` — and not it. So it drifted **24 PRs deep** (last entry #363, nine further feat/fix PRs merged) with every one of those gates green throughout. #392 backfilled the gap; this closes it.
+
+#### Added
+- **`scripts/check-changelog-contract.sh`**, wired into `docs-freshness.yml` with `if: always()`. **C-1**: every feat/fix commit merged after `FLOOR` must be cited in an entry **heading** by its `(#NNN)`. **C-2**: every `EXEMPT` row must still be needed — one whose PR is now cited, or which names a PR that is not an uncited feat/fix commit in range, is **stale and fails**, so exemptions retire themselves rather than waiting for someone to review them (the `KNOWN_DATALESS` mechanism, which has retired three). **C-3/C-4**: self-tests that the commit matcher and the citation lookup can each both fire *and* decline.
+- **`scripts/gates/changelog-contract.conf`**, declaring `FLOOR` and any exemptions. The floor is `ccb15e23` and the file records why: entries before it do not reliably carry the PR number — the top entry cites the **issue** (#362) while the commit that merged it was #363, which appears nowhere. Measured: `grep -c '(#363)'` → 0, `'(#362)'` → 1. Extending the floor backwards would report historically *correct* entries as drift, and a gate that cries wolf gets `|| true` appended to it.
+
+#### Notes
+- **It reads merged history, not the branch.** The range ends at the resolved base branch (`origin/HEAD`, never hardcoded), because branch-local commits carry no PR number and ending at `HEAD` would VOID on nearly every feature PR. The consequence is deliberate: a PR that forgets its entry goes red on the **push-to-main run immediately after it merges** — the right moment, and the right person.
+- **This gate shipped with the bug it exists to catch, twice.** (1) The subject regex is anchored `^`, but the scan runs over `git log --format='%h%x09%s'` lines beginning with the SHA and a **tab**, so it could never match: the first run reported *"26 in range, 0 feat/fix"* and **PASS**. C-3 had passed because it tested a bare subject — an input shape the gate never sees. Fixed by re-anchoring past the SHA field *and* rebuilding every C-3 sample in the real tab-bearing shape. (2) The first break arm — deleting #380 from its heading — **passed**, because an unrelated entry's prose happens to say "#380 merged, changing core-java sources". A PR mentioned in passing is not a PR that has been written up; citations now count only in entry headings, and the arm then failed correctly with a control confirming a whole-file search would still have passed.
+- Falsified across **nine arms** with an opening *and* closing clean arm, every restore verified by content rather than `git diff --stat`: clean → 0, lost citation → 1, stale exemption → 1, missing config → 2, bad `FLOOR` → 2, reasonless `EXEMPT` → 2, unknown directive → 2, reintroduced un-anchored regex → 2 (C-3 catches it *before* scanning), honoured exemption → 0, clean → 0.
+
+
 ### Article 9 allergen data — the vendor is the controller, and the duty now appears where the data is typed (#380, #383) — 2026-07-30/31
 
 Allergy details are data concerning health. Two questions had never been answered in the product: *who holds the Art. 9(2) condition*, and *where does anyone get told*. The determination is recorded in `docs/legal/article-9-allergen-basis.md`, an unauthenticated intake channel was withdrawn, and the duty now sits directly above the checkboxes that collect it.
