@@ -44,6 +44,7 @@ import {
   AlertCircle,
   Calendar,
   ShoppingCart,
+  ShieldAlert,
 } from "lucide-react"
 import Link from "next/link"
 import { Pagination } from "@/components/ui/pagination"
@@ -452,6 +453,24 @@ export default function CustomersPage() {
               <p className="text-sm text-slate-600">
                 Select all allergens this customer must avoid
               </p>
+              {/*
+                UK GDPR Art. 9: allergy details are data concerning health, so recording
+                them needs an Art. 9(2) condition — realistically the customer's explicit
+                consent. The VENDOR is the controller here (they decide to record it), so
+                the duty is theirs and this notice puts it at the point of entry.
+                Determination: docs/legal/article-9-allergen-basis.md.
+              */}
+              <div
+                role="note"
+                className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+              >
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p>
+                  Allergy details are health data. Get the customer&apos;s explicit consent
+                  before recording them — you&apos;re responsible for that consent — and clear
+                  these boxes if they withdraw it.
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 bg-slate-50">
                 {ALLERGENS.map((allergen) => (
                   <label
