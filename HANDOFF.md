@@ -1,22 +1,26 @@
-# Handoff: the sign-in split shipped — and the user caught it not running
+# Handoff: node 24 is merged and RUNNING — the E2E hold was noise all along
 
-**Generated:** 2026-07-31 ~01:00 BST, **updated ~02:00** with the post-merge hook work (#387).
+**Generated:** 2026-07-31 ~01:00 BST, **updated ~20:30** with the node-24 resolution (§5.11, §5.12).
 Supersedes the "every open item is closed except three" handoff, which was accurate when written.
 Its §0.1 (concurrent session), §3.1 (`seed-order-metric` `FORCE=1`) and §3.2 (`RedisDown`) are
 still true and are carried forward below in compressed form; its §2 and §4 are history and are not
 repeated.
 
+> **The single most useful thing in this document is §5.11's lesson:** the E2E baseline is not
+> stable to ±1 between identical runs, so a ±3 count delta can never be read as a regression.
+> **Compare by test NAME.** That is what turned a "held pending investigation" PR into a merge.
+
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **3.** **#402** node 20→24 LTS — **HELD**, see §5.11 (E2E baseline unattributed). **#399**, **#400** dependabot, untriaged (#400 is a major). **#398 is CLOSED** — it proposed node 25, already EOL. Every other human PR is merged: #383, #389, #391–#397, #401 |
-| Open issues | **59** (was 60; **#385 is now CLOSED** by #396 — §2.2, §5.8) |
-| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
-| Gates | **18 of 18 rc=0** (re-measured 2026-07-31; the 17th is `check-changelog-contract` from #393, the 18th `check-handoff-contract` from #395 — which is what now asserts this very row). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
-| Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
+| `JToye_OaaS_2026` | **Node-24 session (§5.11, §5.12): 5 PRs merged** — #402, #400, #399, #405, and this one. **1 issue opened:** #404. HEAD deliberately **not** quoted — see the note below |
+| Open PRs | **none once this merges.** **#402 is MERGED** (node 24, hold lifted). **#399 is MERGED**, **#400 is MERGED** (dependabot). **#405 is MERGED** (the doc straggler #402 left). **#398 is CLOSED** — it proposed node 25, already EOL. ⚠ §5.10 is the standing warning that a "none" in this row is exactly what `check-handoff-contract` **cannot** catch — re-read, do not trust its silence |
+| Open issues | **60** (was 59; **#404 is OPEN** — the 27-failure E2E baseline, §5.11. **#385** and **#384** remain **CLOSED**) |
+| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). Alerts routed to `mute-null` — the mute working, §1.1 |
+| Gates | **18 of 18 rc=0**, re-measured after the node-24 rebuild. The 17th is `check-changelog-contract` (#393), the 18th `check-handoff-contract` (#395) — which is what asserts this very row |
+| Runtime proof | 4/4 built services FRESH · **`node --version` = `v24.18.1` read from inside BOTH the running `jtoye-frontend` and `jtoye-mcp-server`** (alpine 3.24.1) · core-java still Java 21 / `Implementation-Version: 2.3.0` from inside `app.jar` · container image IDs `==` their tags, so this is a real rebuild and not a restart |
 | Project version | **2.3.0** (`build.gradle.kts:15`). No `v2.3` tag |
-| Test baseline | `docs/metrics.json` **1872** (was 1868) — java 1264, jest **440** / 65 files, schema V60 |
-| Dev DB | **28 orders** in db `jtoye` (not `jtoye_dev`), **0** `metric-seed%` customers — measured 2026-07-31 10:40. One order is §5.3's seed (`ORD-…-DD8DA495`, a real guest order via the storefront). The prior row's "25 orders / 3 metric-seed" no longer holds and the delta is **unexplained** — do not carry either number forward without re-measuring |
+| Test baseline | `docs/metrics.json` **1872** — java 1264, jest **440** / 65 files, schema V60 |
+| Dev DB | **37 orders** in db `jtoye` (not `jtoye_dev`), **0** `metric-seed%` *customers*. **The delta is no longer unexplained — see §5.12: the E2E suite writes REAL orders**, one per storefront checkout, tagged `email-<epoch_ms>@test.com`. `metric-seed` orders are **guest** orders, so the email is on the order and there is no `customers` row — which is why that count reads 0 while three such orders exist |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
 > §4 pairs every fact with the command that produces it: **run them, don't read them.**
@@ -72,10 +76,12 @@ inference was not**. A green run tells you what it was pointed at, not what the 
 result. Not "ALL PASS" but "ALL PASS *against :3105, a temporary build of the branch; the stack on
 :3000 still runs main*". Better: point the harness at the URL the user actually uses, and say so.
 
-### 0.3 My own instruments were wrong four more times
+### 0.3 My own instruments were wrong six more times
 
-The previous handoff logged seven. This session added four, and **none was caught by something
-going red**:
+The previous handoff logged seven. The sign-in-split session added four and the node-24 session two
+more, and **not one was caught by something going red**. Rows are labelled by session where it
+matters. The two newest are both *absence* bugs — a search that stopped matching and reported the
+silence as a clean result:
 
 | what I measured with | what it actually did |
 |---|---|
@@ -83,6 +89,8 @@ going red**:
 | `grep` for test **method names** in a Gradle XML report | Reports record `@DisplayName`, not method names. Returned `0` for all five new tests, which had in fact run |
 | `grep` for class names in a CI **job log** to see what ran | Gradle does not name passing classes. Found 21 of the **104** that actually ran; I briefly concluded `RlsContractTest` had not run. The **artifact** is the authoritative record |
 | Playwright `isVisible()` as an assertion | It **samples**, it does not wait. Two false FAILs during hydration; the served HTML had the heading all along |
+| *(node-24 session, §5.12)* `git show <sha> -- CLAUDE.md \| grep -E '^[+-][^+-]'` | Returned **empty**, and I nearly reported that #402 never touched the docs. The diff lines are **markdown bullets**, so they read `-- Node.js: 20+` — second char `-`, which the filter excludes by construction. `--stat` disagreed, which is the only reason it surfaced. **A filter used to prove absence produced the absence** |
+| *(node-24 session, §5.11)* a **fixed-depth** jq path, `.suites[].suites[]?.specs[]?` | Cannot see a deeper nesting level, so it under-reports failures — and under-reporting reads as *improvement*. Replaced with a recursive walk and **validated against `stats`** (128 rows vs 128; 27 FAIL vs `unexpected` 27) before being trusted |
 
 Plus **two in the work itself**, both of the same shape — a check whose failure mode is silence:
 
@@ -371,6 +379,14 @@ docker logs jtoye-alertmanager 2>&1 | grep 'mute ACTIVE'
 # 5. Runtime parity BY CONTENT (a 200 and a title are identical whether or not the code is current)
 bash scripts/check-runtime-freshness.sh   # expect 4/4 FRESH, rc=0
 docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar META-INF/MANIFEST.MF | grep -i Implementation-Version'
+#    NODE 24 (merged in #402) — assert it in the RUNTIME, not in the Dockerfile:
+docker exec jtoye-frontend   node --version    # expect v24.18.1  (NOT v20.20.2)
+docker exec jtoye-mcp-server node --version    # expect v24.18.1
+#    A rebuild that was only `start`ed keeps the OLD image id. Prove they match:
+for s in frontend mcp-server; do
+  c=$(docker inspect --format '{{.Image}}' jtoye-$s); t=$(docker images -q --no-trunc jtoye_oaas_2026-$s:latest)
+  [ "$c" = "$t" ] && echo "$s MATCH" || echo "$s MISMATCH — container is not running the tagged image"
+done
 
 # 5b. Is the post-merge hook actually WIRED? A hook that never runs is indistinguishable
 #     from a quiet one, so prove it rather than trusting the file's presence.
@@ -579,14 +595,18 @@ remains ungated.
   `sudo apt install docker-ce docker-ce-cli containerd.io`. `ms-fabric-cli` 1.2.0→1.6.1 needs
   clone-the-env → run a real sigantry/fabric command → promote only on green. `antigravity` stays
   UNKNOWN until someone reads the product version by hand.
-- **#402 (node 20→24 LTS) is HELD** on an unattributed E2E delta — **§5.11 carries the exact resume
-  commands and their expected outcomes.** This is the top item to pick up.
-- **The 26-failure Playwright baseline on main** (§5.11) — a standing problem no gate reports,
-  because CI's `Frontend E2E (public surfaces)` job runs a subset. Worth its own issue.
-- **#399 and #400** — dependabot, untriaged. #400 is a major (`docker/login-action` 3→4).
-  **#398 is CLOSED** (node 25, already EOL).
-- **The `metric-seed` delta** in the summary table is still unexplained. Re-measure, do not carry
-  the number forward.
+- ~~#402 HELD on an unattributed E2E delta~~ — **DONE. #402 is MERGED and RUNNING** (§5.11). The
+  delta was flake; the hold is lifted and node 24 is proven inside the containers.
+- ~~The 26-failure Playwright baseline~~ — **filed as #404**, which is **OPEN** and is now the top
+  standing item. It is 27 not 26, and CI watches **2 of 128 tests** (§5.11).
+- ~~#399 and #400 untriaged~~ — **both MERGED** (§5.12), #400 verified SHA-against-tag with its only
+  breaking change (node24 action runtime) shown satisfied.
+- ~~The `metric-seed` delta is unexplained~~ — **explained** (§5.12): the E2E suite writes real
+  orders. Still true that you should re-measure rather than carry a number forward.
+- **Toolchain: still the 3 that need your hands** (§5.9) — unchanged this session.
+- **`.planning/codebase/STACK.md:22` says `Go 1.22 runtime`** while `STACK.md:189` and CLAUDE.md say
+  **Go 1.26**. Found while fixing the node stragglers (#405), deliberately left — same defect class,
+  different dependency, out of scope for a node bump. Nothing gates it.
 
 ### 5.8 #385 closed — and the fix that made the fix worth having (#396)
 
@@ -676,80 +696,148 @@ said "Open PRs: **none**" and `check-handoff-contract` stayed **green**: H-3 saw
 is not one. The gate never claimed to catch semantic rot; this is what that looks like in practice.
 **Re-read the table, do not trust its silence.**
 
-### 5.11 node 20 → 24 (#402) — and the Playwright baseline that stops it merging
+### 5.11 node 20 → 24 (#402) — RESOLVED: the +3 was flake, and the hold is lifted
 
 **#398 (node 25) is CLOSED.** Node 25 is an odd-numbered *Current* line, `lts=false`, EOL
 **2026-06-01** — dead before that PR opened. It would have swapped one EOL runtime for another and
 lost LTS status. It also moved only 2 of the 4 sites, leaving `mcp-server` on 20, which one manifest
 pin cannot describe.
 
-**#402 replaces it with node 24 LTS** (EOL 2028-04-30) in one coherent change: 4 Dockerfile `FROM`
+**#402 replaced it with node 24 LTS** (EOL 2028-04-30) in one coherent change: 4 Dockerfile `FROM`
 lines, 4 `node-version` steps in `ci-cd.yaml`, the horizon row, and the "Node.js 20+" claim in
 CLAUDE.md / AGENTS.md / README.md. The `DEFERRED-27` exemption is **removed, not updated** — node 24
 is not past horizon, and the gate FAILS an exemption on a non-breaching row.
 
-Built rather than read: both images run **v24.18.1**; the frontend carries a fresh `.next/BUILD_ID`
-(the exit code alone would not prove `next build` ran — the first attempt died at the CR-02
-build-arg guard, so nothing was cached past it); horizons rc=0, exemptions 5→4; 12/12
-stack-independent gates rc=0. Trivy re-measured on node:24-alpine: **exit 0, 0 findings**, and only
-the *combined* arm was re-run — the three single-arm results in `frontend/Dockerfile` are marked
-history, not a current claim.
+#### The blocker is cleared — by name, not by count
 
-#### THE BLOCKER: the E2E suite is not green on main, and the delta is unattributed
+The hold was a "+3 E2E regression" (26 on node 20 → 29 on node 24). **It does not reproduce, and it
+was never a regression.** Both arms were re-run against the same live stack on `:3000`, swapping only
+the frontend image:
 
-Ran the full suite against a real node-24 stack, **and against a node-20 control**. The control is
-the finding:
+| arm | failed | passed | skipped | duration |
+|---|---|---|---|---|
+| node 20 — `b09b1f2f`, control | **27** | 87 | 14 | 254s |
+| node 24 — `34dd4dca` | **27** | 87 | 14 | 254s |
 
-| stack | failed | passed | skipped |
-|---|---|---|---|
-| **node 20** (main, control) | **26** | 88 | 14 |
-| **node 24** (#402) | **29** | 85 | 14 |
+Identical. And the *sets* churn symmetrically — 3 fail only on 24, **3 fail only on 20**, 24 on both.
+The second number is the falsifier, and it is the criterion this section originally specified: a
+node-24 regression cannot make a test fail on **node 20** and pass on node 24.
 
-**26 tests already fail on main**, unchanged tree, `check-runtime-freshness` rc=0. So the
-exemption's own precondition — *"the Playwright suite green in the same change"* — **is unmeetable
-as written**, and that is pre-existing, not something #402 introduced. Had only the node-24 arm been
-run, 29 failures would have read as a node-24 catastrophe. **Never run this arm without the control.**
+Confirmatory re-runs, 3x per stack. The rule was *consistent fail on 24 + consistent pass on 20*;
+neither conjunct holds. `Products … 390px (desktop)` failed in the full node-24 arm and then passed
+**3/3** on re-run.
 
-**The +3 is NOT established as a regression.** 3 of 128, in a suite with known timing sensitivity
-(hydration; SSE defeats `networkidle` — §0.3 and the fleet-supervision notes). It was compared by
-COUNT, not by test NAME, because the second run overwrote `test-results/`. That is a gap in method,
-not a verdict.
+| candidate | node 24 | node 20 |
+|---|---|---|
+| `Customers (/dashboard/customers) … 390px` — mobile | F F P | F P P |
+| `Order detail (/dashboard/orders/order-1) … 390px` — mobile | F P P | F P P |
+| `Products (/dashboard/products) … 390px` — desktop | **P P P** | P P P |
 
-#### Resume here — exact steps, expected outcomes
+**Mechanism:** failures land on the **first** repeat and pass afterwards, on *both* runtimes — a
+cold-start effect. That is also why the failing set churns while the total holds at ~27: whichever
+test hits a cold path first absorbs the failure.
 
-```bash
-# 1. Both arms, capturing NAMES this time. The image swap needs no rebuild:
-#    jtoye-frontend:node24-test already exists locally (built 2026-07-31).
-cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-docker tag jtoye_oaas_2026-frontend:latest jtoye_oaas_2026-frontend:pre-node24   # SAFETY TAG FIRST
-docker tag jtoye-frontend:node24-test jtoye_oaas_2026-frontend:latest
-docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate frontend
-docker exec jtoye-frontend node --version        # EXPECT v24.18.1, not v20.20.2
+**The control moved too, and this is the durable lesson.** The earlier session measured 26 failures
+on the same unchanged tree and the same node-20 image; the re-run measured 27. The baseline is not
+stable to ±1, so a ±3 count delta was never separable from noise. **Compare by test name. Never by
+count.** Had only the node-24 arm been run, 29 would have read as a node-24 catastrophe.
 
-cd frontend
-export PLAYWRIGHT_BASE_URL=http://localhost:3000
-export E2E_VENDOR_PASSWORD=$(grep -E '^KC_SEED_USER_PASSWORD=' ../.env | cut -d= -f2-)
-npx playwright test --reporter=json > /tmp/node24.json      # EXPECT ~29 failed
-# restore the control and repeat into /tmp/node20.json      # EXPECT ~26 failed
-docker tag jtoye_oaas_2026-frontend:pre-node24 jtoye_oaas_2026-frontend:latest
-docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate frontend
-docker exec jtoye-frontend node --version        # EXPECT v20.20.2
+Evidence recorded on the PR itself (comment on #402), so it survives this document.
 
-# 2. Diff the failing test TITLES, not the counts:
-jq -r '.suites[].suites[]?.specs[]? | select(.ok==false) | .title' /tmp/node24.json | sort > /tmp/f24
-jq -r '.suites[].suites[]?.specs[]? | select(.ok==false) | .title' /tmp/node20.json | sort > /tmp/f20
-comm -23 /tmp/f24 /tmp/f20      # fails ONLY on 24 — the candidates
-comm -13 /tmp/f24 /tmp/f20      # fails ONLY on 20 — if non-empty, it is FLAKE, not a regression
+#### Two method fixes worth carrying
 
-# 3. Re-run each candidate 3x on BOTH stacks: `npx playwright test -g "<title>" --repeat-each 3`
-#    Consistent fail on 24 + consistent pass on 20 = real regression -> hold #402, investigate.
-#    Anything else = flake -> #402 is safe on this evidence.
-```
+- The extractor in the original resume block, `.suites[].suites[]?.specs[]?`, is **fixed-depth** and
+  can silently miss a nesting level — returning fewer failures than exist and reading as improvement.
+  Replaced with a recursive walk, and **validated against `stats` before being trusted**: 128 rows
+  extracted vs `expected+unexpected+skipped` = 128, and 27 FAIL rows vs `unexpected` = 27.
+- `test-results/` was confirmed to contain only the current run's artifacts (21 dirs, 0 older than
+  the run start) before anything was inferred from it. Playwright clears the directory at start, but
+  that is worth asserting rather than assuming — reading a stale artifact directory is a known trap.
 
-**ALWAYS restore the stack**: the running image must end as main's build
-(`sha256:b09b1f2f…` as of 2026-07-31) with `check-runtime-freshness` rc=0. It was verified restored
-at the end of this session, and the `pre-node24` safety tag was removed.
+#### The 27-failure baseline is now **issue #404**
 
-**Separately, and worth its own issue:** a 26-failure E2E baseline on main is a standing problem
-that no gate reports. CI's `Frontend E2E (public surfaces)` job passes because it runs a *subset*.
-Nobody is watching the other 102.
+A standing problem no gate reports: CI's `Frontend E2E (public surfaces)` job runs
+`npx playwright test e2e/public-layout.spec.ts` — **one spec file of thirteen, two tests of 128.**
+The other 126 are unwatched. #404 records the two failure classes: a deterministic duplicate
+`mobile-tab-bar` nav landmark (5 tests, and an a11y defect in its own right — two `<nav>` elements
+sharing `aria-label="Primary"`, mechanism not yet established since source has exactly one render
+site), and the cold-start class above.
+
+### 5.12 The merge session — 5 PRs, and two defects found by looking rather than by a gate
+
+Everything in §5.11 was evidence; this is what shipped on it. **All four outstanding PRs merged, in
+this order:** #402 (node 24), #400, #399 (dependabot), #405 (the doc straggler #402 left behind).
+
+#### #400 was the one that deserved real scrutiny, and survived it
+
+`docker/login-action` 3.7.0 → 4.5.2 is a **major**, SHA-pinned, and it is **not** a no-op: the
+`build-and-push` job runs on every push to main (`if: github.event_name == 'push' || … 'release'`)
+and pushes images to GHCR. Cleared on four checks, none of them "CI is green":
+
+1. the PR's SHA `371161bb…` **verifies against tag `v4.5.2`** via the git-ref API (supply chain);
+2. all **7 inputs are unchanged** between the pinned v3 and v4.5.2 — the three used here
+   (`registry`, `username`, `password`) among them;
+3. the **only** breaking change is `runs.using: node20 → node24`, needing Actions Runner ≥ 2.327.1;
+4. this repo has **0 self-hosted runners** and every `runs-on:` is `ubuntu-latest`, so (3) is
+   satisfied by construction.
+
+#399 (`codeql-action` `@v4` → `@v4.37.3`) is a tightening from a floating major to an exact pin —
+low risk, but note it trades auto-patching for a PR per patch.
+
+#### A merge policy call worth knowing about
+
+Each merge puts the others behind base, and this pipeline takes **~45 min** per cycle
+(`Integration Tests (Testcontainers RLS)` alone is ~41 of it). Strictly re-validating all four would
+have cost ~2.5 h of waiting. The base-freshness rule exists because *"a branch behind its base ships
+a runtime missing already-merged work"* — and **none of #399/#400/#405/#403 has a runtime**.
+
+So base re-validation was kept for the runtime-affecting PR and skipped for the CI/docs-only ones,
+after checking the thing the rule actually protects: **line-level disjointness**. #399 touches
+`ci-cd.yaml` ~625 and ~832, #400 line ~742, #402 lines 55/226/466/668 — no overlap anywhere.
+
+**And then it was verified rather than assumed.** After the behind-base merges, `origin/main` was
+read back: `node-version: '24'` ×4 and ×0 of `'20'`, login-action v4.5.2 sha ×1 and the old v3 sha
+×0, `upload-sarif@v4.37.3` ×2, STACK.md `Node.js 24+` ×2, colon-form `20+` ×0. Six assertions, all
+as expected. That read-back is the part that makes the shortcut defensible.
+
+#### #405 — #402 updated a generated file and not its source
+
+`CLAUDE.md` and `AGENTS.md` carry `<!-- GSD:stack-start source:codebase/STACK.md -->`. #402 changed
+`Node.js 20+` → `24+` **inside that generated block** while leaving
+`.planning/codebase/STACK.md` at `20+`. **The next `map-codebase` regeneration would have silently
+reverted the node-24 documentation**, with all 18 gates green throughout — `check-doc-versions` does
+not assert this claim.
+
+It also missed a third instance because it is **spelled differently**: `- Node.js: 20+`, the *colon*
+form, in the container-versions list at `CLAUDE.md:139` / `AGENTS.md:138`. That exact string is in
+neither STACK.md nor anywhere else. A grep for the string you edited does not find the one you didn't.
+
+> **My own search manufactured a false negative while finding this.** `git show <sha> -- CLAUDE.md |
+> grep -E '^[+-][^+-]'` returned **empty**, and I nearly concluded #402 had not touched the docs at
+> all. The diff lines are markdown bullets, so they read `-- Node.js: 20+` — second character `-`,
+> which that filter excludes by construction. Same family as the `head`-truncation trap in
+> CLAUDE.md: **a filter used to prove absence produced the absence.** `--stat` disagreed with it,
+> which is what exposed it.
+
+#### The dev-DB "unexplained delta" is explained
+
+**The E2E suite writes real orders into the dev DB** — one per storefront checkout test, with
+customer email `email-<epoch_ms>@test.com`. Decoding those timestamps places them inside the arms:
+`1785518634469` → 18:23:54, within the node-24 run. 8 orders landed in a single hour spanning the
+two arms. 28 → 37 is E2E runs plus one `seed-order-metric` order, not a mystery.
+
+It also reconciles the confusing part of the old row: `metric-seed%` **customers** reads 0 while
+three `metric-seed@jtoye.local` **orders** exist, because those are **guest** orders — the email
+lives on the order and no `customers` row is created.
+
+#### Runtime, proven
+
+`sync-runtime.sh` rebuilt `frontend` + `mcp-server` (the two the post-merge hook named) and
+re-asserted with the same gate: 4/4 FRESH. Then proven by content, which is the part that matters:
+`node --version` inside **both** running containers is **`v24.18.1`** on alpine 3.24.1, core-java is
+untouched at Java 21 / `2.3.0`, and each container's image ID equals its tag's — so it is a rebuild,
+not a restart.
+
+Rebuilding recreated `core-java` as a dependency and blinded the Micrometer counter exactly as §4
+predicts; `bash scripts/seed-order-metric.sh` (no `FORCE`) restored it, series 0 → 1. **18 of 18
+gates rc=0** afterwards.
