@@ -18,7 +18,7 @@
 
 **Environment:**
 - JVM (Java 21) - Core API execution
-- Node.js 20+ - Frontend build and runtime
+- Node.js 24+ - Frontend build and runtime
 - Go 1.22 runtime - Edge gateway
 - PostgreSQL 15-alpine - Database (shared with Keycloak; separate DB)
 - Redis 7-alpine - Cache + STOMP user destination resolution support
@@ -158,7 +158,7 @@
 **Development:**
 - Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:140`)
 - Java 21 JDK (JDK 25 incompatible with Gradle 8.10)
-- Node.js 20+
+- Node.js 24+
 - Go 1.22+
 - Git
 - Optional: NVIDIA GPU + Container Toolkit for Ollama image analysis
