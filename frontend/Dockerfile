@@ -2,7 +2,7 @@
 # Optimized for production: standalone build, minimal size
 
 # Stage 1: Builder
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 WORKDIR /app
 
@@ -126,7 +126,7 @@ RUN set -eu; \
 RUN npm run build
 
 # Stage 2: Runner
-FROM node:20-alpine AS runner
+FROM node:25-alpine AS runner
 
 # ---------------------------------------------------------------------------
 # Trivy image gate (.github/workflows/ci-cd.yaml:721 — CRITICAL,HIGH,
