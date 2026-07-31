@@ -9,10 +9,10 @@ repeated.
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **none.** #383 and #389 were merged by a later housekeeping session — see §5 |
+| Open PRs | **none.** #383, #389, #391, #392 and #393 were merged by a later housekeeping session — see §5 |
 | Open issues | **60** |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
-| Gates | **16 of 16 rc=0** (re-measured 2026-07-31 10:40 BST). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
+| Gates | **17 of 17 rc=0** (re-measured 2026-07-31 11:25 BST; the 17th is `check-changelog-contract`, new in #393). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
 | Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
 | Project version | **2.3.0** (`build.gradle.kts:15`). No `v2.3` tag |
 | Test baseline | `docs/metrics.json` **1872** (was 1868) — java 1264, jest **440** / 65 files, schema V60 |
@@ -339,7 +339,8 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 16 x rc=0 — ALL of them. Updated 2026-07-31: #384 is closed by #389, so
+# EXPECT 17 x rc=0 — ALL of them. Updated 2026-07-31: #393 added the 17th
+# (check-changelog-contract). #384 is closed by #389, so
 # check-alert-metrics no longer stays red on HighErrorRate (it is now a declared
 # self-healing rule). The old expectation of "15 x rc=0 + 1 red" is superseded.
 # If check-alert-metrics fails on NoOrdersCreated, that is the rebuild-blindness case:
@@ -400,10 +401,11 @@ worktree first, from the main checkout.
 
 ---
 
-## 5. Housekeeping session, 2026-07-31 ~08:40–10:40 BST
+## 5. Housekeeping session, 2026-07-31 ~08:40–11:25 BST
 
-Merged the two open PRs, cleared every merged branch, and restored the runtime and the monitoring
-the merges disturbed. No feature work.
+Merged the two open PRs, cleared every merged branch, restored the runtime and the monitoring the
+merges disturbed, then closed the two documentation gaps the run exposed. **Five PRs merged, no
+feature work.** The repo ends at `main` alone — one branch, one remote ref, one worktree.
 
 ### 5.1 What merged
 
@@ -419,6 +421,14 @@ The merge collided on the test counts. Resolved by **regenerating, never arithme
 text, `bash scripts/docs-freshness.sh --write`, then let `check-doc-metrics.sh` name each prose line
 to edit. That produced **1872** = `main`'s 436 Jest blocks / 64 files + the 4 blocks in #383's new
 test file. Guessing would have been wrong in both directions.
+
+Then three documentation PRs, each closing a gap the previous one exposed:
+
+- **#391** `1cde1f83` — this document. Five of its claims went false the moment #383 and #389
+  merged, and **nothing gates this file**, so they would have survived until someone reread it.
+- **#392** `97a985f1` — the changelog backfill (§5.5).
+- **#393** `4674e3d1` — the changelog gate (§5.6), because #392 fixed the *instance* and nothing
+  stopped the *recurrence*.
 
 ### 5.2 Branch and worktree cleanup — seven branches, all verified before deletion
 
@@ -452,16 +462,95 @@ It measured "has anything changed since", not "did this land".
 
 ### 5.4 State at hand-off
 
-- **16 of 16 gates rc=0.** Better than this document previously claimed possible (`15 + 1 red`).
+- **17 of 17 gates rc=0**, measured 11:25 BST. Better than this document previously claimed
+  possible (`15 + 1 red`); the 17th is `check-changelog-contract`, added by #393.
 - Go: `gofmt` clean, `vet` clean, `mod tidy` no drift, `test -race -count=1` all five packages
   fresh (not `(cached)`), 0 data races. Frontend: `npm run lint` 0 errors / 28 warnings (baseline),
   `npm run build` rc=0 with TypeScript clean.
-- **Open: #385 only** (§2.2 — `H-5` label/number contradiction). #384 is closed.
+- Runtime: `check-runtime-freshness` rc=0, 4/4 FRESH. Stack UP, 17 jtoye containers, 15 healthy
+  (the other two define no healthcheck — §3). Dev DB `jtoye`: 28 orders.
+- **Open: #385 only** (§2.2 — `H-5` label/number contradiction). #384 is closed. 60 open issues,
+  0 open PRs.
+- **Toolchain drift surfaced but NOT applied** (housekeeping surfaces, it does not converge):
+  conda 26.1.1→26.5.3, node v22.23.1→v22.23.2, npm 12.0.1→12.0.2, gemini-cli 0.52→0.53,
+  copilot 1.0.75→1.0.77, docker-ce 29.6.2→29.7.0, ms-fabric-cli 1.2.0→1.6.1. Plus `antigravity`
+  **UNKNOWN** — a manual channel with no probe, which is unanswerable, not clean.
 
-### 5.5 The one thing left undone
+### 5.5 The changelog backfill — #392
 
-**`docs/CHANGELOG.md` has not been updated since #363** (`ccb15e23`). Nothing gates it, which is why
-it drifted. By the file's own convention — `feat`/`fix` PRs get entries, `docs(handoff)`/`docs(adr)`
-do not — **nine** merged PRs are missing entries: #368, #370, #376, #380, #381, #382, #383, #387,
-#389. Deliberately left for a session that can write them from each PR's own body rather than
-invent them. A claim-gate rule row would stop it recurring.
+**Superseded the "one thing left undone" that stood here.** `docs/CHANGELOG.md` had no entry since
+#363 (`ccb15e23`) and **nothing read it**: the four doc gates open CLAUDE.md, AGENTS.md, README.md,
+the `.planning/codebase` docs, `k8s/DEPLOYMENT.md` and `terminal-states.yaml` — and not it. So it
+drifted **24 PRs deep** with every one of those gates green throughout.
+
+Nine feat/fix PRs were missing (#368, #370, #376, #380, #381, #382, #383, #387, #389), written as
+**six** entries — grouped where the work is genuinely one thread, matching the file's existing style
+(`(#342, #346, #347)`). The three alert PRs are the clearest case for grouping: #370 found
+`NoOrdersCreated` blind after every rebuild, #376 found that #370's own seed script *could not clear
+the alert* (it asked "does the series exist" while the rule asks `increase[30m] < 1`), and #389
+found #384's premise wrong — `HighErrorRate` fires on a high *ratio*, so an empty numerator is
+correct silence. Each fix revealed the previous one had measured the wrong thing; split apart it
+reads as three unrelated tweaks.
+
+Every entry was written **from the merged commit's own body**, carrying across the measured numbers
+and break arms rather than re-deriving them.
+
+**The verification limit, stated because it is easy to miss:** the four doc gates were rc=0, but
+none of them reads `docs/CHANGELOG.md`, so those greens proved only that nothing *else* broke. The
+entries' claims were checked against the tree instead — 16 assertions. The one that appeared to fail
+was the *check*, not the entry: `customerAllergenMask` still grep-matched in `GuestOrderRequest.java`
+because the only hit is the **tombstone comment documenting its removal** — a rule firing on its own
+definition. Excluding comments: 0 fields, 0 accessors, 0 in the OpenAPI snapshot, with a control on
+the live `idempotencyKey` returning 3 to prove the filter could still find something.
+
+### 5.6 The changelog gate — #393. It shipped with the bug it exists to catch, twice
+
+#392 fixed the instance; nothing stopped the recurrence. `scripts/check-changelog-contract.sh` now
+runs in `docs-freshness.yml`:
+
+- **C-1** every feat/fix commit merged after `FLOOR` is cited in an entry **heading** by `(#NNN)`
+- **C-2** `EXEMPT` rows retire themselves — a stale one FAILS (`KNOWN_DATALESS`'s mechanism)
+- **C-3 / C-4** self-tests that the matcher and the citation lookup can each both fire *and* decline
+
+It reads **merged history** (`origin/HEAD`, resolved not hardcoded), never `HEAD`: branch-local
+commits carry no PR number, so ending at `HEAD` would VOID on nearly every feature PR and train
+people to ignore it. The consequence is deliberate — **a PR that forgets its entry goes red on the
+push-to-main run immediately after it merges.**
+
+**Both defects in this gate were found by running the fail direction, not by anything going red:**
+
+1. **It passed while checking nothing.** The subject regex is anchored `^`, but the scan runs over
+   `git log --format='%h%x09%s'` lines beginning with the SHA and a TAB. First run:
+   `26 in range, 0 feat/fix` → **PASS**. C-3 passed alongside it because it tested a **bare
+   subject** — an input shape the gate never sees. Caught only because the printed count looked
+   wrong. Fixed by re-anchoring past the SHA field *and* rebuilding every C-3 sample in the real
+   TAB-bearing shape.
+2. **An incidental mention satisfied it.** The first break arm — delete #380 from its heading —
+   **passed**, because an unrelated entry's prose says "#380 merged, changing core-java sources".
+   Citations now count only in entry headings; the arm then failed correctly, with a control
+   confirming a whole-file search would still have passed.
+
+Falsified across **nine arms** with opening *and* closing clean arms, every restore verified by
+content: lost citation → 1, stale exemption → 1, four VOID conditions → 2, reintroduced regex bug
+→ 2 (C-3 catches it *before* scanning), honoured exemption → 0.
+
+**`FLOOR` is `ccb15e23`, not the root commit,** and the config records why: older entries cite the
+ISSUE, not the PR — the top entry cites #362 while the commit that merged it was #363, which appears
+nowhere (`grep -c '(#363)'` → 0, `'(#362)'` → 1). Extending backwards would report historically
+CORRECT entries as drift, and a gate that cries wolf gets `|| true` appended to it.
+
+**Proven end-to-end after merge**, which is the only test that mattered: the gate discovered its own
+squash commit, 9 → **10 feat/fix, 10 cited, rc=0**. It was not red on arrival because #393 carries
+its own entry, verified *forward* against the exact subject line the squash would produce before the
+PR number existed.
+
+**Two limits worth keeping visible.** It checks **citation, not quality** — a heading with the right
+number satisfies it, and it cannot tell a real write-up from a stub. And everything before `FLOOR`
+remains ungated.
+
+### 5.7 Left undone
+
+- **#385** (§2.2) — `H-5` reports a number that does not measure its label. Untouched.
+- **Toolchain drift** (§5.4) — surfaced, deliberately not applied.
+- **The `metric-seed` delta** in the summary table is still unexplained. Re-measure, do not carry
+  the number forward.
