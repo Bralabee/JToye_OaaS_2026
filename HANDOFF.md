@@ -1,17 +1,18 @@
 # Handoff: the sign-in split shipped — and the user caught it not running
 
-**Generated:** 2026-07-31 ~01:00 BST. Supersedes the "every open item is closed except three"
-handoff, which was accurate when written. Its §0.1 (concurrent session), §3.1 (`seed-order-metric`
-`FORCE=1`) and §3.2 (`RedisDown`) are still true and are carried forward below in compressed form;
-its §2 and §4 are history and are not repeated.
+**Generated:** 2026-07-31 ~01:00 BST, **updated ~02:00** with the post-merge hook work (#387).
+Supersedes the "every open item is closed except three" handoff, which was accurate when written.
+Its §0.1 (concurrent session), §3.1 (`seed-order-metric` `FORCE=1`) and §3.2 (`RedisDown`) are
+still true and are carried forward below in compressed form; its §2 and §4 are history and are not
+repeated.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **2 PRs merged this session:** #381, #382. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
+| `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
 | Open PRs | **#383** `feat/allergen-consent-notice` — the concurrent session's, not mine |
 | Open issues | **60** |
-| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **0 active alerts, 0 silences** |
-| Gates | **15 of 16 rc=0.** `check-alert-metrics` is **rc=1 on `HighErrorRate`** — a real gap, now **#384**, NOT a regression |
+| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
+| Gates | **16 of 16 rc=0 right now** — but `check-alert-metrics` is green only **transiently**; see §2.1 before believing it. #384 is NOT closed |
 | Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
 | Project version | **2.3.0** (`build.gradle.kts:15`). No `v2.3` tag |
 | Test baseline | `docs/metrics.json` **1868** (was 1851) — java 1264, jest 436, schema V60 |
@@ -81,10 +82,21 @@ going red**:
 | `grep` for class names in a CI **job log** to see what ran | Gradle does not name passing classes. Found 21 of the **104** that actually ran; I briefly concluded `RlsContractTest` had not run. The **artifact** is the authoritative record |
 | Playwright `isVisible()` as an assertion | It **samples**, it does not wait. Two false FAILs during hydration; the served HTML had the heading all along |
 
-Plus one in the work itself: **an acceptance criterion that could not fail.** `check-alert-mute`'s
-M-2 ran per-matcher *after* M-1 with a `continue` between them, and in Alertmanager's `matchers:`
-list form a forbidden label is always its own entry — so M-1 rejected it first and M-2 was
-**never reached**. Fixed by scanning the whole matcher set first. Both now fire.
+Plus **two in the work itself**, both of the same shape — a check whose failure mode is silence:
+
+- **An acceptance criterion that could not fail.** `check-alert-mute`'s M-2 ran per-matcher *after*
+  M-1 with a `continue` between them, and in Alertmanager's `matchers:` list form a forbidden label
+  is always its own entry — so M-1 rejected it first and M-2 was **never reached**. Fixed by
+  scanning the whole matcher set first. Both now fire.
+- **A hook that was silent on the only case it exists for.** `.githooks/post-merge`'s first draft
+  carried `trap 'exit 0' ERR` as a "never break a pull" safety net. Bash runs an ERR trap on any
+  non-zero command, and the parity gate **returns 1 exactly when there is drift** — so the hook
+  exited before printing anything. Every other path looked perfect; caught only by stubbing the
+  gate to exit 1 and observing **no output**. Removed; non-blocking is now achieved by every path
+  ending in `exit 0`, which git ignores anyway.
+
+That second one is uncomfortable and worth sitting with: it is the same defect the hook exists to
+prevent, committed while building the hook.
 
 ---
 
@@ -146,16 +158,68 @@ passing through exactly this class of change. Checked and found safe: the six ve
 locate the SSO control by *"Sign in with Keycloak"*, unchanged — otherwise their
 `test.skip(true, "No sign-in method found")` fallback would have gone green while testing nothing.
 
+### #386 — the handoff this document supersedes
+
+Recorded §0.2 (the runtime-parity miss the user caught) and the four wrong instruments.
+
+### #387 — the parity gate now runs itself
+
+**The gate was correct and nobody invoked it.** #380 merged, changing `core-java` sources; `git
+pull` on the machine hosting the stack said nothing, and the container kept serving an image built
+four hours earlier — through two further PRs — until someone ran it by hand.
+
+**`.githooks/post-merge` is now INSTALLED AND LIVE on this checkout.** It runs
+`check-runtime-freshness.sh` after every merge and names the fix. Advisory (every path exits 0),
+silent unless the stack is **UP and DRIFTED**, reports VOID as *"no opinion, NOT a pass"*, and skips
+inside a worktree where the gate cannot answer.
+
+`scripts/sync-runtime.sh` is the fix it names: asks the gate what drifted, rebuilds exactly those
+with `up -d --build`, then **re-asserts with the same gate**, so it cannot report success over a
+runtime the gate would still call stale. The service names are parsed from the gate's output, so
+the parse is asserted — *drift reported but zero names parsed* is a VOID, never "nothing to do".
+
+**Why it is not a CI job, checked rather than assumed:** 0 self-hosted runners, every job
+`ubuntu-latest`, and `DEPLOY_ENABLED` unset so the deploy jobs never run — a GitHub-hosted runner
+has **no runtime to inspect**, local or deployed, so the gate could only ever exit 2 there. What CI
+*can* assert, and now does as the fifth Operational Contracts step, is `install-hooks.sh --check`:
+that the hook is executable **in the git index**. A hook committed `100644` is skipped silently by
+both git and the dispatcher's `[[ -x ]]`, and that symptom is identical to a clean run.
+
+**How hooks reach this repo — and why `install-hooks.sh` does NOT set `core.hooksPath`.** This
+machine runs a global hook set (`core.hooksPath = ~/.git-hooks`) whose members are **dispatchers**:
+git runs only one hooks directory, so each delegates to a repo-local `.githooks/<name>` when the
+repo commits an executable one. **A repo opts in by committing the file and nothing else.** A
+per-repo `core.hooksPath` *replaces* the global directory and would disable the sibling
+`prepare-commit-msg` (it strips the authorship trailers this project's git policy forbids) and
+`pre-push`. The first draft of the installer did exactly that.
+
+> **A config change was made to this shared checkout.** The repo-level `core.hooksPath`, which
+> pointed at a directory holding **zero** hooks and thereby disabled all three dispatchers here, was
+> **removed**. `git config --local` writes to the shared `.git/config`, so this applies to the
+> concurrent session's worktree too: their commits now pass through `prepare-commit-msg` as well.
+> Nothing was displaced (the shadowed directory was empty, and the installer refuses if it is not).
+
 ---
 
 ## 2. Open items
 
-### 2.1 `check-alert-metrics` is rc=1 — this is #384, not a regression
+### 2.1 `HighErrorRate` — #384. The gate is green RIGHT NOW, and that proves nothing
 
-`HighErrorRate` matches **zero series**: `http_server_requests_seconds_count{status=~"5.."}` is a
-Micrometer **request** counter, destroyed on every core-java restart. This project mandates
-rebuilding after any code change, so **the alert that detects "the platform is erroring" is blind
-after every rebuild.**
+**Read this before concluding #384 is fixed.** At the time of writing `check-alert-metrics` is
+rc=0 — because three genuine 500s happened to be served after the rebuild:
+
+```
+count(http_server_requests_seconds_count{status=~"5.."})  ->  3
+  500 /api/v1/announcements/{id}   500 /api/v1/promotions/{id} x2
+```
+
+Those are stale (`rate[5m]=0`, `increase[30m]=0`) and `HighErrorRate` is `inactive` — no live
+error problem. But the series exists **only until the next core-java restart**, so the gate is
+green by accident and will go red again on the next rebuild. Nothing was fixed.
+
+`http_server_requests_seconds_count{status=~"5.."}` is a Micrometer **request** counter, destroyed
+on every core-java restart. This project mandates rebuilding after any code change, so **the alert
+that detects "the platform is erroring" is blind after every rebuild.**
 
 Identical mechanism to `NoOrdersCreated`, but with **none of the remedy**: no seed script, no
 `KNOWN_DATALESS` entry (the array is empty — the exemption was *correctly* retired in #370), and a
@@ -215,7 +279,14 @@ branch caused it.
   passes.
 - **Alertmanager:** the mute is ACTIVE locally via `.env`
   (`ALERTMANAGER_MUTE_ALERTNAMES=NoOrdersCreated`). `.env` is gitignored, so **a fresh clone is loud
-  by default** — which is intended.
+  by default** — which is intended. **Observed working under real conditions, not a synthetic
+  probe:** `NoOrdersCreated` is currently **firing** in Prometheus (2 instances) and Alertmanager
+  routes both to `receivers=mute-null` — visible in both UIs, no email. That is the contract.
+- **Git hooks:** `.githooks/post-merge` is **installed and live** on this checkout, reached through
+  the global dispatcher at `~/.git-hooks` (there is no `core.hooksPath` to set — §1, #387). The
+  repo-level override that previously shadowed it has been removed, which also re-enabled
+  `prepare-commit-msg` and `pre-push` here **for every worktree of this repo**, including the
+  concurrent session's.
 - **Dev DB:** 25 orders, 3 `metric-seed@jtoye.local` (17:47 and 19:17 predate this session; 23:52 is
   mine, from clearing the gate after the rebuild).
 - **Conda env:** none needed — Java 21 + Gradle wrapper, Go 1.26, Node 22. No Python *application*
@@ -265,6 +336,17 @@ docker logs jtoye-alertmanager 2>&1 | grep 'mute ACTIVE'
 # 5. Runtime parity BY CONTENT (a 200 and a title are identical whether or not the code is current)
 bash scripts/check-runtime-freshness.sh   # expect 4/4 FRESH, rc=0
 docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar META-INF/MANIFEST.MF | grep -i Implementation-Version'
+
+# 5b. Is the post-merge hook actually WIRED? A hook that never runs is indistinguishable
+#     from a quiet one, so prove it rather than trusting the file's presence.
+bash scripts/install-hooks.sh --check      # expect PASS (H-1/H-2; H-3 needs the dispatcher)
+JTOYE_HOOK_VERBOSE=1 bash ~/.git-hooks/post-merge
+#     expect: [post-merge] runtime parity: all built services match the tree
+#     SILENCE HERE MEANS IT IS NOT RUNNING — not that everything is fine.
+#     (A real `git merge` on main is blocked by the protected-branch guard, which is
+#      why this invokes the dispatcher directly; git's own invocation of the
+#      dispatcher was proven separately with a real merge in a worktree.)
+#     If it ever reports drift:  bash scripts/sync-runtime.sh
 
 # 6. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
