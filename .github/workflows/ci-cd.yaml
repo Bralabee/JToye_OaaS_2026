@@ -52,7 +52,7 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: edge-go/go.sum
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -463,7 +463,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -665,7 +665,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
