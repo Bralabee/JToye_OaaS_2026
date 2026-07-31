@@ -841,3 +841,52 @@ not a restart.
 Rebuilding recreated `core-java` as a dependency and blinded the Micrometer counter exactly as §4
 predicts; `bash scripts/seed-order-metric.sh` (no `FORCE`) restored it, series 0 → 1. **18 of 18
 gates rc=0** afterwards.
+
+### 5.13 `check-handoff-contract` H-3 deadlocked itself — and it did so at the worst moment
+
+**Found by this document failing to merge.** `docs-freshness` is a **required** check, and it went
+red on `main` at `2b5339f8` and on #403 simultaneously. Both for the same line.
+
+H-3 computed `LAST_TOUCH` from **`BASE_REF`**:
+
+```sh
+LAST_TOUCH=$(git log -1 --format=%H "$BASE_REF" -- "$DOC")   # <- the defect
+```
+
+That asks *"how far has the base moved since **the base** last touched HANDOFF.md"* — **a question
+no pull request can change**, because the PR's commit is not on the base until it merges. So the
+moment `main` exceeded `MAX_PRS_BEHIND` (3), every PR went red, **including the handoff update that
+was the only thing capable of clearing it.** The more overdue the handoff, the more unmergeable its
+own fix became.
+
+This is a nastier shape than a gate that cries wolf: it is a gate whose remedy it forbids. The four
+node-24 merges (#402, #400, #399, #405) pushed main to 4-behind and tripped it.
+
+**The fix is to ask the question that was meant** — *is the copy I am looking at stale?*
+
+```sh
+LAST_TOUCH=$(git log -1 --format=%H HEAD -- "$DOC")
+```
+
+A change that updates the handoff gets credit for it; one that does not, does not. **On-main
+semantics are unchanged by construction**: on a push `HEAD == BASE_REF`, so it resolves to the same
+commit and a genuinely stale main still fails.
+
+Falsified in four directions rather than observed passing once — the middle two are the ones that
+prove the fix did not simply remove the gate's teeth:
+
+| arm | expected | result |
+|---|---|---|
+| branch updates the doc, up to date | pass | **rc=0**, 0 behind |
+| **stale main, doc not updated** | **fail** | **rc=1**, 4 behind — teeth intact |
+| **branch updates the doc but is BEHIND base** | **fail** | **rc=1**, 4 behind — behind-base signal intact |
+| closing clean arm | pass | rc=0 |
+
+Arm 3 is worth keeping in mind: updating the handoff must never excuse being behind base, and it
+does not — the base's newer commits are simply not reachable from `LAST_TOUCH`. Its failure message
+also improved, now naming the branch's own touching commit rather than an unrelated one on main.
+
+**The general lesson, which is the same one §5.11 taught in a different costume:** a check can be
+correct about the world and still ask a question whose answer nobody can act on. "Is it true?" and
+"can anything make it true?" are different questions, and only the second one tells you whether the
+gate is usable.
