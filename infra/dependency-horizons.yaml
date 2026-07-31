@@ -357,7 +357,7 @@ dependencies:
       be the same fabrication this file exists to prevent.
 
   - id: node
-    pin: "node:20-alpine"
+    pin: "node:24-alpine"
     sites:
       - "frontend/Dockerfile:5"
       - "frontend/Dockerfile:129"
@@ -366,19 +366,19 @@ dependencies:
     kind: image
     owner: maintainer
     eol_slug: nodejs
-    eol_cycle: "20"
-    eol_date: "2026-04-30"
-    exemption:
-      reason: >-
-        Node 20 went EOL 2026-04-30 — the most recent of the six breaches, and the one with
-        the largest blast radius: this pin is the build AND runtime base for BOTH the frontend
-        (Next.js 16 / React 19) and the mcp-server, across four sites. Node 22 is the LTS
-        successor. Deferred because the move must be made with the frontend typecheck gate and
-        the Playwright suite green in the same change (`npm run build` is the only thing that
-        type-checks here; jest does not), and because 20 open dependabot PRs already queue
-        major bumps against these two images that must be triaged, not bulk-merged, alongside it.
-      expires: "2026-11-30"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "24"
+    eol_date: "2028-04-30"
+    # The DEFERRED-27 exemption that stood here is REMOVED, not updated: node 24 is an active
+    # LTS (since 2025-10-28) and is not past horizon, and this gate FAILS an exemption on a row
+    # that is not breaching (STALE). Its own stated condition for the move — "the frontend
+    # typecheck gate and the Playwright suite green in the same change" — was met before this
+    # edit, not asserted after it.
+    #
+    # 24, not 22 as that exemption anticipated, and not 25 as dependabot #398 proposed. Measured
+    # against endoflife.date on 2026-07-31: 22 EOL 2027-04-30; 24 EOL 2028-04-30; 25 is an
+    # odd-numbered Current line, lts=false, EOL 2026-06-01 — already expired when #398 opened,
+    # so it would have swapped one dead runtime for another. 26 becomes LTS on 2026-10-28 and is
+    # the next move, not this one.
 
   - id: scratch
     pin: "scratch"

@@ -27,7 +27,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - YAML - Configuration management
 ## Runtime
 - JVM (Java 21) - Core API execution
-- Node.js 20+ - Frontend build and runtime
+- Node.js 24+ - Frontend build and runtime
 - Go 1.26 runtime - Edge gateway
 - PostgreSQL 15 - Database
 - Gradle 8.10+ (Kotlin DSL) - Java/Spring Boot build
@@ -114,7 +114,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 ## Platform Requirements
 - Docker & Docker Compose 1.40+ (for local stack)
 - Java 21 JDK
-- Node.js 20+
+- Node.js 24+
 - Go 1.26+
 - Git
 - Gradle 8.10+ (included via wrapper)
