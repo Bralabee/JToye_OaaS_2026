@@ -22,6 +22,10 @@ export default auth((req) => {
     nonce,
     isDev: process.env.NODE_ENV !== "production",
     keycloakOrigin: process.env.NEXT_PUBLIC_KEYCLOAK_URL || "",
+    // The CUSTOMER realm is a different identity pool (#382) and a different CSP
+    // source. Without it the customer token exchange is blocked and sign-in dies
+    // as "Authentication failed" AFTER the Keycloak user has been created.
+    customerKeycloakOrigin: process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL || "",
     apiOrigin: process.env.NEXT_PUBLIC_API_URL || "",
     upgradeInsecure: process.env.CSP_UPGRADE_INSECURE_REQUESTS === "true",
   })

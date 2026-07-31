@@ -29,30 +29,37 @@ async function loginCustomer(page: Page): Promise<{ email: string }> {
   await page.waitForLoadState("networkidle")
   await page.waitForTimeout(1000)
 
-  // Scope to the NAV "Sign in" (the page body can also render a "Sign in" CTA).
-  await page.locator("nav").getByRole("button", { name: "Sign in" }).first().click()
-  await page.waitForTimeout(3000)
+  // #382 split customer and vendor sign-in. The nav control is now a LINK to the
+  // /shop/signin landing page — NOT a button firing customerLogin() straight at
+  // Keycloak. Ask for role=link: a role=button locator matches nothing here, and
+  // `.first().click()` on nothing waits out the entire test timeout, which reads
+  // as a slow stack rather than as a stale locator. Scope to the NAV, since the
+  // page body can also render a "Sign in" CTA.
+  await page.locator("nav").getByRole("link", { name: "Sign in" }).first().click()
+  await page.waitForURL(/\/shop\/signin/, { timeout: 15_000 })
 
-  // Register (verifyEmail=false in jtoye-customers, so this auto-authenticates).
-  const regLink = page.locator('a:has-text("Register")')
-  if (await regLink.isVisible()) {
-    await regLink.click()
-    await page.waitForTimeout(2000)
-    await page.fill("input#email", email)
-    await page.fill("input#password", "TestPass123!")
-    await page.fill("input#password-confirm", "TestPass123!")
-    await page.fill("input#firstName", "E2E")
-    await page.fill("input#lastName", `User${rand}`)
-    await page.locator('input[type="submit"]').click()
-    // Wait for the OIDC round-trip to land back on the storefront (callback →
-    // token exchange → localStorage session marker), then reload so the nav's
-    // session check runs against the freshly-set marker.
-    await page.waitForURL(/\/shop(\/|$|\?)/, { timeout: 25_000 }).catch(() => {})
-    await page.waitForTimeout(3000)
-    await page.goto(`${BASE}/shop`)
-    await page.waitForLoadState("networkidle")
-    await page.waitForTimeout(2000)
-  }
+  // The landing page offers both doors. "Create an account" calls
+  // customerRegister(), which redirects to Keycloak's /registrations endpoint
+  // directly — so there is no longer a "Register" link to click on a login page.
+  // verifyEmail=false in jtoye-customers, so registering auto-authenticates.
+  await page.getByRole("button", { name: "Create an account" }).click()
+  await page.waitForURL(/openid-connect\/registrations/, { timeout: 20_000 })
+
+  await page.fill("input#email", email)
+  await page.fill("input#password", "TestPass123!")
+  await page.fill("input#password-confirm", "TestPass123!")
+  await page.fill("input#firstName", "E2E")
+  await page.fill("input#lastName", `User${rand}`)
+  await page.locator('input[type="submit"]').click()
+
+  // Wait for the OIDC round-trip to land back on the storefront (callback →
+  // token exchange → session cookie), then reload so the nav's session check
+  // runs against the freshly-set session.
+  await page.waitForURL(/\/shop(\/|$|\?)/, { timeout: 25_000 }).catch(() => {})
+  await page.waitForTimeout(3000)
+  await page.goto(`${BASE}/shop`)
+  await page.waitForLoadState("networkidle")
+  await page.waitForTimeout(2000)
 
   return { email }
 }
@@ -221,11 +228,34 @@ test.describe("Shop Menu & Product Cards", () => {
     expect(logo, "seeded shop logo image should be present").toBeTruthy()
     expect(logo?.naturalWidth ?? 0).toBeGreaterThan(0)
 
-    // Contract #3 — photo-less products (no product photography added this phase,
-    // #15) render the SafeImage BRANDED FALLBACK TILE (a gradient div), never a
-    // broken <img>. Prove the fallback path renders on the product cards.
-    const fallbackTiles = await page.locator("article div.bg-gradient-to-br").count()
-    expect(fallbackTiles).toBeGreaterThan(0)
+    // Contract #3 — EVERY product card presents either a loaded photo or the
+    // SafeImage branded fallback tile (a gradient div). Never neither.
+    //
+    // This previously asserted `fallbackTiles > 0`, on the premise that no
+    // product photography existed yet (#15). That premise expired: all seven
+    // seeded products on this shop now carry images, so zero fallback tiles
+    // render and the assertion failed on CORRECT behaviour. Asserting per-card
+    // coverage keeps the fallback guarantee without pinning it to seed state —
+    // and unlike relaxing it to `>= 0`, it cannot pass vacuously, because every
+    // card has to account for itself.
+    const cards = page.locator("article")
+    const cardCount = await cards.count()
+    expect(
+      cardCount,
+      "VOID: no product cards rendered — the per-card contract below would pass on zero"
+    ).toBeGreaterThan(0)
+
+    for (let i = 0; i < cardCount; i++) {
+      const card = cards.nth(i)
+      const loadedPhotos = await card
+        .locator("img")
+        .evaluateAll((imgs) => imgs.filter((el) => (el as HTMLImageElement).naturalWidth > 0).length)
+      const tiles = await card.locator("div.bg-gradient-to-br").count()
+      expect(
+        loadedPhotos + tiles,
+        `product card ${i} shows neither a loaded photo nor a branded fallback tile`
+      ).toBeGreaterThan(0)
+    }
   })
 
   test("promotion banner and discount badge render on shop detail (STFR-06)", async ({ page }) => {
@@ -319,11 +349,29 @@ test.describe("Cart + Checkout", () => {
     await page.waitForLoadState("domcontentloaded")
     await page.waitForTimeout(2000)
 
+    // The seeded shop enforces a £10 minimum, and one item is £8.99. Clicking
+    // `.first()` then `.nth(1)` looks like "add two products" but is not: after
+    // the first Add the card swaps to a +/- stepper, so the list SHIFTS and
+    // `.nth(1)` lands on a different, cheaper item. That left the basket at
+    // £7.50, below the minimum, and "Place order" stayed correctly DISABLED —
+    // whereupon `.click()` waited out the whole 60s test timeout. The app was
+    // right; the test was adding the wrong things.
+    //
+    // Derive instead of counting: keep adding until the basket clears the
+    // minimum, bounded so a genuinely broken Add button still fails fast.
     const addButtons = page.locator('button:has-text("Add")')
-    await addButtons.first().click()
-    await page.waitForTimeout(300)
-    await addButtons.nth(1).click()
-    await page.waitForTimeout(500)
+    await expect(addButtons.first()).toBeVisible({ timeout: 10_000 })
+
+    const MAX_ADDS = 6
+    let adds = 0
+    while (adds < MAX_ADDS) {
+      await addButtons.first().click()
+      adds++
+      await page.waitForTimeout(400)
+      // The blocking notice disappears once the subtotal clears the minimum.
+      if ((await page.getByText(/Minimum order/i).count()) === 0 && adds >= 2) break
+    }
+    expect(adds, "never cleared the shop minimum within MAX_ADDS items").toBeLessThan(MAX_ADDS)
 
     const cartBar = page.locator("text=View basket")
     await expect(cartBar).toBeVisible()
@@ -361,7 +409,16 @@ test.describe("Cart + Checkout", () => {
     await expect(orderSummary.getByText("Total", { exact: true })).toBeVisible()
     await expect(page.locator("text=Final total confirmed")).toHaveCount(0)
 
-    await page.locator('button[type="submit"]:has-text("Place order")').click()
+    // Assert ENABLED before clicking. A disabled submit makes `.click()` wait out
+    // the full 60s test timeout with no assertion location, so the failure reads
+    // as a hung stack rather than "the basket is under the shop minimum". This
+    // turns that into a named failure in 10s.
+    const placeOrder = page.locator('button[type="submit"]:has-text("Place order")')
+    await expect(
+      placeOrder,
+      "Place order is disabled — basket is likely under the shop minimum"
+    ).toBeEnabled({ timeout: 10_000 })
+    await placeOrder.click()
 
     // COD path (no Stripe keys in this env): the order confirms INLINE with the
     // fee breakdown — "Order confirmed! · Pay on delivery" (a DELIVERY order,
@@ -391,8 +448,12 @@ test.describe("Order Tracking (requires auth)", () => {
 
     await expect(page.locator("text=Sign in to continue")).toBeVisible()
     // Two "Sign in" affordances exist (nav + the RequireCustomerAuth prompt).
-    // Assert the in-page prompt button specifically, scoped to <main>.
-    await expect(page.getByRole("main").getByRole("button", { name: "Sign in" })).toBeVisible()
+    // Assert the in-page prompt specifically, scoped to <main>. #382 turned it
+    // into a LINK to /shop/signin so an expired session has a landing
+    // destination — assert the destination too, not just that a control exists.
+    const prompt = page.getByRole("main").getByRole("link", { name: "Sign in" })
+    await expect(prompt).toBeVisible()
+    await expect(prompt).toHaveAttribute("href", /\/shop\/signin/)
   })
 
   test("standalone tracker is a GUEST lookup — no forced sign-in (Surface H)", async ({ page }) => {
@@ -418,9 +479,24 @@ test.describe("Order Tracking (requires auth)", () => {
     const myOrders = page.locator('nav >> text=My Orders')
     await expect(myOrders).not.toBeVisible()
 
-    // But Browse and Sign in should be
-    await expect(page.locator('nav >> text=Browse')).toBeVisible()
-    await expect(page.locator('nav >> button:has-text("Sign in")')).toBeVisible()
+    // Sign in IS visible at every width — and it is a LINK since #382, not a
+    // button. The old button locator matched nothing, which `toBeVisible()`
+    // reports as a plain "not visible" and hides the real cause.
+    await expect(page.locator("nav").getByRole("link", { name: "Sign in" }).first()).toBeVisible()
+
+    // The browse destination is labelled "Shops" (renamed from "Browse" for
+    // label parity with PublicHeader — the same destination must not be called
+    // two things), and its row is `hidden sm:flex`, so it is a DESKTOP-only
+    // affordance. Gate on the measured viewport rather than the project name so
+    // this stays honest if the projects are ever retuned.
+    const width = page.viewportSize()?.width ?? 0
+    if (width >= 640) {
+      await expect(page.locator("nav").getByRole("link", { name: "Shops" }).first()).toBeVisible()
+    } else {
+      // Below sm the destinations live behind the hamburger, which must exist —
+      // otherwise the nav has simply lost them on mobile.
+      await expect(page.locator("nav").getByRole("button", { name: /open menu/i })).toBeVisible()
+    }
   })
 })
 
@@ -429,20 +505,32 @@ test.describe("Order Tracking (requires auth)", () => {
 // ============================
 
 test.describe("Customer Auth", () => {
-  test("Sign in button redirects to Keycloak", async ({ page }) => {
+  // #382 deliberately replaced the bare window.location redirect with a landing
+  // PAGE, because the redirect gave a shopper no destination — no working back
+  // button, no "create an account", no way to reach the vendor door if they had
+  // guessed wrong. So the contract is now two hops, and this test asserts both.
+  // Asserting the old one-hop behaviour was testing a decision that was reversed.
+  test("Sign in goes to the customer sign-in PAGE, which hands off to Keycloak", async ({ page }) => {
     await page.goto(`${BASE}/shop`)
     await page.waitForLoadState("networkidle")
     await page.waitForTimeout(2000)
 
-    const signIn = page.locator('button:has-text("Sign in")')
+    // Hop 1: nav link -> /shop/signin, carrying where to come back to.
+    const signIn = page.locator("nav").getByRole("link", { name: "Sign in" }).first()
     await expect(signIn).toBeVisible()
-
     await signIn.click()
-    await page.waitForTimeout(3000)
+    await page.waitForURL(/\/shop\/signin/, { timeout: 15_000 })
+    expect(page.url()).toContain("next=")
+    await expect(page.getByRole("heading", { name: "Sign in to order" })).toBeVisible()
+
+    // The page is a landing destination, so it must not be a dead end.
+    await expect(page.getByRole("link", { name: /browse kitchens/i })).toBeVisible()
+
+    // Hop 2: the page hands off to Keycloak, against the CUSTOMER realm client.
+    await page.getByRole("button", { name: "Create an account" }).click()
+    await page.waitForURL(/openid-connect/, { timeout: 20_000 })
     expect(page.url()).toContain("8085")
     expect(page.url()).toContain("storefront-client")
-
-    await expect(page.locator('a:has-text("Register")')).toBeVisible()
   })
 
   test("after login, nav shows profile and My Orders appears", async ({ page }) => {
@@ -452,8 +540,15 @@ test.describe("Customer Auth", () => {
     expect(page.url()).toContain("/shop")
     await page.waitForTimeout(3000)
 
-    // Sign in should be GONE
-    await expect(page.locator('button:has-text("Sign in")')).not.toBeVisible()
+    // Sign in should be GONE.
+    //
+    // This MUST use the link locator. `button:has-text("Sign in")` matched
+    // nothing even while signed OUT — #382 made the control a <Link> — so this
+    // assertion passed unconditionally and could never fail. That is worse than
+    // a failing test: it read as cover for a signed-in/signed-out invariant that
+    // nothing was actually checking. Falsified by running it signed-OUT, where
+    // the link form correctly reports 1.
+    await expect(page.locator("nav").getByRole("link", { name: "Sign in" })).toHaveCount(0)
 
     // Sign out should be visible
     await expect(page.locator('button[title="Sign out"]')).toBeVisible()
