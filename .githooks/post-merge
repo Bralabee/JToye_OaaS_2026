@@ -43,8 +43,18 @@
 
 set -uo pipefail
 
-# Never let a hook take a pull down. Every path below exits 0.
-trap 'exit 0' ERR
+# NO `trap ... ERR` HERE, deliberately.
+#
+# The first draft carried `trap 'exit 0' ERR` as a belt-and-braces "never break a
+# pull". It broke the hook completely: bash runs an ERR trap on any command that
+# returns non-zero, and the gate returns 1 EXACTLY WHEN THERE IS DRIFT. So the
+# assignment below fired the trap and the hook exited before printing anything —
+# silent on the one case it exists for, and indistinguishable from a clean run.
+# Caught only by stubbing the gate to exit 1 and observing no output; every other
+# path looked perfect.
+#
+# Non-blocking is achieved the honest way instead: every path ends in `exit 0`, and
+# git ignores a post-merge hook's status regardless.
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 GATE="$REPO_ROOT/scripts/check-runtime-freshness.sh"

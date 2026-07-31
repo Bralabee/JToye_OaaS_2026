@@ -448,6 +448,62 @@ against **its own** build inputs. edge-go's image legitimately predates the phas
 because zero Go files changed in it, and the gate passes it. Comparing every image
 against the repo's newest commit would flag edge-go forever.
 
+### The gate now runs itself — `.githooks/post-merge`
+
+The gate above was correct and nobody invoked it. Measured on 2026-07-30: **#380**
+merged, changing `core-java` sources; `git pull` on the machine hosting the stack
+said nothing, and the container kept serving an image built four hours earlier —
+through two further PRs — until someone ran the gate by hand. The same session had
+already produced the mirror-image failure, where a fix was verified against a
+temporary build nobody was looking at.
+
+`.githooks/post-merge` runs `check-runtime-freshness.sh` after every merge, which is
+the instant staleness is *created*, and names the fix:
+
+```
+[post-merge] runtime parity: this pull made the running stack STALE
+  core-java    DRIFT  image tagged 2026-07-30 15:51:39 UTC / newest commit e5f7a9e8 20:49:54
+
+  fix:  bash scripts/sync-runtime.sh
+```
+
+| | |
+|---|---|
+| **Advisory, never blocking** | Every path exits 0, and git ignores a post-merge hook's status anyway. It must never be why a pull "fails", or it gets disabled. |
+| **Silent unless it matters** | Speaks only when the stack is **UP and DRIFTED**. A hook that prints on every pull is noise, and noise gets uninstalled. |
+| **VOID is not a pass** | Stack down → the gate exits 2 → the hook reports *"no opinion"* under `JTOYE_HOOK_VERBOSE=1` and stays quiet otherwise. It never launders "could not check" into "clean". |
+| **Skips in a worktree** | Compose derives its project name from the directory, so from a worktree the gate queries an empty project namespace and calls every service NOT RUNNING. The main checkout's own pull does the real check. |
+
+`scripts/sync-runtime.sh` is the fix it names: it asks the gate what drifted, rebuilds
+exactly those with `up -d --build`, then **re-asserts with the same gate** — so it
+cannot report success over a runtime the gate would still call stale. The service
+names are parsed from the gate's output, so the parse is asserted: *drift reported
+but zero names parsed* is a VOID, never "nothing to do".
+
+**Enabling it — and why there is nothing to configure.** This machine runs a global
+hook set (`core.hooksPath = ~/.git-hooks`) whose members are *dispatchers*: git only
+ever runs one hooks directory, so each global hook delegates to a repo-local
+`.githooks/<name>` when the repo commits an executable one. **A repo opts in by
+committing the file and nothing else.**
+
+`scripts/install-hooks.sh` therefore deliberately does **not** set `core.hooksPath` —
+a per-repo value *replaces* the global directory and would disable the sibling
+`prepare-commit-msg` and `pre-push` hooks. What it does instead is remove a
+repo-level override that *shadows* the dispatcher (this checkout carried one pointing
+at a directory holding zero hooks, which disabled all three), and it refuses if the
+shadowed directory is non-empty.
+
+**Why the gate itself is not in CI, and what is.** Checked rather than assumed: this
+repo has **0 self-hosted runners**, every job runs on `ubuntu-latest`, and
+`DEPLOY_ENABLED` is unset so the deploy jobs never run — a GitHub-hosted runner has no
+runtime to inspect, local or deployed, so the gate could only ever exit 2 there. A
+permanently-VOID job trains people to add `|| true`. What CI *can* assert, and now
+does as the fifth Operational Contracts step, is `install-hooks.sh --check`: that the
+hook is **executable in the git index**. A hook committed `100644` is skipped silently
+by both git and the dispatcher's `[[ -x ]]`, and that symptom is identical to a clean
+run. The index is checked rather than the filesystem, because an uncommitted local
+`chmod` is lost on the next clone.
+
 **Why `git log --full-history`.** Plain `git log -- <paths>` applies history
 simplification and, when a merge is TREESAME to one parent, reports that parent's
 older commit instead of the merge — understating the bar by days and letting an
