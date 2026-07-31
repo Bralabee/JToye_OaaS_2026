@@ -22,7 +22,12 @@
 #        scripts. This rotted twice in one session (15 -> 16 -> 17) and is pure local counting.
 #   H-2  Every CAPITALISED issue/PR state claim matches the forge. "#384 is now CLOSED" and
 #        "#385 still OPEN" are checked; lower-case prose is deliberately not.
-#   H-3  The document is not more than MAX_PRS_BEHIND merged commits behind the base branch.
+#   H-3  The document is not more than MAX_PRS_BEHIND merged commits behind the base branch,
+#        measured from HEAD's copy of it — so a change that updates the handoff gets credit for
+#        doing so, while a change that does not still sees a stale base. Measuring from the BASE
+#        instead (the original form) made this check deadlock itself: once main was over budget,
+#        every PR went red including the handoff update that was the only thing able to clear it,
+#        and `docs-freshness` is a required check. See the block at the H-3 implementation.
 #        The ONLY check here that catches semantic rot, and it does so indirectly: it does not
 #        know what the prose says, only that the world moved and the document did not.
 #   H-4  SELF-TEST of both extractors — each must find a positive sample AND decline a negative
@@ -180,8 +185,29 @@ fi
 [ -n "$BASE_REF" ] || die_void "cannot resolve the base branch — set HANDOFF_BASE_REF"
 git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null || die_void "base ref '$BASE_REF' is not a commit (shallow clone?)"
 
-LAST_TOUCH=$(git log -1 --format=%H "$BASE_REF" -- "$DOC" 2>/dev/null)
-[ -n "$LAST_TOUCH" ] || die_void "no commit on $BASE_REF has ever touched $DOC — cannot measure staleness"
+# Measure the last touch from HEAD, not from BASE_REF.
+#
+# WHY. Reading BASE_REF only made this check DEADLOCK ITSELF, and it did so exactly when the
+# document was most overdue. H-3 asked "how far has the base moved since the base last touched
+# HANDOFF.md" — a question whose answer a PR cannot change, because the PR's commit is not on the
+# base until it merges. So once main accumulated more than MAX_PRS_BEHIND commits, EVERY PR went
+# red, INCLUDING the handoff update that was the only thing that could clear it, and
+# `docs-freshness` is a required check. Measured 2026-07-31: main was red at 2b5339f8 and #403 —
+# the fix — was BLOCKED by this line.
+#
+# Taking LAST_TOUCH from HEAD asks the question that was actually meant: "is the version of the
+# document I am looking at stale relative to the base?" A change that updates the doc gets credit
+# for it; one that does not, does not.
+#
+# The on-main semantics are UNCHANGED and deliberately so — on a push to main HEAD == BASE_REF, so
+# this resolves to the identical commit and a genuinely stale main still fails. Verified in both
+# directions rather than assumed.
+#
+# A branch that updates the doc but is BEHIND the base still fails here, because the base's newer
+# commits are not reachable from LAST_TOUCH — which is the correct signal, and the same one
+# `check-branch-behind-base.sh` gives.
+LAST_TOUCH=$(git log -1 --format=%H HEAD -- "$DOC" 2>/dev/null)
+[ -n "$LAST_TOUCH" ] || die_void "no commit reachable from HEAD has ever touched $DOC — cannot measure staleness"
 BEHIND=$(git log --first-parent --oneline "${LAST_TOUCH}..${BASE_REF}" 2>/dev/null | wc -l)
 if [ "$BEHIND" -gt "$MAX_BEHIND" ]; then
 	fail "H-3 $DOC is $BEHIND merged commit(s) behind $BASE_REF (budget $MAX_BEHIND) — last touched by $(git log -1 --format=%h "$LAST_TOUCH"). Re-read it before trusting it."

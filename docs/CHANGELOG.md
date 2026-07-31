@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### H-3 deadlocked itself — the handoff update was the one thing that could not clear it (#403) — 2026-07-31
+
+`check-handoff-contract.sh`'s H-3 computed `LAST_TOUCH` from `BASE_REF`, so it asked *"how far has the base moved since **the base** last touched `HANDOFF.md`"* — **a question no pull request can change**, because its commit is not on the base until it merges. Once `main` exceeded `MAX_PRS_BEHIND` (3), every PR went red, including the handoff update that was the only thing able to clear it. `docs-freshness` is a required check, so this was a hard block.
+
+#### Fixed
+- **The gate forbade its own remedy, and did so exactly when it was most overdue.** Measured 2026-07-31: the four node-24 merges (#402, #400, #399, #405) pushed `main` to 4-behind; `main` went red at `2b5339f8` and #403 — the fix — was `BLOCKED` by the same line. This is a worse shape than a gate that cries wolf: the longer the handoff went unwritten, the more unmergeable its update became.
+- **`LAST_TOUCH` now comes from `HEAD`**, which asks what was meant: *is the copy I am looking at stale?* A change that updates the handoff gets credit for it; one that does not, does not.
+
+#### Notes
+- **On-main semantics are unchanged by construction**, which is the point: on a push to `main`, `HEAD == BASE_REF`, so it resolves to the identical commit and a genuinely stale `main` still fails. This was verified rather than argued.
+- Falsified in four directions, never merely observed passing. The middle two are the ones that prove the fix did not simply remove the gate's teeth: branch updates the doc and is current → rc=0 (0 behind); **stale `main`, doc not updated → rc=1** (4 behind); **branch updates the doc but is BEHIND base → rc=1** (4 behind, so updating the handoff never excuses being behind base); closing clean arm → rc=0.
+- The failure message also improved as a side effect — it now names the branch's own touching commit rather than an unrelated one on `main`.
+- Recorded in `HANDOFF.md` §5.13, alongside §5.11's related lesson: a check can be *correct about the world* and still ask a question whose answer nobody can act on.
+
 ### H-5 counted one accumulator under the other's label (#396, closes #385) — 2026-07-31
 
 `check-dependency-horizons.sh` printed `H-5 drift pin-not-at-site=$n_drift`, but `$n_drift` counts **DRIFT** (the pin is on no non-comment line, or the file is missing) while the label names what **LINE_DRIFT** measures (the pin exists, just not at the declared line). Two accumulators, one number, and the label described the one that was not being counted.
