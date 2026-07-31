@@ -99,6 +99,20 @@ spring:
 # NOT used because this project supplies a custom JwtDecoder bean — that
 # property only applies to Spring's auto-configured decoder.
 jtoye:
+  shop:
+    # Slugs a vendor may NOT claim, because the storefront serves a STATIC route at
+    # /shop/<segment> and Next.js resolves a static segment BEFORE the dynamic
+    # [slug] one. A shop holding one of these is permanently unreachable at its own
+    # URL, with nothing anywhere to say why.
+    #
+    # This is configuration rather than a constant because the list is a function of
+    # the frontend route table (frontend/app/shop/*/), which changes as routes are
+    # added. Keep it in step with that directory — 'auth' and 'orders' have been
+    # static since Phase 18; 'signin' is the customer sign-in page.
+    #
+    # Only an EXPLICITLY supplied slug can collide: ShopService appends a random
+    # 8-character suffix to any slug it generates itself.
+    reserved-slugs: ${SHOP_RESERVED_SLUGS:auth,orders,signin}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:

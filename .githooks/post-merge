@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# post-merge — tell the operator when a pull has just made the running stack stale.
+#
+# WHY THIS EXISTS
+#
+#   Measured on 2026-07-30: #380 merged, changing core-java sources. `git pull` on the
+#   machine that hosts the stack said nothing, and the container kept running an image
+#   built four hours earlier. It stayed stale through two more PRs and was only found
+#   because someone ran scripts/check-runtime-freshness.sh by hand. Before that, the
+#   user had already caught the same class of failure from the other side: a fix that
+#   was verified against a build nobody was looking at.
+#
+#   The gate existed. Nothing invoked it at the moment staleness is CREATED, which is
+#   exactly here — the instant a merge lands in a working tree that owns a runtime.
+#
+# WHY NOT CI
+#
+#   Checked before writing this, not assumed: the repo has 0 self-hosted runners and
+#   every job runs on ubuntu-latest, and DEPLOY_ENABLED is unset so the deploy jobs
+#   never run. A GitHub-hosted runner therefore has NO runtime to inspect — neither
+#   local containers nor a deployed environment — so the gate could only ever exit 2
+#   there. scripts/check-alert-liveness.sh's header states the consequence: a
+#   permanently-VOID job trains people to add `|| true`, which is worse than no job.
+#
+#   Staleness is a property of the machine holding the runtime, so the detector lives
+#   on that machine. If a self-hosted runner is ever added, the same gate can move
+#   into CI unchanged — this hook is a placement decision, not a different check.
+#
+# CONTRACT
+#
+#   ADVISORY, NEVER BLOCKING. git ignores a post-merge hook's exit code, and this
+#   script exits 0 unconditionally anyway so that intent is explicit rather than
+#   incidental. It must never be the reason a pull "fails", or it will be disabled.
+#
+#   SILENT WHEN THERE IS NOTHING TO SAY. A hook that prints on every pull is noise,
+#   and noise gets uninstalled. It speaks only when the stack is UP and DRIFTED.
+#
+#   NOT-RUNNING IS NOT DRIFT. If the stack is down (the normal case on a laptop, or
+#   mid-rebuild) the gate exits 2 (VOID). That is not a fault and is not reported as
+#   one — a VOID here means "no opinion", not "clean". The distinction matters: the
+#   gate itself fails closed on purpose, and this hook must not launder that into a
+#   pass by staying quiet for the wrong reason. It says so explicitly under -v.
+
+set -uo pipefail
+
+# NO `trap ... ERR` HERE, deliberately.
+#
+# The first draft carried `trap 'exit 0' ERR` as a belt-and-braces "never break a
+# pull". It broke the hook completely: bash runs an ERR trap on any command that
+# returns non-zero, and the gate returns 1 EXACTLY WHEN THERE IS DRIFT. So the
+# assignment below fired the trap and the hook exited before printing anything —
+# silent on the one case it exists for, and indistinguishable from a clean run.
+# Caught only by stubbing the gate to exit 1 and observing no output; every other
+# path looked perfect.
+#
+# Non-blocking is achieved the honest way instead: every path ends in `exit 0`, and
+# git ignores a post-merge hook's status regardless.
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+GATE="$REPO_ROOT/scripts/check-runtime-freshness.sh"
+VERBOSE="${JTOYE_HOOK_VERBOSE:-0}"
+
+note() { [ "$VERBOSE" = "1" ] && printf '[post-merge] %s\n' "$*"; return 0; }
+
+[ -r "$GATE" ] || { note "no runtime-freshness gate at scripts/ — nothing to check"; exit 0; }
+command -v docker >/dev/null 2>&1 || { note "docker not present — no runtime to check"; exit 0; }
+
+# A worktree cannot answer this question. Compose derives its project name from the
+# DIRECTORY, so from a worktree the gate queries an empty project namespace and
+# reports every service NOT RUNNING — a VOID that looks like a dead stack. Measured:
+# rc=2 from a worktree and rc=0 from the main checkout, same moment, same containers.
+# Skipping here is correct; the main checkout's own pull will do the real check.
+if [ "$(git rev-parse --git-common-dir)" != "$(git rev-parse --git-dir)" ]; then
+    note "running in a git worktree — the parity gate is only meaningful from the main checkout"
+    exit 0
+fi
+
+# Capture rc on its OWN statement. Reading $? after an echo, a pipe, or a $( ) inside
+# a printf reports THAT command's status, which is 0 essentially always — an error
+# this repo has been bitten by more than once, in both directions.
+GATE_OUT="$(cd "$REPO_ROOT" && bash "$GATE" 2>&1)"
+GATE_RC=$?
+
+case "$GATE_RC" in
+    0)
+        note "runtime parity: all built services match the tree"
+        ;;
+    2)
+        # VOID. Usually just "the stack isn't up", which is not worth a word.
+        note "runtime parity: VOID (stack down, or a built service not running) — no opinion, NOT a pass"
+        ;;
+    *)
+        # The only case worth interrupting anyone for.
+        printf '\n\033[1;33m[post-merge] runtime parity: this pull made the running stack STALE\033[0m\n'
+        printf '%s\n' "$GATE_OUT" | grep -E '^\s+\S+\s+(FRESH|DRIFT)\b' || true
+        printf '\n  fix:  bash scripts/sync-runtime.sh\n'
+        printf '  `docker compose start` and `restart` will NOT fix this — neither builds,\n'
+        printf '  and neither replaces a container holding an older image ID.\n\n'
+        ;;
+esac
+
+exit 0

@@ -483,7 +483,8 @@ jobs:
         working-directory: mcp-server
 
   # Job 1f: Operational contracts (Phase 27 / OPS-01, OPS-02).
-  # Three STATIC gates. None needs a running stack; all three run in seconds.
+  # FIVE STATIC gates. None needs a running stack; all run in seconds.
+  # (The header said "Three" while listing four — corrected when the fifth was added.)
   # Full local run + rationale for each: k8s/DEPLOYMENT.md "Operational contracts".
   #
   #   1. check-terminal-states.sh — 27-00 F-9. Pins the chain
@@ -581,6 +582,24 @@ jobs:
         run: |
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
+
+      # 5. install-hooks.sh --check — the only half of the runtime-parity pair that a
+      #    GitHub-hosted runner CAN assert. The gate itself (check-runtime-freshness.sh)
+      #    is deliberately NOT here: this repo has no self-hosted runner and
+      #    DEPLOY_ENABLED is unset, so a runner has no runtime to inspect and the gate
+      #    could only ever exit 2 — a permanently-VOID job, which trains people to add
+      #    `|| true`. What IS checkable here is that the hook carrying it is capable of
+      #    running at all: a hook committed 100644 is skipped SILENTLY by both git and
+      #    the global dispatcher's `[[ -x ]]`, and the symptom is identical to a clean
+      #    run. Asserted against the git INDEX, so an uncommitted local chmod cannot
+      #    make this pass for one machine and fail for every clone.
+      #    H-3 (repo-level core.hooksPath shadowing) self-skips here: a runner has no
+      #    global dispatcher, and asserting against an absent mechanism would be a
+      #    permanently-red job over nothing.
+      - name: Assert the repo hooks can actually run (executable in the index)
+        run: |
+          chmod +x ./scripts/install-hooks.sh
+          ./scripts/install-hooks.sh --check
 
   # Job 2: Security scanning
   security-scan:

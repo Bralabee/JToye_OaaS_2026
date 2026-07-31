@@ -26,6 +26,7 @@ import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MissingTenantContextException;
+import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -379,6 +380,19 @@ public class GlobalExceptionHandler {
      * is well-formed but semantically conflicts with the key's prior use, so it
      * is neither replayed nor executed afresh: 422 Unprocessable Entity.
      */
+    /**
+     * A vendor-supplied shop slug collided with a static storefront route segment.
+     * 422 rather than 400: the request is well-formed and the value is individually
+     * valid, it just cannot be accepted in this position.
+     */
+    @ExceptionHandler(ReservedSlugException.class)
+    public ProblemDetail handleReservedSlug(ReservedSlugException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Reserved Shop Slug");
+        problem.setType(URI.create("https://jtoye.uk/errors/reserved-shop-slug"));
+        return problem;
+    }
+
     @ExceptionHandler(IdempotencyPayloadMismatchException.class)
     public ProblemDetail handleIdempotencyPayloadMismatch(IdempotencyPayloadMismatchException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());

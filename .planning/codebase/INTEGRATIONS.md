@@ -131,7 +131,7 @@
 - SMTP at 1025, Web UI at 8025, no auth, no TLS — captures all outbound mail
 
 **Alertmanager email routing (new in v2.1 / phase 9):**
-- `prom/alertmanager:v0.27.0` on port 9093 (`infra/monitoring/docker-compose.monitoring.yml:62-89`)
+- `prom/alertmanager:v0.27.0` on port 9093 (`infra/monitoring/docker-compose.monitoring.yml:80-126`)
 - Config rendered at container start from `infra/monitoring/alertmanager/alertmanager.yml.tmpl` by `entrypoint.sh` (Alertmanager has no native env-var substitution — sed placeholder approach)
 - Default route targets Mailhog on `jtoye-network`:
   - `ALERTMANAGER_SMTP_SMARTHOST` (default `mailhog:1025`)
