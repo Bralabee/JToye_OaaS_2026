@@ -9,7 +9,7 @@ repeated.
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **none.** #383, #389, #391, #392, #393, #394, #395 and #396 were merged by a later housekeeping session — see §5 |
+| Open PRs | **3, all Dependabot** — #398 (node 20→**25**-alpine, MAJOR), #399, #400; opened 15:24–15:28, see §5.10. Every human PR is merged: #383, #389, #391–#397 |
 | Open issues | **59** (was 60; **#385 is now CLOSED** by #396 — §2.2, §5.8) |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
 | Gates | **18 of 18 rc=0** (re-measured 2026-07-31; the 17th is `check-changelog-contract` from #393, the 18th `check-handoff-contract` from #395 — which is what now asserts this very row). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
@@ -489,11 +489,15 @@ It measured "has anything changed since", not "did this land".
 - Runtime: `check-runtime-freshness` rc=0, 4/4 FRESH. Stack UP, 17 jtoye containers, 15 healthy
   (the other two define no healthcheck — §3). Dev DB `jtoye`: 28 orders.
 - **No open issue from this session remains.** **#384 is CLOSED** (by #389) and **#385 is CLOSED**
-  (by #396). 59 open issues repo-wide, 0 open PRs.
-- **Toolchain drift surfaced but NOT applied** (housekeeping surfaces, it does not converge):
-  conda 26.1.1→26.5.3, node v22.23.1→v22.23.2, npm 12.0.1→12.0.2, gemini-cli 0.52→0.53,
-  copilot 1.0.75→1.0.77, docker-ce 29.6.2→29.7.0, ms-fabric-cli 1.2.0→1.6.1. Plus `antigravity`
-  **UNKNOWN** — a manual channel with no probe, which is unanswerable, not clean.
+  (by #396). 59 open issues repo-wide.
+- **3 open PRs, all Dependabot, none mine** — opened 15:24–15:28 while this document was being
+  written (see §5.10). **#398 is a MAJOR bump (node 20-alpine → 25-alpine in `/frontend`)** and
+  wants real evaluation, not a rubber stamp.
+- **Toolchain: 4 of 7 applied, 3 + 1 UNKNOWN outstanding** (§5.9). Applied and verified on a clean
+  login shell: node v22.23.1→**v22.23.2**, npm 12.0.1→**12.0.2**, gemini-cli 0.52→**0.53**,
+  copilot 1.0.75→**1.0.77**. Held or handed over: conda (documented upstream block),
+  docker-ce (root, and the daemon restart drops this stack), ms-fabric-cli (per-env promotion),
+  and `antigravity` **UNKNOWN** — a manual channel with no probe, unanswerable rather than clean.
 
 ### 5.5 The changelog backfill — #392
 
@@ -569,9 +573,13 @@ remains ungated.
 
 ### 5.7 Left undone
 
-- **Toolchain drift** (§5.4) — surfaced, deliberately not applied. A system change deserving its
-  own session: `update.sh --tier N` dry-run first, root steps handed to the user, per-tool
-  verification, then `doctor.sh --write-lock` committed on a branch.
+- **Toolchain: the 3 that need your hands** (§5.9). `conda` is HELD by an upstream bug — do not
+  escalate to `--force-reinstall`, 34 envs sit on that base. `docker-ce` needs root **and restarts
+  the daemon**, which drops all 17 containers, so do it with the stack down:
+  `sudo apt install docker-ce docker-ce-cli containerd.io`. `ms-fabric-cli` 1.2.0→1.6.1 needs
+  clone-the-env → run a real sigantry/fabric command → promote only on green. `antigravity` stays
+  UNKNOWN until someone reads the product version by hand.
+- **The 3 Dependabot PRs** (§5.10), especially **#398**'s major node bump.
 - **The `metric-seed` delta** in the summary table is still unexplained. Re-measure, do not carry
   the number forward.
 
@@ -606,3 +614,59 @@ Four arms, opening and closing clean arm, restores verified by content:
 | plant an **unresolvable** pin | 0 | **1** | 2 |
 | plant **both** | **1** | **1** | 2 |
 | clean (closing) | 0 | 0 | 0 |
+
+### 5.9 Toolchain converged — 4 of 7, and two traps found doing it
+
+Applied via `~/dotfiles/toolchain/update.sh --tool <t> --apply`, each verified on a **clean login
+shell** rather than the calling one. Recorded in `toolchain.lock` and merged as **dotfiles #52**
+(`5aba46e`). Drift **7 → 3**, plus 1 UNKNOWN.
+
+| tool | before → after |
+|---|---|
+| node | v22.23.1 → **v22.23.2** |
+| npm | 12.0.1 → **12.0.2** |
+| `@google/gemini-cli` | 0.52.0 → **0.53.0** |
+| `@github/copilot` | 1.0.75 → **1.0.77** |
+
+All 9 npm globals survived the node move, including `@anthropic-ai/claude-code` and the GSD SDK.
+
+**TRAP 1 — order matters, and the tier listing invites the wrong one.** npm was upgraded to 12.0.2,
+then the node step **silently reverted it to 10.9.8**: `nvm install --reinstall-packages-from`
+installs the npm *bundled* with the new node. Nothing errored; only re-running `doctor.sh` caught
+it. **Upgrade npm AFTER node.** Re-applied and re-verified at 12.0.2 on a login shell.
+
+**TRAP 2 — the received GSD-hook rule is wrong, and the truth is quieter.** The rule says "any node
+upgrade silently kills every GSD hook". It does not: **nvm keeps old versions**, so all 6 hooks
+pinned to `.../v22.23.1/bin/node` kept working — on a **stale interpreter**, which nothing reports
+and which `doctor.sh` does not look at. The outage arrives only on `nvm uninstall`, a pruning
+cleanup, or a **fresh machine**, where the dotfiles backup installs 6 hooks pointing at a node that
+was never there. Re-pinned **surgically** (backup → `jq` validate → sed → `jq` validate → prove the
+new binary *executes* → `sync-claude`), **not** by re-running the GSD installer, which wipes the
+local `execute-phase.md`/`execute-plan.md` customizations. The memory note was corrected.
+
+**Not applied, each for a reason, not an oversight:** `conda` is HELD since 2026-07-26 by an
+upstream self-update bug (34 envs sit on that base — do not force it); `docker-ce` needs root and
+restarts the daemon; `ms-fabric-cli` needs a per-env clone-test-promote; `antigravity` is a manual
+tarball whose `package.json` version is the VS Code base, not the product.
+
+**On the CI signal for dotfiles #52:** "0 failing checks" was nearly vacuous — only GitGuardian can
+run, because `verify.yml` is **dormant by design** (private repo, Actions billing failing since
+2026-07-26). The real guard is the local `.githooks/pre-push` selftest, run explicitly: `gates/
+selftest.sh` (engine can fail), `sync-claude.sh --check` (live matches repo), `gates/install.sh
+--check-all`. rc=0.
+
+### 5.10 Three Dependabot PRs opened mid-session — and the gate that will NOT catch this
+
+Opened 15:24–15:28 on 2026-07-31, all `app/dependabot`, none from a human session:
+
+- **#398 — `node` 20-alpine → 25-alpine in `/frontend`. A MAJOR bump.** Two LTS generations, under
+  Next.js 16. Do not merge on green CI alone; the frontend image is what serves the vendor
+  dashboard, and §0.2 of this document is entirely about proving a runtime rather than assuming it.
+- **#399** — `github/codeql-action` 4 → 4.37.3 (minor-and-patch group).
+- **#400** — `docker/login-action` 3.7.0 → 4.5.2. Also a major.
+
+**This is a worked example of the handoff gate's stated limit.** When these opened, this document
+said "Open PRs: **none**" and `check-handoff-contract` stayed **green**: H-3 saw 0 commits behind
+(nothing had merged), and H-2 only checks claims written as `#NNN … CLOSED/OPEN` in CAPS — "none"
+is not one. The gate never claimed to catch semantic rot; this is what that looks like in practice.
+**Re-read the table, do not trust its silence.**
