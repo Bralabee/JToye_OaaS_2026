@@ -12,7 +12,7 @@ repeated.
 | Open PRs | **none.** #383, #389, #391, #392 and #393 were merged by a later housekeeping session — see §5 |
 | Open issues | **60** |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
-| Gates | **17 of 17 rc=0** (re-measured 2026-07-31 11:25 BST; the 17th is `check-changelog-contract`, new in #393). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
+| Gates | **18 of 18 rc=0** (re-measured 2026-07-31; the 17th is `check-changelog-contract` from #393, the 18th `check-handoff-contract` from #395 — which is what now asserts this very row). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
 | Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
 | Project version | **2.3.0** (`build.gradle.kts:15`). No `v2.3` tag |
 | Test baseline | `docs/metrics.json` **1872** (was 1868) — java 1264, jest **440** / 65 files, schema V60 |
@@ -339,8 +339,9 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 17 x rc=0 — ALL of them. Updated 2026-07-31: #393 added the 17th
-# (check-changelog-contract). #384 is closed by #389, so
+# EXPECT 18 x rc=0 — ALL of them. Updated 2026-07-31: #393 added the 17th
+# (check-changelog-contract) and #395 the 18th (check-handoff-contract, which
+# asserts this very number). #384 is closed by #389, so
 # check-alert-metrics no longer stays red on HighErrorRate (it is now a declared
 # self-healing rule). The old expectation of "15 x rc=0 + 1 red" is superseded.
 # If check-alert-metrics fails on NoOrdersCreated, that is the rebuild-blindness case:
