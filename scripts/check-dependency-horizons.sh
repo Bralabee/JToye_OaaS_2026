@@ -511,11 +511,31 @@ while i < len(lines):
         quoted = chr(34) + newv + chr(34)
         if m2.group(2).strip().strip(chr(34)) != newv:
             line = m2.group(1) + quoted + "\n"; changed += 1
+    # Issue #385, second half. This branch used to carry `and len(want_sites[cur]) == 1`, so
+    # --refresh SILENTLY SKIPPED every multi-site row and every block-form list. That is why
+    # the three stale citations on main survived: the NOTE said "run --refresh" and --refresh
+    # could not fix them. Measured on main @ 66c123bf: 3 NOTEs, `refresh: 0 field(s) rewritten`.
+    # Both list forms are now rewritten at any length.
+    q = chr(34)
     m3 = re.match(r"^(\s*)sites:\s*\[(.*)\]\s*$", line)
-    if m3 and cur in want_sites and len(want_sites[cur]) == 1:
-        newv = chr(34) + want_sites[cur][0] + chr(34)
+    if m3 and cur in want_sites:
+        newv = ", ".join(q + s + q for s in want_sites[cur])
         if m3.group(2).strip() != newv:
             line = m3.group(1) + "sites: [" + newv + "]\n"; changed += 1
+        out.append(line); i += 1; continue
+    # Block form: `sites:` alone on its line, followed by `- "file:line"` entries.
+    m4 = re.match(r"^(\s*)sites:\s*$", line)
+    if m4 and cur in want_sites:
+        out.append(line); i += 1
+        k = 0
+        while i < len(lines) and k < len(want_sites[cur]):
+            m5 = re.match(r"^(\s*)-\s*" + q + r"(.*)" + q + r"\s*$", lines[i])
+            if not m5: break
+            want = want_sites[cur][k]
+            if m5.group(2) != want:
+                lines[i] = m5.group(1) + "- " + q + want + q + "\n"; changed += 1
+            out.append(lines[i]); i += 1; k += 1
+        continue
     out.append(line)
     i += 1
 
@@ -548,6 +568,14 @@ N_EXEMPT=$(jq -r '.n_exempt' <<<"$EVAL_OUT")
 
 n_void=0;  [ -n "$VOIDS" ]    && n_void=$(printf '%s\n' "$VOIDS" | command grep -c . || true)
 n_drift=0; [ -n "$DRIFT" ]    && n_drift=$(printf '%s' "$DRIFT" | command grep -c . || true)
+# Issue #385: the summary printed `pin-not-at-site=$n_drift`, but $n_drift counts DRIFT
+# (the pin is on NO non-comment line, or the file is missing) while the LABEL names what
+# LINE_DRIFT measures (the pin exists but not at the declared line). Two accumulators, one
+# number, and the label described the one that was not being counted — so a reviewer scanning
+# the summary read "no site drift" in the same run that printed NOTEs naming site drift.
+# Measured on clean main @ 66c123bf: three NOTEs above a `pin-not-at-site=0`.
+# Each is now counted under the label that actually describes it.
+n_line_drift=0; [ -n "$LINE_DRIFT" ] && n_line_drift=$(printf '%s' "$LINE_DRIFT" | command grep -c . || true)
 n_cov=0;   [ -n "$COVERAGE_FAILS" ] && n_cov=$(printf '%s\n' "$COVERAGE_FAILS" | command grep -c . || true)
 n_fail=0;  [ -n "$FAILS" ]    && n_fail=$(printf '%s\n' "$FAILS" | command grep -c . || true)
 n_unk=0;   [ -n "$UNKNOWNS" ] && n_unk=$(printf '%s\n' "$UNKNOWNS" | command grep -c . || true)
@@ -556,7 +584,8 @@ cat <<SUMMARY
 dependency-horizons summary
   manifest    rows=$N_ROWS  discovered-pins=$(printf '%s\n' "$DISCOVERED" | command grep -c . || true)
   H-1 coverage   missing-row=$n_cov
-  H-5 drift      pin-not-at-site=$n_drift          (VOID class)
+  H-5 sites      pin-not-at-site=$n_line_drift          (NOTE class, advisory — run --refresh)
+                 site-unresolvable=$n_drift          (VOID class)
   H-2/H-3        violations=$n_fail  active-exemptions=$N_EXEMPT
   H-6 UNKNOWN    rows=$n_unk  (printed above; each passes only while its review is unexpired)
   warn window    HORIZON_WARN_DAYS=$HORIZON_WARN_DAYS

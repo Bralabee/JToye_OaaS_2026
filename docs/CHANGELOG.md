@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### H-5 counted one accumulator under the other's label (#396, closes #385) — 2026-07-31
+
+`check-dependency-horizons.sh` printed `H-5 drift pin-not-at-site=$n_drift`, but `$n_drift` counts **DRIFT** (the pin is on no non-comment line, or the file is missing) while the label names what **LINE_DRIFT** measures (the pin exists, just not at the declared line). Two accumulators, one number, and the label described the one that was not being counted.
+
+#### Fixed
+- **The summary contradicted itself, and needed no break arm to show it.** On clean `main` @ `66c123bf` the gate printed **three** `NOTE`s naming site drift immediately above `pin-not-at-site=0` — a reviewer scanning the summary reads "no site drift" in the same run that reports it. Each accumulator now prints under the label that describes it: `pin-not-at-site` (NOTE class, advisory) and `site-unresolvable` (VOID class).
+- **`--refresh`, the remedy the NOTE advertises, could not fix them** — which is why those three survived. It reported `0 field(s) rewritten`, because its rewrite branch carried `and len(want_sites[cur]) == 1` and only ever matched the *inline* list form. The manifest holds 2 block-form rows and 1 inline row with 2 sites: exactly the 3 that were stale. Fixing only the label would have shipped an honest number nobody could act on. Both list forms are now rewritten at any length.
+- **The three real stale citations are corrected** in the same change (line numbers only): `ollama` 435→449 and 460→510, `go-ci-setup` 667→686. `.github/workflows/ci-cd.yaml:52` was already correct and was left alone.
+
+#### Notes
+- **Deliberately still advisory** (the issue's option 1, not option 3). Line numbers churn on any edit above a pin — this session shifted two of them by adding a compose comment block — so failing on line drift would be noise that earns the gate an `|| true`. The defect was the *contradiction*, not the choice to be advisory. `rc` behaviour is unchanged.
+- All four of the issue's acceptance criteria were run, with opening *and* closing clean arms and restores verified by content: clean → `0/0` rc=0; a planted **line** drift → `1/0` rc=0; a planted **unresolvable** pin → `0/1` rc=2; **both together** → `1/1` rc=2, the two staying distinguishable under their own labels; clean again → `0/0` rc=0. The planted-line arm is the falsification that matters — before this change that number stayed `0` with the NOTE printed directly above it, so "the clean tree still reports 0" only became meaningful once 0 was a state the number could leave.
+
+
 ### The handoff is now gated too — but only the half a machine can read (#395) — 2026-07-31
 
 `HANDOFF.md` went stale **twice on the same day**, both times under the very work it was describing: it listed PR #383 as open and pointed at a worktree minutes after both were gone (#391), and its §5.5 called the changelog "the one thing left undone" after #392 had backfilled it and #393 had gated it (#394). Nothing read the file, so both survived until a human reread it — the same root cause as the changelog drift, and as `docs/deferred-items.md` before that.
