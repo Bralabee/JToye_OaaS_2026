@@ -21,19 +21,23 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
+import {
+  VENDOR_USERNAME,
+  VENDOR_PASSWORD,
+  skipWithoutVendorPassword,
+} from "./vendor-credentials"
 
 // Honour PLAYWRIGHT_BASE_URL (dev stack runs on :3100). Mirrors playwright.config.ts.
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account; the
-// password is supplied via E2E_VENDOR_PASSWORD (never committed). A fake session
+// credential comes from e2e/vendor-credentials.ts (never committed). A fake session
 // cookie no longer passes the server-side dashboard auth gate (NextAuth middleware,
 // #89), so this spec performs the genuine SSO login like dashboard-mobile.spec.ts.
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 async function vendorLogin(page: Page) {
+  skipWithoutVendorPassword()
   await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
   const ssoButton = page.getByRole("button", { name: /sign in with keycloak/i })
   if ((await ssoButton.count()) === 0) {

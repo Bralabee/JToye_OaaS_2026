@@ -18,15 +18,18 @@
  * (needs the rebuilt full stack — frontend :3000 + a reachable Keycloak.)
  */
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
+import {
+  VENDOR_USERNAME,
+  VENDOR_PASSWORD,
+  skipWithoutVendorPassword,
+} from "./vendor-credentials"
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
-
 // --- Real vendor sign-in (verbatim shape from dashboard-mobile.spec.ts) ------
 async function vendorLogin(page: Page) {
+  skipWithoutVendorPassword()
   await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
 
   const emailInput = page.locator('input[name="email"], input[type="email"]').first()

@@ -23,12 +23,14 @@
  * Run: npx playwright test webhooks-webperf  (needs the rebuilt full stack)
  */
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
+import {
+  VENDOR_USERNAME,
+  VENDOR_PASSWORD,
+  skipWithoutVendorPassword,
+} from "./vendor-credentials"
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
-
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 // Generous throttled-mobile budgets (no-regression guardrails, not SLAs).
 const LCP_BUDGET_MS = 8000
@@ -52,6 +54,7 @@ function pageOf(rows: unknown[]) {
 }
 
 async function vendorLogin(page: Page) {
+  skipWithoutVendorPassword()
   await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
   const emailInput = page.locator('input[name="email"], input[type="email"]').first()
   if ((await emailInput.count()) > 0) {
