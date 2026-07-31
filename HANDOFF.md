@@ -1,6 +1,7 @@
 # Handoff: node 24 is merged and RUNNING — the E2E hold was noise all along
 
-**Generated:** 2026-07-31 ~01:00 BST, **updated ~20:30** with the node-24 resolution (§5.11, §5.12).
+**Generated:** 2026-07-31 ~01:00 BST, **updated ~21:15** with the tab-bar finding (§5.14) on top of
+the node-24 resolution (§5.11–§5.13).
 Supersedes the "every open item is closed except three" handoff, which was accurate when written.
 Its §0.1 (concurrent session), §3.1 (`seed-order-metric` `FORCE=1`) and §3.2 (`RedisDown`) are
 still true and are carried forward below in compressed form; its §2 and §4 are history and are not
@@ -9,12 +10,20 @@ repeated.
 > **The single most useful thing in this document is §5.11's lesson:** the E2E baseline is not
 > stable to ±1 between identical runs, so a ±3 count delta can never be read as a regression.
 > **Compare by test NAME.** That is what turned a "held pending investigation" PR into a merge.
+>
+> **The second most useful is §5.14's.** Three times today a conclusion was drawn from a *symptom*
+> while its *mechanism* was still open. **One was published wrong** — #404's "duplicate nav is an
+> a11y defect"; there is no duplicate nav (§5.14). The other two were caught only because a *second*
+> instrument disagreed with the first: a break arm that appeared to prove an assertion could not fail
+> (the arm was broken, §5.14), and a diff filter that appeared to prove #402 never touched the docs
+> (`--stat` said otherwise, §0.3). **Before asserting a consequence, establish the mechanism — or
+> mark the consequence unestablished too, not just the mechanism.**
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **Node-24 session (§5.11, §5.12): 5 PRs merged** — #402, #400, #399, #405, and this one. **1 issue opened:** #404. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **none once this merges.** **#402 is MERGED** (node 24, hold lifted). **#399 is MERGED**, **#400 is MERGED** (dependabot). **#405 is MERGED** (the doc straggler #402 left). **#398 is CLOSED** — it proposed node 25, already EOL. ⚠ §5.10 is the standing warning that a "none" in this row is exactly what `check-handoff-contract` **cannot** catch — re-read, do not trust its silence |
-| Open issues | **60** (was 59; **#404 is OPEN** — the 27-failure E2E baseline, §5.11. **#385** and **#384** remain **CLOSED**) |
+| `JToye_OaaS_2026` | **Node-24 session (§5.11–§5.14): 6 PRs merged** — #402, #400, #399, #405, #403, #406, plus this one. **1 issue opened:** #404. HEAD deliberately **not** quoted — see the note below |
+| Open PRs | **none once this merges.** **#402 is MERGED** (node 24, hold lifted). **#399 is MERGED**, **#400 is MERGED** (dependabot). **#405 is MERGED** (the doc straggler #402 left). **#406 is MERGED** (the tab-bar locator, §5.14). **#398 is CLOSED** — it proposed node 25, already EOL. ⚠ §5.10 is the standing warning that a "none" in this row is exactly what `check-handoff-contract` **cannot** catch — re-read, do not trust its silence |
+| Open issues | **60**; **#404 is OPEN** — the E2E baseline. ⚠ **#404's section (a) is WRONG and is corrected in-issue** (banner + comment) and in §5.14: there is **no** duplicate nav and **no** a11y defect. Its live count is **23**, not 27 — 5 of the 27 were the locator artefact #406 fixed. **#385** and **#384** remain **CLOSED** |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). Alerts routed to `mute-null` — the mute working, §1.1 |
 | Gates | **18 of 18 rc=0**, re-measured after the node-24 rebuild. The 17th is `check-changelog-contract` (#393), the 18th `check-handoff-contract` (#395) — which is what asserts this very row |
 | Runtime proof | 4/4 built services FRESH · **`node --version` = `v24.18.1` read from inside BOTH the running `jtoye-frontend` and `jtoye-mcp-server`** (alpine 3.24.1) · core-java still Java 21 / `Implementation-Version: 2.3.0` from inside `app.jar` · container image IDs `==` their tags, so this is a real rebuild and not a restart |
@@ -53,6 +62,32 @@ The habits, unchanged:
 - Remove a worktree **from the main checkout**, never from inside it.
 - **A concurrent merge can put your branch behind mid-flight.** #380 landed while both my branches
   were in review. Rebase and re-run.
+
+> **⚠ It happened again on 2026-07-31 ~20:34, and worktrees did NOT prevent it — because the command
+> was a `pull`, not a commit.** A second session created
+> `feature/faster-integration-tests-container-reuse` at 20:31 and checked it out in the shared
+> checkout. Three minutes later I ran `git pull --ff-only origin main` **in that checkout**, and it
+> fast-forwarded **their** branch from `2b5339f8` to `6f159fd0`. The reflog is explicit:
+>
+> ```
+> feature/faster-integration-tests-container-reuse@{0}: pull --ff-only origin main: Fast-forward
+> feature/faster-integration-tests-container-reuse@{1}: branch: Created from HEAD
+> ```
+>
+> **Damage, established rather than assumed:** none to commits — it was a fast-forward and their
+> branch carried no commits of its own. Their four uncommitted test-file edits also survived it
+> (observed `dirty=4` *after* the pull; the incoming commits touched `HANDOFF.md`,
+> `docs/CHANGELOG.md` and `check-handoff-contract.sh`, none of their files). Only the branch pointer
+> moved. It was deliberately **not** reset backwards — a backwards move on a branch you do not own
+> risks more than it repairs.
+>
+> **The habit this adds, because the existing one was not sufficient:** committing from a worktree
+> protects *your* commits, and it did. It does nothing about **mutating git commands aimed at the
+> shared checkout**. `git pull` writes: it moves whatever branch happens to be checked out there.
+> So — **never run `pull`, `checkout`, `merge`, `reset` or `branch -D` in a checkout you do not own,
+> and check `git branch --show-current` immediately before any of them, not just before `commit`.**
+> Do refreshes inside your own worktree (`git fetch` is safe; `git merge origin/main` there is not
+> shared state).
 
 ### 0.2 The defect the USER caught: I proved a fix on a server nobody was looking at
 
@@ -597,8 +632,12 @@ remains ungated.
   UNKNOWN until someone reads the product version by hand.
 - ~~#402 HELD on an unattributed E2E delta~~ — **DONE. #402 is MERGED and RUNNING** (§5.11). The
   delta was flake; the hold is lifted and node 24 is proven inside the containers.
-- ~~The 26-failure Playwright baseline~~ — **filed as #404**, which is **OPEN** and is now the top
-  standing item. It is 27 not 26, and CI watches **2 of 128 tests** (§5.11).
+- ~~The 26-failure Playwright baseline~~ — **filed as #404**, which is **OPEN** and is still the top
+  standing item. Live count **23**, not 26 or 27: 5 of them were the streaming-buffer locator
+  artefact and are fixed by **#406** (§5.14). ⚠ **#404's own section (a) is wrong** — no duplicate
+  nav, no a11y defect — corrected in-issue and in §5.14. **What stands is the real finding: CI runs
+  `e2e/public-layout.spec.ts` only — 2 of 128 tests.** The remaining 23 are unexamined; 17 of them
+  are `storefront-flows.spec.ts`, and nobody has looked at why.
 - ~~#399 and #400 untriaged~~ — **both MERGED** (§5.12), #400 verified SHA-against-tag with its only
   breaking change (node24 action runtime) shown satisfied.
 - ~~The `metric-seed` delta is unexplained~~ — **explained** (§5.12): the E2E suite writes real
@@ -890,3 +929,67 @@ also improved, now naming the branch's own touching commit rather than an unrela
 correct about the world and still ask a question whose answer nobody can act on. "Is it true?" and
 "can anything make it true?" are different questions, and only the second one tells you whether the
 gate is usable.
+
+### 5.14 The "duplicate mobile-tab-bar" was React's streaming buffer — and #404's a11y claim was wrong
+
+**#404 said the dashboard renders two `<nav>` landmarks sharing `aria-label="Primary"` and called it
+an accessibility defect. That was wrong, and I filed it.** It is corrected in the issue (banner +
+comment) and fixed in **#406**, which is **MERGED**.
+
+**What is actually happening.** While React is still streaming, a suspended segment's HTML is parked
+in a staging buffer appended to `<body>` as `<div hidden id="S:0">` — and that buffer holds a
+**complete duplicate of the dashboard shell**. A raw `getByTestId` matches the live copy *and* the
+staged one, so Playwright strict mode fails with *"resolved to 2 elements"*.
+
+| observation | value |
+|---|---|
+| strict-mode failures, whole file in one run | **8** |
+| the same tests run in isolation (`-g`) | **0** — the stream completes first under light load |
+| at every failure | **`byTestId=2` but `byRole=1`** |
+| the second element's parent chain | `body > div#S:0 > div.flex.h-screen > nav` |
+
+`byRole=1` is the measurement that disproves the a11y claim: the staged copy sits inside `[hidden]`,
+so assistive tech never sees it. **Exactly one Primary landmark is exposed, which is correct.**
+
+**Why the wrong conclusion was reached, because the mistake is reusable.** I read the strict-mode
+error text — two identical `<nav aria-label="Primary">` — and inferred an accessibility consequence
+from the *symptom*, while in the same breath recording the *mechanism* as "not established". The
+consequence depended on the mechanism. **One `getByRole` call, which was one line away, would have
+said 1 immediately.** Declining to guess the mechanism was right; asserting its consequence anyway
+was not.
+
+It also explains why it looked deterministic: it is **load-dependent**, so it appears in a full run
+and vanishes under a targeted one — the opposite of the timing class §5.11 contrasted it with.
+
+**The fix, and why it is not `.first()`.** Query the tab bar by ROLE, and route every other
+shell-scoped query through a `live()` root (`body > div:not([hidden])`) that excludes the staging
+buffers. `.first()` would silence strict mode while letting the assertion bind to the hidden staged
+copy — the class of change that keeps passing through a real regression.
+
+**Fixing only the tab bar moved the failure rather than removing it:** violations went **8 → 7**, and
+all 7 survivors were `getByText('OaaS Platform')`, the sidebar subtitle, because the buffer
+duplicates the *whole* shell. That intermediate measurement is why the fix is general.
+
+`e2e/unsubscribe-flow.spec.ts:57` is deliberately left on `getByTestId(...).toHaveCount(0)`: that is
+an **absence** assertion, and a role query would be strictly *weaker* (it would pass if dashboard
+chrome leaked onto the public page but were hidden).
+
+**Result:** `dashboard-mobile.spec.ts` **5 → 0** failures; whole suite **27 → 23**. Treat 23 as
+indicative, not a clean baseline — that run executed while a concurrent Testcontainers workload was
+on the machine, and this suite is demonstrably load-sensitive.
+
+**A break arm that did not break.** ARM2's first attempt reported "assertion did not fail", which
+read as *the assertion cannot fail*. It was the **arm** that was broken: the mutation set
+`display` on the `<span>` while an ancestor stayed `display:none`, so nothing actually became
+visible. Redone as ARM2b, verifying the element measured **208×16** before trusting the result — and
+then the assertion failed correctly. **A break arm must be shown to have actually broken something**,
+or its "pass" means nothing.
+
+| arm | result |
+|---|---|
+| clean, before | 8 failed / 8 strict-mode violations |
+| clean, after | **26 passed, 0 violations — run twice** |
+| ARM1 remove the nav's `aria-label` | assertion **FAILS** as required |
+| ARM2 first attempt | did **NOT** fail — the arm was broken, not the assertion |
+| ARM2b force it genuinely visible (208×16) | assertion **FAILS** as required |
+| closing clean arm | 26 passed, 0 violations |
