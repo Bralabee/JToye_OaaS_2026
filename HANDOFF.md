@@ -9,8 +9,8 @@ repeated.
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **none.** #383, #389, #391, #392 and #393 were merged by a later housekeeping session — see §5 |
-| Open issues | **60** |
+| Open PRs | **none.** #383, #389, #391, #392, #393, #394, #395 and #396 were merged by a later housekeeping session — see §5 |
+| Open issues | **59** (was 60; **#385 is now CLOSED** by #396 — §2.2, §5.8) |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
 | Gates | **18 of 18 rc=0** (re-measured 2026-07-31; the 17th is `check-changelog-contract` from #393, the 18th `check-handoff-contract` from #395 — which is what now asserts this very row). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
 | Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
@@ -238,7 +238,15 @@ runbook section that says nothing about the blind state.
 > to detect. It was left red deliberately. #384 lists four options and requires whichever is chosen
 > to be shown to **fail** first.
 
-### 2.2 `H-5` reports a number that does not measure its label — #385
+### 2.2 `H-5` reports a number that does not measure its label — #385. **CLOSED by #396**
+
+> **Status update (2026-07-31).** **#385 is now CLOSED.** #396 prints each accumulator under the
+> label that describes it — `pin-not-at-site` (NOTE class, advisory) and `site-unresolvable` (VOID
+> class) — and fixed the reason the drift persisted: `--refresh`, the remedy the NOTE advertises,
+> carried `len(want_sites[cur]) == 1` and only matched the inline list form, so it silently skipped
+> every multi-site and block-form row. That was **exactly** the three stale rows. Both forms now
+> rewrite at any length, and the three real citations were corrected. Kept **advisory** (the issue's
+> option 1): `rc` behaviour is unchanged. The analysis below is retained as the reasoning.
 
 `check-dependency-horizons.sh` prints `H-5 drift  pin-not-at-site=0` **in the same run** in which it
 printed `NOTE minio: pin not at docker-compose.full-stack.yml:9999; found at line(s) 407`.
@@ -430,6 +438,16 @@ Then three documentation PRs, each closing a gap the previous one exposed:
 - **#392** `97a985f1` — the changelog backfill (§5.5).
 - **#393** `4674e3d1` — the changelog gate (§5.6), because #392 fixed the *instance* and nothing
   stopped the *recurrence*.
+- **#394** `2e7156c1` — this document again, because §5.5 still called the changelog "the one thing
+  left undone" after #392 and #393 had done and gated it. **Twice stale in one session.**
+- **#395** `66c123bf` — the handoff gate (§5.6b), the answer to #394 happening at all.
+- **#396** `ef81e1fa` — H-5's label/number contradiction, closing **#385** (§5.8).
+
+**Eight PRs, and only the first two were feature work.** Every one after that existed because the
+previous step exposed something nothing was watching. Worth reading as a chain rather than a list:
+merging #383 made the runtime stale → the #387 hook caught it → rebuilding blinded an alert →
+housekeeping found the handoff stale (#391) → which surfaced the changelog 24 PRs behind (#392) →
+which had no gate (#393) → which made the handoff stale again (#394) → which had no gate (#395).
 
 ### 5.2 Branch and worktree cleanup — seven branches, all verified before deletion
 
@@ -470,8 +488,8 @@ It measured "has anything changed since", not "did this land".
   `npm run build` rc=0 with TypeScript clean.
 - Runtime: `check-runtime-freshness` rc=0, 4/4 FRESH. Stack UP, 17 jtoye containers, 15 healthy
   (the other two define no healthcheck — §3). Dev DB `jtoye`: 28 orders.
-- **Open: #385 only** (§2.2 — `H-5` label/number contradiction). #384 is closed. 60 open issues,
-  0 open PRs.
+- **No open issue from this session remains.** **#384 is CLOSED** (by #389) and **#385 is CLOSED**
+  (by #396). 59 open issues repo-wide, 0 open PRs.
 - **Toolchain drift surfaced but NOT applied** (housekeeping surfaces, it does not converge):
   conda 26.1.1→26.5.3, node v22.23.1→v22.23.2, npm 12.0.1→12.0.2, gemini-cli 0.52→0.53,
   copilot 1.0.75→1.0.77, docker-ce 29.6.2→29.7.0, ms-fabric-cli 1.2.0→1.6.1. Plus `antigravity`
@@ -551,7 +569,40 @@ remains ungated.
 
 ### 5.7 Left undone
 
-- **#385** (§2.2) — `H-5` reports a number that does not measure its label. Untouched.
-- **Toolchain drift** (§5.4) — surfaced, deliberately not applied.
+- **Toolchain drift** (§5.4) — surfaced, deliberately not applied. A system change deserving its
+  own session: `update.sh --tier N` dry-run first, root steps handed to the user, per-tool
+  verification, then `doctor.sh --write-lock` committed on a branch.
 - **The `metric-seed` delta** in the summary table is still unexplained. Re-measure, do not carry
   the number forward.
+
+### 5.8 #385 closed — and the fix that made the fix worth having (#396)
+
+`H-5` printed `pin-not-at-site=$n_drift`, but `$n_drift` counts DRIFT (pin on **no** line) while
+the label names what LINE_DRIFT measures (pin exists, wrong line). **No break arm was needed**: on
+clean `main` @ `66c123bf` the gate printed **three NOTEs naming site drift immediately above
+`pin-not-at-site=0`**. Each accumulator now prints under its own label.
+
+**Fixing the label alone would have been worse than useless, and this is the part to remember.**
+The NOTE says "run `--refresh`"; `--refresh` reported `0 field(s) rewritten`. Its rewrite branch
+carried `and len(want_sites[cur]) == 1` and only matched the **inline** list form, so it silently
+skipped every multi-site row and every block-form list — and the manifest holds 2 block rows plus
+1 inline row with 2 sites, **exactly the three that were stale**. An honest `pin-not-at-site=3`
+that nobody could clear is how an advisory earns an `|| true`. Both forms now rewrite at any
+length; `ollama` 435→449 and 460→510, `go-ci-setup` 667→686 were corrected (`ci-cd.yaml:52` was
+already right and left alone).
+
+**A note on the issue's own acceptance criteria.** It asked to "confirm the clean tree still
+reports 0". It does — but only because the three genuinely-stale rows were fixed first. Taken
+literally against a dirty tree, that criterion pushes toward making the number *say* 0 by some
+other means, re-hiding exactly what the fix exposes. The planted-line arm carries the weight:
+**0 only means something once it is a state the number can leave.**
+
+Four arms, opening and closing clean arm, restores verified by content:
+
+| arm | `pin-not-at-site` | `site-unresolvable` | rc |
+|---|---|---|---|
+| clean (opening) | 0 | 0 | 0 |
+| plant a **line** drift | **1** | 0 | 0 |
+| plant an **unresolvable** pin | 0 | **1** | 2 |
+| plant **both** | **1** | **1** | 2 |
+| clean (closing) | 0 | 0 | 0 |
