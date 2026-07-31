@@ -9,7 +9,7 @@ repeated.
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **3, all Dependabot** — #398 (node 20→**25**-alpine, MAJOR), #399, #400; opened 15:24–15:28, see §5.10. Every human PR is merged: #383, #389, #391–#397 |
+| Open PRs | **3.** **#402** node 20→24 LTS — **HELD**, see §5.11 (E2E baseline unattributed). **#399**, **#400** dependabot, untriaged (#400 is a major). **#398 is CLOSED** — it proposed node 25, already EOL. Every other human PR is merged: #383, #389, #391–#397, #401 |
 | Open issues | **59** (was 60; **#385 is now CLOSED** by #396 — §2.2, §5.8) |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
 | Gates | **18 of 18 rc=0** (re-measured 2026-07-31; the 17th is `check-changelog-contract` from #393, the 18th `check-handoff-contract` from #395 — which is what now asserts this very row). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
@@ -579,7 +579,12 @@ remains ungated.
   `sudo apt install docker-ce docker-ce-cli containerd.io`. `ms-fabric-cli` 1.2.0→1.6.1 needs
   clone-the-env → run a real sigantry/fabric command → promote only on green. `antigravity` stays
   UNKNOWN until someone reads the product version by hand.
-- **The 3 Dependabot PRs** (§5.10), especially **#398**'s major node bump.
+- **#402 (node 20→24 LTS) is HELD** on an unattributed E2E delta — **§5.11 carries the exact resume
+  commands and their expected outcomes.** This is the top item to pick up.
+- **The 26-failure Playwright baseline on main** (§5.11) — a standing problem no gate reports,
+  because CI's `Frontend E2E (public surfaces)` job runs a subset. Worth its own issue.
+- **#399 and #400** — dependabot, untriaged. #400 is a major (`docker/login-action` 3→4).
+  **#398 is CLOSED** (node 25, already EOL).
 - **The `metric-seed` delta** in the summary table is still unexplained. Re-measure, do not carry
   the number forward.
 
@@ -670,3 +675,81 @@ said "Open PRs: **none**" and `check-handoff-contract` stayed **green**: H-3 saw
 (nothing had merged), and H-2 only checks claims written as `#NNN … CLOSED/OPEN` in CAPS — "none"
 is not one. The gate never claimed to catch semantic rot; this is what that looks like in practice.
 **Re-read the table, do not trust its silence.**
+
+### 5.11 node 20 → 24 (#402) — and the Playwright baseline that stops it merging
+
+**#398 (node 25) is CLOSED.** Node 25 is an odd-numbered *Current* line, `lts=false`, EOL
+**2026-06-01** — dead before that PR opened. It would have swapped one EOL runtime for another and
+lost LTS status. It also moved only 2 of the 4 sites, leaving `mcp-server` on 20, which one manifest
+pin cannot describe.
+
+**#402 replaces it with node 24 LTS** (EOL 2028-04-30) in one coherent change: 4 Dockerfile `FROM`
+lines, 4 `node-version` steps in `ci-cd.yaml`, the horizon row, and the "Node.js 20+" claim in
+CLAUDE.md / AGENTS.md / README.md. The `DEFERRED-27` exemption is **removed, not updated** — node 24
+is not past horizon, and the gate FAILS an exemption on a non-breaching row.
+
+Built rather than read: both images run **v24.18.1**; the frontend carries a fresh `.next/BUILD_ID`
+(the exit code alone would not prove `next build` ran — the first attempt died at the CR-02
+build-arg guard, so nothing was cached past it); horizons rc=0, exemptions 5→4; 12/12
+stack-independent gates rc=0. Trivy re-measured on node:24-alpine: **exit 0, 0 findings**, and only
+the *combined* arm was re-run — the three single-arm results in `frontend/Dockerfile` are marked
+history, not a current claim.
+
+#### THE BLOCKER: the E2E suite is not green on main, and the delta is unattributed
+
+Ran the full suite against a real node-24 stack, **and against a node-20 control**. The control is
+the finding:
+
+| stack | failed | passed | skipped |
+|---|---|---|---|
+| **node 20** (main, control) | **26** | 88 | 14 |
+| **node 24** (#402) | **29** | 85 | 14 |
+
+**26 tests already fail on main**, unchanged tree, `check-runtime-freshness` rc=0. So the
+exemption's own precondition — *"the Playwright suite green in the same change"* — **is unmeetable
+as written**, and that is pre-existing, not something #402 introduced. Had only the node-24 arm been
+run, 29 failures would have read as a node-24 catastrophe. **Never run this arm without the control.**
+
+**The +3 is NOT established as a regression.** 3 of 128, in a suite with known timing sensitivity
+(hydration; SSE defeats `networkidle` — §0.3 and the fleet-supervision notes). It was compared by
+COUNT, not by test NAME, because the second run overwrote `test-results/`. That is a gap in method,
+not a verdict.
+
+#### Resume here — exact steps, expected outcomes
+
+```bash
+# 1. Both arms, capturing NAMES this time. The image swap needs no rebuild:
+#    jtoye-frontend:node24-test already exists locally (built 2026-07-31).
+cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
+docker tag jtoye_oaas_2026-frontend:latest jtoye_oaas_2026-frontend:pre-node24   # SAFETY TAG FIRST
+docker tag jtoye-frontend:node24-test jtoye_oaas_2026-frontend:latest
+docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate frontend
+docker exec jtoye-frontend node --version        # EXPECT v24.18.1, not v20.20.2
+
+cd frontend
+export PLAYWRIGHT_BASE_URL=http://localhost:3000
+export E2E_VENDOR_PASSWORD=$(grep -E '^KC_SEED_USER_PASSWORD=' ../.env | cut -d= -f2-)
+npx playwright test --reporter=json > /tmp/node24.json      # EXPECT ~29 failed
+# restore the control and repeat into /tmp/node20.json      # EXPECT ~26 failed
+docker tag jtoye_oaas_2026-frontend:pre-node24 jtoye_oaas_2026-frontend:latest
+docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate frontend
+docker exec jtoye-frontend node --version        # EXPECT v20.20.2
+
+# 2. Diff the failing test TITLES, not the counts:
+jq -r '.suites[].suites[]?.specs[]? | select(.ok==false) | .title' /tmp/node24.json | sort > /tmp/f24
+jq -r '.suites[].suites[]?.specs[]? | select(.ok==false) | .title' /tmp/node20.json | sort > /tmp/f20
+comm -23 /tmp/f24 /tmp/f20      # fails ONLY on 24 — the candidates
+comm -13 /tmp/f24 /tmp/f20      # fails ONLY on 20 — if non-empty, it is FLAKE, not a regression
+
+# 3. Re-run each candidate 3x on BOTH stacks: `npx playwright test -g "<title>" --repeat-each 3`
+#    Consistent fail on 24 + consistent pass on 20 = real regression -> hold #402, investigate.
+#    Anything else = flake -> #402 is safe on this evidence.
+```
+
+**ALWAYS restore the stack**: the running image must end as main's build
+(`sha256:b09b1f2f…` as of 2026-07-31) with `check-runtime-freshness` rc=0. It was verified restored
+at the end of this session, and the `pre-node24` safety tag was removed.
+
+**Separately, and worth its own issue:** a 26-failure E2E baseline on main is a standing problem
+that no gate reports. CI's `Frontend E2E (public surfaces)` job passes because it runs a *subset*.
+Nobody is watching the other 102.
