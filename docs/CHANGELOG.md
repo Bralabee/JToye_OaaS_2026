@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Customer sign-in was CSP-blocked, and an unwatched E2E suite hid it (#408) — 2026-08-01
+
+Two thirds of #404's "27 of 128 Playwright tests fail on clean `main`" turned out not to be product defects at all — and repairing the tests that *were* stale exposed a live defect underneath: **customers could not sign in or register at all.**
+
+#### Fixed
+- **The CSP never learned about the realm split.** #382 split staff (`jtoye-dev`) and customers (`jtoye-customers`) into two Keycloak realms, but `middleware.ts` fed only `NEXT_PUBLIC_KEYCLOAK_URL` into `buildCsp`. The browser blocked the customer token exchange, so registration *succeeded* — enabled users landed in `jtoye-customers` — and only then did sign-in die with "Authentication failed. Please try again.", leaving the shopper with an account they could not use.
+- **Listing the realm was not enough — a CSP source with a path matches EXACTLY unless it ends in `/`.** After the customer realm was added, the browser still blocked the request *while naming that realm in the directive it was enforcing*: the bare form never covered `/realms/jtoye-customers/protocol/openid-connect/token`. Each realm is now emitted bare **and** trailing-slash. A bare *origin* already matches every path and is emitted unchanged, so origin-configured deployments see no CSP change (the header snapshot still passes untouched).
+- **The staff realm carried the same latent bug**, invisible only because NextAuth exchanges tokens server-side where CSP does not apply, while the customer flow does PKCE in the browser. Both fixed, rather than leaving a trap for whoever moves vendor auth client-side.
+- **Six specs defaulted to a password that cannot authenticate.** `?? "password123"` — a literal `onboarding-blocked-flow.spec.ts` had already removed with the note "it fails against the re-imported realm". A wrong password is not a missing one, so nothing skipped: each test submitted it, Keycloak refused, and it timed out ~21s later, indistinguishable in the report from a broken dashboard. The credential now lives in `e2e/vendor-credentials.ts` with an **empty** default, and `skipWithoutVendorPassword()` skips with a message naming the remedy.
+- **`storefront-flows.spec.ts` asserted pre-#382 behaviour throughout** — role=button locators for controls that are now `<Link>`s, a nav link renamed "Browse" → "Shops", a checkout that added the wrong items and then waited 60s on a correctly-disabled "Place order", and a SafeImage assertion that failed because all seven seeded products now *have* photos.
+
+#### Notes
+- **A structural check passed over a dead feature, which is why this needed a browser.** After the first fix `curl -I` showed the customer realm in the header and a unit test asserted it — and sign-in was still completely broken. Only running the flow found the path-matching rule. CLAUDE.md's fifth dimension, exactly.
+- **One assertion could not fail.** `expect(button:has-text("Sign in")).not.toBeVisible()` matched nothing whether signed in or out, so it passed unconditionally — worse than a failing test, because it read as cover for an invariant nothing checked. Rewritten as a link-based `toHaveCount(0)`, it is the assertion that caught the CSP defect.
+- Measured by TEST NAME, never by count (#404 records the suite is not stable to ±3): two full-suite arms differing only in the vendor credential gave **55 → 20** failures, **37 fixed by the credential alone**, and **18 persisting in both arms**. The count moved 13→14 in `storefront-flows` while its persistent set was unchanged at 12 — a flake swapping projects between arms.
+- Proven A/B on the same spec, machine and Keycloak, only the runtime differing: `:3100` branch build → Customer Auth **4 passed**; `:3000` compose serving `main` → **2 passed, 2 FAILED**. `storefront-flows` overall: 12 persistent failures → **26 passed / 2 skipped**, the two stragglers passing 4/4 re-run off a loaded machine.
+- **Provenance stated deliberately** (the §0.2 lesson): `:3100` is a *branch* build. The compose stack on `:3000` still serves `main` and needs a rebuild after merge.
+- Still open under #404: CI runs `e2e/public-layout.spec.ts` only — 2 of 128 tests; and `kitchen-flow` ×2, `media-review-320` ×2 (failing *correctly*, on its own anti-vacuity guard) and `webhooks-flow` ×2 remain, with mechanisms recorded rather than guessed.
+
 ### H-3 deadlocked itself — the handoff update was the one thing that could not clear it (#403) — 2026-07-31
 
 `check-handoff-contract.sh`'s H-3 computed `LAST_TOUCH` from `BASE_REF`, so it asked *"how far has the base moved since **the base** last touched `HANDOFF.md`"* — **a question no pull request can change**, because its commit is not on the base until it merges. Once `main` exceeded `MAX_PRS_BEHIND` (3), every PR went red, including the handoff update that was the only thing able to clear it. `docs-freshness` is a required check, so this was a hard block.
