@@ -550,11 +550,21 @@ test.describe("Customer Auth", () => {
     // the link form correctly reports 1.
     await expect(page.locator("nav").getByRole("link", { name: "Sign in" })).toHaveCount(0)
 
-    // Sign out should be visible
+    // Sign out should be visible — this is the signed-in tell at every width.
     await expect(page.locator('button[title="Sign out"]')).toBeVisible()
 
-    // My Orders should now be visible
-    await expect(page.locator('nav >> text=My Orders')).toBeVisible()
+    // "My Orders" is on the desktop link row (`hidden sm:flex`); below sm it
+    // lives behind the hamburger. Assert it in BOTH places rather than only
+    // where the viewport happens to expose it — skipping on mobile would leave
+    // the smaller viewport, where the nav is most likely to lose a destination,
+    // completely unchecked.
+    const width = page.viewportSize()?.width ?? 0
+    if (width >= 640) {
+      await expect(page.locator("nav").getByRole("link", { name: /my orders/i }).first()).toBeVisible()
+    } else {
+      await page.locator("nav").getByRole("button", { name: /open menu/i }).click()
+      await expect(page.getByRole("link", { name: /my orders/i }).first()).toBeVisible()
+    }
   })
 })
 
