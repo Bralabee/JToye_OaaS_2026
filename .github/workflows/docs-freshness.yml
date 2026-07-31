@@ -50,3 +50,15 @@ jobs:
       - name: Verify documented claims match their sources (claim-gate engine)
         if: always()
         run: bash scripts/check-claims.sh
+      # docs/CHANGELOG.md was the one doc NOTHING read. The four steps above open
+      # CLAUDE.md, AGENTS.md, README.md, the .planning/codebase docs, k8s/DEPLOYMENT.md
+      # and terminal-states.yaml — and not it. So it drifted 24 PRs deep (last entry
+      # #363, nine further feat/fix PRs merged) with every one of those steps green.
+      # Backfilled in #392. This asserts SET COVERAGE — every merged feat/fix PR is
+      # cited — which is a different shape from the claim engine's value-vs-source
+      # rules, hence its own script rather than a manifest row.
+      # It reads MERGED history (origin/HEAD), so a PR that forgets its entry goes red
+      # on the push-to-main run right after it merges.
+      - name: Verify every merged feat/fix PR is in the changelog
+        if: always()
+        run: bash scripts/check-changelog-contract.sh
