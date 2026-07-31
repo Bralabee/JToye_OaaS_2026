@@ -8,6 +8,13 @@ on:
 
 permissions:
   contents: read
+  # check-handoff-contract.sh H-2 resolves capitalised issue/PR state claims in
+  # HANDOFF.md through `gh api repos/{slug}/issues/{n}`. That path serves BOTH
+  # issues and pull requests, so both scopes are required. Without them the gate
+  # VOIDs at exit 2 (unverified) rather than passing — it never reports an
+  # unresolvable claim as clean.
+  issues: read
+  pull-requests: read
 
 jobs:
   check:
@@ -62,3 +69,15 @@ jobs:
       - name: Verify every merged feat/fix PR is in the changelog
         if: always()
         run: bash scripts/check-changelog-contract.sh
+      # HANDOFF.md went stale TWICE on 2026-07-31, both times under the work it was
+      # describing (#391, then #394), because nothing read it. This checks the claims
+      # that ARE mechanically checkable: the gate count, capitalised issue/PR state
+      # claims, and how far the document is behind the base branch. It deliberately
+      # does NOT gate narrative prose — the file is half live state, half history, and
+      # a gate that cannot tell them apart gets `|| true` appended to it. It therefore
+      # cannot catch semantic rot; a green run is not "the handoff is accurate".
+      - name: Verify the live claims in HANDOFF.md still hold
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-handoff-contract.sh
