@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The handoff is now gated too — but only the half a machine can read (#395) — 2026-07-31
+
+`HANDOFF.md` went stale **twice on the same day**, both times under the very work it was describing: it listed PR #383 as open and pointed at a worktree minutes after both were gone (#391), and its §5.5 called the changelog "the one thing left undone" after #392 had backfilled it and #393 had gated it (#394). Nothing read the file, so both survived until a human reread it — the same root cause as the changelog drift, and as `docs/deferred-items.md` before that.
+
+#### Added
+- **`scripts/check-handoff-contract.sh`** + **`scripts/gates/handoff-contract.conf`**, in `docs-freshness.yml`. **H-1**: every `N of N rc=0` and `EXPECT N x rc=0` claim equals the actual gate-script count — this rotted twice in one session (15 → 16 → 17) and is pure local counting. **H-2**: every **capitalised** issue/PR state claim matches the forge. **H-3**: the document is not more than `MAX_PRS_BEHIND` merged commits behind the base. **H-4**: self-tests that both extractors fire *and* decline.
+- The workflow gains `issues: read` + `pull-requests: read`, because H-2 resolves both through `gh api repos/{slug}/issues/{n}` — one path that serves issues and PRs alike.
+
+#### Notes
+- **The design problem is that `HANDOFF.md` is half live state and half history.** "§1 What landed: #381 — environment-scoped mute" is a permanent record that must never be flagged; the summary table is current state that must never be wrong. A gate that cannot tell them apart fires on correct sentences and gets `|| true` appended to it. So **a claim opts in by capitalising its state word**: `#384 is now CLOSED` is checked, `#384 is closed` in prose is deliberately not. Verified as a break arm — appending lower-case prose left the run green at rc=0.
+- **What it cannot do, stated in the script, the config, the workflow and its own PASS line:** it cannot detect semantic rot. Prose that says something no longer true, carrying no capitalised state word and no stale count, passes. §5.5's case would have been caught only by H-3, and only because main happened to move. **A green run means "the mechanically checkable claims hold", not "the handoff is accurate".**
+- **The gate found its own first defect.** Adding an 18th gate script made the handoff's own "17 of 17" false, and the first run failed on exactly that — fixed in the same commit, so it is not red on arrival.
+- Falsified across **nine arms** with opening *and* closing clean arms, restores verified by content: stale gate count → 1, false capitalised state claim → 1, lower-case prose → **0** (narrative stays free), staleness budget exceeded → 1, anchor claim removed → **2** (VOID, not a free pass), config missing → 2, forge unreachable → **2** (unverified, never a pass).
+
+
 ### The changelog is now gated — the one doc nothing read (#393) — 2026-07-31
 
 `docs/CHANGELOG.md` was the only documentation file in this repo that **nothing opened**. The four existing doc gates read CLAUDE.md, AGENTS.md, README.md, the `.planning/codebase` docs, `k8s/DEPLOYMENT.md` and `terminal-states.yaml` — and not it. So it drifted **24 PRs deep** (last entry #363, nine further feat/fix PRs merged) with every one of those gates green throughout. #392 backfilled the gap; this closes it.
