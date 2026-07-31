@@ -2,7 +2,7 @@
 # Optimized for production: standalone build, minimal size
 
 # Stage 1: Builder
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -126,7 +126,7 @@ RUN set -eu; \
 RUN npm run build
 
 # Stage 2: Runner
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 # ---------------------------------------------------------------------------
 # Trivy image gate (.github/workflows/ci-cd.yaml:721 — CRITICAL,HIGH,
@@ -148,13 +148,23 @@ FROM node:20-alpine AS runner
 # Measured against the gate's exact flags (severity CRITICAL,HIGH,
 # ignore-unfixed, exit-code 1). BOTH halves are required — neither alone passes:
 #
+# The four-arm table below was measured on node:20-alpine, the base at the time.
+# It is kept as the record that established each half is load-bearing:
+#
 #   node:20-alpine as-is        -> exit 1, 2 finding groups
 #   apk upgrade only            -> exit 1, 1 group (npm's bundle remains)
 #   rm -rf npm only             -> exit 1, 1 group (openssl remains)
 #   both (this change)          -> exit 0, 0 findings
 #
-# Do not "tidy" either half away: each was shown to be load-bearing by removing
-# it and watching the gate fail.
+# RE-MEASURED on node:24-alpine (alpine 3.24.1) 2026-07-31, same gate flags:
+#   both (this change)          -> exit 0, 0 findings
+# Only the combined arm was re-run. The three single-arm results above have NOT
+# been reproduced on 24, so treat them as history, not as a current claim about
+# this base — if you need to know whether a half is still load-bearing here,
+# remove it and watch the gate, exactly as the original measurement did.
+#
+# Do not "tidy" either half away on the strength of the 0-findings line alone:
+# that is the arm where both are present.
 # ---------------------------------------------------------------------------
 RUN apk --no-cache upgrade libcrypto3 libssl3 \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx

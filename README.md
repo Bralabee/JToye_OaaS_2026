@@ -271,7 +271,7 @@ Database schema version: **V60** (Flyway).
 ### Prerequisites
 
 - **Java 21** (Eclipse Temurin recommended)
-- **Node.js 20+** (with npm)
+- **Node.js 24+** (with npm)
 - **Go 1.25+**
 - **Docker & Docker Compose**
 

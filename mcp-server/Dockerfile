@@ -1,10 +1,10 @@
-# Multi-stage Dockerfile for the MCP server (Node 20, TypeScript ESM)
-# Mirrors frontend/Dockerfile's canonical node:20-alpine builder->runner shape.
+# Multi-stage Dockerfile for the MCP server (Node 24, TypeScript ESM)
+# Mirrors frontend/Dockerfile's canonical node:24-alpine builder->runner shape.
 # Divergence from the frontend analog: plain `tsc -> dist/` output (no Next.js
 # standalone bundle) and EXPOSE 9100 (not 3000).
 
 # Stage 1: Builder — compile TypeScript to dist/
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Runner — production runtime, non-root, prod deps only
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 
