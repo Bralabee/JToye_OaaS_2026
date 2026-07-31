@@ -320,9 +320,105 @@ for entry in "${KNOWN_DATALESS[@]}"; do
 done
 
 # =================================================================================
+# SELF_HEALING — rules whose selector is empty UNTIL THE CONDITION THEY DETECT OCCURS
+#
+# "Selector matches zero series" was one verdict covering three different situations,
+# and only one of them is a fault. Measured, not argued (all four via /api/v1/query):
+#
+#   (sum(rate(X{status=~"5.."}[5m])) by (service) / sum(rate(X[5m])) by (service)) * 100
+#     numerator present -> 1 sample      numerator absent -> 0 samples
+#   the DENOMINATOR alone, sum(rate(X[5m])) by (service) -> 1 sample (survives a restart)
+#   increase(X{...}[30m]) < 1  with X absent -> 0 samples
+#
+# The three situations:
+#
+#   SELF-HEALING   HighErrorRate. Fires on a HIGH ratio. With no 5xx the numerator is
+#                  empty and the rule is correctly silent -- there is nothing to report.
+#                  The instant a 5xx is served the series is created, the expression
+#                  evaluates, and the rule fires on its own. It is not blind; it is
+#                  quiet, and it wakes itself.
+#   ABSENCE-DETECTOR  NoOrdersCreated. Fires on `< 1`, i.e. on the ABSENCE of data. With
+#                  the series gone it yields 0 samples forever, so the one condition it
+#                  exists to detect is exactly the one it cannot see. GENUINELY blind,
+#                  and it needs seeding (scripts/seed-order-metric.sh).
+#   DEAD           StompBrokerLag's class: a label that exists on no series of the metric
+#                  family, so the filter can never match no matter what happens.
+#
+# Conflating the first two is what issue #384 did, and this list is the correction.
+#
+# WHY NOT KNOWN_DATALESS. Its hygiene FAILS an entry "whose selectors NOW match series"
+# -- correct for a temporary defect, wrong here, because for a self-healing rule BOTH
+# states are legitimate. A HighErrorRate entry there would oscillate: stale after any
+# 5xx, required again after any restart. The KNOWN_DATALESS header's warning against
+# re-adding entries stands; this is a different mechanism, not a way around it.
+#
+# THIS IS NOT A BLANK CHEQUE. Two structural properties are ASSERTED per entry, so the
+# dangerous misclassification -- calling an absence-detector self-healing, which would
+# silently retire a real blindness -- is mechanically impossible:
+#
+#   S-1  the rule must NOT fire on absence. Its comparison must be `>`/`>=`, never
+#        `<`, `<=`, `== 0` or `absent(`. This is the check that keeps NoOrdersCreated
+#        out of this list even if someone adds it.
+#   S-2  the metric FAMILY must match >= 1 series. If the whole family is missing the
+#        scrape target is down, which is a real fault and not self-healing.
+#
+# An entry with an empty reason or owner FAILS, and a duplicate FAILS -- same hygiene as
+# KNOWN_DATALESS. Deliberately absent: the "now matches, so remove it" staleness rule,
+# for the reason above.
+#
+# Format: AlertName|reason|owner
+# ---------------------------------------------------------------------------------
+SELF_HEALING=(
+  "HighErrorRate|Fires on a HIGH 5xx ratio, so an empty numerator is correct silence rather than blindness: with no server errors there is nothing to report, and the first 5xx creates the series and makes the rule evaluable within one scrape. The denominator (the unfiltered counter) survives a restart and was measured present, so the family is live. Seeding a 5xx to satisfy this gate would manufacture the exact signal the alert exists to detect. Issue #384.|maintainer"
+)
+
+declare -A SELF_HEALING_MAP=()
+declare -A SELF_HEALING_SEEN=()
+for entry in "${SELF_HEALING[@]}"; do
+  IFS='|' read -r sh_name sh_reason sh_owner <<<"$entry"
+  [ -n "${sh_name:-}" ] || { violation "SELF_HEALING entry is malformed: '$entry'"; continue; }
+  [ -n "${sh_reason:-}" ] || violation "SELF_HEALING '$sh_name' has an EMPTY reason"
+  [ -n "${sh_owner:-}" ]  || violation "SELF_HEALING '$sh_name' has an EMPTY owner"
+  [ -n "${SELF_HEALING_SEEN[$sh_name]:-}" ] && violation "SELF_HEALING has a DUPLICATE entry: $sh_name"
+  SELF_HEALING_SEEN[$sh_name]=1
+
+  # The exemption is granted ONLY at the end, once S-1 has passed. An earlier draft set
+  # it up front: a rule that FAILED S-1 was still counted and still bypassed M-1, so the
+  # summary read "2 self-healing" while simultaneously reporting one of them invalid — a
+  # number that did not measure its own label (the defect class of issue #385). A
+  # rejected entry must fall through to M-1 and be reported blind on its own merits.
+  printf '%s\n' "$EXTRACT" | awk -F'\t' -v n="$sh_name" '$1==n {f=1} END {exit !f}' \
+    || { violation "SELF_HEALING names '$sh_name', which is not a live rule in $RULES_FILE — STALE entry, remove it"; continue; }
+
+  # S-1 — must not be an absence detector. Read from the rule's own expression.
+  sh_expr="$(awk -v n="$sh_name" '
+      $0 ~ "alert:[[:space:]]*"n"[[:space:]]*$" { grab=1; next }
+      grab && /^[[:space:]]*(- alert:|labels:|for:|annotations:)/ { grab=0 }
+      grab { print }
+    ' "$RULES_FILE")"
+  sh_ok=1
+  if [ -z "$sh_expr" ]; then
+    violation "SELF_HEALING '$sh_name': could not read its expression from $RULES_FILE — refusing to certify a rule whose shape cannot be inspected"
+    sh_ok=0
+  elif grep -qE '(<=|<|==[[:space:]]*0|absent\()' <<<"$sh_expr"; then
+    violation "S-1 SELF_HEALING '$sh_name' fires on ABSENCE (its expression contains <, <=, ==0 or absent()). An absence-detector CANNOT be self-healing: the empty case is precisely what it must detect. This is the NoOrdersCreated class — it needs a seed, not an exemption."
+    sh_ok=0
+  fi
+  # Granted ONLY when every assertion above passed. A rejected entry must fall through
+  # to M-1 and be reported blind on its own merits — an earlier draft granted it here
+  # unconditionally, so a rule that FAILED S-1 was still counted and still bypassed M-1.
+  # The summary then read "2 self-healing" while reporting one of them invalid: a number
+  # that did not measure its own label, which is the defect class of issue #385.
+  if [ "$sh_ok" -eq 1 ]; then
+    SELF_HEALING_MAP["$sh_name"]=1
+  fi
+done
+
+# =================================================================================
 # M-1 — every live rule's selectors must match >= 1 series
 # =================================================================================
 declare -A RULE_EMPTY=()
+SELF_HEALED=0
 CHECKED=0
 while IFS=$'\t' read -r rule sel; do
   [ -n "$rule" ] || continue
@@ -330,6 +426,21 @@ while IFS=$'\t' read -r rule sel; do
   count="$(query_count "$sel")"
   if [ "$count" -lt 1 ]; then
     RULE_EMPTY["$rule"]="${RULE_EMPTY["$rule"]:-}${sel}"$'\n'
+    # SELF_HEALING: the empty selector is expected and resolves itself. S-2 is asserted
+    # HERE, against the live runtime, because it is a property of the metric family and
+    # not of the rule text: strip the label filter and require the bare family to exist.
+    # A missing family means the scrape target is down — a real fault, never self-healing.
+    if [ -n "${SELF_HEALING_MAP[$rule]:-}" ]; then
+      family="$(sed -E 's/\{[^}]*\}//g' <<<"$sel")"
+      family_count="$(query_count "$family")"
+      if [ "$family_count" -lt 1 ]; then
+        violation "S-2 SELF_HEALING '$rule' — the metric FAMILY '$family' matches ZERO series, not just the filtered selector. That is a down scrape target, not a rule waiting for its condition, and the exemption does not apply."
+      else
+        SELF_HEALED=$((SELF_HEALED + 1))
+        echo "  M-1   '$rule' selector empty — SELF-HEALING (family '$family' live, ${family_count} series); it wakes on the first matching event. #384"
+      fi
+      continue
+    fi
     if [ -z "${DATALESS_MAP[$rule]:-}" ]; then
       hint=""
       # The commonest cause of this red, and the one whose fix is least obvious: a
@@ -382,6 +493,7 @@ done
 # =================================================================================
 echo "  live rules : $LIVE_RULES"
 echo "  selectors  : $SELECTORS extracted, $CHECKED queried (incl. ${#DORMANT_RULES[@]} dormant)"
+echo "  self-heal  : $SELF_HEALED rule(s) empty-but-self-healing (#384), ${#SELF_HEALING[@]} declared"
 echo "  exemptions : ${#KNOWN_DATALESS[@]} KNOWN_DATALESS, ${#DORMANT_RULES[@]} DORMANT_RULES"
 
 if [ "$VIOLATIONS" -gt 0 ]; then
