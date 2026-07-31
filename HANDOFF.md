@@ -9,14 +9,14 @@ repeated.
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **4 PRs merged this session:** #381, #382, #386, #387. **2 issues opened:** #384, #385. HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **#383** `feat/allergen-consent-notice` — the concurrent session's, not mine |
+| Open PRs | **none.** #383 and #389 were merged by a later housekeeping session — see §5 |
 | Open issues | **60** |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3). **2 active alerts, both `NoOrdersCreated`, both routed to `mute-null`** — the mute working, §1.1 |
-| Gates | **16 of 16 rc=0 right now** — but `check-alert-metrics` is green only **transiently**; see §2.1 before believing it. #384 is NOT closed |
+| Gates | **16 of 16 rc=0** (re-measured 2026-07-31 10:40 BST). **#384 is now CLOSED** by #389 — the transient-green caveat that stood here is superseded; see §2.1 and §5 |
 | Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · `ReservedSlugException` present inside that jar |
 | Project version | **2.3.0** (`build.gradle.kts:15`). No `v2.3` tag |
-| Test baseline | `docs/metrics.json` **1868** (was 1851) — java 1264, jest 436, schema V60 |
-| Dev DB | **25 orders, 3 `metric-seed@jtoye.local`** — one is mine (23:52), two predate this session |
+| Test baseline | `docs/metrics.json` **1872** (was 1868) — java 1264, jest **440** / 65 files, schema V60 |
+| Dev DB | **28 orders** in db `jtoye` (not `jtoye_dev`), **0** `metric-seed%` customers — measured 2026-07-31 10:40. One order is §5.3's seed (`ORD-…-DD8DA495`, a real guest order via the storefront). The prior row's "25 orders / 3 metric-seed" no longer holds and the delta is **unexplained** — do not carry either number forward without re-measuring |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
 > §4 pairs every fact with the command that produces it: **run them, don't read them.**
@@ -27,8 +27,10 @@ repeated.
 
 ### 0.1 A second session shares this checkout — still true
 
-`/home/sanmi/IdeaProjects/JToye_OaaS_2026` is driven by another session. Right now it holds a
-worktree at `.../wt-notice` on `feat/allergen-consent-notice` (**PR #383, open**).
+`/home/sanmi/IdeaProjects/JToye_OaaS_2026` is driven by another session. It previously held a
+worktree at `.../wt-notice` on `feat/allergen-consent-notice`. **That worktree is gone** — #383 was
+merged and both it and `.../wt-384` were removed after their branches proved merged (§5). The
+warning itself stands: assume a second session shares this checkout.
 
 The previous handoff records the sharp version of this warning: a branch switch between an edit and
 a commit **captured one of my commits onto their branch**, and the only visible symptom was
@@ -203,7 +205,14 @@ per-repo `core.hooksPath` *replaces* the global directory and would disable the 
 
 ## 2. Open items
 
-### 2.1 `HighErrorRate` — #384. The gate is green RIGHT NOW, and that proves nothing
+### 2.1 `HighErrorRate` — #384. **CLOSED by #389.** The analysis below is kept as the reasoning
+
+> **Status update (housekeeping, 2026-07-31).** #384 is **CLOSED**; #389 fixed it by teaching
+> `check-alert-metrics` to distinguish a **self-healing** empty selector from a **blind** one.
+> `HighErrorRate` is now a *declared* self-healing rule — an empty 5xx counter is the correct
+> resting state of a healthy platform, not a violation. The gate reports
+> `self-heal : 0 rule(s) empty-but-self-healing (#384), 1 declared`.
+> Everything below is the analysis that motivated the fix; it is no longer an open item.
 
 **Read this before concluding #384 is fixed.** At the time of writing `check-alert-metrics` is
 rc=0 — because three genuine 500s happened to be served after the rebuild:
@@ -251,6 +260,17 @@ checkout, rc=1. Fixed with `scripts/check-dependency-horizons.sh --refresh`. Sam
 Trivy daily-DB time-bomb: expect it again, and diagnose against clean `main` before assuming your
 branch caused it.
 
+> **Recurred on #383, with a different remedy — read this before running `--refresh`.** The refresh
+> above landed in `main` as part of #381 (`6f4e5fd5`). #383 had been cut earlier and was **six
+> commits behind base**, so it still carried the stale `eol_date: "false"` and failed the identical
+> gate a day later. Running `--refresh` on the branch would have been a *second, competing* edit to
+> the same manifest row; the correct fix was `git merge origin/main`.
+> **The tell:** a sibling PR (#389) passed the same gate the same morning. When that is true the
+> gate is not flaky and `main` is not broken — **your branch is behind base**. Check
+> `git log <branch>..origin/main` and diff the manifest row before editing anything.
+> Note `Branch Not Behind Base` is no protection: it passed on #383 when its CI ran, and `main`
+> moved six commits underneath it afterwards. It only ever means "was not behind *at that time*".
+
 ### 2.4 Carried forward, still true
 
 - **`NoOrdersCreated` has two symptoms with two different fixes.** Gate red → `bash
@@ -271,7 +291,8 @@ branch caused it.
 
 ## 3. Environment state
 
-- **JToye:** `main`, clean. Another session holds `feat/allergen-consent-notice` (#383).
+- **JToye:** `main`, clean. **One branch, one worktree** — every merged feature branch was deleted
+  on 2026-07-31 (§5). No other session holds a worktree in this checkout.
 - **Live stack:** 17 jtoye containers. **15 healthy; `jtoye-redis-exporter` and
   `jtoye-postgres-exporter` report no health status because they define no healthcheck** (their
   images are scratch-based — see the comment in `infra/monitoring/docker-compose.monitoring.yml`).
@@ -318,9 +339,13 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 15 x rc=0, and check-alert-metrics rc=1 on HighErrorRate (issue #384).
-# If check-alert-metrics fails on NoOrdersCreated instead, that is the rebuild-blindness
-# case, not #384: run `bash scripts/seed-order-metric.sh` (no FORCE).
+# EXPECT 16 x rc=0 — ALL of them. Updated 2026-07-31: #384 is closed by #389, so
+# check-alert-metrics no longer stays red on HighErrorRate (it is now a declared
+# self-healing rule). The old expectation of "15 x rc=0 + 1 red" is superseded.
+# If check-alert-metrics fails on NoOrdersCreated, that is the rebuild-blindness case:
+# run `bash scripts/seed-order-metric.sh` (no FORCE). Rebuilding core-java destroys the
+# Micrometer request counter, so EXPECT this after any rebuild — including a rebuild of
+# another service that recreates core-java as a dependency.
 
 # 3. The sign-in split, against the runtime the USER sees — §0.2 is about getting this wrong.
 curl -s http://localhost:3000/auth/signin | grep -o 'Vendor sign in'          # expect a hit
@@ -372,3 +397,71 @@ bash scripts/check-runtime-freshness.sh    # then PROVE it by content, per §0.2
 merged branches unmerged. Use PR state as the authority and `-D` only where the forge proved the
 merge. `gh pr merge --delete-branch` also cannot delete a branch a worktree holds — remove the
 worktree first, from the main checkout.
+
+---
+
+## 5. Housekeeping session, 2026-07-31 ~08:40–10:40 BST
+
+Merged the two open PRs, cleared every merged branch, and restored the runtime and the monitoring
+the merges disturbed. No feature work.
+
+### 5.1 What merged
+
+- **#389** `fix/alert-metrics-self-healing` → `227e4e32`. Closes **#384**: `check-alert-metrics` now
+  separates a *self-healing* empty selector from a *blind* one, so a healthy platform's empty 5xx
+  counter is no longer a violation (§2.1).
+- **#383** `feat/allergen-consent-notice` → `29e6132f`. Its `Operational Contracts` failure was
+  **not** its own: the branch was six commits behind base and carried a stale `redis` horizon.
+  Fixed by merging `main`, not by `--refresh` — the reasoning is in §2.3, which is the part of this
+  document most likely to be needed again.
+
+The merge collided on the test counts. Resolved by **regenerating, never arithmetic**: take `main`'s
+text, `bash scripts/docs-freshness.sh --write`, then let `check-doc-metrics.sh` name each prose line
+to edit. That produced **1872** = `main`'s 436 Jest blocks / 64 files + the 4 blocks in #383's new
+test file. Guessing would have been wrong in both directions.
+
+### 5.2 Branch and worktree cleanup — seven branches, all verified before deletion
+
+`main` is now the **only** branch and the **only** worktree, locally and on the remote.
+
+Ancestry is the wrong authority here (see the squash-merge note in §4). Two checks per branch,
+**both shown able to return NO before five yeses were believed**:
+
+1. remote tip `==` the PR's `headRefOid` → nothing was pushed after the merge;
+2. a commit in `main` whose subject ends `(#NNN)` → the squash landed.
+
+A first attempt — "does `main` still differ from this branch on the files it touched" — produced
+**false negatives** and must not be reused: three merged branches flagged unsafe purely because a
+*later* commit had touched the same files (`HANDOFF.md`, rewritten by #388, is the clearest case).
+It measured "has anything changed since", not "did this land".
+
+### 5.3 Runtime and monitoring restored — both were disturbed BY the merges
+
+- **Frontend was stale the moment #383 merged.** The post-merge hook from #387 caught it
+  (`[image-not-rebuilt]`), which is the first time that hook has paid for itself. Rebuilt and
+  **recreated**; image id `fcee04bd` → `b09b1f2f`, and the Art. 9 copy read back out of the running
+  container in both the SSR chunk and the client bundle. `check-runtime-freshness` 4/4 FRESH.
+- **`NoOrdersCreated` went blind as a side effect.** Rebuilding the frontend recreated `core-java`
+  as a dependency, which destroys the Micrometer request counter. `check-alert-metrics` correctly
+  went rc=1 on `NoOrdersCreated`; `bash scripts/seed-order-metric.sh` restored it (series 0 → 1,
+  `HTTP 201 ORD-00000000-20260731-DD8DA495`). **Expect this after any rebuild, including one that
+  only names another service.** §4's gate expectation was updated accordingly.
+- **Browser-verified**, not just bundle-verified: real Keycloak sign-in, the notice visible in the
+  same dialog as the 14 allergen checkboxes and above them, 9/9 checks — with a break arm returning
+  rc=1 and a closing clean arm returning rc=0.
+
+### 5.4 State at hand-off
+
+- **16 of 16 gates rc=0.** Better than this document previously claimed possible (`15 + 1 red`).
+- Go: `gofmt` clean, `vet` clean, `mod tidy` no drift, `test -race -count=1` all five packages
+  fresh (not `(cached)`), 0 data races. Frontend: `npm run lint` 0 errors / 28 warnings (baseline),
+  `npm run build` rc=0 with TypeScript clean.
+- **Open: #385 only** (§2.2 — `H-5` label/number contradiction). #384 is closed.
+
+### 5.5 The one thing left undone
+
+**`docs/CHANGELOG.md` has not been updated since #363** (`ccb15e23`). Nothing gates it, which is why
+it drifted. By the file's own convention — `feat`/`fix` PRs get entries, `docs(handoff)`/`docs(adr)`
+do not — **nine** merged PRs are missing entries: #368, #370, #376, #380, #381, #382, #383, #387,
+#389. Deliberately left for a session that can write them from each PR's own body rather than
+invent them. A claim-gate rule row would stop it recurring.
