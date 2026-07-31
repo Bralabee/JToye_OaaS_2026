@@ -135,7 +135,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - RabbitMQ: 4.3.4-management-alpine
 - MinIO: latest
 - Go: 1.25-alpine
-- Node.js: 20+
+- Node.js: 24+
 - Next.js: 16.2.12
 ## Performance Tuning
 - Connection pooling: HikariCP
