@@ -37,6 +37,58 @@ const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
 const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
 
 /**
+ * The mobile tab bar in the LIVE document.
+ *
+ * `getByTestId("mobile-tab-bar")` is NOT safe here. While React is still
+ * streaming, a suspended segment's HTML is parked in a `<div hidden id="S:n">`
+ * staging buffer appended to `<body>` — and that buffer holds a SECOND copy of
+ * the entire dashboard shell, tab bar included. A raw test-id query matches
+ * both, and Playwright strict mode then fails with "resolved to 2 elements".
+ *
+ * Measured 2026-07-31 against the live stack: **8 such failures in one
+ * whole-file run, and 0 when the same tests run in isolation** — under light
+ * load the stream finishes before the assertion, so the staged copy is already
+ * gone. That is the entire reason these tests looked like a duplicate-nav
+ * product bug; there is no duplicate nav.
+ *
+ * At every one of those failures the counts were `byTestId=2` but **`byRole=1`**:
+ * the staged copy is inside `[hidden]`, so it is not in the accessibility tree.
+ * Querying by ROLE is therefore both immune to the staging buffer *by
+ * construction* and the semantically honest assertion — what these tests mean is
+ * "the Primary navigation is visible at this width", not "an element carrying
+ * this test id exists somewhere in the document, including React's scratch space".
+ *
+ * Deliberately NOT fixed with `.first()`: that would silence the strict-mode
+ * error while still allowing the assertion to bind to the hidden staged copy,
+ * which is exactly the class of change that keeps passing through a real
+ * regression.
+ */
+function tabBarOf(page: Page) {
+  return page.getByRole("navigation", { name: "Primary" })
+}
+
+/**
+ * Query root for the LIVE document, excluding React's streaming staging buffers.
+ *
+ * The buffer duplicates the **entire dashboard shell**, not just the tab bar —
+ * so the sidebar wordmark, `<main>`, the shop switcher and everything else in
+ * the shell are doubled too. Fixing only the tab-bar locator moved the failure
+ * rather than removing it: a first pass here cut the strict-mode violations from
+ * 8 to 7, and all 7 survivors were `getByText('OaaS Platform')`, the sidebar
+ * subtitle. Every shell-scoped query therefore goes through this root.
+ *
+ * `body > div:not([hidden])` is the right shape because React appends its
+ * staging buffers as DIRECT children of `<body>` carrying the `hidden`
+ * attribute (`<div hidden id="S:0">`), while the real shell is a direct child
+ * without it. This keeps `toBeHidden()` assertions meaningful: an element that
+ * is in the live tree but CSS-hidden still matches, so the sidebar-is-hidden
+ * check can still fail if the sidebar ever becomes visible at 390px.
+ */
+function live(page: Page) {
+  return page.locator("body > div:not([hidden])")
+}
+
+/**
  * Perform the real vendor sign-in (SSO button → Keycloak, or a credentials
  * form if the deployment exposes one). Mirrors vendor-refund-flow.spec.ts.
  * Skips cleanly if no known sign-in affordance is present.
@@ -264,17 +316,17 @@ test.describe("Dashboard mobile shell (390px)", () => {
       await page.goto(`${BASE}${route.path}`, { waitUntil: "domcontentloaded" })
 
       // The fixed bottom tab bar is present and visible on mobile.
-      const tabBar = page.getByTestId("mobile-tab-bar")
+      const tabBar = tabBarOf(page)
       await expect(tabBar).toBeVisible()
 
       // The 256px desktop sidebar is hidden below md — its unique "OaaS
       // Platform" wordmark subtitle must not be visible.
-      await expect(page.getByText("OaaS Platform")).toBeHidden()
+      await expect(live(page).getByText("OaaS Platform")).toBeHidden()
 
       // Title readability: the page <h1> is given room (not squeezed into a
       // one-word-per-line column) and does not overflow horizontally.
       if (route.titleHasH1) {
-        const h1 = page.locator("main h1").first()
+        const h1 = live(page).locator("main h1").first()
         await expect(h1).toBeVisible({ timeout: 10_000 })
         const metrics = await h1.evaluate((el) => {
           const cs = getComputedStyle(el)
@@ -304,7 +356,7 @@ test.describe("Dashboard mobile shell (390px)", () => {
 
   test("/dashboard/onboarding is not regressed (known heading renders)", async ({ page }) => {
     await page.goto(`${BASE}/dashboard/onboarding`, { waitUntil: "domcontentloaded" })
-    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible()
+    await expect(tabBarOf(page)).toBeVisible()
     // The onboarding page shows one of its known headings ("Take your shop
     // live" for the create form, or "Go live" for an in-progress record).
     await expect(
@@ -332,13 +384,13 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" })
 
     // The fixed bottom tab bar is the 375px nav.
-    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible()
+    await expect(tabBarOf(page)).toBeVisible()
     // The 256px desktop sidebar is hidden below md (its "OaaS Platform" subtitle).
-    await expect(page.getByText("OaaS Platform")).toBeHidden()
+    await expect(live(page).getByText("OaaS Platform")).toBeHidden()
     // The shop-context switcher is reachable in the md:hidden mobile top bar
     // (the sidebar's copy is display:none below md, so scope to <main>).
     await expect(
-      page.locator("main").getByTestId("shop-switcher").first()
+      live(page).locator("main").getByTestId("shop-switcher").first()
     ).toBeVisible({ timeout: 10_000 })
 
     // No horizontal overflow — the whole document fits the 375px viewport
@@ -346,7 +398,7 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
     const geom = await page.evaluate(() => ({
       docScrollWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
-      mainWidth: (document.querySelector("main") as HTMLElement | null)?.clientWidth ?? 0,
+      mainWidth: (document.querySelector("body > div:not([hidden]) main") as HTMLElement | null)?.clientWidth ?? 0,
     }))
     expect(geom.docScrollWidth).toBeLessThanOrEqual(geom.viewportWidth + 1)
     // Content spans (near) full width — the sidebar steals nothing at 375px.
