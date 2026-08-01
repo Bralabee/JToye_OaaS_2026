@@ -14,7 +14,7 @@ written. Its §0.1 (concurrent session) is carried forward; its instrument-failu
 |---|---|
 | `JToye_OaaS_2026` | **3 PRs merged: #415, #416, #417.** 1 issue filed (#418). HEAD deliberately **not** quoted — see the note below |
 | Open PRs | **none.** #415, #416 and #417 are all MERGED |
-| Open issues | **61.** #412 and #413 are CLOSED. **#404 stays OPEN deliberately** — its three failure classes are fixed, its CI-coverage gap is not (§2.2). **#418 is OPEN** — a flaky required check, see §2.1 |
+| Open issues | **61.** #412, #413 and #404 are all CLOSED. **#418 and #420 are OPEN** — a flaky required check (§2.1) and the E2E coverage gap #404 left behind (§2.2) |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3) |
 | Gates | **18 of 18 rc=0**, measured from the main checkout after the final merge and rebuild |
 | Runtime proof | 4/4 built services FRESH · live 429 read back as `application/problem+json;charset=UTF-8` with `retryAfterSeconds` |
@@ -118,15 +118,23 @@ they were cloned from this one.
 
 It cost roughly two hours of merge latency this session and required a manual `gh run rerun --failed`.
 
-### 2.2 #404 remains OPEN — its failures are fixed, its coverage gap is not
+### 2.2 #420 — the E2E coverage gap that #404 left behind
 
-Full Playwright run on the merged tree: **114 passed, 14 skipped, 0 failed** of 128. The skips are
-pre-existing and conditional — desktop-only GSAP scenes running under the mobile project, multi-replica
-STOMP, and refundable-order / promotion fixtures that do not exist in the dev DB. **A skip is not a
-pass**, and nothing currently reports the total as anything but green. Worth its own issue.
+#404 was CLOSED once its three **failure** classes were fixed. Two things it raised were not
+addressed, so they are now tracked separately as **#420** rather than disappearing with it:
 
-**CI still runs only `e2e/public-layout.spec.ts` — 2 of 128.** The other specs need a full stack CI
-does not have. That is the structural gap #404 documented and it is unchanged.
+- **CI runs `e2e/public-layout.spec.ts` only — 2 of 128 tests.** The other 12 specs need a full stack
+  CI does not have. Structural, not an oversight — but the consequence is that 126 of 128 E2E tests
+  never run on any PR, which is exactly how #404's broken sign-in went unnoticed.
+- **14 tests SKIP rather than pass.** Full run on the merged tree: **114 passed, 14 skipped, 0
+  failed** of 128. Playwright's summary is green and reads as "everything is verified". It is not.
+  Seven distinct tests × 2 projects: desktop-only GSAP scenes enumerated under the *mobile* project
+  (arguably a spec bug, not a missing fixture), multi-replica STOMP, and refundable-order /
+  promotion / onboarding fixtures absent from the dev DB.
+
+The suggested first step is on the issue: make the skip count **visible and bounded** so a new
+conditional skip cannot silently join the 14 — the same shape as the anti-vacuity guard in
+`media-review-320.spec.ts`, which is the only reason its own decay was ever noticed.
 
 ### 2.3 Carried forward, still true
 
