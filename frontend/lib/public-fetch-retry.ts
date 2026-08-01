@@ -48,6 +48,17 @@ export function isRateLimitError(error: unknown): boolean {
  * Honours the server `Retry-After` header (seconds) when it parses to a
  * positive number, clamped to MAX_DELAY_MS. Otherwise falls back to capped
  * exponential backoff: min(BASE_DELAY_MS * 2**attempt, MAX_DELAY_MS).
+ *
+ * ⚠ THE HEADER BRANCH DEPENDS ON SERVER CORS CONFIG (#412). The API is
+ * cross-origin, and `Retry-After` is not CORS-safelisted, so the browser hands
+ * it to script only while `cors.exposed-headers` names it. It did not until
+ * 2026-08-01, so this function had ALWAYS taken the backoff fallback in a real
+ * browser — the docstring above described an intent, not the behaviour. Nothing
+ * reported it: a silent fallback is indistinguishable from a working one, and
+ * the tests below construct the header directly so they could never see it.
+ *
+ * If `cors.exposed-headers` ever loses `Retry-After`, this silently regresses
+ * again and no test here will go red. `CorsExposedHeadersTest` is the guard.
  */
 export function getRetryDelayMs(error: unknown, attempt: number): number {
   const header = (

@@ -14,6 +14,14 @@
  * Stubbing `/media/review-queue` here would have proven only that the component
  * lays out correctly given a shape the backend might not actually send.
  *
+ * <b>Seed with `bash scripts/seed-media-review-fixtures.sh` — it is not optional,
+ * and it is not one-off.</b> The fixtures were originally hand-inserted with
+ * ABSOLUTE timestamps and decayed four days later: once `quarantine_expires_at`
+ * passed, the quarantine sweep reclaimed the bytes exactly as designed, and
+ * `redrivable` went false. The spec then failed on its own VOID guard — correctly,
+ * and that guard is the only reason this did not pass silently over an empty queue.
+ * The script writes every instant RELATIVE TO NOW so the same bomb cannot re-arm.
+ *
  * Fixtures, and what each one proves:
  *   ac55-fixture-redrivable  FAILED, bytes retained   -> Re-upload AND Re-process
  *   ac55-fixture-vetoed      FAILED, bytes reclaimed  -> Re-upload ONLY
@@ -122,7 +130,15 @@ test.describe("AC-5.5 — media review queue at 320px", () => {
     // Re-process appears on exactly the rows whose bytes are retained, and on no
     // others. Offering it elsewhere is a control that can only ever 409.
     const retainedCount = await retainedNotes.count()
-    expect(retainedCount, "VOID: no redrivable row rendered — the criterion would pass on zero").toBeGreaterThanOrEqual(1)
+    expect(
+      retainedCount,
+      "VOID: no redrivable row rendered — the criterion would pass on zero. " +
+        "Run `bash scripts/seed-media-review-fixtures.sh`. The fixtures decay by " +
+        "design: the quarantine sweep reclaims any non-ACTIVE asset once " +
+        "quarantine_expires_at passes, and MediaAssetDto derives redrivable as " +
+        "(expires_at != null && reclaimed_at == null), so a reclaimed fixture " +
+        "stops offering Re-process. This is the guard working, not a flake."
+    ).toBeGreaterThanOrEqual(1)
     await expect(reprocess).toHaveCount(retainedCount)
     expect(retainedCount, "Re-process must NOT appear on every rejected row").toBeLessThan(rejectedCount)
 
