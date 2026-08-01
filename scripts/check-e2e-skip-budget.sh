@@ -40,8 +40,9 @@
 #   Path override: E2E_REPORT=<file>
 #
 #   This gate deliberately does NOT run the suite. The suite needs the full compose
-#   stack, which CI does not have (#420), and a gate that silently runs nothing is worse
-#   than no gate. Absent report == VOID, never pass.
+#   stack, which the PER-PR runner does not stand up (#420) — the nightly job
+#   .github/workflows/e2e-nightly.yml does, and calls this gate after it. A gate that
+#   silently runs nothing is worse than no gate. Absent report == VOID, never pass.
 #
 # EXIT CODES
 #   0 = every skip is declared and within budget
