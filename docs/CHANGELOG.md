@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The three remaining #404 E2E failures were all instrument defects (#416, refs #404) — 2026-08-01
+
+Three specs, six failing tests, **zero product defects**. Two of the three were recorded in the handoff as open or unproven; establishing the mechanisms falsified one of its hypotheses outright.
+
+#### Fixed
+- **`webhooks-flow` ×2 — a nav link added two phases later stole the click.** `getByRole("link", { name: /view/i })` matched the sidebar's **"Image re[view]"** entry: accessible-name matching is SUBSTRING, and that nav item sits earlier in the DOM, so `.first()` clicked it. The run navigated to `/dashboard/media/review` and `waitForURL` timed out pointing at a page nobody asked for — which reads as a routing bug. The spec is Phase 22; `sidebar.tsx:52` arrived in Phase 24. Now anchored to the subscription's own `href`.
+- **`kitchen-flow` ×2 — the recorded hypothesis was wrong.** It was filed as *"consistent with the streaming-buffer class #406 fixed"*. `getByText(/Select shop|Test Shop/i).first()` resolved to `<option value="shop-1">Test Shop</option>`: Radix `Select` renders a visually-hidden native `<select>` for a11y beside the visible trigger, and an `<option>` is hidden BY DESIGN, so the assertion could never have passed on any stack. `Received: hidden` read as a rendering defect; the page was always fine. Now anchored to `role=combobox`, and strictly stronger — it asserts the trigger is visible AND carries the label, which the text matcher was reaching for but could not express.
+- **`media-review-320` ×2 — failing correctly, on a fixture that decayed.** All three `ac55-fixture-*` rows were hand-inserted with ABSOLUTE timestamps and `quarantine_expires_at = 2026-07-30 18:42:39Z`. When that horizon passed the quarantine sweep did exactly its job and stamped `quarantine_reclaimed_at`, and since `MediaAssetDto` derives `redrivable = expires_at != null && reclaimed_at == null`, Re-process stopped rendering. **The spec was right and the fixture was wrong.**
+
+#### Added
+- **`scripts/seed-media-review-fixtures.sh`** — re-typing the INSERT with a later date only re-arms the same bomb, so this writes every instant RELATIVE TO NOW, is idempotent on `(tenant_id, sha256)`, discovers the tenant rather than hardcoding it, and verifies by re-reading the DTO's own predicate rather than counting rows (three rows in the wrong state would pass a count). The spec's VOID message now names it at the point of failure.
+
+#### Notes
+- **The anti-vacuity guard is the only reason any of this surfaced.** *"Nothing overflowed at 320px"* is trivially true when nothing rendered — without that guard the spec would have gone green over an empty queue.
+- **A wrong hypothesis survived a whole session because nothing forced it to be checked.** `kitchen-flow` was recorded with an explicit "Hypothesis, not established" caveat, which is the right instinct; the lesson is that the caveat is no substitute for reading the failure's own locator dump, which named the exact element and settled it in one look.
+- **The break-arm revert ate two of the fixes** — a third occurrence of this trap. `git checkout` restores from the INDEX, and the spec fixes were unstaged, so the arms discarded them while reporting nothing. Caught only because restores are verified by CONTENT (`git hash-object`) and never by `git diff --stat`, which is empty both when a file is restored and when it was never written. Re-applied, then committed BEFORE the closing arm.
+- Falsified rather than observed passing: seed-script arms give clean rc=0 · past horizon rc=1 · un-aged PENDING rc=1 · absent container rc=2 (VOID) · clean rc=0; reverting each spec locator fails its own test. 8/8 green across the three specs with opening and closing clean arms.
+- The seed writes DATABASE state only, no MinIO object, so clicking Re-process would still fail at the storage layer. Honest for this spec, which never clicks it — stated in the script header so a future spec that does click extends the seed rather than assuming coverage.
+
 ### A rate-limited checkout told the shopper to do the one thing that re-trips it (#410, closes #409) — 2026-08-01
 
 Filed as *"order created (201) but the UI never confirms"*. **That framing was wrong and is corrected in the issue.** The order is not created: the POST is rejected with `429` before it reaches the controller, so nothing is persisted and there is no duplicate-order risk. The defect underneath is real but different.
