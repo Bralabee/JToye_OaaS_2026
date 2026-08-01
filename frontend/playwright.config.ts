@@ -26,6 +26,12 @@ export default defineConfig({
   projects: [
     {
       name: "mobile",
+      // #420: exclude blocks that are desktop-by-design so they are never ENUMERATED
+      // here. Previously they were enumerated and then skipped at runtime, which put 2
+      // permanent entries into the suite's skip count for surface that is fully covered
+      // by the desktop project. A skip must mean "nobody checked this"; it cannot also
+      // mean "not applicable here" and stay useful.
+      grepInvert: /@desktop-only/,
       use: {
         browserName: "chromium",
         viewport: { width: 390, height: 844 },
