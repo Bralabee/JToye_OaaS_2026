@@ -137,10 +137,28 @@ Three checks killed that theory:
 | does un-parking the interval to 250ms reproduce it locally? | **No** — 5/5 pass |
 | could RLS scoping or cross-class DB pollution explain it? | **No** — per-class `@Container`, and Testcontainers' bootstrap role is a superuser that bypasses even FORCE RLS |
 
-**What is known:** `PaymentEventOutboxReliabilityIntegrationTest:273` fails in **both directions** —
-`TooManyActualInvocations` on #415, `WantedButNotInvoked` on #417 — on branches touching neither
-payment nor outbox code, and only on heavily-contended runs where Testcontainers Postgres was
-demonstrably sick (477 and 500 `Connection refused` lines).
+**What is known.** The failing assertion is in
+`core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java`,
+test `failedRows_resurrectAndDrain_poisonStaysDead()`:
+
+```java
+verify(rabbitTemplate, times(1)).convertAndSend(
+        eq(RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE), eq("payment.succeeded"), any(Object.class));
+```
+
+⚠ **It is now at line 294, NOT 273.** #422 inserted the state assertions above it and rewrote the
+matchers; both CI logs and the issue body quote `:273`, which no longer points at it. Verify the line
+before quoting it again — `grep -n 'verify(rabbitTemplate, times(1))'` returns four hits in this file
+and only the one inside `failedRows_resurrectAndDrain_poisonStaysDead` is the flaky one.
+
+It failed in **both directions**, on branches touching neither payment nor outbox code, and only on
+heavily-contended runs where Testcontainers Postgres was demonstrably sick (477 and 500
+`Connection refused` lines):
+
+```
+#415  org.mockito.exceptions.verification.TooManyActualInvocations at …IntegrationTest.java:273
+#417  org.mockito.exceptions.verification.WantedButNotInvoked      at …IntegrationTest.java:273
+```
 
 **Next occurrence will be diagnostic.** #422 inverted the assertion order so row state is checked
 **before** the invocation count:
@@ -181,6 +199,23 @@ over a broken path. Provision test-mode keys, or leave it declared.
   `docker-ce` restarts the daemon, dropping all 17 containers — do it with the stack down.
 - **No `v2.3` git tag** — a release decision.
 - **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
+
+### 2.4 Decisions with rationale — do not re-litigate these without reading why
+
+Each of these looks like an oversight from the outside. Each was chosen deliberately, and at least
+three of them will actively break something if "fixed" naively.
+
+| decision | why | what happens if you undo it |
+|---|---|---|
+| **The refund E2E test is NOT unblocked by seeding** `paymentStatus=CAPTURED` | `RefundService` calls `Stripe.Refund.create`; `STRIPE_API_KEY` is empty here | The test passes its skip guard and then **fails** at the Stripe call. A green-looking fixture over a broken path — strictly worse than the skip. **Needs real test-mode keys, not a fixture** |
+| **`check-e2e-skip-budget.sh` VOIDs instead of running the suite** | The suite needs the full compose stack, which CI does not have | A gate that silently runs nothing reports PASS over zero tests. It also VOIDs on a report older than the specs, for the same reason |
+| **`times(1)` was NOT relaxed to `atLeast(1)`** on the flaky assertion | Exactly-once IS the property under test — the outbox exists so a resurrected row drains once and a poison row is never republished | You get a permanently green test over the behaviour it was written to protect |
+| **`cors.exposed-headers` is not plumbed through compose or the k8s configmap** | The `application.yml` default reaches every environment already | Restating six header names in a second file is drift risk with no benefit — two places to forget |
+| **The tenant 429 path KEEPS `tenantId`; the public path must NOT** | An authenticated caller already knows its tenant; a guest must never be told one | Removing it from the tenant path is a regression by omission. Adding it to the public path is a disclosure — asserted two ways in `RateLimitInterceptorTest`, including a raw-substring check that catches a leak inside `detail` |
+| **Seed scripts write every instant RELATIVE TO NOW** | The `ac55-*` fixtures were lost to an absolute `quarantine_expires_at` | A fixture with a fixed date is a scheduled test outage. Re-typing the INSERT with a later date just re-arms it |
+| **The desktop-only GSAP block is tagged + `grepInvert`ed, not deleted or duplicated** | It is desktop-by-design and the desktop project always runs it | Deleting loses coverage; pinning a viewport so it runs in both projects doubles cost for no gain; leaving the runtime skip corrupts the skip count with a permanent N/A |
+| **#404 was closed but #420 opened** rather than closing #404 alone | #416 fixed its three failure classes; its CI-coverage gap and skip problem were untouched | Closing on "0 failed" would have lost both, which is the exact failure #404 documented |
+| **`CLEAN_RESIDUE=1` has not been run** | Nothing depends on the cross-tenant rows either way, and deleting data is not free | Safe to run; just not something to do reflexively while diagnosing something else |
 
 ---
 
