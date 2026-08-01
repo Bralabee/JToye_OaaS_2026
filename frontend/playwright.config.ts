@@ -5,6 +5,15 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false, // Sequential — tests share state (orders, auth)
+  // `fullyParallel: false` only sequences tests WITHIN a file. The two projects
+  // below still ran concurrently on 2 workers, and both browsers leave through
+  // the same Docker gateway IP, so they share ONE server-side rate-limit bucket.
+  // Each storefront page load fires several public calls (shop, config,
+  // promotions, announcements, reviews), so two contexts exhausted the burst and
+  // the order POST came back 429 — surfacing as a checkout that never confirmed
+  // (#409). Measured: 1 worker 3/3 green, 2 workers intermittent.
+  // Overridable for a deliberate concurrency experiment.
+  workers: Number(process.env.PLAYWRIGHT_WORKERS ?? 1),
   retries: 0,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
