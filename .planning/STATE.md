@@ -25,17 +25,38 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: **27 (operational-maturity) — IN PROGRESS**
-Plan: **27-03 (alerting / DLQ / runbook) — Tasks 0–6 COMPLETE, PAUSED at Task 7's checkpoint**
+Phase: **27 (operational-maturity) — COMPLETE 7/7 (2026-07-29)**
+Milestone: **v2.3 — OPEN, and deliberately not closed.** Widened 2026-08-01 from Phases 21–26 to
+**21–32**. Owner decision: *"2.3 is not complete. closing nothing. just document. we will proceed
+with 2.3 until it's go to market ready."* Phase 27 is recorded as part of v2.3.
+Next: **Phase 28 (Security Triage + the Dev/Prod Boundary) — not started, not yet planned.**
 
-> **Note on this file.** Everything below the Phase-27 block is Phase 26's record and is retained
-> verbatim. The `progress:` counters in the frontmatter were deliberately **not** touched: they run
-> on the milestone-v2.3 denominator (48/48), and `gsd-sdk query state.record-session` is recorded in
-> this project's memory as corrupting them — it bumps `completed_plans`, rewrites `percent` on a
-> different denominator, and destroys `last_activity`. Phase 27 progress is tracked in
+> **Corrected 2026-08-01.** This block previously read *"Phase 27 IN PROGRESS — 27-03 PAUSED at Task
+> 7's checkpoint"* and named `check-alert-liveness` as a red owned gate. Both were stale: Phase 27
+> closed 7/7 on 2026-07-29, and the liveness gate was fixed under **#339** (CLOSED). `HANDOFF.md`
+> (2026-08-01) is the live authority — 19 of 19 gates rc=0. The 27-03 record below is **retained
+> verbatim as history**, with its resolution noted in place; it is not a description of the present.
+>
+> **Why a stale block matters here:** the GSD workflows read this file first, so a fresh session
+> would have resumed a phase that finished three days earlier.
+
+> **Note on the frontmatter.** The `progress:` counters were deliberately **not** touched. They run
+> on the **v2.3 build denominator, Phases 21–26 (48/48)**, and are not the milestone's completion
+> measure now that v2.3 spans 21–32. `gsd-sdk query state.record-session` is recorded in this
+> project's memory as corrupting them — it bumps `completed_plans`, rewrites `percent` on a
+> different denominator, and destroys `last_activity`. Phases 27–32 are tracked in
 > `.planning/ROADMAP.md` instead.
 
-### 27-03 — alerting, DLQ triage and the runbook (branch `feature/27-03-alerting-dlq-runbook`)
+### 27-03 — alerting, DLQ triage and the runbook — HISTORICAL, RESOLVED (retained verbatim)
+
+> **This section describes 2026-07-29, not today.** 27-03 went on to complete **9/9** and merged as
+> **PR #336**; Phase 27 closed **7/7**. The "BLOCKED — two tasks outstanding" note near the end of
+> this section is **resolved**: Task 7's human-action checkpoint was taken, and Task 8 re-ran the
+> live gate after 27-02 replaced the broker, finding the alert layer survived the major version
+> change **with no edit** (19 live rules / 24 selectors / 3 dormant, identical to 3.12;
+> `dlq-inspect --summary` flipped 1 → 0). The nine parked dead letters were dispositioned by 27-02.
+> Nothing below is a live blocker. Kept because the three defects it records — found by *running*
+> the checks rather than reading them — are the durable lesson.
 
 **Tasks 0–6 complete. 8 commits, `322f546`..`2ca16a3`, tree clean, 0 behind `origin/main`.**
 Full record with both directions of every acceptance criterion:
@@ -64,7 +85,8 @@ green in every unit test, useless in production, caught only by the live end-to-
 credentials instead of VOIDing; and the selector stripper leaked `service`/`le` out of `by (…)`
 clauses, **masked by an exemption list** so the exit code looked clean.
 
-**BLOCKED — two tasks outstanding, and the plan is NOT done:**
+**BLOCKED — two tasks outstanding, and the plan is NOT done:** *(as at 2026-07-29 — BOTH RESOLVED,
+see the note at the head of this section)*
 
 - **Task 7** is a `checkpoint:human-action`. Group A drills (manufactured, non-invasive) are
   runnable unattended; **Group B stops shared services** — rabbitmq for ~2 minutes and core-java for
@@ -162,8 +184,20 @@ Progress: [██████████] 100% — milestone v2.3 build complet
 | 24 | Image Architecture — CoW Assets + Safe Upload Pipeline | IMG-01..04 | V53 media_asset | 3 |
 | 25 | Mutating MCP Tools | AI-02 | none | 2 |
 | 26 | Local-K8s Overlay + Verified Breakage Fixes | INFRA-01, INFRA-02 | none | **9 delivered** (roadmap estimate was 2) |
+| 27 | Operational Maturity | OPS-01..05 | V60 media durability | **7 delivered** |
+| 28 | Security Triage + the Dev/Prod Boundary | SEC-01..04 | none expected | not yet planned |
+| 29 | Deployable Staging, With Its Own Monitoring | DPLY-01..05 | none expected | not yet planned |
+| 30 | The Money Path, Executed | PAY-01..03 | possible (billing) | not yet planned |
+| 31 | Consumer-Safety and Legal Floor | LGL-01..03 | possible (consent/retention) | not yet planned |
+| 32 | Production Cutover + First Tenant | GTM-01..02 | none expected | not yet planned |
 
 Execution order: 21 → 22 → 23 → 24 → 25 → 26 (locked; Comms inserted at 22 on 2026-07-14, absorbing the former standalone Outbound Webhooks). Hard dependency: 23 before 24 (V52 `shop_staff` precedes V53 `media_asset`).
+
+**Go-to-market closure, added 2026-08-01 (v2.3 stays OPEN).** Order: 28 → 29 → 32, with **30 and 31 running in parallel alongside 29**. Phase 28 is first because it determines what is safe to deploy and is cheap. Phase 29 is the long pole and must carry its own monitoring — `k8s/` ships no Prometheus, Alertmanager or Grafana today, so everything Phase 27 built stops at the compose boundary. Phase 32 depends on 29 + 30 + 31.
+
+Four **blocking decisions** gate 29–32 and none are engineering tasks: the production domain (`jtoye.co.uk` unregistered, `FRONTEND_PUBLIC_*` point at `olajay.co.uk`, no A records), the hosting target, Stripe test-mode keys (gates Phase 30 entirely), and **ADR-0002 sign-off** (still `Proposed`, gates DPLY-04).
+
+Cohort B (catering, **#428**) and the ingredient graph (**#427**) sit **after** go-to-market and gate nothing here — except #427 Wave 1, which is LGL-03 inside Phase 31.
 
 ## Performance Metrics
 
@@ -379,6 +413,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260730-kg1 | ADR-0004 knowledge-graph strategy (Proposed) — **adopt the data model, reject the datastore**: a relational ingredient/entity graph in the existing Postgres, with Apache AGE and Neo4j assessed and rejected. Doc-only. Second research round overturned five first-round claims and they are recorded rather than dropped: Natasha's Law is the **wrong statute** (PPDS excludes distance selling — the distance-selling written-allergen duty replaces it, and is stronger because it attaches to vendors *through* the platform); the **COGS/margin pitch is retracted** (`ingredients_text` is a declaration list carrying no quantities); traceability demoted (Art. 18 stops at "except final consumers", lot capture needs tooling that does not exist); **"AGE cannot honour RLS" was false** — it does, so AGE is rejected on sharper grounds: it creates label tables at runtime in a per-graph schema while `RlsContractTest` sweeps only `relnamespace = 'public'` (`RlsContractTest.java:130`), leaving the RLS drift guard **green over an unprotected graph** — Proof Standard #5 in the subsystem least able to afford it; and FHRS is OGL, promoting the verified-identity graph to strongest moat. Includes ODbL containment (share-alike could force open the ontology; §4.5(c) internal-use exemption deliberately **not** relied on for multi-tenant SaaS), a structural Layer-B invariant (no `tenant_id` column ⇒ incapable of holding tenant data), and falsifiable revisit triggers gated on widening the RLS sweep **and showing it fail** first. Falsified both ways: the scoped citation run first returned **rc=2 VOID (zero citations discovered)** — which is why 6 `path:line` citations were added — then break arm `:130`→`:46` gave rc=1/violations=1/`cited: @Testcontainers`; restore verified **by content**, closing clean arm rc=0. All 5 doc gates rc=0, docs-freshness 1851 unchanged | 2026-07-30 | a60d7e33 | [260730-kg1-adr-0004-knowledge-graph-strategy](./quick/260730-kg1-adr-0004-knowledge-graph-strategy/) |
 | 260730-tap | Environment-scoped Alertmanager **notification** mute (`ALERTMANAGER_MUTE_ALERTNAMES`, empty by default) so `NoOrdersCreated` stops paging a quiet dev stack — the previous remedy (`FORCE=1 seed-order-metric.sh`) bought silence by writing a **real order row into the dev DB every run**. Rule untouched; it still evaluates and still shows as firing in the UI. Two constraints found by measurement, not assumption: the child routes **share one `routes:` key** (a second block = duplicate key, amtool rejects), and the matcher **must key on `alertname`** because `check-alert-liveness.sh` posts its L-3 probe with `severity="info"` — a severity-keyed mute swallows it and L-3 then blames "an active silence", reading as a transport fault. New `scripts/check-alert-mute.sh` (M-1..M-6, `MODE=static` for CI). **Every assertion falsified**; the M-6 arm is the point — on a misordered route **M-1–M-4 all passed** over a mute that consumed nothing, only the functional arm caught it. Found **3 defects in my own instruments**: the M-1 awk scan never terminated (reported the receivers section as matchers), M-2 was **incapable of firing** (M-1's `continue` skipped it), and my compose edit shifted a line citation red (baseline proven rc=0 main / rc=1 branch). Unconfigured render **byte-identical** to the live pre-change baseline (1629B `f9b5b39f`); Slack-only render byte-identical to the pre-change files. Sink-verified in Mailhog: control 2, muted 0. 11/11 static + 4/4 live gates rc=0 | 2026-07-30 | 5454f15b | [260730-tap-environment-scoped-alertmanager-mute-for](./quick/260730-tap-environment-scoped-alertmanager-mute-for/) |
 | 260730-u3t | **Separate customer and vendor sign-in.** The header CTA "Sign in" and the footer "Vendor sign in" both resolved to `/auth/signin` — the STAFF-realm (`jtoye-dev`) NextAuth page — so a shopper clicking the primary CTA on every marketing surface landed in an identity pool their account does not exist in, with no route back. Customer login had **no page at all**: a bare `window.location` redirect from a button, so an expired session or `/shop/orders` deep link had nowhere to land. The backend split was already correct (`CustomerJwtVerifier`, separate issuer) — only the frontend leaked. Ships `/shop/signin` (server component + client card so `metadata` survives), repoints the header, retitles `/auth/signin`, adds reciprocal persona cross-links, and turns both bare redirects into `Link`s carrying `?next=`. `safeReturnTo` narrows that param at BOTH ends (rejects absolute, protocol-relative `//host`, backslash variants, `javascript:`/`data:`). **Prerequisite shipped first:** a reserved-slug guard — `/shop/signin` is a STATIC segment under `/shop/[slug]` and Next.js resolves static first, so a vendor-supplied slug would strand a shop; reachable today and **already live for `auth`/`orders` since Phase 18**. RFC 7807 422, list is config not constant. **Live browser proof + CONTROL ARM**: on this branch the two personas reach `jtoye-customers` vs `jtoye-dev`; the same harness on the pre-fix build times out with `navigated to /auth/signin` in its log. 3 unit break arms each verified to fail. **One break arm silently did not run** (a perl regex never matched, so it reported "17 passed") — redone with the plant asserted first; my own verification grep was also wrong twice. Repaired the E2E verifier the split broke (`getByRole("button")` against a Link **times out** rather than failing loudly). Jest 64 suites/441 tests green, metrics re-baselined 1851→1868, 11/11 static gates rc=0 | 2026-07-30 | (see PR) | [260730-u3t-separate-customer-and-vendor-sign-in](./quick/260730-u3t-separate-customer-and-vendor-sign-in/) |
+| 260801-ths | **Document the go-to-market plan as Phases 28–32 inside the OPEN v2.3 milestone.** Docs only — no code, no schema, no CI. Asked to formalise this as a new milestone v2.4, the owner instead ruled *"2.3 is not complete. closing nothing. just document. we will proceed with 2.3 until it's go to market ready"*, so **nothing was closed or archived** and v2.3 widened from Phases 21–26 to **21–32**, with Phase 27 recorded as part of v2.3. Origin: the 2026-08-01 state review, which found the build queue empty (21–27 all complete, no successor milestone) alongside a platform that had never run outside a laptop, never executed the money path against Stripe even in test mode, and carried **11 untriaged pentest findings in a git-excluded file with no issue**. It also found two substantial threads — the ADR-0004 ingredient graph and the **catering cohort** — with no phase, no requirement ID and no issue, hence invisible to every roadmap- and tracker-driven review; both were filed as **#427** and **#428** before this task. `ROADMAP.md` gains Phases 28–32 with falsifiable criteria (each written to be capable of FAILING on the current tree — the DPLY-03 monitoring criterion fails by construction, since `k8s/` ships zero monitoring manifests); `REQUIREMENTS.md` gains SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 **plus OPS×5, which Phase 27 never had here** (24 → 46 requirements); `STATE.md`'s current-position block corrected — it claimed Phase 27 was mid-flight at 27-03 when it closed 7/7 on 2026-07-29, and named `check-alert-liveness` as a red owned gate that **#339 had closed**. The 27-03 record is retained verbatim with its resolution noted in place rather than deleted. **`state.record-session` deliberately NOT called** (memory: it bumps `completed_plans`, rewrites `percent` on a different denominator, destroys `last_activity`); the `progress:` counters stay on the v2.3 **build** denominator 48/48, which is now explicitly labelled as not the milestone's completion measure. Two `.idea/` files staged in the tree before this task began were deliberately **not** committed | 2026-08-01 | (see PR) | [260801-ths-document-v23-gtm-phases-28-32](./quick/260801-ths-document-v23-gtm-phases-28-32/) |
 
 ## Session Continuity
 
