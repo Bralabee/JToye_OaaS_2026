@@ -1,29 +1,25 @@
-# Handoff: an unwatched E2E suite was hiding a broken customer sign-in
+# Handoff: three "already fixed" claims that were each wrong in a different way
 
-**Generated:** 2026-08-01 ~01:00 BST. Supersedes the node-24 handoff (#407), which was accurate when
-written. Its §0.1 (concurrent session) and the instrument-failure log are carried forward; its
-node-24 sections are history and are not repeated.
+**Generated:** 2026-08-01 ~05:15 BST. Supersedes the E2E/CSP handoff (#414), which was accurate when
+written. Its §0.1 (concurrent session) is carried forward; its instrument-failure log is folded into
+§0.3 with this session's additions.
 
-> **The single most useful thing in this document is §0.2:** three separate times this session, a
-> check was green over a feature that was completely broken. `curl -I` showed the right header, unit
-> tests asserted the right value, and the running product did not work. Every one was caught by
-> exercising the real path in a browser, and none by anything going red.
->
-> **The second is §0.3.** `grep` on this machine is **ugrep**, where `{` and `}` are regex
-> metacharacters — so a literal pattern containing braces silently returns 0. Used to prove a
-> restore had happened, it reported both "the plant is gone" and "the fix is missing" on a tree that
-> was provably correct.
+> **The most useful thing in this document is §0.2.** Three separate defects were closed this
+> session, and in each case the *issue's own diagnosis was wrong in a way that a passing check could
+> never have revealed*. One grep pattern could not match the thing it claimed was absent; one
+> hypothesis named the wrong subsystem; one fixture had decayed rather than been missing. Every
+> mechanism was settled by reading the failure's own output, not by reasoning about the code.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **3 PRs merged this session: #408, #410, #411.** 2 issues filed (#412, #413), 1 filed-and-closed (#409). HEAD deliberately **not** quoted — see the note below |
-| Open PRs | **none.** #408, #410 and #411 are all MERGED |
-| Open issues | **62.** #409 is CLOSED. #404 is OPEN and remains the top standing item. #412 and #413 are OPEN and are this session's follow-ups — **land #412 before #413**, see §2.1 |
+| `JToye_OaaS_2026` | **3 PRs merged: #415, #416, #417.** 1 issue filed (#418). HEAD deliberately **not** quoted — see the note below |
+| Open PRs | **none.** #415, #416 and #417 are all MERGED |
+| Open issues | **61.** #412 and #413 are CLOSED. **#404 stays OPEN deliberately** — its three failure classes are fixed, its CI-coverage gap is not (§2.2). **#418 is OPEN** — a flaky required check, see §2.1 |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3) |
-| Gates | **18 of 18 rc=0**, measured from the main checkout after the final merge |
-| Runtime proof | 4/4 built services FRESH · `Implementation-Version: 2.3.0` read from inside the running `app.jar` · frontend container image ID `==` its tag, so a real rebuild not a restart · CSP on `:3000` carries `realms/jtoye-customers/` |
+| Gates | **18 of 18 rc=0**, measured from the main checkout after the final merge and rebuild |
+| Runtime proof | 4/4 built services FRESH · live 429 read back as `application/problem+json;charset=UTF-8` with `retryAfterSeconds` |
 | Project version | **2.3.0** (`build.gradle.kts`). Latest tag is `v2.2`; no `v2.3` tag — a release decision |
-| Test baseline | `docs/metrics.json` **1895** — java 1264, jest **463** / 66 files, schema V60 |
+| Test baseline | `docs/metrics.json` **1914** — java 1271 / 220 files, jest **475** / 67 files, schema V60 |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
 > §4 pairs every fact with the command that produces it: **run them, don't read them.**
@@ -32,140 +28,115 @@ node-24 sections are history and are not repeated.
 
 ## 0. ⚠ READ FIRST
 
-### 0.1 A second session shares this checkout — currently PARKED
+### 0.1 A second session shares this checkout
 
-The user confirmed mid-session that the other session is **parked**, which is why `git pull` was
-run here safely. Do not assume that is still true.
+Unchanged from #414 and still true: `git pull`, `checkout`, `merge`, `reset` and `branch -D` all
+**write** to whatever branch is checked out in the shared checkout. Check `git branch --show-current`
+immediately before any of them, not just before `commit`.
 
-**There is one unpushed local branch that is NOT mine:**
-`feature/faster-integration-tests-parallelism`, one commit `c142b90c`, +8 lines in
-`core-java/build.gradle.kts` ("parallelize integrationTest to cut ~39m runtime to ~15m"). It has no
-PR, no remote, and no secret-looking paths. **It was deliberately left alone** — Phase 13 of
-housekeeping surfaces such branches, it never pushes them.
+`feature/faster-integration-tests-parallelism` (one commit `c142b90c`, +8 lines in
+`core-java/build.gradle.kts`, "parallelize integrationTest to cut ~39m runtime to ~15m") is **still
+unpushed and still not mine** — deliberately left alone. Note that **#418 makes this branch more
+interesting than it looks**: the flake it would help with is a contention flake.
 
-The standing warning, unchanged: `git pull`, `checkout`, `merge`, `reset` and `branch -D` all
-**write** to whatever branch is checked out in the shared checkout. Committing from a worktree
-protects your commits; it does nothing about a mutating command aimed at the shared checkout. Check
-`git branch --show-current` immediately before any of them, not just before `commit`.
+### 0.2 Three issues, three wrong diagnoses — and none of them was detectable by a green check
 
-### 0.2 Three green checks over three dead features — all in one session
-
-This is the theme of the whole session, and the reason #409's first fix did not work.
-
-| what was green | what was actually true |
+| the issue said | what was actually true |
 |---|---|
-| `curl -I` showed the customer realm in `connect-src`, and a unit test asserted it | **Customer sign-in was still completely broken.** A CSP source carrying a path matches EXACTLY unless it ends in `/`, so the bare realm URL never covered `…/protocol/openid-connect/token` |
-| `curl -I` showed `Retry-After: 19`, and unit tests asserted the quantified copy | **The browser rendered "wait a moment" every time.** `Retry-After` is not CORS-safelisted and the API is cross-origin, so it is hidden from JS. The header branch could never execute — the tests build the header object directly and could not see that |
-| `getRetryDelayMs()` docstring says it "honours the server Retry-After" | Same cause. It has **always** taken its exponential-backoff fallback. A silent fallback is indistinguishable from a working one — filed as **#412** |
+| #412: *"`grep -rn 'exposedHeaders\|Access-Control-Expose'` returns **nothing***", so no allowlist existed | The allowlist **existed and omitted the four headers**. `exposedHeaders` (plural) cannot match `addExposedHeader` (singular) at `CorsConfig.java:30-31`. Same defect, different mechanism — and the wrong mechanism would have produced a wrong fix |
+| #404: `kitchen-flow` is *"consistent with the streaming-buffer class #406 fixed. **Hypothesis, not established**"* | **Wrong subsystem entirely.** `getByText(/Select shop\|Test Shop/i).first()` resolved to `<option value="shop-1">`. Radix `Select` renders a visually-hidden native `<select>` for a11y beside the visible trigger, and an `<option>` is hidden BY DESIGN — the assertion could never have passed, on any stack, ever |
+| #404: `media-review-320` is failing on a *"missing fixture"* | The fixture was **present and had decayed**. All three rows were hand-inserted with ABSOLUTE timestamps; when `quarantine_expires_at` passed, the quarantine sweep did exactly its job and stamped `quarantine_reclaimed_at`, and `redrivable = expires_at != null && reclaimed_at == null` went false |
 
-**The habit:** after any fix, exercise the real path and read the value the user would see. "The
-check I added now passes" is evidence about the check, not about the feature. Logging the *rendered
-copy* in a browser is what caught all three.
+**The habit that settled all three:** read the failure's own output before theorising. Playwright
+printed `locator resolved to <option value="shop-1">Test Shop</option>` — that one line ended the
+kitchen-flow hypothesis. `curl -D -` printed `Access-Control-Expose-Headers: Authorization,
+Content-Type` — that one line ended the "no allowlist" theory.
 
-### 0.3 My own instruments were wrong five more times
+### 0.3 Instruments that lied, this session and last
 
 | what I measured with | what it actually did |
 |---|---|
-| `grep -c 'wsOrigin} ${keycloakSources.join'` to verify a break-arm restore | **Returned 0 on a provably correct tree.** `grep` here is **ugrep**: braces are metacharacters. It reported "plant gone" AND "fix missing" at once. Settled by `git hash-object` vs `git rev-parse HEAD:<path>`. Use `grep -F` for any literal containing `{`/`}` |
-| `curl \| grep -c '<article'` on the shop page, to prove Add buttons were missing | **0 hits on a page that renders them.** The menu is client-rendered; curl cannot answer that question. A filter used to prove absence produced the absence |
-| `grep -q 'vendor-credentials'` as an idempotence guard while editing six specs | Matched a **comment** naming the file, so two specs were silently skipped. Fixed by anchoring on the import statement itself |
-| `pkill -f "next start -p 3111"` | Matched **its own shell's** command line and killed it (exit 144). The bracket form `[n]ext` is required — the same self-match trap as `pgrep`. Kill by PID from `ss -ltnp` instead |
-| reading "the URL stayed on `/checkout`" as proof the order failed | **Not evidence.** The COD confirmation renders INLINE on the same route, so the URL does not change on success either. This produced a wrong issue (#409's original framing) that had to be corrected in-issue |
+| `fetch(...).catch(e => ...)` then `wave.find(r => r.status === 429)` | **Reported "never received a 429" over 1440 requests.** Every non-`Response` fell into the `.catch()` and the search skipped it, so "all failed" and "no 429" were indistinguishable. Re-instrumented to tally EVERY outcome; the re-run showed `{"429": 60}`. A filter used to prove absence must never be able to manufacture it |
+| `git checkout -- <spec>` to restore after a break arm | **Ate two fixes and reported nothing.** `git checkout` restores from the **INDEX**, and the fixes were unstaged. Third occurrence in this repo. Caught only because restores are verified by `git hash-object`, never by `git diff --stat` — which is empty both when a file is restored and when it was never written. **Commit before running arms** |
+| `rc=$?` after `... \| tail -15` | Reported **0 over a gate that printed 10 FAIL lines**. `$?` was `tail`'s. Capture on its own statement: `out=$(cmd); rc=$?` |
+| reading a test-results XML after a build | **Read a STALE report.** The compile failed, nothing ran, and the previous run's `tests="5"` was still on disk and looked like a pass. `rm -f` the report before every arm |
+| `curl -I` to answer "can the browser read this header?" | **Categorically the wrong instrument.** curl shows what was SENT; the browser decides what script may READ. On one and the same response curl showed `Retry-After: 50` while Chromium resolved `headers.get('Retry-After')` to `null` |
+| a unit test asserting `body.contains("Too Many Requests")` | **Passed against BOTH the old hand-rolled body and the RFC 7807 one**, so it was never evidence about the contract at all. Replaced by parsing the JSON and asserting fields by name |
 
 ---
 
 ## 1. What landed
 
-### #408 — customer sign-in was CSP-blocked, and the E2E suite that would have caught it was itself broken
+### #415 — the rate limiter's four headers were on the wire and readable by nobody (closes #412)
 
-Two thirds of #404's "27 of 128 failures" were never product defects.
+`RateLimitInterceptor` sets `Retry-After` and three `X-RateLimit-*` on every 429. A cross-origin
+response hands JS only the CORS-safelisted headers unless the server names the rest, and the
+allowlist carried `Authorization, Content-Type` only. Two client paths depended on them and **both
+degraded silently**: `public-fetch-retry.ts` always took its exponential-backoff fallback despite a
+docstring claiming otherwise, and the checkout could not quantify the wait (#409/#410).
 
-- **37 were a vendor password that cannot authenticate.** Six specs carried `?? "password123"` — a
-  literal `onboarding-blocked-flow.spec.ts:62` had already removed with the note *"it fails against
-  the re-imported realm"*. A wrong password is not a missing one, so nothing skipped: each test
-  timed out ~21s at `vendorLogin`, indistinguishable in the report from a broken dashboard. Now
-  centralised in `frontend/e2e/vendor-credentials.ts` with an **empty** default and
-  `skipWithoutVendorPassword()`.
-- **Repairing the stale specs exposed a live defect.** #382 split the staff and customer Keycloak
-  realms; `middleware.ts` fed only the staff URL into the CSP. Registration **succeeded** and the
-  token exchange was then blocked, leaving the shopper on `/shop/auth/callback` reading
-  *"Authentication failed"* holding an account they could not use.
-- **And listing the realm was not enough** — see §0.2. Each realm is now emitted bare **and**
-  trailing-slash. A bare *origin* already matches every path and is emitted unchanged.
+Now config-injected via `cors.exposed-headers` (env `CORS_EXPOSED_HEADERS`). Deliberately **not**
+plumbed through compose or the k8s configmap — the `application.yml` default reaches every
+environment, and restating six header names in a second file is drift risk with no benefit.
 
-Measured by test NAME, never by count (the suite is not stable to ±3): arms differing only in the
-credential gave **55 → 20** failures, **18 persisting in both**.
+### #417 — the 429 body is RFC 7807, server and client changed together (closes #413)
 
-### #410 — a rate-limited order told the shopper to do the one thing that re-trips it
+Both paths now emit a real `ProblemDetail` through the application's **own** `ObjectMapper` — chosen
+because the defect being fixed *was* a hand-written body that merely resembled the contract, and
+rebuilding it by hand would reintroduce the same bug in a nicer-looking form. `retryAfterSeconds` is
+a typed number. The charset was wrong too: `getWriter()` defaults to ISO-8859-1 and the old responses
+really did go out as `application/json;charset=ISO-8859-1`.
 
-Filed as #409 *"order created (201) but never confirmed"*. **That framing was wrong** and is
-corrected in the issue: the POST is rejected with `429` before reaching the controller, so nothing
-is persisted and there was never a duplicate-order risk.
+**Shipped with the frontend, and that was the whole hazard.** `order-error.ts` read `data.message`,
+which this change removes. Server-only would have dropped the quantified wait back to "wait a moment"
+with **nothing going red** on either side.
 
-Checkout read only `response.data.detail` (RFC 7807); the limiter answers `{"error","message"}` with
-`Retry-After`. So the one actionable sentence was discarded and the shopper saw *"Failed to place
-order. Please try again."* — the exact action that re-trips the limit. `lib/order-error.ts` now
-handles 429 first, then `detail`, then `message`.
+### #416 — the three remaining #404 E2E failures were all instrument defects (refs #404)
 
-**The harness was generating the load.** `fullyParallel: false` only sequences tests *within a file*;
-the two projects still ran on 2 workers through one Docker gateway IP. `workers` is pinned to 1.
-**And that was not sufficient** — the public limit is 30/min burst 10 while one storefront page load
-fires ~6 public calls, so a single sequential run produced **166** rejections. The local compose
-stack now sets `RATE_LIMIT_PUBLIC_PER_MINUTE=600`, `RATE_LIMIT_PUBLIC_BURST=120`, with the limiter
-**still enabled** deliberately.
-
-### #411 — the changelog gate caught its own entry
-
-#410's changelog heading cited the issue (`#409`) but not the PR, so `check-changelog-contract` C-1
-went red on the push-to-main run **7 minutes after** the merge. Exactly the behaviour that gate
-documents. The heading now carries both.
+Six failing tests, **zero product defects**. Mechanisms in §0.2. `webhooks-flow` was broken by a
+Phase 24 nav entry against a Phase 22 spec — accessible-name matching is substring, so `/view/i`
+matched "Image re**view**". `scripts/seed-media-review-fixtures.sh` is new: relative timestamps,
+idempotent on `(tenant_id, sha256)`, discovers the tenant, and verifies by re-reading the DTO's own
+predicate rather than counting rows.
 
 ---
 
 ## 2. Open items
 
-### 2.1 #412 and #413 — this session's follow-ups. **Land #412 first**
+### 2.1 #418 — a flaky REQUIRED check that blocks merges. **Fix this first**
 
-Both are OPEN and both change a live API response contract, which is why neither was done inline.
+`PaymentEventOutboxReliabilityIntegrationTest:273` races its own `@Scheduled` flusher. It failed on
+two unrelated branches at the same line with **opposite** Mockito errors — `TooManyActualInvocations`
+on #415, `WantedButNotInvoked` on #417. A real defect fails in one direction; failing in both is a
+race.
 
-- **#412 — `Access-Control-Expose-Headers`.** `Retry-After`, `X-RateLimit-Limit`,
-  `X-RateLimit-Remaining` and `X-RateLimit-Reset` are set by `RateLimitInterceptor` and readable by
-  **no browser client**. `CorsConfig.java:25` sets `setAllowedOrigins` and never `setExposedHeaders`.
-  Two client paths already depend on them and both silently degrade (§0.2).
-- **#413 — the 429 body is hand-rolled JSON, not RFC 7807.** `RateLimitInterceptor.java:158` and
-  `:258` write `{"error","message","tenantId"}` while `GlobalExceptionHandler.java:52-54` builds a
-  proper `ProblemDetail` everywhere else.
+`flushPending()` is `@Scheduled(fixedDelayString = "${payment.outbox.flush-interval-ms:5000}")`, the
+test is a plain `@SpringBootTest` with nothing disabling that schedule, and the background scheduler
+shares the very `@MockBean RabbitTemplate` the assertion counts. Suggested fix and the reason **not**
+to relax it to `atLeast(1)` are both on the issue. Check the `MediaEventOutboxFlusher` suites too —
+they were cloned from this one.
 
-> **⚠ The ordering is load-bearing.** While `Retry-After` stays invisible, `order-error.ts` depends
-> on parsing `data.message`. Reshaping the body to RFC 7807 **before** #412 would silently drop the
-> quantified wait — and **nothing would go red**: the server tests do not know about the frontend,
-> and the frontend tests build their own fixtures. Sequencing notes are on both issues.
+It cost roughly two hours of merge latency this session and required a manual `gh run rerun --failed`.
 
-### 2.2 #404 — still the top standing item
+### 2.2 #404 remains OPEN — its failures are fixed, its coverage gap is not
 
-**CI runs `e2e/public-layout.spec.ts` only — 2 of 128 tests.** The other 11 specs need a full stack
-that CI does not have; that is the structural gap, not an oversight. Remaining known failures, with
-mechanisms recorded rather than guessed:
+Full Playwright run on the merged tree: **114 passed, 14 skipped, 0 failed** of 128. The skips are
+pre-existing and conditional — desktop-only GSAP scenes running under the mobile project, multi-replica
+STOMP, and refundable-order / promotion fixtures that do not exist in the dev DB. **A skip is not a
+pass**, and nothing currently reports the total as anything but green. Worth its own issue.
 
-- `media-review-320` ×2 — failing **correctly**, on its own anti-vacuity guard
-  (*"VOID: no redrivable row rendered"*). A missing fixture, not a defect.
-- `kitchen-flow` ×2 — `Received: hidden`, consistent with the streaming-buffer class #406 fixed.
-  **Hypothesis, not established.**
-- `webhooks-flow` ×2 — `waitForURL` times out having navigated to `/dashboard/media/review`.
-  **Mechanism open.**
-- `storefront-flows` is now **28 passed / 2 skipped** at 1 worker, 0 rate-limit rejections.
+**CI still runs only `e2e/public-layout.spec.ts` — 2 of 128.** The other specs need a full stack CI
+does not have. That is the structural gap #404 documented and it is unchanged.
 
 ### 2.3 Carried forward, still true
 
-- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** `sync-runtime.sh`
-  does exactly that. Remedy: `bash scripts/seed-order-metric.sh` (no `FORCE` — the mute covers the
-  firing case). Expect it every time.
-- **Toolchain: 4 DRIFT + 1 UNKNOWN**, surfaced 2026-08-01, none applied (housekeeping reports, it
-  does not converge). `conda` 26.1.1→26.5.3 is HELD by an upstream bug — 34 envs sit on that base,
-  do not force it. `docker-ce` needs root and **restarts the daemon**, dropping all 17 containers —
-  do it with the stack down. `ms-fabric-cli` 1.2.0→1.6.1 needs clone-test-promote.
-  `@google/gemini-cli` 0.53.0→0.53.1 is new and trivial. `antigravity` is **UNKNOWN**, not clean:
-  its `package.json` reports the VS Code base, not the product version.
+- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** `sync-runtime.sh` does
+  exactly that. Remedy: `bash scripts/seed-order-metric.sh` (no `FORCE`). Expect it every time.
+- **`seed-media-review-fixtures.sh` seeds DATABASE state only** — no MinIO object — so clicking
+  Re-process on the redrivable fixture still fails at the storage layer. Honest for the spec that uses
+  it, which never clicks it. A future spec that does click must extend the script.
+- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `conda` 26.1.1→26.5.3 is HELD by an upstream bug.
+  `docker-ce` restarts the daemon, dropping all 17 containers — do it with the stack down.
 - **No `v2.3` git tag** — a release decision.
 - **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
 
@@ -173,22 +144,16 @@ mechanisms recorded rather than guessed:
 
 ## 3. Environment state
 
-- **JToye:** `main`, clean, 0 behind. **Two local branches** — `main` and the concurrent session's
-  unpushed `feature/faster-integration-tests-parallelism` (§0.1). Remote has `main` only. One
-  worktree.
-- **Live stack:** 17 jtoye containers. **15 healthy;** `jtoye-redis-exporter` and
-  `jtoye-postgres-exporter` report no health status because their scratch-based images define no
+- **JToye:** `main`, clean, 0 behind, rebuilt. Local branches: `main` plus the concurrent session's
+  unpushed `feature/faster-integration-tests-parallelism` (§0.1). One worktree.
+- **Live stack:** 17 jtoye containers, **15 healthy**; `jtoye-redis-exporter` and
+  `jtoye-postgres-exporter` report no health status because their scratch images define no
   healthcheck. That is **not** unhealthy — `check-alert-liveness` L-1 asserts every scrape target is
   `up`, and it passes.
-- **Rate limiting:** the compose stack now runs the public limiter at **600/min, burst 120**
-  (default is 30/10). Still **enabled** — the 429 path is reachable by exceeding the wider budget,
-  which is how the browser verification in #410 was produced.
-- **Alertmanager:** the mute is ACTIVE locally via `.env` (`ALERTMANAGER_MUTE_ALERTNAMES`). `.env`
-  is gitignored, so a fresh clone is loud by default — intended.
-- **Git hooks:** `.githooks/post-merge` is installed and live; it fired correctly on **both** merges
-  this session, naming `sync-runtime.sh` each time.
-- **Node/Go:** node v22.23.2, npm 12.0.2 on the host; the containers run node 24.18.1. Go 1.26 —
-  `gofmt` clean, `vet` clean, `mod tidy` no drift, `test -race -count=1` all 5 packages fresh, 0 races.
+- **Rate limiting:** public limiter at **600/min, burst 120** locally (default 30/10), still
+  **ENABLED** deliberately — the 429 path is how both fixes were verified.
+- **Media fixtures:** seeded and current. They decay by design once `quarantine_expires_at` passes;
+  re-run the script rather than editing rows.
 - **Conda env:** none needed — no Python application code.
 
 ---
@@ -199,8 +164,6 @@ mechanisms recorded rather than guessed:
 # 0. FIRST: is the other session still parked?  (§0.1)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git branch --show-current; git status --short; git worktree list
-#    If that is NOT 'main', do NOT switch. Work from a worktree:
-#      git worktree add <dir> -b <branch> origin/main
 
 # 1. Tree state, asserted rather than quoted. Resolve the default branch, never hardcode it.
 git fetch -q origin
@@ -209,49 +172,44 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 # expect dirty=0 ahead=0 behind=0 on main. A VOID line is NOT a pass.
 
 # 2. Every gate. Capture rc on its OWN statement — §0.3 explains why.
-#    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE (see the note below).
+#    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
 # EXPECT 18 x rc=0 — ALL of them.
-# If check-alert-metrics fails on NoOrdersCreated, that is the rebuild-blindness case:
-# run `bash scripts/seed-order-metric.sh` (no FORCE). EXPECT it after any rebuild.
+# check-alert-metrics red on NoOrdersCreated is the rebuild-blindness case (§2.3).
 
-# 3. Customer sign-in, end to end, against the runtime the USER sees — §0.2 is about
-#    getting this wrong. A 200 and a header prove nothing here.
-curl -sI http://localhost:3000/shop | grep -i '^content-security-policy:' \
-  | grep -cF 'realms/jtoye-customers/'        # expect 1 — the TRAILING SLASH form is the fix
-cd frontend && KC_SEED_USER_PASSWORD=$(grep -E '^KC_SEED_USER_PASSWORD=' ../.env | cut -d= -f2-) \
-  PLAYWRIGHT_BASE_URL=http://localhost:3000 \
-  npx playwright test e2e/storefront-flows.spec.ts -g "Customer Auth"
-#    expect 4 passed. This is the ONLY check that would have caught #408.
+# 3. The two fixes, read out of the RUNNING product — a 200 proves nothing here.
+#    Trip the limiter, then read the wire. Both lines must appear.
+for i in $(seq 1 900); do curl -s -o /dev/null http://localhost:9090/api/v1/public/shops & done; wait
+curl -s -D - -o /dev/null -H 'Origin: http://localhost:3000' http://localhost:9090/api/v1/public/shops \
+  | grep -iE '^(HTTP/|content-type|access-control-expose)'
+# EXPECT: 429 · application/problem+json;charset=UTF-8 · an expose list containing Retry-After.
+# `curl -I` CANNOT tell you whether a browser can READ that header — see §0.3.
 
-# 4. Runtime parity BY CONTENT (a 200 and a title are identical whether or not the code is current)
+# 4. Runtime parity BY CONTENT
 bash scripts/check-runtime-freshness.sh   # expect 4/4 FRESH, rc=0
-docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar META-INF/MANIFEST.MF | grep -i Implementation-Version'
-for s in frontend mcp-server; do
-  c=$(docker inspect --format '{{.Image}}' jtoye-$s); t=$(docker images -q --no-trunc jtoye_oaas_2026-$s:latest)
-  [ "$c" = "$t" ] && echo "$s MATCH" || echo "$s MISMATCH — container is not running the tagged image"
-done
+docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar BOOT-INF/classes/application.yml' \
+  | grep -c 'exposed-headers'             # expect 1 — read from INSIDE the jar, not the filesystem
 
-# 5. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
+# 5. E2E — source .env FIRST or six vendor specs skip; seed or media-review VOIDs
+cd frontend && set -a; . ../.env; set +a
+bash ../scripts/seed-media-review-fixtures.sh
+PLAYWRIGHT_BASE_URL=http://localhost:3000 npx playwright test --reporter=line
+# EXPECT 114 passed / 14 skipped / 0 failed. The 14 skips are NOT passes (§2.2).
+
+# 6. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Running the E2E suite.** Source the stack's `.env` first (`set -a; . ./.env; set +a`) or the six
-vendor specs skip with a reason. `workers` is pinned to 1 — do not raise it without also raising the
-public rate limit, or the suite throttles itself (§1, #410).
+**If the integration check goes red, read WHICH test before assuming your diff.** #418 is a live
+flake in a required check; two PRs hit it this session and both passed on re-run. Confirm the failing
+test is unrelated to your diff *and* that the same SHA has passed before, then
+`gh run rerun <id> --failed`. Do not re-run reflexively — a real failure re-run is a real failure hidden.
 
-**If `check-runtime-freshness` or `check-container-config-drift` VOIDs (exit 2), check *where* you
-ran it before you touch the stack.** Both VOID from a **worktree** even on a healthy stack: Compose
-derives the project name from the directory. **Run those two from the main checkout.** They fail
-closed, which is correct.
-
-**Merged code is not running code.** After any merge that touches source: `bash
-scripts/sync-runtime.sh`, which rebuilds exactly what drifted and re-asserts with the same gate —
-then reseed the order metric (§2.3).
+**Merged code is not running code.** After any merge touching source: `bash scripts/sync-runtime.sh`,
+then reseed the order metric (§2.3). `docker compose start` does not rebuild.
 
 **Squash-merge note:** the repo squash-merges, so `git branch --merged` and `git branch -d` call
-merged branches unmerged. Use PR state as the authority. `gh pr merge --delete-branch` also cannot
-delete a branch a worktree holds — remove the worktree first, from the main checkout.
+merged branches unmerged. Use PR state as the authority.
