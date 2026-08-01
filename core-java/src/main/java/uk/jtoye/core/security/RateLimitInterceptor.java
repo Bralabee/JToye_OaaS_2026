@@ -1,5 +1,6 @@
 package uk.jtoye.core.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
@@ -12,9 +13,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,13 +64,24 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     // Null-safe MeterRegistry, mirroring PaymentEventOutboxFlusher.
     private final Counter failOpenCounter;
 
-    public RateLimitInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+    /**
+     * issue #413: the application's own mapper, so the 429 body is serialised exactly as
+     * {@code GlobalExceptionHandler}'s ProblemDetail responses are. Spring Boot registers
+     * {@code ProblemDetailJacksonMixin} on this bean, which is what flattens the extra
+     * {@code retryAfterSeconds}/{@code tenantId} properties to top level instead of nesting
+     * them under a {@code "properties"} object.
+     */
+    private final ObjectMapper objectMapper;
+
+    public RateLimitInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider,
+                                ObjectMapper objectMapper) {
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.failOpenCounter = reg != null
                 ? Counter.builder("jtoye.ratelimit.fail_open")
                     .description("Rate limiter degraded to fail-open because the Redis-backed bucket was unavailable (issue #86)")
                     .register(reg)
                 : null;
+        this.objectMapper = objectMapper;
     }
 
     @Value("${rate-limiting.enabled:true}")
@@ -153,11 +170,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                 response.setHeader(HEADER_REMAINING, "0");
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
                 response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
-                response.setContentType("application/json");
-                response.getWriter().write(String.format(
-                    "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in %d seconds.\",\"tenantId\":\"%s\"}",
-                    waitForRefill, tenantId
-                ));
+                // issue #413: tenantId stays on the TENANT path. It is a diagnostic an
+                // authenticated caller already knows, and dropping it while reshaping the
+                // body would be a regression by omission. The public path omits it — see
+                // handlePublicRateLimit.
+                writeProblem(response, waitForRefill, tenantId);
 
                 logger.warn("Rate limit exceeded for tenant {} on path {} - retry after {} seconds",
                            tenantId, requestPath, waitForRefill);
@@ -173,6 +190,46 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                     tenantId, requestPath, e.getMessage());
             return true;
         }
+    }
+
+    /**
+     * issue #413: write the 429 body as RFC 7807, the shape every other error surface uses.
+     *
+     * <p><b>Why a real {@link ProblemDetail} and a real {@link ObjectMapper}, not hand-rolled
+     * JSON.</b> The defect being fixed is precisely that this class hand-wrote a body which
+     * only resembled the contract. Constructing the same type {@code GlobalExceptionHandler}
+     * returns, and serialising it with the application's own mapper, means the shape cannot
+     * drift from the documented one — {@code type}, {@code title}, {@code status},
+     * {@code detail}, and a flattened {@code retryAfterSeconds}. Approximating it by hand
+     * would reintroduce the same class of bug in a nicer-looking form.
+     *
+     * <p><b>{@code retryAfterSeconds} is a typed number, not prose.</b> The wait was previously
+     * available only inside an English sentence, so the frontend had to mine it out with a
+     * regex (#409/#410). An agent or client reading the documented contract now gets an
+     * integer. The sentence stays too — it is what a human sees.
+     *
+     * <p><b>The charset is set explicitly.</b> {@code getWriter()} defaults to ISO-8859-1, and
+     * the pre-fix responses really did go out as
+     * {@code application/json;charset=ISO-8859-1} — measured in a browser 2026-08-01.
+     *
+     * @param tenantId included only on the tenant path; {@code null} on the public path, where
+     *                 leaking a tenant id to an unauthenticated guest would be a disclosure.
+     */
+    private void writeProblem(HttpServletResponse response, long waitForRefill, UUID tenantId)
+            throws java.io.IOException {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS,
+                String.format("Rate limit exceeded. Please try again in %d seconds.", waitForRefill));
+        problem.setTitle("Too Many Requests");
+        problem.setType(URI.create("https://jtoye.uk/errors/rate-limited"));
+        problem.setProperty("retryAfterSeconds", waitForRefill);
+        if (tenantId != null) {
+            problem.setProperty("tenantId", tenantId.toString());
+        }
+
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write(objectMapper.writeValueAsString(problem));
     }
 
     /**
@@ -252,12 +309,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                 response.setHeader(HEADER_REMAINING, "0");
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
                 response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
-                response.setContentType("application/json");
                 // Generic body — no tenantId to leak for a tenant-less guest request.
-                response.getWriter().write(String.format(
-                    "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in %d seconds.\"}",
-                    waitForRefill
-                ));
+                writeProblem(response, waitForRefill, null);
 
                 logger.warn("Public rate limit exceeded for client {} on path {} - retry after {} seconds",
                            clientIp, requestPath, waitForRefill);

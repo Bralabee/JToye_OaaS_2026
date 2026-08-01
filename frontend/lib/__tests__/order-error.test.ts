@@ -145,6 +145,108 @@ describe("describeOrderError — #409", () => {
     })
   })
 
+  /**
+   * #413 reshaped the limiter's 429 body to RFC 7807. `message` is GONE and the
+   * sentence moved to `detail`, alongside a typed `retryAfterSeconds` member.
+   *
+   * Copied verbatim from the live stack after the change:
+   *   HTTP/1.1 429 / Content-Type: application/problem+json
+   *   {"type":"https://jtoye.uk/errors/rate-limited","title":"Too Many Requests",
+   *    "status":429,"detail":"Rate limit exceeded. Please try again in 19 seconds.",
+   *    "retryAfterSeconds":19}
+   */
+  const rateLimited7807 = (over: Record<string, unknown> = {}) => ({
+    response: {
+      status: 429,
+      headers: {},
+      data: {
+        type: "https://jtoye.uk/errors/rate-limited",
+        title: "Too Many Requests",
+        status: 429,
+        detail: "Rate limit exceeded. Please try again in 19 seconds.",
+        retryAfterSeconds: 19,
+        ...over,
+      },
+    },
+  })
+
+  describe("#413: the RFC 7807 rate-limit body", () => {
+    it("quantifies the wait from the TYPED retryAfterSeconds member", () => {
+      const msg = describeOrderError(rateLimited7807())
+      expect(msg).toContain("19 seconds")
+      expect(msg).not.toBe(GENERIC_ORDER_ERROR)
+    })
+
+    it("prefers the typed member over re-parsing the prose", () => {
+      // Same response, disagreeing sources. The typed member wins, so a reworded
+      // sentence can never silently change the advice.
+      const msg = describeOrderError(
+        rateLimited7807({
+          retryAfterSeconds: 7,
+          detail: "Rate limit exceeded. Please try again in 19 seconds.",
+        })
+      )
+      expect(msg).toContain("7 seconds")
+      expect(msg).not.toContain("19 seconds")
+    })
+
+    it("still quantifies from `detail` when the typed member is absent", () => {
+      // A stale core-java, or a future body that keeps the sentence and drops the
+      // number, must not fall back to the vague copy.
+      const msg = describeOrderError(rateLimited7807({ retryAfterSeconds: undefined }))
+      expect(msg).toContain("19 seconds")
+    })
+
+    it("REGRESSION GUARD: the post-#413 body must not fall back to the vague copy", () => {
+      // THIS is the failure the issue warned about. Before this file was updated,
+      // the 429 branch read only `data.message` — which #413 removed — so the
+      // quantified wait silently degraded to "wait a moment" with NOTHING going
+      // red: the server tests do not know about the frontend, and the other tests
+      // in this file construct the pre-#413 fixture.
+      //
+      // The body below is the real post-#413 shape and carries NO `message` field.
+      const msg = describeOrderError(rateLimited7807())
+      expect(msg).not.toMatch(/wait a moment/i)
+      expect(msg).toMatch(/wait 19 seconds/i)
+    })
+
+    it("rejects a non-positive or non-finite typed member rather than saying 'wait 0 seconds'", () => {
+      // Same trap `Number("")` sprang on the header path: 0 is falsy-but-numeric,
+      // and "wait 0 seconds" is advice that is both wrong and useless. It must fall
+      // through to `detail`, which still carries a usable number here.
+      for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const msg = describeOrderError(rateLimited7807({ retryAfterSeconds: bad }))
+        expect(msg).toContain("19 seconds") // recovered from detail, not from `bad`
+      }
+    })
+
+    it("still prefers the header over everything, once #412 makes it readable", () => {
+      const msg = describeOrderError({
+        response: {
+          status: 429,
+          headers: { "retry-after": "3" },
+          data: rateLimited7807().response.data,
+        },
+      })
+      expect(msg).toContain("3 seconds")
+    })
+
+    it("keeps working on the PRE-#413 body, so a stale core-java still degrades safely", () => {
+      // Incremental betterment: the old parser is retained, not replaced.
+      const msg = describeOrderError({
+        response: {
+          status: 429,
+          headers: {},
+          data: {
+            error: "Too Many Requests",
+            message: "Rate limit exceeded. Please try again in 42 seconds.",
+          },
+        },
+      })
+      expect(msg).toContain("42 seconds")
+    })
+  })
+
   describe("secondsFromMessage", () => {
     it("reads the limiter's sentence", () => {
       expect(secondsFromMessage("Rate limit exceeded. Please try again in 19 seconds.")).toBe(19)

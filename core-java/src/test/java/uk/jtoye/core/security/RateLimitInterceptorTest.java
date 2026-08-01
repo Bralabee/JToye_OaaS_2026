@@ -10,8 +10,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -42,6 +46,15 @@ class RateLimitInterceptorTest {
     // is the intended null-safe behaviour for these pre-existing happy-path tests.
     @Mock
     private ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    // issue #413: a REAL mapper, not a mock. The interceptor now serialises a
+    // ProblemDetail through it, and a mock would return null — every body assertion
+    // below would then be asserting on the string "null" while looking green.
+    // Jackson2ObjectMapperBuilder is what Spring Boot's auto-configured mapper is built
+    // with, and it is what registers ProblemDetailJacksonMixin — the mixin that flattens
+    // the extra properties to top level instead of nesting them under "properties".
+    @Spy
+    private ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
     @Mock
     private HttpServletRequest request;
@@ -135,13 +148,58 @@ class RateLimitInterceptorTest {
         verify(response).setHeader("X-RateLimit-Limit", "100");
         verify(response).setHeader("X-RateLimit-Remaining", "0");
         verify(response).setHeader(eq("Retry-After"), eq("30"));
-        verify(response).setContentType("application/json");
+        // issue #413: RFC 7807 media type, and an explicit charset — getWriter() otherwise
+        // defaults to ISO-8859-1, which is what the pre-fix responses really sent.
+        verify(response).setContentType("application/problem+json");
+        verify(response).setCharacterEncoding("UTF-8");
 
-        String responseBody = stringWriter.toString();
-        assertTrue(responseBody.contains("Too Many Requests"));
-        assertTrue(responseBody.contains("30 seconds"));
+        // Assert the CONTRACT, not a substring. `contains("Too Many Requests")` passed
+        // against the old hand-rolled {"error":...} body too, so it could not tell the two
+        // shapes apart — parse it and assert the RFC 7807 fields by name.
+        JsonNode body = objectMapper.readTree(stringWriter.toString());
+        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asText());
+        assertEquals("Too Many Requests", body.path("title").asText());
+        assertEquals(429, body.path("status").asInt());
+        assertEquals("Rate limit exceeded. Please try again in 30 seconds.", body.path("detail").asText());
+
+        // The wait as a TYPED number, not mined out of prose (#409/#410).
+        assertTrue(body.path("retryAfterSeconds").isNumber(), "retryAfterSeconds must be a number, not a string");
+        assertEquals(30, body.path("retryAfterSeconds").asLong());
+
+        // The old shape is GONE, not merely supplemented — a client reading `detail` per the
+        // documented contract must not be handed `message` instead.
+        assertTrue(body.path("error").isMissingNode(), "the hand-rolled `error` field must be gone");
+        assertTrue(body.path("message").isMissingNode(), "the hand-rolled `message` field must be gone");
+
+        // Flattened to top level, NOT nested under "properties" — this is the mixin doing
+        // its job, and it is the one thing a wrong ObjectMapper would silently change.
+        assertTrue(body.path("properties").isMissingNode(),
+                "extra members must be flattened by ProblemDetailJacksonMixin, not nested");
 
         // Cleanup
+        TenantContext.clear();
+    }
+
+    @Test
+    void tenantPath429_carriesTenantIdAsATypedMember() throws Exception {
+        // Incremental betterment: tenantId existed in the old body and is a diagnostic an
+        // authenticated caller already knows. Reshaping the body must not drop it.
+        TenantContext.set(testTenantId);
+        when(request.getRequestURI()).thenReturn("/api/orders");
+
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(false);
+        when(probe.getNanosToWaitForRefill()).thenReturn(7_000_000_000L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        StringWriter stringWriter = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(stringWriter));
+
+        interceptor.preHandle(request, response, new Object());
+
+        JsonNode body = objectMapper.readTree(stringWriter.toString());
+        assertEquals(testTenantId.toString(), body.path("tenantId").asText());
+
         TenantContext.clear();
     }
 
@@ -373,12 +431,23 @@ class RateLimitInterceptorTest {
         verify(response).setHeader("X-RateLimit-Limit", "30");
         verify(response).setHeader("X-RateLimit-Remaining", "0");
         verify(response).setHeader(eq("Retry-After"), eq("15"));
-        verify(response).setContentType("application/json");
+        verify(response).setContentType("application/problem+json");
+        verify(response).setCharacterEncoding("UTF-8");
         verify(builder).build(argThat((String key) -> key.startsWith("rl:public:")), any(Supplier.class));
 
-        String body = stringWriter.toString();
-        assertTrue(body.contains("Too Many Requests"), "body should be the generic 429 message");
-        assertFalse(body.contains("tenantId"), "public 429 body must not leak a tenantId field");
+        // issue #413: same RFC 7807 contract as the tenant path, asserted by field name.
+        JsonNode body = objectMapper.readTree(stringWriter.toString());
+        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asText());
+        assertEquals("Too Many Requests", body.path("title").asText());
+        assertEquals(429, body.path("status").asInt());
+        assertEquals(15, body.path("retryAfterSeconds").asLong());
+
+        // The load-bearing omission, asserted TWO ways. `isMissingNode()` is the precise
+        // check; the raw-substring check additionally catches a tenant id leaking anywhere
+        // else in the payload — inside `detail`, say — which a field lookup cannot see.
+        assertTrue(body.path("tenantId").isMissingNode(), "public 429 must not carry a tenantId member");
+        assertFalse(stringWriter.toString().contains("tenantId"),
+                "public 429 body must not mention tenantId anywhere");
     }
 
     @Test
