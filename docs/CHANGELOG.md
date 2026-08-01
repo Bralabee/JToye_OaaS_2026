@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A tenant-listing blip aborted the whole scheduled pass (#422, refs #418) — 2026-08-01
+
+Found while investigating a flaky required check. **The diagnosis originally filed on #418 was wrong and is retracted there**, which is the more useful half of this entry.
+
+#### Fixed
+- **`listTenantIds()` sat OUTSIDE the per-tenant try/catch** in three scheduled workers, so a transient failure while merely *listing* tenants escaped the guard and aborted the entire pass — publishing nothing for **any** tenant. Both failing CI runs of 2026-08-01 carry **78** stack traces of `Unexpected error occurred in scheduled task` ending at exactly that call. The per-tenant catch was doing its job; the query feeding the loop was never covered. A skipped pass is recoverable — rows stay PENDING and the next tick retries — so it now logs and returns rather than escaping to `TaskUtils`.
+- Fixed in **all three** places sharing the shape, not just the one the traces landed in: `PaymentEventOutboxFlusher` (flush **and** resurrect), `MediaEventOutboxFlusher` (cloned from it), and `WebhookDeliveryWorker` — which the logs show hitting this path directly.
+
+#### Notes
+- **RETRACTION.** #418 claimed `PaymentEventOutboxReliabilityIntegrationTest` "is a plain `@SpringBootTest` with nothing disabling that schedule", so the test raced its own `@Scheduled` flusher. **It does disable it** — `@DynamicPropertySource` parks both intervals at 24h. The grep behind that claim did not include `DynamicPropertySource`, so it missed the very lines it declared absent: the same false-negative shape as #412's `exposedHeaders`-vs-`addExposedHeader` grep, in the same week. **Second time a grep's PATTERN, not its result, produced a confident wrong conclusion.**
+- Three checks then killed the race theory outright: no scheduled execution runs inside the failing test's window (the last is **70–82s earlier**, in the previous class's teardown); un-parking the interval to 250ms locally does **not** reproduce it (5/5 pass); and neither RLS scoping nor cross-class pollution can explain it (per-class `@Container`, and Testcontainers' bootstrap role is a superuser that bypasses even FORCE RLS). **The flake's mechanism remains unestablished and #418 stays open.**
+- **The next occurrence will be diagnostic.** In the flaky assertion the row-state checks now run BEFORE the invocation count. That distinguishes the two cases neither CI log could: row `SENT` with a wrong count means the publish happened and the mock is the problem; row still `PENDING` means the flush genuinely did not run. Ordering costs nothing and would have answered this in one look.
+- The verify is also scoped to the row's own exchange + routing key, mirroring the verify that already closes the broker-outage test in the same file. This narrows WHAT counts, not HOW MANY — **still `times(1)`**, deliberately not relaxed to `atLeast(1)`, because exactly-once is the property under test.
+- Falsified rather than observed passing: reverting the flush guard fails 1 of the 3 new tests, with opening and closing clean arms and the restore verified by `git hash-object`. A third test proves the new catch is scoped to the LISTING call and does not swallow real per-tenant work, so the other two cannot pass vacuously.
+
 ### The rate-limit 429 body is RFC 7807 now — server and client changed together (#417, closes #413) — 2026-08-01
 
 `RateLimitInterceptor` hand-wrote `{"error","message","tenantId"}` in two places while `GlobalExceptionHandler` builds a real `ProblemDetail` everywhere else. The one field every other error surface uses — `detail` — was absent, and the wait was available only as prose inside an English sentence. That already cost real behaviour: the checkout read `data.detail`, correctly following the documented contract, got nothing, and told a rate-limited shopper to retry immediately (#409).
