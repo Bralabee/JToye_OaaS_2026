@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The other 124 E2E tests now run — nightly, against a real stack (#426, refs #420) — 2026-08-01
+
+CI ran `e2e/public-layout.spec.ts` and **nothing else — 2 of 126 tests**. The per-PR job is stack-free by design and must stay that way; the moment it needs a backend, the cheap layout gate is lost. The consequence was that **124 of 126 E2E tests never ran on any PR**. #404 is the record of what that costs: a broken customer sign-in shipped and sat undetected, because the suite that would have caught it was itself broken and unwatched. Closing #404 on *"0 failed"* would have lost this; #420 kept it, and this is its CI half — the skip half was #423.
+
+#### Added
+- **`.github/workflows/e2e-nightly.yml`** — scheduled 02:00 UTC + `workflow_dispatch`. Stands up the full compose stack, seeds fixtures via `seed-e2e-fixtures.sh`, runs all 126 specs with `--reporter=json`, and enforces `check-e2e-skip-budget.sh`. **Nightly rather than per-PR deliberately**: ~20 min build + ~20 min suite is a tax no single change should pay, and catching a regression within a day is strictly better than the status quo of never.
+
+#### Notes
+- **`ollama` and `ollama-init` are excluded, and that is a finding rather than a shortcut.** `ollama-init` pulls `gemma3:12b` (~8 GB; a GitHub runner has ~14 GB of disk **in total**) and `ollama` declares `deploy.resources.reservations.devices: [nvidia]`, which no GitHub-hosted runner provides — so a naive "bring up everything" job could never have worked. `core-java.depends_on` is postgres/keycloak/redis/rabbitmq only, and the sole consumer is image analysis, which no spec asserts on. Verified against compose's OWN parse rather than a grep: `docker compose config --services` reports **14**, the workflow lists **12**, the difference is exactly those two, and nothing listed is absent from compose (a typo'd service would abort the `up`).
+- **Fail-closed at every step.** A stack that does not come up, a report that is absent or reports **zero** tests, and a non-zero skip-budget rc are all failures. No step is muted. The `|| true` on the Playwright step is not a swallowed failure — a suite with real failures must still emit a report for the gate and the artifact upload, and the next step re-derives the verdict FROM the report and exits non-zero on `failed > 0`.
+- **No repository secret is consumed.** All 16 of `verify-env.sh`'s `REQUIRED_VARS` are generated per-run for a stack that lives ~40 minutes, so the workflow cannot leak one. They must be genuinely random: the preflight rejects the weak deny-list and any `CHANGE_ME*` value, and it runs BEFORE the 20-minute build so a malformed env fails fast rather than late.
+- **A naive `grep -c continue-on-error` on the new file returned 1, not 0** — the header comment names the string it forbids, so the check fired on its own definition. That is the documented "doc rule that must name the token it forbids" trap; the honest form is key-shaped (`^[[:space:]]*continue-on-error[[:space:]]*:`), and it was falsified before being trusted: rc=1 (absent) on the real file, rc=0 on a copy with the skip-budget step muted.
+- Falsified rather than observed passing throughout: `actionlint` rc=0 on the real file and **rc=1** on a copy carrying a bad step key (naming the line); 19/19 repo gates rc=0 after the change. A suspected `set -e` bug in the wait loop was **disproved by a 6-line repro rather than by argument** — a non-final command in an `&&` list is exempt from `set -e`, so the loop polls correctly; reasoning alone would have produced a wrong "fix".
+- **The job has never run, and cannot be proven green from a feature branch** — `schedule` fires only on the default branch and `workflow_dispatch` needs the workflow merged first. Stated here rather than implied: this ships a correct, lint-clean, fail-closed workflow, **not** a demonstrated-green one. Expect one round of adjustment; ranked first-run risks (disk, the 600 s bring-up deadline, rate limiting) and their remedies are recorded in the task SUMMARY.
+- The 8 declared skips are untouched. Four need Stripe test-mode keys or a scaled stack — environment decisions, not CI work.
+
 ### A tenant-listing blip aborted the whole scheduled pass (#422, refs #418) — 2026-08-01
 
 Found while investigating a flaky required check. **The diagnosis originally filed on #418 was wrong and is retracted there**, which is the more useful half of this entry.
