@@ -24,8 +24,16 @@ import { test, expect } from "@playwright/test"
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 
-test.describe("desktop GSAP scenes (>=768px + motion)", () => {
-  // Only meaningful on the desktop project (1440x900); skip under mobile (390).
+// Tagged @desktop-only so the MOBILE project never ENUMERATES this block
+// (playwright.config.ts sets grepInvert on that project). #420: these two tests are
+// desktop-by-design and the desktop project always runs them, so skipping them at
+// runtime under mobile added 2 permanent entries to the suite's skip count — surface
+// that is not unverified at all. A skip should mean "nobody checked this", and it
+// cannot carry that meaning while it also means "not applicable here".
+test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }, () => {
+  // Belt-and-braces with the project filter: the tag governs enumeration, this governs
+  // execution. They protect different failure modes — a config edit that drops the
+  // grepInvert would otherwise silently run GSAP scene assertions at 390px.
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 768, "desktop-only scenes")
 
   test("/ splits the hero headline, marks the scope active, parallaxes the heat-wash", async ({
