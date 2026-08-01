@@ -6,7 +6,7 @@ Multi-tenant UK retail SaaS for food vendors — shops, products, orders, custom
 
 Milestone v2.3 turns from platform hardening to **vendor operational control**. It unblocks stuck onboarding (visible per-gate blockers, correctable data, reachable exits — zero migrations), stands up the platform's first **delivery consumer** of the V46 transactional outbox (email-first notifications + the outbound-webhook machine channel + a WhatsApp/SMS seam), adds a finer authorization boundary *inside* the tenant (`shop_staff` mapping, roles, an application-layer gate, a shop-context switcher — with a GROUP_ADMIN backfill so day one has no regression), and hardens image handling ahead of real vendor uploads (a copy-on-write `media_asset` model + a safe async upload pipeline that stores only the validated, normalized derivative). It also extends the AI/automation surface (mutating MCP tools riding the #204 Idempotency-Key contract) and replaces the imperative k8s deploy patches with a committed `k8s/local` overlay plus the verified breakage fixes.
 
-**6 phases (21–26)**, continuing phase numbering from v2.2's Phase 20. Original scope locked by user 2026-07-14 (three phase-ready specs in `.planning/specs/` carry file:line evidence and locked decisions); the **Notifications & Comms phase was inserted at 22 on 2026-07-14**, ahead of the original order, absorbing the standalone Outbound Webhooks phase (#205) + WhatsApp (#208) — a dedicated delivery consumer had to precede the surfaces that depend on it. Phase order is thinnest/highest-pain first. Granularity: `fine`.
+**Originally 6 phases (21–26)**, continuing phase numbering from v2.2's Phase 20. **Widened to 21–32 on 2026-08-01**: the 2026-08-01 state review found the build queue empty (21–27 all complete, no successor milestone) while the platform had still never run outside a laptop, had never executed the money path against Stripe even in test mode, and carried Phase 27's monitoring in compose only. Asked whether that closure work should open a v2.4, the owner ruled: *"2.3 is not complete. closing nothing. we will proceed with 2.3 until it's go to market ready."* Phase 27 is recorded as part of v2.3, and Phases 28–32 carry v2.3 to a first paying tenant. Nothing is archived. Original scope locked by user 2026-07-14 (three phase-ready specs in `.planning/specs/` carry file:line evidence and locked decisions); the **Notifications & Comms phase was inserted at 22 on 2026-07-14**, ahead of the original order, absorbing the standalone Outbound Webhooks phase (#205) + WhatsApp (#208) — a dedicated delivery consumer had to precede the surfaces that depend on it. Phase order is thinnest/highest-pain first. Granularity: `fine`.
 
 ## Milestones
 
@@ -43,6 +43,16 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 24: Image Architecture — CoW Assets + Safe Upload Pipeline** — `media_asset` (V53) copy-on-write + reference counting + safe async RabbitMQ upload/normalize pipeline storing only the validated derivative (completed 2026-07-23)
 - [x] **Phase 25: Mutating MCP Tools** — Write tools on the Phase 20 MCP server riding the uniform Idempotency-Key contract, RLS-proven under the MCP credential (completed 2026-07-24)
 - [x] **Phase 26: Local-K8s Overlay + Verified Breakage Fixes** — Committed `k8s/local` overlay replacing imperative patches + the verified deploy breakage list fixed, proven on a live minikube rehearsal (verbatim server dry-run, 3/3 rollout, NOSUPERUSER boot corroborated from the database side, two-arm backup falsification, broker-side STOMP identity, real Keycloak login through the ingress). The rehearsal also **falsified** the KDS relay path — a RabbitMQ `/topic` destination cannot contain `/`, and `k8s/base` sets `relay`, so staging and production both inherit it: a confirmed production defect found only because D-06 insisted the relay be proven on a cluster rather than in compose (tracked as [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266), fixed in its own scoped work — **#266 CLOSED 2026-07-26 by PR #269, `d964a85`: the destination is now a single dot-separated segment built in one place. The live L6 proof — a KDS client receiving a relayed event — is still uncaptured, so this is a fixed defect plus an open evidence gap, not a proven realtime path**) (completed 2026-07-26)
+
+- [x] **Phase 27: Operational Maturity** — Terminal failure states declared/detected/routed to a human, dependency support horizons that fail the build before they lapse, a measured concurrency baseline, media durability under broker outage, and the webhook fan-out outage fixed (7/7 plans; detail section below) (completed 2026-07-29)
+
+**Go-to-market closure (added 2026-08-01 — v2.3 stays open until these land):**
+
+- [ ] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0`
+- [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
+- [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
+- [ ] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice
+- [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 
 ## Phase Details
 
@@ -326,6 +336,24 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
+| 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 0/? | Not started | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
+| 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
+| 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
+| 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
+
+**Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
+before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
+The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48 — they run on the
+**v2.3 build denominator (Phases 21–26)** and are not the milestone's completion measure. Phases
+27–32 are tracked in this table.
+
+**Blocking decisions for Phases 29–32** — these are commercial, not technical, and nothing in 29–32
+starts until they land: (1) the production domain (`jtoye.co.uk` was never registered;
+`FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records); (2) the hosting target; (3) Stripe
+test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, still `Proposed`, which
+gates DPLY-04.
 
 ### Phase 27: Operational Maturity — messaging as the first instance
 
@@ -353,3 +381,164 @@ Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 - [x] 27-06-PLAN.md (Wave 4) — CI wiring: the `ops-contracts` job — three static gates
 
 **Planning note**: plans were written, audited by five independent passes (correctness ×2, falsifiability ×2, regression-by-omission ×1), and fixed *before* registration. `drafts/REVISION-BRIEF.md` is binding and records where the brief itself was wrong. Registered via `/gsd-phase`; the SDK derived Phase **28** because the phase directory already existed, and was corrected to 27 by hand.
+
+---
+
+## Go-to-market closure — Phases 28–32
+
+Added 2026-08-01. Source: the 2026-08-01 state review (see `HANDOFF.md` and the Overview note above).
+These carry the **open** v2.3 milestone to a first paying tenant. Cohort framing follows
+`docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`: **Cohort A (takeaway) is the go-to-market**;
+Cohort B (catering) runs as discovery in parallel under #428 and gates no phase here.
+
+> **Every success criterion below must be capable of FAILING on the tree as it stands on
+> 2026-08-01.** Where a criterion is already satisfied it is not a criterion — that is this repo's
+> Proof Standard #1 and the reason ~22 unfalsifiable criteria were found in Phase 26.
+
+### Phase 28: Security Triage + the Dev/Prod Boundary
+
+**Goal**: The 11 findings in the untracked Strix pentest backlog are triaged into the tracker or
+formally accepted; the dev-only tenant-header path can no longer be advertised or reached under the
+`prod` profile; and the local stack stops publishing infrastructure to `0.0.0.0`.
+**Depends on**: Nothing structural. Sequenced first because it determines what is safe to deploy in
+Phase 29, and because it is cheap.
+**Requirements**: SEC-01, SEC-02, SEC-03, SEC-04
+**Success Criteria** (what must be TRUE):
+
+  1. Pentest finding **A1** (cross-tenant BOLA on promotions/announcements, CVSS 9.1) is re-verified
+     against a stack **rebuilt from HEAD**, and its stated root cause is recorded as CONFIRMED or
+     FALSIFIED with the measurement that settled it. Measured on the tree 2026-08-01, the root cause
+     as written — *"these tables lack a `tenant_id` column / RLS policy"* — does **not** hold:
+     `shop_promotions` and `shop_announcements` both carry `tenant_id` + ENABLE + FORCE RLS
+     (V28/V29/V33/V35/V39/V51), and `PromotionService`/`AnnouncementService` both call
+     `shopAccessService.require(shopId, SHOP_MANAGER)` on create/update/delete since Phase 23. The
+     criterion FAILS if the re-verification is skipped, or reports "as filed" without an arm.
+     (SEC-01)
+  2. Each of the 11 findings has either a **sanitized** GitHub issue (public repo — impact + fix +
+     acceptance only; never literal secret values, the DB→OAuth→header chain, or repro payloads) or a
+     dated written acceptance naming the finding. `SECURITY-FINDINGS.md` stays git-excluded. (SEC-02)
+  3. No dev-only branch is reachable under the `prod` profile, and `OpenApiConfig` no longer
+     advertises the `X-Tenant-Id` fallback in a spec that finding C3 reports as unauthenticated. A CI
+     gate asserts this and is **shown to fail** against a deliberately reintroduced fallback.
+     `TenantFilter` is already `@Profile({"dev","local","test"})` and every k8s env sets
+     `SPRING_PROFILES_ACTIVE=prod`, so the boundary holds — the advertisement is what does not.
+     (SEC-03)
+  4. `docker-compose.full-stack.yml` publishes no infrastructure port on `0.0.0.0`. Falsifiable on a
+     running stack, with a control proving the check can see a `0.0.0.0` binding. Today postgres
+     (`5433`), mailhog (`8025`), minio (`9000`/`9001`) and the rabbitmq management UI (`15672`) all
+     publish with no bind address. Local credentials named in the report are rotated. (SEC-04)
+
+**Also in scope, same defect class, cheapest fixed together**: #283 (replace the retained
+`auth == null` internal bypass with an explicit `asSystem()` marker), #284 (`@Async` / `@Scheduled` /
+`@RabbitListener` propagate no SecurityContext and would take that bypass), #289 (STOMP shop-gate
+hard-coded to the kitchen topic).
+
+**UI hint**: no
+
+### Phase 29: Deployable Staging, With Its Own Monitoring
+
+**Goal**: A staging environment exists that a human can log into and that **alerts a human when it
+breaks** — the first runtime of this platform outside a laptop.
+**Depends on**: Phase 28 (do not deploy an untriaged exposure surface). Blocked on the production-domain
+and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-off**.
+**Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
+**Success Criteria** (what must be TRUE):
+
+  1. Staging serves a **real Keycloak vendor login through the ingress to a dashboard**, over a
+     resolvable public hostname, with real seeded rows — not localhost, not a port-forward. Phase
+     26-08's L7 proof is the template: one verbatim URL carrying `client_id` and an encoded
+     `redirect_uri`, landing on a rendered dashboard. (DPLY-01)
+  2. The deploy knot is closed or explicitly deferred **with a reason recorded per issue**: #99
+     (deploy gate is theatre), #100 (sealed secrets half-landed), #292 (one frontend image can bake
+     only one API origin), #293 (CSP omits the IdP origin and can refuse the sign-in redirect), #299
+     (customer-storefront realm unconfigured in **every** k8s environment), #301 (no mcp-server
+     manifests), #302 (logback FileAppender fails on every boot), #271 (NetworkPolicy egress
+     hardcodes 5432 while `DB_PORT` is Secret-driven). (DPLY-02)
+  3. **Prometheus, Alertmanager and Grafana run in Kubernetes**, and `check-alert-liveness.sh` +
+     `check-alert-metrics.sh` exit 0 **against the staging target**, not against compose. This
+     criterion fails on the current tree by construction: `k8s/` ships **zero** monitoring
+     manifests — the entire stack lives in `infra/monitoring/docker-compose.monitoring.yml`, recorded
+     in Phase 27 `deferred-items.md` §5. Everything Phase 27 built is compose-scoped, so a staging
+     deploy today would be wholly unmonitored. (DPLY-03)
+  4. PITR per #101, with a restore proven **by row count on a restored database**, two-arm. Arm A
+     must demonstrate that a zero-row dump still passes the pipeline's own byte-size and
+     `pg_restore --list` checks — 26-07's L4 measured exactly that (arm A `products 0` while clearing
+     `MIN_BACKUP_BYTES` by 149×). A single green arm is not evidence. (DPLY-04)
+  5. NetworkPolicies are **enforced, not merely rendered** (#297 — install Calico; the Phase 26 D-17
+     prerequisite is already cleared), with a denied connection captured as the positive proof.
+     Phase 26 recorded enforcement explicitly NOT PROVEN and that record must not be quietly
+     inherited as a pass. (DPLY-05)
+
+**UI hint**: no
+
+### Phase 30: The Money Path, Executed
+
+**Goal**: The platform can take money and give it back, proven against Stripe rather than against a
+mock. This is the phase that turns a working product into a business.
+**Depends on**: **Stripe test-mode keys** — an account decision, not a task; `STRIPE_API_KEY` and
+`STRIPE_WEBHOOK_SECRET` are empty on every stack today. Phase 29 for the staging run.
+**Requirements**: PAY-01, PAY-02, PAY-03
+**Success Criteria** (what must be TRUE):
+
+  1. The refund E2E (#61) **runs and passes rather than skipping**, and its `ALLOW` entries leave
+     `scripts/gates/e2e-skip-budget.conf`. The gate is shown to fail if they are re-added without a
+     justification and a REMOVE WHEN. Today the test is deliberately skipped and must stay so: it
+     calls `Stripe.Refund.create`, and seeding `paymentStatus=CAPTURED` with an invented
+     `payment_reference` would push it past its guard and then fail at Stripe — a green-looking
+     fixture over a broken path. **It needs keys, not a fixture.** (PAY-01)
+  2. Recurring subscription billing exists for the published price — £39 per location per month plus
+     0.5%, per `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`. #102's remainder closed. Falsifiable
+     by retrieving a test-mode subscription invoice from Stripe **by id**, not by reading an
+     application log. (PAY-02)
+  3. The full loop is executed on staging — onboard → order → capture → **payout to a connected
+     account** → refund — with each step's evidence read out of Stripe's API. MARKETPLACE orders
+     route as destination charges per ADR-0001 Decision 2; that path has never been exercised.
+     (PAY-03)
+
+**UI hint**: yes (billing/subscription surface)
+
+### Phase 31: Consumer-Safety and Legal Floor
+
+**Goal**: The platform is defensible to a consumer, to a regulator, and to a procurement
+questionnaire.
+**Depends on**: Nothing structural — runs in parallel with Phases 29 and 30.
+**Requirements**: LGL-01, LGL-02, LGL-03
+**Success Criteria** (what must be TRUE):
+
+  1. #116 — a privacy policy, a cookie banner and a written retention policy are live on the public
+     storefront. Absent today, and a UK legal requirement for a consumer-facing storefront rather
+     than polish. (LGL-01)
+  2. #103 + #272 — WCAG 2.1 AA, with a **published conformance statement** and an automated
+     accessibility check in CI **shown to fail** against a deliberately broken control. The 2026-07-08
+     audit recorded accessibility as "essentially absent"; it is both a procurement blocker and
+     Equality Act exposure. (LGL-02)
+  3. **#427 Wave 1** — the allergen evidence chain's zero-infrastructure slice: a **recorded
+     lawful-basis decision** for consulting a stored customer allergen profile at checkout
+     (authenticated only) or an explicit decision not to, order-level allergen-mask aggregation, and
+     conflict surfacing on the KDS. Today there is **no consumer-allergen matching at checkout at
+     all** — the guest cross-check was removed as special category data with no Article 9 condition
+     — and every allergen statement the platform makes resolves to an integer a vendor hand-types
+     into a CSV column, rendered at
+     `frontend/components/storefront/product-detail-modal.tsx:65` and **never reconciled** against
+     the ingredients text in the adjacent column. This is the one item on the list that can injure
+     someone. (LGL-03)
+
+**UI hint**: yes (consent banner, policy pages, a11y remediation across the storefront)
+
+### Phase 32: Production Cutover + First Tenant
+
+**Goal**: One real Cohort A (takeaway) operator is live, in production, and paying.
+**Depends on**: Phases 29, 30 and 31. All four blocking decisions resolved.
+**Requirements**: GTM-01, GTM-02
+**Success Criteria** (what must be TRUE):
+
+  1. Production is tagged and deployed: a **`v2.3` git tag exists** (none does today — the latest tag
+     is `v2.2` while `build.gradle.kts` reads `2.3.0`), `DEPLOY_ENABLED` is `true`, and
+     `check-runtime-freshness.sh` is green **against production** with the branch-behind-base gate
+     empty. (GTM-01)
+  2. One real vendor completes onboarding → published shop → first paid order in production, and
+     **#428 Wave 1 (catering discovery) has produced its recorded finding** — either a validated
+     wedge or a documented decision that catering is not it. Both are successful outcomes; the
+     failure mode is reaching production with the Cohort B question still unasked. (GTM-02)
+
+**UI hint**: no

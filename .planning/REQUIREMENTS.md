@@ -7,7 +7,7 @@
 
 ## v1 Requirements
 
-v2.3 scopes **24 requirements across 7 categories**. Original scope locked by user 2026-07-14 (do not re-litigate); a **Notifications & Comms** category was inserted as **Phase 22** on 2026-07-14, absorbing the former standalone Outbound Webhooks (#205 → COMMS-04/05/06) + WhatsApp (#208). Phase order is thinnest/highest-pain first: Onboarding UX → **Notifications & Comms** → Vendor-scoped access → Image architecture → AI (mutating MCP) → Infrastructure (Dashboard mobile MOBL-01 folded into Vendor-scoped access).
+v2.3 originally scoped **24 requirements across 7 categories**. **Widened 2026-08-01 to 46 across 13 categories** — see *Go-to-market closure* below: `OPS×5` (Phase 27, previously recorded in `ROADMAP.md` only) plus `SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2` (Phases 28–32). **v2.3 is not closed and nothing is archived** — owner decision 2026-08-01: *"2.3 is not complete. closing nothing. we will proceed with 2.3 until it's go to market ready."* Original scope locked by user 2026-07-14 (do not re-litigate); a **Notifications & Comms** category was inserted as **Phase 22** on 2026-07-14, absorbing the former standalone Outbound Webhooks (#205 → COMMS-04/05/06) + WhatsApp (#208). Phase order is thinnest/highest-pain first: Onboarding UX → **Notifications & Comms** → Vendor-scoped access → Image architecture → AI (mutating MCP) → Infrastructure (Dashboard mobile MOBL-01 folded into Vendor-scoped access).
 
 Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first); Comms tables take later versions under `out-of-order=true` so that ordering is undisturbed. The onboarding-blocker path is zero-migration.
 
@@ -88,6 +88,56 @@ Durable deliverable replacing the imperative deploy patches from the 2026-07-14 
     - **NOT CLAIMED, and stated plainly: the KDS realtime path does NOT work.** *(Recorded at phase close, 2026-07-26; the defect half of this is now FIXED — read the dated status update immediately below before quoting this sentence.)* `26-VALIDATION.md` carries a *stronger* INFRA-02d row than this requirement's text — "a KDS client actually receives a relayed event" (decision D-06) — and that row is **FALSIFIED**, not merely unproven: `k8s/LOCAL.md` **L6** records 14 SUBSCRIBE / 14 `Invalid destination` ERROR / **0 MESSAGE** frames, because a RabbitMQ `/topic` destination may not contain `/` and the app uses `/topic/kitchen/{tenantId}/{shopId}`. `k8s/base/configmap.yaml:36` sets `stomp.broker.mode: "relay"` with no staging or production override, so **both** inherit the broken path. This requirement is closed on its own acceptance — *the credentials reach spring config* — and **not** on relay function. The defect is a confirmed production defect tracked as **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** (`bug`/`P1`), with the mechanism, the two-arm raw-socket falsification and a must-fail-first four-part acceptance test in `k8s/LOCAL.md` §7 A3 and the phase's `deferred-items.md`. Marking INFRA-02 complete over a falsified row without saying so would be exactly the green-by-construction failure this phase spent nine plans building against.
     - **STATUS UPDATE — 2026-07-26: the code defect is FIXED; the live proof is STILL NOT CAPTURED. These are two different things and must not be collapsed into one.** Issue **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** was **CLOSED** at 2026-07-26T10:03:13Z by PR **#269**, merged to main as **`d964a85`**. The destination is now built in one place — `core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java` — as `/topic/{feature}.{tenantId}[.{qualifier}]`, a single dot-separated segment RabbitMQ accepts and the idiomatic AMQP routing key; `TenantChannelInterceptor` parses that shape, its cross-tenant denial was **re-run rather than assumed**, and it now rejects any slashed `/topic/` destination on shape alone before the tenant parse. Coverage added: `StompDestinationsTest`, `TenantChannelInterceptorTest`, `TenantChannelInterceptorShopGateIntegrationTest`, `OrderStateChangeListenerTest`, `OrderStateChangeListenerIdempotencyIntegrationTest`, `kitchen/__tests__/page.test.tsx`, `use-stomp.test.ts` — each confirmed to fail with the fix reverted — plus a live two-arm probe of the destination **shape** (slashed → `Invalid destination`, dotted → RECEIPT). **What has NOT happened: nothing has yet exercised a real RabbitMQ STOMP relay end to end.** Evidence row **L6** — *a KDS client actually receives a relayed order event through a real broker* — is **still NOT CAPTURED**, and capturing it needs a running cluster. **Therefore INFRA-02(d) remains closed on its stated credential-wiring acceptance, unchanged.** It is **not** upgraded to "the realtime path is proven working", and `26-VALIDATION.md`'s functional row stays **RED** — its state has changed from *falsified defect* to *open evidence gap*, which is a different result, not a better one. **A fix is not a proof:** treating the two as equivalent would be precisely the green-by-construction failure this phase spent nine plans building against.
 
+## Go-to-market closure (added 2026-08-01) — Phases 27–32
+
+Cohort framing follows `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`: **Cohort A (takeaway) is the
+go-to-market**. Cohort B (catering) runs as parallel discovery under **#428** and gates nothing here.
+Full falsifiable success criteria live in `ROADMAP.md` under *Go-to-market closure*; this section
+carries the requirement IDs and their sources.
+
+### Operational maturity (OPS) — Phase 27
+
+Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 while these lived in
+`ROADMAP.md` only, which is why a requirements-driven review could not see them.
+
+- [x] **OPS-01**: Terminal failure states declared, detected and routed to a human — no DLQ, poison row or FAILED asset silently unowned. Alert rules proven capable of firing against live series, not merely `promtool`-valid.
+- [x] **OPS-02**: Every pinned runtime dependency carries a support horizon that fails the build before it lapses; RabbitMQ on a supported 4.x series with a proven rollback.
+- [x] **OPS-03**: Consumer concurrency and prefetch derive from a measured baseline; the load harness asserts status codes so a 401 flood cannot read as throughput.
+- [x] **OPS-04**: In-flight work survives infrastructure failure — a broker outage no longer destroys uploads (V60), a broker rebuild no longer orphans undelivered messages.
+- [x] **OPS-05**: Outbound webhooks actually deliver. Closed a live outage in which **100% of webhook events had dead-lettered since Phase 22** (untrusted-package deserialization).
+
+### Security triage (SEC) — Phase 28
+
+- [ ] **SEC-01**: Pentest finding A1 re-verified against a stack rebuilt from HEAD, recorded CONFIRMED or FALSIFIED with the measurement that settled it. Source: `SECURITY-FINDINGS.md` (git-excluded, Strix run `d8c0`, 2026-07-31). Its stated root cause does not hold on the tree — both tables carry FORCE RLS and both services gate writes on `require(shopId, SHOP_MANAGER)`.
+- [ ] **SEC-02**: All 11 findings triaged — a sanitized public issue or a dated written acceptance each. No literal secret values, no exploit chain, no repro payloads (the repo is public).
+- [ ] **SEC-03**: No dev-only branch reachable under the `prod` profile, and the `X-Tenant-Id` fallback no longer advertised in the unauthenticated OpenAPI spec. CI gate shown to fail against a reintroduced fallback.
+- [ ] **SEC-04**: Compose publishes no infrastructure port on `0.0.0.0`; local credentials rotated. Also closes the #283/#284/#289 bypass class.
+
+### Deployable staging (DPLY) — Phase 29
+
+- [ ] **DPLY-01**: A real Keycloak vendor login through the ingress to a rendered dashboard, on a resolvable public hostname, with real seeded rows.
+- [ ] **DPLY-02**: The deploy knot closed or per-issue deferred with a reason — #99, #100, #292, #293, #299, #301, #302, #271.
+- [ ] **DPLY-03**: Prometheus, Alertmanager and Grafana running **in k8s**, with `check-alert-liveness.sh` and `check-alert-metrics.sh` exit 0 against staging. `k8s/` ships zero monitoring manifests today (Phase 27 `deferred-items.md` §5) — everything Phase 27 built is compose-scoped, so a staging deploy today is unmonitored.
+- [ ] **DPLY-04**: PITR (#101) with a restore proven by row count, two-arm — arm A must show a zero-row dump passing the pipeline's own byte and `pg_restore --list` checks. Blocked on **ADR-0002 sign-off**.
+- [ ] **DPLY-05**: NetworkPolicies enforced, not merely rendered (#297 Calico), with a denied connection captured.
+
+### Money path (PAY) — Phase 30
+
+- [ ] **PAY-01**: The refund E2E (#61) runs and passes; its `ALLOW` entries leave `e2e-skip-budget.conf`. Blocked on **Stripe test-mode keys** — not on a fixture.
+- [ ] **PAY-02**: Recurring subscription billing at the published £39/location/month + 0.5%, proven by retrieving a test-mode invoice from Stripe by id. Closes #102's remainder.
+- [ ] **PAY-03**: The full loop executed on staging — onboard → order → capture → payout to a connected account → refund — evidenced from Stripe's API, never from an application log.
+
+### Consumer-safety and legal floor (LGL) — Phase 31
+
+- [ ] **LGL-01**: #116 — privacy policy, cookie banner and written retention policy live on the public storefront.
+- [ ] **LGL-02**: #103 + #272 — WCAG 2.1 AA with a published conformance statement and a CI a11y check shown to fail against a broken control.
+- [ ] **LGL-03**: #427 Wave 1 — recorded lawful-basis decision for consulting a stored customer allergen profile, order-level mask aggregation, KDS conflict surfacing. Today no consumer-allergen matching exists at checkout, and every allergen statement resolves to a hand-typed integer never reconciled against the adjacent ingredients text.
+
+### Go to market (GTM) — Phase 32
+
+- [ ] **GTM-01**: Production tagged and deployed — a `v2.3` git tag exists (none does; latest is `v2.2` while `build.gradle.kts` reads `2.3.0`), `DEPLOY_ENABLED` true, `check-runtime-freshness.sh` green against production.
+- [ ] **GTM-02**: One real Cohort A vendor completes onboarding → published shop → first paid order in production, and #428 Wave 1 has produced its recorded finding.
+
 ## Future Requirements (deferred — tracked, not lost)
 
 Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
@@ -142,4 +192,29 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | INFRA-01 | Phase 26 | 26-01, 26-03, 26-04, 26-05, 26-06, 26-07, 26-09 | Complete — overlay committed (26-04: 6 files, 23 rendered resources) + LOC-1..LOC-6/INV-1..INV-6 render gates (26-03) + bootstrap entry point (26-05) + runbook (26-06); closed on the live verbatim server dry-run, 23 objects, 0 `denied the request` across 8 run logs (26-07, `k8s/LOCAL.md` §11 L1) with 3/3 rollout, ingress smoke on real seeded rows and provable `--dry-run-only` re-runnability (L1b/L1c/L1d) |
 | INFRA-02 | Phase 26 | 26-01, 26-02, 26-03, 26-07, 26-08, 26-09 | Complete — (a) INV-1/INV-2 + live `secretKeyRef`, port 5433, `value` field 0 (L2b); (b) validator counts 1/1/0 + DB-side `rolsuper=f` + 16→0→5 connection attribution (L2); (c) `.status.succeeded=1` to host MinIO + two-arm falsification arm A products 0 / arm B products 47 (L3/L4); (d) env-contract direction (a) + `Access refused` count 0 + broker-side `auth_login=jtoye`, guest 0 with non-vacuity control (L5 + 26-08). **(d) is closed on credential wiring only — the stronger D-06 functional row (a KDS client receives a relayed event) is FALSIFIED, tracked as [#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)**. *2026-07-26: #266 CLOSED by PR #269 (`d964a85`) — defect fixed with unit + integration coverage; **(d) still closed on credential wiring only**, because L6 (a client receiving a relayed event) is still uncaptured and needs a cluster. The row is now an open **evidence gap**, not a defect. A fix is not a proof.* |
 
-**Coverage:** 24 v1 requirements (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2) mapped to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`.)
+| OPS-01 | Phase 27 | 27-00, 27-03, 27-06 | Complete |
+| OPS-02 | Phase 27 | 27-00, 27-02, 27-06 | Complete |
+| OPS-03 | Phase 27 | 27-00, 27-04 | Complete |
+| OPS-04 | Phase 27 | 27-01, 27-02 | Complete |
+| OPS-05 | Phase 27 | 27-05 | Complete |
+| SEC-01 | Phase 28 | not yet planned | Not started |
+| SEC-02 | Phase 28 | not yet planned | Not started |
+| SEC-03 | Phase 28 | not yet planned | Not started |
+| SEC-04 | Phase 28 | not yet planned | Not started |
+| DPLY-01 | Phase 29 | not yet planned | Not started |
+| DPLY-02 | Phase 29 | not yet planned | Not started |
+| DPLY-03 | Phase 29 | not yet planned | Not started |
+| DPLY-04 | Phase 29 | not yet planned | Not started — blocked on ADR-0002 sign-off |
+| DPLY-05 | Phase 29 | not yet planned | Not started |
+| PAY-01 | Phase 30 | not yet planned | Not started — blocked on Stripe test-mode keys |
+| PAY-02 | Phase 30 | not yet planned | Not started |
+| PAY-03 | Phase 30 | not yet planned | Not started |
+| LGL-01 | Phase 31 | not yet planned | Not started |
+| LGL-02 | Phase 31 | not yet planned | Not started |
+| LGL-03 | Phase 31 | not yet planned | Not started — #427 Wave 1 |
+| GTM-01 | Phase 32 | not yet planned | Not started |
+| GTM-02 | Phase 32 | not yet planned | Not started |
+
+**Coverage:** **46 requirements across 13 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete, plus the 2026-08-01 widening: OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started). Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.)
+
+**Not tracked as v2.3 requirements, deliberately:** **#427** (ADR-0004 Ingredient node / allergen evidence chain) beyond its Wave 1 slice at LGL-03, and **#428** (Cohort B catering, discovery-gated). Both are epics filed 2026-08-01 after the state review found they had no phase, no requirement ID and no issue and were therefore invisible to every roadmap- and tracker-driven review. They are the growth story and sit **after** go-to-market, not inside it.
