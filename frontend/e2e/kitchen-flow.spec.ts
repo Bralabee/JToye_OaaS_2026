@@ -194,8 +194,21 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // Header
     await expect(page.getByRole("heading", { name: /Kitchen Display/i })).toBeVisible()
 
-    // Shop selector trigger is rendered
-    await expect(page.getByText(/Select shop|Test Shop/i).first()).toBeVisible()
+    // Shop selector trigger is rendered.
+    //
+    // Anchored to the trigger's ROLE, not to its text (#404). Radix `Select`
+    // renders a visually-hidden native <select> for a11y alongside the visible
+    // trigger, so `getByText(/Select shop|Test Shop/i).first()` resolved to
+    // `<option value="shop-1">Test Shop</option>` — an element that is hidden BY
+    // DESIGN and can therefore never satisfy toBeVisible(). The failure read
+    // `Received: hidden` and looked like a rendering defect; the page was fine.
+    //
+    // Strictly stronger than the original: this asserts the trigger is visible AND
+    // carries the expected label, which is what the text matcher was reaching for
+    // but could not express. There is exactly one Select on this page (page.tsx:419).
+    const shopSelector = page.getByRole("combobox").first()
+    await expect(shopSelector).toBeVisible()
+    await expect(shopSelector).toHaveText(/Select shop|Test Shop/i)
 
     // Mute toggle button is present
     await expect(page.getByTitle(/Mute alerts|Unmute alerts/)).toBeVisible()
