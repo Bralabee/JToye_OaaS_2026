@@ -185,6 +185,21 @@ services:
     environment:
       TZ: Europe/London
       SPRING_PROFILES_ACTIVE: dev
+      # Public rate limit, widened for the LOCAL E2E runtime only (#409).
+      #
+      # The default is 30 requests/minute with a burst of 10. One storefront page
+      # load fires ~6 public calls (shop, config, promotions, announcements,
+      # reviews, products), so roughly five page loads exhaust it — and the
+      # Playwright suite does far more than that. Measured 2026-08-01: a single
+      # sequential run produced 166 rate-limit rejections, one of them on the
+      # order POST, which surfaced as a checkout that never confirmed (#409).
+      #
+      # The limiter stays ENABLED deliberately. Disabling it would make the local
+      # stack stop exercising a control that production relies on, and would let
+      # a genuine 429-handling regression pass unnoticed; the 429 path is still
+      # reachable on demand by exceeding the widened budget.
+      RATE_LIMIT_PUBLIC_PER_MINUTE: ${RATE_LIMIT_PUBLIC_PER_MINUTE:-600}
+      RATE_LIMIT_PUBLIC_BURST: ${RATE_LIMIT_PUBLIC_BURST:-120}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}

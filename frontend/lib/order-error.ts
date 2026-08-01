@@ -58,6 +58,22 @@ export function retryAfterSeconds(err: unknown): number | null {
 }
 
 /**
+ * Recover the wait from the rate limiter's prose body, e.g.
+ * "Rate limit exceeded. Please try again in 19 seconds."
+ *
+ * Deliberately narrow: it must match the limiter's sentence and decline
+ * anything else, so an unrelated message can never be mined for a stray number
+ * and rendered as a countdown.
+ */
+export function secondsFromMessage(message?: string): number | null {
+  if (!message) return null
+  const m = /\bin\s+(\d+(?:\.\d+)?)\s+second/i.exec(message)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null
+}
+
+/**
  * The message to show under the Place-order button.
  *
  * Order matters: 429 is handled BEFORE the generic body-message path, because
@@ -70,7 +86,16 @@ export function describeOrderError(err: unknown): string {
   if (!res) return GENERIC_ORDER_ERROR
 
   if (res.status === 429) {
-    const wait = retryAfterSeconds(err)
+    // Header first, BODY as the fallback that actually fires in a browser.
+    //
+    // `Retry-After` is not a CORS-safelisted response header, and the storefront
+    // calls the API cross-origin, so the browser hides it from JS unless the
+    // server sends Access-Control-Expose-Headers. It does not. Measured in a
+    // real browser 2026-08-01: the header path never ran and every shopper got
+    // the unquantified copy — the unit tests passed throughout, because they
+    // construct the header directly. The body is readable, and it carries the
+    // same number, so parse that as well.
+    const wait = retryAfterSeconds(err) ?? secondsFromMessage(res.data?.message)
     if (wait !== null) {
       const unit = wait === 1 ? "second" : "seconds"
       return `Too many requests just now. Please wait ${wait} ${unit} and place your order again — nothing has been charged and your basket is safe.`

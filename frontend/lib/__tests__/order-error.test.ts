@@ -1,6 +1,7 @@
 import {
   describeOrderError,
   retryAfterSeconds,
+  secondsFromMessage,
   GENERIC_ORDER_ERROR,
 } from "@/lib/order-error"
 
@@ -51,21 +52,33 @@ describe("describeOrderError — #409", () => {
       expect(describeOrderError(rateLimited(1))).toContain("1 second and")
     })
 
-    // A malformed header must degrade to the vaguer sentence, never render
-    // "try again in NaN seconds".
+    // A malformed header must never render "try again in NaN seconds". It now
+    // recovers the number from the BODY instead — which is the path that
+    // actually runs in a browser, since the header is hidden cross-origin.
     it.each([["not-a-number"], [""], ["Wed, 21 Oct 2026 07:28:00 GMT"]])(
-      "falls back to an unquantified wait when Retry-After is %p",
+      "recovers the wait from the body when Retry-After is %p",
       (value) => {
         const msg = describeOrderError(rateLimited(value))
-        expect(msg).toMatch(/wait a moment/i)
-        expect(msg).not.toMatch(/NaN/)
+        expect(msg).toContain("19 seconds")
+        expect(msg).not.toMatch(/NaN|undefined/)
       }
     )
 
-    it("still says to wait when Retry-After is absent entirely", () => {
+    it("recovers from the body when Retry-After is absent entirely", () => {
       const msg = describeOrderError(rateLimited())
+      expect(msg).toContain("19 seconds")
+      expect(msg).not.toMatch(/NaN|undefined/)
+    })
+
+    // Only when BOTH sources are unusable does it fall to the vaguer sentence.
+    it.each([
+      ["a body with no duration", "Rate limit exceeded."],
+      ["an empty body message", ""],
+    ])("falls back to an unquantified wait given %s", (_label, message) => {
+      const err = { response: { status: 429, headers: {}, data: { message } } }
+      const msg = describeOrderError(err)
       expect(msg).toMatch(/wait a moment/i)
-      expect(msg).not.toMatch(/undefined|NaN/)
+      expect(msg).not.toMatch(/NaN|undefined|\d+ seconds/)
     })
   })
 
@@ -98,6 +111,55 @@ describe("describeOrderError — #409", () => {
     it("uses the generic copy for a network error with no response", () => {
       expect(describeOrderError(new Error("Network Error"))).toBe(GENERIC_ORDER_ERROR)
       expect(describeOrderError(undefined)).toBe(GENERIC_ORDER_ERROR)
+    })
+  })
+
+  // Retry-After is not CORS-safelisted and the API is cross-origin, so a real
+  // browser NEVER sees the header. Measured 2026-08-01: every shopper got the
+  // unquantified copy while these unit tests were green, because they build the
+  // header directly. The body is readable and carries the same number.
+  describe("browser reality: header hidden, body readable", () => {
+    it("quantifies the wait from the BODY when the header is absent", () => {
+      const err = {
+        response: {
+          status: 429,
+          headers: {}, // exactly what a cross-origin browser response looks like
+          data: {
+            error: "Too Many Requests",
+            message: "Rate limit exceeded. Please try again in 19 seconds.",
+          },
+        },
+      }
+      expect(describeOrderError(err)).toContain("19 seconds")
+    })
+
+    it("prefers the header when both are present", () => {
+      const err = {
+        response: {
+          status: 429,
+          headers: { "retry-after": "5" },
+          data: { message: "Rate limit exceeded. Please try again in 19 seconds." },
+        },
+      }
+      expect(describeOrderError(err)).toContain("5 seconds")
+    })
+  })
+
+  describe("secondsFromMessage", () => {
+    it("reads the limiter's sentence", () => {
+      expect(secondsFromMessage("Rate limit exceeded. Please try again in 19 seconds.")).toBe(19)
+    })
+
+    it("declines unrelated prose, so a stray number is never a countdown", () => {
+      expect(secondsFromMessage("Order 12 could not be placed.")).toBeNull()
+      expect(secondsFromMessage("Minimum order is 10 pounds.")).toBeNull()
+      expect(secondsFromMessage(undefined)).toBeNull()
+      expect(secondsFromMessage("")).toBeNull()
+    })
+
+    it("rounds up and rejects zero", () => {
+      expect(secondsFromMessage("try again in 2.4 seconds")).toBe(3)
+      expect(secondsFromMessage("try again in 0 seconds")).toBeNull()
     })
   })
 
