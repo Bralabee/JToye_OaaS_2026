@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A rate-limited checkout told the shopper to do the one thing that re-trips it (#409) — 2026-08-01
+### A rate-limited checkout told the shopper to do the one thing that re-trips it (#410, closes #409) — 2026-08-01
 
 Filed as *"order created (201) but the UI never confirms"*. **That framing was wrong and is corrected in the issue.** The order is not created: the POST is rejected with `429` before it reaches the controller, so nothing is persisted and there is no duplicate-order risk. The defect underneath is real but different.
 
