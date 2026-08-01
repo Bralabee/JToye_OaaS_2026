@@ -113,7 +113,19 @@ public class WebhookDeliveryWorker {
      */
     @Scheduled(fixedDelayString = "${webhook.delivery.interval-ms:5000}")
     public void deliverDue() {
-        for (UUID tenantId : listTenantIds()) {
+        // issue #418: listTenantIds() was outside the per-tenant guard, so a transient
+        // failure merely LISTING tenants escaped it and aborted the whole pass. This
+        // worker is where the shape was actually OBSERVED failing in CI — the 2026-08-01
+        // logs carry "Unexpected error occurred in scheduled task" traces ending at
+        // WebhookDeliveryWorker.listTenantIds. Same fix as the two outbox flushers.
+        List<UUID> tenantIds;
+        try {
+            tenantIds = listTenantIds();
+        } catch (Exception e) {
+            log.error("event=webhook_delivery_skipped — could not list tenants; retrying on the next tick", e);
+            return;
+        }
+        for (UUID tenantId : tenantIds) {
             try {
                 deliverForTenant(tenantId);
             } catch (Exception e) {

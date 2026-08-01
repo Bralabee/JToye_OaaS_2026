@@ -119,7 +119,18 @@ public class MediaEventOutboxFlusher {
      */
     @Scheduled(fixedDelayString = "${media.outbox.flush-interval-ms:5000}")
     public void flushPending() {
-        for (UUID tenantId : listTenantIds()) {
+        // issue #418: listTenantIds() was outside the per-tenant guard, so a transient
+        // failure merely LISTING tenants aborted the whole pass. Cloned from the payment
+        // flusher, which is where the CI stack traces landed — fixed here for the same
+        // reason the shape was cloned in the first place.
+        List<UUID> tenantIds;
+        try {
+            tenantIds = listTenantIds();
+        } catch (Exception e) {
+            log.error("Media outbox flush skipped — could not list tenants; retrying on the next tick", e);
+            return;
+        }
+        for (UUID tenantId : tenantIds) {
             try {
                 flushTenant(tenantId);
             } catch (Exception e) {
@@ -155,7 +166,15 @@ public class MediaEventOutboxFlusher {
      */
     @Scheduled(fixedDelayString = "${media.outbox.resurrect-interval-ms:300000}")
     public void resurrectFailed() {
-        for (UUID tenantId : listTenantIds()) {
+        // issue #418: same uncovered listTenantIds() — see flushPending() above.
+        List<UUID> tenantIds;
+        try {
+            tenantIds = listTenantIds();
+        } catch (Exception e) {
+            log.error("Media outbox resurrection skipped — could not list tenants; retrying on the next tick", e);
+            return;
+        }
+        for (UUID tenantId : tenantIds) {
             try {
                 resurrectTenant(tenantId);
             } catch (Exception e) {

@@ -155,7 +155,25 @@ public class PaymentEventOutboxFlusher {
      */
     @Scheduled(fixedDelayString = "${payment.outbox.flush-interval-ms:5000}")
     public void flushPending() {
-        for (UUID tenantId : listTenantIds()) {
+        // issue #418: listTenantIds() was OUTSIDE this try, so a transient failure while
+        // merely LISTING tenants escaped the per-tenant guard below and aborted the whole
+        // pass. Measured on the CI runs of 2026-08-01: 78 stack traces of
+        // "Unexpected error occurred in scheduled task" ending at listTenantIds(), each
+        // one a flush pass that published nothing for ANY tenant because the tenant list
+        // could not be read. The per-tenant catch was doing its job; the query that feeds
+        // it simply was not covered.
+        //
+        // A skipped pass is recoverable — the next tick retries and the rows are still
+        // PENDING — so this logs and returns rather than rethrowing into the scheduler's
+        // error handler, which is what produced those 78 traces.
+        List<UUID> tenantIds;
+        try {
+            tenantIds = listTenantIds();
+        } catch (Exception e) {
+            log.error("Outbox flush skipped — could not list tenants; retrying on the next tick", e);
+            return;
+        }
+        for (UUID tenantId : tenantIds) {
             try {
                 flushTenant(tenantId);
             } catch (Exception e) {
@@ -199,7 +217,17 @@ public class PaymentEventOutboxFlusher {
      */
     @Scheduled(fixedDelayString = "${payment.outbox.resurrect-interval-ms:300000}")
     public void resurrectFailed() {
-        for (UUID tenantId : listTenantIds()) {
+        // issue #418: same uncovered listTenantIds() as flushPending(). Fixed here too
+        // rather than only where the stack traces happened to land — the hazard is the
+        // shape, not the one method that demonstrated it.
+        List<UUID> tenantIds;
+        try {
+            tenantIds = listTenantIds();
+        } catch (Exception e) {
+            log.error("Outbox resurrection skipped — could not list tenants; retrying on the next tick", e);
+            return;
+        }
+        for (UUID tenantId : tenantIds) {
             try {
                 resurrectTenant(tenantId);
             } catch (Exception e) {

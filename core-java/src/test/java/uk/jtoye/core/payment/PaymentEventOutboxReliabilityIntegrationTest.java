@@ -270,9 +270,29 @@ class PaymentEventOutboxReliabilityIntegrationTest {
 
         // Broker healthy — the resurrected row drains, the poison row is untouched.
         flusher.flushPending();
-        verify(rabbitTemplate, times(1)).convertAndSend(anyString(), anyString(), any(Object.class));
-        assertThat(rowById(exhausted).get("status")).isEqualTo("SENT");
+
+        // STATE FIRST, MOCK SECOND (#418). This line failed on CI in BOTH directions —
+        // TooManyActualInvocations (#415) and WantedButNotInvoked (#417) — on branches
+        // that touched neither payment nor outbox code. Because the invocation count was
+        // asserted BEFORE the row state, the CI log recorded a bare Mockito error and
+        // never said the one thing that would have identified the mechanism: whether the
+        // row had actually drained. Ordering the observable outcome first costs nothing
+        // and makes the next occurrence self-diagnosing —
+        //   row SENT but count wrong  -> the publish happened; the mock is the problem
+        //   row still PENDING         -> the flush genuinely did not run
+        assertThat(rowById(exhausted).get("status"))
+                .as("the resurrected row must actually drain — asserted before the mock so a "
+                        + "failure here identifies the mechanism rather than hiding it")
+                .isEqualTo("SENT");
         assertThat(rowById(poisoned).get("status")).isEqualTo("FAILED");
+
+        // Scoped to THIS row's exchange + routing key, mirroring the verify that already
+        // closes the broker-outage test above. `anyString(), anyString(), any()` counts
+        // EVERY publish from ANY source, so one unrelated invocation inflates the count
+        // without saying anything about the property under test. Exactly-once is
+        // unchanged — this narrows what counts, it does not loosen how many.
+        verify(rabbitTemplate, times(1)).convertAndSend(
+                eq(RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE), eq("payment.succeeded"), any(Object.class));
     }
 
     // ------------------------------------------------------------------
