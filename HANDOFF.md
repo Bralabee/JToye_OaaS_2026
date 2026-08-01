@@ -14,9 +14,9 @@ written. Its §0.1 (concurrent session) is carried forward; its instrument-failu
 |---|---|
 | `JToye_OaaS_2026` | **3 PRs merged: #415, #416, #417.** 1 issue filed (#418). HEAD deliberately **not** quoted — see the note below |
 | Open PRs | **none.** #415, #416 and #417 are all MERGED |
-| Open issues | **61.** #412, #413 and #404 are all CLOSED. **#418 and #420 are OPEN** — a flaky required check (§2.1) and the E2E coverage gap #404 left behind (§2.2) |
+| Open issues | **61.** #412, #413 and #404 are all CLOSED. **#418 and #420 are OPEN** — a flaky required check (§2.1, retracted diagnosis) and #420, whose SKIP half is now closed and whose CI-coverage half is not (§2.2) |
 | Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3) |
-| Gates | **18 of 18 rc=0**, measured from the main checkout after the final merge and rebuild |
+| Gates | **19 of 19 rc=0** — the 19th is `check-e2e-skip-budget`, which VOIDs until a fresh Playwright JSON report exists (§4 step 5), exactly as `check-runtime-freshness` VOIDs without a running stack |
 | Runtime proof | 4/4 built services FRESH · live 429 read back as `application/problem+json;charset=UTF-8` with `retryAfterSeconds` |
 | Project version | **2.3.0** (`build.gradle.kts`). Latest tag is `v2.2`; no `v2.3` tag — a release decision |
 | Test baseline | `docs/metrics.json` **1914** — java 1271 / 220 files, jest **475** / 67 files, schema V60 |
@@ -123,18 +123,28 @@ It cost roughly two hours of merge latency this session and required a manual `g
 #404 was CLOSED once its three **failure** classes were fixed. Two things it raised were not
 addressed, so they are now tracked separately as **#420** rather than disappearing with it:
 
-- **CI runs `e2e/public-layout.spec.ts` only — 2 of 128 tests.** The other 12 specs need a full stack
-  CI does not have. Structural, not an oversight — but the consequence is that 126 of 128 E2E tests
-  never run on any PR, which is exactly how #404's broken sign-in went unnoticed.
-- **14 tests SKIP rather than pass.** Full run on the merged tree: **114 passed, 14 skipped, 0
-  failed** of 128. Playwright's summary is green and reads as "everything is verified". It is not.
-  Seven distinct tests × 2 projects: desktop-only GSAP scenes enumerated under the *mobile* project
-  (arguably a spec bug, not a missing fixture), multi-replica STOMP, and refundable-order /
-  promotion / onboarding fixtures absent from the dev DB.
+- **CI runs `e2e/public-layout.spec.ts` only — 2 of 126 tests.** ⚠ **STILL OPEN.** The other 12
+  specs need a full stack CI does not have. Structural, not an oversight — but the consequence is
+  that 124 of 126 E2E tests never run on any PR, which is exactly how #404's broken sign-in went
+  unnoticed. This is the remaining half of #420 and nothing here has changed it.
+- **The skip half is now DONE: 14 → 8, and the 8 are declared.** Full run: **118 passed, 8 skipped,
+  0 failed** of 126.
+  - **4 became real passes** via `scripts/seed-e2e-fixtures.sh` — a DRAFT order (the dev DB held 91
+    orders and **not one** in DRAFT, so "the Issue-refund button is hidden on a DRAFT order" — a
+    gating assertion on a money path — had never executed) and an in-window promotion +
+    announcement on `mama-ades-kitchen`, which had **zero** of each.
+  - **2 stopped being counted at all**: the desktop-only GSAP block is tagged `@desktop-only` and
+    the mobile project `grepInvert`s it, so it is no longer *enumerated* there. It was never
+    unverified — the desktop project always ran it.
+  - **8 remain, every one declared** in `scripts/gates/e2e-skip-budget.conf` with a justification
+    and a REMOVE WHEN: multi-replica STOMP (4), the real-Stripe refund (2), demo-tenant onboarding
+    (2). `check-e2e-skip-budget.sh` fails on an undeclared skip **even when the total does not
+    move**, and on a stale ALLOW that no longer matches anything.
 
-The suggested first step is on the issue: make the skip count **visible and bounded** so a new
-conditional skip cannot silently join the 14 — the same shape as the anti-vacuity guard in
-`media-review-320.spec.ts`, which is the only reason its own decay was ever noticed.
+**The refund test was deliberately NOT unblocked.** It calls `Stripe.Refund.create` and
+`STRIPE_API_KEY` is empty here. Seeding `paymentStatus=CAPTURED` with an invented
+`payment_reference` would push it past its skip and then fail at the Stripe call — a green-looking
+fixture over a broken path. It needs real test-mode keys, which is an environment decision.
 
 ### 2.3 Carried forward, still true
 
@@ -184,7 +194,9 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 18 x rc=0 — ALL of them.
+# EXPECT 19 x rc=0 — ALL of them. Run step 5 FIRST: check-e2e-skip-budget VOIDs (2)
+# until a fresh Playwright JSON report exists, the same way check-runtime-freshness
+# VOIDs without a running stack. A VOID is not a pass.
 # check-alert-metrics red on NoOrdersCreated is the rebuild-blindness case (§2.3).
 
 # 3. The two fixes, read out of the RUNNING product — a 200 proves nothing here.
@@ -200,11 +212,16 @@ bash scripts/check-runtime-freshness.sh   # expect 4/4 FRESH, rc=0
 docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar BOOT-INF/classes/application.yml' \
   | grep -c 'exposed-headers'             # expect 1 — read from INSIDE the jar, not the filesystem
 
-# 5. E2E — source .env FIRST or six vendor specs skip; seed or media-review VOIDs
+# 5. E2E — source .env FIRST or six vendor specs skip; seed, or several specs VOID/skip.
+#    seed-e2e-fixtures.sh covers the DRAFT order + promo/announcement AND delegates to
+#    seed-media-review-fixtures.sh, so it is the single entry point.
 cd frontend && set -a; . ../.env; set +a
-bash ../scripts/seed-media-review-fixtures.sh
-PLAYWRIGHT_BASE_URL=http://localhost:3000 npx playwright test --reporter=line
-# EXPECT 114 passed / 14 skipped / 0 failed. The 14 skips are NOT passes (§2.2).
+bash ../scripts/seed-e2e-fixtures.sh
+mkdir -p e2e-artifacts
+PLAYWRIGHT_BASE_URL=http://localhost:3000 npx playwright test --reporter=json > e2e-artifacts/report.json
+# EXPECT 118 passed / 8 skipped / 0 failed, of 126. The 8 skips are NOT passes (§2.2) —
+# they are DECLARED, which is a different thing. Then gate them:
+bash ../scripts/check-e2e-skip-budget.sh   # expect rc=0; VOID(2) if the report is stale
 
 # 6. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
