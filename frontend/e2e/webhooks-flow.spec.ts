@@ -194,7 +194,13 @@ test.describe("Webhook dashboard journey (COMMS-06)", () => {
     ).toBeVisible({ timeout: 10_000 })
 
     // --- Surface B: open detail ----------------------------------------------
-    await page.getByRole("link", { name: /view/i }).first().click()
+    // Anchored to the subscription's own href, NOT to a name pattern (#404).
+    // `{ name: /view/i }` matched the sidebar's "Image re[view]" link — accessible
+    // -name matching is substring, and that nav entry sits earlier in the DOM, so
+    // `.first()` clicked it and the run navigated to /dashboard/media/review.
+    // The spec (Phase 22) predated that nav entry (Phase 24), so a nav addition
+    // silently broke it with nothing in either phase going red.
+    await page.locator(`a[href="/dashboard/webhooks/${SUB_ID}"]`).first().click()
     await page.waitForURL(new RegExp(`/dashboard/webhooks/${SUB_ID}`), { timeout: 10_000 })
     const table = page.getByTestId("deliveries-table")
     await expect(table.getByText("Delivered")).toBeVisible({ timeout: 10_000 })
