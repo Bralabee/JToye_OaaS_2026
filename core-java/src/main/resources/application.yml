@@ -530,6 +530,10 @@ webhook:
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  # issue #412: a cross-origin response hands JS only the CORS-safelisted headers
+  # unless they are named here. Omitting the four rate-limit headers made them
+  # invisible to every browser client while curl still showed them on the wire.
+  exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset}
 
 rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}
