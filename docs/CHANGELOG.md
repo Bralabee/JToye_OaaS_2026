@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The rate limiter's four headers were on the wire and readable by nobody (#415, closes #412) — 2026-08-01
+
+`RateLimitInterceptor` sets `Retry-After`, `X-RateLimit-Limit`, `-Remaining` and `-Reset` on every 429. A cross-origin response hands JS **only** the CORS-safelisted headers unless the server names the rest in `Access-Control-Expose-Headers` — and that allowlist carried `Authorization, Content-Type` only.
+
+#### Fixed
+- **All four headers are now exposed**, via a config-injected `cors.exposed-headers` (env `CORS_EXPOSED_HEADERS`) consistent with the neighbouring `cors.allowed-origins`. Two client paths depended on them and both degraded **silently**: `lib/public-fetch-retry.ts` always took its exponential-backoff fallback despite a docstring claiming it honours the header, and the checkout could not quantify the wait for a throttled shopper (#409/#410).
+
+#### Notes
+- **The issue's own diagnosis was a false negative, and the gate for that is reading the wire.** It reported `grep -rn 'exposedHeaders|Access-Control-Expose'` returning nothing and concluded no allowlist existed. The pattern `exposedHeaders` (plural) cannot match `addExposedHeader` (singular) at `CorsConfig.java:30-31`. The allowlist existed and omitted the four — same defect, different mechanism. This is the fourth instrument failure in two sessions where a grep's *shape* produced the wrong conclusion.
+- **`curl` cannot answer this question at all.** It shows what was **sent**; the browser decides what script may **read**. On one and the same response, `curl` showed `Retry-After: 50` while Chromium resolved `headers.get('Retry-After')` to `null`. Both directions were measured in a real browser before and after — `null` → `"18"`, with the visible-header list growing from exactly the five safelisted names to include all four.
+- **The axios path was proved separately.** The storefront uses axios, whose XHR adapter builds `error.response.headers` from `getAllResponseHeaders()` — a different browser API filtered by the same allowlist, so a passing `fetch` proves nothing about it. Verified: `{"status": 429, "retryAfter": "41"}`.
+- **A probe that swallowed its own errors nearly produced a wrong answer.** The first pass-direction run reported "never received a 429" because every outcome that was not a `Response` fell into a `.catch()` the search then skipped — indistinguishable from a working limiter. Re-instrumented to tally every outcome; the re-run showed `{"429": 60}`. A filter used to prove absence must never be able to manufacture it.
+- **One acceptance criterion was expected to be unsatisfiable and was measured anyway.** The issue asks that the CORS *preflight* carry `Access-Control-Expose-Headers`; the spec puts exposed-headers on the actual response. Measuring rather than asserting showed Spring emits it on **both**, so the criterion stands as written.
+- Falsified rather than observed passing: two break arms on the shipped `application.yml` default — dropping `Retry-After`, and hardcoding the literal to remove the env override — each fail exactly one test, with opening **and** closing clean arms and both restores verified by `git hash-object` against the committed blob.
+- Six new tests drive the **real `CorsFilter`** rather than inspecting the config object, since asserting that a list contains six strings proves the list and not the emission — precisely the defect's shape. One is a permanent fail-direction arm holding the pre-fix allowlist; another parses `application.yml` so a regression in the shipped default cannot hide behind tests that inject their own value.
+- Deliberately **not** plumbed through docker-compose or the k8s configmap: the `application.yml` default already reaches every environment, and restating six header names in a second file is drift risk with no benefit.
+- **Landed before #413 on purpose.** While `Retry-After` was invisible, `order-error.ts` depended on parsing `data.message`; reshaping that body to RFC 7807 first would silently drop the quantified wait, with nothing going red on either the server or the frontend side.
+
 ### A rate-limited checkout told the shopper to do the one thing that re-trips it (#410, closes #409) — 2026-08-01
 
 Filed as *"order created (201) but the UI never confirms"*. **That framing was wrong and is corrected in the issue.** The order is not created: the POST is rejected with `429` before it reaches the controller, so nothing is persisted and there is no duplicate-order risk. The defect underneath is real but different.
