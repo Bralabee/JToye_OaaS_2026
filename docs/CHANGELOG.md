@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 14 E2E skips became 8, and the 8 are declared rather than silent (#423, refs #420) — 2026-08-01
+
+The suite reported *"114 passed, 0 failed"* while **14 tests SKIPPED**, and nothing in that summary distinguished the two. A skip means **nobody checked this**. Among them: *"the Issue-refund button is hidden on a DRAFT order"* — a gating assertion on a **money path** — had never executed, because the dev DB held 91 orders across PENDING/CONFIRMED/PREPARING/COMPLETED/CANCELLED and **not one** in DRAFT. Nothing was red, and nothing ever would have been.
+
+#### Added
+- **`scripts/seed-e2e-fixtures.sh`** — turns 4 skips into real passes: a DRAFT order, and an in-window promotion + announcement on `mama-ades-kitchen`, which had **zero** of each. Every instant is written RELATIVE TO NOW; the `ac55-*` rows this project already lost to an absolute `quarantine_expires_at` are why that is a rule and not a preference. It delegates to `seed-media-review-fixtures.sh`, so there is one entry point rather than two rituals.
+- **`scripts/check-e2e-skip-budget.sh` + `scripts/gates/e2e-skip-budget.conf`** — the remaining 8 skips are matched BY TITLE against `ALLOW` entries, each carrying a justification and a REMOVE WHEN. A bare count would miss the case that matters: fix one skip, gain another, total unchanged, regression invisible. A **stale** `ALLOW` fails too, so exemptions retire by the gate going red rather than by someone remembering — the same contract as `check-changelog-contract` C-2.
+
+#### Fixed
+- **2 skips stopped being counted at all.** The desktop-only GSAP block is tagged `@desktop-only` and the mobile project `grepInvert`s it, so mobile no longer ENUMERATES it. It was never unverified — the desktop project always ran it — so it was two permanent entries in a number meant to mean *unchecked*. Verified by enumeration rather than by reading the config: 0 listed under mobile, still 2 under desktop.
+
+#### Notes
+- **A correction, stated rather than quietly edited.** My first review of this said the promo fixture had "expired". That is true of `brixton-village-grill`'s 2026-07-17 promo, but that is **not the shop the spec opens** (`SHOP_SLUG = "mama-ades-kitchen"`, which had no promotion at all). Checking which shop the spec actually visits would have taken one line — the same failure mode retracted on #418 an hour earlier.
+- **The refund test was deliberately NOT unblocked.** It calls `Stripe.Refund.create` and `STRIPE_API_KEY` is empty on this stack. Seeding `paymentStatus=CAPTURED` with an invented `payment_reference` would push it past its skip and then FAIL at the Stripe call — a green-looking fixture over a broken path. It needs real test-mode keys, which is an environment decision, not a fixture gap.
+- **The gate VOIDs rather than running the suite.** The suite needs a stack CI does not have, and a gate that silently runs nothing is worse than no gate. It also VOIDs when the report is OLDER than the specs it describes — a stale artifact certifying a skip set that no longer exists is a documented trap here.
+- Falsified rather than observed passing, with opening and closing clean arms and restores verified by `git hash-object`: budget lowered → rc=1; an `ALLOW` removed → rc=1 naming the now-undeclared skip; an `ALLOW` matching nothing → rc=1; and rc=2 VOID for a missing report, an unknown config directive, a config with no `ALLOW`s, a zero-test report, and a stale report. S-4 self-tests the matcher in **both** directions, so "all declared" cannot be reached by a matcher that quietly stopped matching.
+- **`MAX_SKIPS` is 8, measured from a real report.** The first draft said 6 — STOMP was counted as one test when it is two. The arithmetic now lives in the file with the subtraction shown.
+- Measured: **118 passed / 8 skipped / 0 failed** of 126 (was 114/14/0 of 128). The CI-coverage half of #420 — 2 of 126 specs run per PR — is untouched and stays open.
+
 ### The rate-limit 429 body is RFC 7807 now — server and client changed together (#417, closes #413) — 2026-08-01
 
 `RateLimitInterceptor` hand-wrote `{"error","message","tenantId"}` in two places while `GlobalExceptionHandler` builds a real `ProblemDetail` everywhere else. The one field every other error surface uses — `detail` — was absent, and the wait was available only as prose inside an English sentence. That already cost real behaviour: the checkout read `data.detail`, correctly following the documented contract, got nothing, and told a rate-limited shopper to retry immediately (#409).
