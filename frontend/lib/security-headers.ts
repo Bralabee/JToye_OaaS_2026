@@ -16,8 +16,19 @@ export interface CspOptions {
   nonce: string
   /** Development mode enables 'unsafe-eval' (React refresh / Next dev overlay). */
   isDev: boolean
-  /** Public Keycloak origin — allowed in form-action + connect-src. */
+  /** Public Keycloak realm URL for STAFF/vendor — allowed in form-action + connect-src. */
   keycloakOrigin?: string
+  /**
+   * Public Keycloak realm URL for CUSTOMERS (jtoye-customers).
+   *
+   * Separate from `keycloakOrigin` because these are realm URLs with a PATH, not
+   * bare origins, and #382 split the two identity pools. Omitting it does not
+   * fail loudly — it CSP-blocks the customer token exchange at
+   * `…/jtoye-customers/protocol/openid-connect/token`, so registration creates
+   * the Keycloak user and then the sign-in silently dies with "Authentication
+   * failed. Please try again." Covered by __tests__/csp-headers.test.ts.
+   */
+  customerKeycloakOrigin?: string
   /** Public API origin — allowed in connect-src, plus its ws(s):// form. */
   apiOrigin?: string
   /**
@@ -38,10 +49,42 @@ export function buildCsp({
   nonce,
   isDev,
   keycloakOrigin = "",
+  customerKeycloakOrigin = "",
   apiOrigin = "",
   upgradeInsecure = false,
 }: CspOptions): string {
   const wsOrigin = apiOrigin.replace(/^http/, "ws")
+
+  // Both realms, de-duplicated and blank-safe. They are usually the same host on
+  // different realm paths, so emitting both is correct; emitting an empty string
+  // or a duplicate is not.
+  //
+  // EACH IS EMITTED TWICE, bare and with a trailing slash, and that is the whole
+  // point of this list. A CSP source expression carrying a path matches that path
+  // EXACTLY unless it ends in "/", in which case it matches the subtree. These
+  // values are realm URLs with a path, so the bare form
+  // `…/realms/jtoye-customers` never matched
+  // `…/realms/jtoye-customers/protocol/openid-connect/token` — the endpoint the
+  // browser actually calls. Listing the realm and still being blocked is what
+  // that looks like from the console, and it is why adding the customer realm
+  // alone did not fix customer sign-in.
+  //
+  // The staff realm carries the same latent bug. It is invisible there because
+  // NextAuth exchanges tokens SERVER-side, where CSP does not apply; the customer
+  // flow does PKCE in the BROWSER, where it does. Fixing both keeps the two
+  // consistent rather than leaving a trap for whoever moves vendor auth
+  // client-side.
+  // A BARE ORIGIN already matches every path, so it needs no subtree form; only
+  // a value carrying a path does. Deployments that configure a bare origin keep
+  // the exact CSP they had.
+  const keycloakSources = [keycloakOrigin, customerKeycloakOrigin]
+    .filter((src) => src !== "")
+    .flatMap((src) => {
+      const bare = src.replace(/\/+$/, "")
+      const hasPath = /^[a-z][a-z0-9+.-]*:\/\/[^/]+\/.+/i.test(bare)
+      return hasPath ? [bare, `${bare}/`] : [bare]
+    })
+    .filter((src, i, all) => all.indexOf(src) === i)
 
   const directives = [
     "default-src 'self'",
@@ -50,12 +93,12 @@ export function buildCsp({
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://*.stripe.com https: http://localhost:9000",
     "font-src 'self' data:",
-    `connect-src 'self' https://api.stripe.com https://*.stripe.com ${apiOrigin} ${wsOrigin} ${keycloakOrigin}`
+    `connect-src 'self' https://api.stripe.com https://*.stripe.com ${apiOrigin} ${wsOrigin} ${keycloakSources.join(" ")}`
       .replace(/\s+/g, " ")
       .trim(),
     "frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com",
     "frame-ancestors 'none'",
-    `form-action 'self' ${keycloakOrigin}`.replace(/\s+/g, " ").trim(),
+    `form-action 'self' ${keycloakSources.join(" ")}`.replace(/\s+/g, " ").trim(),
     "base-uri 'self'",
     "object-src 'none'",
     ...(upgradeInsecure && !isDev ? ["upgrade-insecure-requests"] : []),

@@ -24,6 +24,11 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
+import {
+  VENDOR_USERNAME,
+  VENDOR_PASSWORD,
+  skipWithoutVendorPassword,
+} from "./vendor-credentials"
 
 // Honour PLAYWRIGHT_BASE_URL (dev stack may run on :3100). Mirrors playwright.config.ts.
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
@@ -31,10 +36,9 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev realm account and
 // maps to tenant 00000000-…-000000000001 (the DemoDataSeeder demo tenant). The
-// password is deployment-specific and MUST be supplied via E2E_VENDOR_PASSWORD —
-// it is never committed (secret-scanning gate). Both are overridable per env.
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
+// credential comes from e2e/vendor-credentials.ts — see that file for why the
+// old `?? "password123"` default made every test here fail as a ~21s timeout
+// rather than skip with a reason.
 
 /**
  * The mobile tab bar in the LIVE document.
@@ -94,6 +98,7 @@ function live(page: Page) {
  * Skips cleanly if no known sign-in affordance is present.
  */
 async function vendorLogin(page: Page) {
+  skipWithoutVendorPassword()
   await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
 
   // Some deployments expose a NextAuth credentials form; the dev stack's signin

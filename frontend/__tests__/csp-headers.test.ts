@@ -38,6 +38,73 @@ describe("buildCsp() — Content-Security-Policy directives", () => {
     apiOrigin: "https://api.example.test",
   }
 
+  // #382 split staff (jtoye-dev) and customer (jtoye-customers) into separate
+  // realms. `keycloakOrigin` carries a realm PATH, not a bare origin, so the
+  // customer realm is a genuinely different CSP source and is NOT covered by
+  // the staff one. Omitting it does not fail loudly: registration creates the
+  // Keycloak user, then the browser blocks the token exchange and the shopper
+  // sees "Authentication failed. Please try again." Measured on the live stack
+  // 2026-08-01 before this was wired.
+  describe("customer realm is its own connect-src source (#382 realm split)", () => {
+    const staff = "http://kc.example.test/realms/jtoye-dev"
+    const customer = "http://kc.example.test/realms/jtoye-customers"
+
+    it("allows BOTH realms in connect-src when both are configured", () => {
+      const directives = parseCsp(
+        buildCsp({ ...base, keycloakOrigin: staff, customerKeycloakOrigin: customer })
+      )
+      expect(directives["connect-src"]).toContain(staff)
+      expect(directives["connect-src"]).toContain(customer)
+    })
+
+    // The assertion that actually makes sign-in work. A CSP source with a path
+    // matches EXACTLY unless it ends in "/", so the bare realm URL never covers
+    // `/protocol/openid-connect/token`. Listing the realm and still being blocked
+    // is precisely what shipped; measured in a real browser on 2026-08-01.
+    it("emits the trailing-slash SUBTREE form, not just the bare realm path", () => {
+      const connectSrc = parseCsp(
+        buildCsp({ ...base, keycloakOrigin: staff, customerKeycloakOrigin: customer })
+      )["connect-src"]
+      const sources = connectSrc.split(" ")
+      for (const realm of [staff, customer]) {
+        expect(sources).toContain(`${realm}/`)
+      }
+    })
+
+    it("covers the token endpoint the browser actually calls", () => {
+      const sources = parseCsp(
+        buildCsp({ ...base, keycloakOrigin: staff, customerKeycloakOrigin: customer })
+      )["connect-src"].split(" ")
+      const tokenUrl = `${customer}/protocol/openid-connect/token`
+      // CSP path semantics: a source covers the URL when it is the exact path, or
+      // a trailing-slash prefix of it.
+      const covered = sources.some(
+        (src) => src === tokenUrl || (src.endsWith("/") && tokenUrl.startsWith(src))
+      )
+      expect(covered).toBe(true)
+    })
+
+    // The falsifying arm: this is the exact shipped state that broke customer
+    // sign-in, so the test must FAIL if the customer source is ever dropped.
+    it("does NOT smuggle the customer realm in via the staff realm", () => {
+      const directives = parseCsp(buildCsp({ ...base, keycloakOrigin: staff }))
+      expect(directives["connect-src"]).toContain(staff)
+      expect(directives["connect-src"]).not.toContain(customer)
+    })
+
+    it("emits neither a duplicate nor a blank when the two are equal or absent", () => {
+      const same = parseCsp(
+        buildCsp({ ...base, keycloakOrigin: staff, customerKeycloakOrigin: staff })
+      )["connect-src"]
+      expect(same.split(" ").filter((s) => s === staff)).toHaveLength(1)
+
+      const neither = parseCsp(
+        buildCsp({ ...base, keycloakOrigin: "", customerKeycloakOrigin: "" })
+      )["connect-src"]
+      expect(neither).not.toMatch(/\s{2,}|\s$/)
+    })
+  })
+
   it("has the baseline directives", () => {
     const csp = buildCsp(base)
     expect(csp).toContain("default-src 'self'")

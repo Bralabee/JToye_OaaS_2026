@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-1872%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-1877%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -232,10 +232,10 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
 - Backend (Java): 1264 `@Test` methods across 219 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 77 `Test*` functions across 9 files ✅
-- Frontend (Jest): 440 `it/test` blocks across 65 files ✅
+- Frontend (Jest): 445 `it/test` blocks across 65 files ✅
 - Frontend E2E (Playwright): 43 `test()` blocks across 13 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 1872 logical test invocations** ✅
+- **Total: 1877 logical test invocations** ✅
 
 Database schema version: **V60** (Flyway).
 
@@ -244,7 +244,7 @@ Database schema version: **V60** (Flyway).
 > `docs/metrics.json` against the source tree, and `scripts/check-doc-metrics.sh`
 > asserts the numbers quoted *in this file* (and in `CLAUDE.md` / `AGENTS.md`)
 > against `docs/metrics.json`. Before the second gate existed this block had
-> drifted to `921` while the tree was at `1872` — the first gate never read it.
+> drifted to `921` while the tree was at `1877` — the first gate never read it.
 
 **Production Readiness:** 100/100
 

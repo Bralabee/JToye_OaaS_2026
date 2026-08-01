@@ -29,16 +29,20 @@
  */
 
 import { test, expect } from "@playwright/test"
+import {
+  VENDOR_USERNAME,
+  VENDOR_PASSWORD,
+  skipWithoutVendorPassword,
+} from "./vendor-credentials"
 
 const BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100"
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account, mapping
 // to tenant 00000000-…-000000000001 via the realm's tenant_id attribute. The
-// password is deployment-specific — supply via E2E_VENDOR_PASSWORD (never committed).
-const VENDOR_USERNAME = process.env.E2E_VENDOR_USERNAME ?? "admin-user"
-const VENDOR_PASSWORD = process.env.E2E_VENDOR_PASSWORD ?? "password123"
+// credential comes from e2e/vendor-credentials.ts (never committed).
 
 async function vendorLogin(page: import("@playwright/test").Page) {
+  skipWithoutVendorPassword()
   await page.goto(`${BASE_URL}/auth/signin`)
   // NOT networkidle: the app keeps SSE/realtime connections open, so
   // networkidle never fires — wait for the DOM and the concrete controls.
