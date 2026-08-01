@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A rate-limited checkout told the shopper to do the one thing that re-trips it (#409) — 2026-08-01
+
+Filed as *"order created (201) but the UI never confirms"*. **That framing was wrong and is corrected in the issue.** The order is not created: the POST is rejected with `429` before it reaches the controller, so nothing is persisted and there is no duplicate-order risk. The defect underneath is real but different.
+
+#### Fixed
+- **The server's only actionable sentence was discarded.** Checkout read *only* `response.data.detail` (RFC 7807). The rate limiter answers `429` with `Retry-After: 19` and a body of `{"error":"Too Many Requests","message":"Rate limit exceeded. Please try again in 19 seconds."}` — a different shape. So the shopper saw *"Failed to place order. Please try again."*, which invites an **immediate** retry: precisely the action that re-trips the limit. `lib/order-error.ts` now handles 429 first, then `detail`, then `message`, then a generic fallback, and says plainly that nothing was charged and the basket survives.
+- **`Retry-After` can never be read in a browser.** It is not CORS-safelisted and the storefront calls the API cross-origin, so it is hidden from JS unless the server sends `Access-Control-Expose-Headers` — which it does not. The header branch could not execute in production. The number is now also recovered from the body, with a deliberately narrow pattern so an unrelated message can never have a stray number mined out of it and rendered as a countdown.
+- **The E2E harness was generating the load.** `playwright.config.ts` said `fullyParallel: false` — *"Sequential — tests share state"* — but that only sequences tests **within a file**; the two projects still ran on 2 workers through the same Docker gateway IP, sharing one bucket. `workers` is now pinned to 1 (overridable via `PLAYWRIGHT_WORKERS`).
+- **And pinning workers was not sufficient.** The public limit is **30/min, burst 10**, while one storefront page load fires ~6 public calls — about five page loads exhaust it. A single sequential run produced **166** rate-limit rejections. The local compose stack now sets `RATE_LIMIT_PUBLIC_PER_MINUTE=600`, `RATE_LIMIT_PUBLIC_BURST=120`.
+
+#### Notes
+- **The limiter stays ENABLED deliberately.** Disabling it would stop the local stack exercising a control production relies on, and would let a genuine 429-handling regression pass unnoticed. The 429 path is still reachable by exceeding the wider budget — which is exactly how the browser verification was produced.
+- **Green unit tests coexisted with a dead code path**, again. `curl -I` showed `Retry-After: 19` and the tests asserted the quantified copy, yet the browser rendered *"wait a moment"* every time, because the tests build the header object directly. Found by logging the **rendered copy** in a real browser, not by reading the code.
+- **A test caught a bug in the fix**: `Number("")` is `0`, not `NaN`, so a blank `Retry-After` was quantified as *"wait 0 seconds"*. Surfaced by the malformed-header case; `<= 0` now falls through.
+- Falsified rather than observed passing: reverting `describeOrderError` to the old `detail`-only behaviour fails **10 of 16** of its tests, with opening and closing clean arms and the restore verified by `git hash-object` against the committed blob. The browser check asserts the bucket returned `429` **first**, so it cannot pass vacuously.
+- Verified live: *"Too many requests just now. Please wait 53 seconds and place your order again — nothing has been charged and your basket is safe."* `storefront-flows` on `:3000` at 1 worker: **28 passed / 2 skipped**, 429s during the run **166 → 91**.
+- The diagnostic specs were deliberately **not** committed — a test that exhausts the rate limiter would poison every test after it.
+- Left for its own issue: the rate-limit response is **not RFC 7807** (`error`/`message` rather than `type`/`title`/`detail`), contradicting the standing agent-readiness contract. Changing a live error shape is a contract change, not a drive-by.
+
 ### Customer sign-in was CSP-blocked, and an unwatched E2E suite hid it (#408) — 2026-08-01
 
 Two thirds of #404's "27 of 128 Playwright tests fail on clean `main`" turned out not to be product defects at all — and repairing the tests that *were* stale exposed a live defect underneath: **customers could not sign in or register at all.**

@@ -9,6 +9,7 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { useCart } from "@/components/storefront/cart-provider"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
+import { describeOrderError } from "@/lib/order-error"
 import publicApiClient from "@/lib/public-api-client"
 import { PublicShop } from "@/types/storefront"
 
@@ -363,12 +364,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         allergenWarnings: confirmation.allergenWarnings || [],
       })
     } catch (err: unknown) {
-      if (err && typeof err === "object" && "response" in err) {
-        const axiosErr = err as { response?: { data?: { detail?: string } } }
-        setError(axiosErr.response?.data?.detail || "Failed to place order. Please try again.")
-      } else {
-        setError("Failed to place order. Please try again.")
-      }
+      // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate
+      // limiter answers 429 with `Retry-After` and an `error`/`message` body, so
+      // the one actionable sentence the server sent was discarded and the
+      // shopper was told to "try again" — immediately, which re-trips the limit.
+      setError(describeOrderError(err))
     } finally {
       setSubmitting(false)
     }
