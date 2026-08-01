@@ -25,9 +25,18 @@ interface ApiErrorLike {
     /** Header lookup is case-insensitive in practice; both forms are read. */
     headers?: Record<string, unknown>
     data?: {
-      /** RFC 7807 (GlobalExceptionHandler). */
+      /** RFC 7807 (GlobalExceptionHandler, and the rate limiter since #413). */
       detail?: string
-      /** Non-7807 shape used by RateLimitInterceptor. */
+      /**
+       * RFC 7807 extension member (#413) — the wait as a TYPED number, flattened to
+       * top level by ProblemDetailJacksonMixin. Preferred over mining it out of prose.
+       */
+      retryAfterSeconds?: number
+      /**
+       * The PRE-#413 rate-limiter shape. Retained deliberately: it is what a stale
+       * core-java still sends, and this file is the only thing standing between that
+       * and a shopper being told to retry immediately.
+       */
       message?: string
       error?: string
     }
@@ -86,16 +95,29 @@ export function describeOrderError(err: unknown): string {
   if (!res) return GENERIC_ORDER_ERROR
 
   if (res.status === 429) {
-    // Header first, BODY as the fallback that actually fires in a browser.
+    // FOUR sources, most authoritative first. Each one exists because the one
+    // before it has been observed to be absent in a real browser.
     //
-    // `Retry-After` is not a CORS-safelisted response header, and the storefront
-    // calls the API cross-origin, so the browser hides it from JS unless the
-    // server sends Access-Control-Expose-Headers. It does not. Measured in a
-    // real browser 2026-08-01: the header path never ran and every shopper got
-    // the unquantified copy — the unit tests passed throughout, because they
-    // construct the header directly. The body is readable, and it carries the
-    // same number, so parse that as well.
-    const wait = retryAfterSeconds(err) ?? secondsFromMessage(res.data?.message)
+    // 1. `Retry-After` — correct, and INVISIBLE to JS until #412. It is not a
+    //    CORS-safelisted response header and the storefront calls the API
+    //    cross-origin, so the browser withheld it unless the server sent
+    //    Access-Control-Expose-Headers. Measured 2026-08-01: this branch never ran
+    //    in production, while the unit tests passed throughout because they build
+    //    the header object directly.
+    // 2. `retryAfterSeconds` — the typed RFC 7807 member added by #413. Preferred
+    //    over prose because it cannot be broken by rewording the sentence.
+    // 3. `detail` — #413 moved the sentence here from `message`.
+    // 4. `message` — the pre-#413 shape. RETAINED, not dead code: a stale
+    //    core-java still sends it, and this is the only thing standing between
+    //    that and a shopper being told to retry immediately (#409).
+    const typed = res.data?.retryAfterSeconds
+    const wait =
+      retryAfterSeconds(err) ??
+      (typeof typed === "number" && Number.isFinite(typed) && typed > 0
+        ? Math.ceil(typed)
+        : null) ??
+      secondsFromMessage(res.data?.detail) ??
+      secondsFromMessage(res.data?.message)
     if (wait !== null) {
       const unit = wait === 1 ? "second" : "seconds"
       return `Too many requests just now. Please wait ${wait} ${unit} and place your order again — nothing has been charged and your basket is safe.`

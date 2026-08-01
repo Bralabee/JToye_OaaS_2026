@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The rate-limit 429 body is RFC 7807 now — server and client changed together (#417, closes #413) — 2026-08-01
+
+`RateLimitInterceptor` hand-wrote `{"error","message","tenantId"}` in two places while `GlobalExceptionHandler` builds a real `ProblemDetail` everywhere else. The one field every other error surface uses — `detail` — was absent, and the wait was available only as prose inside an English sentence. That already cost real behaviour: the checkout read `data.detail`, correctly following the documented contract, got nothing, and told a rate-limited shopper to retry immediately (#409).
+
+#### Fixed
+- **Both 429 paths emit a real `ProblemDetail`**, serialised through the application's OWN `ObjectMapper`. That choice is deliberate: the defect being fixed IS a hand-written body that merely resembled the contract, and rebuilding it by hand would reintroduce the same class of bug in a nicer-looking form. Same type, same mapper, so the shape cannot drift from `GlobalExceptionHandler`'s.
+- **`retryAfterSeconds` is a TYPED number**, not prose — an agent reading the contract gets an integer instead of having to regex an English sentence. The sentence stays in `detail` for humans.
+- **The charset was wrong too.** `getWriter()` defaults to ISO-8859-1, and the pre-fix responses really did go out as `application/json;charset=ISO-8859-1` — measured in a browser. Now `application/problem+json` with an explicit UTF-8.
+
+#### Notes
+- **The frontend changed in the same commit, and that is the whole hazard.** `order-error.ts` read `data.message`, which this change REMOVES. Reshaping the server alone would have dropped the quantified wait back to "wait a moment" with NOTHING going red — the server tests do not know about the frontend, and the frontend tests construct their own fixtures. It now reads four sources, most authoritative first: header (readable since #412) → typed member → `detail` → `message`. The last is RETAINED, not dead code: a stale core-java still sends it.
+- **The old assertions could not tell the two shapes apart.** `contains("Too Many Requests")` passed against the hand-rolled body *and* the RFC 7807 one, so it was never evidence about the contract. Tests now parse the JSON and assert fields by name, that `error`/`message` are GONE, and that the extra members are FLATTENED rather than nested under `"properties"` — the one thing a wrongly-configured `ObjectMapper` would silently change.
+- **The public path's missing `tenantId` is asserted TWO ways**: a field lookup for the member, and a raw-substring check that also catches a leak inside `detail`, which a field lookup cannot see. The TENANT path keeps `tenantId` — it existed in the old body and dropping it while reshaping would be a regression by omission.
+- Falsified rather than observed passing. Server arms: dropping the typed member → 2 failures; reverting the media type → 2 failures; opening and closing clean arms green, restores verified by `git hash-object`. Client arm — the exact regression the issue warned about, reverting `order-error.ts` to the pre-change `message`-only branch while the server is reshaped → **5 of 30 jest tests fail**, including the named REGRESSION GUARD.
+- **Landed after #412 on purpose.** While `Retry-After` was invisible cross-origin, `order-error.ts` depended on parsing `data.message`; reshaping the body first would have silently dropped the quantified wait with nothing going red on either side.
 ### The rate limiter's four headers were on the wire and readable by nobody (#415, closes #412) — 2026-08-01
 
 `RateLimitInterceptor` sets `Retry-After`, `X-RateLimit-Limit`, `-Remaining` and `-Reset` on every 429. A cross-origin response hands JS **only** the CORS-safelisted headers unless the server names the rest in `Access-Control-Expose-Headers` — and that allowlist carried `Authorization, Content-Type` only.
