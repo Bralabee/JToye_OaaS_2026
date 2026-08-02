@@ -1,301 +1,262 @@
-# Handoff: four wrong diagnoses, three of them mine, none catchable by a green check
+# Handoff: two threads had no ticket, and a roadmap review cannot see what has no ticket
 
-**Generated:** 2026-08-01 ~11:00 BST. Supersedes #419/#421, which were accurate when written —
-their §2.1 carried a diagnosis of #418 that this session **retracted**, which is exactly the
-semantic rot `check-handoff-contract` says it cannot detect.
+**Generated:** 2026-08-01 ~22:15 BST. Supersedes #424/#425, which were accurate for the E2E/outbox
+session that produced them. Their §0.2 (four wrong diagnoses) and §2.4 (decisions with rationale) are
+**still live** and are carried forward here in §5 — do not treat this document as discarding them.
 
-> **§0.2 is the point of this document.** Four separate defects were diagnosed this session and
-> **four diagnoses were wrong** — three of them written by me, two into filed GitHub issues. Every
-> one was settled by reading the failure's own output; none by anything going red. If you read one
-> section, read that one, then §0.3.
+> **§0.1 is the point of this document.** The build queue was empty and every process said the
+> project was in good shape. Two substantial threads — one of them **half the stated go-to-market** —
+> had no phase, no requirement ID and no issue, so no roadmap- or tracker-driven review could see
+> them. A third body of work, **11 pentest findings including 3 CRITICAL**, sits in a git-excluded
+> file that one `rm` would destroy. If you read one section, read that one.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **7 PRs merged: #415, #416, #417, #419, #421, #422, #423.** 3 issues filed (#418, #420, and #404's closure). HEAD deliberately **not** quoted — see below |
+| `JToye_OaaS_2026` | **1 PR merged: #429.** 2 epics filed: **#427**, **#428**. HEAD deliberately **not** quoted |
 | Open PRs | **none** |
-| Open issues | **61.** #412, #413 and #404 are CLOSED. **#418 and #420 are OPEN** and are this session's follow-ups (§2) |
-| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck (§3) |
-| Gates | **19 of 19 rc=0.** The 19th (`check-e2e-skip-budget`) VOIDs until a fresh Playwright JSON report exists — run §4 step 5 first |
-| Runtime proof | 4/4 built services FRESH · live 429 read back as `application/problem+json;charset=UTF-8` carrying `retryAfterSeconds` |
-| Project version | **2.3.0** (`build.gradle.kts`). Latest tag `v2.2`; no `v2.3` tag — a release decision |
-| Test baseline | `docs/metrics.json` **1917** — java 1274 / 221 files, jest 475 / 67 files, schema V60 |
-| E2E | **118 passed / 8 skipped / 0 failed** of 126. The 8 are DECLARED, which is not the same as passing |
+| Open issues | **63** (was 61; +#427 +#428) |
+| Milestone | **v2.3 is OPEN and now spans Phases 21–32.** Owner ruling — see §1.1. Do **not** run `/gsd-complete-milestone` |
+| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck |
+| Gates | **19 of 19 rc=0**, measured this session |
+| Test baseline | `docs/metrics.json` **1917**, unchanged — this session added no counted invocation |
+| Runtime | 4/4 built services FRESH. **No rebuild needed** — nothing this session touched source, schema, CI or workflows |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
-> §4 pairs every fact with the command that produces it: **run them, don't read them.**
+> §6 pairs every fact with the command that produces it: **run them, don't read them.**
 
 ---
 
 ## 0. ⚠ READ FIRST
 
-### 0.1 A second session shares this checkout
+### 0.1 The review was blind, and the blindness was structural
 
-Unchanged and still true: `git pull`, `checkout`, `merge`, `reset` and `branch -D` all **write** to
-whatever branch is checked out in the shared checkout. Check `git branch --show-current` immediately
-before any of them, not just before `commit`.
+A full state review ran against `ROADMAP.md` + `REQUIREMENTS.md` + `STATE.md` + `gh issue list`. It
+reported the project as feature-complete with an empty build queue. It was wrong, in three ways that
+share one cause:
 
-`feature/faster-integration-tests-parallelism` (one commit `c142b90c`, +8 lines in
-`core-java/build.gradle.kts`, "parallelize integrationTest to cut ~39m runtime to ~15m") is **still
-unpushed and still not mine** — deliberately left alone. ⚠ **Think before adopting it**: the
-integration job is where #418's flake lives, and that flake is contention-sensitive. More parallelism
-may make it worse, not better.
-
-### 0.2 Four diagnoses, four wrong — and the pattern is the same every time
-
-| what was believed | what was true | how it was settled |
+| what was invisible | why | now |
 |---|---|---|
-| **#412** (filed): *"the `Access-Control-Expose` grep returns nothing"*, so no allowlist existed | The allowlist **existed and omitted the four headers**. `exposedHeaders` (plural) cannot match `addExposedHeader` (singular) | `curl -D -` printed `Access-Control-Expose-Headers: Authorization, Content-Type` |
-| **#404** (recorded): `kitchen-flow` is *"consistent with the streaming-buffer class #406 fixed"* | **Wrong subsystem.** Radix `Select` renders a visually-hidden native `<select>`; the locator resolved to an `<option>`, hidden BY DESIGN, so the assertion could never pass on any stack | Playwright's own log: `locator resolved to <option value="shop-1">Test Shop</option>` |
-| **#418** (filed by me): the test *"has nothing disabling that schedule"*, so it races its own `@Scheduled` flusher | **It parks both intervals at 24h** via `@DynamicPropertySource`. My grep pattern did not contain `DynamicPropertySource` | Reading the file. Then three checks killed the theory outright (§2.1) |
-| **#420** (written by me): the promo fixture *"exists and expired"* | True of `brixton-village-grill` — but `storefront-flows` opens **`mama-ades-kitchen`**, which had **zero** promotions | `SHOP_SLUG` is on line 20 of the spec |
+| **ADR-0004** — the ingredient/knowledge graph. Accepted 2026-07-30, 468 lines, a 6-step sequencing plan | Authored as a `/gsd-quick` task. No phase, no requirement ID, no issue | **#427** |
+| **The catering cohort** — *half the stated go-to-market*. `BUSINESS_MODEL_DECISION_GUIDE.md` names takeaway **and** catering as separate cohorts and calls catering the wedge | Lives only in an analysis doc. No phase, no requirement ID, no issue | **#428** |
+| **11 pentest findings, 3 CRITICAL** (Strix run `d8c0`, 2026-07-31 02:16) | `SECURITY-FINDINGS.md` is **untracked and git-excluded** (public repo). No issue for any finding | **still untriaged — SEC-02** |
 
-**Two of these were retracted in public**, on #418 and #420. Neither retraction was forced by a
-failing check; both came from someone re-reading the evidence.
+**The filter was wrong, not the search.** Every file was readable; "planned" was defined as *has a
+phase or an issue*. An Accepted ADR ending in a Sequencing section is planned work by any reading.
 
-**The habit:** read the failure's own output *before* theorising, and check the one line that says
-which thing the test actually touches. Every wrong diagnosis above cost more to unwind than that
-would have cost to do.
+**The durable fix is not "look harder".** Give every Accepted ADR a tracking issue, or add a
+`check-adr-has-tracking-issue.sh` that fails closed — same shape as `check-terminal-states.sh`.
+**Not built.**
 
-### 0.3 Instruments that lied
+### 0.2 Instruments that lied, this session
 
 | what I measured with | what it actually did |
 |---|---|
-| a grep, twice, to prove absence | **Evidence about the PATTERN, not the code.** `exposedHeaders` cannot match `addExposedHeader`; a pattern without `DynamicPropertySource` cannot see `@DynamicPropertySource`. Both became filed issues. Prefer the ROOT token (`ExposedHeader`, `PropertySource`) and prove the pattern can hit before concluding it cannot |
-| `fetch(...).catch(...)` then `find(r => r.status === 429)` | **Reported "never received a 429" over 1440 requests.** Every non-`Response` fell into the `.catch()` and the search skipped it, so "all failed" and "no 429" were indistinguishable. Re-instrumented to tally EVERY outcome: `{"429": 60}` |
-| `git checkout -- <file>` to restore after a break arm | **Ate two fixes silently.** It restores from the **INDEX**, and they were unstaged. Third occurrence here. Caught only because restores are verified by `git hash-object`, never by `git diff --stat`. **Commit before running arms** |
-| `rc=$?` after `… \| tail -15` | Reported **0 over a gate that printed 10 FAIL lines**. `$?` was `tail`'s. Capture on its own statement |
-| reading a test-results XML after a build | **Read a STALE report** — the compile had failed, nothing ran, and the previous run's numbers looked like a pass. `rm -f` the report before every arm |
-| `curl -I` to answer "can a browser read this header?" | **Categorically the wrong instrument.** On one and the same response curl showed `Retry-After: 50` while Chromium resolved `headers.get('Retry-After')` to `null` |
-| `body.contains("Too Many Requests")` as a contract assertion | **Passed against BOTH the old hand-rolled body and the RFC 7807 one** — never evidence about the contract at all |
-| a CI re-run to "confirm a flake" | Legitimate **only after** you have shown the failing test is unrelated to your diff AND the same SHA has passed before. A reflexive re-run hides a real failure |
+| `PLAN.md`-without-`SUMMARY.md` as the pending-work scan | **Correct method, incomplete scope.** It found `23-18` — but I ran it over `phases/` and `milestones/` and **not `quick/`**, which is exactly where ADR-0004 lived. Scan all three |
+| the same scan, on `motion-D-PLAN.md` | **False positive.** Its summary is `motion-D-01-SUMMARY.md`; a stem-match said "pending" over work completed 2026-07-14 |
+| 10 green doc gates over `.planning/` edits | **Near-vacuous.** No gate covers `ROADMAP.md`, `REQUIREMENTS.md` or `STATE.md` — `check-doc-citations`'s `DEFAULT_DOCS` reaches `.planning/codebase/*` only. Green meant "broke nothing they watch" |
+| `Integration Tests` passing in **6s**, `Frontend E2E` in **11s** on a docs-only PR | **Path-filtered, not run.** A 6-second required check is a skip wearing a tick |
+| `git grep -c` to prove main carried the merge | Sound **only because a control ran**: `Phase 33` → 0 on the same file. Without it, a matcher that matches everything is indistinguishable from a real hit |
 
 ---
 
 ## 1. What landed
 
-### #415 — the rate limiter's four headers were readable by nobody (closes #412)
+### 1.1 The milestone ruling — v2.3 stays open (#429)
 
-A cross-origin response hands JS only the CORS-safelisted headers unless the server names the rest;
-the allowlist carried `Authorization, Content-Type`. Two client paths degraded **silently**:
-`public-fetch-retry.ts` always took its backoff fallback despite a docstring claiming otherwise, and
-the checkout could not quantify the wait. Now config-injected via `cors.exposed-headers`.
+Asked to formalise the go-to-market plan as a new milestone **v2.4**, the owner ruled:
 
-### #417 — the 429 body is RFC 7807, server and client together (closes #413)
+> *"2.3 is not complete. closing nothing. just document. we will proceed with 2.3 until it's go to
+> market ready."*
 
-Both paths emit a real `ProblemDetail` through the application's **own** `ObjectMapper` — chosen
-because the defect *was* a hand-written body that merely resembled the contract. `retryAfterSeconds`
-is a typed number. The charset was wrong too (`ISO-8859-1`). **Shipped with the frontend**, because
-`order-error.ts` read `data.message`, which this removed — server-only would have dropped the
-quantified wait with nothing going red.
+So `/gsd-new-milestone` was **not** run. Nothing archived, `MILESTONES.md` untouched (it still lists
+only v2.1/v2.0 — now deliberate). **v2.3 widened from Phases 21–26 to 21–32**, Phase 27 recorded as
+part of v2.3. Requirements went **24 → 46** (added `OPS×5` — Phase 27 never had requirement IDs, which
+is exactly why a requirements-driven review could not see it — plus `SEC×4 DPLY×5 PAY×3 LGL×3 GTM×2`).
 
-### #416 — #404's three remaining failure classes were all instrument defects
+**Order: 28 → 29 → 32, with 30 and 31 in parallel alongside 29.**
 
-Six failing tests, **zero product defects**: a nav link added two phases later stealing a click
-(`/view/i` matches "Image re**view**"); a Radix hidden `<option>`; and a fixture that had **decayed**
-because it was written with absolute dates.
+`STATE.md` was corrected: it claimed Phase 27 was mid-flight at 27-03 when it closed **7/7 on
+2026-07-29**, and named `check-alert-liveness` as a red owned gate that **#339** had closed. The GSD
+workflows read that file first, so a fresh session would have resumed a phase finished three days
+earlier. The 27-03 record is **retained verbatim** with its resolution noted in place.
+`state.record-session` was deliberately **not** called.
 
-### #422 — a tenant-listing blip aborted the whole scheduled pass (refs #418)
+### 1.2 #427 — the ingredient graph epic
 
-`listTenantIds()` sat **outside** the per-tenant try/catch in three scheduled workers, so a transient
-failure while merely *listing* tenants aborted the entire pass — publishing nothing for **any**
-tenant. 78 stack traces per failing CI run end at exactly that call. Fixed in
-`PaymentEventOutboxFlusher`, `MediaEventOutboxFlusher` and `WebhookDeliveryWorker`.
+ADR-0004's decision: **adopt the graph data model, reject the graph datastore.** Apache AGE is
+disqualified for a repo-specific reason worth carrying: AGE creates label tables dynamically in a
+**per-graph schema**, and `RlsContractTest` sweeps `relnamespace = 'public'::regnamespace`
+(verified at `core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java:130`) — **the RLS
+drift guard would stay green over an unprotected graph.**
 
-### #423 — 14 E2E skips became 8, and the 8 are declared (refs #420)
+**Built: 0%.** The edges exist as shipped columns; the Ingredient node does not — `ingredients` is
+free text (V1/V25/V41), no ingredient or edge table in any migration.
 
-The suite said "114 passed, 0 failed" while 14 skipped. Among them: *"the Issue-refund button is
-hidden on a DRAFT order"* — a gating assertion on a **money path** — had never executed.
+**Its finding is a live product risk:** nothing ever reconciles `allergen_mask` — an integer a vendor
+hand-types into a CSV column — against the ingredients text in the adjacent column, and that mask is
+what the storefront renders (`frontend/components/storefront/product-detail-modal.tsx:65`). Wave 1 is
+scheduled as **LGL-03 in Phase 31**.
 
-**As measured before the fix (2026-08-01 ~08:30):** all **91** orders in the dev DB were
-`payment_status = NONE` and **not one** was DRAFT. Both halves of that are now deliberately stale —
-`seed-e2e-fixtures.sh` adds the DRAFT order, and the count has since grown past 91 (seeding plus
-`seed-order-metric.sh`). Re-measure rather than quoting these:
+### 1.3 #428 — the catering cohort epic, deliberately gated
 
-```bash
-docker exec jtoye-postgres psql -U jtoye -d jtoye -tAc \
-  "select status, payment_status, count(*) from orders group by 1,2 order by 3 desc;"
-```
+Cohort B has **zero implementation**: no Quote/Enquiry/Booking entity, and `fulfilment_type` is
+`DELIVERY | COLLECTION` only (V45). What *is* shipped is the honesty — `/for-operators`
+(`operator-pitch.tsx:114`, `:130`) already tells operators catering and WhatsApp are *"validation
+tracks, not current, guaranteed production workflows"*. **Nothing may weaken that disclaimer ahead of
+the capability.**
 
-`payment_status` is still `NONE` for **every** row, which is why the refund test itself stays
-skipped (§2.2) — that part has not changed and will not until Stripe test keys exist.
+The epic is **gated, not scheduled**: Wave 2 stays closed until ≥3 caterers are interviewed. The
+business-model guide calls these *discovery* cohorts, so building quotation workflow first would
+answer with code a question interviews answer free. **Wave 1 costs no engineering time and can start
+today.**
 
 ---
 
-## 2. Open items
+## 2. Open items — this session's
 
-### 2.1 #418 — the flake's mechanism is STILL UNKNOWN. Do not trust the issue body
+### 2.1 The pentest backlog is still untriaged, and A1's root cause is FALSIFIED
 
-⚠ **The diagnosis in #418's body is wrong and is retracted in its comments.** It claims the test
-races its own `@Scheduled` flusher. It does not: `@DynamicPropertySource` parks both intervals at
-86400000 ms.
+`SECURITY-FINDINGS.md` (untracked, git-excluded; full evidence at
+`~/strix_runs/host-docker-internal-9090_d8c0/`, chmod 600). **Do not repeat its claims unchecked** —
+verified against the tree 2026-08-01:
 
-Three checks killed that theory:
+- **A1** (cross-tenant BOLA on promotions/announcements, CVSS 9.1) — **its stated root cause is
+  false.** It says the tables *"lack a `tenant_id` column / RLS policy"*. Both carry `tenant_id` +
+  ENABLE + FORCE RLS (V28/V29/V33/V35/V39/V51), and `PromotionService`/`AnnouncementService` both call
+  `shopAccessService.require(shopId, SHOP_MANAGER)` on create/update/delete since Phase 23. Either the
+  tested stack was stale or the mechanism is the A2 chain. **Re-verify on a freshly built stack before
+  filing or fixing** — that is SEC-01, and it is written as *re-verify*, not *fix*.
+- **A2** (`X-Tenant-Id` fallback, CVSS 8.2) — **real in code, dev-scoped.** `TenantFilter` is
+  `@Profile({"dev","local","test"})` and every k8s env sets `SPRING_PROFILES_ACTIVE=prod`. Compose runs
+  `dev`, so it is live locally. `OpenApiConfig.java:50` still **advertises** it, in a spec finding C3
+  reports as unauthenticated.
+- **B1/B2/C1** — compose publishes with no bind address, so `0.0.0.0`: postgres `5433`, mailhog `8025`,
+  minio `9000`/`9001`, rabbitmq mgmt `15672`.
 
-| check | result |
+**Confirmed-good, protect from regression:** JWT signature validation rejects `alg=none` (all case
+variants), RS256→HS256 confusion, JKU injection, `kid` traversal; `core-api` enforces PKCE.
+
+### 2.2 Two bookkeeping repairs I found and did NOT make
+
+Both are live hazards, not tidiness:
+
+1. **`23-18-PLAN.md` has no `SUMMARY.md`.** The work **shipped** (issue #280 CLOSED, PR #308 merged
+   2026-07-26; verified in code — all three controllers take `shopId` with a 403). But `gsd-sdk` marks
+   a plan done **only** by SUMMARY presence, so an unscoped `/gsd:execute-phase 23` would
+   **re-execute already-merged work**. Write the SUMMARY before touching Phase 23.
+2. **Phase 23 has three disagreeing plan counts** — `ROADMAP.md:136` prose says **15**, the progress
+   table says **17/17**, and **18** `*-PLAN.md` files exist. `23-18` appears nowhere in the roadmap.
+
+### 2.3 The three most load-bearing planning files are ungated
+
+`ROADMAP.md`, `REQUIREMENTS.md` and `STATE.md` are covered by **no gate**. That is how `STATE.md` came
+to claim a finished phase was mid-flight and nothing noticed for three days. A `check-state-freshness`
+— assert `STATE.md`'s current phase matches `ROADMAP.md`'s progress table — would have caught it the
+day it appeared. **Recommended in `260801-ths`'s SUMMARY, not built.**
+
+### 2.4 The four blocking decisions — none are engineering tasks
+
+Phases 29–32 do not start until these land:
+
+| decision | state |
 |---|---|
-| do scheduled `flushPending` executions land in the failing test's window? | **No** — the last is 70–82s earlier, in the *previous* class's teardown |
-| does un-parking the interval to 250ms reproduce it locally? | **No** — 5/5 pass |
-| could RLS scoping or cross-class DB pollution explain it? | **No** — per-class `@Container`, and Testcontainers' bootstrap role is a superuser that bypasses even FORCE RLS |
+| **Production domain** | `jtoye.co.uk` never registered; `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records |
+| **Hosting target** | Your Azure sub is `c483d353`; the employer HS2 sub is off-limits. A live `snackpass-*` Container Apps stack already runs this product |
+| **Stripe test-mode keys** | Empty on every stack. Gates Phase 30 **entirely** |
+| **ADR-0002 sign-off** | Still `Proposed` — *"needs owner sign-off before #101 implementation starts"*. Gates PITR / DPLY-04 |
 
-**What is known.** The failing assertion is in
-`core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java`,
-test `failedRows_resurrectAndDrain_poisonStaysDead()`:
+### 2.5 The most under-weighted item in the backlog
 
-```java
-verify(rabbitTemplate, times(1)).convertAndSend(
-        eq(RabbitMQConfig.PAYMENT_EVENTS_EXCHANGE), eq("payment.succeeded"), any(Object.class));
-```
-
-⚠ **It is now at line 294, NOT 273.** #422 inserted the state assertions above it and rewrote the
-matchers; both CI logs and the issue body quote `:273`, which no longer points at it. Verify the line
-before quoting it again — `grep -n 'verify(rabbitTemplate, times(1))'` returns four hits in this file
-and only the one inside `failedRows_resurrectAndDrain_poisonStaysDead` is the flaky one.
-
-It failed in **both directions**, on branches touching neither payment nor outbox code, and only on
-heavily-contended runs where Testcontainers Postgres was demonstrably sick (477 and 500
-`Connection refused` lines):
-
-```
-#415  org.mockito.exceptions.verification.TooManyActualInvocations at …IntegrationTest.java:273
-#417  org.mockito.exceptions.verification.WantedButNotInvoked      at …IntegrationTest.java:273
-```
-
-**Next occurrence will be diagnostic.** #422 inverted the assertion order so row state is checked
-**before** the invocation count:
-- row `SENT`, count wrong → the publish happened; the mock/verification is the problem
-- row still `PENDING` → the flush genuinely did not run
-
-**Capture that line when it next fails** — it is the one fact that would settle this. Cost so far:
-~2h of merge latency across two PRs and one manual `gh run rerun --failed`.
-
-### 2.2 #420 — the CI coverage half is untouched
-
-**CI runs `e2e/public-layout.spec.ts` only — 2 of 126 tests.** The other 12 specs need a full stack
-CI does not have. 124 of 126 E2E tests never run on any PR, which is exactly how #404's broken
-sign-in went unnoticed. Options are enumerated on the issue (nightly compose job / extend the
-stack-free browser gate / accept explicitly in writing). **This is a decision, not a task.**
-
-The skip half is done: 14 → 8, all 8 declared in `scripts/gates/e2e-skip-budget.conf` with a
-justification and a REMOVE WHEN. Remaining: multi-replica STOMP (4), the real-Stripe refund (2),
-demo-tenant onboarding (2).
-
-**The refund test needs a decision from you, not a fixture.** It calls `Stripe.Refund.create` and
-`STRIPE_API_KEY` is empty here. Seeding `paymentStatus=CAPTURED` with an invented
-`payment_reference` would push it past its skip and then FAIL at Stripe — a green-looking fixture
-over a broken path. Provision test-mode keys, or leave it declared.
-
-### 2.3 Carried forward, still true
-
-- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** `sync-runtime.sh` does
-  exactly that. Remedy: `bash scripts/seed-order-metric.sh` (no `FORCE`). Expect it every time.
-- **Fixtures decay by design.** `seed-e2e-fixtures.sh` and `seed-media-review-fixtures.sh` write
-  every instant RELATIVE TO NOW for that reason. If a spec starts VOIDing on its own guard, re-run
-  the seed before suspecting the product.
-- **Cross-tenant residue in the dev DB**: a `shop_announcements` row and one `shop_promotions` row
-  belong to tenant 2 but hang off tenant 1's shop, left from an RLS test. RLS hides them; they make
-  those tables look populated when they are not. `CLEAN_RESIDUE=1 bash scripts/seed-e2e-fixtures.sh`
-  removes them — **not run yet**, deliberately, since nothing depends on them either way.
-- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `conda` 26.1.1→26.5.3 is HELD by an upstream bug.
-  `docker-ce` restarts the daemon, dropping all 17 containers — do it with the stack down.
-- **No `v2.3` git tag** — a release decision.
-- **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
-
-### 2.4 Decisions with rationale — do not re-litigate these without reading why
-
-Each of these looks like an oversight from the outside. Each was chosen deliberately, and at least
-three of them will actively break something if "fixed" naively.
-
-| decision | why | what happens if you undo it |
-|---|---|---|
-| **The refund E2E test is NOT unblocked by seeding** `paymentStatus=CAPTURED` | `RefundService` calls `Stripe.Refund.create`; `STRIPE_API_KEY` is empty here | The test passes its skip guard and then **fails** at the Stripe call. A green-looking fixture over a broken path — strictly worse than the skip. **Needs real test-mode keys, not a fixture** |
-| **`check-e2e-skip-budget.sh` VOIDs instead of running the suite** | The suite needs the full compose stack, which CI does not have | A gate that silently runs nothing reports PASS over zero tests. It also VOIDs on a report older than the specs, for the same reason |
-| **`times(1)` was NOT relaxed to `atLeast(1)`** on the flaky assertion | Exactly-once IS the property under test — the outbox exists so a resurrected row drains once and a poison row is never republished | You get a permanently green test over the behaviour it was written to protect |
-| **`cors.exposed-headers` is not plumbed through compose or the k8s configmap** | The `application.yml` default reaches every environment already | Restating six header names in a second file is drift risk with no benefit — two places to forget |
-| **The tenant 429 path KEEPS `tenantId`; the public path must NOT** | An authenticated caller already knows its tenant; a guest must never be told one | Removing it from the tenant path is a regression by omission. Adding it to the public path is a disclosure — asserted two ways in `RateLimitInterceptorTest`, including a raw-substring check that catches a leak inside `detail` |
-| **Seed scripts write every instant RELATIVE TO NOW** | The `ac55-*` fixtures were lost to an absolute `quarantine_expires_at` | A fixture with a fixed date is a scheduled test outage. Re-typing the INSERT with a later date just re-arms it |
-| **The desktop-only GSAP block is tagged + `grepInvert`ed, not deleted or duplicated** | It is desktop-by-design and the desktop project always runs it | Deleting loses coverage; pinning a viewport so it runs in both projects doubles cost for no gain; leaving the runtime skip corrupts the skip count with a permanent N/A |
-| **#404 was closed but #420 opened** rather than closing #404 alone | #416 fixed its three failure classes; its CI-coverage gap and skip problem were untouched | Closing on "0 failed" would have lost both, which is the exact failure #404 documented |
-| **`CLEAN_RESIDUE=1` has not been run** | Nothing depends on the cross-tenant rows either way, and deleting data is not free | Safe to run; just not something to do reflexively while diagnosing something else |
+**`k8s/` ships zero monitoring manifests.** Prometheus, Alertmanager and Grafana exist only in
+`infra/monitoring/docker-compose.monitoring.yml` (Phase 27 `deferred-items.md` §5). Everything Phase
+27 built — 19 alert rules, the liveness gate, `dlq-inspect` — is **compose-scoped by construction**,
+so a staging deploy today would be **wholly unmonitored**. Now criterion **DPLY-03**, written to fail
+on the current tree.
 
 ---
 
-## 3. Environment state
+## 3. Carried forward — still true, from #424/#425
 
-- **JToye:** `main`, clean, 0 behind, rebuilt. Local branches: `main` + the concurrent session's
-  unpushed `feature/faster-integration-tests-parallelism` (§0.1). One worktree.
-- **Live stack:** 17 jtoye containers, **15 healthy**; `jtoye-redis-exporter` and
-  `jtoye-postgres-exporter` report no health status because their scratch images define no
-  healthcheck. That is **not** unhealthy — `check-alert-liveness` L-1 asserts every scrape target is
-  `up`, and it passes.
-- **Rate limiting:** public limiter at **600/min, burst 120** locally (default 30/10), still
-  **ENABLED** deliberately — the 429 path is how #412 and #413 were both verified.
-- **Stripe:** `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` are **empty**. This is what gates the refund
-  E2E test (§2.2).
-- **E2E fixtures:** seeded and current. They decay on purpose — re-run the seed, do not edit rows.
+Not re-measured this session unless noted. **Read #425's §2.4 in git history before undoing any of
+these** — each was chosen deliberately and at least three break something if "fixed" naively.
+
+- **#418 — the flake's mechanism is STILL UNKNOWN, and the issue body's diagnosis is retracted.** It
+  does *not* race its own `@Scheduled` flusher (`@DynamicPropertySource` parks both intervals at 24h).
+  The assertion is in `PaymentEventOutboxReliabilityIntegrationTest.failedRows_resurrectAndDrain_poisonStaysDead()`
+  — **now at line 294, not 273**, which both CI logs and the issue body still quote. #422 inverted the
+  assertion order so the **next occurrence is diagnostic**: row `SENT` + wrong count → the mock is the
+  problem; row still `PENDING` → the flush did not run. **Capture that line when it next fails.**
+- **#420's CI half** — #426 added `e2e-nightly.yml` (all 126 specs, real stack). **It has never run**
+  (`schedule` fires only on the default branch); dispatch it once manually. Per-PR CI still runs 2 of 126.
+- **The refund E2E stays skipped deliberately** — `Stripe.Refund.create` with an empty key. Seeding
+  `paymentStatus=CAPTURED` would push it past its guard and fail at Stripe: a green-looking fixture
+  over a broken path. **Needs keys, not a fixture.**
+- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** Remedy:
+  `bash scripts/seed-order-metric.sh`. Expect it every time.
+- **Fixtures decay by design** — seeds write every instant relative to now. Re-run the seed before
+  suspecting the product.
+- **Cross-tenant residue** in the dev DB (one `shop_announcements`, one `shop_promotions` row).
+  `CLEAN_RESIDUE=1 bash scripts/seed-e2e-fixtures.sh` removes them — **not run**, deliberately.
+- **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. Now **GTM-01**.
+- **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
+- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `docker-ce` restarts the daemon — stack down first.
+
+---
+
+## 4. Environment state
+
+- **JToye:** `main`, 0 behind, clean **except** `.idea/dataSources.xml` + `.idea/db-forest-config.xml`
+  (staged) and `.idea/dataSources.local.xml` + `.idea/dataSources/` (untracked). **These are not mine
+  and were deliberately never committed** — #429 was committed by pathspec to leave them staged.
+  Decide whether they belong in `.gitignore`.
+- **Live stack:** 17 jtoye containers, 15 healthy; `jtoye-redis-exporter` and `jtoye-postgres-exporter`
+  report no health status because their images define no healthcheck. That is **not** unhealthy.
+- **No rebuild pending** — this session changed no source, schema, CI or workflow.
 - **Conda env:** none needed — no Python application code.
 
 ---
 
-## 4. Resume instructions
+## 5. Resume instructions
 
 ```bash
-# 0. FIRST: is the other session still parked?  (§0.1)
+# 0. Tree state, asserted rather than quoted. Resolve the default branch, never hardcode it.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
-git branch --show-current; git status --short; git worktree list
-
-# 1. Tree state, asserted rather than quoted. Resolve the default branch, never hardcode it.
 git fetch -q origin
 b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || echo "VOID: no origin/HEAD"
 echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -l) ahead=$(git rev-list --count $b..HEAD) behind=$(git rev-list --count HEAD..$b)"
-# expect dirty=0 ahead=0 behind=0 on main. A VOID line is NOT a pass.
+# expect behind=0. dirty=4 is the .idea residue above, not your change. A VOID line is NOT a pass.
 
-# 2. Every gate. Capture rc on its OWN statement — §0.3 explains why.
-#    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE.  RUN STEP 5 FIRST.
+# 1. Every gate. Capture rc on its OWN statement — an rc read after a pipe is the pipe's.
+#    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE (compose project name comes from the directory).
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 19 x rc=0 — ALL of them. check-e2e-skip-budget VOIDs (2) until step 5 has produced a
-# report, the same way check-runtime-freshness VOIDs without a running stack. A VOID is not a pass.
-# check-alert-metrics red on NoOrdersCreated is the rebuild-blindness case (§2.3).
+# EXPECT 19 x rc=0 — measured 2026-08-01. A VOID (2) is not a pass.
 
-# 3. The two rate-limit fixes, read out of the RUNNING product — a 200 proves nothing here.
-for i in $(seq 1 900); do curl -s -o /dev/null http://localhost:9090/api/v1/public/shops & done; wait
-curl -s -D - -o /dev/null -H 'Origin: http://localhost:3000' http://localhost:9090/api/v1/public/shops \
-  | grep -iE '^(HTTP/|content-type|access-control-expose)'
-# EXPECT: 429 · application/problem+json;charset=UTF-8 · an expose list containing Retry-After.
-# `curl -I` CANNOT tell you whether a browser can READ that header — §0.3.
+# 2. The milestone shape, read out of the file rather than remembered
+git grep -c 'Phase 32: Production Cutover' HEAD -- .planning/ROADMAP.md   # expect 2
+git grep -c 'Phase 33'                     HEAD -- .planning/ROADMAP.md   # expect 0 — the control
 
-# 4. Runtime parity BY CONTENT
-bash scripts/check-runtime-freshness.sh   # expect 4/4 FRESH, rc=0
-docker exec jtoye_oaas_2026-core-java-1 sh -c 'unzip -p /app/app.jar BOOT-INF/classes/application.yml' \
-  | grep -c 'exposed-headers'             # expect 1 — read from INSIDE the jar, not the filesystem
+# 3. Before starting Phase 28, settle SEC-01 FIRST — it is the question the phase hangs on.
+#    Rebuild ALL, then re-run A1 cross-tenant. Its filed root cause does NOT hold on the tree.
+bash scripts/sync-runtime.sh && bash scripts/seed-order-metric.sh
 
-# 5. E2E — source .env FIRST, then SEED, then run with the JSON reporter.
-cd frontend && set -a; . ../.env; set +a
-bash ../scripts/seed-e2e-fixtures.sh      # covers DRAFT order + promo, delegates to the media seed
-mkdir -p e2e-artifacts
-PLAYWRIGHT_BASE_URL=http://localhost:3000 npx playwright test --reporter=json > e2e-artifacts/report.json
-# EXPECT 118 passed / 8 skipped / 0 failed, of 126.
-bash ../scripts/check-e2e-skip-budget.sh  # expect rc=0; VOID(2) if the report is stale or absent
-cd ..
+# 4. Before touching Phase 23 at all — §2.2. An unscoped execute-phase re-runs merged work.
+ls .planning/phases/23-*/23-18-SUMMARY.md 2>/dev/null || echo "MISSING — write it first"
 
-# 6. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
+# 5. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**If `Integration Tests (Testcontainers RLS)` goes red, read WHICH test before touching your diff.**
-#418 is a live flake in a required check; it hit two PRs this session and both passed on re-run.
-Confirm the failing test is unrelated to your diff **and** that the same SHA has passed before, then
-`gh run rerun <id> --failed`. **Do not re-run reflexively** — a re-run of a real failure is a real
-failure hidden. And **capture the row-state assertion** (§2.1) if it is this test.
+**Recommended next move: Phase 28.** It is the only phase gated on none of the four decisions, it is
+the cheapest, and it determines what is safe to deploy in Phase 29. Start at **SEC-01** — re-verify
+A1 — because every other item in that phase is downstream of the answer.
 
-**CI runs duplicate/stale workflows.** A force-push leaves the superseded run in flight; several
-heavy runs competing is what starved Testcontainers. Cancel runs whose SHA is no longer any branch's
-head — check with `git branch -a --contains <sha>` first.
+**#428 Wave 1 (catering discovery) costs no engineering time and can run in parallel with anything.**
 
 **Merged code is not running code.** After any merge touching source: `bash scripts/sync-runtime.sh`,
-then reseed the order metric (§2.3). `docker compose start` does not rebuild.
+then reseed the order metric. `docker compose start` does not rebuild.
 
 **Squash-merge note:** the repo squash-merges, so `git branch --merged` and `git branch -d` call
 merged branches unmerged. Use PR state as the authority.
