@@ -1,25 +1,26 @@
-# Handoff: two threads had no ticket, and a roadmap review cannot see what has no ticket
+# Handoff: the audit that found the bugs is itself invisible to the repo
 
-**Generated:** 2026-08-01 ~22:15 BST. Supersedes #424/#425, which were accurate for the E2E/outbox
-session that produced them. Their §0.2 (four wrong diagnoses) and §2.4 (decisions with rationale) are
-**still live** and are carried forward here in §5 — do not treat this document as discarding them.
+**Generated:** 2026-08-02 ~20:35 BST. Supersedes #430, which was accurate for the roadmap-blindness
+session that produced it. Its §0.1 (two threads with no ticket) and §2.4 (the four blocking
+decisions) are **still live** and are carried forward here in §4 — this document does not discard them.
 
-> **§0.1 is the point of this document.** The build queue was empty and every process said the
-> project was in good shape. Two substantial threads — one of them **half the stated go-to-market** —
-> had no phase, no requirement ID and no issue, so no roadmap- or tracker-driven review could see
-> them. A third body of work, **11 pentest findings including 3 CRITICAL**, sits in a git-excluded
-> file that one `rm` would destroy. If you read one section, read that one.
+> **§0.1 is the point of this document.** A full QA council ran on 2026-08-02 and found
+> **3 Critical / 10 High / 9 Medium / 13 Low** across Phases 22–27. Three findings have been fixed.
+> **Everything else lives only in `.qa-council/disc-20260802-121732/`, which is GITIGNORED**, with no
+> issue for any of it. The previous handoff's lesson was that a roadmap review cannot see what has no
+> ticket; this is the same lesson one layer down — a *repo* review cannot see what is not in the repo.
+> If you read one section, read that one.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **1 PR merged: #429.** 2 epics filed: **#427**, **#428**. HEAD deliberately **not** quoted |
-| Open PRs | **none** |
-| Open issues | **63** (was 61; +#427 +#428) |
-| Milestone | **v2.3 is OPEN and now spans Phases 21–32.** Owner ruling — see §1.1. Do **not** run `/gsd-complete-milestone` |
-| Live stack | Compose UP, **17** jtoye containers, **15 healthy** — the other 2 define no healthcheck |
-| Gates | **19 of 19 rc=0**, measured this session |
-| Test baseline | `docs/metrics.json` **1917**, unchanged — this session added no counted invocation |
-| Runtime | 4/4 built services FRESH. **No rebuild needed** — nothing this session touched source, schema, CI or workflows |
+| `JToye_OaaS_2026` | **2 PRs merged this session: #434, #435.** HEAD deliberately **not** quoted |
+| Open PRs | **none** (measured, not assumed) |
+| Open issues | **64** |
+| Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
+| Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
+| Gates | **19 of 19 rc=0**, measured after the merges on a freshly rebuilt runtime |
+| Test baseline | `docs/metrics.json` **1927** (was 1923; +4 from `OptimisticLockExceptionHandlerTest`) |
+| Runtime | 4/4 built services FRESH — `sync-runtime.sh` run AFTER both merges, parity re-asserted |
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
 > §6 pairs every fact with the command that produces it: **run them, don't read them.**
@@ -28,206 +29,204 @@ session that produced them. Their §0.2 (four wrong diagnoses) and §2.4 (decisi
 
 ## 0. ⚠ READ FIRST
 
-### 0.1 The review was blind, and the blindness was structural
+### 0.1 The QA council's findings are not in the repository
 
-A full state review ran against `ROADMAP.md` + `REQUIREMENTS.md` + `STATE.md` + `gh issue list`. It
-reported the project as feature-complete with an empty build queue. It was wrong, in three ways that
-share one cause:
+`/qa-council` run **`disc-20260802-121732`** audited the six phases shipped since the 2026-07-14 run
+(22 comms, 23 vendor-scoped access, 24 CoW media, 25 mutating MCP, 26 k8s overlay, 27 ops + the
+RabbitMQ 3.12→4.3 replacement). It is the first full council since then.
 
-| what was invisible | why | now |
-|---|---|---|
-| **ADR-0004** — the ingredient/knowledge graph. Accepted 2026-07-30, 468 lines, a 6-step sequencing plan | Authored as a `/gsd-quick` task. No phase, no requirement ID, no issue | **#427** |
-| **The catering cohort** — *half the stated go-to-market*. `BUSINESS_MODEL_DECISION_GUIDE.md` names takeaway **and** catering as separate cohorts and calls catering the wedge | Lives only in an analysis doc. No phase, no requirement ID, no issue | **#428** |
-| **11 pentest findings, 3 CRITICAL** (Strix run `d8c0`, 2026-07-31 02:16) | `SECURITY-FINDINGS.md` is **untracked and git-excluded** (public repo). No issue for any finding | **still untriaged — SEC-02** |
+**Where it lives:** `.qa-council/disc-20260802-121732/` — `findings.json`, `plan.md`,
+`QA-COUNCIL-REPORT.md`, and per-lane evidence under `evidence/`. **`.qa-council/` is in
+`.gitignore`.** One `rm` destroys it, and no clone has ever contained it.
 
-**The filter was wrong, not the search.** Every file was readable; "planned" was defined as *has a
-phase or an issue*. An Accepted ADR ending in a Sequencing section is planned work by any reading.
+**`.qa-council/LATEST` still points at `disc-20260714-162412`** — the July run. It will not lead you
+to the August one. Read the directory listing, not the pointer.
 
-**The durable fix is not "look harder".** Give every Accepted ADR a tracking issue, or add a
-`check-adr-has-tracking-issue.sh` that fails closed — same shape as `check-terminal-states.sh`.
-**Not built.**
+| | |
+|---|---|
+| Fixed | **F-C1 + F-H1** cross-tenant write BOLA + list leak (#433 MERGED) · **F-M1** optimistic-lock 500 (#434 MERGED) |
+| Group A remainder — genuine bugs, **no issues filed** | F-H4 empty webhook delivery log (missing tenant GUC) · F-M3/F-M4 modal + a11y (**419 axe violations**, LGL-02) · F-H8/F-H9 SEO (robots 404, no metadata/JSON-LD) · F-H3 raw-image endpoints bypass the Phase-24 pipeline · F-M5 no ProblemDetail schema · F-M8 17 docs-broken |
+| Group B → Phase 28, **needs SEC-02 issues filed** | F-C2 Postgres superuser on 0.0.0.0 · F-C3 Grafana admin/admin · F-H10 infra ports + MailHog · F-M7 unauth actuator/OpenAPI/edge · F-H2 `X-Tenant-Id` advertised in the unauth spec |
+| Group C → tracked | allergen text↔mask = #427 (still OPEN) · storefront social signup = #432 (still OPEN) · the low-severity set |
+
+**The single most important result, worth carrying verbatim.** Phase 28's SEC-01 was written as
+*"re-verify pentest A1"*. A1 is a real Critical cross-tenant write BOLA — but its **filed root cause
+("missing `tenant_id` / RLS") is FALSIFIED**: both tables carry `tenant_id` with ENABLE + FORCE RLS.
+The real cause was service-layer authorization in `ShopAccessService.require()`, and it also affected
+`POST /products`. **Implementing the filed fix would have shipped a no-op over a live Critical.**
+Re-verify, don't implement, is the whole reason that finding got closed correctly.
+
+**The durable fix is not "look harder".** Either give the council run a tracking issue per Group, or
+un-ignore a findings summary. Neither is done.
 
 ### 0.2 Instruments that lied, this session
 
 | what I measured with | what it actually did |
 |---|---|
-| `PLAN.md`-without-`SUMMARY.md` as the pending-work scan | **Correct method, incomplete scope.** It found `23-18` — but I ran it over `phases/` and `milestones/` and **not `quick/`**, which is exactly where ADR-0004 lived. Scan all three |
-| the same scan, on `motion-D-PLAN.md` | **False positive.** Its summary is `motion-D-01-SUMMARY.md`; a stem-match said "pending" over work completed 2026-07-14 |
-| 10 green doc gates over `.planning/` edits | **Near-vacuous.** No gate covers `ROADMAP.md`, `REQUIREMENTS.md` or `STATE.md` — `check-doc-citations`'s `DEFAULT_DOCS` reaches `.planning/codebase/*` only. Green meant "broke nothing they watch" |
-| `Integration Tests` passing in **6s**, `Frontend E2E` in **11s** on a docs-only PR | **Path-filtered, not run.** A 6-second required check is a skip wearing a tick |
-| `git grep -c` to prove main carried the merge | Sound **only because a control ran**: `Phase 33` → 0 on the same file. Without it, a matcher that matches everything is indistinguishable from a real hit |
+| **HANDOFF.md §3's "one `shop_announcements`, one `shop_promotions` row"**, quoted to the owner as current | **Wrong by a day and wrong about the contents.** There were **6** rows, and **4 were created that same morning** as `SEC01-PROBE-*` / `VERIFY-PROBE-XT` attack probes — the council's `state.json` recorded them as *"DELIBERATELY RETAINED … evidence for SEC-01"*. A destructive step was approved on stale figures. Snapshotted to `evidence/sec-A1-residue-rows-preclean.txt` before deleting. **Re-run a handoff's measurement before repeating its numbers as current** |
+| `BUILD SUCCESSFUL` from a `--tests`-filtered gradle run | Means nothing on its own — it is also what running **zero** tests looks like. Read `tests="N" failures="N"` out of `build-local/test-results/`. (`core-java/build/` is a **stale 2025-12-27 artifact** reporting 3 false failures — the live dir is `build-local`) |
+| the changelog entry I wrote for F-M1 | **Could not satisfy its own gate.** `check-changelog-contract` keys on the merged PR's own `(#NNN)`, which does not exist until `gh pr create` prints it. The entry merged as #434 and only then went red. **Add the number after `gh pr create`, before merging** |
+| `jsonPath("$.code")` in a standalone-MockMvc test | Failed `PathNotFoundException` against a handler that is **correct in production**. `new ObjectMapper()` does not register `ProblemDetailJacksonMixin`; `Jackson2ObjectMapperBuilder.json().build()` does. Same fix `RateLimitInterceptorTest` carries for #413 |
+| 19 gates, read as a flat pass/fail | Two went red for reasons that are **correct behaviour**, not regressions: `check-runtime-freshness` after any core-java source change, and `check-alert-metrics` after any rebuild that recreates core-java. Both name their own remedy in their output. Expect them |
 
 ---
 
 ## 1. What landed
 
-### 1.1 The milestone ruling — v2.3 stays open (#429)
+### 1.1 #434 — a lost optimistic-lock race is a 409, not an opaque 500 (F-M1 / INT-03)
 
-Asked to formalise the go-to-market plan as a new milestone **v2.4**, the owner ruled:
+`ObjectOptimisticLockingFailureException` matched **none** of `GlobalExceptionHandler`'s 30 handlers,
+so it fell to the `Exception.class` catch-all: `500 .../errors/internal`, *"An unexpected error
+occurred"*.
 
-> *"2.3 is not complete. closing nothing. just document. we will proceed with 2.3 until it's go to
-> market ready."*
+**Nothing was actually failing, which is the point.** 8 barrier-synchronised `confirm`s on one PENDING
+order measured `{200: 1, 500: 7}` while data integrity **held** — exactly one transition applied, final
+state consistent. The same duplicate and illegal transitions run **sequentially** already returned a
+typed `400`. The race was the only thing separating a correct 400 from an opaque 500.
 
-So `/gsd-new-milestone` was **not** run. Nothing archived, `MILESTONES.md` untouched (it still lists
-only v2.1/v2.0 — now deliberate). **v2.3 widened from Phases 21–26 to 21–32**, Phase 27 recorded as
-part of v2.3. Requirements went **24 → 46** (added `OPS×5` — Phase 27 never had requirement IDs, which
-is exactly why a requirements-driven review could not see it — plus `SEC×4 DPLY×5 PAY×3 LGL×3 GTM×2`).
+**Why it mattered operationally:** a KDS is a shared shop screen, so two staff bumping one ticket is
+the normal case — and the frontend api-client **auto-retries on 5xx**. A 500 turned ordinary contention
+into a retry storm against a row whose write had already succeeded.
 
-**Order: 28 → 29 → 32, with 30 and 31 in parallel alongside 29.**
+Declared on the **`OptimisticLockingFailureException` superclass**, not Hibernate's subclass, so a
+Spring-translated `StaleObjectStateException` and any future `@Version` entity are covered — one root
+cause, two reported symptoms (INT-03 and the security lane's A1-del), one handler.
 
-`STATE.md` was corrected: it claimed Phase 27 was mid-flight at 27-03 when it closed **7/7 on
-2026-07-29**, and named `check-alert-liveness` as a red owned gate that **#339** had closed. The GSD
-workflows read that file first, so a fresh session would have resumed a phase finished three days
-earlier. The 27-03 record is **retained verbatim** with its resolution noted in place.
-`state.record-session` was deliberately **not** called.
+Detail is a **fixed string**: the provider message names the table and the `version` column, so it is
+logged at WARN and never returned.
 
-### 1.2 #427 — the ingredient graph epic
+**Functional proof, same instrument as the finding, reproduced 3× on 3 distinct orders — the last on
+the merged-main runtime:**
 
-ADR-0004's decision: **adopt the graph data model, reject the graph datastore.** Apache AGE is
-disqualified for a repo-specific reason worth carrying: AGE creates label tables dynamically in a
-**per-graph schema**, and `RlsContractTest` sweeps `relnamespace = 'public'::regnamespace`
-(verified at `core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java:130`) — **the RLS
-drift guard would stay green over an unprotected graph.**
+| | codes | types | final_status |
+|---|---|---|---|
+| before (council, 13:20) | `{200: 1, 500: 7}` | `errors/internal` | CONFIRMED |
+| after | `{200: 1, 409: 7}` | `errors/concurrent-modification` | CONFIRMED |
 
-**Built: 0%.** The edges exist as shipped columns; the Ingredient node does not — `ingredients` is
-free text (V1/V25/V41), no ingredient or edge table in any migration.
+Recorded at `.qa-council/disc-20260802-121732/evidence/fm1-optlock-409-postfix.txt`.
 
-**Its finding is a live product risk:** nothing ever reconciles `allergen_mask` — an integer a vendor
-hand-types into a CSV column — against the ingredients text in the adjacent column, and that mask is
-what the storefront renders (`frontend/components/storefront/product-detail-modal.tsx:65`). Wave 1 is
-scheduled as **LGL-03 in Phase 31**.
+Falsified with opening and closing clean arms: clean 4/4 → break arm (handler de-registered) **3 of 4
+fail, control arm still passing** → restore verified **by `git hash-object`** → closing clean 4/4.
+Full unit suite **870 tests / 0 failures** (council baseline 866 + these 4, nothing else disturbed).
 
-### 1.3 #428 — the catering cohort epic, deliberately gated
+### 1.2 #435 — the `.idea` residue, and the changelog citation
 
-Cohort B has **zero implementation**: no Quote/Enquiry/Booking entity, and `fulfilment_type` is
-`DELIVERY | COLLECTION` only (V45). What *is* shipped is the honesty — `/for-operators`
-(`operator-pitch.tsx:114`, `:130`) already tells operators catering and WhatsApp are *"validation
-tracks, not current, guaranteed production workflows"*. **Nothing may weaken that disclaimer ahead of
-the capability.**
+Four IntelliJ database-tooling paths added to `.gitignore` (`dataSources.xml`,
+`dataSources.local.xml`, `dataSources/`, `db-forest-config.xml`). The tree had been permanently
+`dirty=4` since 2026-08-01, and this document's own resume block carried a footnote telling the reader
+to discount it — **which trains you to discount a dirty tree at exactly the moment it is the signal.**
 
-The epic is **gated, not scheduled**: Wave 2 stays closed until ≥3 caterers are interviewed. The
-business-model guide calls these *discovery* cohorts, so building quotation workflow first would
-answer with code a question interviews answer free. **Wave 1 costs no engineering time and can start
-today.**
+**Four exact paths, deliberately not a blanket `.idea/`**: the repo tracks `.idea/vcs.xml`,
+`.idea/gradle.xml` and `.idea/go.imports.xml` on purpose. Control arm: `check-ignore .idea/vcs.xml`
+still returns rc=1 after the change.
+
+Also carries the `(#434)` citation fix described in §0.2.
+
+### 1.3 The changelog gate was red on `main` before this session started
+
+`check-changelog-contract` was **rc=1 on the first sweep of the session, before any change** — #433
+merged 2026-08-02 with no entry, after #430 recorded 19/19 green on 2026-08-01. Both were true at the
+time; the gate is not flaky, the world moved. Backfilled in #434; the gate now cites **22 of 22**.
 
 ---
 
 ## 2. Open items — this session's
 
-### 2.1 The pentest backlog is still untriaged, and A1's root cause is FALSIFIED
+### 2.1 The pentest backlog is still untriaged, and A1 is now ANSWERED
 
-`SECURITY-FINDINGS.md` (untracked, git-excluded; full evidence at
-`~/strix_runs/host-docker-internal-9090_d8c0/`, chmod 600). **Do not repeat its claims unchecked** —
-verified against the tree 2026-08-01:
+`SECURITY-FINDINGS.md` (untracked, git-excluded; evidence at
+`~/strix_runs/host-docker-internal-9090_d8c0/`, chmod 600). Status changed this session:
 
-- **A1** (cross-tenant BOLA on promotions/announcements, CVSS 9.1) — **its stated root cause is
-  false.** It says the tables *"lack a `tenant_id` column / RLS policy"*. Both carry `tenant_id` +
-  ENABLE + FORCE RLS (V28/V29/V33/V35/V39/V51), and `PromotionService`/`AnnouncementService` both call
-  `shopAccessService.require(shopId, SHOP_MANAGER)` on create/update/delete since Phase 23. Either the
-  tested stack was stale or the mechanism is the A2 chain. **Re-verify on a freshly built stack before
-  filing or fixing** — that is SEC-01, and it is written as *re-verify*, not *fix*.
-- **A2** (`X-Tenant-Id` fallback, CVSS 8.2) — **real in code, dev-scoped.** `TenantFilter` is
-  `@Profile({"dev","local","test"})` and every k8s env sets `SPRING_PROFILES_ACTIVE=prod`. Compose runs
-  `dev`, so it is live locally. `OpenApiConfig.java:50` still **advertises** it, in a spec finding C3
-  reports as unauthenticated.
+- **A1** — **RESOLVED as a finding, not as filed.** Real Critical, false root cause, fixed at the
+  service layer in #433. SEC-01 is answered; do not re-run it.
+- **A2** (`X-Tenant-Id` fallback, CVSS 8.2) — **still real in code, dev-scoped.** `TenantFilter` is
+  `@Profile({"dev","local","test"})` and k8s sets `SPRING_PROFILES_ACTIVE=prod`. Compose runs `dev`, so
+  it is live locally. `OpenApiConfig.java:50` still **advertises** it — that is council F-H2.
 - **B1/B2/C1** — compose publishes with no bind address, so `0.0.0.0`: postgres `5433`, mailhog `8025`,
-  minio `9000`/`9001`, rabbitmq mgmt `15672`.
+  minio `9000`/`9001`, rabbitmq mgmt `15672`. These are council F-C2 / F-H10.
 
-**Confirmed-good, protect from regression:** JWT signature validation rejects `alg=none` (all case
-variants), RS256→HS256 confusion, JKU injection, `kid` traversal; `core-api` enforces PKCE.
+**Nothing from the council's Group B has an issue.** That is SEC-02 and it is the cheapest next move.
 
-### 2.2 Two bookkeeping repairs — ✅ BOTH CLOSED 2026-08-02
+### 2.2 The cross-tenant DB residue is GONE
 
-*Recorded as open when this document was written; fixed the same day. Kept rather than deleted,
-because the mechanism is the reusable part.*
+All 6 rows deleted via `CLEAN_RESIDUE=1 bash scripts/seed-e2e-fixtures.sh`, verified 0 remaining **with
+a blindness control** (3 promotions / 1 announcement still visible, so the verification query was not
+simply seeing nothing). Snapshot retained at `evidence/sec-A1-residue-rows-preclean.txt`.
 
-1. **`23-18-PLAN.md` had no `SUMMARY.md`** though its work shipped (#280 CLOSED, PR #308 merged
-   2026-07-26). `gsd-sdk` marks a plan done **only** by SUMMARY presence, so an unscoped
-   `/gsd:execute-phase 23` would have **re-executed already-merged work**. The executor had written
-   its evidence back into `23-18-PLAN.md` instead of a SUMMARY — the evidence was never lost, only
-   the completion marker. **Retroactive `23-18-SUMMARY.md` written**, sourced from that evidence and
-   re-verified against the live tree.
-2. **Phase 23 carried three disagreeing plan counts** — prose said **15**, the progress table
-   **17/17**, and **18** `*-PLAN.md` files existed, with `23-18` named nowhere in the roadmap. **Now
-   18 plans / 18 summaries, and the roadmap reads 18 in both places**, with a `23-18` entry added
-   under a new *Post-phase* heading.
+Previous handoffs described this as 2 rows. It was 6. See §0.2.
 
-> **Trap caught while doing this, worth carrying:** a `find` for the two test classes the plan's T6
-> named (`PromotionControllerShopFilterTest`, `AnnouncementControllerShopFilterTest`) returned
-> **MISSING** and was nearly written up as a coverage gap. Reading the shipping commit showed both had
-> landed **consolidated into one `MarketingControllerShopFilterTest`**. *An empty search is evidence
-> about the pattern, not about the code* — the third instance of that shape in this repo's records.
+### 2.3 The three most load-bearing planning files are still ungated
 
-### 2.3 The three most load-bearing planning files are ungated
+`ROADMAP.md`, `REQUIREMENTS.md` and `STATE.md` are covered by **no gate** — unchanged from #430. A
+`check-state-freshness` asserting `STATE.md`'s current phase against `ROADMAP.md`'s progress table was
+recommended in `260801-ths`'s SUMMARY and is **still not built**.
 
-`ROADMAP.md`, `REQUIREMENTS.md` and `STATE.md` are covered by **no gate**. That is how `STATE.md` came
-to claim a finished phase was mid-flight and nothing noticed for three days. A `check-state-freshness`
-— assert `STATE.md`'s current phase matches `ROADMAP.md`'s progress table — would have caught it the
-day it appeared. **Recommended in `260801-ths`'s SUMMARY, not built.**
+---
 
-### 2.4 The four blocking decisions — none are engineering tasks
+## 3. Carried forward — still true, not re-measured unless noted
 
-Phases 29–32 do not start until these land:
+- **#418 is still OPEN and the flake's mechanism is STILL UNKNOWN**; the issue body's diagnosis is retracted. It
+  does *not* race its own `@Scheduled` flusher (`@DynamicPropertySource` parks both intervals at 24h).
+  The assertion is in `PaymentEventOutboxReliabilityIntegrationTest.failedRows_resurrectAndDrain_poisonStaysDead()`
+  — **line 294, not 273**, which both CI logs and the issue body still quote. #422 inverted the
+  assertion order so the next occurrence is diagnostic: row `SENT` + wrong count → the mock; row still
+  `PENDING` → the flush did not run. **Capture that line when it next fails.**
+- **#420 is still OPEN — its CI half.** `e2e-nightly.yml` (all 126 specs, real stack) **has still never run**
+  (`schedule` fires only on the default branch). Dispatch it once manually. Per-PR CI still runs 2 of 126.
+  Corollary seen again this session: `Integration Tests` passed in **6s** on #435 — path-filtered, a
+  skip wearing a tick. The same job took **43m51s** on #434, which is what running it looks like.
+- **The refund E2E stays skipped deliberately** — `Stripe.Refund.create` with an empty key. Needs keys,
+  not a fixture.
+- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** Remedy:
+  `bash scripts/seed-order-metric.sh`. Hit twice this session. Expect it every time.
+- **Fixtures decay by design** — seeds write every instant relative to now. Re-run the seed before
+  suspecting the product.
+- **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. GTM-01.
+- **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
+- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `docker-ce` restarts the daemon — stack down first.
+
+---
+
+## 4. Carried forward from #430 — the blocking decisions
+
+Phases 29–32 do not start until these land. **None are engineering tasks.**
 
 | decision | state |
 |---|---|
 | **Production domain** | `jtoye.co.uk` never registered; `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records |
 | **Hosting target** | Your Azure sub is `c483d353`; the employer HS2 sub is off-limits. A live `snackpass-*` Container Apps stack already runs this product |
 | **Stripe test-mode keys** | Empty on every stack. Gates Phase 30 **entirely** |
-| **ADR-0002 sign-off** | Still `Proposed` — *"needs owner sign-off before #101 implementation starts"*. Gates PITR / DPLY-04 |
+| **ADR-0002 sign-off** | Still `Proposed` — gates PITR / DPLY-04 |
 
-### 2.5 The most under-weighted item in the backlog
+Also unscheduled: **#427 is OPEN** (ADR-0004 ingredient graph, 0% built — its finding that nothing
+reconciles `allergen_mask` against the ingredients text is a live product risk, scheduled as LGL-03 in
+Phase 31) and **#428 is OPEN** (the catering cohort, *half the stated go-to-market*, deliberately gated
+until ≥3 caterers are interviewed — **Wave 1 costs no engineering time and can start today**).
 
-**`k8s/` ships zero monitoring manifests.** Prometheus, Alertmanager and Grafana exist only in
-`infra/monitoring/docker-compose.monitoring.yml` (Phase 27 `deferred-items.md` §5). Everything Phase
-27 built — 19 alert rules, the liveness gate, `dlq-inspect` — is **compose-scoped by construction**,
-so a staging deploy today would be **wholly unmonitored**. Now criterion **DPLY-03**, written to fail
-on the current tree.
-
----
-
-## 3. Carried forward — still true, from #424/#425
-
-Not re-measured this session unless noted. **Read #425's §2.4 in git history before undoing any of
-these** — each was chosen deliberately and at least three break something if "fixed" naively.
-
-- **#418 — the flake's mechanism is STILL UNKNOWN, and the issue body's diagnosis is retracted.** It
-  does *not* race its own `@Scheduled` flusher (`@DynamicPropertySource` parks both intervals at 24h).
-  The assertion is in `PaymentEventOutboxReliabilityIntegrationTest.failedRows_resurrectAndDrain_poisonStaysDead()`
-  — **now at line 294, not 273**, which both CI logs and the issue body still quote. #422 inverted the
-  assertion order so the **next occurrence is diagnostic**: row `SENT` + wrong count → the mock is the
-  problem; row still `PENDING` → the flush did not run. **Capture that line when it next fails.**
-- **#420's CI half** — #426 added `e2e-nightly.yml` (all 126 specs, real stack). **It has never run**
-  (`schedule` fires only on the default branch); dispatch it once manually. Per-PR CI still runs 2 of 126.
-- **The refund E2E stays skipped deliberately** — `Stripe.Refund.create` with an empty key. Seeding
-  `paymentStatus=CAPTURED` would push it past its guard and fail at Stripe: a green-looking fixture
-  over a broken path. **Needs keys, not a fixture.**
-- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** Remedy:
-  `bash scripts/seed-order-metric.sh`. Expect it every time.
-- **Fixtures decay by design** — seeds write every instant relative to now. Re-run the seed before
-  suspecting the product.
-- **Cross-tenant residue** in the dev DB (one `shop_announcements`, one `shop_promotions` row).
-  `CLEAN_RESIDUE=1 bash scripts/seed-e2e-fixtures.sh` removes them — **not run**, deliberately.
-- **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. Now **GTM-01**.
-- **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
-- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `docker-ce` restarts the daemon — stack down first.
+**`k8s/` still ships zero monitoring manifests** (DPLY-03, written to fail on the current tree). A
+staging deploy today would be wholly unmonitored.
 
 ---
 
-## 4. Environment state
+## 5. Environment state
 
-- **JToye:** `main`, 0 behind, clean **except** `.idea/dataSources.xml` + `.idea/db-forest-config.xml`
-  (staged) and `.idea/dataSources.local.xml` + `.idea/dataSources/` (untracked). **These are not mine
-  and were deliberately never committed** — #429 was committed by pathspec to leave them staged.
-  Decide whether they belong in `.gitignore`.
-- **Live stack:** 17 jtoye containers, 15 healthy; `jtoye-redis-exporter` and `jtoye-postgres-exporter`
-  report no health status because their images define no healthcheck. That is **not** unhealthy.
-- **No rebuild pending** — this session changed no source, schema, CI or workflow.
-- **Conda env:** none needed — no Python application code.
+- **Branch `main`**, 0 behind, **clean** — the `.idea` residue that made this line read `dirty=4` for
+  two days is gone as of #435. A dirty tree now means *your* change.
+- **Live stack:** 16 jtoye containers — 11 from `docker-compose.full-stack.yml` + 5 from
+  `infra/monitoring/docker-compose.monitoring.yml`. **14 report healthy**;
+  `jtoye-redis-exporter` and `jtoye-postgres-exporter` report no health status because their images
+  define **no healthcheck**. That is **not** unhealthy. `keycloak-realm-render` is a one-shot init that
+  exits by design and is not counted.
+- **Runtime is CURRENT.** `sync-runtime.sh` was run *after* both merges and parity re-asserted:
+  4/4 FRESH. The F-M1 fix was then re-proven functionally against that rebuilt stack.
+- **Conda env:** none needed — no Python application code. Note the `block-base-python` hook refuses
+  bare `python3` here; there is no `.conda-env` for this repo. The F-M1 race probe was therefore
+  written in **Node**, not Python.
+- **Stripe:** UNCONFIGURED (empty key → COD only). Email → Mailhog. S3 → MinIO. Broker → RabbitMQ 4.3.4.
 
 ---
 
-## 5. Resume instructions
+## 6. Resume instructions
 
 ```bash
 # 0. Tree state, asserted rather than quoted. Resolve the default branch, never hardcode it.
@@ -235,36 +234,41 @@ cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git fetch -q origin
 b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || echo "VOID: no origin/HEAD"
 echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -l) ahead=$(git rev-list --count $b..HEAD) behind=$(git rev-list --count HEAD..$b)"
-# expect behind=0. dirty=4 is the .idea residue above, not your change. A VOID line is NOT a pass.
+# expect behind=0 AND dirty=0. A VOID line is NOT a pass.
 
 # 1. Every gate. Capture rc on its OWN statement — an rc read after a pipe is the pipe's.
 #    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE (compose project name comes from the directory).
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 19 x rc=0 — measured 2026-08-01. A VOID (2) is not a pass.
+# EXPECT 19 x rc=0. A VOID (2) is not a pass.
+# If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
+# If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
+# Both gates print their own remedy. Neither is a regression.
 
-# 2. The milestone shape, read out of the file rather than remembered
-git grep -c 'Phase 32: Production Cutover' HEAD -- .planning/ROADMAP.md   # expect 2
-git grep -c 'Phase 33'                     HEAD -- .planning/ROADMAP.md   # expect 0 — the control
+# 2. The QA council findings — the thing no repo command can show you (§0.1).
+ls .qa-council/disc-20260802-121732/                 # NOT the LATEST pointer; it still says July
+sed -n '1,80p' .qa-council/disc-20260802-121732/QA-COUNCIL-REPORT.md
 
-# 3. Before starting Phase 28, settle SEC-01 FIRST — it is the question the phase hangs on.
-#    Rebuild ALL, then re-run A1 cross-tenant. Its filed root cause does NOT hold on the tree.
-bash scripts/sync-runtime.sh && bash scripts/seed-order-metric.sh
+# 3. Re-prove F-M1 is live, rather than trusting this document.
+#    Expect {"200":1,"409":7} and type errors/concurrent-modification. A 500 means the runtime is stale.
+docker exec jtoye_oaas_2026-core-java-1 sh -c \
+  'unzip -p /app/app.jar BOOT-INF/classes/uk/jtoye/core/common/GlobalExceptionHandler.class | strings' \
+  | grep -c concurrent-modification      # expect 2; a filesystem `find` returns a misleading 0
 
-# 4. Before touching Phase 23 at all — §2.2. An unscoped execute-phase re-runs merged work.
-ls .planning/phases/23-*/23-18-SUMMARY.md 2>/dev/null || echo "MISSING — write it first"
-
-# 5. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
+# 4. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Recommended next move: Phase 28.** It is the only phase gated on none of the four decisions, it is
-the cheapest, and it determines what is safe to deploy in Phase 29. Start at **SEC-01** — re-verify
-A1 — because every other item in that phase is downstream of the answer.
+**Recommended next move: SEC-02 — file issues for the council's Group B.** It is five Critical/High
+infra findings that currently exist in a gitignored file and nowhere else, it needs no decision from
+§4, and Phase 28 is already scoped to receive them. Losing that directory today loses the audit.
 
-**#428 Wave 1 (catering discovery) costs no engineering time and can run in parallel with anything.**
+**Second: Group A's F-H4** (webhook delivery log permanently empty — a missing tenant GUC). It is a
+shipped Phase-22 feature that has never worked, and the finding names the cause.
+
+**#428 Wave 1 (catering discovery) still costs no engineering time and runs in parallel with anything.**
 
 **Merged code is not running code.** After any merge touching source: `bash scripts/sync-runtime.sh`,
 then reseed the order metric. `docker compose start` does not rebuild.
