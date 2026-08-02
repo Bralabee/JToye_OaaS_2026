@@ -7,9 +7,9 @@
   "go_test_files": 9,
   "jest_blocks": 475,
   "jest_files": 67,
-  "playwright_blocks": 43,
-  "playwright_specs": 13,
+  "playwright_blocks": 46,
+  "playwright_specs": 14,
   "mcp_test_blocks": 48,
   "mcp_test_files": 8,
-  "total_logical_invocations": 1927
+  "total_logical_invocations": 1930
 }
