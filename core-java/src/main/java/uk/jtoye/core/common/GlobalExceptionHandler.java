@@ -2,6 +2,7 @@ package uk.jtoye.core.common;
 
 import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -447,6 +448,51 @@ public class GlobalExceptionHandler {
         problem.setTitle("Media Re-process Rejected");
         problem.setType(URI.create("https://jtoye.uk/errors/" + ex.getTypeSlug()));
         problem.setProperty("code", ex.getCode());
+        return problem;
+    }
+
+    /**
+     * QA council {@code disc-20260802-121732} F-M1 / INT-03 — two writers reached the same row and
+     * the JPA {@code @Version} check lost the race, so the UPDATE matched 0 rows. Until this handler
+     * existed, {@link OptimisticLockingFailureException} matched none of the other handlers and fell
+     * to the {@code Exception.class} catch-all below: an opaque 500 {@code .../errors/internal},
+     * "An unexpected error occurred".
+     *
+     * <p><b>Why 409 and not 500.</b> Nothing failed. The measured behaviour is that data integrity
+     * HOLDS — 8 barrier-synchronised {@code confirm}s produced exactly one transition and a
+     * consistent final state; 7 callers simply lost. That is the definition of a conflict, and the
+     * same contention run SEQUENTIALLY already returns a typed 400. Reporting the concurrent case as
+     * a server fault made an identical, correct outcome look like a crash.
+     *
+     * <p><b>Why it mattered operationally.</b> A KDS is a shared shop screen, so two staff bumping
+     * one ticket is the normal case, not an edge case — and the frontend api-client auto-retries on
+     * 5xx. A 500 therefore turned ordinary contention into a retry storm against a row whose write
+     * had already succeeded. 4xx stops that: the caller re-reads and decides.
+     *
+     * <p>Caught at the {@link OptimisticLockingFailureException} superclass, not at
+     * {@code ObjectOptimisticLockingFailureException}, so the Hibernate-specific subclass, a bare
+     * {@code StaleObjectStateException} translated by Spring, and any future
+     * {@code @Version}-carrying entity all land here rather than only the two endpoints where this
+     * was observed. This is ONE root cause with two reported symptoms (the concurrent transitions of
+     * INT-03 and the cross-tenant delete of the security lane's A1-del), and one handler closes both.
+     *
+     * <p>The detail is a FIXED string. The provider message is
+     * {@code "Batch update returned unexpected row count ... where id=? and version=?"}, which leaks
+     * table shape and the optimistic-locking column to an unauthenticated-reachable error body; it
+     * is logged instead. {@code code} is set for the same reason as
+     * {@link MediaRedriveRejectedException}: an agent branches on it without parsing prose (D-06).
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+        // WARN, not ERROR: expected contention on a shared screen, not a fault to page on. Logged
+        // rather than returned, because the provider message names the table and the version column.
+        log.warn("Optimistic lock conflict — concurrent write lost the version check: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "This record was modified by another request. Re-read it and retry.");
+        problem.setTitle("Concurrent Modification");
+        problem.setType(URI.create("https://jtoye.uk/errors/concurrent-modification"));
+        problem.setProperty("code", "concurrent-modification");
         return problem;
     }
 
