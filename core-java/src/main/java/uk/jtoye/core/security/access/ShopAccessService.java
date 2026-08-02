@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
@@ -218,17 +219,26 @@ public class ShopAccessService {
      * explicit {@code tenant_id} comparison closes the hole. A foreign UNPUBLISHED (or absent) shop
      * is filtered to empty by RLS and denied by {@code orElseThrow}.
      *
-     * @throws ShopAccessDeniedException if no tenant is pinned, the shop is not visible under the
-     *         caller's tenant, or the shop's {@code tenant_id} differs from the caller's.
+     * <p>Cross-tenant shop access is answered NON-DISCLOSINGLY as a 404
+     * {@link ResourceNotFoundException}, never a 403 — the established contract from the PR #70 /
+     * issue #71 cross-tenant IDOR fix (guarded by {@code ShopImageCrossTenantIntegrationTest}) and
+     * the {@code PublicStorefrontService} pattern: a caller must not learn that a shop it cannot
+     * touch exists in another tenant. The message is byte-identical to a genuinely-absent shop
+     * (ShopService throws the same {@code "Shop not found: "}), so the two are indistinguishable.
+     *
+     * @throws ShopAccessDeniedException if no tenant is pinned (a security-config error, not a
+     *         cross-tenant access).
+     * @throws ResourceNotFoundException if the shop is not visible under the caller's tenant, or
+     *         the shop's {@code tenant_id} differs from the caller's (both answered as 404).
      */
     private void requireShopInCallerTenant(UUID shopId) {
         UUID callerTenant = TenantContext.get()
                 .orElseThrow(() -> new ShopAccessDeniedException(shopId, ShopRole.GROUP_ADMIN));
         UUID shopTenant = shopRepository.findById(shopId)
                 .map(Shop::getTenantId)
-                .orElseThrow(() -> new ShopAccessDeniedException(shopId, ShopRole.GROUP_ADMIN)); // foreign unpublished / absent -> RLS-empty -> deny
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId)); // foreign unpublished / absent -> RLS-empty
         if (!callerTenant.equals(shopTenant)) {
-            throw new ShopAccessDeniedException(shopId, ShopRole.GROUP_ADMIN); // foreign published shop -> tenant mismatch -> deny
+            throw new ResourceNotFoundException("Shop not found: " + shopId); // foreign published shop -> tenant mismatch (non-disclosing)
         }
     }
 

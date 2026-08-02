@@ -20,7 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.ProductService;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.security.TenantContext;
@@ -114,8 +114,11 @@ class CrossTenantAuthzIntegrationTest {
 
     /**
      * The core Critical: a tenant-B day-one GROUP_ADMIN naming a tenant-A shopId on a promotion
-     * create is denied with the typed {@link ShopAccessDeniedException}. Pre-fix: the GROUP_ADMIN
-     * early-return let the create succeed (201) and the row persisted under tenant B on shop A.
+     * create is denied with a NON-DISCLOSING 404 {@link ResourceNotFoundException} — the cross-tenant
+     * contract established by PR #70 (see {@code ShopImageCrossTenantIntegrationTest}), which the full
+     * suite surfaced as the required shape for the shared {@code require()} gate. Pre-fix: the
+     * GROUP_ADMIN early-return let the create succeed (201) and the row persisted under tenant B on
+     * shop A. The load-bearing security assertion is {@code promotionCount(shopA).isZero()} either way.
      */
     @Test
     void createPromotion_crossTenantShop_isBlocked() {
@@ -128,7 +131,7 @@ class CrossTenantAuthzIntegrationTest {
 
         assertThatThrownBy(() -> promotionService.createPromotion(promotionRequest(shopA)))
                 .as("a tenant-B GROUP_ADMIN must NOT create a promotion on a tenant-A shop (cross-tenant BOLA)")
-                .isInstanceOf(ShopAccessDeniedException.class);
+                .isInstanceOf(ResourceNotFoundException.class);
 
         assertThat(promotionCount(shopA))
                 .as("no promotion row was written on the foreign shop")
@@ -169,7 +172,7 @@ class CrossTenantAuthzIntegrationTest {
 
         assertThatThrownBy(() -> productService.createProduct(productRequest(shopA)))
                 .as("a tenant-B GROUP_ADMIN must NOT create a product on a tenant-A shop (cross-tenant BOLA)")
-                .isInstanceOf(ShopAccessDeniedException.class);
+                .isInstanceOf(ResourceNotFoundException.class);
 
         assertThat(productCount(shopA))
                 .as("no product row was written on the foreign shop")
@@ -190,7 +193,7 @@ class CrossTenantAuthzIntegrationTest {
 
         assertThatThrownBy(() -> announcementService.createAnnouncement(announcementRequest(shopA)))
                 .as("a tenant-B GROUP_ADMIN must NOT create an announcement on a tenant-A shop (cross-tenant BOLA)")
-                .isInstanceOf(ShopAccessDeniedException.class);
+                .isInstanceOf(ResourceNotFoundException.class);
 
         assertThat(announcementCount(shopA))
                 .as("no announcement row was written on the foreign shop")
