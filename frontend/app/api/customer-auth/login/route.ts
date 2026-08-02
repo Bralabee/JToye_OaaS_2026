@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import {
+  ACCESS_COOKIE,
+  ID_COOKIE,
+  REFRESH_COOKIE,
+  REFRESH_MAX_AGE,
+  cookieBaseOptions,
+} from "@/lib/customer-auth-cookies"
 
 /**
  * POST /api/customer-auth/login
@@ -21,10 +28,6 @@ interface LoginBody {
   }
 }
 
-const ACCESS_COOKIE = "jtoye-customer-access"
-const REFRESH_COOKIE = "jtoye-customer-refresh"
-const ID_COOKIE = "jtoye-customer-id"
-
 export async function POST(req: NextRequest) {
   let body: LoginBody
   try {
@@ -46,16 +49,11 @@ export async function POST(req: NextRequest) {
 
   const nowSec = Math.floor(Date.now() / 1000)
   const accessMaxAge = Math.max(0, tokens.expiresAt - nowSec)
-  // Refresh tokens from Keycloak typically live ~30 min; cap at 30 days for safety
-  const refreshMaxAge = 60 * 60 * 24 * 30
+  // Refresh/ID cookies outlive the short access token on purpose — the refresh
+  // token is what carries the session past accessTokenLifespan (#465).
+  const refreshMaxAge = REFRESH_MAX_AGE
 
-  const isProd = process.env.NODE_ENV === "production"
-  const baseOpts = {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: "lax" as const,
-    path: "/",
-  }
+  const baseOpts = cookieBaseOptions()
 
   const res = NextResponse.json({ ok: true, expiresAt: tokens.expiresAt })
   res.cookies.set(ACCESS_COOKIE, tokens.accessToken, {

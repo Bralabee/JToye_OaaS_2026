@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 import { m } from "framer-motion"
@@ -8,7 +8,8 @@ import { User, LogOut, Package, MapPin, Menu, X, ShoppingBag } from "lucide-reac
 import { cn } from "@/lib/utils"
 import { springPop } from "@/lib/motion"
 import { useCartCount } from "@/hooks/use-cart-count"
-import { getCustomerSession, customerLogout } from "@/lib/customer-auth"
+import { useCustomerSession } from "@/hooks/use-customer-session"
+import { customerLogout } from "@/lib/customer-auth"
 import {
   Sheet,
   SheetClose,
@@ -17,13 +18,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 
-interface CustomerProfile {
-  email: string
-  name: string
-}
-
 export function StorefrontNav() {
-  const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  // Session state comes from the shared hook, not a local copy — PublicHeader
+  // reads the same one so the two headers can never disagree (#457).
+  const { profile } = useCustomerSession()
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
   const params = useParams<{ slug?: string }>()
@@ -31,46 +29,6 @@ export function StorefrontNav() {
   const cartCount = useCartCount(slug)
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
-
-  const checkSession = useCallback(async () => {
-    const session = await getCustomerSession()
-    setProfile(session?.profile || null)
-  }, [])
-
-  useEffect(() => {
-    // Check on mount
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
-    checkSession()
-
-    // Re-check when page gains focus (covers OAuth redirect return)
-    const onFocus = () => checkSession()
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") checkSession()
-    }
-    // Re-check on storage changes (covers cross-tab login via marker)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "jtoye-customer-logged-in" || e.key === "jtoye-customer-expires-at") {
-        checkSession()
-      }
-    }
-
-    window.addEventListener("focus", onFocus)
-    document.addEventListener("visibilitychange", onVisibility)
-    window.addEventListener("storage", onStorage)
-
-    // Also poll briefly after mount to catch the redirect scenario
-    // (OAuth callback sets localStorage then redirects — same tab, no storage event)
-    const timer = setInterval(checkSession, 1000)
-    const cleanup = setTimeout(() => clearInterval(timer), 5000) // Stop polling after 5s
-
-    return () => {
-      window.removeEventListener("focus", onFocus)
-      document.removeEventListener("visibilitychange", onVisibility)
-      window.removeEventListener("storage", onStorage)
-      clearInterval(timer)
-      clearTimeout(cleanup)
-    }
-  }, [checkSession])
 
   const desktopLink = (active: boolean) =>
     cn(
