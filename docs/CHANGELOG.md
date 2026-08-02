@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A lost optimistic-lock race is a 409 now, not an opaque 500 (F-M1 / INT-03) — 2026-08-02
+
+Two staff bumping the same KDS ticket is the normal case on a shared shop screen, not an edge case. Until this change the loser got `500 .../errors/internal`, *"An unexpected error occurred"* — indistinguishable from a server fault, and **the frontend api-client auto-retries on 5xx**, so ordinary contention became a retry storm against a row whose write had already succeeded.
+
+#### Fixed
+- **`ObjectOptimisticLockingFailureException` matched none of `GlobalExceptionHandler`'s 30 handlers** and fell to the `Exception.class` catch-all. One handler now maps it to a typed **409 `.../errors/concurrent-modification`** with a stable `code`. Declared on the **`OptimisticLockingFailureException` superclass**, not Hibernate's subclass, so a Spring-translated `StaleObjectStateException` and any future `@Version` entity are covered rather than only the two endpoints where this was observed — it is one root cause with two reported symptoms (INT-03's concurrent transitions, the security lane's A1-del cross-tenant delete) and one handler closes both.
+
+#### Notes
+- **Nothing was actually failing, which is the whole point.** 8 barrier-synchronised `confirm`s gave `{200: 1, 500: 7}` while data integrity **held** — exactly one transition applied, final state consistent. The same duplicate and illegal transitions run **sequentially** already returned a typed `400` naming the event and the state. The race was the only thing separating a correct 400 from an opaque 500, so 409 is the honest answer: the request conflicts, it did not fault.
+- **The detail is a fixed string, deliberately.** The provider message is `"Batch update returned unexpected row count … where id=? and version=?"`, which names the table and the optimistic-locking column. It is logged at **WARN** — contention, not something to page on — and never returned. The test asserts the *absence* of `version`, `Batch update` and `update orders set` from the body, because asserting the fixed detail alone would pass just as well if the raw message were appended to it.
+- Falsified rather than observed passing, with opening and closing clean arms: clean **4/4**, break arm (handler de-registered) **3 failed of 4**, restore verified **by `git hash-object`** rather than by `git diff --stat`, closing clean arm **4/4**. Counts read from the results XML (`tests="4" failures="0"`), not inferred from `BUILD SUCCESSFUL` — which is also what running zero tests looks like.
+- The fourth test is a **control arm**: an unrelated `RuntimeException` must still reach the catch-all as a 500. It passed in the break arm too, which is what proves the other three failures were specific rather than wholesale.
+- **Harness trap worth carrying:** the first run failed on `$.code` with `PathNotFoundException` against a handler that is correct in production. `standaloneSetup` with a bare `new ObjectMapper()` does not register `ProblemDetailJacksonMixin`, the mixin that flattens `setProperty` members to the top level. Build the converter from `Jackson2ObjectMapperBuilder` — the same fix `RateLimitInterceptorTest` already carries for #413.
+
+### Cross-tenant write BOLA closed in the shop-access gate (#433, QA-council F-C1/F-H1) — 2026-08-02
+
+**Backfilled 2026-08-02.** This PR merged without a changelog entry, which turned `check-changelog-contract` red on `main` — the gate was working exactly as designed and is the reason the omission was caught at all.
+
+#### Fixed
+- **F-C1 — cross-tenant write BOLA** on promotions, announcements **and `POST /products`**. `ShopAccessService.require()` now verifies the shop's `tenant_id` equals the caller's (explicit compare, RLS-published-shop aware); a cross-tenant target is answered as a **non-disclosing 404**, matching the #70 contract.
+- **F-H1 — authenticated list leaked other tenants' published-shop rows.** `getAllPromotions` / `getAllAnnouncements` now use tenant-scoped `findByTenantId`. The RLS policy and the `/public/*` surface are untouched.
+
+#### Notes
+- **Phase 28's SEC-01 was written as "re-verify pentest A1", and re-verifying is what saved it.** A1 is a real Critical, but its **filed root cause — "missing `tenant_id` / RLS" — is falsified**: both tables carry `tenant_id` with ENABLE + FORCE RLS. Implementing the filed fix would have shipped a **no-op over a live Critical**. The real cause was service-layer authorization.
+- Red→green **5/5 fail before, 6/6 after**, verified over live HTTP on a runtime rebuilt from the branch, **by a verifier who was not the author**: original attack 201→404, 0 cross-tenant rows, in-tenant happy path still 201 (no over-block), public storefront still serving promotions.
+- **The first full-suite run FAILED** (5×, `ShopImageCrossTenantIntegrationTest`) — the initial fix returned 403 where the codebase's tested precedent (#70) is a non-disclosing 404. That is the documented "a new authZ gate silently breaks existing integration tests" trap, and it was caught **only because the full suite ran**, not the passing subset. The fix was refined to conform, not to override: same-tenant-ungranted → 403 typed shop-access, cross-tenant → 404 non-disclosing.
+
 ### The other 124 E2E tests now run — nightly, against a real stack (#426, refs #420) — 2026-08-01
 
 CI ran `e2e/public-layout.spec.ts` and **nothing else — 2 of 126 tests**. The per-PR job is stack-free by design and must stay that way; the moment it needs a backend, the cheap layout gate is lost. The consequence was that **124 of 126 E2E tests never ran on any PR**. #404 is the record of what that costs: a broken customer sign-in shipped and sat undetected, because the suite that would have caught it was itself broken and unwatched. Closing #404 on *"0 failed"* would have lost this; #420 kept it, and this is its CI half — the skip half was #423.
