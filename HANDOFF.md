@@ -45,7 +45,7 @@ to the August one. Read the directory listing, not the pointer.
 | | |
 |---|---|
 | Fixed | **F-C1 + F-H1** cross-tenant write BOLA + list leak (#433 MERGED) · **F-M1** optimistic-lock 500 (#434 MERGED) |
-| Group A remainder — genuine bugs, **no issues filed** | F-H4 empty webhook delivery log (missing tenant GUC) · F-M3/F-M4 modal + a11y (**419 axe violations**, LGL-02) · F-H8/F-H9 SEO (robots 404, no metadata/JSON-LD) · F-H3 raw-image endpoints bypass the Phase-24 pipeline · F-M5 no ProblemDetail schema · F-M8 17 docs-broken |
+| Group A remainder — **all FILED 2026-08-02**, clustered by root cause as the council adjudicated | **#444** F-H4 webhook delivery log (missing tenant GUC) · **#445** F-H3 raw-image endpoints bypass the Phase-24 pipeline · **#446** F-M3 hand-rolled dish modal · **#447** F-H8/F-H9 SEO · **#448** F-M5/F-L1 ProblemDetail · **#449** F-M8 17 docs-broken · **#450** the small-broken copy set · **#451** F-M4 419 axe violations · **#452** F-H5/F-H7 lifecycle dead-ends · **#453** F-H6 · **#454** F-M6 CLS |
 | Group B → Phase 28, **SEC-02 issues now FILED** | **#438** F-C2 dev Postgres bind · **#439** F-C3 Grafana default creds · **#440** F-H2 spec advertises a tenant-override header · **#441** F-H10 infra port binds + mail archive · **#442** F-M7 unauth actuator/OpenAPI/edge. All five OPEN, `security` + P1/P2 labelled, **deliberately sanitised** (§2.1) |
 | Group C → tracked | allergen text↔mask = #427 (still OPEN) · storefront social signup = #432 (still OPEN) · the low-severity set |
 
@@ -291,9 +291,16 @@ production, and it needs no decision from §4. Its trap is written into its acce
 that authenticates the metrics endpoint without giving Prometheus a way in **silently blinds the whole
 Phase 27 alerting layer**, and nothing turns red when that happens.
 
-**Second: Group A's F-H4** (webhook delivery log permanently empty — a missing tenant GUC). It is a
-shipped Phase-22 feature that has never worked, and the finding names the cause. It still has **no
-issue** — Group A was not filed, only Group B.
+**Second: #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped Phase-22 feature
+that has never worked, and the finding names the cause in one line (no `@Transactional`, so
+`TenantSetLocalAspect` never pins the GUC and RLS returns nothing).
+
+**The whole council backlog is now filed — #438–#454, 23 issues.** A coverage sweep maps all 34
+findings to filed / already-fixed / deliberately-Group-C, with **0 unaccounted** and a control token
+proving the sweep discriminates. Two findings — **#453 is OPEN** (F-H6, High) and **#454 is OPEN**
+(F-M6) — appear in `findings.json` and the report prose but **in no group in `plan.md`**: the council
+found them and never routed them. They were caught only by that sweep. If you run a council again,
+diff `findings.json` against the groups in `plan.md` before trusting the adjudication.
 
 **#428 Wave 1 (catering discovery) still costs no engineering time and runs in parallel with anything.**
 
