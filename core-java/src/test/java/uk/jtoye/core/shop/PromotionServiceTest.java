@@ -222,7 +222,11 @@ class PromotionServiceTest {
         // Given
         Pageable pageable = PageRequest.of(0, 20);
         Page<ShopPromotion> page = new PageImpl<>(List.of(testPromotion), pageable, 1);
-        when(promotionRepository.findAll(pageable)).thenReturn(page);
+        // FC-1 (QA-council, F-H1): the GROUP_ADMIN list path is now tenant-scoped at the
+        // query (findByTenantId), not a bare findAll() that leaked cross-tenant rows through
+        // the RLS storefront carve-out. The test's intent (GROUP_ADMIN list returns a mapped
+        // page) is preserved — the mock/verify move to the tenant-scoped finder.
+        when(promotionRepository.findByTenantId(tenantId, pageable)).thenReturn(page);
 
         // When
         Page<PromotionDto> result = promotionService.getAllPromotions(pageable);
@@ -233,7 +237,7 @@ class PromotionServiceTest {
         assertEquals(1, result.getContent().size());
         assertEquals(promotionId, result.getContent().get(0).getId());
         assertEquals("10% Off Everything", result.getContent().get(0).getLabel());
-        verify(promotionRepository).findAll(pageable);
+        verify(promotionRepository).findByTenantId(tenantId, pageable);
     }
 
     @Test

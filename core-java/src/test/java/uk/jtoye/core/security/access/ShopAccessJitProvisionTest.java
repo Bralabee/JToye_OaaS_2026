@@ -121,6 +121,22 @@ class ShopAccessJitProvisionTest {
     }
 
     /**
+     * FC-1 (QA-council): a GROUP_ADMIN's require() now verifies the named shop belongs to the
+     * caller's tenant (a tenant-wide GROUP_ADMIN is not cross-tenant). Seed a real tenant + shop
+     * so a day-one implicit / realm-admin GROUP_ADMIN passes on a shop it genuinely owns; a random
+     * (non-existent) shop id would now be correctly denied and no longer exercise this path.
+     */
+    private UUID seedTenantAndShop(UUID tenant) {
+        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                tenant, "jit-tenant-" + tenant);
+        UUID shopId = UUID.randomUUID();
+        jdbc.update("INSERT INTO shops (id, tenant_id, name, slug, address, published, delivery_fee_pennies) "
+                        + "VALUES (?, ?, ?, ?, ?, true, 0)",
+                shopId, tenant, "shop-" + shopId, "slug-" + shopId, "1 Test Street, London");
+        return shopId;
+    }
+
+    /**
      * Two concurrent first-requests from the same ungranted {@code (tenant, sub)}
      * must JIT-provision EXACTLY ONE GROUP_ADMIN row (ON CONFLICT DO NOTHING).
      */
@@ -176,11 +192,15 @@ class ShopAccessJitProvisionTest {
         setStrictScoping(false);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
+        // FC-1: require() now checks the named shop is in the caller's tenant; seed a real
+        // in-tenant shop so the day-one implicit GROUP_ADMIN passes (a random id would now be
+        // correctly denied, no longer exercising the JIT day-one path this asserts).
+        UUID shopId = seedTenantAndShop(tenant);
         authenticate(sub, false);
         TenantContext.set(tenant);
 
         // Does NOT throw: JIT provisions GROUP_ADMIN, which satisfies any floor.
-        shopAccessService.require(UUID.randomUUID(), ShopRole.STAFF);
+        shopAccessService.require(shopId, ShopRole.STAFF);
 
         assertThat(groupAdminRowCount(tenant, sub))
                 .as("first request auto-provisioned exactly one GROUP_ADMIN row")
@@ -219,11 +239,14 @@ class ShopAccessJitProvisionTest {
         setStrictScoping(true);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
+        // FC-1: require() now checks shop tenancy even for a realm-admin (tenant-wide, not
+        // cross-tenant); seed a real in-tenant shop so the ROLE_admin bridge passes on it.
+        UUID shopId = seedTenantAndShop(tenant);
         authenticate(sub, true);
         TenantContext.set(tenant);
 
         // Passes purely on the ROLE_admin bridge.
-        shopAccessService.require(UUID.randomUUID(), ShopRole.GROUP_ADMIN);
+        shopAccessService.require(shopId, ShopRole.GROUP_ADMIN);
         assertThat(shopAccessService.isGroupAdmin()).isTrue();
 
         assertThat(groupAdminRowCount(tenant, sub))

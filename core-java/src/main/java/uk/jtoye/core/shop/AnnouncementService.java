@@ -38,8 +38,13 @@ public class AnnouncementService {
         log.debug("Fetching announcements with pagination: page {}, size {}",
                 pageable.getPageNumber(), pageable.getPageSize());
         // VSA-02 (D-01): read-scope by grant set at the QUERY.
+        // FC-1 (QA-council, F-H1): confine the GROUP_ADMIN authenticated list to the caller's
+        // tenant. A bare findAll() leaked other tenants' rows via the shop_announcements_read RLS
+        // storefront carve-out; findByTenantId keeps this list tenant-scoped regardless.
         if (shopAccessService.isGroupAdmin()) {
-            return announcementRepository.findAll(pageable)
+            UUID tenantId = TenantContext.get()
+                    .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+            return announcementRepository.findByTenantId(tenantId, pageable)
                     .map(announcementMapper::toDto);
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();

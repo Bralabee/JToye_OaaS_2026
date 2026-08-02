@@ -13,8 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -78,6 +81,12 @@ public class ShopAccessService {
     private final UserDirectoryRepository userDirectoryRepository;
     private final TenantCacheEvictor cacheEvictor;
     /**
+     * Read-only lookup of a shop's owning {@code tenant_id} so a tenant-wide GROUP_ADMIN's
+     * {@link #require(UUID, ShopRole)} cannot cross the tenant boundary (QA-council FC-1). A
+     * JpaRepository proxy — it holds no reference back to this service, so no construction cycle.
+     */
+    private final ShopRepository shopRepository;
+    /**
      * Lazy self-reference (WR-01): {@link #resolveMembership} is {@code @Cacheable}, but
      * {@code @EnableCaching} runs in default proxy mode, so a SELF-invocation
      * ({@code this.resolveMembership(...)}) never passes through the caching interceptor — the
@@ -119,10 +128,12 @@ public class ShopAccessService {
     public ShopAccessService(ShopStaffRepository shopStaffRepository,
                              UserDirectoryRepository userDirectoryRepository,
                              TenantCacheEvictor cacheEvictor,
+                             ShopRepository shopRepository,
                              ObjectProvider<ShopAccessService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.cacheEvictor = cacheEvictor;
+        this.shopRepository = shopRepository;
         this.selfProvider = selfProvider;
     }
 
@@ -166,6 +177,14 @@ public class ShopAccessService {
     public void require(UUID shopId, ShopRole minRole) {
         onRequest();
         if (isGroupAdmin()) {
+            // FC-1 (QA-council): a tenant-wide GROUP_ADMIN is tenant-WIDE, NOT cross-tenant. The
+            // early-return used to grant access for ANY shopId, so a tenant-B GROUP_ADMIN could
+            // name a tenant-A shop on a write (BOLA). When a shop IS named, verify it belongs to
+            // the caller's tenant BEFORE the early-return grants access. (A null shopId is a
+            // tenant-wide resource handled below/above — nothing to bind to a tenant here.)
+            if (shopId != null) {
+                requireShopInCallerTenant(shopId);
+            }
             return;
         }
         // CR-04: a null shopId is a tenant-wide / unassigned resource; only a
@@ -182,6 +201,44 @@ public class ShopAccessService {
         ShopRole role = membership.perShopRole().get(shopId);
         if (role == null || !role.satisfies(minRole)) {
             throw new ShopAccessDeniedException(shopId, minRole);
+        }
+    }
+
+    /**
+     * FC-1 (QA-council): assert {@code shopId} is owned by the caller's tenant, so a tenant-wide
+     * GROUP_ADMIN's {@link #require} cannot reach across the tenant boundary. Only consulted for a
+     * GROUP_ADMIN with a NON-null shopId (the non-GROUP_ADMIN branch is already tenant-safe: a
+     * foreign shopId is absent from the caller's per-shop grant map, so {@code role == null} denies
+     * it there).
+     *
+     * <p><strong>The RLS subtlety this method exists to defeat:</strong> the {@code shops_public_read}
+     * policy is {@code (published = true) OR (tenant_id = current_tenant_id())}, so
+     * {@code shopRepository.findById(foreignShopId)} under the caller's tenant GUC STILL returns a
+     * foreign shop when it is PUBLISHED — carrying its real foreign {@code tenant_id}. A
+     * null/empty check would therefore pass a published foreign shop straight through. Only an
+     * explicit {@code tenant_id} comparison closes the hole. A foreign UNPUBLISHED (or absent) shop
+     * is filtered to empty by RLS and denied by {@code orElseThrow}.
+     *
+     * <p>Cross-tenant shop access is answered NON-DISCLOSINGLY as a 404
+     * {@link ResourceNotFoundException}, never a 403 — the established contract from the PR #70 /
+     * issue #71 cross-tenant IDOR fix (guarded by {@code ShopImageCrossTenantIntegrationTest}) and
+     * the {@code PublicStorefrontService} pattern: a caller must not learn that a shop it cannot
+     * touch exists in another tenant. The message is byte-identical to a genuinely-absent shop
+     * (ShopService throws the same {@code "Shop not found: "}), so the two are indistinguishable.
+     *
+     * @throws ShopAccessDeniedException if no tenant is pinned (a security-config error, not a
+     *         cross-tenant access).
+     * @throws ResourceNotFoundException if the shop is not visible under the caller's tenant, or
+     *         the shop's {@code tenant_id} differs from the caller's (both answered as 404).
+     */
+    private void requireShopInCallerTenant(UUID shopId) {
+        UUID callerTenant = TenantContext.get()
+                .orElseThrow(() -> new ShopAccessDeniedException(shopId, ShopRole.GROUP_ADMIN));
+        UUID shopTenant = shopRepository.findById(shopId)
+                .map(Shop::getTenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId)); // foreign unpublished / absent -> RLS-empty
+        if (!callerTenant.equals(shopTenant)) {
+            throw new ResourceNotFoundException("Shop not found: " + shopId); // foreign published shop -> tenant mismatch (non-disclosing)
         }
     }
 
