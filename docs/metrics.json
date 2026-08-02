@@ -1,6 +1,6 @@
 {
-  "java_test_methods": 1274,
-  "java_test_files": 221,
+  "java_test_methods": 1280,
+  "java_test_files": 222,
   "java_controllers": 23,
   "schema_version": 60,
   "go_test_funcs": 77,
@@ -11,5 +11,5 @@
   "playwright_specs": 13,
   "mcp_test_blocks": 48,
   "mcp_test_files": 8,
-  "total_logical_invocations": 1917
+  "total_logical_invocations": 1923
 }
