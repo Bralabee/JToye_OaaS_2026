@@ -6,21 +6,32 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 > **§0.1 is the point of this document.** A full QA council ran on 2026-08-02 and found
 > **3 Critical / 10 High / 9 Medium / 13 Low** across Phases 22–27. Three findings have been fixed.
-> **Everything else lives only in `.qa-council/disc-20260802-121732/`, which is GITIGNORED**, with no
-> issue for any of it. The previous handoff's lesson was that a roadmap review cannot see what has no
-> ticket; this is the same lesson one layer down — a *repo* review cannot see what is not in the repo.
-> If you read one section, read that one.
+> Everything else lives only in `.qa-council/disc-20260802-121732/`, which is **GITIGNORED**. It is now
+> all filed (#438–#454), but the *evidence* still exists in one untracked directory. The previous
+> handoff's lesson was that a roadmap review cannot see what has no ticket; this is the same lesson one
+> layer down — a *repo* review cannot see what is not in the repo.
+>
+> **§2.4 is the newer and, for the product, larger story.** Twelve findings from the owner **using the
+> running app** — filed as #457–#463. Four of them had a *different mechanism* than the symptom
+> suggested, and one (#460, no concept of locality) is a missing subsystem the business model already
+> assumes. **No audit in this repo found any of them.** Every process here was green while a signed-in
+> customer could not tell they were signed in and no order took a payment.
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **2 PRs merged this session: #434, #435.** HEAD deliberately **not** quoted |
+| `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
 | Open PRs | **none** (measured, not assumed) |
-| Open issues | **64** |
+| Open issues | **87** — was 63; this session filed **23** council issues (#438–#454) + **7** owner-reported (#457–#463) |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
-| Gates | **19 of 19 rc=0**, measured after the merges on a freshly rebuilt runtime |
-| Test baseline | `docs/metrics.json` **1927** (was 1923; +4 from `OptimisticLockExceptionHandlerTest`) |
-| Runtime | 4/4 built services FRESH — `sync-runtime.sh` run AFTER both merges, parity re-asserted |
+| Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
+| Test baseline | `docs/metrics.json` **1930** — re-measured, not carried forward. It was 1927 an hour earlier; the concurrent session moved it |
+| Runtime | 4/4 built services FRESH, re-asserted after the concurrent session's merges |
+
+> ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
+> checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
+> **Re-measure every number below before repeating it**; §2.4's first entry is what happens when you
+> don't.
 
 > **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
 > §6 pairs every fact with the command that produces it: **run them, don't read them.**
@@ -184,6 +195,53 @@ Previous handoffs described this as 2 rows. It was 6. See §0.2.
 `check-state-freshness` asserting `STATE.md`'s current phase against `ROADMAP.md`'s progress table was
 recommended in `260801-ths`'s SUMMARY and is **still not built**.
 
+### 2.4 Twelve findings the owner got by USING the app — none of which any audit found
+
+Reported 2026-08-02 from live use, verified against the tree, filed as seven issues. Read this section
+before §0.1's: the council findings are mostly correctness and infrastructure; these are the product.
+
+| issue | items | what it is |
+|---|---|---|
+| **#457 is OPEN** | 1b, 9 | Public header is **session-blind** — `/` and `/track` *read as* logged out. P1 |
+| **#458 is OPEN** | 1a, 2, 3, 4 | Signed-in nav shows `For operators` + `Track order` ungated; tracking belongs in the profile, auto-populated, with a dispatch notification |
+| **#459 is OPEN** | 6 | Basket survives sign-out → a second customer on the same browser inherits it |
+| **#460 is OPEN** | 7 | **No concept of locality.** A phase, not a patch. P1 |
+| **#461 is OPEN** | 8, 10 | No payment processing; pay-on-collection must become channel-issued payment links. P1 |
+| **#462 is OPEN** | 11 | No second factor, no verified contact channel |
+| **#463 is OPEN** | 5 | *My Orders* spinner is client-side rendering, **not** a slow API |
+
+Item 12 (README review) went as a **comment on #449**, which already owns the entry-doc surface.
+
+**Four had a different mechanism than the symptom — this is the part worth carrying:**
+
+- **"Going home logs me out" is not a logout.** `StorefrontNav` — the only component that renders
+  customer session state — is mounted **only** by `app/shop/layout.tsx:43`. `/` and `/track` render
+  `PublicShell` → `PublicHeader`, which contains **zero** references to `getCustomerSession`. The
+  session is a `localStorage` marker nothing in the navigation path clears. **Not yet browser-proven**,
+  and #457 makes that its first acceptance criterion — if the session really is lost it is a far more
+  serious bug, and nobody should touch auth on the strength of the symptom.
+- **The basket cannot cross shops** — `cart-provider.tsx` keys `jtoye-cart-{shopSlug}`, the payload
+  carries its own slug, and the parser rejects a mismatch (`:57-61`). It crosses **identities** because
+  `customerLogout()` clears four keys (`customer-auth.ts:94-98`) and not the cart. One device, public
+  catalogue data, no PII, no server-side exposure. Real, bounded — and the desirable
+  anonymous→signed-in carry-forward must survive the fix.
+- **Payments are not missing code.** `PublicStorefrontService:508-521` falls back to COD *by design*
+  when the provider is unconfigured. This is the empty-`STRIPE_API_KEY` state (§4). First action is
+  keys, not code.
+- **The slow page is not a slow query.** Measured: orders API **13–17 ms** warm, `/shop`
+  server-rendered **12 ms**. `/shop/orders` is `"use client"` end-to-end, so the spinner covers bundle
+  + hydration + fetch. "Optimise the query" would have been wasted work.
+
+**#460 is re-ranked above the rest.** `navigator.geolocation` = **0**, `deliveryRadius` = **0**. Shop
+`latitude`/`longitude` exist on the DTO (`:657-658`) and **nothing computes distance**; postcode search
+is a substring match over name/description/address. Birmingham and London see the same vendor list.
+Vendor visibility, delivery feasibility, distance-based fees and the local-SEO work (#447) are all
+downstream of a locality model that does not exist.
+
+**The process lesson.** Every gate was green, 23 council issues had just been filed, and none of this
+surfaced. The council audits what the code *does*; the owner used what the product *is*. **Keep doing
+this by hand** — no gate in this repo would have caught a single one of the twelve.
+
 ---
 
 ## 3. Carried forward — still true, not re-measured unless noted
@@ -194,6 +252,11 @@ recommended in `260801-ths`'s SUMMARY and is **still not built**.
   — **line 294, not 273**, which both CI logs and the issue body still quote. #422 inverted the
   assertion order so the next occurrence is diagnostic: row `SENT` + wrong count → the mock; row still
   `PENDING` → the flush did not run. **Capture that line when it next fails.**
+- **A new E2E spec landed un-run, and the skip-budget gate caught it.** #456 added
+  `frontend/e2e/marketing-dish-scroller.spec.ts`; `check-e2e-skip-budget` now returns **rc=2 VOID**
+  because the stored report is older than the specs it describes. That is the gate working — a stale
+  report certifying a skip set that no longer exists is a documented trap here. It is also the most
+  concrete argument yet for dispatching the nightly job below: it would have run this spec.
 - **#420 is still OPEN — its CI half.** `e2e-nightly.yml` (all 126 specs, real stack) **has still never run**
   (`schedule` fires only on the default branch). Dispatch it once manually. Per-PR CI still runs 2 of 126.
   Corollary seen again this session: `Integration Tests` passed in **6s** on #435 — path-filtered, a
@@ -284,16 +347,24 @@ docker exec jtoye_oaas_2026-core-java-1 sh -c \
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Recommended next move: #442 (F-M7).** SEC-02 filing is done — #438–#442 exist, so the audit is safe
-and the queue is now real work. Take #442 first even though it is the lowest-severity of the five: it
-is the only Group B finding whose `permitAll` is not profile-gated, so it is the only one that reaches
-production, and it needs no decision from §4. Its trap is written into its acceptance criteria — a fix
-that authenticates the metrics endpoint without giving Prometheus a way in **silently blinds the whole
-Phase 27 alerting layer**, and nothing turns red when that happens.
+**Recommended next move: #457 — and settle it in a browser before writing anything.** It is a P1, it
+is probably a one-component fix (a session-blind header, §2.4), and until it is confirmed nobody knows
+whether the customer session actually survives navigation. That answer changes the size of the work by
+an order of magnitude, and it is ten minutes with a browser. **Do not fix it from the symptom.**
 
-**Second: #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped Phase-22 feature
-that has never worked, and the finding names the cause in one line (no `@Transactional`, so
+**Then #442 (F-M7)** — the only Group B finding whose `permitAll` is not profile-gated, so the only one
+that reaches production, and it needs no decision from §4. Its trap is in its acceptance criteria: a
+fix that authenticates the metrics endpoint without giving Prometheus a way in **silently blinds the
+whole Phase 27 alerting layer**, and nothing turns red when that happens.
+
+**Then #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped Phase-22 feature that
+has never worked, and the finding names the cause in one line (no `@Transactional`, so
 `TenantSetLocalAspect` never pins the GUC and RLS returns nothing).
+
+**#460 and #461 need a DECISION before any code**, and both are P1. #460 (locality) is a phase, and
+§4's unresolved production-domain question touches it. #461 (payments) is blocked on Stripe test-mode
+keys — which is already one of §4's four blocking decisions, so it is the same blocker wearing a
+different hat, not a new one.
 
 **The whole council backlog is now filed — #438–#454, 23 issues.** A coverage sweep maps all 34
 findings to filed / already-fixed / deliberately-Group-C, with **0 unaccounted** and a control token
