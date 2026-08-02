@@ -136,16 +136,27 @@ verified against the tree 2026-08-01:
 **Confirmed-good, protect from regression:** JWT signature validation rejects `alg=none` (all case
 variants), RS256→HS256 confusion, JKU injection, `kid` traversal; `core-api` enforces PKCE.
 
-### 2.2 Two bookkeeping repairs I found and did NOT make
+### 2.2 Two bookkeeping repairs — ✅ BOTH CLOSED 2026-08-02
 
-Both are live hazards, not tidiness:
+*Recorded as open when this document was written; fixed the same day. Kept rather than deleted,
+because the mechanism is the reusable part.*
 
-1. **`23-18-PLAN.md` has no `SUMMARY.md`.** The work **shipped** (issue #280 CLOSED, PR #308 merged
-   2026-07-26; verified in code — all three controllers take `shopId` with a 403). But `gsd-sdk` marks
-   a plan done **only** by SUMMARY presence, so an unscoped `/gsd:execute-phase 23` would
-   **re-execute already-merged work**. Write the SUMMARY before touching Phase 23.
-2. **Phase 23 has three disagreeing plan counts** — `ROADMAP.md:136` prose says **15**, the progress
-   table says **17/17**, and **18** `*-PLAN.md` files exist. `23-18` appears nowhere in the roadmap.
+1. **`23-18-PLAN.md` had no `SUMMARY.md`** though its work shipped (#280 CLOSED, PR #308 merged
+   2026-07-26). `gsd-sdk` marks a plan done **only** by SUMMARY presence, so an unscoped
+   `/gsd:execute-phase 23` would have **re-executed already-merged work**. The executor had written
+   its evidence back into `23-18-PLAN.md` instead of a SUMMARY — the evidence was never lost, only
+   the completion marker. **Retroactive `23-18-SUMMARY.md` written**, sourced from that evidence and
+   re-verified against the live tree.
+2. **Phase 23 carried three disagreeing plan counts** — prose said **15**, the progress table
+   **17/17**, and **18** `*-PLAN.md` files existed, with `23-18` named nowhere in the roadmap. **Now
+   18 plans / 18 summaries, and the roadmap reads 18 in both places**, with a `23-18` entry added
+   under a new *Post-phase* heading.
+
+> **Trap caught while doing this, worth carrying:** a `find` for the two test classes the plan's T6
+> named (`PromotionControllerShopFilterTest`, `AnnouncementControllerShopFilterTest`) returned
+> **MISSING** and was nearly written up as a coverage gap. Reading the shipping commit showed both had
+> landed **consolidated into one `MarketingControllerShopFilterTest`**. *An empty search is evidence
+> about the pattern, not about the code* — the third instance of that shape in this repo's records.
 
 ### 2.3 The three most load-bearing planning files are ungated
 

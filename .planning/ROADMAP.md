@@ -143,7 +143,7 @@ Plans:
   4. A GROUP_ADMIN can list, grant, and revoke staff roles per shop from a staff-management screen; a grant immediately unlocks access and a revoke immediately produces a 403. (VSA-04)
   5. The dashboard sidebar no longer overlays content at 375px — the nav collapses to a drawer/bottom-nav that pairs with the shop switcher, verified by a 375px Jest/Playwright viewport spec. (MOBL-01)
 
-**Plans**: 15 plans (6 waves shipped + 5 gap-closure waves)
+**Plans**: 18 plans (6 waves shipped + 6 gap-closure waves + 23-18, the post-phase WR-04 fix). *Corrected 2026-08-02: this line read `15` while the progress table read `17/17` and 18 `*-PLAN.md` files existed — three disagreeing counts, and `23-18` appeared nowhere in this document.*
 
 Plans:
 **Wave 1**
@@ -199,6 +199,10 @@ Source: `23-VERIFICATION.md` (status `gaps_found` — 3 confirmed authorization 
 - [x] 23-15-PLAN.md (Gap Wave 5) — Phase gate: OpenAPI snapshot regen (`adc1c58`, 4 staff endpoints incl. /me) + `docs-freshness --write` reconcile (1511→1573 / schema 56→57, CLAUDE.md+AGENTS.md, EXIT 0) over a green suite (integrationTest 331/0, jest 360/360) + 23-VALIDATION/REQUIREMENTS/23-CONTEXT/deferred-items reconcile; VSA-02+VSA-04 → Complete. Both known-red CI gates now green. (completed 2026-07-21) [VSA-02, VSA-04]
 - [x] 23-16-PLAN.md (Gap Wave 5, test-only) — migrated 7 legacy integration classes from `@WithMockUser` / non-UUID `.jwt()` to the production UUID-subject JWT auth shape, turning the full `:core-java:integrationTest` from 13 failures (23-08's fail-closed `requireVendorUserId()` denials) to **331/0** with zero main-source change; the fail-closed boundary is preserved, not relaxed. (completed 2026-07-21)
 - [x] 23-17-PLAN.md (Gap Wave 6, code-review blocker) — **CONFIRMED V57 deployment blocker fixed**: the grant_source backfill (shipped by 23-14) was a bare no-GUC `UPDATE` invisible under the FORCE-RLS shop_staff table to the RLS-bound migration role (jtoye_app) → 0 rows → `SET NOT NULL` bricks boot on any non-fresh DB. Rewritten as V44's per-tenant `set_config` loop; steps 1/3/4 unchanged, no RLS policy touched (RlsContractTest green). New `V57GrantSourceBackfillIntegrationTest` proves it on a non-fresh two-tenant DB under a NOSUPERUSER `rls_migrator` role (RED against the bare UPDATE — SQLSTATE 23502 at SET NOT NULL; GREEN after). Full `integrationTest` **332/0**. (completed 2026-07-21) [VSA-02]
+
+**Post-phase** *(added to this document 2026-08-02 — it shipped 2026-07-26 but was never listed here)*
+
+- [x] 23-18-PLAN.md (post-phase, WR-04) — Products and marketing narrowed to the selected shop **client-side, over a single already-paginated page**: the header count was `filtered.length` (*"matches on this page"*, not the shop's total), a shop whose rows began on page 2 rendered "No products in this shop", rows past page 1 were unreachable, and the fetch effects never listed `contextShopId` as a dependency so switching shop did not even refetch. Adjudicated a milestone blocker by the #307 backlog review — the only open v2.3 deferral that **misreports a vendor's own data back to them**. Optional `?shopId=` added to **four** endpoints (`/products`, `/products/search`, `/promotions`, `/announcements`), each dispatching to a service method opening with `require(shopId, STAFF)`. **Not a security fix** — the set was already grant-scoped by 23-03; what changed is *where* the filter runs. Falsified both directions: gates removed → 7/7 gate tests FAILED, restored → 25/0; `shopScope` neutralised → exactly the 3 request-shape Jest assertions failed, restored → 16/16. Closes **#280** via **PR #308** (`d8b7c052`, merged 2026-07-26). (completed 2026-07-26) [WR-04 deferral under VSA-04; strengthens VSA-03]
 
 **UI hint**: yes
 
@@ -332,7 +336,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 |-------|-----------|----------------|--------|-----------|
 | 21. Onboarding Blocker UX | v2.3 | 5/5 | Complete    | 2026-07-14 |
 | 22. Notifications & Comms | v2.3 | 7/7 | Complete    | 2026-07-15 |
-| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 17/17 | Complete    | 2026-07-22 |
+| 23. Vendor-Scoped Access + Responsive Dashboard Nav | v2.3 | 18/18 | Complete    | 2026-07-26 |
 | 24. Image Architecture — CoW Assets + Safe Upload Pipeline | v2.3 | 6/6 | Complete    | 2026-07-23 |
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
