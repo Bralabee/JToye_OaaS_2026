@@ -119,6 +119,16 @@ SPRING_FRAMEWORK_UPGRADE_REPORT.md
 .idea/copilot.data.migration.ask2agent.xml
 .idea/modules/
 
+# IntelliJ database tooling — machine-local, never committed. dataSources.xml carries
+# this workstation's JDBC hosts/ports/users (compose maps postgres to 5433, k8s does not),
+# dataSources.local.xml the per-driver local state, and .idea/dataSources/ a ~400KB
+# introspection cache of the live schema that regenerates on connect. Same rationale as
+# .idea/workspace.xml above: IDE state, not project configuration.
+.idea/dataSources.xml
+.idea/dataSources.local.xml
+.idea/dataSources/
+.idea/db-forest-config.xml
+
 ### SWC Cache ###
 .swc/
 **/.swc/

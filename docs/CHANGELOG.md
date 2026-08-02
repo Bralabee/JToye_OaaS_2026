@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A lost optimistic-lock race is a 409 now, not an opaque 500 (F-M1 / INT-03) — 2026-08-02
+### A lost optimistic-lock race is a 409 now, not an opaque 500 (#434, QA-council F-M1 / INT-03) — 2026-08-02
 
 Two staff bumping the same KDS ticket is the normal case on a shared shop screen, not an edge case. Until this change the loser got `500 .../errors/internal`, *"An unexpected error occurred"* — indistinguishable from a server fault, and **the frontend api-client auto-retries on 5xx**, so ordinary contention became a retry storm against a row whose write had already succeeded.
 
