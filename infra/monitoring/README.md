@@ -53,7 +53,7 @@ Production-ready monitoring stack using Prometheus for metrics collection and Gr
   - `ALERTMANAGER_SMTP_TO` (default `ops@jtoye.local`)
   - `ALERTMANAGER_SMTP_REQUIRE_TLS` (default `false`)
 - **Route tree:** single `email-default` receiver, `group_by: [alertname, service]`, `group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 12h`
-- **Smoke test:** `infra/monitoring/scripts/smoke-test-alertmanager.sh` posts a synthetic alert via Alertmanager's `/api/v2/alerts` endpoint + stops `jtoye-core-java` to trigger the real `ServiceDown` rule, asserting Mailhog receives both emails
+- **Smoke test:** `infra/monitoring/scripts/smoke-test-alertmanager.sh` posts a synthetic alert via Alertmanager's `/api/v2/alerts` endpoint + stops the `core-java` container to trigger the real `ServiceDown` rule, asserting Mailhog receives both emails. The container is resolved through compose (`docker compose ps -q core-java`), never by a literal name — `core-java` declares no `container_name` so it can be `--scale`d, and the previous literal `jtoye-core-java` could never match. Overridable via `CORE_SERVICE` / `CORE_CONTAINER` / `COMPOSE_FILE`. **Fails closed:** an unresolvable or non-running container exits **5 (VOID)**, never 0; set `ALLOW_SYNTHETIC_ONLY=1` to deliberately accept synthetic-only coverage (reported as `PARTIAL`)
 - **Runbook:** `docs/runbooks/alerts.md` — first-response steps per alert rule (`ServiceDown` filled in; other 9 rules are TODO-skeleton)
 
 ## Quick Start

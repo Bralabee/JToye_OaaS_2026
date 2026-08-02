@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The alert smoke test looked for a container that cannot exist, and called it a pass (#437) — 2026-08-02
+
+Test 2 of `infra/monitoring/scripts/smoke-test-alertmanager.sh` is the only half that exercises real Prometheus rule evaluation through to Alertmanager routing — Test 1 POSTs straight to the Alertmanager API and never touches Prometheus. Test 2 gated on `docker ps … | grep -q '^jtoye-core-java$'` and, on no-match, logged `PASS (synthetic only)` and exited **0**. The pattern **cannot match**: `docker-compose.full-stack.yml` removed `container_name` from `core-java` so the service can be `--scale`d, so compose names the container `jtoye_oaas_2026-core-java-1`. The fail-open branch was therefore not an edge case — it was the **only branch ever taken**, and Test 2 has been dead and reporting green since `container_name` was removed.
+
+#### Fixed
+- **The container is resolved through compose (`docker compose ps -q "${CORE_SERVICE}"`), never by a literal name** — the approach `scripts/check-container-config-drift.sh` already uses, and documents using precisely because `core-java` declares no `container_name`. `infra/load-testing/media-pipeline-arm.sh` already carried the matching warning against `docker exec jtoye-core-java`; nothing had applied it here.
+- **The script now fails CLOSED.** An unresolvable *or* non-running container exits **5 (VOID)**, never 0 — "found nothing" is not "clean". The state is asserted as `running`, not merely present.
+- Inputs became configuration rather than literals — `COMPOSE_FILE`, `CORE_SERVICE`, `CORE_CONTAINER` — following the `${VAR:-default}` convention already in `infra/backups/backup.sh`, `scripts/seed-e2e-fixtures.sh` and `infra/load-testing/baseline.sh`.
+- `infra/monitoring/README.md` named the unmatchable `jtoye-core-java`; it now documents the compose resolution, the override variables and the fail-closed contract.
+
+#### Notes
+- **Additive, per the Incremental Betterment Doctrine.** The synthetic-only run is preserved, not deleted — it just has to be *requested*: `ALLOW_SYNTHETIC_ONLY=1` opts in explicitly and reports **`PARTIAL`**, not `PASS`. A deliberate partial run and a silently dead test should not produce the same word.
+- Falsified in **both** directions, five arms, against the live stack. **Arm A is load-bearing**: the *original* gate, run with `core-java` `running` **and `healthy`**, logged "not running", printed `PASS`, and exited **0** — the defect was live, not theoretical. Arms C and E (`CORE_SERVICE=does-not-exist`; an exited container) both exit **5**; arm D (opt-in) reports `PARTIAL`; arm B resolves `jtoye_oaas_2026-core-java-1`. The fail-direction proof is what the previous code never had.
+- The harness was built by extracting the **shipped lines** rather than retyping them, and truncated immediately before `docker stop`, so the live stack was never disturbed — 16 containers running before and after.
+- **What is still NOT proven, stated rather than papered over:** the full end-to-end alert flow. It needs `core-java` stopped for ~4.5 min (`for: 2m` + `group_wait` + delivery) and `.env` sets `ALERTMANAGER_SLACK_WEBHOOK_URL`, so a real outbound Slack message could fire. `ServiceDown` end-to-end has been unverified since `container_name` was removed and **remains so** — a fix is not a proof. The difference is that running the script now genuinely tests it, where before it could only ever report `PASS (synthetic only)`.
+- `shellcheck` is not installed on the machine this was verified on, so that check was **VOID, not clean**; `sh -n` and `dash -n` both pass.
+- **Same latent coupling remains elsewhere and is not fixed here:** `scripts/verify-env.sh`, `scripts/k8s-local-secrets.sh` and `infra/load-testing/baseline.sh` also hardcode container names. They work today only because `postgres` still declares a `container_name` — the moment it does not, they fail the same way.
+
 ### A lost optimistic-lock race is a 409 now, not an opaque 500 (#434, QA-council F-M1 / INT-03) — 2026-08-02
 
 Two staff bumping the same KDS ticket is the normal case on a shared shop screen, not an edge case. Until this change the loser got `500 .../errors/internal`, *"An unexpected error occurred"* — indistinguishable from a server fault, and **the frontend api-client auto-retries on 5xx**, so ordinary contention became a retry storm against a row whose write had already succeeded.
