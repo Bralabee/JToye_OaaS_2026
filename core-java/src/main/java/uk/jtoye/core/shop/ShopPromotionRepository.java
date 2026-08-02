@@ -17,6 +17,13 @@ public interface ShopPromotionRepository extends JpaRepository<ShopPromotion, UU
     // their grant set, narrowed at the QUERY. Callers guarantee a non-empty set.
     Page<ShopPromotion> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
 
+    // FC-1 (QA-council): the GROUP_ADMIN authenticated list is confined to the caller's
+    // tenant at the QUERY. A bare findAll() leaks OTHER tenants' rows through the
+    // shop_promotions_read RLS policy's `OR EXISTS(published shop)` storefront carve-out;
+    // an explicit tenant filter closes that read leak without touching the RLS policy or
+    // the anonymous storefront path.
+    Page<ShopPromotion> findByTenantId(UUID tenantId, Pageable pageable);
+
     @Query("SELECT p FROM ShopPromotion p WHERE p.shopId = :shopId AND p.active = true AND p.validFrom <= CURRENT_TIMESTAMP AND p.validUntil > CURRENT_TIMESTAMP ORDER BY p.createdAt DESC")
     List<ShopPromotion> findActiveByShopId(@Param("shopId") UUID shopId);
 

@@ -208,7 +208,11 @@ class AnnouncementServiceTest {
         // Given
         Pageable pageable = PageRequest.of(0, 20);
         Page<ShopAnnouncement> page = new PageImpl<>(List.of(testAnnouncement), pageable, 1);
-        when(announcementRepository.findAll(pageable)).thenReturn(page);
+        // FC-1 (QA-council, F-H1): the GROUP_ADMIN list path is now tenant-scoped at the
+        // query (findByTenantId), not a bare findAll() that leaked cross-tenant rows through
+        // the RLS storefront carve-out. The test's intent (GROUP_ADMIN list returns a mapped
+        // page) is preserved — the mock/verify move to the tenant-scoped finder.
+        when(announcementRepository.findByTenantId(tenantId, pageable)).thenReturn(page);
 
         // When
         Page<AnnouncementDto> result = announcementService.getAllAnnouncements(pageable);
@@ -219,7 +223,7 @@ class AnnouncementServiceTest {
         assertEquals(1, result.getContent().size());
         assertEquals(announcementId, result.getContent().get(0).getId());
         assertEquals("Holiday Hours", result.getContent().get(0).getTitle());
-        verify(announcementRepository).findAll(pageable);
+        verify(announcementRepository).findByTenantId(tenantId, pageable);
     }
 
     @Test

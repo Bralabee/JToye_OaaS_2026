@@ -180,10 +180,14 @@ class StrictScopingTighteningIntegrationTest {
                 .isTrue();
 
         // A fully-ungranted user under strict OFF is the day-one implicit GROUP_ADMIN.
+        // FC-1: require() now checks the named shop is in the caller's tenant, so seed a real
+        // in-tenant shop (a random/non-existent id would now be correctly denied and stop
+        // exercising the day-one implicit-GROUP_ADMIN path this asserts).
+        UUID shopId = seedTenantAndShop(tenant);
         UUID ungranted = UUID.randomUUID();
         authenticate(ungranted, false);
         TenantContext.set(tenant);
-        assertThatCode(() -> shopAccessService.require(UUID.randomUUID(), ShopRole.GROUP_ADMIN))
+        assertThatCode(() -> shopAccessService.require(shopId, ShopRole.GROUP_ADMIN))
                 .as("strict OFF: an ungranted user is the day-one implicit GROUP_ADMIN")
                 .doesNotThrowAnyException();
     }
@@ -256,6 +260,22 @@ class StrictScopingTighteningIntegrationTest {
             TenantContext.clear();
             SecurityContextHolder.clearContext();
         }
+    }
+
+    /**
+     * FC-1 (QA-council): a GROUP_ADMIN's require() now verifies the named shop belongs to the
+     * caller's tenant (a tenant-wide GROUP_ADMIN is not cross-tenant). Seed a real tenant + shop
+     * so a day-one implicit GROUP_ADMIN passes on a shop it genuinely owns; a random
+     * (non-existent) shop id would now be correctly denied and no longer exercise this path.
+     */
+    private UUID seedTenantAndShop(UUID tenant) {
+        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                tenant, "strict-tenant-" + tenant);
+        UUID shopId = UUID.randomUUID();
+        jdbc.update("INSERT INTO shops (id, tenant_id, name, slug, address, published, delivery_fee_pennies) "
+                        + "VALUES (?, ?, ?, ?, ?, true, 0)",
+                shopId, tenant, "shop-" + shopId, "slug-" + shopId, "1 Test Street, London");
+        return shopId;
     }
 
     /** Seed a committed tenant-wide GROUP_ADMIN row with an explicit provenance + created_at. */

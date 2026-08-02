@@ -17,6 +17,13 @@ public interface ShopAnnouncementRepository extends JpaRepository<ShopAnnounceme
     // in their grant set, narrowed at the QUERY. Callers guarantee a non-empty set.
     Page<ShopAnnouncement> findByShopIdIn(Collection<UUID> shopIds, Pageable pageable);
 
+    // FC-1 (QA-council): the GROUP_ADMIN authenticated list is confined to the caller's
+    // tenant at the QUERY. A bare findAll() leaks OTHER tenants' rows through the
+    // shop_announcements_read RLS policy's `OR EXISTS(published shop)` storefront carve-out;
+    // an explicit tenant filter closes that read leak without touching the RLS policy or
+    // the anonymous storefront path.
+    Page<ShopAnnouncement> findByTenantId(UUID tenantId, Pageable pageable);
+
     @Query("SELECT a FROM ShopAnnouncement a WHERE a.shopId = :shopId AND a.active = true " +
            "AND (a.validFrom IS NULL OR a.validFrom <= CURRENT_TIMESTAMP) " +
            "AND (a.validUntil IS NULL OR a.validUntil > CURRENT_TIMESTAMP) " +
