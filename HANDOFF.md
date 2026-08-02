@@ -46,7 +46,7 @@ to the August one. Read the directory listing, not the pointer.
 |---|---|
 | Fixed | **F-C1 + F-H1** cross-tenant write BOLA + list leak (#433 MERGED) · **F-M1** optimistic-lock 500 (#434 MERGED) |
 | Group A remainder — genuine bugs, **no issues filed** | F-H4 empty webhook delivery log (missing tenant GUC) · F-M3/F-M4 modal + a11y (**419 axe violations**, LGL-02) · F-H8/F-H9 SEO (robots 404, no metadata/JSON-LD) · F-H3 raw-image endpoints bypass the Phase-24 pipeline · F-M5 no ProblemDetail schema · F-M8 17 docs-broken |
-| Group B → Phase 28, **needs SEC-02 issues filed** | F-C2 Postgres superuser on 0.0.0.0 · F-C3 Grafana admin/admin · F-H10 infra ports + MailHog · F-M7 unauth actuator/OpenAPI/edge · F-H2 `X-Tenant-Id` advertised in the unauth spec |
+| Group B → Phase 28, **SEC-02 issues now FILED** | **#438** F-C2 dev Postgres bind · **#439** F-C3 Grafana default creds · **#440** F-H2 spec advertises a tenant-override header · **#441** F-H10 infra port binds + mail archive · **#442** F-M7 unauth actuator/OpenAPI/edge. All five OPEN, `security` + P1/P2 labelled, **deliberately sanitised** (§2.1) |
 | Group C → tracked | allergen text↔mask = #427 (still OPEN) · storefront social signup = #432 (still OPEN) · the low-severity set |
 
 **The single most important result, worth carrying verbatim.** Phase 28's SEC-01 was written as
@@ -132,20 +132,43 @@ time; the gate is not flaky, the world moved. Backfilled in #434; the gate now c
 
 ## 2. Open items — this session's
 
-### 2.1 The pentest backlog is still untriaged, and A1 is now ANSWERED
+### 2.1 The pentest backlog is now TRACKED, and A1 is ANSWERED
 
 `SECURITY-FINDINGS.md` (untracked, git-excluded; evidence at
 `~/strix_runs/host-docker-internal-9090_d8c0/`, chmod 600). Status changed this session:
 
 - **A1** — **RESOLVED as a finding, not as filed.** Real Critical, false root cause, fixed at the
   service layer in #433. SEC-01 is answered; do not re-run it.
-- **A2** (`X-Tenant-Id` fallback, CVSS 8.2) — **still real in code, dev-scoped.** `TenantFilter` is
-  `@Profile({"dev","local","test"})` and k8s sets `SPRING_PROFILES_ACTIVE=prod`. Compose runs `dev`, so
-  it is live locally. `OpenApiConfig.java:50` still **advertises** it — that is council F-H2.
-- **B1/B2/C1** — compose publishes with no bind address, so `0.0.0.0`: postgres `5433`, mailhog `8025`,
-  minio `9000`/`9001`, rabbitmq mgmt `15672`. These are council F-C2 / F-H10.
+- **A2** (request-header tenant fallback, CVSS 8.2) — **still real in code, dev-scoped.**
+  `TenantFilter` is `@Profile({"dev","local","test"})` and k8s sets `SPRING_PROFILES_ACTIVE=prod`.
+  Compose runs `dev`, so it is live locally. `OpenApiConfig.java:50` still **advertises** the scheme
+  unconditionally — that is council F-H2, now **#440**.
+- **B1/B2/C1** — the Compose stack publishes infra ports with no bind address. Inventory deliberately
+  not reproduced here; see the local evidence file. These are council F-C2 / F-H10, now **#438** and
+  **#441**.
 
-**Nothing from the council's Group B has an issue.** That is SEC-02 and it is the cheapest next move.
+> **Disclosure note, added 2026-08-02.** The port inventory and the header name were spelled out in
+> this section in #430 and carried forward unreviewed into #436. They are removed from the current
+> file, but **`git log -p HANDOFF.md` still contains them** — removing text from HEAD does not remove
+> it from a public repository's history, and this is recorded rather than quietly edited. Treat it as
+> already-public and rotate on that basis; do not treat this edit as a containment.
+
+**SEC-02 is DONE as of 2026-08-02: all five Group B findings now have issues** — **#438 is OPEN**,
+**#439 is OPEN**, **#440 is OPEN**, **#441 is OPEN**, **#442 is OPEN**. The audit is no longer
+one `rm` away from being lost.
+
+**They are deliberately sanitised, and that is a constraint on whoever works them.** This repository
+is **public**, which is the same reason `SECURITY-FINDINGS.md` was git-excluded. The issues carry the
+component, the problem class, the scope, the fix direction and falsifiable acceptance criteria — but
+**no reproduction commands, no port/credential pairings and no role attributes**. Verified after
+filing by scanning **GitHub's stored bodies**, not the local drafts, with a control token proving the
+scan was not blind. The detail lives in `.qa-council/disc-20260802-121732/evidence/sec-findings.md`.
+**Do not paste repro steps into these issues when working them.**
+
+**Read #442 before ranking by severity.** The council rated F-M7 *Medium* and the other four
+Critical/High, which is right on severity and **misleading on urgency**: the other four are explicitly
+dev-stack-only, while F-M7's `permitAll` entries are **not profile-gated** and therefore reach
+production. It is a deploy-blocker being closed before there is a deployment to block.
 
 ### 2.2 The cross-tenant DB residue is GONE
 
@@ -261,12 +284,16 @@ docker exec jtoye_oaas_2026-core-java-1 sh -c \
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Recommended next move: SEC-02 — file issues for the council's Group B.** It is five Critical/High
-infra findings that currently exist in a gitignored file and nowhere else, it needs no decision from
-§4, and Phase 28 is already scoped to receive them. Losing that directory today loses the audit.
+**Recommended next move: #442 (F-M7).** SEC-02 filing is done — #438–#442 exist, so the audit is safe
+and the queue is now real work. Take #442 first even though it is the lowest-severity of the five: it
+is the only Group B finding whose `permitAll` is not profile-gated, so it is the only one that reaches
+production, and it needs no decision from §4. Its trap is written into its acceptance criteria — a fix
+that authenticates the metrics endpoint without giving Prometheus a way in **silently blinds the whole
+Phase 27 alerting layer**, and nothing turns red when that happens.
 
 **Second: Group A's F-H4** (webhook delivery log permanently empty — a missing tenant GUC). It is a
-shipped Phase-22 feature that has never worked, and the finding names the cause.
+shipped Phase-22 feature that has never worked, and the finding names the cause. It still has **no
+issue** — Group A was not filed, only Group B.
 
 **#428 Wave 1 (catering discovery) still costs no engineering time and runs in parallel with anything.**
 
