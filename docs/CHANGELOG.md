@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The dish row scrolled, but nothing on screen said so (#456) — 2026-08-02
+
+The "Cooking near you right now" row on `/` was `overflow-x-auto` and nothing else. It scrolled, but the affordance was invisible: the last card is hard-clipped at the container edge — measured, **"Lamb Biryani" cut mid-word at 390px and "Pho Bo" cut at 1440px** — and on touch the only signal was an overlay scrollbar that does not exist until you are already scrolling. An affordance has to be the thing you see *before* you interact, not the feedback you get after.
+
+#### Added
+- **`components/marketing/dish-scroller.tsx`** — an edge fade on whichever side still has content, proximity scroll-snap, and arrow buttons for fine pointers. The fade **is** the affordance, so it disappears at that end of the range; a permanently-on fade is decoration that carries no information. Snap is proximity rather than mandatory because the cards are `min-w` and mandatory snapping on uneven widths fights the user near the ends. Arrows are pointer-fine only — on touch the swipe is the affordance and an arrow is redundant chrome.
+- **`frontend/e2e/marketing-dish-scroller.spec.ts`** — asserts the affordance, not the scrolling. `overflow-x-auto` has always scrolled; a test that only proved the row moves would have passed on the broken version and told us nothing.
+
+#### Fixed
+- Card `hover:shadow-md` is now gated behind `(hover: hover) and (pointer: fine)`. `future.hoverOnlyWhenSupported` is unset in `tailwind.config.ts`, so a bare `hover:` latches on tap and leaves the card stuck lifted after a touch.
+
+#### Notes
+- **Pointer type is resolved in JS, not a Tailwind variant.** Stacking `[@media(hover:hover)_and_(pointer:fine)]:` with an attribute variant does not compose — Tailwind emits the media query into the **class name** instead of wrapping the rule, yielding `[data-can-right=true] > .\[\@media...\]` with no `@media` at all, so the arrows would have shown on touch. `components/marketing/reveal.tsx` resolves its media query in JS for the same reason. (Separately: the arbitrary variant needs `_and_`, not `and` — without the underscores the CSS parser throws `Unexpected token Function("and")`.)
+- **`ResizeObserver` is feature-detected, not assumed.** Calling it unguarded threw during the passive-effect flush under jsdom and took down all five rendering assertions in `app/__tests__/landing.test.tsx`; where it is absent we fall back to `window resize`, so the affordance degrades rather than disappearing.
+- **No-JS contract:** both disclosure flags default `false`, so no fade and no arrow renders and the row stays natively scrollable. If JS never runs the user gets exactly the previous behaviour — never a masked or frozen row.
+- **Falsified in both directions.** The new spec passes against the fix (5/5) and **fails against the unmodified build** still serving on `:3000` (5/5 failed, rc=1), with that server verified up and rendering the section (heading present ×2, new `aria-label` absent ×0) — so it fails for the right reason, not because a server was down. Both docs-freshness gates were likewise observed **failing** on the metric drift before `docs/metrics.json` was written, then passing after.
+- The `tsc` error in `components/dashboard/__tests__/dashboard-shell.test.tsx` (`Cannot find namespace 'JSX'`) is **pre-existing** — identical on an unmodified `main` at the same commit — and is not addressed here.
+- **Found while verifying, NOT fixed here: the `mobile` Playwright project is not a touch device.** Measured — repo `mobile` (390×844, `isMobile: true`) reports `pointer: fine` = `true` and `maxTouchPoints` = **0**; a Pixel 7 profile reports `false` / `1`. `isMobile` sets the viewport and device-scale factor, but `hasTouch` is what drives the `hover`/`pointer` media features, so the mobile project is a narrow desktop window and anything touch-specific — hover latching, tap targets, `pointer: coarse` styling, swipe gestures — is currently unexercised by it. v2.3 explicitly includes "fixing dashboard mobile", so this wants its own ticket; changing it alters the behaviour of every existing spec and is deliberately out of scope here.
+
+
 ### The alert smoke test looked for a container that cannot exist, and called it a pass (#437) — 2026-08-02
 
 Test 2 of `infra/monitoring/scripts/smoke-test-alertmanager.sh` is the only half that exercises real Prometheus rule evaluation through to Alertmanager routing — Test 1 POSTs straight to the Alertmanager API and never touches Prometheus. Test 2 gated on `docker ps … | grep -q '^jtoye-core-java$'` and, on no-match, logged `PASS (synthetic only)` and exited **0**. The pattern **cannot match**: `docker-compose.full-stack.yml` removed `container_name` from `core-java` so the service can be `--scale`d, so compose names the container `jtoye_oaas_2026-core-java-1`. The fail-open branch was therefore not an edge case — it was the **only branch ever taken**, and Test 2 has been dead and reporting green since `container_name` was removed.

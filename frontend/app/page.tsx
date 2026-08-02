@@ -13,6 +13,7 @@ import { PublicShell } from "@/components/public/public-shell"
 import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
+import { DishScroller } from "@/components/marketing/dish-scroller"
 
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
@@ -181,25 +182,32 @@ export default function Home() {
                 See all kitchens →
               </Link>
             </div>
-            <div className="mt-5 flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin]">
-              {featuredDishes.map((d) => (
-                <Link
-                  key={d.name}
-                  href={`/shop?q=${encodeURIComponent(d.q)}`}
-                  className="group min-w-[190px] shrink-0 overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-shadow hover:shadow-md"
-                >
-                  <div className={`grid h-28 place-items-center bg-gradient-to-br ${d.grad} text-5xl`}>
-                    <span aria-hidden>{d.emoji}</span>
-                  </div>
-                  <div className="p-3.5">
-                    <div className="font-bold text-slate-900">{d.name}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">
-                      {d.vendor} · ⭐ {d.rating} · FHRS 5
+            {/*
+              Card hover is gated on a fine pointer. `future.hoverOnlyWhenSupported`
+              is unset in tailwind.config.ts, so a bare `hover:` latches on tap and
+              leaves the card stuck lifted after a touch.
+            */}
+            <div className="mt-5">
+              <DishScroller label="Dishes cooking near you">
+                {featuredDishes.map((d) => (
+                  <Link
+                    key={d.name}
+                    href={`/shop?q=${encodeURIComponent(d.q)}`}
+                    className="group min-w-[190px] shrink-0 overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
+                  >
+                    <div className={`grid h-28 place-items-center bg-gradient-to-br ${d.grad} text-5xl`}>
+                      <span aria-hidden>{d.emoji}</span>
                     </div>
-                    <div className="mt-2 font-extrabold text-oxblood">{d.price}</div>
-                  </div>
-                </Link>
-              ))}
+                    <div className="p-3.5">
+                      <div className="font-bold text-slate-900">{d.name}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {d.vendor} · ⭐ {d.rating} · FHRS 5
+                      </div>
+                      <div className="mt-2 font-extrabold text-oxblood">{d.price}</div>
+                    </div>
+                  </Link>
+                ))}
+              </DishScroller>
             </div>
           </div>
         </section>
