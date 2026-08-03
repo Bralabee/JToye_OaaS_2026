@@ -161,7 +161,12 @@ if [ "${#TRIGGERS[@]}" -gt 0 ]; then
 else
     echo ""
     echo "  LANE: CHEAP — the Testcontainers suite path-skips (reports SUCCESS by design)."
-    echo "    Baseline ~3 min, dominated by the Run Tests job."
+    echo "    Baseline ~3 min (measured on #508/#510), dominated by Run Tests."
+    echo "    Varies: PR #513 measured 12 min because the Playwright BROWSER CACHE"
+    echo "    missed — 'Install Playwright chromium' took 633s against 27s on #508,"
+    echo "    while every other step matched within seconds. That is infrastructure"
+    echo "    variance, not diff size, and it does not change the decision: even a"
+    echo "    cache-miss cheap run is ~4x below the expensive lane."
     echo "    BATCHING BUYS ~NOTHING HERE. Ship these separately for an easier"
     echo "    review and a smaller blast radius; the CI saving is minutes."
     echo "LANE=cheap"
