@@ -21,11 +21,11 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
 | Open PRs | **none** (measured, not assumed) |
-| Open issues | **87** — was 63; filed **23** council issues (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed, #457 + #465 closed by PR #466 |
+| Open issues | **86** — re-measured 2026-08-03. Was 63; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; #442 closed by #472 |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
-| Test baseline | `docs/metrics.json` **1943** as of PR #466 (was 1930, and 1927 an hour before that). **Re-measure it; do not carry this number forward** — it has moved three times in a day |
+| Test baseline | `docs/metrics.json` **1951** as of PR #472 (1930 → 1943 → 1951 in one day). **Re-measure it; do not carry this number forward** — it has moved three times in a day |
 | Runtime | 4/4 built services FRESH, re-asserted after the concurrent session's merges |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
@@ -57,7 +57,7 @@ to the August one. Read the directory listing, not the pointer.
 |---|---|
 | Fixed | **F-C1 + F-H1** cross-tenant write BOLA + list leak (#433 MERGED) · **F-M1** optimistic-lock 500 (#434 MERGED) |
 | Group A remainder — **all FILED 2026-08-02**, clustered by root cause as the council adjudicated | **#444** F-H4 webhook delivery log (missing tenant GUC) · **#445** F-H3 raw-image endpoints bypass the Phase-24 pipeline · **#446** F-M3 hand-rolled dish modal · **#447** F-H8/F-H9 SEO · **#448** F-M5/F-L1 ProblemDetail · **#449** F-M8 17 docs-broken · **#450** the small-broken copy set · **#451** F-M4 419 axe violations · **#452** F-H5/F-H7 lifecycle dead-ends · **#453** F-H6 · **#454** F-M6 CLS |
-| Group B → Phase 28, **SEC-02 issues now FILED** | **#438** F-C2 dev Postgres bind · **#439** F-C3 Grafana default creds · **#440** F-H2 spec advertises a tenant-override header · **#441** F-H10 infra port binds + mail archive · **#442** F-M7 unauth actuator/OpenAPI/edge. All five OPEN, `security` + P1/P2 labelled, **deliberately sanitised** (§2.1) |
+| Group B → Phase 28, **SEC-02 filed; #442 now CLOSED** | **#438** F-C2 dev Postgres bind · **#439** F-C3 Grafana default creds · **#440** F-H2 spec advertises a tenant-override header · **#441** F-H10 infra port binds + mail archive · **#442** F-M7 actuator/OpenAPI/edge — **CLOSED** by PR #472, and two of its three claims were FALSIFIED (§2.1). The other four OPEN, `security` + P1/P2 labelled, **deliberately sanitised** (§2.1) |
 | Group C → tracked | allergen text↔mask = #427 (still OPEN) · storefront social signup = #432 (still OPEN) · the low-severity set |
 
 **The single most important result, worth carrying verbatim.** Phase 28's SEC-01 was written as
@@ -165,7 +165,7 @@ time; the gate is not flaky, the world moved. Backfilled in #434; the gate now c
 > already-public and rotate on that basis; do not treat this edit as a containment.
 
 **SEC-02 is DONE as of 2026-08-02: all five Group B findings now have issues** — **#438 is OPEN**,
-**#439 is OPEN**, **#440 is OPEN**, **#441 is OPEN**, **#442 is OPEN**. The audit is no longer
+**#439 is OPEN**, **#440 is OPEN**, **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit is no longer
 one `rm` away from being lost.
 
 **They are deliberately sanitised, and that is a constraint on whoever works them.** This repository
@@ -176,10 +176,24 @@ filing by scanning **GitHub's stored bodies**, not the local drafts, with a cont
 scan was not blind. The detail lives in `.qa-council/disc-20260802-121732/evidence/sec-findings.md`.
 **Do not paste repro steps into these issues when working them.**
 
-**Read #442 before ranking by severity.** The council rated F-M7 *Medium* and the other four
-Critical/High, which is right on severity and **misleading on urgency**: the other four are explicitly
-dev-stack-only, while F-M7's `permitAll` entries are **not profile-gated** and therefore reach
-production. It is a deploy-blocker being closed before there is a deployment to block.
+**#442 is CLOSED (PR #472) — and the reason to keep reading it is now different.** This section used
+to say F-M7 was the one Group B finding reaching production, because its `permitAll` entries were not
+profile-gated. **That reasoning was half wrong, and re-verifying before implementing is what caught
+it.** Two of its three claims were falsified:
+
+- *metrics unauthenticated in prod* — **FALSE**: prod binds actuator to a separate
+  `management.server.port` and the k8s Service publishes only the app port. An existing test already
+  proved it both directions. Implementing the filed fix would have authenticated an unreachable
+  endpoint.
+- *OpenAPI unauthenticated in prod* — **FALSE for the default config**: springdoc is off there
+  (`SWAGGER_ENABLED:false`). Gated anyway as defence in depth, recorded as such.
+- What was genuinely exposed: the **edge gateway**, and **staging** — which the finding never
+  mentions, and which had no management port, `show-details: always`, *and* springdoc explicitly
+  enabled.
+
+**The transferable lesson, now twice in this file:** a council finding names a symptom and guesses a
+mechanism. SEC-01/A1 had a falsified root cause; F-M7 had a falsified location. Re-verify, then fix
+what is actually true — and say which parts were wrong rather than quietly fixing something else.
 
 ### 2.2 The cross-tenant DB residue is GONE
 
@@ -359,10 +373,21 @@ demanded, turned one symptom into two defects and found **#465** (the session en
 of activity, with a 30-day refresh token never redeemed). Both closed. Keep doing this: the ten-minute
 browser arm is what stopped a correct-looking header fix from shipping over a live P1.
 
-**Recommended next move: #442 (F-M7)** — the only Group B finding whose `permitAll` is not
-profile-gated, so the only one that reaches production, and it needs no decision from §4. Its trap is
-in its acceptance criteria: a fix that authenticates the metrics endpoint without giving Prometheus a
-way in **silently blinds the whole Phase 27 alerting layer**, and nothing turns red when that happens.
+**#442 is DONE (PR #472), and its trap was real.** The acceptance criteria warned that authenticating
+metrics without giving Prometheus a way in blinds the Phase 27 alerting layer. Verified: the scrape
+config declares no `basic_auth` and no `authorization` for either job, so authentication was the wrong
+fix outright. Closed by **port isolation** instead — the approach prod already used. Two of the
+finding's three claims were falsified along the way (§2.1).
+
+**Recommended next move: #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped
+Phase-22 feature that has never worked, and the finding names the cause in one line (no
+`@Transactional`, so `TenantSetLocalAspect` never pins the GUC and RLS returns nothing). Needs no
+decision from §4.
+
+⚠ **#444 is core-java, so its PR WILL run the full Testcontainers suite (~47 min, measured on #472).**
+That is not a cost to avoid — RLS behaviour under a real Postgres is exactly what that suite buys, and
+this repo has a recorded trap where auth-layer changes silently break *existing* integration tests.
+Frontend-only work path-skips it in ~5s, so batching is free there and only there.
 
 **Also newly filed: #467** — `/api/customer-orders` 502s on the compose stack (`CORE_API_INTERNAL_URL`
 unset; `localhost` in-container is the container's own loopback, and `extra_hosts` does not beat it),
