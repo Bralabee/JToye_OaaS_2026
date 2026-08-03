@@ -67,9 +67,12 @@ function void_(why) {
 
 if (!PASSWORD) void_("KC_SEED_USER_PASSWORD is unset — every arm below would be vacuous")
 
-const stamp = Date.now()
-const emailA = `signout504-a-${stamp}@example.com`
-const emailB = `signout504-b-${stamp}@example.com`
+// Only ONE identity is registered, deliberately. "The next person on the shared
+// device" is played by the second Sign in click, not by a second account: what
+// S3 asks is whether Keycloak CHALLENGES that click at all. If it does, the
+// identity is genuinely gated and who types into the form is beside the point;
+// if it does not, the token it issues is A's regardless of who is standing there.
+const emailA = `signout504-a-${Date.now()}@example.com`
 
 const session = (page) =>
   page.evaluate(async (b) => {
@@ -228,7 +231,10 @@ try {
   // --- S3: THE SECURITY HALF. No cookie clear — see the header.
   const cookiesAfter = await idpCookieNames(context)
   console.log(`        IdP cookies still in the jar: ${JSON.stringify(cookiesAfter)}`)
-  console.log(`        (nothing was cleared; ${cookiesAfter.length} of ${cookiesBefore.length} retained)`)
+  console.log(
+    `        (${cookiesAfter.length} of ${cookiesBefore.length} retained — THIS SCRIPT cleared none of them;` +
+      ` any reduction is Keycloak's own Set-Cookie during a real logout, which is itself evidence, not a shortcut)`
+  )
   const attempt = await signInAttempt(page)
   check(
     "S3",
@@ -246,6 +252,14 @@ try {
   )
 
   // --- S4: the same-origin restriction.
+  //
+  // Navigate back to the APP ORIGIN first. When S3 passes, the browser is left
+  // parked on the Keycloak login page, and `logoutUrlFor` fetches a same-origin
+  // relative-to-BASE URL from wherever the page happens to be — cross-origin
+  // from there, so it dies with "Failed to fetch" and S4 never runs. Measured
+  // while writing this; the same "you are standing on the IdP's origin" trap the
+  // cart-identity-boundary script records for localStorage.
+  await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
   //
   // Read the DECODED redirect target, never the raw URL. Two reasons, both
   // learned the hard way while writing this: the raw URL percent-encodes the
