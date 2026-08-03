@@ -24,6 +24,7 @@ import org.springframework.web.client.RestOperations;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -155,9 +156,42 @@ public class SecurityConfig {
                 // change, because gating a surface some CI job silently depends on
                 // is how a security fix turns into a red pipeline nobody can explain.
                 //
-                // In prod these fall through to anyRequest().authenticated() below,
-                // so an operator with a token can still read the spec.
-                if (!isProd) {
+                // Gated on a DEVELOPMENT-PROFILE ALLOWLIST, not on !isProd, and the
+                // difference is load-bearing. application-staging.yml explicitly
+                // enables springdoc ("Enable Swagger in staging for API testing"),
+                // so a !isProd condition would have left the full API surface
+                // anonymous on staging — a deployed, potentially reachable
+                // environment — while reading as if it had been fixed. The issue's
+                // own fix direction says non-DEVELOPMENT profiles, not non-prod.
+                //
+                // Fails closed: an unrecognised or absent profile gets the gated
+                // behaviour. `test` is required in this list — OpenApiSnapshotTest
+                // fetches /v3/api-docs via MockMvc under @ActiveProfiles("test") to
+                // build the contract snapshot, and dropping it would break the
+                // breaking-change gate rather than secure anything.
+                //
+                // In every other profile these fall through to
+                // anyRequest().authenticated() below, so an operator with a token
+                // can still read the spec.
+                // Two conditions, and BOTH are necessary — this is not belt-and-braces.
+                //
+                // The allowlist alone fails closed on an unknown profile but is
+                // defeated by the repo's own prod-test idiom, which activates
+                // {"prod","test"} together (SecurityHeadersProdProfileTest) so the
+                // prod branch runs without needing a real Redis. Keying on "test"
+                // being present would make those tests exercise the DEV path and
+                // silently stop testing prod.
+                //
+                // The deployed-profile check alone handles that, but would leave an
+                // unrecognised profile name (say "qa") permitAll.
+                //
+                // Together: permitted only when the profile set looks like local
+                // development AND contains no deployed profile.
+                List<String> active = Arrays.asList(env.getActiveProfiles());
+                boolean looksLocal = active.stream()
+                        .anyMatch(p -> p.equals("dev") || p.equals("test") || p.equals("local"));
+                boolean isDeployedProfile = active.contains("prod") || active.contains("staging");
+                if (looksLocal && !isDeployedProfile) {
                     auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll();
                 }
                 // issue #98 [P2-7] item 4: /actuator/prometheus permitAll is now

@@ -30,6 +30,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * what an unauthenticated caller gets. A test that authenticated first would pass
  * on the unfixed tree and prove nothing.
  *
+ * <p><b>Scope, stated honestly.</b> In the DEFAULT prod configuration springdoc is
+ * switched off ({@code SWAGGER_ENABLED:false}), so the document is absent and this
+ * gate changes nothing. The exposure it closes is the configuration where an
+ * operator turns Swagger on in a deployed environment to debug — at which point,
+ * before this change, the entire API surface became anonymously readable on the
+ * published port. This is defence in depth, not the closure of a live hole, and the
+ * test enables springdoc explicitly so it measures the security gate rather than
+ * the feature flag.
+ *
  * Profile bootstrapping mirrors {@link SecurityHeadersProdProfileTest}: "prod"
  * drives the gating branch in SecurityConfig, "test" opts out of CacheConfig so no
  * real Redis is needed.
@@ -68,6 +77,23 @@ class OpenApiProdProfileGatingTest {
         registry.add("spring.autoconfigure.exclude",
                 () -> "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
                     + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration");
+
+        // THE LINE THAT MAKES THIS TEST CAPABLE OF FAILING.
+        //
+        // application-prod.yml sets springdoc.api-docs.enabled=${SWAGGER_ENABLED:false},
+        // so by default the document does not exist in prod and every path below
+        // returns 404. The first version of this class asserted "not 200" without
+        // these two properties and PASSED IDENTICALLY with the security fix reverted —
+        // an assertion that was already true before the change, proving nothing.
+        // Caught only by running the break arm.
+        //
+        // Enabling springdoc here removes 404-because-absent from the picture, so the
+        // only remaining reason for a non-200 is the security gate. That makes this a
+        // test of SecurityConfig rather than a test of a feature flag — and it is the
+        // stronger question anyway: an operator who sets SWAGGER_ENABLED=true to debug
+        // production must not thereby publish the whole API surface anonymously.
+        registry.add("springdoc.api-docs.enabled", () -> "true");
+        registry.add("springdoc.swagger-ui.enabled", () -> "true");
     }
 
     @Autowired

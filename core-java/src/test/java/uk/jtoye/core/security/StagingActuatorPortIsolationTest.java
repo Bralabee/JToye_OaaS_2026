@@ -83,13 +83,36 @@ class StagingActuatorPortIsolationTest {
                 + "the scrape surface is on the port the k8s Service publishes");
     }
 
+    /**
+     * NOT LOAD-BEARING, and labelled so deliberately. Measured in the break arm:
+     * with the management port removed this assertion still PASSED, because
+     * {@code /actuator/configprops} was never in the permitAll list and so is
+     * covered by {@code anyRequest().authenticated()} whichever port it is on.
+     * Only {@link #prometheusNotServedOnAppPortInStaging()} actually detects the
+     * regression. Kept as a boundary assertion, not counted as proof — a test that
+     * passes in both arms proves nothing and should not be presented as if it did.
+     */
     @Test
     void configpropsNotServedOnAppPortInStaging() throws Exception {
         int status = mockMvc.perform(get("/actuator/configprops"))
                 .andReturn().getResponse().getStatus();
         assertNotEquals(200, status,
-                "/actuator/configprops answered 200 on the APPLICATION port under staging — "
-                + "staging's wider exposure list is only defensible off the public port");
+                "/actuator/configprops answered 200 on the APPLICATION port under staging");
+    }
+
+    /**
+     * Issue #442: staging explicitly enables springdoc ("Enable Swagger in staging
+     * for API testing"), so it is the profile where the OpenAPI gate has to hold —
+     * a {@code !isProd} condition would have left the whole API surface anonymous
+     * on a deployed environment while looking fixed.
+     */
+    @Test
+    void apiDocsNotAnonymousInStaging() throws Exception {
+        int status = mockMvc.perform(get("/v3/api-docs"))
+                .andReturn().getResponse().getStatus();
+        assertNotEquals(200, status,
+                "/v3/api-docs answered 200 to an UNAUTHENTICATED caller under the staging profile — "
+                + "staging enables springdoc, so this is a real anonymous read of the API surface");
     }
 
     /**
