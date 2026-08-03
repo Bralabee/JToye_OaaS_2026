@@ -74,6 +74,16 @@ kubectl create namespace jtoye-production
 # `backup-username=jtoye_backup` below is the deliberate exception: a read-only
 # BYPASSRLS role that exists precisely so pg_dump captures rows from FORCE-RLS
 # tenant tables (as the app role it would dump 0 rows).
+# PORT CONTRACT (issue #271): the `port` below is what every pod DIALS. The
+# NetworkPolicy egress rule that PERMITS that connection is derived from app-config
+# `db.port` in the same overlay. If you change `port` here you MUST change
+# `db.port` in that environment's configmap-patch.yaml too — otherwise, under an
+# enforcing CNI, the policy blocks the port the app dials and every core-java
+# replica CrashLoops with a network denial that reads like a database error.
+# Check both after creating the Secret:
+#   kubectl get secret postgres-credentials -n <ns> -o jsonpath='{.data.port}' | base64 -d; echo
+#   kubectl get cm app-config -n <ns> -o jsonpath='{.data.db\.port}'; echo
+# They must print the same number.
 kubectl create secret generic postgres-credentials \
   --from-literal=host=postgresql-primary.jtoye-infrastructure.svc.cluster.local \
   --from-literal=port=5432 \
