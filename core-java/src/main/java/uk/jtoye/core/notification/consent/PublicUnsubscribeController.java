@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uk.jtoye.core.security.TenantContext;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -99,21 +100,37 @@ public class PublicUnsubscribeController {
      * previous bundle posts {@code Content-Type: application/json} with a literal
      * {@code null} body and the fields in the query string. Without this it would
      * start failing mid-session. New traffic never takes that path.
+     *
+     * <p><b>{@code Optional<UnsubscribeRequest>}, deliberately — NOT
+     * {@code @RequestBody(required = false)}.</b> They are not interchangeable
+     * here. {@code RequestMappingHandlerMapping.updateConsumesCondition} copies
+     * {@code required} onto the {@code consumes} condition as
+     * {@code bodyRequired}, and {@code ConsumesRequestCondition.getMatchingCondition}
+     * short-circuits to {@code EMPTY_CONDITION} for a request with no body when
+     * {@code bodyRequired} is false. An empty consumes condition matches
+     * <i>everything</i> and compares equal to {@link #unsubscribeOneClick}'s, so
+     * a bodyless POST matched both handlers with identical specificity and
+     * Spring threw {@code IllegalStateException: Ambiguous handler methods}.
+     * (Observed, not theorised: it failed
+     * {@code queryParamPost_withNoContentType_stillWorks} on the first run.)
+     * {@code Optional} leaves {@code required} true — so the consumes condition
+     * keeps its teeth and dispatch stays unambiguous — while
+     * {@code RequestResponseBodyMethodProcessor.checkRequired} still tolerates a
+     * null-valued body via {@code MethodParameter.isOptional()}.
      */
     @PostMapping(value = "/unsubscribe", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Unsubscribe (JSON body)",
             description = "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression "
                     + "idempotently. The token and email travel in the body so they are never captured by access logs.")
     public ResponseEntity<UnsubscribeResponse> unsubscribe(
-            @RequestBody(required = false) UnsubscribeRequest body,
+            @RequestBody Optional<UnsubscribeRequest> body,
             @RequestParam(name = "tenant", required = false) UUID tenant,
             @RequestParam(name = "email", required = false) String email,
             @RequestParam(name = "category", required = false) NotificationCategory category,
             @RequestParam(name = "token", required = false) String token) {
-        if (body != null) {
-            return process(body.tenant(), body.email(), body.category(), body.token());
-        }
-        return process(tenant, email, category, token);
+        return body
+                .map(b -> process(b.tenant(), b.email(), b.category(), b.token()))
+                .orElseGet(() -> process(tenant, email, category, token));
     }
 
     /**
