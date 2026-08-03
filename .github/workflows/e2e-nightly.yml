@@ -143,6 +143,23 @@ jobs:
           echo "KC_DB_PASSWORD=${pg_pw}" >> .env
           echo "POSTGRES_EXPORTER_PASSWORD=${pg_pw}" >> .env
 
+          # KC_SEED_USER_PASSWORD is imported into the realm as a USER PASSWORD
+          # (infra/keycloak/realm-export.template.json), so it must satisfy that
+          # realm's own passwordPolicy:
+          #   length(12) and upperCase(1) and lowerCase(1) and digits(1)
+          #   and specialChars(1) and notUsername
+          # `openssl rand -hex` emits [0-9a-f] ONLY — no upper case, no special
+          # character — so the loop's value fails two of those rules and realm
+          # import aborts with `invalidPasswordMinSpecialCharsMessage`, leaving
+          # Keycloak unhealthy and the whole stack down. This was invisible until
+          # the database credentials were fixed, because Keycloak previously died
+          # at the JDBC step and never reached realm import.
+          # The suffix supplies the two character classes hex cannot; the random
+          # body still carries the entropy. verify-env.sh check (e) asserts the
+          # result against the policy parsed from the realm file itself.
+          seed_pw="Aa1!$(openssl rand -hex 24)"
+          echo "KC_SEED_USER_PASSWORD=${seed_pw}" >> .env
+
           echo "appended $(wc -l < .env) total lines"
 
       # Credential half only: --with-stack probes a running stack, which does not exist

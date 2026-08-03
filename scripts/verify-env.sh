@@ -230,6 +230,72 @@ for pair in "${CREDENTIAL_PAIRS[@]}"; do
 done
 [ "$PAIRS_CHECKED" -gt 0 ] || { fail "No credential pairs were evaluated — this check is vacuous"; ERRORS=$((ERRORS + 1)); }
 
+# ---- (e) realm password policy ----------------------------------------------
+# A credential is not merely "strong enough for us" — if it is imported into a
+# Keycloak realm it must satisfy THAT REALM's declared passwordPolicy, or realm
+# import aborts and Keycloak never starts.
+#
+# This was masked for the entire life of e2e-nightly.yml. Keycloak died at the
+# JDBC step long before it reached realm import, so the policy was never
+# evaluated. Fixing the database credentials surfaced it immediately:
+#   ERROR: Failed to start server in (development) mode
+#   ERROR: invalidPasswordMinSpecialCharsMessage
+# The generated value is `ci` + 48 hex characters: lower-case and digits only,
+# so it satisfies length/lowerCase/digits and fails upperCase and specialChars.
+# The developer .env value happens to satisfy all five, which is why every local
+# stack worked and nobody saw it.
+#
+# The policy is PARSED from the realm file rather than restated here. A copy
+# would be a second source of truth that goes stale the first time someone edits
+# the realm — and the failure mode would be this check confidently passing a
+# credential the realm is about to reject.
+echo "Checking realm-imported credentials satisfy the realm's own passwordPolicy..."
+REALM_TEMPLATE="$(dirname "$0")/../infra/keycloak/realm-export.template.json"
+if [ ! -f "$REALM_TEMPLATE" ]; then
+  fail "VOID: realm template not found at ${REALM_TEMPLATE} — cannot evaluate the password policy"
+  ERRORS=$((ERRORS + 1))
+else
+  # Which variables does the realm import as a password? Read it, do not assume.
+  policy_vars=$(/usr/bin/grep -B2 '"type" *: *"password"' "$REALM_TEMPLATE" \
+                | /usr/bin/grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u)
+  # The value line follows "type": "password", so also look just after it.
+  policy_vars="${policy_vars}
+$(/usr/bin/grep -A2 '"type" *: *"password"' "$REALM_TEMPLATE" \
+   | /usr/bin/grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u)"
+  policy_vars=$(printf '%s\n' "$policy_vars" | /usr/bin/grep -v '^$' | sort -u)
+
+  policy=$(/usr/bin/sed -n 's/.*"passwordPolicy" *: *"\([^"]*\)".*/\1/p' "$REALM_TEMPLATE" | head -n1)
+
+  if [ -z "$policy_vars" ] || [ -z "$policy" ]; then
+    fail "VOID: could not parse the realm's password variables and/or passwordPolicy from ${REALM_TEMPLATE} — refusing to pass on an unread policy"
+    ERRORS=$((ERRORS + 1))
+  else
+    for var in $policy_vars; do
+      val="${!var-}"
+      if [ -z "$val" ]; then
+        fail "VOID: ${var} is imported into the realm as a password but is unset — cannot evaluate the policy"
+        ERRORS=$((ERRORS + 1))
+        continue
+      fi
+      # Each rule is checked against the value; an UNRECOGNISED rule is reported
+      # rather than skipped, so the check can never silently under-enforce.
+      for rule in $(printf '%s' "$policy" | tr ' ' '\n' | /usr/bin/grep -v '^and$' | /usr/bin/grep -v '^$'); do
+        name="${rule%%(*}"; arg="${rule#*(}"; arg="${arg%)}"
+        [ "$name" = "$arg" ] && arg=1
+        case "$name" in
+          length)       [ "${#val}" -ge "$arg" ] || { fail "${var} violates the realm policy '${rule}' (value redacted)"; ERRORS=$((ERRORS + 1)); } ;;
+          upperCase)    case "$val" in *[A-Z]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no upper-case character (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          lowerCase)    case "$val" in *[a-z]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no lower-case character (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          digits)       case "$val" in *[0-9]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no digit (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          specialChars) case "$val" in *[!a-zA-Z0-9]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no special character (value redacted). A hex-only generator produces exactly this."; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          notUsername)  : ;;  # usernames are per-user; not evaluable from the env alone
+          *)            fail "Unrecognised realm password rule '${rule}' — this check would silently under-enforce it"; ERRORS=$((ERRORS + 1)) ;;
+        esac
+      done
+    done
+  fi
+fi
+
 if [ "$ERRORS" -eq 0 ]; then
   pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
   pass "All ${PAIRS_CHECKED} same-role credential pair(s) agree"
