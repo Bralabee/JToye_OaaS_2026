@@ -495,8 +495,10 @@ jobs:
         working-directory: mcp-server
 
   # Job 1f: Operational contracts (Phase 27 / OPS-01, OPS-02).
-  # FIVE STATIC gates. None needs a running stack; all run in seconds.
-  # (The header said "Three" while listing four — corrected when the fifth was added.)
+  # SIX STATIC gates. None needs a running stack; all run in seconds.
+  # (The header said "Three" while listing four — corrected when the fifth was added,
+  # and again when #276 added the sixth. If you add a seventh, this line is part of
+  # the change.)
   # Full local run + rationale for each: k8s/DEPLOYMENT.md "Operational contracts".
   #
   #   1. check-terminal-states.sh — 27-00 F-9. Pins the chain
@@ -526,7 +528,19 @@ jobs:
   #      historical records under .planning/phases/** are deliberately excluded, since
   #      validating them would force a choice between a red gate and rewriting the record.
   #
-  # EXIT CONVENTION, shared by all three: 0 = clean · 1 = violation · 2 = VOID.
+  #   5. check-image-supply-chain.sh — #276. The container-image gate's red/green
+  #      stopped tracking our own code: a floating base tag's CONTENT and Trivy's
+  #      daily vulnerability DB both move without us, so build-and-push failed on
+  #      main twice with no change between the runs, and default fail-fast turned
+  #      one leg's CVE into `cancelled` for the other two. Asserts the three
+  #      properties that make that survivable — fail-fast:false on the publish
+  #      matrix, the table-vs-sarif split that keeps the gate on fixable
+  #      CRITICAL/HIGH only, dependabot docker coverage of every tracked
+  #      Dockerfile — plus that the scheduled scan in base-image-freshness.yml
+  #      still asks the gate's EXACT question (same flags, same pinned action).
+  #      A detector that has drifted reports "clean" about a different question.
+  #
+  # EXIT CONVENTION, shared by all of them: 0 = clean · 1 = violation · 2 = VOID.
   # **EXIT 2 FAILS THIS JOB.** A missing tool, an unreachable endoflife.date, an absent
   # docker or an empty discovery result turns this job RED — never silently green,
   # because "could not check" is never "clean". Do not add `continue-on-error`,
@@ -595,7 +609,25 @@ jobs:
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
 
-      # 5. install-hooks.sh --check — the only half of the runtime-parity pair that a
+      # 5. check-image-supply-chain.sh — #276. The container-image gate compares two
+      #    things that BOTH move on their own (a floating base tag's content, and
+      #    Trivy's daily-refreshed vulnerability DB), so build-and-push went red on
+      #    main twice with no code change between the runs. Three properties have to
+      #    hold for that to be survivable, and all three are one-line YAML edits away
+      #    from silently regressing: fail-fast:false on the publish matrix, the
+      #    table-vs-sarif split that keeps the gate on CRITICAL/HIGH+fixable only, and
+      #    a scheduled scan whose flags and pinned action still match the gate's.
+      #
+      #    This gate is STATIC — it reads YAML and the git index, runs no scanner and
+      #    makes no network call, so it belongs in this job rather than being a fourth
+      #    outbound dependency. It says nothing about whether the images are currently
+      #    clean; only .github/workflows/base-image-freshness.yml answers that, daily.
+      - name: Assert the container-image supply chain has a refresh path (#276)
+        run: |
+          chmod +x ./scripts/check-image-supply-chain.sh
+          ./scripts/check-image-supply-chain.sh --explain
+
+      # 6. install-hooks.sh --check — the only half of the runtime-parity pair that a
       #    GitHub-hosted runner CAN assert. The gate itself (check-runtime-freshness.sh)
       #    is deliberately NOT here: this repo has no self-hosted runner and
       #    DEPLOY_ENABLED is unset, so a runner has no runtime to inspect and the gate
@@ -744,6 +776,25 @@ jobs:
       packages: write
       security-events: write
     strategy:
+      # fail-fast: false (#276). DEFAULT fail-fast turns ONE leg's failure into a
+      # total publishing outage. Observed on two consecutive main runs (e01e654,
+      # d964a85) where the frontend leg hit a base-image CVE:
+      #
+      #   Build and Push Images (frontend):  failure
+      #   Build and Push Images (core-java): cancelled
+      #   Build and Push Images (edge-go):   cancelled
+      #
+      # core-java and edge-go had NO findings and were cancelled mid-build. Those
+      # two images are independently useful — the deploy jobs pin all three by
+      # ${{ github.sha }}, so a partial publish still leaves core-java/edge-go
+      # pullable at that sha for a manual rollout or a local pull, whereas a
+      # cancelled leg leaves nothing at all.
+      #
+      # This does NOT weaken the deploy path. deploy-staging/deploy-production
+      # `needs: [build-and-push]`, and a matrix job is `failure` if ANY leg failed
+      # regardless of fail-fast — so a red frontend still blocks both deploys. The
+      # only thing that changes is that the other two legs are allowed to finish.
+      fail-fast: false
       matrix:
         service: [core-java, edge-go, frontend]
     steps:
