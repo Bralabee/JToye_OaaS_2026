@@ -4,9 +4,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,9 +34,39 @@ import java.util.UUID;
  *       address exists — a verified token always writes its bound recipient's
  *       opt-out (idempotently); there is no address lookup and no
  *       "address exists" signal.</li>
- *   <li><b>PII in logs (ASVS V7):</b> the {@code email} and {@code token} params
- *       are never logged or echoed into the response body.</li>
+ *   <li><b>PII in logs (ASVS V7):</b> the {@code email} and {@code token} values
+ *       are never logged by this application or echoed into the response body.
+ *       They must also stay OUT OF THE REQUEST LINE wherever we control it —
+ *       see the two POST variants below (issue #278).</li>
  * </ul>
+ *
+ * <h2>Why there are two POST variants (issue #278)</h2>
+ *
+ * <p>A query string is captured verbatim by every intermediary on the path:
+ * nginx-ingress writes the whole request line as {@code $request} in its default
+ * {@code log-format-upstream}, APM agents tag full-URL spans, and proxies keep
+ * URLs long after bodies are discarded. So the browser-driven POST — the high
+ * volume path, and the one whose shape we own end to end — now carries its
+ * fields in a JSON <b>body</b>.
+ *
+ * <p>The query-param POST is NOT merely a legacy shim to be removed later; it is
+ * a <b>permanent protocol requirement</b>. {@code EmailChannel} stamps the RFC
+ * 8058 headers {@code List-Unsubscribe: <url>} +
+ * {@code List-Unsubscribe-Post: List-Unsubscribe=One-Click}, and RFC 8058 §3.1
+ * fixes the POST body a mail provider sends to the literal string
+ * {@code List-Unsubscribe=One-Click}. There is therefore no body slot in which a
+ * one-click POST could carry the token — the identifier can only live in the
+ * URI. Deleting the {@code @RequestParam} variant would break one-click
+ * unsubscribe for every message already in a customer's inbox <i>and</i> every
+ * message sent afterwards, costing both PECR compliance and Gmail/Yahoo
+ * bulk-sender deliverability. Both variants are kept, deliberately.
+ *
+ * <p>Dispatch is by {@code Content-Type}, which is unambiguous: only
+ * {@code application/json} reaches {@link #unsubscribe}; a one-click POST
+ * ({@code application/x-www-form-urlencoded}) and a bare POST with no
+ * {@code Content-Type} both fall to {@link #unsubscribeOneClick}. The JSON
+ * variant additionally accepts the old query params as a fallback so an
+ * already-loaded browser tab running the previous bundle keeps working.
  *
  * <p>The write is tenant-scoped: the tenant is taken from the VERIFIED token and
  * pinned via {@link TenantContext} (try/finally) before the {@code @Transactional}
@@ -57,11 +89,45 @@ public class PublicUnsubscribeController {
         this.suppressionService = suppressionService;
     }
 
-    /** One-click POST (RFC 8058 List-Unsubscribe-Post target). */
-    @PostMapping("/unsubscribe")
-    @Operation(summary = "Unsubscribe (one-click POST)",
-            description = "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently.")
+    /**
+     * Canonical POST: the fields travel in a JSON body, so the token and the
+     * recipient email never enter the request line and never reach an access
+     * log (#278). This is what the confirmation page calls.
+     *
+     * <p>The four {@code @RequestParam}s are a compatibility fallback, used only
+     * when the body is absent or null — an already-open browser tab running the
+     * previous bundle posts {@code Content-Type: application/json} with a literal
+     * {@code null} body and the fields in the query string. Without this it would
+     * start failing mid-session. New traffic never takes that path.
+     */
+    @PostMapping(value = "/unsubscribe", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Unsubscribe (JSON body)",
+            description = "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression "
+                    + "idempotently. The token and email travel in the body so they are never captured by access logs.")
     public ResponseEntity<UnsubscribeResponse> unsubscribe(
+            @RequestBody(required = false) UnsubscribeRequest body,
+            @RequestParam(name = "tenant", required = false) UUID tenant,
+            @RequestParam(name = "email", required = false) String email,
+            @RequestParam(name = "category", required = false) NotificationCategory category,
+            @RequestParam(name = "token", required = false) String token) {
+        if (body != null) {
+            return process(body.tenant(), body.email(), body.category(), body.token());
+        }
+        return process(tenant, email, category, token);
+    }
+
+    /**
+     * RFC 8058 one-click POST — the {@code List-Unsubscribe} target stamped into
+     * every email by {@code EmailChannel}. The mail provider POSTs the fixed body
+     * {@code List-Unsubscribe=One-Click} as {@code application/x-www-form-urlencoded},
+     * so the identifying fields can only be in the URI. Kept permanently: see the
+     * class Javadoc.
+     */
+    @PostMapping("/unsubscribe")
+    @Operation(summary = "Unsubscribe (RFC 8058 one-click POST)",
+            description = "The List-Unsubscribe-Post target for mail providers. RFC 8058 fixes the request body, so "
+                    + "these fields must travel in the URI; prefer the JSON-body variant from any client you control.")
+    public ResponseEntity<UnsubscribeResponse> unsubscribeOneClick(
             @RequestParam("tenant") UUID tenant,
             @RequestParam("email") String email,
             @RequestParam("category") NotificationCategory category,
@@ -83,6 +149,14 @@ public class PublicUnsubscribeController {
 
     private ResponseEntity<UnsubscribeResponse> process(UUID tenant, String email,
                                                         NotificationCategory category, String token) {
+        // A request missing any field can never verify. Answer exactly as a bad
+        // token does — same status, no DB touch, nothing echoed back — so the
+        // response distinguishes nothing (T-22-02-02) and no field name leaks.
+        if (tenant == null || email == null || email.isBlank() || category == null || token == null) {
+            log.warn("Unsubscribe rejected: incomplete request");
+            return ResponseEntity.ok(new UnsubscribeResponse("invalid"));
+        }
+
         if (!tokenService.verify(tenant, email, category, token)) {
             // Never log the email or the signed value (ASVS V7); category is not PII.
             log.warn("Unsubscribe rejected: signature verification failed for category {}", category);
@@ -97,6 +171,15 @@ public class PublicUnsubscribeController {
             TenantContext.clear();
         }
         return ResponseEntity.ok(new UnsubscribeResponse(firstTime ? "unsubscribed" : "already_unsubscribed"));
+    }
+
+    /**
+     * JSON request body for the canonical POST (#278). Carrying these four
+     * fields here rather than in the query string is the whole point: a body is
+     * not part of the request line, so nginx {@code $request}, APM full-URL
+     * spans, proxy logs and browser history never see the token or the email.
+     */
+    public record UnsubscribeRequest(UUID tenant, String email, NotificationCategory category, String token) {
     }
 
     /** Minimal, PII-free result. Never carries the email or token back. */
