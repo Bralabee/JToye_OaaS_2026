@@ -14,6 +14,14 @@ const ID_COOKIE = "jtoye-customer-id"
 // Use the dedicated customer base URL, falling back ONLY to the jtoye-customers dev
 // default — never to NEXT_PUBLIC_KEYCLOAK_URL (the staff/vendor realm), which would
 // route customer logout into the wrong identity pool. Admin logout (NextAuth) unaffected.
+//
+// Issue #467 audit: this `localhost` is CORRECT and must stay public, unlike the
+// one that broke /api/customer-orders. This handler never fetches the URL — it
+// returns it in JSON for the BROWSER to navigate to, and the browser is outside
+// the container where localhost:8085 is exactly right. Swapping in an internal
+// host (keycloak:8080, as customer-token-refresh.ts correctly uses for its
+// server-side token call) would produce a URL no browser can resolve. The
+// NEXT_PUBLIC_ prefix marks the same distinction: this is the public view.
 const KC_BASE =
   process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL ||
   "http://localhost:8085/realms/jtoye-customers" // never fall back to jtoye-dev (staff realm)
