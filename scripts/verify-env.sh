@@ -203,9 +203,17 @@ else
 fi
 
 # Test: Database connection
-DB_TEST=$(docker exec jtoye-postgres psql -U "${POSTGRES_USER:-jtoye}" -d "${POSTGRES_DB:-jtoye}" -tAc "SELECT COUNT(*) FROM tenant;" 2>/dev/null)
+#
+# The table is `tenants`, plural. This read `tenant` for as long as the check has
+# existed, so the query always errored, `2>/dev/null` swallowed the error, the
+# result was always empty and this test could only ever FAIL. It was found while
+# verifying that start-dev.sh still works after the #438/#441 rebind — the
+# failure is unrelated to that change and predates it. Noted rather than quietly
+# corrected because it is the same shape as the defects those issues describe: a
+# check that ran for months, was incapable of passing, and was never read.
+DB_TEST=$(docker exec jtoye-postgres psql -U "${POSTGRES_USER:-jtoye}" -d "${POSTGRES_DB:-jtoye}" -tAc "SELECT COUNT(*) FROM tenants;" 2>/dev/null)
 if [ -n "$DB_TEST" ]; then
-  pass "Database is accessible and tenant table exists"
+  pass "Database is accessible and tenants table exists"
   info "Current tenant count: ${DB_TEST}"
 else
   fail "Database connection or schema issue"
