@@ -551,7 +551,7 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 20 x rc=0. A VOID (2) is not a pass.
+# EXPECT 22 x rc=0. A VOID (2) is not a pass.
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
 # Both gates print their own remedy. Neither is a regression.
