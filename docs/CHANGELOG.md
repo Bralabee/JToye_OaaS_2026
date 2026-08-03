@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Three vendor-dashboard defects on one surface (#476) — 2026-08-03
+
+Closes #282, #288 and #290 together: they share the shop list / staff picker surface, so three separate branches would have collided.
+
+#### Fixed
+- **#282 — the shop list was truncated at 200.** `fetchMyShops` issued one request with a hardcoded `?page=0&size=200` and returned `content` as the whole list, so a tenant past 200 shops lost the tail — unselectable in the switcher *and* ungrantable on the staff screen, which feeds off the same call. `fetchAllMyShops()` now pages until the first server signal that there is no next page, with a `MAX_SHOP_PAGES` circuit breaker that warns rather than hanging the tab. Page size moved to `NEXT_PUBLIC_SHOPS_PAGE_SIZE` via `resolveShopsPageSize()`, default 200 — an unconfigured deployment issues exactly the request it always did.
+- **#288 — a zero-access user got a blank `<select>`.** A non-`GROUP_ADMIN` with zero grants matched neither guard and fell through into the select, which rendered with no children at all; the failure output showed it literally as a self-closing `<select />`. Now renders a "No shop access" state in the same bordered-row shape as the existing single-grant pinned label — no new visual idiom, every existing branch untouched, and a `GROUP_ADMIN` with no shops deliberately still gets "All shops".
+- **#290 — the masked email printed twice.** `(d.displayName || d.email) + " (" + d.email + ")"` repeats the address when there is no display name, and emails are masked at the DTO boundary, so that string is the whole of what identifies a colleague.
+
+#### Notes
+- **A 375px check changed the design, and the choice was then proven load-bearing by counterfactual.** The explanatory sentence was first placed below the chip unconditionally; the mobile top bar is a fixed `h-14` with the switcher in `max-w-[55%]` (~206px). Swapping the sidebar classes back in at 375px makes the sentence **64px tall over a 38px chip and spill 25.5px over the page heading** — the code comment had predicted "~4 lines (~64px)" and the measurement matched exactly. Unlike the transient D-13 notice this state is **permanent** for the affected user, so it would have been permanently broken. It is `sr-only` in the topbar variant and laid out in the sidebar.
+- **Verified in a real browser, not only in jsdom.** #282 was proven against the **real backend with no interception**, by setting the PR's own `NEXT_PUBLIC_SHOPS_PAGE_SIZE=2` so a real 4-shop tenant became a genuine two-page fetch: pre-fix **3 options** with the tail lost, post-fix **5 options** with every shop present. At 375px the #288 no-access block measures `w=159 h=38`, bottom `46.5` inside the 56px bar — **contained by 9.5px** — with no horizontal scrollbar (`scrollWidth 375 == clientWidth 375`), and the `sr-only` sentence is genuinely exposed to assistive tech, confirmed from a real Chromium ARIA snapshot rather than inferred from CSS. #290's duplicate is gone for **both** null and empty display names while a *named* member still renders `Name (email)`, so the fix was not achieved by dropping the address. Zero console errors, zero warnings and zero failed requests across every page and every arm.
+- **Two caveats on that browser run, recorded rather than smoothed over:** it ran on **Node 22.23.2, not the declared 24+**, and under `next start` rather than the standalone server the container uses. Rendering and CSS are unaffected, but it is **not a production-identical topology**.
+- **The #282 fixture is 250 shops and the fake endpoint honours `?page=` and `?size=`.** One that ignored them would have returned all 250 on page 0 and every case would have passed *against the bug*. The spec's `springPage()` helper reproduces the known `PageImpl` total-recompute rule rather than inventing metadata.
+- **Companion guards prevent cheap satisfactions:** #290's de-dupe cannot be met by dropping the address, and #288's `sr-only` assertion was break-armed by flipping it to the visible class.
+
 ### The three legacy image endpoints stored raw client bytes (#479) — 2026-08-03
 
 Closes #445. `POST /products/{id}/images`, `POST /shops/{id}/logo` and `POST /shops/{id}/banner` all reached MinIO through two `StorageService` methods that bypassed the Phase-24 normaliser. All three are reachable in production with no profile gate.
