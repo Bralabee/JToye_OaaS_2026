@@ -18,7 +18,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: ${DB_NAME:-jtoye}
     ports:
-      - "5433:5432" # use 5433 on host to avoid conflicts with existing postgres
+      # Loopback-only by default (#438) — same reasoning as the full-stack
+      # compose. This file is the infra-only path used by scripts/start-dev.sh,
+      # so leaving it on all interfaces would make the fix bypassable through
+      # the documented start command.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:5433:5432" # 5433 on host to avoid conflicts with an existing postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -65,7 +69,7 @@ services:
       KEYCLOAK_ADMIN: ${KC_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set}
     ports:
-      - "8085:8080"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:8085:8080"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks:

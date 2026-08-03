@@ -1,6 +1,33 @@
 # Monitoring Stack for JToye OaaS
 # Includes Prometheus, Grafana, and metrics exporters
 # Usage: docker-compose -f docker-compose.monitoring.yml up -d
+#
+# PUBLISHED-PORT BIND ADDRESS (issue #439)
+# ----------------------------------------
+# All ports below are published on ${JTOYE_BIND_HOST}, default 127.0.0.1. They
+# previously carried no bind address, which Docker expands to 0.0.0.0.
+#
+# GRAFANA ADMIN CREDENTIAL. The variable indirection below is not new and was
+# never the defect — GF_SECURITY_ADMIN_PASSWORD has always been injected from
+# the environment, with no literal in this file. What went wrong is that the
+# INJECTED VALUE was itself the factory default, so a config-level reading of
+# this file ("the credential is injected, therefore it is not the default") was
+# true and useless at the same time. That is why the check for this lives in
+# scripts/check-infra-exposure.sh (assertion C) and interrogates the RUNNING
+# instance, rather than asserting anything about these lines.
+#
+# Two follow-ons close the loop:
+#   - scripts/verify-env.sh now covers GRAFANA_ADMIN_PASSWORD and rejects
+#     product-default and short values, so start-dev.sh refuses to boot on one;
+#   - Grafana only applies GF_SECURITY_ADMIN_PASSWORD when it first CREATES the
+#     admin user. On a volume that already has one, editing .env changes
+#     nothing — the password must be reset against the running instance
+#     (grafana cli admin reset-admin-password) or the volume recreated. A
+#     config-only "fix" here would have looked complete and changed no
+#     behaviour whatsoever.
+#
+# When the k8s monitoring manifests land (DPLY-03) they should take the
+# credential the same way, so this is fixed once rather than twice.
 
 services:
   # Prometheus - Metrics collection and storage
@@ -34,7 +61,7 @@ services:
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9091:9090"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9091:9090"
     networks:
       - monitoring
       - jtoye-network
@@ -62,7 +89,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
     networks:
       - monitoring
     depends_on:
@@ -113,7 +140,7 @@ services:
       - ./alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
       - alertmanager_data:/alertmanager
     ports:
-      - "9093:9093"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9093:9093"
     networks:
       - monitoring
       - jtoye-network
@@ -132,7 +159,7 @@ services:
       REDIS_ADDR: "redis://redis:6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"
     ports:
-      - "9121:9121"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9121:9121"
     networks:
       - monitoring
       - jtoye-network
@@ -151,7 +178,7 @@ services:
     environment:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_EXPORTER_USER:-jtoye}:${POSTGRES_EXPORTER_PASSWORD:?POSTGRES_EXPORTER_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-jtoye}?sslmode=${POSTGRES_EXPORTER_SSLMODE:-require}"
     ports:
-      - "9187:9187"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9187:9187"
     networks:
       - monitoring
       - jtoye-network

@@ -10,9 +10,10 @@
 # WIRING:
 #   Runs as a fail-loud preflight at the top of scripts/start-dev.sh, BEFORE any
 #   container is brought up. Exits non-zero (naming the offending variable) when a
-#   required credential is unset/empty or matches the weak deny-list, so the stack
-#   never boots with a missing or weak secret. Live stack health is covered
-#   separately by scripts/smoke-test.sh.
+#   required credential is unset/empty, matches the weak deny-list, or is shorter
+#   than the minimum length, so the stack never boots with a missing or weak
+#   secret. Live stack health is covered separately by scripts/smoke-test.sh, and
+#   network exposure by scripts/check-infra-exposure.sh.
 #
 # SECURITY: never prints secret VALUES — variable NAMES only.
 
@@ -46,6 +47,13 @@ REQUIRED_VARS=(
   KC_SEED_USER_PASSWORD
   INTEGRATION_CATALOG_RO_SECRET
   INTEGRATION_ORDERS_RW_SECRET
+  # Added for issues #438 / #439. Both were previously OUTSIDE this list, which
+  # is the whole reason they went unnoticed: the monitoring compose file requires
+  # them (`${VAR:?}`) so they were always SET, and being set was all anyone ever
+  # checked. This preflight is the control that should have fired, and it could
+  # not fire on a variable it was not looking at.
+  GRAFANA_ADMIN_PASSWORD
+  POSTGRES_EXPORTER_PASSWORD
 )
 
 # Weak values that must never be used. Tokens are stored canonical UPPER-case and
@@ -58,7 +66,27 @@ DENY_EXACT=(
   PASSWORD123
   MINIOADMIN
   CHANGEME
+  # Added for issues #438 / #439 — both defects were a single dictionary word
+  # sitting in a variable this list did not name. Enumerating tokens can only
+  # ever catch the ones somebody thought of, so the length floor below is the
+  # control that generalises; this list stays for the well-known factory pairs.
+  ADMIN
+  SECRET
+  PASSWORD
+  GUEST
+  ROOT
+  POSTGRES
+  REDIS
+  KEYCLOAK
+  GRAFANA
+  LETMEIN
 )
+
+# Minimum length for a required credential. This is deliberately a SEPARATE
+# mechanism from the token list above: it catches a weak value nobody enumerated.
+# Both measured defects (a 6-letter and a 5-letter word) fail this floor on their
+# length alone, without the deny-list naming either of them.
+MIN_CREDENTIAL_LENGTH=8
 
 # ---- Arg parsing ------------------------------------------------------------
 ENV_FILE="./.env"
@@ -124,8 +152,19 @@ for var in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
+# ---- (c) minimum length -----------------------------------------------------
+echo "Checking no required variable is shorter than ${MIN_CREDENTIAL_LENGTH} characters..."
+for var in "${REQUIRED_VARS[@]}"; do
+  val="${!var}"
+  [ -z "$val" ] && continue # already reported as missing above
+  if [ "${#val}" -lt "$MIN_CREDENTIAL_LENGTH" ]; then
+    fail "Required variable ${var} is shorter than the ${MIN_CREDENTIAL_LENGTH}-character minimum (value redacted)"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
 if [ "$ERRORS" -eq 0 ]; then
-  pass "All ${#REQUIRED_VARS[@]} required credential variables are set and non-weak"
+  pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
 else
   echo ""
   fail "${ERRORS} environment problem(s) found — fix the named variable(s) in ${ENV_FILE}"
