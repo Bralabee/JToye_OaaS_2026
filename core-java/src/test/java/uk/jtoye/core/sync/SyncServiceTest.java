@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -29,13 +30,22 @@ class SyncServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    /**
+     * Issue #483: the batch's cache invalidation moved from a cross-tenant
+     * {@code @CacheEvict(allEntries = true)} annotation to per-touched-id calls on this
+     * collaborator. Mocked here because this class is about the upsert mapping; the eviction
+     * RADIUS is proven against a real cache by {@code SyncServiceTenantCacheScopeTest}.
+     */
+    @Mock
+    private TenantCacheEvictor cacheEvictor;
+
     private SyncService syncService;
 
     private final UUID tenantId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        syncService = new SyncService(shopRepository, productRepository);
+        syncService = new SyncService(shopRepository, productRepository, cacheEvictor);
         TenantContext.set(tenantId);
     }
 
