@@ -305,7 +305,23 @@ this by hand** — no gate in this repo would have caught a single one of the tw
   suspecting the product.
 - **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. GTM-01.
 - **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
-- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `docker-ce` restarts the daemon — stack down first.
+- **Toolchain: 2 DRIFT + 1 UNKNOWN**, none applied — re-measured 2026-08-03, down from 4 DRIFT.
+  `conda` 26.1.1→26.5.3 and `ms-fabric-cli` 1.2.0→1.6.1. `antigravity` is UNKNOWN because it is a
+  **manual** channel the probe cannot query — a recorded decision, not a gap. `docker-ce` restarts
+  the daemon — stack down first.
+- **`.claude/worktrees/` was not gitignored: 9 live agent worktrees, 70,498 untracked files**, each a
+  full working copy holding one of the merge train's branches. A plain `git add .` in this checkout
+  staged all of it. Fixed in **#482**, scoped to `.claude/worktrees/` and **not** `.claude/`, because
+  the project convention reserves `.claude/skills/` for tracked project skills.
+  **The habit matters more than the fix.** The same hazard fired earlier the same day at 369 lines
+  through a *named-path* `git add AGENTS.md`, which merged another session's uncommitted work as
+  #469 and had to be reverted by #470 — a named path proves *which file*, never *which lines*. So:
+  **`git diff --staged` before every commit here**, and treat `N insertions / 0 deletions` on a file
+  you only edited as content that arrived from someone else.
+- **Orphaned and worth someone's attention: `feature/faster-integration-tests-parallelism`** — one
+  unpushed commit, *"perf(test): parallelize integrationTest to cut ~39m runtime to ~15m"*, no PR,
+  not in a worktree. The suite was **measured at 47 minutes** on #472 (02:10:20→02:57:34) and #444
+  will pay the same. Deliberately not pushed — publishing another session's work is its author's call.
 
 ---
 
