@@ -66,7 +66,12 @@ export function ShopSwitcherProvider({ children }: { children: ReactNode }) {
         // D-13: a saved *specific shop* no longer in the granted set was revoked.
         const savedIsStale =
           saved !== ALL_SHOPS_CONTEXT && !grantedIds.includes(saved)
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; single writer for both switchers
+        // SSR-safe mount-time hydration, and the SINGLE writer for both switchers.
+        // (No eslint-disable needed: `react-hooks/set-state-in-effect` only fires on
+        // a setState called DIRECTLY in the effect body — these run in the resolved
+        // promise's callback. The directives that used to sit here were inert and
+        // reported as unused-directive warnings; the rule itself is live and will
+        // error if this ever moves into the effect body.)
         setShops(fetched)
         setIsGroupAdmin(ga)
         setUserId(uid)
@@ -83,7 +88,8 @@ export function ShopSwitcherProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- error settles the loading state
+        // The error path still settles the loading state (same rejected-promise
+        // callback, so no eslint directive is needed here either).
         if (active) setLoading(false)
       })
     return () => {

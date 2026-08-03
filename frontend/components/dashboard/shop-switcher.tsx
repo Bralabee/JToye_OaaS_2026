@@ -52,6 +52,31 @@ export function ShopSwitcher({
 
   const dark = variant === "sidebar"
 
+  /**
+   * Layout classes for a supplementary note rendered UNDER the control (#495, #490).
+   *
+   * `topbar` is the mobile bar: a fixed `h-14` (56px) `items-center` flex row with
+   * the switcher in a `max-w-[55%]` (~206px) column. Extra FLOW content there does
+   * not merely spill past the border — it re-centres the whole column and LIFTS
+   * the `<select>` out of the bar. Measured in the running app at 375px on a
+   * Pixel 7 profile, against the bar's own top edge:
+   *
+   *   "Apply to all shops"  badge bottom 59 vs a 56px bar (+3 over), select top −5
+   *   D-13 stale sentence   note  bottom 95 vs a 56px bar (+39 over), select
+   *                         top −40 / bottom −2 — the control is entirely above
+   *                         the viewport and cannot be touched at all
+   *
+   * So the constraint is the fixed bar height, not the margin: shrinking `mt-1.5`
+   * leaves a narrower device wrapping the text further and lifting the control
+   * again. A note in `topbar` must contribute NO height. `sr-only` is absolutely
+   * positioned, so it costs the column nothing while keeping the sentence in the
+   * accessibility tree — which is exactly what #476 chose for the #288
+   * zero-access sentence. This helper is that decision stated ONCE: #288's
+   * sentence was gated and the two older notes were not, and the divergence is
+   * the whole bug. A fourth note gets the same treatment by construction.
+   */
+  const note = (laidOut: string) => (variant === "topbar" ? "sr-only" : laidOut)
+
   if (loading) {
     return (
       <div className={cn("min-w-0", className)} data-testid="shop-switcher" aria-busy="true">
@@ -94,27 +119,14 @@ export function ShopSwitcher({
             />
             <span className="truncate">No shop access</span>
           </div>
-          {/* Same placement + type scale as the D-13 stale notice below — but shown
-              only where there is vertical room for it, which is a property of the
-              VARIANT, not the viewport.
-
-              `topbar` is the mobile bar: a fixed `h-14` (56px) flex row, with the
-              switcher in a `max-w-[55%]` (~206px) column. At 375px this sentence
-              wraps to ~4 lines (~64px) on top of the ~38px chip and spills out of a
-              bar that has no room to grow, over the page content beneath it. Unlike
-              the D-13 stale notice — transient, and dismissed on the next selection —
-              this state is PERMANENT for a zero-access user, so it would be
-              permanently broken. So the chip carries it visually there (it fits), and
-              the sentence stays in the accessibility tree via `sr-only`; a mobile user
-              also meets the full explanation on any screen that renders its own
-              access-required card. */}
-          <p
-            className={cn(
-              variant === "topbar"
-                ? "sr-only"
-                : "mt-1.5 text-xs text-slate-400"
-            )}
-          >
+          {/* Shown only where there is vertical room for it — a property of the
+              VARIANT, not the viewport. See `note()` for the measured geometry.
+              Unlike the D-13 stale notice this state is PERMANENT for a
+              zero-access user, so the chip above carries it visually in the bar
+              (it fits) and the sentence stays in the accessibility tree; a mobile
+              user also meets the full explanation on any screen that renders its
+              own access-required card. */}
+          <p className={note("mt-1.5 text-xs text-slate-400")}>
             You have not been granted access to any shop. Ask a group admin in your
             business to grant you a shop.
           </p>
@@ -148,10 +160,25 @@ export function ShopSwitcher({
         Shop context
       </label>
       <div className="relative">
-        <Store
-          className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-orange-500"
-          aria-hidden="true"
-        />
+        {/* The leading glyph is absolutely positioned, so it costs the bar no
+            height whichever mark it draws. In `topbar` the D-13 sentence below is
+            `sr-only` (it cannot fit — see `note()`), which would otherwise leave a
+            SIGHTED mobile user with a silently-reset selection and no signal at
+            all; the amber alert mark is that signal's visible substitute. The
+            sidebar keeps the sentence itself, so it needs no substitute and its
+            appearance is unchanged. */}
+        {stale && variant === "topbar" ? (
+          <ShieldAlert
+            data-testid="shop-switcher-stale-glyph"
+            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-600 dark:text-amber-300"
+            aria-hidden="true"
+          />
+        ) : (
+          <Store
+            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-orange-500"
+            aria-hidden="true"
+          />
+        )}
         <select
           id="shop-context-select"
           value={selected}
@@ -181,12 +208,16 @@ export function ShopSwitcher({
 
       {/* D-08: the group-wide affordance renders ONLY for a GROUP_ADMIN AND only
           in the "All shops" context — both conditions in the same guard. The
-          server also re-gates group-wide writes to GROUP_ADMIN (T-23-05-02). */}
+          server also re-gates group-wide writes to GROUP_ADMIN (T-23-05-02).
+          #495: laid out in the sidebar, `sr-only` in the bar — the badge's own
+          20px plus its margin put its bottom at 59 in a 56px bar. The selected
+          option still reads "All shops" there, so a mobile GROUP_ADMIN does not
+          lose the fact, only the restatement of it. */}
       {isGroupAdmin && selected === ALL_SHOPS_CONTEXT && (
         <p
           data-testid="apply-to-all"
           className={cn(
-            "mt-1.5 inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium",
+            note("mt-1.5 inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"),
             dark ? "bg-slate-800 text-orange-300" : "bg-orange-50 text-orange-700 dark:bg-slate-800 dark:text-orange-300"
           )}
         >
@@ -194,13 +225,17 @@ export function ShopSwitcher({
         </p>
       )}
 
-      {/* D-13: a revoked saved selection degrades to an access-required notice. */}
+      {/* D-13: a revoked saved selection degrades to an access-required notice.
+          #490: the sentence wraps to ~4 lines (64px) in the bar's ~206px column
+          and lifted the <select> clean off the top of the screen, so in `topbar`
+          it is `sr-only` — still announced (role="alert"), and paired with the
+          amber leading glyph above so the change is visible too. */}
       {stale && (
         <p
           role="alert"
           data-testid="shop-switcher-stale"
           className={cn(
-            "mt-1.5 text-xs",
+            note("mt-1.5 text-xs"),
             dark ? "text-amber-300" : "text-amber-600 dark:text-amber-300"
           )}
         >
