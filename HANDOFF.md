@@ -20,8 +20,8 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
-| Open PRs | **3** (measured 2026-08-03), all the tail of a six-PR QC'd merge train run smallest-test-delta-first. Merged so far: **#480 is CLOSED**, **#474 is CLOSED**, **#478 is CLOSED**. Remaining order is **#477, #479, then #476** — #476 was moved to last deliberately: it is the only PR in the set with no real-browser proof (jsdom + a production build), and its #288 zero-access empty state at 375px is *reasoned* from the mobile bar's measured `h-14` constraint, **not photographed**. It is under live browser verification and is held until that verdict lands. **Re-measure; this cell is stale by design while the train runs** |
-| Open issues | **89** — re-measured 2026-08-03, third measurement of the day (63 → 86 → 92 → 89, moving in both directions as the council backlog was filed and the train closed issues). **#442 is CLOSED** (#472), **#473 is CLOSED** (issue #302), **#475 is CLOSED** (issue #274); the train has since closed **#418**, **#287** and **#279**. Do not carry this number — re-run `gh issue list --state open --limit 300 --json number --jq length`, and note the default `--limit` is 30, which silently undercounts |
+| Open PRs | **0** (measured 2026-08-03). The six-PR QC'd merge train is **complete**: **#480 is CLOSED**, **#474 is CLOSED**, **#478 is CLOSED**, **#477 is CLOSED**, **#479 is CLOSED**, **#476 is CLOSED**, closing issues #418, #287, #279, #390, #445, #282, #288 and #290. #476 was held to last because it was the only one with no real-browser proof; the verification then passed — the #288 no-access block measures `h=38`, bottom `46.5` inside the 56px bar (contained by 9.5px), and the `sr-only` choice was proven load-bearing by counterfactual (the sidebar classes at 375px spill **25.5px** over the page heading). **Re-measure before trusting this cell** |
+| Open issues | **85** — re-measured 2026-08-03 after the train finished; it moved in **both** directions across the day (63 → 86 → 92 → 89 → 85) as the council backlog was filed and the train closed issues, which is why no single figure here is safe to carry. **#442 is CLOSED** (#472), **#473 is CLOSED** (issue #302), **#475 is CLOSED** (issue #274). Re-run `gh issue list --state open --limit 300 --json number --jq length` — the default `--limit` is **30**, which silently undercounts |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
@@ -300,6 +300,15 @@ this by hand** — no gate in this repo would have caught a single one of the tw
   PR**, restored → PASS. Note the gate **cannot** check the citation pre-merge from the branch itself
   (its range ends at `origin/main`, where the PR is absent), so a green run on the branch proves
   nothing about it — the simulation is the only real evidence.
+- **"Resolve doc conflicts by taking main's copy" is WRONG for `docs/CHANGELOG.md`, and nothing
+  would have caught it.** The blanket rule is right for `AGENTS.md`/`CLAUDE.md`/`README.md`/
+  `docs/metrics.json`, which are regenerated straight afterwards. It is wrong for the changelog:
+  once a sibling PR merges, both entries want the same insertion point under `## [Unreleased]`, so
+  taking main's copy **silently deletes your own entry**. Hit on #476's re-rebase after #479 landed.
+  The gate cannot see it — its range ends at `origin/main`, where your PR is absent — so the branch
+  stays green and the omission only surfaces *after* merge, reddening everyone else. Resolve that one
+  file by taking main's copy and **re-inserting** your entry, then assert both citations by content
+  (`grep -c '(#476)'` and `grep -c '(#479)'` each `1`) before continuing the rebase.
 - **Never run a gate from the main checkout — it is usually BEHIND `origin/main`.**
   `check-changelog-contract` resolves its commit *range* from `origin/main` but reads
   `docs/CHANGELOG.md` from the **working tree**. Run from a tree two commits behind, it compared a
