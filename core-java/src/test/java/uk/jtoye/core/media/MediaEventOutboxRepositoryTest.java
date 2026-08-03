@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -16,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -38,6 +40,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @Tag("testcontainers")
 @Transactional  // @Modifying resurrectFailed() requires an ambient tx (the flusher always calls it inside one)
+// #418: MediaEventOutboxFlusher.flushPending/resurrectFailed are @Scheduled at a
+// 5s/300s DEFAULT here (this class parks nothing), so the scheduler was free to
+// claim and publish the very rows these repository assertions count.
+@Import(NoScheduledTriggersTestConfig.class)
 class MediaEventOutboxRepositoryTest {
 
     @Container

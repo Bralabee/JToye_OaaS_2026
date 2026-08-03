@@ -52,6 +52,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @Testcontainers
 @ActiveProfiles("test")
 @org.junit.jupiter.api.Tag("testcontainers")
+// #418: cleanupStaleDraftOrders() is @Scheduled (cron) and driven by hand here.
+// A cron trigger has no startup run, but the other nine @Scheduled workers in the
+// context do, and this class sets cleanup.stale-draft-hours=0 — so every draft it
+// creates is instantly eligible. Removing the triggers keeps the sweep this class
+// asserts on the only one that ever runs.
+@org.springframework.context.annotation.Import(
+        uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig.class)
 class ScheduledCleanupServiceIntegrationTest {
 
     @Container

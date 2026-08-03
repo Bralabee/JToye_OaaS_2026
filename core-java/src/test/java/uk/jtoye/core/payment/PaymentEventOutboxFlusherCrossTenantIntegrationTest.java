@@ -10,6 +10,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -23,6 +24,7 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -67,6 +69,11 @@ import static org.mockito.Mockito.verify;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// #418: identical shape to PaymentEventOutboxReliabilityIntegrationTest — parked
+// intervals, a shared @MockBean RabbitTemplate, and exact times(2) publish counts.
+// Parking the interval never stopped the initialDelay=0 startup pass, so the
+// scheduler could publish these same rows on the same mock. Trigger removed.
+@Import(NoScheduledTriggersTestConfig.class)
 class PaymentEventOutboxFlusherCrossTenantIntegrationTest {
 
     @Container

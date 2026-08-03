@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -17,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -46,6 +48,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// #418: this class drives MediaPendingReaper.reapOrphans() and
+// MediaQuarantineRetentionSweep.sweep() by hand and then asserts times(1)/never()
+// on a @SpyBean StorageService. Both are @Scheduled, and a @Scheduled method runs
+// once at context refresh whatever its interval — so a startup sweep could delete
+// (or decline to delete) an object behind the assertion's back. Trigger removed.
+@Import(NoScheduledTriggersTestConfig.class)
 class MediaDurabilityIntegrationTest {
 
     @Container

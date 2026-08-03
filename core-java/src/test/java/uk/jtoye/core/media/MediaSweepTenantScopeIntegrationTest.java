@@ -9,6 +9,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
@@ -20,6 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -75,6 +77,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// #418: the sweep under test is @Scheduled and is driven by hand here; a startup
+// run would sweep the fixtures before the test's own call could observe them.
+@Import(NoScheduledTriggersTestConfig.class)
 class MediaSweepTenantScopeIntegrationTest {
 
     private static final String SWEEP_ROLE = "rls_sweep_role";
