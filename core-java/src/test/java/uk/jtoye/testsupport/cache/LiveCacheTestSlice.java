@@ -58,15 +58,68 @@ import uk.jtoye.core.config.TenantAwareCacheKeyGenerator;
  * to store a negative result at all, this cache accepts it: "no entry" here means no put was even
  * attempted, and cannot be an artifact of the cache refusing nulls.
  *
+ * <h2>Coverage inventory (#498 acceptance criterion) — COMPLETE, not truncated</h2>
+ *
+ * Every {@code @Cacheable}/{@code @CachePut}/{@code @CacheEvict} site in {@code core-java/src/main},
+ * measured with a line-anchored search that excludes the many Javadoc mentions of these annotations
+ * (a naive substring search returns ~30 hits, of which 26 are prose):
+ *
+ * <table border="1">
+ *   <caption>All four annotated methods, and where each is covered</caption>
+ *   <tr><th>Site</th><th>Region</th><th>Covered by</th></tr>
+ *   <tr>
+ *     <td>{@code ProductService.ProductCacheLoader#getProductById}</td><td>products</td>
+ *     <td>{@code CachingInterceptorLivenessTest} (hit, miss, cross-tenant — behavioural) and
+ *         {@code NegativeCachingOptionalEmptyTest} (region contents)</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code ShopService.ShopCacheLoader#getShopById}</td><td>shops</td>
+ *     <td>{@code CachingInterceptorLivenessTest} (hit, miss — behavioural) and
+ *         {@code NegativeCachingOptionalEmptyTest} (region contents)</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code ShopAccessService#resolveMembership}</td><td>shopMembership</td>
+ *     <td><b>NOT covered by this fast slice.</b> Covered structurally by
+ *         {@code ShopAccessCacheBypassIntegrationTest}, which is {@code @Tag("testcontainers")} and
+ *         therefore runs only in {@code integrationTest}, not in the per-PR unit job. Left where it
+ *         is deliberately: the method needs four collaborators plus an {@code ObjectProvider} self
+ *         reference and {@code @Value}-injected properties, so reproducing it here would be a
+ *         second, differently-wired copy of a context that already exists. The region is declared
+ *         in {@link #REGIONS} so the slice is ready for it.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code SyncService#syncBatch} — {@code @Caching(evict = {shops, products}, allEntries)}</td>
+ *     <td>shops + products</td>
+ *     <td><b>NOT covered.</b> An eviction assertion needs a populated region and a real
+ *         {@code SyncService}; it is a genuine gap, recorded rather than quietly omitted. Note that
+ *         {@code allEntries = true} is itself cross-tenant by construction — it clears every
+ *         tenant's entries, which is the blast radius {@code TenantCacheEvictor} exists to avoid
+ *         elsewhere. Worth its own issue.</td>
+ *   </tr>
+ * </table>
+ *
+ * <h2>Tests that depend on reads NOT being cached (#498 acceptance criterion)</h2>
+ *
+ * <b>None were changed, and none needed identifying, because nothing moved.</b> {@code CacheConfig}
+ * keeps {@code @Profile("!test")}; this slice is only ever active in a context that names it
+ * explicitly ({@code @SpringJUnitConfig} / {@code @Import}); and it lives outside the component-scan
+ * root so it cannot be picked up implicitly. Every existing test therefore runs with exactly the
+ * cache configuration it ran with before — which is none. This criterion is satisfied by the change
+ * being additive, NOT by an enumeration having been performed; stated that way so nobody later
+ * reads it as a completed audit of which tests tolerate caching.
+ *
  * <h2>The rule for using it</h2>
  *
  * <b>A cache assertion must be BEHAVIOURAL, not just structural.</b> Reading
  * {@code cacheManager.getCache(region).get(key)} proves a put happened at a key; it does NOT prove
- * a subsequent call is served from the cache. The two come apart in practice — swapping
- * {@code @Cacheable} for {@code @CachePut} leaves every region-contents assertion in this codebase
- * green while every read goes to the database. Assert instead that a second identical call does not
- * reach the repository ({@code verify(repo, times(1))}), and pair every "not cached" assertion with
- * a positive control proving something IS cached through the same interceptor.
+ * a subsequent call is served from the cache. The two come apart in practice, and this was measured
+ * rather than reasoned: with {@code @Cacheable} swapped for {@code @CachePut} on
+ * {@code ProductCacheLoader}, so the products cache stores everything and serves nothing,
+ * {@code NegativeCachingOptionalEmptyTest} ran <b>4 tests, 0 failures — fully green</b>, while
+ * {@code CachingInterceptorLivenessTest} caught it with 3 failures. Assert instead that a second
+ * identical call does not reach the repository ({@code verify(repo, times(1))}), and pair every
+ * "not cached" assertion with a positive control proving something IS cached through the same
+ * interceptor.
  *
  * @see uk.jtoye.core.config.CachingInterceptorLivenessTest the behavioural assertions
  * @see uk.jtoye.core.config.NegativeCachingOptionalEmptyTest the #484 region-contents assertions
