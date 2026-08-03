@@ -1,6 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import {
+  canAdoptCart,
+  cartStorageKey,
+  getCurrentCustomerId,
+} from "@/lib/cart-identity"
 
 interface CartUpdatedDetail {
   slug: string
@@ -11,13 +16,19 @@ interface CartUpdatedDetail {
 function readCount(slug: string): number {
   if (typeof window === "undefined") return 0
   try {
-    const raw = localStorage.getItem(`jtoye-cart-${slug}`)
+    const raw = localStorage.getItem(cartStorageKey(slug))
     if (!raw) return 0
     const parsed = JSON.parse(raw) as {
       shopSlug?: string
+      owner?: string | null
       items?: { quantity?: number }[]
     }
     if (parsed.shopSlug !== slug) return 0
+    // Same ownership rule the provider applies (#459). The provider rewrites a
+    // rejected basket and broadcasts, so this only governs the first paint —
+    // but the first paint is where a badge reading "3" over somebody else's
+    // basket would be seen.
+    if (!canAdoptCart(parsed.owner, getCurrentCustomerId())) return 0
     return (parsed.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0)
   } catch {
     return 0
@@ -48,7 +59,7 @@ export function useCartCount(slug: string | undefined): number {
       if (detail?.slug === slug) setCount(detail.itemCount)
     }
     const onStorage = (e: StorageEvent) => {
-      if (e.key === `jtoye-cart-${slug}`) setCount(readCount(slug))
+      if (e.key === cartStorageKey(slug)) setCount(readCount(slug))
     }
 
     window.addEventListener("jtoye:cart-updated", onCartUpdated)
