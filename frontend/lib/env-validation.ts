@@ -25,6 +25,15 @@ interface EnvVars {
   NEXT_PUBLIC_SUPPORT_EMAIL: string;
   NEXT_PUBLIC_SUPPORT_URL: string;
   NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS: string;
+
+  // Shop-list paging (#282). How many shops `fetchMyShops()` asks for per request
+  // while it pages the caller's full list. A tuning knob that varies with the
+  // deployment's shop-per-tenant profile, so it is config, not a literal
+  // (GLOBAL_RULE_6) — but it is BROWSER-side and safely defaulted, so it is
+  // deliberately in neither `requiredEnvVars` nor `optionalEnvVars`: the
+  // server-startup validator never reads it, and its absence is not a
+  // misconfiguration worth an operator signal. See `resolveShopsPageSize`.
+  NEXT_PUBLIC_SHOPS_PAGE_SIZE: string;
 }
 
 const requiredEnvVars: (keyof EnvVars)[] = [
@@ -72,6 +81,29 @@ export function resolveSupportChannel(email?: string, url?: string): SupportChan
   if (trimmedUrl) return { href: trimmedUrl, label: trimmedUrl };
   if (trimmedEmail) return { href: `mailto:${trimmedEmail}`, label: trimmedEmail };
   return { href: null, label: null };
+}
+
+/**
+ * Shops-per-request default when `NEXT_PUBLIC_SHOPS_PAGE_SIZE` is unset (#282).
+ * Matches the page size the pre-pagination `fetchMyShops` used, so a deployment
+ * that sets nothing issues exactly the same first request it always did — the
+ * change is that it now follows the list past that page instead of truncating.
+ */
+export const DEFAULT_SHOPS_PAGE_SIZE = 200;
+
+/**
+ * Resolve the shop-list page size from config (#282, GLOBAL_RULE_6 — no page-size
+ * literal in the fetch). Anything that is not a positive integer (unset, blank,
+ * `not-a-number`, `0`, `-5`, `50.5`) falls back to {@link DEFAULT_SHOPS_PAGE_SIZE}
+ * rather than producing a request the API would reject, because a misconfigured
+ * knob must not be able to break the shop switcher.
+ *
+ * The server may still clamp an over-large page size; the caller pages until the
+ * API says there is no more, so a clamp costs extra requests, never lost shops.
+ */
+export function resolveShopsPageSize(raw?: string): number {
+  const parsed = Number(raw?.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SHOPS_PAGE_SIZE;
 }
 
 export function validateEnvironment(): void {

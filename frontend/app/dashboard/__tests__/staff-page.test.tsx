@@ -331,6 +331,63 @@ describe("Staff management screen (VSA-04)", () => {
     expect(screen.getAllByText(/auto-granted on first sign-in/i)).toHaveLength(1)
   })
 
+  // #290: the grant picker built its option label as
+  // `(displayName || email) + " (" + email + ")"`, so a directory entry with NO
+  // display name rendered its masked email TWICE — "j***@vendor.co.uk
+  // (j***@vendor.co.uk)". Directory emails are masked at the DTO boundary (WR-10:
+  // first local-part character + full domain), which is exactly the form a group
+  // admin has to read to recognise a colleague — so printing it twice is noise on
+  // the one string that carries the meaning.
+  it("renders a display-name-less member's masked email exactly once in the grant picker (#290)", async () => {
+    const MASKED = "j***@vendor.co.uk"
+    const USER_JIT = "33333333-3333-3333-3333-333333333333"
+    mockedApiClient.get.mockResolvedValue({
+      data: {
+        directory: [
+          ...directory,
+          { userId: USER_JIT, email: MASKED, displayName: null, lastSeen: null },
+        ],
+        grants,
+      },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    const picker = screen.getByLabelText(/team member/i) as HTMLSelectElement
+    const option = Array.from(picker.options).find((o) => o.value === USER_JIT)
+    expect(option).toBeDefined()
+    expect(option!.textContent!.split(MASKED).length - 1).toBe(1)
+  })
+
+  // The companion half of #290: a member WITH a display name is labelled
+  // "Name (masked-email)" — one name, one address. Constrains the de-dupe so it
+  // cannot be "fixed" by dropping the email from the label entirely.
+  it("labels a named member as 'name (masked email)' — email still present, still once", async () => {
+    const MASKED = "s***@vendor.co.uk"
+    mockedApiClient.get.mockResolvedValue({
+      data: {
+        directory: [
+          {
+            userId: USER_SAM,
+            email: MASKED,
+            displayName: "Sam Cook",
+            lastSeen: "2026-07-18T09:00:00Z",
+          },
+        ],
+        grants,
+      },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    const picker = screen.getByLabelText(/team member/i) as HTMLSelectElement
+    const option = Array.from(picker.options).find((o) => o.value === USER_SAM)
+    expect(option!.textContent).toContain("Sam Cook")
+    expect(option!.textContent!.split(MASKED).length - 1).toBe(1)
+  })
+
   // 23-11: revocation is NOT unconditionally immediate — an already-open live
   // stream persists up to the 5-minute SSE timeout.
   it("states the real revocation-timing bound, not unqualified immediacy (23-11)", async () => {

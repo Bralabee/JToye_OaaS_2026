@@ -22,8 +22,9 @@ import {
   setShopContext,
   subscribeShopContext,
 } from "@/lib/shop-context"
+import { fetchMyShops } from "@/lib/shops-api"
 import apiClient from "@/lib/api-client"
-import type { Shop } from "@/types/api"
+import type { PageResponse, Shop } from "@/types/api"
 
 /** Every switcher must sit under the shared provider (its single data source). */
 function renderSwitcher(ui: ReactElement) {
@@ -93,6 +94,78 @@ function mockAccess(opts: {
     }
     if (url.startsWith("/api/v1/shops")) {
       return Promise.resolve({ data: { content: opts.shops } })
+    }
+    return Promise.reject(new Error(`unexpected GET ${url}`))
+  }) as never)
+}
+
+/** A query-string value from a recorded request URL. */
+function param(url: string, key: string): string | null {
+  return new URLSearchParams(url.split("?")[1] ?? "").get(key)
+}
+
+/** Every `GET /api/v1/shops…` URL the code under test actually requested. */
+function shopCallUrls(): string[] {
+  return mockedApiClient.get.mock.calls
+    .map(([u]) => String(u))
+    .filter((u) => u.startsWith("/api/v1/shops"))
+}
+
+/**
+ * A faithful Spring `PageImpl` page over `all` — the SHAPE the real API returns.
+ *
+ * `new PageImpl<>(content, pageable, total)` RECOMPUTES `total` as
+ * `offset + content.size()` whenever `offset + pageSize > total`, which is why a
+ * hand-written fixture whose total does not genuinely exceed the page size makes
+ * CORRECT pagination look broken. This reproduces that rule instead of inventing
+ * metadata, and the fixture below is 250 shops — more than one page at any page
+ * size the client would sensibly request.
+ */
+function springPage<T>(all: T[], page: number, size: number): PageResponse<T> {
+  const offset = page * size
+  const content = all.slice(offset, offset + size)
+  const total =
+    content.length > 0 && offset + size > all.length
+      ? offset + content.length
+      : all.length
+  const totalPages = size > 0 ? Math.ceil(total / size) : 1
+  return {
+    content,
+    totalElements: total,
+    totalPages,
+    size,
+    number: page,
+    first: page === 0,
+    last: page + 1 >= totalPages,
+  }
+}
+
+/**
+ * Like `mockAccess`, but the fake shops endpoint HONOURS `?page=` and `?size=`.
+ *
+ * That is the whole point of the #282 cases: a mock that ignored the parameters
+ * would hand back every shop on page 0, the pre-fix single-request code would look
+ * complete, and the case would pass against the bug it exists to catch.
+ */
+function mockPagedAccess(opts: {
+  shops: Shop[]
+  groupAdmin: boolean
+  userId?: string
+}) {
+  mockedApiClient.get.mockImplementation(((url: string) => {
+    if (url === "/api/v1/staff/me") {
+      return Promise.resolve({
+        data: {
+          userId: opts.userId ?? USER,
+          groupAdmin: opts.groupAdmin,
+          grantedShopIds: opts.groupAdmin ? null : opts.shops.map((s) => s.id),
+        },
+      })
+    }
+    if (url.startsWith("/api/v1/shops")) {
+      const page = Number(param(url, "page") ?? 0)
+      const size = Number(param(url, "size") ?? 20)
+      return Promise.resolve({ data: springPage(opts.shops, page, size) })
     }
     return Promise.reject(new Error(`unexpected GET ${url}`))
   }) as never)
@@ -273,5 +346,128 @@ describe("ShopSwitcher — two instances are one control (WR-06)", () => {
     )
     expect(shopCalls).toHaveLength(1)
     expect(meCalls).toHaveLength(1)
+  })
+})
+
+/**
+ * Issue #282 — `fetchMyShops` requested ONE page of a hardcoded 200. A tenant with
+ * more shops than fit in that page silently lost the tail: those shops could not be
+ * selected in the switcher and did not appear in the staff screen's shop picker.
+ */
+describe("fetchMyShops — pages the whole shop list (#282)", () => {
+  // 250 > any single page the client requests, so a correct implementation MUST
+  // make more than one request to see the last shop.
+  const MANY = Array.from({ length: 250 }, (_, i) =>
+    makeShop(`shop-${String(i).padStart(3, "0")}`, `Shop ${i}`)
+  )
+  const TAIL = MANY[MANY.length - 1]
+
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_SHOPS_PAGE_SIZE
+  })
+
+  it("returns every shop, including the tail past the first page", async () => {
+    mockPagedAccess({ shops: MANY, groupAdmin: true })
+
+    const { shops } = await fetchMyShops()
+
+    expect(shops).toHaveLength(MANY.length)
+    expect(shops.map((s) => s.id)).toContain(TAIL.id)
+  })
+
+  it("requests exactly the pages it needs — consecutive, one page size, none wasted", async () => {
+    mockPagedAccess({ shops: MANY, groupAdmin: true })
+
+    await fetchMyShops()
+
+    const calls = shopCallUrls()
+    const sizes = new Set(calls.map((u) => Number(param(u, "size"))))
+    expect(sizes.size).toBe(1)
+    const [size] = [...sizes]
+    // Derived from the size the client actually asked for, so this stays true if
+    // the configured page size changes — but still fails on a truncating fetch
+    // (1 request) or a runaway loop (more requests than pages).
+    expect(calls.map((u) => Number(param(u, "page")))).toEqual(
+      Array.from({ length: Math.ceil(MANY.length / size) }, (_, i) => i)
+    )
+  })
+
+  it("takes its page size from config (NEXT_PUBLIC_SHOPS_PAGE_SIZE), not a literal", async () => {
+    process.env.NEXT_PUBLIC_SHOPS_PAGE_SIZE = "100"
+    mockPagedAccess({ shops: MANY, groupAdmin: true })
+
+    const { shops } = await fetchMyShops()
+
+    expect(shopCallUrls().every((u) => param(u, "size") === "100")).toBe(true)
+    expect(shopCallUrls()).toHaveLength(3)
+    expect(shops).toHaveLength(MANY.length)
+  })
+
+  it("falls back to the default page size when the configured value is not a positive integer", async () => {
+    process.env.NEXT_PUBLIC_SHOPS_PAGE_SIZE = "not-a-number"
+    mockPagedAccess({ shops: MANY, groupAdmin: true })
+
+    const { shops } = await fetchMyShops()
+
+    const sizes = shopCallUrls().map((u) => Number(param(u, "size")))
+    expect(sizes.every((s) => Number.isInteger(s) && s > 0)).toBe(true)
+    expect(shops).toHaveLength(MANY.length)
+  })
+
+  it("offers the tail shops in the switcher itself, not just in the fetch result", async () => {
+    mockPagedAccess({ shops: MANY, groupAdmin: false })
+    renderSwitcher(<ShopSwitcher />)
+
+    expect(
+      await screen.findByRole("option", { name: TAIL.name })
+    ).toBeInTheDocument()
+  })
+})
+
+/**
+ * Issue #288 — a non-GROUP_ADMIN whose grants were all revoked fell through to a
+ * controlled `<select value="all">` with NO matching option: a blank, broken-looking
+ * control that never explained why. The backend already denies every scoped request;
+ * the screen just could not say so.
+ */
+describe("ShopSwitcher — zero-access non-GROUP_ADMIN (#288)", () => {
+  it("renders an explanatory no-access notice instead of a blank select", async () => {
+    mockAccess({ shops: [], groupAdmin: false, grantedShopIds: [] })
+    renderSwitcher(<ShopSwitcher />)
+
+    const notice = await screen.findByTestId("shop-switcher-no-access")
+    expect(notice).toHaveTextContent(/no shop access/i)
+    // …and says what to do about it.
+    expect(notice).toHaveTextContent(/group admin/i)
+    // The dead control is gone — an empty <select> IS the defect.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  })
+
+  // The mobile top bar is a FIXED h-14 (56px) row and the switcher sits in a
+  // max-w-[55%] (~206px) column, so at 375px this sentence wraps to ~4 lines and
+  // would spill out of a bar that cannot grow — permanently, for this user. The chip
+  // carries it visually there; the sentence stays in the accessibility tree.
+  it("keeps the explanation laid out in the sidebar and visually-hidden in the mobile top bar", async () => {
+    mockAccess({ shops: [], groupAdmin: false, grantedShopIds: [] })
+    const { unmount } = renderSwitcher(<ShopSwitcher variant="topbar" />)
+
+    expect(await screen.findByText(/ask a group admin/i)).toHaveClass("sr-only")
+    unmount()
+
+    renderSwitcher(<ShopSwitcher variant="sidebar" />)
+    expect(await screen.findByText(/ask a group admin/i)).not.toHaveClass("sr-only")
+  })
+
+  // Over-reach guard: a GROUP_ADMIN with no shops yet is NOT locked out — they hold
+  // tenant-wide access and need the "All shops" context to create the first shop.
+  // (This case also passes against the pre-fix code; it constrains the fix, it does
+  // not demonstrate it.)
+  it("leaves a GROUP_ADMIN who has no shops yet on the 'All shops' control", async () => {
+    mockAccess({ shops: [], groupAdmin: true, grantedShopIds: null })
+    renderSwitcher(<ShopSwitcher />)
+
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement
+    expect(select.value).toBe("all")
+    expect(screen.queryByTestId("shop-switcher-no-access")).not.toBeInTheDocument()
   })
 })

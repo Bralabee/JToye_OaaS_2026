@@ -1,6 +1,6 @@
 "use client"
 
-import { Store, ChevronsUpDown } from "lucide-react"
+import { Store, ChevronsUpDown, ShieldAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { setShopContext, ALL_SHOPS_CONTEXT } from "@/lib/shop-context"
 import { useShopContext } from "@/hooks/use-shop-context"
@@ -16,8 +16,9 @@ import { useShopSwitcherData } from "@/components/dashboard/shop-switcher-provid
  *
  * A GROUP_ADMIN lands on "All shops" (D-06) and gets the group-wide "apply to all
  * shops" affordance in that context (D-08). A non-GROUP_ADMIN sees only their
- * granted shops; a single grant is pinned. A stale/revoked saved selection
- * degrades to an access-required notice rather than crashing (D-13).
+ * granted shops; a single grant is pinned, and NO grants render an explanatory
+ * no-access state rather than an empty dropdown (#288). A stale/revoked saved
+ * selection degrades to an access-required notice rather than crashing (D-13).
  *
  * `variant="sidebar"` styles it for the always-dark desktop sidebar chrome;
  * `variant="topbar"` (default) is theme-adaptive for the mobile top bar.
@@ -60,6 +61,64 @@ export function ShopSwitcher({
             dark ? "bg-slate-800" : "bg-slate-200/70 dark:bg-slate-700/60"
           )}
         />
+      </div>
+    )
+  }
+
+  // #288: a non-GROUP_ADMIN holding NO grants (revoked, or never granted) used to
+  // fall through to the <select> below with value="all" and no matching option — a
+  // blank control that looked broken and explained nothing. The backend already
+  // denies every scoped request, so this is honesty about a state the user is
+  // genuinely in, not a new restriction. A GROUP_ADMIN with no shops is NOT this
+  // case: they hold tenant-wide access and need "All shops" to create the first shop.
+  if (!isGroupAdmin && shops.length === 0) {
+    return (
+      <div className={cn("min-w-0", className)} data-testid="shop-switcher">
+        <div role="status" data-testid="shop-switcher-no-access">
+          {/* Same bordered-row shape as the single-grant pinned label below, so this
+              reads as the switcher in another state rather than a new component. */}
+          <div
+            className={cn(
+              "flex min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium",
+              dark
+                ? "border-slate-700 bg-slate-800 text-slate-300"
+                : "border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            )}
+          >
+            <ShieldAlert
+              className={cn(
+                "h-4 w-4 shrink-0",
+                dark ? "text-amber-300" : "text-amber-600 dark:text-amber-300"
+              )}
+              aria-hidden="true"
+            />
+            <span className="truncate">No shop access</span>
+          </div>
+          {/* Same placement + type scale as the D-13 stale notice below — but shown
+              only where there is vertical room for it, which is a property of the
+              VARIANT, not the viewport.
+
+              `topbar` is the mobile bar: a fixed `h-14` (56px) flex row, with the
+              switcher in a `max-w-[55%]` (~206px) column. At 375px this sentence
+              wraps to ~4 lines (~64px) on top of the ~38px chip and spills out of a
+              bar that has no room to grow, over the page content beneath it. Unlike
+              the D-13 stale notice — transient, and dismissed on the next selection —
+              this state is PERMANENT for a zero-access user, so it would be
+              permanently broken. So the chip carries it visually there (it fits), and
+              the sentence stays in the accessibility tree via `sr-only`; a mobile user
+              also meets the full explanation on any screen that renders its own
+              access-required card. */}
+          <p
+            className={cn(
+              variant === "topbar"
+                ? "sr-only"
+                : "mt-1.5 text-xs text-slate-400"
+            )}
+          >
+            You have not been granted access to any shop. Ask a group admin in your
+            business to grant you a shop.
+          </p>
+        </div>
       </div>
     )
   }
