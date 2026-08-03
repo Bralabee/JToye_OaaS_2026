@@ -2,7 +2,6 @@ package uk.jtoye.core.product;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -66,8 +65,24 @@ public class BulkImportService {
     /**
      * Parse and import products from a CSV file.
      * Validates each row — creates valid products, collects errors for invalid rows.
+     *
+     * <p><strong>No cache eviction (issue #287).</strong> This path is create-only: every
+     * row becomes a {@code new Product()} saved under a freshly generated id, and the
+     * {@code products} cache region holds exactly one thing —
+     * {@link ProductService.ProductCacheLoader#getProductById} keyed
+     * {@code tenant:{tenantId}:getProductById:{productId}}. A row that did not previously
+     * exist has no key in that region, so there is nothing an import can make stale.
+     * (Previously {@code @CacheEvict(value = "products", allEntries = true)}, which clears
+     * the WHOLE shared region — tenant isolation lives in the KEY, not the region — so one
+     * vendor's import cold-started every other vendor's catalogue reads. Removed for the
+     * same reason Phase 23 removed it from {@link ProductService#createProduct} and
+     * {@code ShopService.createShop}.)
+     *
+     * <p>If this path ever gains an UPDATE (e.g. upsert-by-SKU) or a delete, it MUST evict
+     * the affected ids through {@code TenantCacheEvictor.evictEntity("products",
+     * "getProductById", id)} — the tenant-scoped, exact-key mechanism the update/delete
+     * paths already use. Do NOT reach back for {@code allEntries = true}.
      */
-    @CacheEvict(value = "products", allEntries = true)
     public BulkImportResult importFromCsv(MultipartFile file) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -154,8 +169,15 @@ public class BulkImportService {
     /**
      * Import products from multiple images using AI analysis.
      * Each image is analyzed, then a product is created from the AI suggestions.
+     *
+     * <p><strong>No cache eviction (issue #287)</strong> — same reasoning as
+     * {@link #importFromCsv}: create-only, so no pre-existing cache key can be staled.
+     * The blast was worse here, because the old {@code @CacheEvict(allEntries = true)}
+     * fired on the normal return even when AI is disabled and the method creates nothing
+     * at all. The media the worker attaches asynchronously is resolved OUTSIDE the
+     * {@code @Cacheable} loader (see {@code ProductService.resolveDetail}), so a
+     * {@code PENDING -> ACTIVE} flip needs no eviction either.
      */
-    @CacheEvict(value = "products", allEntries = true)
     public BulkImportResult importFromImages(MultipartFile[] files) {
         // §3-FLAG #1 (VSA-02): the AI image-import path assigns NO shop_id (products are
         // created as unassigned drafts), so there is no per-row shop to scope against.
