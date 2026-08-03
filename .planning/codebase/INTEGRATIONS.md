@@ -19,7 +19,7 @@
   - Endpoint: `OLLAMA_URL` (default `http://ollama:11434`)
   - Model: `OLLAMA_MODEL` (default `gemma3:12b`, pulled by `ollama-init` sidecar)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/ai/` via Spring `WebClient` (WebFlux)
-  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:578-580`
+  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:586-588`
   - Failure mode: Resilience4j circuit breaker (50% threshold, 60s wait, max 2 retries)
   - Fallback: Switch to Anthropic Claude via `AI_PROVIDER=anthropic`
 - Anthropic Claude — Cloud vision alternative
@@ -50,7 +50,7 @@
   - Constraints: max 5MB, allowed types `image/jpeg|png|webp|gif`
 
 **Caching:**
-- Redis 7-alpine (`docker-compose.full-stack.yml:163`)
+- Redis 7-alpine (`docker-compose.full-stack.yml:171`)
   - Connection: `REDIS_HOST:REDIS_PORT` (dev `redis:6379`)
   - Auth: `REDIS_PASSWORD` (required — compose passes `--requirepass`)
   - Client: Spring Data Redis (Lettuce) + Spring Cache
@@ -61,7 +61,7 @@
 ## Message Queue
 
 **RabbitMQ 4.3.4 (AMQP + STOMP):**
-- Image: `rabbitmq:4.3.4-management-alpine` (`docker-compose.full-stack.yml:187`)
+- Image: `rabbitmq:4.3.4-management-alpine` (`docker-compose.full-stack.yml:195`)
 - Plugins enabled (`infra/rabbitmq/enabled_plugins`):
   - `rabbitmq_management` + `rabbitmq_management_agent` — port 15672 UI
   - `rabbitmq_prometheus` — metrics scrape target
@@ -127,7 +127,7 @@
 - Toggles: `NOTIFICATION_EMAIL_ENABLED`, tracking pixel via `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, sender `NOTIFICATION_EMAIL_FROM`
 
 **Mailhog (dev SMTP sink):**
-- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:602`)
+- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:610`)
 - SMTP at 1025, Web UI at 8025, no auth, no TLS — captures all outbound mail
 
 **Alertmanager email routing (new in v2.1 / phase 9):**
