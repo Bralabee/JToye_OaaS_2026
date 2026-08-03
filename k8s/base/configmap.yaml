@@ -19,6 +19,46 @@ data:
   # API URLs
   api.url: "https://api.olajay.co.uk"
   frontend.url: "https://app.olajay.co.uk"
+
+  # --- Issue #506: the SERVER-SIDE core API base for the frontend -------------
+  #
+  # api.url above is the BROWSER's view of core. It is baked into the frontend
+  # image at Docker BUILD time as NEXT_PUBLIC_API_URL and is correct for every
+  # client-side caller. It is NOT usable by Next.js code running INSIDE a
+  # frontend pod, and that is the whole reason this key exists.
+  #
+  # frontend/lib/customer-orders-server.ts resolves the core base as
+  #   CORE_API_INTERNAL_URL || NEXT_PUBLIC_API_URL || "http://localhost:9090"
+  # and the middle term is FROZEN at build time — Next inlines every literal
+  # `process.env.NEXT_PUBLIC_*` reference into the SERVER bundle as well as the
+  # client one. Measured in the built artifact (jtoye-frontend, .next/server):
+  #   process.env.CORE_API_INTERNAL_URL||"http://localhost:9090"
+  # i.e. NEXT_PUBLIC_API_URL had already been substituted by its baked literal,
+  # and only CORE_API_INTERNAL_URL survives as a runtime lookup. That is why
+  # this must be a non-NEXT_PUBLIC_ name: nothing else can be set per
+  # environment after the image is built. Re-adding NEXT_PUBLIC_API_URL as a
+  # runtime env would reach NOTHING (D-18) — do not.
+  #
+  # WHY THE SHORT SERVICE NAME AND NOT AN FQDN
+  # core-java is a ClusterIP Service in the SAME namespace as the frontend in
+  # every overlay, but the namespace itself differs (jtoye-staging /
+  # jtoye-production / jtoye-local). `core-java` resolves through the pod's own
+  # `search <ns>.svc.cluster.local …` list, so ONE base value is correct in all
+  # three — an FQDN would be an environment-varying literal needing three
+  # patches (GLOBAL_RULE_6). Port 9090 is the Service's declared port
+  # (k8s/base/core-java-deployment.yaml).
+  #
+  # ALREADY ALLOWED BY POLICY: k8s/base/networkpolicies/10-frontend.yaml has
+  # always carried an egress rule "core-java on port 9090 (server-side API calls
+  # from Next.js)" selecting `app: core-java` on TCP 9090. Until now nothing
+  # used it — the policy anticipated a call the Deployment could not make.
+  #
+  # PATH-EQUIVALENT to the public route: k8s/base/ingress.yaml routes
+  # host api.url `/` (Prefix) straight to Service core-java:9090 with NO
+  # rewrite, so `<internal>/public/orders/mine` and `<public>/public/orders/mine`
+  # reach the identical upstream path. Going direct also skips the ingress
+  # per-IP rate limit, which server-to-server traffic should never consume.
+  api.internal.url: "http://core-java:9090"
   
   # Redis configuration
   redis.host: "redis-cluster.jtoye-infrastructure.svc.cluster.local"

@@ -93,6 +93,58 @@ spec:
         # NEXTAUTH_URL below is NOT of this class — it is a genuine server-side
         # runtime env, read by Auth.js in the Node process. It stays.
         # ---------------------------------------------------------------------
+        #
+        # ---------------------------------------------------------------------
+        # ISSUE #506 — the SERVER-SIDE half of the same question, answered here.
+        #
+        # D-18 above correctly removed NEXT_PUBLIC_API_URL because it reached
+        # nothing. What it left behind is a server-side path with no supply at
+        # all. frontend/lib/customer-orders-server.ts resolves core as
+        #   CORE_API_INTERNAL_URL || NEXT_PUBLIC_API_URL || "http://localhost:9090"
+        # and is used by BOTH server-side consumers of the core API:
+        #   - app/api/customer-orders/route.ts  (route handler)
+        #   - app/shop/orders/page.tsx          (server component, via
+        #                                        loadCustomerOrders)
+        # With CORE_API_INTERNAL_URL unset, every k8s pod fell through to the
+        # BAKED public origin. Measured, on the tree as it stood:
+        #   local      -> http://api.jtoye.local        resolves ONLY from the
+        #                 developer's workstation /etc/hosts (192.168.49.2);
+        #                 a pod resolves through CoreDNS, which has no such
+        #                 record. `getent hosts api.jtoye.local` succeeds on the
+        #                 host and the name exists nowhere else.
+        #   staging    -> https://api-staging.olajay.co.uk   NXDOMAIN
+        #   production -> https://api.olajay.co.uk           NXDOMAIN
+        #                 (control: `getent hosts github.com` rc=0, so the
+        #                  resolver works and these are genuine NXDOMAINs.)
+        # Even were those names live, the call would hairpin out of the cluster
+        # and back through the ingress. For local it is worse than unreachable:
+        # the baked origin is port 80, and 10-frontend.yaml's public egress rule
+        # allows 443 ONLY and `except`s 192.168.0.0/16 — the minikube node's own
+        # range — so under an enforcing CNI that path is doubly dead.
+        #
+        # It fails the way #467 failed: the API errors and "My Orders" renders
+        # *"No orders found for this email."* — an error shown as an empty
+        # state, invisible to a user, a screenshot, or a test asserting the page
+        # renders.
+        #
+        # This variable is deliberately NOT NEXT_PUBLIC_*. That is the whole
+        # mechanism: Next inlines every literal `process.env.NEXT_PUBLIC_*` into
+        # the SERVER bundle too, so such a name is frozen at build time and no
+        # runtime env can correct it. Verified in the built artifact — the only
+        # surviving runtime lookup in that fallback chain is
+        #   process.env.CORE_API_INTERNAL_URL||"http://localhost:9090"
+        # NEXT_PUBLIC_API_URL must NOT be re-added here (D-18 above).
+        #
+        # This does NOT resolve #292 (one frontend image per commit can bake only
+        # one BROWSER-facing origin). #292 is about the client bundle and stands
+        # unchanged; this closes the server-side half, which is the half a
+        # non-NEXT_PUBLIC_ variable *can* fix.
+        # ---------------------------------------------------------------------
+        - name: CORE_API_INTERNAL_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: api.internal.url
         - name: NEXTAUTH_URL
           valueFrom:
             configMapKeyRef:
@@ -173,6 +225,77 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.issuer.uri
+        # ---------------------------------------------------------------------
+        # ISSUE #293 — the third member of the issuer family, and the only one
+        # k8s never supplied.
+        #
+        # It is NOT of the D-18 class, and that distinction is the whole reason
+        # this can be fixed by a runtime env at all. Next inlines a
+        # `process.env.NEXT_PUBLIC_*` reference ONLY for names PRESENT in the
+        # build environment; frontend/Dockerfile deliberately declares no
+        # ARG/ENV for this one (see its line-85 note, "do not tidy it into the
+        # block above"), and .github/workflows/ci-cd.yaml deliberately omits it
+        # from build-args. So it survives the build as a live lookup. Measured
+        # inside the built image's edge bundle:
+        #   apiOrigin:"http://localhost:9090"                      <- INLINED
+        #   customerKeycloakOrigin:"…/realms/jtoye-customers"       <- INLINED
+        #   keycloakOrigin:process.env.NEXT_PUBLIC_KEYCLOAK_URL||"" <- RUNTIME
+        # and proven end-to-end on the compose runtime, where the value is
+        # supplied ONLY at runtime and still reaches the enforcing CSP.
+        #
+        # WHAT WAS ACTUALLY BROKEN IN k8s (two things, both measured):
+        #
+        #  1. frontend/lib/env-validation.ts lists NEXT_PUBLIC_KEYCLOAK_URL in
+        #     requiredEnvVars, and instrumentation.ts runs validateEnvironment()
+        #     at server start. Every k8s pod therefore logged
+        #       [ERROR] Missing required environment variables in production:
+        #               NEXT_PUBLIC_KEYCLOAK_URL
+        #     on every boot. (Control: the compose container, which DOES set it,
+        #     logs the optional-var WARN and no such ERROR — so the code path is
+        #     live and the message is real, not theoretical.)
+        #
+        #  2. frontend/middleware.ts feeds it to buildCsp() as keycloakOrigin,
+        #     so the ENFORCING CSP omitted the STAFF/vendor realm from BOTH
+        #     form-action and connect-src in every k8s environment. Run against
+        #     the real buildCsp with keycloakOrigin "":
+        #       form-action 'self' <customer-realm> <customer-realm>/
+        #     and with it supplied:
+        #       form-action 'self' <staff-realm> <staff-realm>/
+        #                          <customer-realm> <customer-realm>/
+        #     NOTE the issue's phrasing "form-action 'self' with no IdP origin"
+        #     overstates it: the CUSTOMER realm is baked at build time and was
+        #     always present. Only the staff realm was missing.
+        #
+        # SCOPE OF (2), stated honestly so nobody re-derives it: this app's
+        # vendor sign-in is `signIn("keycloak")` from next-auth/react, which
+        # POSTs same-origin via fetch and then assigns window.location.href.
+        # form-action governs FORM submissions, not location assignments, so the
+        # omission is a LATENT gap on today's code path rather than a live
+        # outage. It becomes live the moment vendor auth moves client-side or a
+        # real <form action> to Keycloak is rendered — which is exactly the trap
+        # frontend/lib/security-headers.ts already warns about.
+        #
+        # THE KEY CHOICE IS LOAD-BEARING. frontend/auth.ts:48 reads
+        #   kcPublicBase = NEXT_PUBLIC_KEYCLOAK_URL || KEYCLOAK_ISSUER
+        # and builds the BROWSER's authorize URL from it. KEYCLOAK_ISSUER above
+        # is already sourced from keycloak.public.issuer.uri, so sourcing this
+        # from the SAME key makes kcPublicBase byte-identical to what it
+        # resolves to today: a pure no-op for the OIDC flow in all three
+        # overlays. Sourcing it from keycloak.issuer.uri instead would silently
+        # repoint the local authorize redirect at host.minikube.internal:8085 —
+        # a host the browser cannot reach — and break the login it is meant to
+        # protect. Use the PUBLIC key.
+        #
+        # The subtree form is handled downstream: these values are realm URLs
+        # WITH A PATH, and buildCsp emits both `<realm>` and `<realm>/` because a
+        # CSP source carrying a path matches that path EXACTLY unless it ends in
+        # "/". Naming the realm is not the same as covering its token endpoint.
+        # ---------------------------------------------------------------------
+        - name: NEXT_PUBLIC_KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.public.issuer.uri
         resources:
           requests:
             memory: "256Mi"
