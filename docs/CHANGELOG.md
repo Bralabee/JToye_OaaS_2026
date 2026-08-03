@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Sign-out that left you signed in, and three other things the UI misreported (#518) — 2026-08-04
+
+Closes #504, #295, #495, #490 and #306. Lane B of a 15-agent Wave-1 run: four agents, four disjoint file sets, zero merge conflicts. Batched into one PR **not** for CI time — this lane is ~3 min either way — but because `docs/CHANGELOG.md` has one insertion point, so four concurrent PRs would mean three rebase conflicts on this file, and taking main's copy on any of them silently deletes an entry.
+
+#### Security
+- **#504 — customer sign-out did not sign you out, and the title understates it.** `post_logout_redirect_uri` was built from the container's **bind address**, producing `http://0.0.0.0:3000/shop`, which Keycloak rejects. The Host header cannot rescue it: only the scheme follows the forwarded header. The consequence is not a broken redirect — all six `KEYCLOAK_*`/`AUTH_SESSION_*` cookies survived, and clicking *Sign in* afterwards returned `credentialPrompt=false`, `authenticated=true`, with the **`sub` identical to the previous customer's**. On a shared device the next person to press Sign in gets the last person's account. Fixed in two halves on purpose — a public-origin resolver **and** a back-channel IdP logout — because the session half would otherwise remain a downstream consequence of the redirect half, and this defect exists precisely because one inferred value silently carried the security half. Proven with the front-channel removed entirely: `POST /api/customer-auth/logout → 200 {"ok":true,"idp":"ok"}`, all six IdP cookies still in the jar, next Sign in challenged.
+
+#### Fixed
+- **#295 — Stripe Connect return/refresh landed on a 404**, and the issue's stated origin was stale (PR #317 moved hostnames to `olajay.co.uk` after it was filed). The path is byte-identical at all five config sites, verified by reading `application.yml` out of the **running fat jar** rather than the source tree. A fact the issue did not carry shaped the fix: `stripeConnectStatus` is exposed on one DTO behind one `hasRole('admin')` endpoint, and the vendor session carries no `tenantId` — so there is nothing honest for the return page to poll and no way for `/refresh` to mint a new link. Both pages say so instead of shipping a button that would 403.
+- **#490 — the D-13 notice does not overflow the mobile bar, it removes the control.** Filed as an overflow; measured, the notice is `h=64` and because the bar is `items-center` that height re-centres the column and lifts the `<select>` to `top=-40 / bottom=-2`. A vendor in that state cannot touch their shop switcher on mobile at all. Forced through the real seam — `localStorage['shopContext']` naming an ungranted shop, which is what a revocation leaves behind — not a mock.
+- **#495 — the "Apply to all shops" badge sat outside the 56px bar** (`bottom=59`, 3px proud). Both now route through one rule so a fourth notice cannot diverge, and both measure identically to #476's no-access block: `h=38`, contained by 9.5px.
+- **#306 — the marketing count described a set the user could not see.** The header rendered the unfiltered `totalElements` regardless of filter: `3 promotions in total` above a 2-row filtered table. Also fixed: "Upcoming" (0 matches) rendered a table header over an empty body with no message at all.
+
+#### Notes
+- **#306's filed defect could not manifest, and its proposed fix was a no-op.** The pagination half needs more than 20 promotions; there are 3. And `?status=nonsense-value-xyz` returns 200 with all rows — `PromotionController.list` declares only `shopId` + `Pageable`, so sending `?status=` would have looked like a fix and changed nothing. The server-side date-window predicate is a backend change and is deliberately not here. Same invisible-at-this-data-scale class as #282.
+- **Metrics regenerated once, at assembly, with `--write`** — jest_blocks 548→593, files 74→79, total 2092→2137, Playwright unchanged at 49. The four agents' independently reported deltas summed to **+44** against a measured **+45**: close enough to look right, wrong enough to matter. `it.each` and table-driven blocks are invisible to the literal-token counter, so arithmetic over agent reports is never the arbiter even when every agent is honest.
+- **The merged tree was verified as a whole**, which no individual agent could do: 79 suites, 630 tests, 0 failures; `npm run build` rc=0.
+- Two local gates are non-zero and neither runs in per-PR CI: `check-e2e-skip-budget` rc=2 (stored report older than `frontend/e2e`, which this touches — nightly-only, and the nightly regenerates it) and `check-runtime-freshness` rc=1 (frontend source changed; remedy `scripts/sync-runtime.sh`). Recorded rather than left to read as green.
+
 ### The E2E instruments were wrong, and three lessons became executable (#513) — 2026-08-03
 
 Closes #505 and #503; closes #305 as already-fixed. All three are defects in the **instrument**, not the product — the class where a green suite certifies surface it cannot observe.
