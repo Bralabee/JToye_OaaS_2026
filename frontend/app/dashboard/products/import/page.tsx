@@ -36,8 +36,15 @@ export default function ImportProductsPage() {
     <div className="space-y-6">
       <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4">
-        <Link href="/dashboard/products" className="text-slate-600 hover:text-slate-800">
-          <ArrowLeft className="h-5 w-5" />
+        {/* Icon-only LINK — same empty-accessible-name defect as the icon
+            buttons, and the one `link-name` violation left in the sweep. */}
+        <Link
+          href="/dashboard/products"
+          aria-label="Back to products"
+          title="Back to products"
+          className="text-slate-600 hover:text-slate-800"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </Link>
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Import Products</h1>
