@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { resolvePublicOrigin } from "@/lib/public-origin"
 
 /**
  * GET /api/customer-auth/logout-url?redirect=/shop
@@ -43,18 +44,32 @@ function sanitizeRedirect(raw: string | null): string {
 export async function GET(req: NextRequest) {
   const id = req.cookies.get(ID_COOKIE)?.value
   const redirect = sanitizeRedirect(req.nextUrl.searchParams.get("redirect"))
-  const origin = req.nextUrl.origin
-  const postLogoutRedirectUri = `${origin}${redirect}`
+
+  // Issue #504: the origin is INJECTED, not read off the request. `nextUrl.origin`
+  // is the server's BIND address inside a container — measured
+  // `http://0.0.0.0:3000`, unmoved by the Host header — and Keycloak refused the
+  // `post_logout_redirect_uri` built from it. `resolvePublicOrigin` returns null
+  // rather than guessing; see the degraded branch below.
+  const origin = resolvePublicOrigin(req)
+  const postLogoutRedirectUri = origin ? `${origin}${redirect}` : null
 
   if (!id) {
-    // No session — just bounce back to the redirect target
-    return NextResponse.json({ url: postLogoutRedirectUri })
+    // No session — just bounce back to the redirect target. With no trustworthy
+    // origin the RELATIVE path is strictly safer and equally correct: the
+    // browser resolves it against the page it is already on, which is this app.
+    return NextResponse.json({ url: postLogoutRedirectUri ?? redirect })
   }
 
-  const params = new URLSearchParams({
-    id_token_hint: id,
-    post_logout_redirect_uri: postLogoutRedirectUri,
-  })
+  const params = new URLSearchParams({ id_token_hint: id })
+  if (postLogoutRedirectUri) {
+    params.set("post_logout_redirect_uri", postLogoutRedirectUri)
+  }
+  // No origin => NO post_logout_redirect_uri, deliberately. Measured against the
+  // live realm: `logout?id_token_hint=…` with no redirect uri TERMINATES the
+  // session and renders Keycloak's own "You are logged out" page, whereas an
+  // unregistered redirect uri errors WITHOUT terminating anything. Losing the
+  // return journey is a cosmetic degradation; losing the sign-out is the
+  // security defect. Never trade the second away to keep the first.
   return NextResponse.json({
     url: `${KC_BASE}/protocol/openid-connect/logout?${params.toString()}`,
   })
