@@ -163,8 +163,53 @@ for var in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
+# ---- (d) cross-variable consistency -----------------------------------------
+# Checks (a)-(c) validate each variable IN ISOLATION. That is not enough, and the
+# gap had a real cost: e2e-nightly.yml generated an independent random value for
+# POSTGRES_PASSWORD and for KC_DB_PASSWORD, both of which name the SAME Postgres
+# role (POSTGRES_USER=jtoye, KC_DB_USERNAME=jtoye). Every variable was set,
+# non-weak and long enough, so this preflight passed — and the stack then died at
+# `FATAL: password authentication failed for user "jtoye"` roughly four minutes
+# later, on every scheduled run the workflow ever had.
+#
+# It is the same lesson as the #438/#439 note above, one level up: the control
+# could not fire on a RELATIONSHIP it was not looking at. A structural check can
+# pass while the thing it exists to protect is broken.
+#
+# Each entry is "userVarA:passVarA|userVarB:passVarB" and means: if the two user
+# variables name the same role, the two password variables must agree.
+echo "Checking credential pairs that name the same role actually agree..."
+CREDENTIAL_PAIRS=(
+  "POSTGRES_USER:POSTGRES_PASSWORD|KC_DB_USERNAME:KC_DB_PASSWORD"
+)
+PAIRS_CHECKED=0
+for pair in "${CREDENTIAL_PAIRS[@]}"; do
+  left="${pair%%|*}"; right="${pair##*|}"
+  u_a="${left%%:*}";  p_a="${left##*:}"
+  u_b="${right%%:*}"; p_b="${right##*:}"
+  val_u_a="${!u_a-}"; val_u_b="${!u_b-}"
+  val_p_a="${!p_a-}"; val_p_b="${!p_b-}"
+
+  # An unset user variable is not "no conflict" — it means this check could not
+  # be evaluated, and a check that cannot be evaluated must say so, never pass
+  # silently. "Found nothing" is never "clean".
+  if [ -z "$val_u_a" ] || [ -z "$val_u_b" ]; then
+    fail "Cannot evaluate the ${p_a}/${p_b} pairing: ${u_a} and/or ${u_b} is unset"
+    ERRORS=$((ERRORS + 1))
+    continue
+  fi
+
+  PAIRS_CHECKED=$((PAIRS_CHECKED + 1))
+  if [ "$val_u_a" = "$val_u_b" ] && [ "$val_p_a" != "$val_p_b" ]; then
+    fail "${u_a} and ${u_b} are both '${val_u_a}' — the same database role — but ${p_a} and ${p_b} differ (values redacted). Postgres creates that role with ${p_a}; anything connecting with ${p_b} will get 'password authentication failed'."
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+[ "$PAIRS_CHECKED" -gt 0 ] || { fail "No credential pairs were evaluated — this check is vacuous"; ERRORS=$((ERRORS + 1)); }
+
 if [ "$ERRORS" -eq 0 ]; then
   pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
+  pass "All ${PAIRS_CHECKED} same-role credential pair(s) agree"
 else
   echo ""
   fail "${ERRORS} environment problem(s) found — fix the named variable(s) in ${ENV_FILE}"
