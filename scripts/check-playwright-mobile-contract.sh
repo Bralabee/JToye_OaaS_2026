@@ -54,17 +54,24 @@ REPORT="$(awk '
         # Leaving the array: a "]" at the same indent level that opened it.
         if ($0 ~ /^[[:space:]]*\][[:space:]]*,?[[:space:]]*$/ && depth <= 0) { inproj = 0; next }
 
-        if ($0 ~ /name:[[:space:]]*"/) {
+        # Strip line comments BEFORE matching. Without this a comment merely
+        # MENTIONING hasTouch satisfies the gate — and this config is heavily
+        # commented, including a comment block explaining why hasTouch matters.
+        # A gate that its own rationale can satisfy is vacuous.
+        code = $0
+        sub(/\/\/.*/, "", code)
+
+        if (code ~ /name:[[:space:]]*"/) {
             if (cur != "") print cur, mob, touch, dev
-            cur = $0
+            cur = code
             sub(/.*name:[[:space:]]*"/, "", cur)
             sub(/".*/, "", cur)
             mob = 0; touch = 0; dev = 0
         }
         if (cur != "") {
-            if ($0 ~ /isMobile[[:space:]]*:/)            mob   = 1
-            if ($0 ~ /hasTouch[[:space:]]*:/)            touch = 1
-            if ($0 ~ /\.\.\.[[:space:]]*devices\[/)      dev   = 1
+            if (code ~ /isMobile[[:space:]]*:/)            mob   = 1
+            if (code ~ /hasTouch[[:space:]]*:/)            touch = 1
+            if (code ~ /\.\.\.[[:space:]]*devices\[/)      dev   = 1
         }
     }
     END { if (cur != "") print cur, mob, touch, dev }
