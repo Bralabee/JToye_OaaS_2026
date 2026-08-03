@@ -263,6 +263,52 @@ downstream of a locality model that does not exist.
 surfaced. The council audits what the code *does*; the owner used what the product *is*. **Keep doing
 this by hand** — no gate in this repo would have caught a single one of the twelve.
 
+### 2.5 The eight-PR train fixed ten issues that are all INVISIBLE at this data scale
+
+**The owner looked at the running app after the train merged and still saw the problems they had asked
+about.** They were right, and the reason is a selection error worth not repeating.
+
+The brief was "issues resolvable without colliding with each other or a concurrent session."
+Non-collision selects for *small and isolated*, which is close to the inverse of *user-visible*. The
+result: ten issues CLOSED, none of which change what anyone sees in normal use.
+
+| Issue | Why it is invisible today |
+|---|---|
+| #302, #274, #418, #287 | CI / infrastructure only |
+| #279 | forward-looking hardening — no field rendered today was ever vulnerable |
+| #390 | only observable in a delete/edit race |
+| #288 | needs a non-GROUP_ADMIN with ZERO shop grants; `shop_staff` has 2 rows, both GROUP_ADMIN/JIT |
+| #290 | needs a `user_directory` row with NULL/empty `display_name`; all 4 rows have one |
+| #282 | the cap was 200 and the tenant has 4 shops |
+| #445 | forward-only; existing objects keep their raw bytes, EXIF and client-declared Content-Type |
+
+Measured against the dev DB on 2026-08-03, not assumed. **This is also why the browser verification of
+#476 had to force all three states** — two by Playwright route interception, one via the PR's own
+`NEXT_PUBLIC_SHOPS_PAGE_SIZE=2` knob against the real backend. Nobody has yet seen any of the three
+arise from real rows; a DB-seeded run is still owed.
+
+**Nine follow-ups were filed** for work the agents found and correctly refused to do: 483, 484, 485,
+486, 487, 488, 489, 490, 495. Two carry warnings that matter more than the fix:
+
+- **483 says do NOT apply #287's fix to `SyncService`.** It carries the identical
+  `@CacheEvict(allEntries = true)`, but that path genuinely upserts (`findByName`/`findBySku` +
+  `orElseGet` at `SyncService.java:90,105`), so removing the eviction there ships stale reads. Only
+  its *radius* is wrong.
+- **487 is UNMEASURED and says so in its title.** Its first step is a read-only query, not a fix.
+
+### 2.6 What the next session should actually pick up
+
+85 issues open (9 P1 / 36 P2 / 32 P3). The seven the owner reported by USING the app — #458, #459,
+#460, #461, #462, #463 and #467 — are all still OPEN and were never in scope. Those are what they see.
+
+**Start with #467**: `/api/customer-orders` 502s on the compose stack and the page renders "No orders
+found", so it lies to a customer about their own orders. It is reproducible on the running stack now.
+
+**Do not parallelise this cluster.** Unlike the train's set, these overlap heavily (customer nav,
+basket, orders and auth all touch the same surfaces). Sequence them, use fewer agents, and verify each
+in a real browser against the live stack rather than trusting jsdom — §2.4's twelve findings exist
+because nothing but hands-on use found them.
+
 ---
 
 ## 3. Carried forward — still true, not re-measured unless noted
