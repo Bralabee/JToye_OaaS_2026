@@ -543,6 +543,11 @@ spec:
           preStop:
             exec:
               command: ["sh", "-c", "sleep 10"]  # Graceful shutdown
+        # Issue #302: writable backing store for the prod/staging log file.
+        # See the `volumes:` block below for the full rationale.
+        volumeMounts:
+        - name: app-logs
+          mountPath: /var/log/jtoye
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
@@ -551,6 +556,75 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: false  # Spring Boot needs write access
+      # =====================================================================
+      # Issue #302 — make the prod/staging log path WRITABLE, without moving it.
+      #
+      # THE DEFECT. Every k8s environment runs the `prod` profile (D-10), and
+      # `application-prod.yml:91` sets
+      #     logging.file.name: ${LOG_PATH:/var/log/jtoye}/application.log
+      # (staging's own profile does the same at application-staging.yml:81 with
+      # `application-staging.log`). LOG_PATH is injected above from app-config
+      # `log.path`, which k8s/base/configmap.yaml:147 sets to `/var/log/jtoye`.
+      #
+      # Nothing created that directory and nothing could write it:
+      #   - core-java/Dockerfile never creates /var/log/jtoye. It creates only a
+      #     `spring` SYSTEM user (`adduser -S`, auto-assigned UID) and chowns
+      #     /app — /var/log stays root-owned 0755 from the Alpine base.
+      #   - `runAsUser: 1000` above OVERRIDES the image's `USER spring:spring`,
+      #     so the process is UID 1000, which owns nothing under /var/log.
+      # So logback's FileAppender failed to start on EVERY boot with a
+      # FileNotFoundException/Permission denied, and file logging was silently
+      # absent in staging and production. Non-fatal — the app continues and the
+      # console JSON appender (the sink log aggregation actually scrapes) is
+      # unaffected — but it is boot noise that reads like a real fault.
+      #
+      # NOTE: `readOnlyRootFilesystem` is already `false`, so a read-only root
+      # filesystem was NEVER the cause. Directory ownership was.
+      #
+      # WHY emptyDir AND NOT a PVC. These are per-pod, per-boot diagnostic logs,
+      # not durable state. The Deployment runs replicas: 3 behind a RollingUpdate
+      # and an HPA to maxReplicas 10; a ReadWriteOnce PVC would serialise
+      # scheduling onto one node and break both. Durable retention is the log
+      # aggregator's job via the console appender, not this file.
+      #
+      # WHY NOT JUST REPOINT log.path AT /tmp. k8s/local/configmap-patch.yaml:169
+      # does exactly that, and it is the right call FOR LOCAL — but changing
+      # where production writes its application log is a production behaviour
+      # change. This keeps the declared prod path intact and makes it writable,
+      # in every environment, with no per-overlay patch. The local overlay's
+      # /tmp value is deliberately left alone (it still works; this mount simply
+      # goes unused there).
+      #
+      # sizeLimit is derived from the committed logback budget, not invented:
+      # application-prod.yml caps the appender at `total-size-cap: 1GB`
+      # (max-size 10MB x max-history 30), staging at 500MB. 2Gi is ~2x the
+      # larger cap, so logback's own rotation is always the binding constraint
+      # and the pod is never evicted for exceeding the volume. Without a
+      # sizeLimit a runaway appender consumes node ephemeral storage and can
+      # trigger node-level disk-pressure eviction of UNRELATED pods.
+      securityContext:
+        # fsGroup is load-bearing, NOT decoration. It is what makes the mount
+        # WRITABLE rather than merely PRESENT — the exact "structural check
+        # passes while the function is still broken" failure this platform has
+        # been bitten by before.
+        #
+        # `runAsGroup` is deliberately NOT set on this container, so the
+        # process's PRIMARY gid when runAsUser overrides the image USER is
+        # runtime-dependent and cannot be relied on. fsGroup removes that
+        # dependency from both directions: the kubelet chowns the volume to
+        # GID 1000 (setgid, group-writable) AND adds 1000 to the process's
+        # supplementary groups, so UID 1000 can write regardless of which
+        # primary GID the runtime picked and regardless of the default mode
+        # the kubelet applies to a fresh emptyDir.
+        #
+        # Safe to add here: this pod has exactly one volume (the emptyDir
+        # below), so fsGroup's recursive ownership pass has nothing else to
+        # touch, and it only ever ADDS a supplementary group.
+        fsGroup: 1000
+      volumes:
+      - name: app-logs
+        emptyDir:
+          sizeLimit: 2Gi
 ---
 apiVersion: v1
 kind: Service

@@ -20,6 +20,20 @@ jobs:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
         env:
+          # REQUIRED, not cosmetic. gitleaks-action@v2 hardcodes a 8.24.3 default
+          # (src/index.js: `process.env.GITLEAKS_VERSION || "8.24.3"`), and 8.24.3
+          # silently ignores the plural `[[allowlists]]` array-of-tables form that
+          # .gitleaks.toml is written in — it parses without error and has no
+          # effect, so every allowlist in that file was dead. Measured on a probe
+          # repo, same config and args, only the binary differing: 8.24.3 reported
+          # 3 findings (identical to a zero-allowlist control), 8.27.2 reported 1.
+          # Plural allowlists need >= 8.25.1. See issue #274.
+          #
+          # Pinned exactly, never `latest`: `latest` lets an unrelated upstream
+          # release flip this gate red with no code change (same time-bomb shape
+          # as the Trivy daily-DB issue). Bumping this is a deliberate act —
+          # re-run the full-history comparison in #274 before changing it.
+          GITLEAKS_VERSION: "8.27.2"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITLEAKS_ENABLE_COMMENTS: true
