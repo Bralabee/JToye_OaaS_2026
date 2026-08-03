@@ -67,13 +67,26 @@ UI accessible at: http://localhost:9090/swagger-ui.html
 ```
 
 ### Test 5: JWT Authentication ✅
-**Endpoint**: `GET http://localhost:9090/shops` (without JWT token)
-**Expected**: HTTP 401 Unauthorized
-**Result**: PASSED
+**Endpoint**: `GET http://localhost:9090/api/v1/shops`
+**Expected**: `401` without a token, **and `200` with a valid one**.
+
+```bash
+set -a; . ./.env; set +a
+TOKEN=$(curl -s -d grant_type=password \
+  -d "client_id=$KEYCLOAK_CLIENT_ID" -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+  -d username=tenant-a-user -d "password=$KC_SEED_USER_PASSWORD" \
+  http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token | jq -r .access_token)
+
+curl -s -o /dev/null -w 'no token : %{http_code}\n' http://localhost:9090/api/v1/shops
+curl -s -o /dev/null -w 'token    : %{http_code}\n' http://localhost:9090/api/v1/shops \
+  -H "Authorization: Bearer $TOKEN"
 ```
-Status: 401
-Authentication required for protected endpoints
-```
+
+⚠️ **The 401 arm alone proves nothing.** The auth filter runs before routing, so *every* path
+returns `401` unauthenticated — including paths that do not exist. This check previously named
+`/shops` (no prefix), a route that has not existed since the `/api/v1` prefix was introduced, and
+it passed on every run regardless. The authenticated arm is what distinguishes "protected" from
+"absent": run both, or the test cannot fail.
 
 ### Test 6: Database Connectivity ✅
 **Test**: PostgreSQL connection and tenant table access

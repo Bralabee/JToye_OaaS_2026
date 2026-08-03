@@ -1,8 +1,14 @@
 # API Reference - J'Toye OaaS
 
-**Version:** 0.7.1
-**Base URL:** `http://localhost:9090`
+**Base URL:** `http://localhost:9090/api/v1`
 **Authentication:** Bearer JWT Token
+
+> The `/api/v1` prefix is applied by `WebConfig.configurePathMatch`, not by the controllers, so it
+> appears in no `@RequestMapping` and is easy to miss when reading the source. Requesting the bare
+> path (`/shops`) returns `404`.
+>
+> `/health`, `/actuator/**`, `/v3/api-docs` and `/swagger-ui.html` are **not** under the prefix and
+> 404 if you add it. The public storefront answers on both `/public/**` and `/api/v1/public/**`.
 
 ---
 
@@ -43,7 +49,7 @@ curl -X POST http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/toke
 ### Use Token
 
 ```bash
-curl http://localhost:9090/shops \
+curl http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer eyJhbGci..."
 ```
 
@@ -448,48 +454,48 @@ Edge Go API Gateway implements rate limiting:
 TOKEN=$(curl -s -d 'grant_type=password' -d 'client_id=test-client' -d 'username=tenant-a-user' -d 'password=password123' "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 # 2. Create shop
-SHOP=$(curl -s -X POST http://localhost:9090/shops \
+SHOP=$(curl -s -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"My Shop","address":"123 Street"}')
 SHOP_ID=$(echo "$SHOP" | jq -r .id)
 
 # 3. Create product
-PROD=$(curl -s -X POST http://localhost:9090/products \
+PROD=$(curl -s -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"sku":"PROD-001","title":"Product","ingredientsText":"Test","allergenMask":0,"priceGbp":10}')
 PROD_ID=$(echo "$PROD" | jq -r .id)
 
 # 4. Create order
-ORDER=$(curl -s -X POST http://localhost:9090/orders \
+ORDER=$(curl -s -X POST http://localhost:9090/api/v1/orders \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"shopId\":\"$SHOP_ID\",\"customerName\":\"John Doe\",\"items\":[{\"productId\":\"$PROD_ID\",\"quantity\":2}]}")
 ORDER_ID=$(echo "$ORDER" | jq -r .id)
 
 # 5. Submit order
-curl -s -X POST http://localhost:9090/orders/$ORDER_ID/submit \
+curl -s -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/submit \
   -H "Authorization: Bearer $TOKEN"
 
 # 6. Confirm order
-curl -s -X POST http://localhost:9090/orders/$ORDER_ID/confirm \
+curl -s -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/confirm \
   -H "Authorization: Bearer $TOKEN"
 
 # 7. Start preparation
-curl -s -X POST http://localhost:9090/orders/$ORDER_ID/start-preparation \
+curl -s -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/start-preparation \
   -H "Authorization: Bearer $TOKEN"
 
 # 8. Mark ready
-curl -s -X POST http://localhost:9090/orders/$ORDER_ID/mark-ready \
+curl -s -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/mark-ready \
   -H "Authorization: Bearer $TOKEN"
 
 # 9. Complete order
-curl -s -X POST http://localhost:9090/orders/$ORDER_ID/complete \
+curl -s -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/complete \
   -H "Authorization: Bearer $TOKEN"
 
 # 10. Verify final status
-curl -s http://localhost:9090/orders/$ORDER_ID \
+curl -s http://localhost:9090/api/v1/orders/$ORDER_ID \
   -H "Authorization: Bearer $TOKEN" | jq .status
 # Should return: "COMPLETED"
 ```
@@ -509,12 +515,12 @@ All API endpoints are **automatically tenant-scoped** via Row-Level Security (RL
 **Example:**
 ```bash
 # Tenant A creates shop
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -d '{"name":"Tenant A Shop"}'
 
 # Tenant B tries to list shops
-curl http://localhost:9090/shops \
+curl http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_B"
 
 # Result: Does NOT see Tenant A's shop (RLS filters it out)

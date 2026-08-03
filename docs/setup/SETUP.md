@@ -7,7 +7,7 @@
 
 ```bash
 # Start all services (PostgreSQL, Keycloak, Redis, RabbitMQ, Backend, Edge, Frontend)
-docker-compose -f docker-compose.full-stack.yml up
+docker compose -f docker-compose.full-stack.yml up
 ```
 
 Access the application:
@@ -19,7 +19,7 @@ Login with: `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD` (from your `.
 
 Stop the stack:
 ```bash
-docker-compose -f docker-compose.full-stack.yml down
+docker compose -f docker-compose.full-stack.yml down
 ```
 
 ---
@@ -28,20 +28,20 @@ docker-compose -f docker-compose.full-stack.yml down
 
 ### Prerequisites
 - **Java 21** (for core-java)
-- **Node.js 20+** (for frontend)
-- **Go 1.22+** (for edge-go)
+- **Node.js 24+** (for frontend)
+- **Go 1.26+** (for edge-go)
 - **Docker & Docker Compose** (for infrastructure)
 
 ### 1. Start Infrastructure Services
 
 Start PostgreSQL, Keycloak, Redis, and RabbitMQ:
 ```bash
-docker-compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ```
 
 Verify services are running:
 ```bash
-docker-compose -f docker-compose.full-stack.yml ps
+docker compose -f docker-compose.full-stack.yml ps
 ```
 
 ### 2. Running Services Locally
@@ -89,8 +89,11 @@ The application uses these database settings (from `application.yml`):
 - **Host**: `localhost` (override with `DB_HOST`)
 - **Port**: `5432` (override with `DB_PORT=5433` ⚠️ **REQUIRED**)
 - **Database**: `jtoye` (override with `DB_NAME`)
-- **Username**: `jtoye` (override with `DB_USER`)
-- **Password**: `secret` (override with `DB_PASSWORD`)
+- **Username**: `jtoye_app` (override with `DB_USER`)
+- **Password**: *empty* (you **must** supply `DB_PASSWORD`)
+
+⚠️ Do not set `DB_USER=jtoye`. `jtoye` is a PostgreSQL superuser; superusers bypass row-level
+security, and `DatabaseConfigurationValidator` refuses to start the application if it detects one.
 
 ## Troubleshooting
 

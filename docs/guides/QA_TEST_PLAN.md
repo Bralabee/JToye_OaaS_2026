@@ -87,14 +87,12 @@ docker compose -f docker-compose.full-stack.yml up
 # Check all containers running
 docker compose -f docker-compose.full-stack.yml ps
 
-# Should show 7 services:
-# - jtoye-postgres (healthy)
-# - jtoye-keycloak (healthy)
-# - jtoye-redis (healthy)
-# - jtoye-rabbitmq (healthy)
-# - jtoye-core-java (healthy)
-# - jtoye-edge-go (healthy)
-# - jtoye-frontend (healthy)
+# Should list 14 services, with postgres/keycloak/redis/rabbitmq/core-java/edge-go/frontend/
+# mcp-server/minio/mailhog/ollama healthy, and the three *-init / *-render jobs exited 0.
+#
+# Note the SERVICE name (core-java), not a container name: core-java declares no
+# container_name (removed so `--scale core-java=N` works), so it is named
+# jtoye_oaas_2026-core-java-1 and any check matching a literal `jtoye-core-java` can never fire.
 ```
 
 **Access URLs:**
@@ -362,7 +360,7 @@ echo "Tenant B Token: $TOKEN_B"
 
 **Request:**
 ```bash
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{
@@ -372,7 +370,7 @@ curl -X POST http://localhost:9090/shops \
   }' | jq
 
 # Save the ID
-SHOP_ID=$(curl -s -X POST http://localhost:9090/shops \
+SHOP_ID=$(curl -s -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"QA Shop","address":"Test St"}' | jq -r .id)
@@ -397,7 +395,7 @@ SHOP_ID=$(curl -s -X POST http://localhost:9090/shops \
 **Request:**
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/shops | jq
+  http://localhost:9090/api/v1/shops | jq
 ```
 
 **Expected:**
@@ -420,7 +418,7 @@ curl -s -H "Authorization: Bearer $TOKEN_A" \
 **Request:**
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/shops/$SHOP_ID | jq
+  http://localhost:9090/api/v1/shops/$SHOP_ID | jq
 ```
 
 **Expected:**
@@ -439,7 +437,7 @@ curl -s -H "Authorization: Bearer $TOKEN_A" \
 
 **Request:**
 ```bash
-curl -X PUT http://localhost:9090/shops/$SHOP_ID \
+curl -X PUT http://localhost:9090/api/v1/shops/$SHOP_ID \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{
@@ -466,7 +464,7 @@ curl -X PUT http://localhost:9090/shops/$SHOP_ID \
 
 **Request:**
 ```bash
-curl -X DELETE http://localhost:9090/shops/$SHOP_ID \
+curl -X DELETE http://localhost:9090/api/v1/shops/$SHOP_ID \
   -H "Authorization: Bearer $TOKEN_A"
 ```
 
@@ -489,7 +487,7 @@ curl -X DELETE http://localhost:9090/shops/$SHOP_ID \
 
 **Request:**
 ```bash
-curl -X POST http://localhost:9090/products \
+curl -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{
@@ -500,7 +498,7 @@ curl -X POST http://localhost:9090/products \
     "pricePennies": 999
   }' | jq
 
-PRODUCT_ID=$(curl -s -X POST http://localhost:9090/products \
+PRODUCT_ID=$(curl -s -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"sku":"QA-001","title":"Test","ingredientsText":"Test","allergenMask":0}' | jq -r .id)
@@ -545,7 +543,7 @@ Bit 13 (8192): Sulphites
 ```bash
 # Product with milk (64) and eggs (8)
 allergenMask=$((64 + 8))  # = 72
-curl -X POST http://localhost:9090/products \
+curl -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d "{\"sku\":\"MILK-EGGS\",\"title\":\"Test\",\"ingredientsText\":\"Milk, Eggs\",\"allergenMask\":$allergenMask}"
@@ -569,7 +567,7 @@ DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED
 
 **Create Order (DRAFT):**
 ```bash
-ORDER_ID=$(curl -s -X POST http://localhost:9090/orders \
+ORDER_ID=$(curl -s -X POST http://localhost:9090/api/v1/orders \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"customerName":"QA Test Customer"}' | jq -r .id)
@@ -579,30 +577,30 @@ echo "Order ID: $ORDER_ID"
 
 **Confirm Order (DRAFT → PENDING):**
 ```bash
-curl -X POST http://localhost:9090/orders/$ORDER_ID/confirm \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/confirm \
   -H "Authorization: Bearer $TOKEN_A"
 
 # Verify state
 curl -s -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/orders/$ORDER_ID | jq '.status'
+  http://localhost:9090/api/v1/orders/$ORDER_ID | jq '.status'
 # Expected: "PENDING"
 ```
 
 **Prepare Order (PENDING → CONFIRMED):**
 ```bash
-curl -X POST http://localhost:9090/orders/$ORDER_ID/prepare \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/prepare \
   -H "Authorization: Bearer $TOKEN_A"
 ```
 
 **Ready Order (CONFIRMED → PREPARING → READY):**
 ```bash
-curl -X POST http://localhost:9090/orders/$ORDER_ID/ready \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/ready \
   -H "Authorization: Bearer $TOKEN_A"
 ```
 
 **Complete Order (READY → COMPLETED):**
 ```bash
-curl -X POST http://localhost:9090/orders/$ORDER_ID/complete \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/complete \
   -H "Authorization: Bearer $TOKEN_A"
 ```
 
@@ -619,7 +617,7 @@ curl -X POST http://localhost:9090/orders/$ORDER_ID/complete \
 
 **Create Customer:**
 ```bash
-CUSTOMER_ID=$(curl -s -X POST http://localhost:9090/customers \
+CUSTOMER_ID=$(curl -s -X POST http://localhost:9090/api/v1/customers \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{
@@ -640,7 +638,7 @@ CUSTOMER_ID=$(curl -s -X POST http://localhost:9090/customers \
 
 **Sync Batch (from Edge):**
 ```bash
-curl -X POST http://localhost:9090/sync/batch \
+curl -X POST http://localhost:9090/api/v1/sync/batch \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{
@@ -679,13 +677,13 @@ curl -X POST http://localhost:9090/sync/batch \
 **Setup:**
 ```bash
 # Create shop for Tenant A
-SHOP_A=$(curl -s -X POST http://localhost:9090/shops \
+SHOP_A=$(curl -s -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant A Shop","address":"A Street"}' | jq -r .id)
 
 # Create shop for Tenant B
-SHOP_B=$(curl -s -X POST http://localhost:9090/shops \
+SHOP_B=$(curl -s -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_B" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant B Shop","address":"B Avenue"}' | jq -r .id)
@@ -695,17 +693,17 @@ SHOP_B=$(curl -s -X POST http://localhost:9090/shops \
 ```bash
 # Tenant A lists shops (should only see their own)
 curl -s -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/shops | jq '.content[] | .name'
+  http://localhost:9090/api/v1/shops | jq '.content[] | .name'
 # Expected: ["Tenant A Shop"]
 
 # Tenant B lists shops (should only see their own)
 curl -s -H "Authorization: Bearer $TOKEN_B" \
-  http://localhost:9090/shops | jq '.content[] | .name'
+  http://localhost:9090/api/v1/shops | jq '.content[] | .name'
 # Expected: ["Tenant B Shop"]
 
 # Tenant A tries to access Tenant B's shop
 curl -I -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/shops/$SHOP_B
+  http://localhost:9090/api/v1/shops/$SHOP_B
 # Expected: HTTP/1.1 404 Not Found
 ```
 
@@ -725,14 +723,14 @@ curl -I -H "Authorization: Bearer $TOKEN_A" \
 
 **No Token:**
 ```bash
-curl -I http://localhost:9090/shops
+curl -I http://localhost:9090/api/v1/shops
 # Expected: HTTP/1.1 401 Unauthorized
 ```
 
 **Invalid Token:**
 ```bash
 curl -I -H "Authorization: Bearer invalid-token-here" \
-  http://localhost:9090/shops
+  http://localhost:9090/api/v1/shops
 # Expected: HTTP/1.1 401 Unauthorized
 ```
 
@@ -772,7 +770,7 @@ curl -I -H "Authorization: Bearer invalid-token-here" \
 # Test shops endpoint
 hey -n 1000 -c 10 \
   -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/shops
+  http://localhost:9090/api/v1/shops
 
 # Expected:
 # - 95th percentile < 200ms
@@ -825,47 +823,47 @@ EXPLAIN ANALYZE SELECT * FROM shops WHERE tenant_id = '00000000-0000-0000-0000-0
 
 ```bash
 # 1. Create shop
-SHOP=$(curl -s -X POST http://localhost:9090/shops \
+SHOP=$(curl -s -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"Integration Test Shop","address":"Test St"}' | jq -r .id)
 
 # 2. Create products
-PROD1=$(curl -s -X POST http://localhost:9090/products \
+PROD1=$(curl -s -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"sku":"INT-001","title":"Product 1","ingredientsText":"Test","allergenMask":0,"pricePennies":1000}' | jq -r .id)
 
-PROD2=$(curl -s -X POST http://localhost:9090/products \
+PROD2=$(curl -s -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"sku":"INT-002","title":"Product 2","ingredientsText":"Test","allergenMask":0,"pricePennies":2000}' | jq -r .id)
 
 # 3. Create customer
-CUSTOMER=$(curl -s -X POST http://localhost:9090/customers \
+CUSTOMER=$(curl -s -X POST http://localhost:9090/api/v1/customers \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Customer","email":"test@example.com","allergenMask":0}' | jq -r .id)
 
 # 4. Create order
-ORDER=$(curl -s -X POST http://localhost:9090/orders \
+ORDER=$(curl -s -X POST http://localhost:9090/api/v1/orders \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d "{\"customerName\":\"Test Customer\"}" | jq -r .id)
 
 # 5. Complete order lifecycle
-curl -X POST http://localhost:9090/orders/$ORDER/confirm \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER/confirm \
   -H "Authorization: Bearer $TOKEN_A"
-curl -X POST http://localhost:9090/orders/$ORDER/prepare \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER/prepare \
   -H "Authorization: Bearer $TOKEN_A"
-curl -X POST http://localhost:9090/orders/$ORDER/ready \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER/ready \
   -H "Authorization: Bearer $TOKEN_A"
-curl -X POST http://localhost:9090/orders/$ORDER/complete \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER/complete \
   -H "Authorization: Bearer $TOKEN_A"
 
 # 6. Verify final state
 curl -s -H "Authorization: Bearer $TOKEN_A" \
-  http://localhost:9090/orders/$ORDER | jq '{id, status, customerName}'
+  http://localhost:9090/api/v1/orders/$ORDER | jq '{id, status, customerName}'
 ```
 
 **Expected:**

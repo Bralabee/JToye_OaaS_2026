@@ -10,12 +10,16 @@ Get J'Toye OaaS running in minutes!
 
 **Best for:** First-time users, quick demos, testing
 
-✅ **No environment setup required**
 ✅ **No local installations needed**
 ✅ **Works on all platforms**
+⚠️ **A repo-root `.env` is required** — `docker-compose.full-stack.yml` declares 18 variables in
+`${VAR:?}` form, so without it even `docker compose config` fails.
 
 ```bash
-docker-compose -f docker-compose.full-stack.yml up
+cp .env.example .env          # then fill in every CHANGE_ME value
+bash scripts/verify-env.sh    # fails loudly if anything is missing or weak
+
+docker compose -f docker-compose.full-stack.yml up
 ```
 
 **Access the application:**
@@ -30,7 +34,7 @@ docker-compose -f docker-compose.full-stack.yml up
 
 **Stop the stack:**
 ```bash
-docker-compose -f docker-compose.full-stack.yml down
+docker compose -f docker-compose.full-stack.yml down
 ```
 
 ---
@@ -40,18 +44,21 @@ docker-compose -f docker-compose.full-stack.yml down
 **Best for:** Active development, debugging, IDE integration
 
 **Prerequisites:**
-- Java 21, Node.js 20+, Go 1.22+
-- Docker & Docker Compose (for infrastructure only)
+- Java 21 (JDK 25 is incompatible with Gradle 8.10), Node.js 24+, Go 1.26+
+- Docker with **Compose v2** (`docker compose`) — for the backing services only
 
 #### Step 1: Environment Setup
 
 **Linux/Mac:**
 ```bash
+cp .env.example .env                                  # repo root — the compose stack reads this
 cp frontend/.env.local.example frontend/.env.local
 cp core-java/.env.example core-java/.env
 cp edge-go/.env.example edge-go/.env
-cp infra/.env.example infra/.env
 ```
+
+Fill in every `CHANGE_ME`. `scripts/run-app.sh` sources the repo-root `.env` first and then
+`core-java/.env`, so a value set in the latter wins for the backend.
 
 **Windows (Command Prompt):**
 ```cmd
@@ -73,7 +80,7 @@ Copy-Item infra\.env.example infra\.env
 
 ```bash
 cd infra
-docker-compose up -d
+docker compose up -d
 cd ..
 ```
 
@@ -143,7 +150,7 @@ Once services are running, verify everything works:
 docker ps | grep postgres
 
 # If not running, start infrastructure
-cd infra && docker-compose up -d
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ```
 
 ### "Authentication failed" or "Configuration error"
@@ -250,10 +257,10 @@ cd frontend && npm test
 
 **Docker (full stack):**
 ```bash
-docker-compose -f docker-compose.full-stack.yml down
+docker compose -f docker-compose.full-stack.yml down
 
 # To also remove data:
-docker-compose -f docker-compose.full-stack.yml down -v
+docker compose -f docker-compose.full-stack.yml down -v
 ```
 
 **Local development:**
@@ -261,7 +268,7 @@ docker-compose -f docker-compose.full-stack.yml down -v
 2. Stop backend: `Ctrl+C` in terminal
 3. Stop infrastructure:
    ```bash
-   cd infra && docker-compose down
+   docker compose -f docker-compose.full-stack.yml down
    ```
 
 ---

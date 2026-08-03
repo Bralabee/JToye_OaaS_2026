@@ -5,7 +5,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 
 ### Core Components
 *   **core-java**: Spring Boot 3 service (System of Record). Handles business logic, data persistence, and RLS enforcement.
-*   **edge-go**: Go 1.22 Gin service (System of Engagement). Provides rate limiting, circuit breaking, and batch synchronization.
+*   **edge-go**: Go 1.26 Gin service (System of Engagement). Provides rate limiting, circuit breaking, and batch synchronization.
 *   **frontend**: Next.js 14 application with NextAuth.js and Keycloak integration.
 *   **Keycloak**: OIDC provider for identity and access management.
 *   **PostgreSQL**: Relational database with RLS policies for tenant isolation.
@@ -15,14 +15,14 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ## 2. Quick Start
 
 ### Prerequisites
-*   Java 21, Go 1.22+, Node.js 20+
+*   Java 21, Go 1.26+, Node.js 24+
 *   Docker & Docker Compose
 
 ### Option A: Full-Stack Docker (Recommended)
 **✅ No environment setup required!**
 
 ```bash
-docker-compose -f docker-compose.full-stack.yml up
+docker compose -f docker-compose.full-stack.yml up
 ```
 
 See [DOCKER_QUICK_START.md](DOCKER_QUICK_START.md) for details.
@@ -41,7 +41,7 @@ See [DOCKER_QUICK_START.md](DOCKER_QUICK_START.md) for details.
 
 2.  **Start Infrastructure**:
     ```bash
-    cd infra && docker-compose up -d
+    docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
     ```
     *Note: This uses `infra/.env` file. Postgres will take a few seconds to initialize on first run.*
 
@@ -61,7 +61,7 @@ See [DOCKER_QUICK_START.md](DOCKER_QUICK_START.md) for details.
     *   UI: `http://localhost:3000`
     *   API: `http://localhost:9090`
     *   Swagger: `http://localhost:9090/swagger-ui.html`
-    *   Keycloak: `http://localhost:8085` (admin/admin123)
+    *   Keycloak: `http://localhost:8085` (user `$KEYCLOAK_ADMIN`, password `$KEYCLOAK_ADMIN_PASSWORD` from your `.env`)
 
 ---
 

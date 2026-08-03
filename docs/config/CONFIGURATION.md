@@ -159,8 +159,8 @@ TENANT_B=00000000-0000-0000-0000-000000000002
 DB_HOST=localhost
 DB_PORT=5433         # Host port (Docker maps 5433→5432)
 DB_NAME=jtoye
-DB_USER=jtoye
-DB_PASSWORD=secret
+DB_USER=jtoye_app
+DB_PASSWORD=CHANGE_ME
 ```
 
 **Docker Internal (`docker-compose.full-stack.yml`):**
@@ -168,8 +168,8 @@ DB_PASSWORD=secret
 DB_HOST=postgres     # Docker service name
 DB_PORT=5432         # Container port
 DB_NAME=jtoye
-DB_USER=jtoye
-DB_PASSWORD=secret
+DB_USER=jtoye_app
+DB_PASSWORD=CHANGE_ME
 ```
 
 ### Connection Pool
@@ -209,7 +209,7 @@ The project includes `infra/keycloak/realm-export.json` with:
 **Clients:**
 - `core-api` - Backend service
   - Client ID: `core-api`
-  - Secret: `core-api-secret-2026`
+  - Secret: the value of `$KEYCLOAK_CLIENT_SECRET` from your `.env` (never a literal)
   - Access Type: Confidential
 
 - `frontend` - Next.js application
@@ -225,9 +225,9 @@ The project includes `infra/keycloak/realm-export.json` with:
 **Users:**
 | Username | Password | Group | Role |
 |----------|----------|-------|------|
-| admin-user | admin123 | - | Admin |
-| tenant-a-user | password123 | tenant-a | User |
-| tenant-b-user | password123 | tenant-b | User |
+| admin-user | value of `$KC_SEED_USER_PASSWORD` | - | Admin |
+| tenant-a-user | value of `$KC_SEED_USER_PASSWORD` | tenant-a | User |
+| tenant-b-user | value of `$KC_SEED_USER_PASSWORD` | tenant-b | User |
 
 **Protocol Mapper:**
 - Name: `tenant_id`
@@ -243,7 +243,7 @@ The project includes `infra/keycloak/realm-export.json` with:
 ```
 URL: http://localhost:8085
 Username: admin
-Password: admin123
+Password: the value of `$KEYCLOAK_ADMIN_PASSWORD` from your `.env`
 ```
 
 ### Getting a Token (CLI)
@@ -256,7 +256,7 @@ TOKEN_A=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 echo "Token: $TOKEN_A"
@@ -279,20 +279,20 @@ TOKEN_A=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
   -d 'username=tenant-a-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 TOKEN_B=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
   -d 'username=tenant-b-user' \
-  -d 'password=password123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "$KC/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 ```
 
 **2. Create data for Tenant A:**
 ```bash
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant A Shop","address":"123 Main St"}'
@@ -300,7 +300,7 @@ curl -X POST http://localhost:9090/shops \
 
 **3. Create data for Tenant B:**
 ```bash
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_B" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant B Shop","address":"456 Oak Ave"}'
@@ -309,11 +309,11 @@ curl -X POST http://localhost:9090/shops \
 **4. Verify isolation:**
 ```bash
 # Tenant A can only see their shop
-curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/shops | jq '.content[] | .name'
+curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/api/v1/shops | jq '.content[] | .name'
 # Output: "Tenant A Shop"
 
 # Tenant B can only see their shop
-curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/shops | jq '.content[] | .name'
+curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/api/v1/shops | jq '.content[] | .name'
 # Output: "Tenant B Shop"
 ```
 
@@ -327,14 +327,14 @@ TOKEN=$(curl -s \
   -d 'grant_type=password' \
   -d 'client_id=core-api' \
   -d 'username=admin-user' \
-  -d 'password=admin123' \
+  -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 TENANT_A=00000000-0000-0000-0000-000000000001
 TENANT_B=00000000-0000-0000-0000-000000000002
 
 # Create as Tenant A
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-Id: $TENANT_A" \
   -H "Content-Type: application/json" \
@@ -342,11 +342,11 @@ curl -X POST http://localhost:9090/shops \
 
 # List as Tenant A
 curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_A" \
-  http://localhost:9090/shops | jq
+  http://localhost:9090/api/v1/shops | jq
 
 # List as Tenant B (should be empty)
 curl -s -H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT_B" \
-  http://localhost:9090/shops | jq
+  http://localhost:9090/api/v1/shops | jq
 ```
 
 ---
