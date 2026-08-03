@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server"
+import {
+  CUSTOMER_COOKIES,
+  cookieBaseOptions,
+} from "@/lib/customer-auth-cookies"
 
 /**
  * POST /api/customer-auth/logout
@@ -9,20 +13,10 @@ import { NextResponse } from "next/server"
  * the server).
  */
 
-const ACCESS_COOKIE = "jtoye-customer-access"
-const REFRESH_COOKIE = "jtoye-customer-refresh"
-const ID_COOKIE = "jtoye-customer-id"
-
 export async function POST() {
   const res = NextResponse.json({ ok: true })
-  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ID_COOKIE]) {
-    res.cookies.set(name, "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 0,
-    })
+  for (const name of CUSTOMER_COOKIES) {
+    res.cookies.set(name, "", { ...cookieBaseOptions(), maxAge: 0 })
   }
   return res
 }

@@ -3,8 +3,10 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, User, X } from "lucide-react"
+import { LogOut, Menu, Package, User, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useCustomerSession } from "@/hooks/use-customer-session"
+import { customerLogout } from "@/lib/customer-auth"
 import {
   Sheet,
   SheetClose,
@@ -40,6 +42,10 @@ import {
 export function PublicHeader() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  // #457: this header used to have no notion of the customer session, so going
+  // from /shop to / or /track showed "Sign in" to someone who was signed in and
+  // read as "the site logged me out". Same hook as StorefrontNav — one source.
+  const { profile } = useCustomerSession()
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
@@ -88,13 +94,47 @@ export function PublicHeader() {
             <Link href="/track" className={desktopLink(isActive("/track"))}>
               Track order
             </Link>
-            <Link
-              href="/shop/signin"
-              className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-oxblood-700"
-            >
-              <User className="h-3 w-3" />
-              Sign in
-            </Link>
+            {profile ? (
+              <>
+                <Link
+                  href="/shop/orders"
+                  className={cn(
+                    "flex items-center gap-1",
+                    desktopLink(isActive("/shop/orders"))
+                  )}
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  My Orders
+                </Link>
+                {/* Identity chip + sign-out, matching the StorefrontNav idiom so
+                    the signed-in state looks the same on every public surface. */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="max-w-[100px] truncate">
+                      {profile.name || profile.email}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => customerLogout()}
+                    className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-600"
+                    title="Sign out"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span className="sr-only">Sign out</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <Link
+                href="/shop/signin"
+                className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-oxblood-700"
+              >
+                <User className="h-3 w-3" />
+                Sign in
+              </Link>
+            )}
           </nav>
 
           {/* Mobile hamburger (<sm) */}
@@ -139,15 +179,46 @@ export function PublicHeader() {
                     Track order
                   </Link>
                 </SheetClose>
-                <SheetClose asChild>
-                  <Link
-                    href="/shop/signin"
-                    className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-oxblood px-3 text-sm font-medium text-white transition-colors hover:bg-oxblood-700"
-                  >
-                    <User className="h-4 w-4" />
-                    Sign in
-                  </Link>
-                </SheetClose>
+                {profile ? (
+                  <>
+                    <SheetClose asChild>
+                      <Link
+                        href="/shop/orders"
+                        className={mobileLink(isActive("/shop/orders"))}
+                      >
+                        My Orders
+                      </Link>
+                    </SheetClose>
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-cream-100 px-4 pt-3">
+                      <span className="flex min-w-0 items-center gap-1.5 text-xs text-emerald-700">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                        <span className="truncate">
+                          {profile.name || profile.email}
+                        </span>
+                      </span>
+                      <SheetClose asChild>
+                        <button
+                          type="button"
+                          onClick={() => customerLogout()}
+                          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Sign out
+                        </button>
+                      </SheetClose>
+                    </div>
+                  </>
+                ) : (
+                  <SheetClose asChild>
+                    <Link
+                      href="/shop/signin"
+                      className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-oxblood px-3 text-sm font-medium text-white transition-colors hover:bg-oxblood-700"
+                    >
+                      <User className="h-4 w-4" />
+                      Sign in
+                    </Link>
+                  </SheetClose>
+                )}
               </nav>
             </SheetContent>
           </Sheet>
