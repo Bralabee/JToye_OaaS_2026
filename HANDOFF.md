@@ -20,12 +20,12 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
-| Open PRs | **none** (measured, not assumed) |
-| Open issues | **86** — re-measured 2026-08-03. Was 63; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; #442 closed by #472 |
+| Open PRs | **7** (measured 2026-08-03). Six are a QC'd merge train — #480, #474, #478, #476, #477, #479 — being merged one at a time, smallest test-count delta first; the seventh is this refresh. **Re-measure; this cell is stale by design while the train runs.** A concurrent session merged **#491** and **#482** while this cell was being written, which is also what pushed H-3 over budget |
+| Open issues | **92** — re-measured 2026-08-03, after the count below was written. Was 63, then 86; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; **#442 is CLOSED** (#472); **#473 is CLOSED** (issue #302) and **#475 is CLOSED** (issue #274). The train will close eight more — do not carry this number |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
-| Test baseline | `docs/metrics.json` **1951** as of PR #472 (1930 → 1943 → 1951 in one day). **Re-measure it; do not carry this number forward** — it has moved three times in a day |
+| Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
 | Runtime | 4/4 built services FRESH, re-asserted after the concurrent session's merges |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
@@ -267,12 +267,27 @@ this by hand** — no gate in this repo would have caught a single one of the tw
 
 ## 3. Carried forward — still true, not re-measured unless noted
 
-- **#418 is still OPEN and the flake's mechanism is STILL UNKNOWN**; the issue body's diagnosis is retracted. It
-  does *not* race its own `@Scheduled` flusher (`@DynamicPropertySource` parks both intervals at 24h).
-  The assertion is in `PaymentEventOutboxReliabilityIntegrationTest.failedRows_resurrectAndDrain_poisonStaysDead()`
-  — **line 294, not 273**, which both CI logs and the issue body still quote. #422 inverted the
-  assertion order so the next occurrence is diagnostic: row `SENT` + wrong count → the mock; row still
-  `PENDING` → the flush did not run. **Capture that line when it next fails.**
+- **#418's mechanism is now known, and this document had it wrong.** The line that used to sit here said
+  the suite does *not* race its own `@Scheduled` flusher, because `@DynamicPropertySource` parks both
+  intervals at 24h. **That reasoning is refuted by PR #480** (open at the time of writing, first in the
+  train): `@Scheduled(fixedDelayString=…)` leaves `initialDelay` at **0**, so the first execution fires
+  at context refresh *regardless of the interval*. Parking suppresses the second run onward, never the
+  first — a probe with both intervals at 86400000 still found **10 live scheduled tasks**. The earlier
+  supporting evidence was vacuous too: a flush pass over an empty tenant list logs nothing, so "no
+  scheduled trace in the failure window" was never absence of execution. Amplified reproduction:
+  300 samples → 72 failures, then 25; with the fix and the amplifier still on, 300 → **0**.
+  `NoScheduledTriggersTestConfig` removes the `internalScheduledAnnotationProcessor` bean so nothing is
+  ever scheduled; no sleeps, no widened timeouts, no production code touched.
+- **A merge with no changelog entry reddens every *other* open PR, not the one that caused it.**
+  `check-changelog-contract` ranges over **merged history** (`FLOOR..origin/main`) while reading the
+  changelog from the **branch's** copy. #473 and #475 merged without entries, so from that moment every
+  open PR failed the required `docs-freshness` job with `C-1 PR #473 … no entry` — a failure naming a
+  PR the author had never touched. **#491 is CLOSED** and backfilled both entries. Three consequences
+  worth keeping: the gate is satisfiable from inside any PR (it reads *your* changelog), so it is **not**
+  the "gate forbids its own remedy" shape; a merge train must add the entry **in the merging PR**,
+  because the cost lands on everyone else the instant it merges; and **two sessions diagnosed and fixed
+  this independently within the hour** — the second only discovered the first when `gh pr merge`
+  refused. Before writing a fix for a *shared* red gate, re-read `origin/main`.
 - **A new E2E spec landed un-run, and the skip-budget gate caught it.** #456 added
   `frontend/e2e/marketing-dish-scroller.spec.ts`; `check-e2e-skip-budget` now returns **rc=2 VOID**
   because the stored report is older than the specs it describes. That is the gate working — a stale
