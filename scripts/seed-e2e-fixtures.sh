@@ -104,6 +104,21 @@ DRAFT_ORDER_NUMBER="ORD-E2E-DRAFT-FIXTURE"
 # --- 1. DRAFT order ----------------------------------------------------------------
 # Idempotent on order_number. Deliberately minimal: the spec only opens it and asserts
 # the Issue-refund control is ABSENT, so no items or payment state are required.
+#
+# WHY created_at IS REFRESHED AND NOT ONLY updated_at
+#   The dashboard orders list sorts createdAt desc and paginates at PAGE_SIZE = 20
+#   (frontend/app/dashboard/orders/page.tsx:221). The spec only ever reads page 1.
+#   Measured 2026-08-03 with only updated_at refreshed: this fixture sat at rank 21
+#   of 156 orders — ONE ROW past the page — so the spec skipped with "No DRAFT order
+#   seeded" while SIX DRAFT orders existed in the table. Every suite run creates
+#   orders at checkout, so the fixture drifts down and the test silently stops
+#   running. Refreshing created_at returns it to rank 1 on every re-seed, which is
+#   what "run the seeder before the suite" has to mean to be worth anything.
+#
+# NOTE FOR EDITORS: this prose lives OUT here, not inside the heredoc below. That
+# heredoc is UNQUOTED (<<SQL), so backticks in it are command substitution. A comment
+# mentioning a backticked identifier ran it, printed "command not found", and SILENTLY
+# DELETED the phrase from the SQL that was actually sent. Keep prose in shell comments.
 draft_sql=$(cat <<SQL
 insert into orders
   (id, tenant_id, shop_id, order_number, status, total_amount_pennies,
@@ -114,6 +129,7 @@ values
    0, 0, 0, 'STANDARD', 0, 0, 'COLLECTION', 'E2E Draft Fixture', now(), now())
 on conflict (order_number) do update set
   status     = 'DRAFT',
+  created_at = now(),
   updated_at = now();
 SQL
 )
@@ -174,8 +190,22 @@ fi
 
 # --- Verify by the SPECS' OWN predicates, not by row counts ------------------------
 # A row in the wrong state would satisfy a count. These mirror what each spec looks for.
-draft=$(psql_q "select count(*) from orders
-  where tenant_id = '$SHOP_TENANT' and status = 'DRAFT';")
+#
+# THE DRAFT CHECK USED TO BE A ROW COUNT, AND THAT MADE THIS "PASS" A LIE.
+#   It asserted `count(*) where status = 'DRAFT' >= 1` — a row existing ANYWHERE in
+#   the table. The spec does not read the table; it reads PAGE 1 of the dashboard
+#   orders list, sorted createdAt desc, 20 rows. Measured 2026-08-03: 6 DRAFT orders
+#   present, newest at rank 21 of 156, spec skipped, and this script printed
+#   "can now assert non-vacuously". A structural check green over a dead path — the
+#   exact failure this repo keeps re-finding.
+#   The check below now asks the question the SPEC asks: is the fixture reachable on
+#   the page the spec actually looks at?
+ORDERS_PAGE_SIZE="${ORDERS_PAGE_SIZE:-20}"   # mirrors PAGE_SIZE in frontend/app/dashboard/orders/page.tsx
+draft=$(psql_q "select count(*) from (
+    select status, row_number() over (order by created_at desc) as rank
+      from orders where tenant_id = '$SHOP_TENANT'
+  ) ranked
+  where status = 'DRAFT' and rank <= $ORDERS_PAGE_SIZE;")
 promo=$(psql_q "select count(*) from shop_promotions
   where shop_id = '$SHOP_ID' and active
     and valid_from <= now() and valid_until > now();")
@@ -184,7 +214,7 @@ ann=$(psql_q "select count(*) from shop_announcements
     and (valid_from is null or valid_from <= now())
     and (valid_until is null or valid_until > now());")
 
-echo "  DRAFT orders for the vendor tenant           : $draft  (expect >= 1)"
+echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
 echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
 
