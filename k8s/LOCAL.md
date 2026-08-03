@@ -257,14 +257,23 @@ host gateway CIDR on those seven ports. The policy flow matrix and rollback step
 
 ## 7. Known findings and caveats
 
-**PIT-5 — the logback boot error, fixed locally.** Under the prod profile,
-`application-prod.yml:91` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container runs as
-`runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
+**PIT-5 — the logback boot error, fixed locally, then fixed durably (issue #302).** Under the prod
+profile, `application-prod.yml:91` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
+runs as `runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
 logback's FileAppender fails to start with a `FileNotFoundException … Permission denied` on every
 boot. It is **non-fatal** (the app continues; the 2026-07-14 run reached 11/11 READY that way), but it
 is noise that reads like a real fault, and file logging is silently absent. The local overlay sets
-`log.path: /tmp`, which the pod user can write. The **base default is unchanged**; the durable fix is
-an `emptyDir` mounted at `/var/log/jtoye` in the base (recorded as a deferred item).
+`log.path: /tmp`, which the pod user can write — that resolved local only.
+
+The durable fix has since shipped in `k8s/base/core-java-deployment.yaml`: an `emptyDir` (`app-logs`,
+`sizeLimit: 2Gi`) mounted at `/var/log/jtoye`, plus a pod-level `securityContext.fsGroup: 1000`. The
+`fsGroup` is the load-bearing half — `runAsGroup` is not set on this container, so the process's
+primary GID is runtime-dependent; `fsGroup` both chowns the volume to GID 1000 and adds 1000 to the
+process's supplementary groups, so UID 1000 can write regardless. The **prod log path is unchanged**
+(that would have been a production behaviour change), and every overlay inherits the mount from the
+base with no per-overlay patch. The local overlay deliberately **keeps** `log.path: /tmp`: it is
+already writable, and leaving it avoids a needless change to a documented local behaviour — the
+mount is simply unused there.
 
 **PIT-6 / D-17 — the kube-dns selector poisoning, fixed and CI-asserted.** The `labels:` transformer
 used to carry `includeSelectors: true`, which injects the common labels into **every**

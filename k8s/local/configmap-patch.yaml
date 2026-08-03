@@ -166,4 +166,12 @@ data:
   # Permission denied. Non-fatal (the app continues; 2026-07-14 booted 11/11
   # READY) but it is noise that looks like a real fault, and file logging is
   # silently absent. /tmp is writable by the pod user.
+  #
+  # Issue #302: the DURABLE fix now lives in the base — core-java-deployment.yaml
+  # mounts an `app-logs` emptyDir at /var/log/jtoye with a pod-level
+  # securityContext.fsGroup: 1000, so the declared prod path is writable in every
+  # environment. This /tmp override is KEPT deliberately rather than reverted:
+  # /tmp is already writable, local behaviour is documented in k8s/LOCAL.md §7,
+  # and reverting would change a working local default to no benefit. The base
+  # mount is simply unused in this overlay.
   log.path: "/tmp"
