@@ -181,3 +181,10 @@ e2e-artifacts/
 # broker migration, a full tar of the RabbitMQ data directory — a dead-letter export holds
 # real webhook payloads and the volume snapshot holds every queued message. Never committed.
 .evidence/
+
+# Claude Code agent worktrees. Each is a FULL working copy of this repo, so a
+# blanket `git add .` here stages tens of thousands of files belonging to another
+# session's in-flight branches. Measured 2026-08-03: 9 live worktrees, 70,498
+# untracked files. Ignore the worktree root ONLY — `.claude/skills/` is a
+# supported location for tracked project skills and must stay visible.
+.claude/worktrees/
