@@ -48,26 +48,46 @@ export function StorefrontNav() {
   return (
     <nav className="flex items-center gap-3 sm:gap-4 text-sm">
       {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
-          including "For operators" so the operator door is reachable from /shop. */}
+          now PERSONA-GATED (#458).
+
+          The earlier contract was unconditional parity, "including 'For
+          operators' so the operator door is reachable from /shop". That intent
+          is kept, not discarded — it is just satisfied for the audience it was
+          written for. Someone signed in as a CUSTOMER has already self-selected:
+          the operator pitch is noise on their surface, and a standalone "Track
+          order" (the GUEST lookup, which asks for an order number and an email)
+          is redundant when the system already knows every order they have
+          placed. Their route is My Orders -> the tracking view, auto-populated.
+
+          Neither door is deleted:
+           - /for-operators stays in this header for everyone NOT signed in as a
+             customer, and in the PublicFooter on every surface (incl. /shop).
+           - /track stays in this header for guests, in the PublicFooter for
+             everyone, and behind every order card in My Orders.
+          So both remain one visible link away at every breakpoint. */}
       <div className="hidden sm:flex items-center gap-4">
         {/* Label parity with PublicHeader — the same destination must not be
             called "Shops" on one surface and "Browse" on the next. */}
         <Link href="/shop" className={desktopLink(pathname === "/shop")}>
           Shops
         </Link>
-        <Link
-          href="/for-operators"
-          className={desktopLink(isActive("/for-operators"))}
-        >
-          For operators
-        </Link>
-        <Link
-          href="/track"
-          className={cn("flex items-center gap-1", desktopLink(isActive("/track")))}
-        >
-          <MapPin className="h-3.5 w-3.5" />
-          Track order
-        </Link>
+        {!profile && (
+          <>
+            <Link
+              href="/for-operators"
+              className={desktopLink(isActive("/for-operators"))}
+            >
+              For operators
+            </Link>
+            <Link
+              href="/track"
+              className={cn("flex items-center gap-1", desktopLink(isActive("/track")))}
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              Track order
+            </Link>
+          </>
+        )}
         {profile && (
           <Link
             href="/shop/orders"
@@ -142,8 +162,10 @@ export function StorefrontNav() {
         </Link>
       )}
 
-      {/* Mobile hamburger (<sm) — same idiom as PublicHeader so every public
-          destination (incl. /for-operators) is one visible tap from /shop. */}
+      {/* Mobile hamburger (<sm) — same idiom as PublicHeader. The sheet is a
+          SEPARATE code path from the desktop row above, so the #458 gating has
+          to be applied here too; a desktop-only fix leaves the link live on the
+          viewport where it was actually reported. */}
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetTrigger asChild>
           <button
@@ -172,19 +194,23 @@ export function StorefrontNav() {
                 Shops
               </Link>
             </SheetClose>
-            <SheetClose asChild>
-              <Link
-                href="/for-operators"
-                className={mobileLink(isActive("/for-operators"))}
-              >
-                For operators
-              </Link>
-            </SheetClose>
-            <SheetClose asChild>
-              <Link href="/track" className={mobileLink(isActive("/track"))}>
-                Track order
-              </Link>
-            </SheetClose>
+            {!profile && (
+              <>
+                <SheetClose asChild>
+                  <Link
+                    href="/for-operators"
+                    className={mobileLink(isActive("/for-operators"))}
+                  >
+                    For operators
+                  </Link>
+                </SheetClose>
+                <SheetClose asChild>
+                  <Link href="/track" className={mobileLink(isActive("/track"))}>
+                    Track order
+                  </Link>
+                </SheetClose>
+              </>
+            )}
             {profile && (
               <SheetClose asChild>
                 <Link

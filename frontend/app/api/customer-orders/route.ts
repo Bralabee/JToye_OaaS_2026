@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { coreBaseUrl } from "@/lib/customer-orders-server"
 
 /**
  * GET /api/customer-orders?page=&size=
@@ -25,18 +26,15 @@ import { NextRequest, NextResponse } from "next/server"
 
 const ACCESS_COOKIE = "jtoye-customer-access"
 
-// Server-side base URL for the core API. In the compose stack the frontend
-// container maps localhost to the host gateway (extra_hosts), so the browser
-// bake NEXT_PUBLIC_API_URL (http://localhost:9090) also resolves in-container.
-// Deployments without that mapping can point CORE_API_INTERNAL_URL at the
-// in-network core host instead.
-function coreBaseUrl(): string {
-  return (
-    process.env.CORE_API_INTERNAL_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:9090"
-  )
-}
+// Issue #467: `coreBaseUrl` now lives in lib/customer-orders-server.ts and is
+// shared with the server component that renders /shop/orders, so there is ONE
+// definition of how this container reaches core rather than one per caller.
+// The comment that used to sit here was wrong in a way that cost this route
+// every request it ever made: it claimed the compose `extra_hosts` mapping made
+// `localhost` resolve in-container. It does not — the container's own
+// /etc/hosts maps `127.0.0.1 localhost` first and wins — so this route 502'd on
+// the compose stack from the day it shipped. See the shared function for the
+// measurements.
 
 export async function GET(req: NextRequest) {
   const access = req.cookies.get(ACCESS_COOKIE)?.value
