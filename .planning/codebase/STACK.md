@@ -177,14 +177,14 @@
 
 **Container/Image Versions (source of truth):**
 - Spring Boot 3.5.16 on Java 21 — `core-java/build.gradle.kts:2,9`
-- postgres:15-alpine — `docker-compose.full-stack.yml:14`
-- keycloak:24.0.5 — `docker-compose.full-stack.yml:81`
-- redis:7-alpine — `docker-compose.full-stack.yml:126`
-- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:149`
-- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:541`
-- prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:8`
-- grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:50`
-- prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:81`
+- postgres:15-alpine — `docker-compose.full-stack.yml:43`
+- keycloak:24.0.5 — `docker-compose.full-stack.yml:115`
+- redis:7-alpine — `docker-compose.full-stack.yml:163`
+- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:187`
+- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:591`
+- prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:35`
+- grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:77`
+- prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:108`
 - Next.js 16.2.12 — `frontend/package.json:36`
 - Go 1.26 (`go 1.26.0`) — `edge-go/go.mod:3`
 

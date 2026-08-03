@@ -248,7 +248,7 @@ states:
   - id: TS-13
     name: exporter up but blind
     kind: infra_exporter
-    locator: "infra/monitoring/docker-compose.monitoring.yml:148"
+    locator: "infra/monitoring/docker-compose.monitoring.yml:175"
     subject: "postgres-exporter"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
