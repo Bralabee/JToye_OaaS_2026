@@ -134,17 +134,35 @@ merge when the run reaches Flyway and fails *only* on #517. Satisfied twice.
 
 ---
 
-## 2. Wave 1: the other four lanes are BUILT but NOT ASSEMBLED
+## 2. Wave 1: THREE lanes assembled into PRs, TWO still local
 
-**11 local branches hold finished, verified work that is not in any PR.** They are local-only — a
-`git clone` does not have them. Losing this checkout loses them.
+**Assembled — PRs open, none merged.** Each verified as a *merged tree*, which no individual agent
+could do.
 
-| lane | branches | issues |
-|---|---|---|
-| **A** core-java (**EXPENSIVE ~45 min CI — batch as one PR**) | `wave1/core-502`, `wave1/core-489-483`, `wave1/core-501-498`, `wave1/core-278` | #502, #489, #483, #501, #498, #278 |
-| **C** frontend tokens | `wave1/fe-451-tokens` | #451 |
-| **D** k8s | `wave1/k8s-293-506`, `wave1/k8s-271`, `wave1/k8s-298-299-303` | #293, #506, #271, #298, #299, #303 |
-| **E** docs/CI | `wave1/docs-449`, `wave1/ci-276`, `wave1/ci-337` | #449, #276, #337 |
+| lane | PR | issues | merged-tree proof |
+|---|---|---|---|
+| **B** frontend | **#518** | #504, #295, #495, #490, #306 | 79 suites / 630 tests / 0 failures · `npm run build` rc=0 |
+| **A** core-java | **#519** | #502, #489, #483, #501, #498, #278 | 132 suites / **947 tests** / 0 failures / 1 pre-existing skip |
+| **E** docs/CI | **#520** | #449, #276, #337 | `go test ./... -count=1` all six packages ok · `actionlint` rc=0 |
+
+Plus **#515** (the nightly credential faults, §0.1). **Four PRs open, zero merged.**
+
+**⚠ MERGE-ORDER COUPLING — read before merging any of them.** #520 takes the gate count **22 → 24**
+(`check-image-supply-chain.sh`, `check-edge-core-contract.sh`) and updates `HANDOFF.md`'s `EXPECT 22`
+accordingly. **This document still says EXPECT 22 and is correct only until #520 merges.** Whichever of
+#518/#519/#520 merges second and third will also conflict on `docs/CHANGELOG.md` and `docs/metrics.json`
+— that is expected and the resolution is fixed: for the changelog take main's copy and **RE-INSERT**
+your entry, then assert both citations by content; for metrics re-run `scripts/docs-freshness.sh
+--write` on the merged tree and re-sync the prose. Never take a side on a count.
+
+### 2.0 STILL LOCAL — two lanes, four branches, in no PR and on no remote
+
+**Losing this checkout loses them.**
+
+| lane | branches | issues | state |
+|---|---|---|---|
+| **C** frontend tokens | `wave1/fe-451-tokens` | #451 | **APPROVED 2026-08-04 — assemble it** (§2.1) |
+| **D** k8s | `wave1/k8s-293-506`, `wave1/k8s-271`, `wave1/k8s-298-299-303` | #293, #506, #271, #298, #299, #303 | render-verified only — see §2.2 |
 
 **Assembly rules that are not optional** (all four prevented conflicts rather than resolving them):
 
@@ -159,21 +177,51 @@ merge when the run reaches Flyway and fails *only* on #517. Satisfied twice.
 
 ### 2.1 Decisions the lanes are waiting on
 
-- **Lane C blocks on a brand decision.** #451 moved `--primary` from orange-600 to **orange-700**
-  design-system-wide. Unavoidable for AA — white-on-orange-600 is 3.56:1 and there is no lighter
-  foreground — but it is a palette change. Alternative offered: a separate `--primary-strong` used only
-  behind text. **Results: desktop 257→58, mobile 270→31, 0 critical / 0 serious, 0 routes regressed.**
+- **Lane C is APPROVED — the owner said go on 2026-08-04. Assemble it.** #451 moves `--primary` from
+  orange-600 to **orange-700** design-system-wide. Unavoidable for AA — white-on-orange-600 is 3.56:1
+  and there is no foreground lighter than white — and the owner accepted the palette shift over the
+  alternative (a separate `--primary-strong` used only behind text). **Do not re-litigate this.**
+  Assembly is a one-branch merge plus the standard once-per-lane regeneration; note it adds **14 jest
+  blocks**, so `docs/metrics.json` must be regenerated and the prose re-synced.
+  **Results: desktop 257→58, mobile 270→31, 0 critical / 0 serious, 0 routes regressed.**
   It also caught a trap: the vendor account renders "No shop access" on every dashboard route, so tables
   never mount and `button-name: 0` from a naive sweep is an **artefact**. Measured populated separately:
   64 → 0.
-- **Lane E needs two stale-doc calls**: `AGENTS.md`/`CLAUDE.md` claim "Docker Compose 1.40+" and
-  "Go: 1.25-alpine" (both stale, both in gate-enforced generated files), and `ci-cd.yaml`'s step name
-  still reads *"Assert the **core-java** env contract"* after D3 widened it to three services.
-- **Lane E changes the gate count.** `wave1/ci-276` adds `scripts/check-image-supply-chain.sh`, so
-  `check-handoff-contract` H-1 will fail against this document's `EXPECT 22`. **Re-measure and update
-  §6 when Lane E merges — do not hardcode a guess.**
-- **Lane A needs one OpenAPI regeneration** (`./gradlew :core-java:updateOpenApiSnapshot`), once for the
-  lane. `wave1/core-278` widens the spec additively; a whole-file rewrite by four agents would collide.
+- **~~Lane E needs two stale-doc calls~~ — DONE in #520**, both verified before changing:
+  `Go: 1.25-alpine` → `1.26-alpine` (`edge-go/Dockerfile:10` is `FROM golang:1.26-alpine`, `go.mod`
+  reads `go 1.26.0`), and `Docker Compose 1.40+` → `Compose v2+` (1.40 is a **v1** version string, the
+  v1 binary is not installed here at all, and #449's own work converted these docs to the
+  `docker compose` subcommand — the requirement line was contradicting the instructions beside it).
+  **STILL OPEN, belongs to Lane D:** `ci-cd.yaml`'s step name still reads *"Assert the **core-java**
+  env contract"* after `wave1/k8s-298-299-303` widened that gate to three services. One-line rename
+  plus a comment block at `ci-cd.yaml:317-322`.
+- **~~Lane E changes the gate count~~ — DONE in #520.** 22 → 24, and `check-handoff-contract` H-1
+  caught the stale `EXPECT 22` exactly as predicted. **This document still says 22 and is correct only
+  until #520 merges** (§2).
+- **~~Lane A needs one OpenAPI regeneration~~ — DONE in #519.** One thing the branch's own report got
+  wrong and the regeneration exposed: it called the drift *"additive, not breaking"*, but the two POST
+  **operationIds were renamed** (`unsubscribe` → `unsubscribeOneClick`). Checked, not assumed — no
+  consumer in `frontend/`, `edge-go/` or `mcp-server/` keys on an operationId.
+
+### 2.2 Lane D — the one real open question
+
+All three D branches are **render-verified only**. No packet was ever allowed or denied: there is no
+minikube profile, the local CNI does not implement NetworkPolicies, and staging/production have never
+been deployed. What is proven is that the rendered manifests agree with the declared values and that
+the gates fail when they do not. **The CrashLoop #271 describes remains undemonstrated.**
+
+**⚠ OPEN QUESTION FOR THE OWNER (raised 2026-08-04, not yet answered).** The owner believes they
+*"have some k8s solution to cater for minikube or its likes"* — a cluster that would not collide with
+the Compose stack. **Ask before assembling Lane D**, because the answer changes what Lane D can claim:
+
+- if a **non-colliding cluster** exists (kind / k3d / a remote cluster — anything not sharing the dev
+  Postgres), Lane D's claims can move from render-only to **functional**, and #297 (install Calico so
+  NetworkPolicies are actually enforced) stops being unverifiable and could be folded in;
+- if not, Lane D ships render-only with that limitation stated, and #297 stays out.
+
+The constraint that forced this is in `CLAUDE.md`: run Compose **or** a local minikube, never both —
+they share the dev DB. That XOR is about *the dev database*, not about Kubernetes as such, so a cluster
+pointed at its own datastore may well dissolve it. **Do not assume either way; ask.**
 
 ---
 
@@ -270,8 +318,22 @@ gh run list --workflow=e2e-nightly.yml --limit 1
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Next move, in order.** Assemble **Lane A** (core-java, the expensive lane — batching it is worth ~45
-min per PR avoided; four branches, one OpenAPI regeneration). Then **Lane E**, then **Lane D**. **Lane C
-waits on the `--primary` brand decision** (§2.1). Merge #515 on its corrected criterion, and treat
-**#517** as the real blocker for #420 — it is a product defect, not a CI one, and no environment can be
-provisioned cleanly on the first attempt until it is fixed.
+**Next move, in order.**
+
+1. **Assemble Lane C** — approved, one branch (`wave1/fe-451-tokens`), +14 jest blocks. Standard recipe:
+   branch off `origin/main`, merge, `scripts/docs-freshness.sh --write`, re-sync the prose in
+   README/CLAUDE/AGENTS, run the 22 gates (expect the same two non-zero), push, PR, then add the
+   changelog entry **with the PR number** and push again.
+2. **Ask the owner about the k8s cluster (§2.2) BEFORE assembling Lane D.** The answer decides whether
+   Lane D can claim functional verification or only render.
+3. **Merge the four open PRs**, minding the order coupling in §2 — #520 moves the gate count, and the
+   second and third to merge will conflict on `docs/CHANGELOG.md` and `docs/metrics.json`.
+4. **#517 is the real blocker for #420.** A product defect, not a CI one: no environment provisions
+   cleanly on the first attempt until it is fixed, and it is **intermittent** (2 of 3), so one green
+   fresh-DB boot proves nothing.
+
+**The one habit to carry.** Of 20 issues worked this session, **8 filings were wrong as written** and
+three of those would have shipped an outage or a no-op over a live defect. Not one was caught by a test
+passing. Reproduce the defect and run the fail direction *before* writing the fix — and when a check
+comes back clean, ask what would make it fail before believing it. Every instrument in §0.3 looked
+authoritative right up to the moment its control arm ran.
