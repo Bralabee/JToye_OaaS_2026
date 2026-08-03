@@ -289,9 +289,13 @@ export default function StaffPage() {
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="">Select a person…</option>
+                {/* #290: `(displayName || email) + " (" + email + ")"` printed the
+                    masked email TWICE for anyone without a display name
+                    ("j***@vendor.co.uk (j***@vendor.co.uk)"). The email is only a
+                    disambiguator for a name — with no name it IS the label. */}
                 {directory.map((d) => (
                   <option key={d.userId} value={d.userId}>
-                    {(d.displayName || d.email) + " (" + d.email + ")"}
+                    {d.displayName ? `${d.displayName} (${d.email})` : d.email}
                   </option>
                 ))}
               </select>
