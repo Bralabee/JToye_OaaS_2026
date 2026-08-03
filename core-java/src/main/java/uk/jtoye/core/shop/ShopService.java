@@ -408,6 +408,15 @@ public class ShopService {
             this.shopMapper = shopMapper;
         }
 
+        /**
+         * {@code unless = "#result == null"} IS correct here and DOES suppress the negative
+         * entry: Spring unwraps the {@code Optional} before evaluating {@code unless}, so
+         * {@code #result} is the {@code ShopDto} on a hit and {@code null} on a miss. Do NOT
+         * rewrite it as {@code !#result.isPresent()} — that throws
+         * {@code SpelEvaluationException EL1004E} on every successful lookup. See the fuller
+         * note on {@code ProductService.ProductCacheLoader#getProductById} (issue #484);
+         * both directions are pinned by {@code NegativeCachingOptionalEmptyTest}.
+         */
         @Transactional(readOnly = true)
         @Cacheable(value = "shops", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
         public Optional<ShopDto> getShopById(UUID shopId) {
