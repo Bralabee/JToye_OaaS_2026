@@ -291,6 +291,26 @@ class WebhookDeliveryLogIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * The defect's real teacher: an unpinned read returning zero rows is
+     * indistinguishable from a genuine empty log, which is why this survived a
+     * milestone. With no tenant established the endpoint must now FAIL LOUDLY
+     * (RFC 7807, {@code missing-tenant-context}) rather than answer with an
+     * empty page.
+     */
+    @Test
+    @WithMockUser
+    @DisplayName("with no tenant established the log errors loudly instead of returning an empty page")
+    void deliveryLog_withNoTenant_failsLoudly() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/missing-tenant-context"))
+                .andReturn();
+        assertThat(result.getResponse().getContentAsString())
+                .as("the caller must not be handed a page of zero deliveries")
+                .doesNotContain("totalElements");
+    }
+
     /** AC #2 — replay works on a delivery the log returned (no Idempotency-Key). */
     @Test
     @WithMockUser
