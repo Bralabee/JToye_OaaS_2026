@@ -80,7 +80,7 @@ public class ProductController {
             @Parameter(description = "Product ID") @PathVariable UUID id) {
         return productService.getProductById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
     }
 
     @GetMapping("/search")
@@ -173,12 +173,8 @@ public class ProductController {
     public ResponseEntity<ProductDto> update(
             @Parameter(description = "Product ID") @PathVariable UUID id,
             @Parameter(description = "Product update request") @Valid @RequestBody CreateProductRequest req) {
-        try {
-            ProductDto dto = productService.updateProduct(id, req);
-            return ResponseEntity.ok(dto);
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.notFound().build();
-        }
+        // issue #500: no local catch — GlobalExceptionHandler owns the RFC 7807 404 body.
+        return ResponseEntity.ok(productService.updateProduct(id, req));
     }
 
     // NOTE (Phase 24 / 24-03): the synchronous `POST /{id}/image` upload+AI-suggest handler
@@ -250,11 +246,8 @@ public class ProductController {
     })
     public ResponseEntity<Void> delete(
             @Parameter(description = "Product ID") @PathVariable UUID id) {
-        try {
-            productService.deleteProduct(id);
-            return ResponseEntity.noContent().build();
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.notFound().build();
-        }
+        // issue #500: see update() above.
+        productService.deleteProduct(id);
+        return ResponseEntity.noContent().build();
     }
 }

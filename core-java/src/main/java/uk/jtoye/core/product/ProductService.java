@@ -540,6 +540,21 @@ public class ProductService {
             this.productMapper = productMapper;
         }
 
+        /**
+         * {@code unless = "#result == null"} IS correct on an {@code Optional}-returning
+         * method and DOES suppress the negative entry — issue #484 was filed on the belief
+         * that it cannot fire because {@code Optional.empty() != null}. Spring unwraps the
+         * Optional BEFORE evaluating {@code unless}: {@code CacheAspectSupport} hands
+         * {@code ObjectUtils.unwrapOptional(returnValue)} to {@code canPutToCache}, so
+         * {@code #result} is bound to the {@code ProductDto} on a hit and to {@code null}
+         * on a miss. Deleting this clause is what makes a 404 lookup populate the region.
+         *
+         * <p>Do NOT "fix" it to {@code "#result == null || !#result.isPresent()"}:
+         * {@code #result} is the UNWRAPPED DTO, which has no {@code isPresent()}, so that
+         * expression throws {@code SpelEvaluationException EL1004E} on every SUCCESSFUL
+         * lookup and disables this cache outright. Both directions are pinned by
+         * {@code NegativeCachingOptionalEmptyTest}.
+         */
         @Transactional(readOnly = true)
         @Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator", unless = "#result == null")
         public Optional<ProductDto> getProductById(UUID productId) {

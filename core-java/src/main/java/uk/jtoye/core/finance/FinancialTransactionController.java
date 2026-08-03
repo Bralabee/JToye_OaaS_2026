@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
@@ -71,7 +72,7 @@ public class FinancialTransactionController {
             @Parameter(description = "Transaction ID") @PathVariable UUID id) {
         return financialTransactionService.getTransactionById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Financial transaction not found: " + id));
     }
 
     @PostMapping

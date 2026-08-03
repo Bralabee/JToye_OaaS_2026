@@ -2,6 +2,7 @@ package uk.jtoye.core.customer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -110,7 +111,11 @@ public class CustomerService {
         customer.setUpdatedAt(OffsetDateTime.now());
 
         // Save with flush to ensure immediate persistence
-        customer = customerRepository.saveAndFlush(customer);
+        try {
+            customer = customerRepository.saveAndFlush(customer);
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(customerId, ex);
+        }
 
         log.info("Updated customer {} with email '{}', allergen restrictions: {}",
                 customer.getId(), customer.getEmail(), customer.getAllergenRestrictions());
@@ -129,8 +134,45 @@ public class CustomerService {
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
 
-        customerRepository.delete(customer);
+        try {
+            customerRepository.delete(customer);
+            // Issue #486: flush HERE rather than letting the DELETE go at commit. Without it the
+            // row-count failure is raised after this method returns, outside any catch we could
+            // write, and the request ends as an untyped error from the transaction boundary.
+            customerRepository.flush();
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(customerId, ex);
+        }
 
         log.info("Deleted customer {} with email '{}'", customer.getId(), customer.getEmail());
+    }
+
+    /**
+     * Issue #486 — the same defect class as #390 (promotions/announcements), at the customer
+     * endpoints. The row was there when we read it and gone when we wrote it, so Hibernate's
+     * row-count check failed ({@code Batch update returned unexpected row count from update [0]
+     * ... delete from customers where id=?}). That is a missing resource, not a server fault and
+     * not a conflict worth retrying: a client that re-reads finds nothing and a client that
+     * retries gets the same answer forever.
+     *
+     * <p>Reachable by ordinary concurrent vendor activity — two staff deleting the same customer,
+     * a double-click, a retry after a slow response, a GDPR erasure landing mid-edit.
+     *
+     * <p><strong>Why 404 is unconditionally right here.</strong> {@link Customer} carries no JPA
+     * {@code @Version}, so the statement's predicate is {@code id = ?} alone. Zero affected rows
+     * can therefore mean exactly one thing — no such row is visible to this transaction. It cannot
+     * mean "stale version", which is the case {@code GlobalExceptionHandler}'s 409 handler exists
+     * for; that handler stays in place for {@code @Version}-carrying entities ({@code Product},
+     * {@code Shop}, {@code Order}, {@code MediaAsset}) and is not weakened here.
+     *
+     * <p>The message is byte-identical to the absent-at-read-time 404 above, so a caller cannot
+     * distinguish the two and no timing information leaks. The provider message names the table
+     * and is logged, never returned (same reasoning as the 409 handler).
+     */
+    private ResourceNotFoundException vanishedMidTransaction(UUID customerId,
+                                                             OptimisticLockingFailureException ex) {
+        log.info("Customer {} was removed by another transaction before this write landed: {}",
+                customerId, ex.getMessage());
+        return new ResourceNotFoundException("Customer not found: " + customerId);
     }
 }

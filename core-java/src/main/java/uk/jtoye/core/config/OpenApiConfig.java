@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import uk.jtoye.core.security.TenantFilter;
 
 import java.util.List;
 
@@ -86,17 +87,21 @@ public class OpenApiConfig {
                                 .addSecurityItem(new SecurityRequirement()
                                                 .addList("bearer-jwt"))
                                 .addSecurityItem(new SecurityRequirement()
-                                                .addList("tenant-header"))
+                                                .addList(TenantHeaderSchemeCustomizer.SCHEME_NAME))
                                 .components(new Components()
                                                 .addSecuritySchemes("bearer-jwt", new SecurityScheme()
                                                                 .type(SecurityScheme.Type.HTTP)
                                                                 .scheme("bearer")
                                                                 .bearerFormat("JWT")
                                                                 .description("JWT token from Keycloak. Must contain tenant claim (`tenant_id`, `tenantId`, or `tid`)."))
-                                                .addSecuritySchemes("tenant-header", new SecurityScheme()
+                                                // issue #440 [F-H2]: the header name comes from the filter that
+                                                // honours it, never a copied literal, and TenantHeaderSchemeCustomizer
+                                                // removes this scheme wherever that filter is not in the context —
+                                                // so the document cannot advertise a mechanism the service lacks.
+                                                .addSecuritySchemes(TenantHeaderSchemeCustomizer.SCHEME_NAME, new SecurityScheme()
                                                                 .type(SecurityScheme.Type.APIKEY)
                                                                 .in(SecurityScheme.In.HEADER)
-                                                                .name("X-Tenant-Id")
+                                                                .name(TenantFilter.TENANT_HEADER)
                                                                 .description("Dev fallback: UUID of tenant (only used when JWT lacks tenant claim)"))
                                                 // issue #206 [AI-4]: advertise the catalog capability scopes as an
                                                 // OAuth2 client-credentials scheme. tokenUrl derives from issuerUri

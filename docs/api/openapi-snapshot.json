@@ -2762,6 +2762,36 @@
         },
         "type" : "object"
       },
+      "ProblemDetail" : {
+        "additionalProperties" : true,
+        "description" : "RFC 7807 problem detail. Every non-2xx response from this API uses this shape, produced centrally by GlobalExceptionHandler. Handlers may attach additional machine-readable members (e.g. shopId, requiredRole, errors).",
+        "properties" : {
+          "detail" : {
+            "description" : "Human-readable explanation specific to this occurrence.",
+            "type" : "string"
+          },
+          "instance" : {
+            "description" : "URI reference identifying the specific occurrence, typically the request path.",
+            "format" : "uri",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "HTTP status code, repeated in the body per RFC 7807.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "title" : {
+            "description" : "Short, human-readable summary of the error class.",
+            "type" : "string"
+          },
+          "type" : {
+            "description" : "Stable, dereferenceable identifier for the error class, e.g. https://jtoye.uk/errors/not-found. Match on this, not on the prose.",
+            "format" : "uri",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ProductDto" : {
         "properties" : {
           "additionalImageUrls" : {
@@ -4177,9 +4207,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4225,9 +4255,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4273,9 +4303,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4283,9 +4313,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4293,9 +4323,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/KeycloakDeprovisionResult"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4341,9 +4371,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4351,9 +4381,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4399,9 +4429,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4409,9 +4439,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4457,9 +4487,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4467,9 +4497,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4477,9 +4507,9 @@
           },
           "502" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ConnectAccountDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4525,9 +4555,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4535,9 +4565,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4584,9 +4614,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageAnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4594,9 +4624,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageAnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4642,9 +4672,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4686,6 +4716,13 @@
             "description" : "Announcement deleted successfully"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Announcement not found"
           }
         },
@@ -4730,9 +4767,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4790,9 +4827,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4800,9 +4837,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AnnouncementDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4840,9 +4877,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageCustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4900,9 +4937,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/CustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4910,9 +4947,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/CustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -4954,9 +4991,23 @@
             "description" : "Customer deleted successfully"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Customer not found"
           },
           "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Cannot delete customer with existing orders"
           }
         },
@@ -5001,9 +5052,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/CustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5061,9 +5112,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/CustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5071,9 +5122,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/CustomerDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5111,9 +5162,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageFinancialTransactionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5159,9 +5210,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/FinancialTransactionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5241,9 +5292,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/FinancialTransactionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5292,9 +5343,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ErasureResponse"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5343,9 +5394,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DataExportResponse"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5386,12 +5437,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "items" : {
-                    "$ref" : "#/components/schemas/MediaAssetDto"
-                  },
-                  "type" : "array"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5441,9 +5489,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAssetDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5451,9 +5499,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAssetDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5511,9 +5559,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5521,9 +5569,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5531,9 +5579,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5541,9 +5589,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5551,9 +5599,9 @@
           },
           "422" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5601,9 +5649,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5611,9 +5659,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5654,12 +5702,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "items" : {
-                    "$ref" : "#/components/schemas/AdminOnboardingDto"
-                  },
-                  "type" : "array"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5700,12 +5745,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "items" : {
-                    "$ref" : "#/components/schemas/AdminOnboardingDto"
-                  },
-                  "type" : "array"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5755,9 +5797,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5765,9 +5807,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5775,9 +5817,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5856,9 +5898,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5866,9 +5908,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5876,9 +5918,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5938,9 +5980,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5948,9 +5990,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -5958,9 +6000,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AdminOnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6008,9 +6050,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6018,9 +6060,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6058,9 +6100,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6068,9 +6110,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6108,9 +6150,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6148,9 +6190,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6158,9 +6200,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6198,9 +6240,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6208,9 +6250,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6248,9 +6290,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6258,9 +6300,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/OnboardingDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -6685,7 +6727,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -6723,7 +6805,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -6761,7 +6883,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -6837,7 +6999,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -6875,7 +7077,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -6913,7 +7155,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Transition applied"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Transition not legal from the order's current status"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks at least STAFF on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Concurrent modification of the same order, or insufficient stock"
           }
         },
         "security" : [
@@ -7100,9 +7382,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7110,9 +7392,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7158,9 +7440,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7168,9 +7450,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7388,6 +7670,13 @@
             "description" : "Product deleted successfully"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Product not found"
           }
         },
@@ -7432,9 +7721,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7492,9 +7781,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7502,9 +7791,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7554,9 +7843,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ProductDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7658,9 +7947,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7668,9 +7957,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7678,9 +7967,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7688,9 +7977,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7698,9 +7987,9 @@
           },
           "413" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7708,9 +7997,9 @@
           },
           "422" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/MediaAcceptDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7970,9 +8259,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PagePromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -7980,9 +8269,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PagePromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8028,9 +8317,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8072,6 +8361,13 @@
             "description" : "Promotion deleted successfully"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Promotion not found"
           }
         },
@@ -8116,9 +8412,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8176,9 +8472,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8186,9 +8482,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PromotionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8865,9 +9161,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8875,9 +9171,9 @@
           },
           "401" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8923,9 +9219,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -8933,9 +9229,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9020,6 +9316,13 @@
             "description" : "Shop deleted successfully"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Shop not found"
           }
         },
@@ -9064,9 +9367,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9124,9 +9427,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9134,9 +9437,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ShopDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9368,9 +9671,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StaffListResponse"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9425,9 +9728,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StaffMemberDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9435,9 +9738,9 @@
           },
           "403" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StaffMemberDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9445,9 +9748,9 @@
           },
           "409" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StaffMemberDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9512,12 +9815,33 @@
             "description" : "Grant revoked"
           },
           "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
           },
           "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Grant not found (or another tenant's)"
           },
           "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
             "description" : "Would remove the last GROUP_ADMIN (last-group-admin)"
           }
         },
@@ -9627,9 +9951,9 @@
           },
           "400" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/WithSecret"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
@@ -9678,9 +10002,9 @@
           },
           "404" : {
             "content" : {
-              "*/*" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/WebhookSubscriptionDto"
+                  "$ref" : "#/components/schemas/ProblemDetail"
                 }
               }
             },
