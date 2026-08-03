@@ -188,6 +188,44 @@ tasks.register<Test>("integrationTest") {
     //
     // Raw series: .planning/phases/27-operational-maturity/baselines/ (T7 arms A/B/C).
     setForkEvery(4)
+
+    // Run several forkEvery-bounded JVMs CONCURRENTLY. Container startup is
+    // wait-bound (~16s per container sitting idle), so overlapping those waits is
+    // most of the win. Measured on a 16-core dev box: full integrationTest
+    // 2337s -> 911s (2.6x), 416 tests, 0 failures, 0 OOM at 4 forks.
+    //
+    // This does NOT reopen the OOM the block above documents: forkEvery(4) still
+    // bounds native-thread accumulation PER JVM. Concurrency multiplies the number
+    // of bounded JVMs; it does not raise any one JVM's ceiling.
+    //
+    // THE DIVISOR IS 2, AND THAT IS THE WHOLE POINT.
+    //
+    //   This started life as `availableProcessors() / 4`, which is correct on the
+    //   16-core dev box (16/4 = 4, the validated cap) and INERT ON CI: a
+    //   GitHub-hosted runner has 2 or 4 cores, so 4/4 = 1 and 2/4 = 0 -> coerced
+    //   to 1. Behaviour unchanged on precisely the machine where the 45-minute job
+    //   runs. A speed-up that cannot reach CI is a speed-up nobody sees, and the
+    //   commit message claiming "39m -> 15m" was true only locally.
+    //
+    //   With /2 the dev box is UNCHANGED (16/2 = 8, coerced back to the validated
+    //   cap of 4) while a 4-core runner moves 1 -> 2. The cap stays at 4 because
+    //   4 forks is the largest value with a measured 0-OOM run behind it; going
+    //   higher would be extrapolation, not measurement.
+    //
+    // Env-adaptive by construction — no hardcoded machine assumption. Override for
+    // an experiment with -PitMaxParallelForks=N.
+    maxParallelForks = (findProperty("itMaxParallelForks") as String?)?.toIntOrNull()
+        ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
+
+    doFirst {
+        // Recorded in the job log so the next person reads a measurement rather
+        // than re-deriving the arithmetic above from the runner's core count.
+        logger.lifecycle(
+            "integrationTest: availableProcessors=${Runtime.getRuntime().availableProcessors()}, " +
+                "maxParallelForks=$maxParallelForks, forkEvery=4"
+        )
+    }
+
     shouldRunAfter(tasks.test)
 }
 

@@ -168,6 +168,18 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      # The integrationTest fork count is derived from availableProcessors(), so the
+      # runner's shape IS the input to that decision. Record it in the log rather
+      # than assuming a runner size that GitHub can change under us — the previous
+      # divisor was inert on CI for exactly that reason and nobody noticed, because
+      # nothing ever printed the number it resolved to.
+      - name: Runner shape (input to the integrationTest fork count)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        run: |
+          echo "nproc            : $(nproc)"
+          echo "memory           : $(free -h | awk '/^Mem:/ {print $2 " total, " $7 " available"}')"
+          echo "disk (workspace) : $(df -h . | awk 'NR==2 {print $4 " available"}')"
+
       - name: Run Testcontainers integration suite
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
