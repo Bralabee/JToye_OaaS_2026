@@ -37,11 +37,28 @@ const WILDCARD = "*"
  *                          reached ONLY via a token link in an outbound email
  *                          (List-Unsubscribe / footer link), never an in-app
  *                          nav link; noindex + sitemap-excluded by design.
+ *  - "/dashboard/payments/connect/return"   Stripe Connect redirect targets
+ *  - "/dashboard/payments/connect/refresh"  (#295). Same shape as
+ *                          /shop/auth/callback: the ONLY inbound edge is an
+ *                          external redirect from Stripe's hosted Express
+ *                          onboarding flow, whose destination is set server-side
+ *                          by `stripe.connect.return-url` / `refresh-url` in
+ *                          core-java's application.yml (+ the k8s overlays), not
+ *                          by any href in this codebase. Adding an in-app nav
+ *                          link to satisfy this guard would ship a dashboard
+ *                          entry that goes nowhere useful — the allowlist is the
+ *                          honest answer, not a decorative link.
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
  */
-const ALLOWLIST = new Set<string>(["/", "/shop/auth/callback", "/unsubscribe"])
+const ALLOWLIST = new Set<string>([
+  "/",
+  "/shop/auth/callback",
+  "/unsubscribe",
+  "/dashboard/payments/connect/return",
+  "/dashboard/payments/connect/refresh",
+])
 
 function isTestFile(file: string): boolean {
   return /(^|[/\\])__tests__[/\\]/.test(file) || /\.(test|spec)\.[jt]sx?$/.test(file)
