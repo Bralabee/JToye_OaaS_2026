@@ -130,7 +130,13 @@ class LegacyImageUploadPipelineTest {
         assertThat(sha256(put.bytes)).isNotEqualTo(sha256(raw));
         assertThat(put.bytes).startsWith(RIFF);
         assertThat(put.contentType).isEqualTo("image/webp");
-        assertThat(put.key).isEqualTo(tenantId + "/shops/" + entityId + "/logo.webp");
+        // Issue #489 changed the key from the fixed ".../logo.webp" to a content-addressed
+        // ".../logo-<sha256 of these bytes>.webp" (see StorageService.uploadNamed). This
+        // assertion's job here is the #445 one — the object is the WebP derivative at a
+        // ".webp" key under the shop's own prefix; the key SHAPE is pinned by
+        // ShopBrandImageKeyTest.
+        assertThat(put.key)
+                .isEqualTo(tenantId + "/shops/" + entityId + "/logo-" + sha256(put.bytes) + ".webp");
     }
 
     @Test
@@ -146,7 +152,9 @@ class LegacyImageUploadPipelineTest {
         assertThat(sha256(put.bytes)).isNotEqualTo(sha256(raw));
         assertThat(put.bytes).startsWith(RIFF);
         assertThat(put.contentType).isEqualTo("image/webp");
-        assertThat(put.key).isEqualTo(tenantId + "/shops/" + entityId + "/banner.webp");
+        // See the note on the logo case above (issue #489 content-addressed key).
+        assertThat(put.key)
+                .isEqualTo(tenantId + "/shops/" + entityId + "/banner-" + sha256(put.bytes) + ".webp");
     }
 
     @Test
