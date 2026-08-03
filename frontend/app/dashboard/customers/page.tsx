@@ -318,7 +318,7 @@ export default function CustomersPage() {
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
                               {allergenNames.length === 0 ? (
-                                <span className="text-sm text-slate-400">
+                                <span className="text-sm text-muted-foreground">
                                   No restrictions
                                 </span>
                               ) : (

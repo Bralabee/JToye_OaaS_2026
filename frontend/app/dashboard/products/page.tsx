@@ -474,14 +474,14 @@ export default function ProductsPage() {
                               {product.category ? (
                                 <Badge variant="outline" className="text-xs">{product.category}</Badge>
                               ) : (
-                                <span className="text-xs text-slate-400">—</span>
+                                <span className="text-xs text-muted-foreground">—</span>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
                               {allergenNames.length === 0 ? (
-                                <span className="text-sm text-slate-400">
+                                <span className="text-sm text-muted-foreground">
                                   No allergens
                                 </span>
                               ) : (
