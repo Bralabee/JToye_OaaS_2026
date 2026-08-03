@@ -119,7 +119,7 @@ export function UnsubscribeContent() {
         {state === "already_unsubscribed" && (
           <div className="flex flex-col items-center py-4 text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-              <CheckCircle2 className="h-6 w-6 text-slate-500" />
+              <CheckCircle2 className="h-6 w-6 text-slate-600" />
             </span>
             <h1 className="text-2xl font-semibold leading-tight text-slate-900">
               You&apos;re already unsubscribed
@@ -134,7 +134,7 @@ export function UnsubscribeContent() {
         {state === "invalid" && (
           <div className="flex flex-col items-center py-4 text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
+              <AlertTriangle className="h-6 w-6 text-amber-700" />
             </span>
             <h1 className="text-2xl font-semibold leading-tight text-slate-900">
               This link isn&apos;t valid

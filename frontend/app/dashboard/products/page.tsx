@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { IconButton } from "@/components/ui/icon-button"
 import { IngredientText } from "@/components/ui/ingredient-text"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -538,25 +539,21 @@ export default function ProductsPage() {
                                 }}
                                 className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                                 title="Download allergen label"
+                                aria-label={`Download allergen label for ${product.title}`}
                               >
                                 <FileText className="h-4 w-4" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                              <IconButton
                                 onClick={() => openEditDialog(product)}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                                label={`Edit product ${product.title}`}
+                                icon={<Pencil className="h-4 w-4" />}
+                              />
+                              <IconButton
                                 onClick={() => openDeleteDialog(product)}
-                                className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                label={`Delete product ${product.title}`}
+                                icon={<Trash2 className="h-4 w-4" />}
+                              />
                             </div>
                           </TableCell>
                         </m.tr>

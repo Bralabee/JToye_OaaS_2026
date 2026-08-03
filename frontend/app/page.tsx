@@ -178,7 +178,7 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
             <div className="flex items-baseline justify-between">
               <h2 className="text-2xl font-bold text-oxblood">Cooking near you right now</h2>
-              <Link href="/shop" className="text-sm font-bold text-amber-600 hover:text-amber-700">
+              <Link href="/shop" className="text-sm font-bold text-amber-700 hover:text-amber-800">
                 See all kitchens →
               </Link>
             </div>
@@ -200,7 +200,7 @@ export default function Home() {
                     </div>
                     <div className="p-3.5">
                       <div className="font-bold text-slate-900">{d.name}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
+                      <div className="mt-0.5 text-xs text-slate-600">
                         {d.vendor} · ⭐ {d.rating} · FHRS 5
                       </div>
                       <div className="mt-2 font-extrabold text-oxblood">{d.price}</div>

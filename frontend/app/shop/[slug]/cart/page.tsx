@@ -19,7 +19,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
         <ShoppingBag className="h-16 w-16 text-oxblood/25" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Your basket is empty</h2>
-        <p className="mt-1 text-sm text-slate-500">Add items from the menu to get started.</p>
+        <p className="mt-1 text-sm text-slate-600">Add items from the menu to get started.</p>
         <Link
           href={`/shop/${slug}`}
           className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors"
@@ -38,13 +38,13 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         <div>
           <Link
             href={`/shop/${slug}`}
-            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-1"
+            className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-1"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to menu
           </Link>
           <h1 className="text-xl font-bold text-slate-900">Your basket</h1>
-          <p className="text-sm text-slate-500">{itemCount} item{itemCount !== 1 ? "s" : ""}</p>
+          <p className="text-sm text-slate-600">{itemCount} item{itemCount !== 1 ? "s" : ""}</p>
         </div>
         <button
           onClick={clearCart}

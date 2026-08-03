@@ -115,7 +115,10 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all hover:bg-slate-800",
                 isActive
-                  ? "bg-orange-600 text-white shadow-lg shadow-orange-500/40"
+                  // orange-700, not orange-600: this pill carries white text at
+                  // 14px, so 4.5:1 applies (#451). The glow keeps the brighter
+                  // orange-500 — a shadow is decorative and carries no text.
+                  ? "bg-orange-700 text-white shadow-lg shadow-orange-500/40"
                   : "text-slate-300 hover:text-white"
               )}
             >

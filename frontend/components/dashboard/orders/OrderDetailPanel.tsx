@@ -86,7 +86,7 @@ function refundStatusClass(status: Refund["status"]): string {
   if (status === "succeeded") return "text-emerald-700 font-medium"
   if (status === "failed") return "text-red-600 font-medium"
   if (status === "canceled") return "text-slate-500"
-  return "text-orange-600 font-medium"
+  return "text-orange-700 font-medium"
 }
 
 interface OrderDetailPanelProps {
@@ -344,7 +344,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
             type="button"
             size="sm"
             variant="outline"
-            className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+            className="border-orange-500 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
             onClick={() => setRefundDialogOpen(true)}
           >
             <RotateCcw className="mr-1 h-3 w-3" aria-hidden="true" />

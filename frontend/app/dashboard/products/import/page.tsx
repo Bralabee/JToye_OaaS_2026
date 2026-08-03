@@ -36,7 +36,7 @@ export default function ImportProductsPage() {
     <div className="space-y-6">
       <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4">
-        <Link href="/dashboard/products" className="text-slate-400 hover:text-slate-600">
+        <Link href="/dashboard/products" className="text-slate-600 hover:text-slate-800">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
@@ -135,7 +135,7 @@ function CsvImportTab() {
             <Download className="h-4 w-4" />
             Download CSV Template
           </Button>
-          <p className="mt-3 text-xs text-slate-400">
+          <p className="mt-3 text-xs text-slate-600">
             Columns: title, sku, price_pounds, ingredients, category, description, dietary_tags, prep_time_minutes, allergen_mask
           </p>
         </CardContent>
@@ -161,7 +161,7 @@ function CsvImportTab() {
               <div className="flex flex-col items-center gap-3">
                 <Upload className="h-8 w-8 text-slate-400" />
                 <span className="text-sm text-slate-600">Click to select CSV file or drag & drop</span>
-                <span className="text-xs text-slate-400">UTF-8 encoded, comma-separated</span>
+                <span className="text-xs text-slate-600">UTF-8 encoded, comma-separated</span>
               </div>
             )}
           </div>
@@ -269,7 +269,7 @@ function PhotoImportTab() {
             <div className="flex flex-col items-center gap-3">
               <ImageIcon className="h-8 w-8 text-violet-400" />
               <span className="text-sm text-slate-600">Drop food photos here or click to select</span>
-              <span className="text-xs text-slate-400">JPEG, PNG, WebP — select multiple at once</span>
+              <span className="text-xs text-slate-600">JPEG, PNG, WebP — select multiple at once</span>
             </div>
           </div>
           <input
@@ -382,7 +382,7 @@ function ImportResultsPanel({ result, isPhotoImport }: { result: ImportResult; i
                   )}
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-slate-800 truncate block">{p.title}</span>
-                    <span className="text-xs text-slate-400">{p.sku}</span>
+                    <span className="text-xs text-slate-600">{p.sku}</span>
                   </div>
                   <span className="text-xs font-medium text-slate-600">
                     {p.pricePennies > 0 ? `£${(p.pricePennies / 100).toFixed(2)}` : "Price needed"}
@@ -391,7 +391,7 @@ function ImportResultsPanel({ result, isPhotoImport }: { result: ImportResult; i
               ))}
             </div>
             {isPhotoImport && (
-              <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+              <p className="mt-2 text-xs text-amber-700 flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 AI-created products are drafts — set prices and review before publishing
               </p>

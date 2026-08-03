@@ -230,7 +230,7 @@ function TrackOrderContent() {
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-oxblood">Your order</h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-600">
               Signed in — we found this one for you. No order number needed.
             </p>
           </div>
@@ -254,7 +254,7 @@ function TrackOrderContent() {
         className="rounded-xl bg-white border border-cream-100 p-5 shadow-sm"
       >
         <h1 className="text-xl font-bold text-oxblood">Track your order</h1>
-        <p className="mt-1 mb-4 text-xs text-slate-500">
+        <p className="mt-1 mb-4 text-xs text-slate-600">
           Enter your order number and the email you used — no sign-in needed.
         </p>
 
@@ -326,7 +326,7 @@ function TrackOrderContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-600">
                   {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
                 </p>
                 <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
@@ -416,7 +416,7 @@ function TrackOrderContent() {
         {autoResolved && (
           <Link
             href="/shop/orders"
-            className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-700"
+            className="inline-flex items-center gap-1 text-sm text-slate-600 transition-colors hover:text-slate-700"
           >
             <Package className="h-4 w-4" />
             All my orders
@@ -424,7 +424,7 @@ function TrackOrderContent() {
         )}
         <Link
           href="/shop"
-          className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-700"
+          className="inline-flex items-center gap-1 text-sm text-slate-600 transition-colors hover:text-slate-700"
         >
           <Store className="h-4 w-4" />
           Browse shops
