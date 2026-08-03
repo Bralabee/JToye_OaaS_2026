@@ -166,3 +166,39 @@ replicas:
     count: 1
   - name: frontend
     count: 1
+
+# Issue #271 — the Postgres egress port follows app-config `db.port`.
+#
+# REPEATED FROM k8s/base/kustomization.yaml, AND NOT REDUNDANT. This overlay is
+# the one that actually exercises the flexibility: configmap-patch.yaml sets
+# db.port to 5433, the compose-published host Postgres port. kustomize builds the
+# base — running the base replacement against the BASE ConfigMap's 5432 — before
+# this overlay's patches touch that ConfigMap, so without this block the local
+# render emits `port: 5432` while every local pod dials 5433. Measured, not
+# assumed; see the writeup in k8s/base/kustomization.yaml.
+#
+# LOCALLY THIS RULE IS DOUBLY INERT and that is worth stating plainly, so nobody
+# reads a green render as a working path: there is no `jtoye-infrastructure`
+# namespace on the local cluster (Postgres is a compose container on the HOST,
+# reached via host.minikube.internal), and minikube's default CNI does not
+# enforce NetworkPolicies at all (D-11, k8s/LOCAL.md §6). What the local render
+# proves is that the DERIVATION works at a non-default port — which is exactly
+# the case no other target covers. Issue #297 (install Calico) is what turns
+# these policies from valid into enforced, and it needs a host-gateway egress
+# allowance that does not exist yet; see k8s/LOCAL.md §6.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.db\.port
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port

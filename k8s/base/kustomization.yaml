@@ -84,3 +84,53 @@ labels:
 commonAnnotations:
   maintainer: "jtoye-devops-team"
   documentation: "https://github.com/jtoye/oaas-platform"
+
+# =============================================================================
+# Issue #271 — the Postgres egress port is DERIVED, never authored twice.
+#
+# THE DEFECT. Phase 26 made DB_PORT Secret-driven (DEF-1) so a non-default
+# Postgres port needs no manifest edit, but the NetworkPolicy egress rules that
+# PERMIT that connection kept their own `5432` literal. Using the flexibility the
+# fix introduced therefore produced a NetworkPolicy denial under an enforcing
+# CNI: every core-java replica CrashLooping, and the nightly pg-backup dump
+# failing, with the logs pointing at the wrong layer. Fixing one half of a
+# coupling is what created the trap.
+#
+# WHAT THIS DOES. app-config `db.port` is the single RENDER-TIME declaration of
+# the Postgres port; this copies it into the dedicated single-port Postgres
+# egress rule of both NetworkPolicies. Change the port in ONE place.
+#
+# THE fieldPath INDICES ARE LOAD-BEARING. `spec.egress.1` is the Postgres rule in
+# both policies — deliberately its own rule carrying exactly ONE port, so
+# `ports.0.port` means "the Postgres port" and not "whichever port sorts first".
+# kustomize renders MAP keys alphabetically but preserves LIST order, so these
+# indices address the authored order in the networkpolicies/*.yaml files.
+# Inserting an egress rule ahead of index 1 silently retargets the replacement;
+# INV-7 in k8s/scripts/check-render-invariants.sh asserts the rendered
+# infrastructure-egress port SET exactly, in every target, which is what catches
+# that (and a plain forgotten replacement) before it ships.
+#
+# THIS BLOCK MUST BE REPEATED IN EVERY OVERLAY THAT PATCHES db.port — verified,
+# not assumed: with the block present here ONLY and k8s/local patching db.port to
+# 5433, the local render still emitted `port: 5432`. kustomize builds the base
+# (running this replacement against the BASE ConfigMap) before the overlay's
+# patches touch that ConfigMap, so the overlay must run its own pass. It is the
+# same repetition the `labels: fields:` list already carries for D-17, and for
+# the same structural reason.
+# =============================================================================
+replacements:
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.db\.port
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port

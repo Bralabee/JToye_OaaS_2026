@@ -189,6 +189,7 @@ this host: the other kubectl context is employer infrastructure and must never b
 | Ingress hosts | `api.jtoye.local` → `core-java:9090`, `app.jtoye.local` → `frontend:3000`; SSE ingress `api.jtoye.local/api/v1/orders/stream` (`pathType: Exact`) | The one deploy surface no other local runtime exercises, and it gives NextAuth a stable callback origin. 9091 is the internal management port and is published through no ingress. |
 | Image tags | all three service images pinned to `newTag: local` | A locally built tag that exists in no registry. Base sets `imagePullPolicy: IfNotPresent`, which is exactly right for `minikube image load`. The `pg-backup` image is loaded as-is at its immutable tag. |
 | Split-horizon issuer pair | `keycloak.issuer.uri` = pod-reachable; `keycloak.public.issuer.uri` = browser-reachable | Two different values, by design. Set both to the pod URL and every real token is rejected on `iss` mismatch; set both to the browser URL and the pod cannot fetch JWKS. This is the class that once caused a total live-auth outage. |
+| `db.port` | `5433` (base: `5432`) | Issue #271. The **render-time** declaration of the Postgres port, consumed by no container — its consumer is the `replacements:` block in `k8s/local/kustomization.yaml`, which writes it into the Postgres egress rule of both NetworkPolicies. `DB_PORT` itself still comes from the `postgres-credentials` Secret (`port`), so the port stays changeable without a manifest edit. The two must agree; `scripts/k8s-local-secrets.sh` refuses to create the Secret when they do not. |
 | `log.path` | `/tmp` | See §7, PIT-5. |
 | Secrets | **zero** `kind: Secret` in the render | Enforced by `k8s/scripts/check-no-plaintext-secrets.sh`, which auto-discovers every overlay. Secrets arrive out-of-band from `scripts/k8s-local-secrets.sh`. |
 
@@ -243,12 +244,50 @@ rendered policy set would deny the **entire** local traffic pattern:
   namespace that **does not exist locally**.
 - The ports the local pattern actually needs — `5433` (Postgres), `8085` (Keycloak), `6379` (Redis),
   `5672` (AMQP), `61613` (STOMP), `9000` (MinIO), `1025` (SMTP) — appear in no allowed egress rule
-  for the host gateway. The in-cluster rule lists `5432/6379/5672/61613/9000/9093`, but scoped to
-  that non-existent namespace.
+  for the host gateway. The in-cluster rules list `<db.port>/6379/5672/61613/9000/9093`, but scoped
+  to that non-existent namespace.
 
 So "an enforcing CNI would need explicit egress rules" is concretely: a rule permitting TCP to the
 host gateway CIDR on those seven ports. The policy flow matrix and rollback steps are in
 `k8s/base/networkpolicies/README.md`.
+
+**The Postgres port in those rules is now DERIVED, not authored (issue #271).** It reads `5433` in
+the local render and `5432` in base/staging/production, because both come from app-config `db.port`
+via the `replacements:` block that each kustomization carries. Before this, the rules held their own
+`5432` literal while `DB_PORT` was Secret-driven — so the first environment to use that flexibility
+(this one: local genuinely runs 5433) would have been denied by the policy that exists to permit it,
+CrashLooping every `core-java` replica under an enforcing CNI with a network denial that reads like
+an application fault. `INV-7` in `k8s/scripts/check-render-invariants.sh` asserts the complete
+rendered egress port set per policy per target, so the two halves cannot diverge again.
+
+Two limits on that, stated plainly rather than left to be discovered:
+
+- **It is render-only.** With no enforcing CNI here and staging/production never deployed, no run on
+  this platform has ever *executed* a NetworkPolicy decision. What is proven is that the rendered
+  manifests agree with the declared port — not that any packet was allowed or denied.
+- **`db.port` is a second encoding of a fact the `postgres-credentials` Secret also holds.** It has
+  to be: a Secret value can never appear in a kustomize render (`check-no-plaintext-secrets.sh`
+  guarantees that), so a policy literal cannot be derived from the Secret. Locally the two are
+  reconciled executably — `scripts/k8s-local-secrets.sh` compares `.env` `K8S_LOCAL_DB_PORT` against
+  the rendered `db.port` and refuses on a mismatch. For staging/production the Secret is sealed and
+  unreadable from this repository, so it is an operator check, in the same shape as the
+  `RABBITMQ_USER` pre-rollout note in `k8s/base/core-java-deployment.yaml`.
+
+**What issue #297 (install an enforcing CNI) inherits from this.** The port half is done and needs no
+further work there; what #297 still has to add is the part that was never right:
+
+1. A **host-gateway egress allowance** for the local overlay. `192.168.0.0/16` is currently in the
+   `except[]` list of the `0.0.0.0/0` rule, which denies `host.minikube.internal` outright. Every
+   local backing service is behind that gateway, so nothing works until it is allowed — this is the
+   real work, and it is a local-overlay patch, not a base edit.
+2. The **seven host-gateway ports** listed above, of which Postgres is `db.port` — read it from
+   app-config rather than writing `5433` again, or #271 returns in a new file.
+3. The `jtoye-infrastructure` in-cluster rules stay inert locally (no such namespace). Do not
+   "fix" that by deleting them: they are the staging/production path.
+4. If #297 adds or reorders egress rules in `20-core-java.yaml` / `40-datastores.yaml`, the
+   `spec.egress.1.ports.0.port` fieldPath in every `replacements:` block must be re-checked. INV-7
+   fails loudly on a retarget, but it will read as an unrelated port-set failure, so this note is
+   here to shorten that diagnosis.
 
 **HPA scaling behaviour — not proven.** metrics-server is deliberately not enabled; D-09 sets
 `minReplicas: 1` so nothing needs to compute a metric. An HPA here sits inert.

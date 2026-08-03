@@ -47,14 +47,34 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Postgres + MinIO in the infra namespace
+    # -------------------------------------------------------------------------
+    # POSTGRES — its own egress rule, holding exactly ONE port. Issue #271.
+    #
+    # pg-backup reads DB_PORT from the SAME `postgres-credentials` Secret key as
+    # core-java (pg-backup-cronjob.yaml `key: port`), so it had the identical
+    # defect: a Secret-driven port permitted by a hardcoded one. A non-5432
+    # Postgres would have failed the nightly dump under an enforcing CNI —
+    # silently, at 02:00, in a CronJob nobody watches.
+    #
+    # The port below is OVERWRITTEN at render time from app-config `db.port` by
+    # the `replacements:` block in k8s/base/kustomization.yaml (and in each
+    # overlay's). See networkpolicies/20-core-java.yaml for the full rationale,
+    # including why splitting the rule changes no security posture.
+    # -------------------------------------------------------------------------
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: jtoye-infrastructure
       ports:
         - protocol: TCP
-          port: 5432
+          port: 5432   # Postgres — replaced from app-config db.port
+    # MinIO in the infra namespace (backup upload target when s3.backup.endpoint
+    # points in-cluster).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
         - protocol: TCP
           port: 9000
     # S3 public endpoint (for external S3, optional)
@@ -72,6 +92,16 @@ spec:
 # -----------------------------------------------------------------------------
 # Notes for jtoye-infrastructure namespace maintainer (not applied by this
 # kustomization — copy into that namespace's kustomization):
+#
+# ISSUE #271 APPLIES TO THIS MIRROR TOO, and nothing in this repository can
+# enforce it. The `port: 5432` in the example below is the DEFAULT, not a
+# constant: it must equal this platform's app-config `db.port` (and the
+# `postgres-credentials` Secret `port` key, which is the value core-java and
+# pg-backup actually dial). An INGRESS policy in the infrastructure namespace
+# that admits 5432 while the app dials 5433 denies the connection just as
+# completely as an egress policy that does — from the other side, and outside
+# every gate this repository runs. Read the port off app-config rather than
+# copying the digits below.
 #
 # apiVersion: networking.k8s.io/v1
 # kind: NetworkPolicy

@@ -19,7 +19,49 @@ data:
   # API URLs
   api.url: "https://api.olajay.co.uk"
   frontend.url: "https://app.olajay.co.uk"
-  
+
+  # ---------------------------------------------------------------------------
+  # Postgres port — the RENDER-TIME declaration (issue #271)
+  #
+  # WHAT CONSUMES THIS: nothing injects it as an env var. It exists so the
+  # NetworkPolicy egress rules that PERMIT the Postgres connection can be derived
+  # from one declared value instead of carrying their own literal. The derivation
+  # is the `replacements:` block in k8s/base/kustomization.yaml, which writes this
+  # value into the Postgres egress rule of BOTH networkpolicies/20-core-java.yaml
+  # and networkpolicies/40-datastores.yaml.
+  #
+  # WHY THIS IS NOT ALSO DB_PORT's SOURCE, and the residual contract.
+  #   DB_PORT stays on the `postgres-credentials` Secret (`port` key) in both
+  #   core-java-deployment.yaml and pg-backup-cronjob.yaml. That is DEF-1's fix
+  #   and it is deliberately NOT undone here: the Secret is created OUT-OF-BAND
+  #   (SealedSecrets in staging/production; scripts/k8s-local-secrets.sh from the
+  #   gitignored .env locally), so an environment can change its Postgres port
+  #   WITHOUT editing a committed manifest. Moving DB_PORT here would make the
+  #   port a manifest edit again — the exact complaint DEF-1 was filed about.
+  #
+  #   A Secret VALUE can never appear in a kustomize render (by design, and
+  #   k8s/scripts/check-no-plaintext-secrets.sh enforces it), so a NetworkPolicy
+  #   literal can never be derived from the Secret. One render-time declaration is
+  #   therefore the closest single source that exists. The contract is:
+  #
+  #       postgres-credentials/port  ==  app-config db.port
+  #
+  #   ENFORCED, not merely documented, in the one place both are observable:
+  #   scripts/k8s-local-secrets.sh (STEP 1c) refuses to create the Secret when the
+  #   two disagree. For staging/production the Secret is sealed and unreadable
+  #   from this repository, so it is an operator step, in the same shape as the
+  #   RABBITMQ_USER pre-rollout check in k8s/base/core-java-deployment.yaml.
+  #   Written up in k8s/LOCAL.md § 6.
+  #
+  # SOURCE of this value: the Postgres default, matching what the base render has
+  # always permitted. Overlays patch it (k8s/local uses 5433, the compose-published
+  # host port). An overlay that patches it MUST also carry the `replacements:`
+  # block — kustomize does not re-run a base replacement against an overlay's
+  # patched source. INV-7 in k8s/scripts/check-render-invariants.sh fails the build
+  # when an overlay forgets, which is what stops the two halves diverging again.
+  # ---------------------------------------------------------------------------
+  db.port: "5432"
+
   # Redis configuration
   redis.host: "redis-cluster.jtoye-infrastructure.svc.cluster.local"
   redis.port: "6379"

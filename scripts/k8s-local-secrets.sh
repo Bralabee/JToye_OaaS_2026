@@ -136,6 +136,53 @@ case "${DB_BACKUP_PASSWORD}" in
 esac
 echo "OK: all ${#REQUIRED_VALUES[@]} required values present and DB_BACKUP_PASSWORD is not the placeholder"
 
+# ---------------------------------------------------------------------------
+# STEP 1c — the Postgres port must mean the same thing on both sides (issue #271).
+#
+# There are two encodings of one fact and there is no way to collapse them:
+#   - postgres-credentials `port` (created below from .env K8S_LOCAL_DB_PORT) is
+#     what core-java and pg-backup actually DIAL. It is a Secret so that an
+#     environment can change its Postgres port with no manifest edit — that is
+#     DEF-1's fix and it stays.
+#   - app-config `db.port` in the RENDER is what the NetworkPolicy egress rules
+#     are derived from, because a Secret VALUE can never appear in a kustomize
+#     render (check-no-plaintext-secrets.sh guarantees that, deliberately).
+#
+# If they disagree the pods dial one port while the policy permits another. Today
+# that is INERT locally — minikube's default CNI does not enforce NetworkPolicies
+# (D-11, k8s/LOCAL.md §6) — which is precisely why it must be caught here rather
+# than discovered later: issue #297 installs a CNI that DOES enforce, and on that
+# day a silent divergence becomes a CrashLoop with a network denial that reads
+# like an application fault.
+#
+# This is the ONE place both halves are observable at once. INV-7 in
+# k8s/scripts/check-render-invariants.sh asserts the render half in CI; .env is
+# gitignored and absent there, so CI structurally cannot make this comparison.
+# ---------------------------------------------------------------------------
+_local_render="$(kubectl kustomize "$REPO_ROOT/k8s/local" 2> /dev/null)" || {
+  echo "TOOLING ERROR [db-port-agreement]: 'kubectl kustomize k8s/local' failed, so the app-config db.port could not be read. Not proceeding on an unverified port." >&2
+  exit 2
+}
+# Anchored to the ConfigMap data indentation, quotes stripped. A miss yields an
+# EMPTY value, which is treated as VOID below rather than as agreement.
+_rendered_db_port="$(printf '%s\n' "$_local_render" \
+  | /usr/bin/awk '/^  db\.port:[[:space:]]/ { v = $2; gsub(/^["\x27]|["\x27]$/, "", v); print v; exit }')"
+if [ -z "$_rendered_db_port" ]; then
+  echo "TOOLING ERROR [db-port-agreement]: the k8s/local render carries no app-config 'db.port' key. That key is the source the NetworkPolicy Postgres egress is derived from (issue #271); without it the comparison would pass vacuously." >&2
+  exit 2
+fi
+if [ "$_rendered_db_port" != "$K8S_LOCAL_DB_PORT" ]; then
+  echo "REFUSED [db-port-agreement]: .env K8S_LOCAL_DB_PORT is ${K8S_LOCAL_DB_PORT} but the k8s/local render declares app-config db.port=${_rendered_db_port}." >&2
+  echo "  The Secret this script is about to create would tell every pod to dial ${K8S_LOCAL_DB_PORT}," >&2
+  echo "  while the NetworkPolicy egress rules permit ${_rendered_db_port}. Under an enforcing CNI" >&2
+  echo "  (issue #297) that is a CrashLoop for every core-java replica plus a failed nightly" >&2
+  echo "  pg-backup, reported as a database error rather than a network denial." >&2
+  echo "  FIX: set db.port in k8s/local/configmap-patch.yaml to ${K8S_LOCAL_DB_PORT}, or correct" >&2
+  echo "  K8S_LOCAL_DB_PORT in .env — whichever is wrong. They name one fact." >&2
+  exit 1
+fi
+echo "OK: app-config db.port (${_rendered_db_port}) agrees with .env K8S_LOCAL_DB_PORT — the NetworkPolicy permits the port the pods will dial"
+
 NS="$(k8s_local_namespace)"
 echo "OK: target namespace ${NS} (parsed from the local kustomization)"
 

@@ -12,6 +12,7 @@ apiVersion: v1
 data:
   api.url: https://api-staging.olajay.co.uk
   cors.allowed-origins: https://app-staging.olajay.co.uk
+  db.port: "5432"
   frontend.url: https://app-staging.olajay.co.uk
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
@@ -1266,6 +1267,11 @@ spec:
   - ports:
     - port: 5432
       protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+  - ports:
     - port: 6379
       protocol: TCP
     - port: 5672
@@ -1532,6 +1538,11 @@ spec:
   - ports:
     - port: 5432
       protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jtoye-infrastructure
+  - ports:
     - port: 9000
       protocol: TCP
     to:
