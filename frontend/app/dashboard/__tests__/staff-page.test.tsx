@@ -124,8 +124,15 @@ describe("Staff management screen (VSA-04)", () => {
     expect(mockedApiClient.get).toHaveBeenCalledWith("/api/v1/staff")
 
     // Directory identities are visible...
-    expect(screen.getByText(EMAIL_SAM)).toBeInTheDocument()
+    const shownEmail = screen.getByText(EMAIL_SAM)
+    expect(shownEmail).toBeInTheDocument()
     expect(screen.getByText("Ada Owner")).toBeInTheDocument()
+
+    // …in the MASKED form the API actually returns. Without this, the fixtures can
+    // drift back to `sam@vendor.co.uk` — a response shape that cannot occur — and
+    // every case here still passes, because they all read the same constant. This
+    // is the assertion that fires on that drift.
+    expect(shownEmail.textContent).toMatch(/^[^@]\*\*\*@[^@]+$/)
 
     // ...and the grants resolve to human-readable shop + role.
     expect(screen.getAllByText("Peckham Kitchen").length).toBeGreaterThan(0)
