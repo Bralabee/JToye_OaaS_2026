@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A one-tenant bulk import cleared every tenant's product cache (#474) — 2026-08-03
+
+Closes #287. `@CacheEvict(value = "products", allEntries = true)` on both `BulkImportService` paths flushed the whole region, so one vendor importing a CSV evicted every other tenant's cached products.
+
+#### Fixed
+- **The annotation is removed from both bulk paths — removed, not narrowed**, and the distinction is on evidence. The `products` region holds exactly one thing (`ProductService.ProductCacheLoader.getProductById`, keyed `tenant:{tid}:getProductById:{pid}`); no list, search or aggregate is cached. Both bulk paths are **create-only** — every row is a `new Product()` with a generated UUID, saved; neither loads-and-mutates nor deletes. So no key that existed before an import can be staled by it, and there is nothing to evict.
+
+#### Notes
+- **"Narrow it to the tenant" had no mechanism.** `TenantCacheEvictor` exposes only `evictEntity` (exact key), and its javadoc promises an `evictAllForMethod` for bulk imports that **does not exist** — plausibly how this survived Phase 23. The fix mirrors the reasoning Phase 23 already applied to `ProductService.createProduct` and `ShopService.createShop`; these two paths were simply missed.
+- **This bug class is invisible to the normal suite by construction.** `CacheConfig` is `@Profile("!test")`, so the test re-supplies a `ConcurrentMapCacheManager` via a nested `@TestConfiguration`, mirroring `ShopAccessCacheBypassIntegrationTest`. Tenancy is driven through `TenantContext.set(...)` at the boundary rather than the Postgres GUC, because `TenantSetLocalAspect` re-pins the GUC before every repository call.
+- **The instrument was proven live, not merely red.** Fail direction on the unfixed tree: 3 of 5 failing, **all on the survival assertion and never on the "entry was populated" precondition** — so the test could see the cache before it asserted about it. Pass direction 5/5 run with `--rerun-tasks` (`5 executed`, no `UP-TO-DATE`, which is also what running zero tests looks like).
+- **Adjacent, reported not fixed:** `SyncService.processBatch` carries the identical `allEntries` blast, but there removal would be **wrong** — it genuinely upserts (`findByName`/`findBySku` + `orElseGet`), so existing rows can be mutated. Only its radius is wrong. Wants its own issue.
+
 ### Eight integration suites were racing their own `@Scheduled` workers (#480) — 2026-08-03
 
 Closes #418. The flake was real, both CI failure modes came from one cause, and **the issue body and its own retraction were each half right**.
