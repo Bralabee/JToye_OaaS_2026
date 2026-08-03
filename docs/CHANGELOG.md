@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### HTML escaping is now the default in the email renderer (#478) — 2026-08-03
+
+Closes #279. **Forward-looking hardening, not a live vulnerability** — every value `EmailTemplateRenderer` interpolates today was traced to its source, and none carries vendor-, customer- or third-party-controlled text. That matches the issue's own claim, confirmed independently rather than taken on trust.
+
+#### Fixed
+- **Escaping is enforced by which accessor a builder calls, not by remembering to escape.** `sHtml(model, key)` / `esc(value)` cover every HTML body and attribute context and are what a future field inherits by default; `s(model, key)` is for the plain-text body and MIME subject only, both javadoc'd as such.
+- **The `href="%s"` attribute was unescaped** — attribute context is a different injection class from body text, and it sat outside the issue's framing entirely.
+- **`formatAmount` raw-concatenated any non-GBP currency.** Unreachable today (both call sites pass the literal `"gbp"`), but it becomes a string of unknown provenance in the HTML body the moment multi-currency lands. Now routed through the escaping accessor.
+
+#### Notes
+- **`wrapText` and the subject stay raw, and are documented "do NOT harden this method".** Escaping there would put a literal `&lt;` in a vendor's inbox; the `bodyHtml` key is legitimately markup the builder composed, and must not be escaped.
+- **The UTF-8 overload of `HtmlUtils.htmlEscape` is deliberate**, matching `<meta charset="UTF-8">` and `MimeMessageHelper(mime, true, "UTF-8")`. Measured difference: the no-arg overload renders `£12.50` as `&pound;12.50`. Both are safe, but the no-arg form would have quietly changed how money renders.
+- **The mechanism is real even though no live data reaches it.** Fail direction on the unfixed tree: 3 of 16 failing — raw `<script>` and `<img>` reaching the HTML body, and a value closing the `href` attribute to add a handler.
+- **Four of the seven tests are regression guards that pass on both trees by design, so each was break-armed rather than reported as a vacuous pass** — including the no-double-escape proof, which is the assertion most likely to be satisfied for the wrong reason.
+
 ### A one-tenant bulk import cleared every tenant's product cache (#474) — 2026-08-03
 
 Closes #287. `@CacheEvict(value = "products", allEntries = true)` on both `BulkImportService` paths flushed the whole region, so one vendor importing a CSV evicted every other tenant's cached products.
