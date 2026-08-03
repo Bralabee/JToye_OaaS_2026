@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The session ended after five minutes, and the public header never asked (#466) — 2026-08-03
+
+One reported symptom — *"going home when logged in logs me out"* — turned out to be **two** defects, and the browser falsification run before writing any code showed the filed diagnosis was half right. The session *does* survive the navigation; it is destroyed by a 300s timer. Fixing only the header would have left the report looking unfixed, because after five minutes the header would correctly say "Sign in".
+
+#### Fixed
+- **The customer session no longer ends at `accessTokenLifespan` (#465).** `/api/customer-auth/session` decided `authenticated` purely on cookie presence plus the ID token's `exp`, with **no renewal branch**, while a refresh token sat unused in an HttpOnly cookie for 30 days — the only `grant_type: "refresh_token"` in the frontend was `auth.ts`, the *operator* path on a different realm. Measured: the expiry did not move through **4 minutes of continuous navigation**, and the customer was signed out at 300s while Keycloak's own SSO session (30 min idle / 2 h max) was still alive, so re-signing in needed no credentials. The endpoint now redeems that token against the INTERNAL issuer and re-issues all three cookies.
+- **`PublicHeader` is no longer session-blind (#457).** It contained **zero** references to the session, so `/`, `/track` and the marketing surfaces showed "Sign in" to a signed-in customer. The mount/focus/visibility/storage logic moved out of `StorefrontNav` into `useCustomerSession`, and both headers consume it — one reader rather than two that can disagree. Signed-in chrome is additive; the logged-out header is unchanged.
+
+#### Notes
+- **Rotation is the trap, and it fails late.** The realm sets `revokeRefreshToken=true` / `refreshTokenMaxReuse=0`, so the *rotated* token must be persisted; writing the old one back fails on the **next** refresh, not the current one. The test therefore asserts **two consecutive** refreshes — in the break arm that wrote the old token back, the single-refresh test still passed and only the two-refresh test caught it.
+- **A single-flight guard is required, not defensive padding.** `StorefrontNav` probes the session on mount, focus, visibilitychange, storage *and* a 1s interval for the first 5s, so several probes crossing the expiry boundary together is the normal case. With rotation enforced, a second redemption of the same token is rejected — without the guard this fix would itself have logged customers out.
+- Refresh **fails closed**: an unreachable or refusing IdP clears the cookies rather than reporting a live session. The anonymous path is untouched and still answers `200 { authenticated: false }`, never 401 (backlog #13).
+- **Verified on the rebuilt runtime, not the source tree**: 11 minutes signed in across two full lifespans, expiry rolling forward twice (`00:03:44` → `00:09:25` → `00:14:26`), `document.cookie` empty throughout. All three break arms restored and verified by `git hash-object`, with a **closing** clean arm (54/54) as well as an opening one.
+- **Found while verifying, NOT fixed here: `/api/customer-orders` returns 502 on the compose stack.** The frontend container cannot reach `http://localhost:9090` (`extra_hosts` localhost→host-gateway does not beat the container's own loopback) and `CORE_API_INTERNAL_URL` is unset. Pre-existing — present in the console before any edit on this branch. It wants its own ticket for the failure mode more than the cause: the page renders that 502 as *"No orders found for this email"*, an **error displayed as an empty state**.
+
+
 ### The dish row scrolled, but nothing on screen said so (#456) — 2026-08-02
 
 The "Cooking near you right now" row on `/` was `overflow-x-auto` and nothing else. It scrolled, but the affordance was invisible: the last card is hard-clipped at the container edge — measured, **"Lamb Biryani" cut mid-word at 390px and "Pho Bo" cut at 1440px** — and on touch the only signal was an overlay scrollbar that does not exist until you are already scrolling. An affordance has to be the thing you see *before* you interact, not the feedback you get after.
