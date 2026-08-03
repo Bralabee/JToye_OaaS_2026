@@ -14,15 +14,23 @@
  *
  * This call removes the coupling. `POST /protocol/openid-connect/logout` with
  * `client_id` + `refresh_token` is server-to-server, has no redirect URI to get
- * wrong, and terminates the session outright. Measured against the live realm:
+ * wrong, and terminates the session outright. Measured against the running app
+ * with the front-channel navigation removed ENTIRELY, so nothing else could have
+ * done it:
  *
- *   POST .../logout (client_id + refresh_token)      -> HTTP 204
- *   all 6 KEYCLOAK_* / AUTH_SESSION_* cookies STILL in the browser jar
- *   subsequent Sign in                                -> credential prompt
+ *   POST /api/customer-auth/logout   -> 200 {"ok":true,"idp":"ok"}
+ *   IdP cookies still in the jar     -> all 6, none cleared
+ *   subsequent Sign in               -> credential prompt
  *
  * The surviving cookies are the point: they prove the termination happened at
  * the IdP and is not a browser cookie clear flattering the result — the trap
  * issue #504 explicitly warns about.
+ *
+ * And it is not redundant with the origin fix. Measured with NEITHER
+ * APP_PUBLIC_ORIGIN nor NEXTAUTH_URL set — the total config failure this
+ * module's sibling guards against — the shopper still lands on Keycloak's page
+ * rather than the storefront (cosmetic), but the session is still gone and the
+ * next Sign in is still challenged (the part that matters).
  *
  * The front-channel redirect is still performed afterwards, and still matters:
  * it is the OIDC-standard RP-initiated logout and it is what returns the
