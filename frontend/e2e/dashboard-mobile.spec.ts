@@ -30,7 +30,7 @@ import {
   skipWithoutVendorPassword,
 } from "./vendor-credentials"
 
-// Honour PLAYWRIGHT_BASE_URL (dev stack may run on :3100). Mirrors playwright.config.ts.
+// Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors playwright.config.ts.
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 

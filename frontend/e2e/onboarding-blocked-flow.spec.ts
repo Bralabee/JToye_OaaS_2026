@@ -9,8 +9,8 @@
  *                                           spinner) once a mandatory gate parks in
  *                                           MANUAL_REVIEW.
  *
- * Targets the dev frontend (port 3100 by default; the full-stack compose maps it on
- * 3000 — override with PLAYWRIGHT_BASE_URL) and the core-java API on :9090. Per
+ * Targets the frontend on :3000 (the full-stack compose mapping, and the
+ * playwright.config.ts default) and the core-java API on :9090. Per
  * CLAUDE.md "rebuild containers before E2E" run
  *   docker compose -f docker-compose.full-stack.yml build && \
  *   docker compose -f docker-compose.full-stack.yml up -d
@@ -52,7 +52,7 @@
 import { test, expect, type Page } from "@playwright/test"
 
 // Canonical full-stack compose serves the frontend on :3000 (RULE 0); override with
-// PLAYWRIGHT_BASE_URL for the alternate 3100 dev mapping.
+// PLAYWRIGHT_BASE_URL only for a genuinely different host.
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000"
 // The dev-realm vendor `admin-user` maps to tenant 00000000-…-0001 (curated demo data)
 // AND carries the `admin` realm role — the same session can both drive the vendor

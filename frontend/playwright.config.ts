@@ -17,8 +17,16 @@ export default defineConfig({
   retries: 0,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
-    // Dev env uses port 3100 (MCP server holds 3000); override via
-    // `PLAYWRIGHT_BASE_URL=http://localhost:3100 npx playwright test` locally.
+    // THE base-URL authority. Specs must navigate with RELATIVE paths and must
+    // not declare their own default — enforced by
+    // scripts/check-e2e-baseurl-contract.sh.
+    //
+    // This comment used to read "Dev env uses port 3100 (MCP server holds
+    // 3000)". Both halves are false and were the source of the folklore that
+    // put `:3100` into nine files' prose and one file's CODE (#505). Measured
+    // 2026-08-03 on the Compose stack: frontend **3000**, core-java 9090,
+    // edge-go 8089, mcp-server **9100** — nothing publishes 3100 at all.
+    // Override for a genuinely different host with PLAYWRIGHT_BASE_URL.
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",

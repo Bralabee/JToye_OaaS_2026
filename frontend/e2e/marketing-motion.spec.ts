@@ -6,8 +6,8 @@
  * against a PRODUCTION build (RESEARCH Pitfall 5: dev CSP allows 'unsafe-eval'
  * and dev/prod bundling differs). Run against the local Docker/prod stack:
  *
- *   PLAYWRIGHT_BASE_URL=http://localhost:3100 \
- *     npx playwright test e2e/marketing-motion.spec.ts
+ *   npx playwright test e2e/marketing-motion.spec.ts   # uses the config baseURL (:3000)
+ *
  *
  * Deterministic signals (frontmatter interface contract):
  *   - `.gsap-word`               — hand-split headline word spans (desktop only)
