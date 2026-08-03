@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A promotion that vanishes mid-transaction now answers 404, not 409 (#477) — 2026-08-03
+
+Closes #390. **The root cause is not what the issue title says.** Both services already handled the simple absent-id case correctly — `findById().orElseThrow(ResourceNotFoundException)` at `PromotionService:109/126` and `AnnouncementService:113/130` — so a random UUID was always a typed 404.
+
+#### Fixed
+- **The real shape is a row visible at read and gone at write.** `delete(entity)` with no flush raised Hibernate's row-count check at the *transaction boundary*, after the method returned, where no catch inside the method could reach it. All four paths now answer a typed **404**.
+
+#### Notes
+- **The 500 in the issue's log no longer existed on main.** #434 added an `OptimisticLockingFailureException` handler on 2026-08-02, so these four paths were already answering **409** by the time this was picked up. 409 is still the wrong contract: it tells a caller to re-read and retry a row that will never come back.
+- **404 is unconditionally correct here only because neither entity carries a JPA `@Version`**, so the delete's predicate is `id = ?` alone and zero rows can only mean "no such row is visible to this transaction". The #434 409 handler is untouched and still covers genuinely versioned entities.
+- **An instrument defect worth recording.** The *first* fail-direction run showed `expected:<404> but was:<500>`, which looked like a perfect reproduction of the issue. It was not: the harness spied Spring Data repositories, and `callRealMethod()` cannot work on an interface proxy, so a `MockitoException` was hitting the catch-all. **The 500 was the harness's own bug wearing the costume of the reported bug.** Rebuilt on a concrete class; the honest pre-fix answer is 409.
+- **Honest note on vacuity:** the four `unknownId` arms and the two repeat-delete arms pass on *both* trees — they guard an already-correct path and are **not** evidence of this fix. Only the four `vanishes` arms are. Two positive controls (a live row still deletes/updates, and the DB is checked afterwards) are the control arm; without them, "answer 404 to everything" would pass.
+- **Found, not fixed:** the identical shape exists on `CustomerService.deleteCustomer` and on `StaffManagementService`/`ShopStaff`, neither of which carries `@Version`; `Product`, `Shop`, `Order` and `MediaAsset` all do, so a 409 is defensible there. Deliberately not widened — #390 scopes to promotions and announcements. Separately **reasoned but not measured**: a possible RLS read/write asymmetry that could leave rows permanently undeletable through the API. The Testcontainers bootstrap role is SUPERUSER, so RLS does not fire and the test cannot see it. Escalated rather than acted on.
+
 ### HTML escaping is now the default in the email renderer (#478) — 2026-08-03
 
 Closes #279. **Forward-looking hardening, not a live vulnerability** — every value `EmailTemplateRenderer` interpolates today was traced to its source, and none carries vendor-, customer- or third-party-controlled text. That matches the issue's own claim, confirmed independently rather than taken on trust.
