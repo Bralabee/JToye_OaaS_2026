@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Every gitleaks allowlist was inert, and file logging never started in k8s (#473, #475) — 2026-08-03
+
+Two fixes that merged without changelog entries, backfilled here from their commit messages so `check-changelog-contract` — which was **red on `main`** and therefore blocking every open PR — goes green. Both are *silently-inert guard* defects: the configuration was present and read as correct, and neither did anything.
+
+#### Fixed
+- **Logback's FileAppender failed on every boot in staging and production (#302, PR #473).** Every k8s environment runs the `prod` profile, and `application-prod.yml` points `logging.file.name` at `/var/log/jtoye`, which **nothing ever created** — `core-java/Dockerfile` chowns only `/app`, so `/var/log` stays root-owned `0755`, and the manifest's `runAsUser: 1000` overrides the image's `USER spring:spring`. File logging was silently absent. `k8s/base/core-java-deployment.yaml` now declares an `app-logs` emptyDir at that path, inherited by every overlay with no patch needed. Two supporting details are load-bearing rather than decorative: `fsGroup: 1000` (the container sets no `runAsGroup`, so the primary gid is runtime-dependent — without fsGroup the mount would be **present but not provably writable**, a structural pass over a still-dead feature), and `sizeLimit: 2Gi` derived from the committed logback budget (prod caps the appender at 1GB, staging 500MB) so an unbounded emptyDir cannot consume node ephemeral storage and evict unrelated pods.
+- **All three gitleaks allowlists were dead (#274, PR #475).** `gitleaks-action@v2` hardcodes a `8.24.3` default, which does not support the plural `[[allowlists]]` array-of-tables form `.gitleaks.toml` is written in. It parses without error and has **no effect**, so the path, content-placeholder and commit-fingerprint blocks were all inert. Pinned to `8.27.2`.
+
+#### Notes
+- **The gitleaks fix was proven in both directions rather than assumed**, on a throwaway repo holding freshly-random fake secrets — deliberately *not* AWS's documentation example key, which gitleaks' own default config allowlists and which would therefore have passed for the wrong reason. Measured: under `8.24.3` the committed config found **3** leaks, identical to a zero-allowlist control — the real config was indistinguishable from having no allowlists at all. Under `8.27.2` the two path-allowlisted files are suppressed and the uncovered control secret is still caught at exit 2, so detection is intact.
+- A version bump was chosen over rewriting to the singular `[allowlist]` form, because the config is already correct for modern gitleaks and only one singular table is permitted — the three blocks would have had to be merged.
+- **Entries authored by a different session from the one that made the changes**, from the commit messages rather than from the diffs. Recorded because the gate keys on the merged PR number `(#NNN)`, which does not exist until `gh pr create` prints it — so an entry written before the PR merges is impossible, and one written after is easy to forget. That sequencing is the actual cause of both omissions, not carelessness.
+
+
 ### The metrics finding pointed at the one profile that was already safe (#472) — 2026-08-03
 
 SEC-02/F-M7 said the metrics endpoint, the OpenAPI document and the edge metrics endpoint were unauthenticated in every profile "including prod". Re-verified before implementing, per the SEC-01/A1 precedent — **two of the three claims are falsified**, and the environment that was actually exposed is one the finding never mentions.
