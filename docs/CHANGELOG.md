@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### An email that told delivery customers to collect, and four other things that were not what they were filed as (#519) — 2026-08-04
+
+Closes #502, #489, #483, #501, #498 and #278. Lane A of a 15-agent Wave-1 run: four agents, six issues, disjoint file sets, zero conflicts. Batched because `core-java/**` triggers the ~45 min Testcontainers suite — four separate PRs would have cost ~3 hours of CI for the same result.
+
+#### Fixed
+- **#502 — the READY email told DELIVERY customers to collect, and it was the default path, not an edge case.** `orders.fulfilment_type` is `NOT NULL DEFAULT 'DELIVERY'` and `PublicStorefrontService:392` is the only writer that ever sets it explicitly, so **every** order created through the vendor/API path — plus every row V45 backfilled — was a delivery order being told to come and collect. Settled by rendering the real email body, not by reading the source. Checked for a decoy first: Phase 22's second notification subsystem mails the *vendor* from a separate queue, so the legacy path really is the live one.
+- **#489 — a logo promised `immutable` for a year could change underneath the cache.** Two different logos uploaded to the same shop both PUT to `.../logo.webp`. Keys are now content-addressed on the **stored derivative**, so a later `jtoye.media.*` budget change lands on a new key rather than overwriting an object the CDN was told would never change.
+- **#483 — `SyncService`'s cache eviction was narrowed, NOT removed.** It carries the same `allEntries = true` as #287, but that path genuinely upserts, so deleting it ships stale reads. A break arm proves the guard works: removing the eviction turns three tests red with `expected: null but was: ValueWrapper for [stale-shop]`.
+- **#278 — the unsubscribe token and recipient email travelled in the query string**, captured verbatim by the nginx access log (`log-format-upstream` contains `"$request"`, and nothing in `k8s/` disables it). Reproduced on the wire against a socket that logs the request line.
+
+#### Added
+- **#501 — a gate stopping a `@RestController` injecting a repository**, which under RLS fails silently as "no data". Reflection-based, not textual.
+- **#498 — a behavioural cache-liveness test.** Every existing cache assertion was structural, and a completely dead cache passed all of them.
+
+#### Notes
+- **#501's own probe table was wrong in both directions, and that is why the gate is reflection-based.** Its one reported violation is a **false positive** — the grep matches a Javadoc `{@link WebhookDeliveryRepository}` — so a text gate would be **red on a correct tree**. Its `*Controller.java` scope also missed `CoreApplication`. Then the gate's own fail-direction run found a third hole: Spring's classpath scanner silently omits `DevTenantController`, because it evaluates `@Conditional` and `@Profile({"dev","local"})` does not match a test environment. Nothing in the output said so — and a dev/admin controller is exactly the kind that gets a repository wired straight in, so the conventional implementation would have reported clean over the likeliest offender.
+- **#498's thesis, proven rather than argued.** Swap `@Cacheable`→`@CachePut` so the cache stores everything and serves nothing: the existing suite goes **fully green over a completely dead cache**. The new test asserts `verify(repo, times(1))` after two identical calls — not "a cache exists", not "zero entries", which is precisely the distinction #484 could not make.
+- **#278's proposed fix would have caused an outage.** "Accept a `@RequestBody`" deletes the query-param POST — but RFC 8058 §3.1 fixes the mail provider's one-click body to the literal `List-Unsubscribe=One-Click`, so **there is no body slot for the token**. Implemented as filed and measured: **HTTP 415**, breaking one-click unsubscribe for every message already in an inbox. Both POST shapes are kept permanently, dispatched by `Content-Type`. Related: `@RequestBody(required = false)` is **not** interchangeable with `Optional<>` — it copies `required` onto the `consumes` condition, which then matches everything and ties with the sibling mapping (`Ambiguous handler methods`, a 500 on a public endpoint).
+- **#489 was 4× narrower than filed** — three of its four named `immutable` sites already carried non-deterministic keys. Those are now pinned by tests so they cannot rot back into a "fix".
+- **The OpenAPI snapshot regeneration renamed two operationIds** (`unsubscribe` → `unsubscribeOneClick`), which the originating branch's own report described as purely additive and did not mention. No consumer keys on an operationId — checked across `frontend/`, `edge-go/` and `mcp-server/`, not assumed.
+- **`scripts/openapi-gate.sh` reports "BREAKING" when it cannot classify.** On this tree it exits 1 with `oasdiff: command not found` and still prints `ERROR: BREAKING OpenAPI change`. Fail-closed is right; calling a missing tool a breaking change is not. Worth its own fix.
+- Counts regenerated once with `--write`: java_test_methods 1370→1420, files 235→241, total 2092→2142. Merged tree verified as a whole — **132 suites, 947 tests, 0 failures** — read from `build-local/test-results/`, never from the exit code, because rc=0 is also what running zero tests looks like.
+
 ### The E2E instruments were wrong, and three lessons became executable (#513) — 2026-08-03
 
 Closes #505 and #503; closes #305 as already-fixed. All three are defects in the **instrument**, not the product — the class where a green suite certifies surface it cannot observe.
