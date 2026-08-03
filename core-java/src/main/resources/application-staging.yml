@@ -84,14 +84,33 @@ logging:
     total-size-cap: 500MB
 
 management:
+  # issue #442 [SEC-02 / F-M7]: staging was the WEAKEST profile, and the finding
+  # did not mention it. Unlike prod it set no management.server.port, so its whole
+  # actuator surface — including prometheus, env and configprops — was served on
+  # the PUBLIC app port, the one the k8s Service publishes. The finding read
+  # "not profile-gated, therefore prod"; prod was already mitigated by exactly the
+  # line below, and staging was not.
+  #
+  # Same treatment as prod: a distinct management port binds actuator there only,
+  # so the public app port serves no actuator at all. Env-overridable, never
+  # hardcoded; not published via Service/Ingress, so the scrape and kubelet reach
+  # it in-cluster only.
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9091}
   endpoints:
     web:
+      # Wider than prod on purpose — staging is for debugging. That is defensible
+      # ONLY because the port above keeps this surface off the public app port;
+      # it was not defensible while these rode 9090.
       exposure:
-        include: health,info,metrics,prometheus,env,configprops  # More endpoints for debugging
+        include: health,info,metrics,prometheus,env,configprops
       base-path: /actuator
   endpoint:
     health:
-      show-details: always  # Always show health details in staging
+      # Was `always`, which combined with the permitAll on /actuator/health meant
+      # full health detail — component names, connection states — was readable
+      # anonymously. Matches prod now.
+      show-details: when-authorized
       probes:
         enabled: true
   metrics:

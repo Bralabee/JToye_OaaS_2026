@@ -135,11 +135,31 @@ public class SecurityConfig {
                 // fails. Health-group endpoints expose only aggregate status
                 // (show-details=when-authorized), so anonymous access leaks nothing.
                 auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // issue #97 [P2-6]: /api/v1/public/** is the canonical versioned
                     // alias of the legacy /public/** surface — both must stay public.
                     .requestMatchers("/public/**", "/api/v1/public/**").permitAll()
                     .requestMatchers("/ws/**").permitAll();
+
+                // issue #442 [SEC-02 / F-M7]: the API description is now gated to
+                // NON-PROD. It was permitAll with no profile condition, and unlike
+                // the actuator surface below it is served on the PUBLIC app port
+                // (9090) — the one the k8s Service actually publishes. That made it
+                // the only part of that finding which genuinely reached a deployed
+                // instance: the whole API surface, plus (per #440) a tenant-selection
+                // header it should not advertise, readable without a credential.
+                //
+                // Nothing legitimate needs it anonymous. The breaking-change gate
+                // builds the document from a Gradle task (generateOpenApiSpec ->
+                // OpenApiSnapshotTest, Testcontainers, `test` profile), never by
+                // fetching a running production instance — verified before this
+                // change, because gating a surface some CI job silently depends on
+                // is how a security fix turns into a red pipeline nobody can explain.
+                //
+                // In prod these fall through to anyRequest().authenticated() below,
+                // so an operator with a token can still read the spec.
+                if (!isProd) {
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll();
+                }
                 // issue #98 [P2-7] item 4: /actuator/prometheus permitAll is now
                 // UNCONDITIONAL. In prod the actuator endpoints are served ONLY on
                 // the internal management port (management.server.port, default

@@ -197,7 +197,23 @@ func main() {
 
 	// Prometheus scrape endpoint. Public (no JWT) so Prometheus can scrape it;
 	// exposes only aggregate, low-cardinality series (see metrics.go).
-	r.GET("/metrics", metricsHandler())
+	//
+	// issue #442 [SEC-02 / F-M7]: when EDGE_MANAGEMENT_PORT is set, this route is
+	// served ONLY on that separate listener (below) and is deliberately absent
+	// here, so it is not reachable on the published application port. Mirrors
+	// core-java's management.server.port so one mental model covers both runtimes.
+	//
+	// UNSET => this route stays exactly where it was. That default is load-bearing:
+	// the local scrape config targets the app port with NO credentials, so any
+	// change that moved or gated this route unconditionally would silently blind
+	// the Phase 27 alerting layer — the failure the issue's own criteria warn about.
+	//
+	// /health and /ready deliberately stay on the main port either way: the kubelet
+	// probes target them there, and moving them would fail every rollout.
+	managementPort := getEnv("EDGE_MANAGEMENT_PORT", "")
+	if managementPort == "" {
+		r.GET("/metrics", metricsHandler())
+	}
 
 	// Documentation routes (/openapi.json + /docs) are registered here. The
 	// registration is wired up in docs.go (added in task 16-03) via
@@ -228,6 +244,33 @@ func main() {
 		}
 	}()
 
+	// issue #442: the management listener. Serves ONLY /metrics, and only when
+	// EDGE_MANAGEMENT_PORT is set — so this whole block is inert by default and
+	// the dev stack is byte-for-byte unchanged.
+	//
+	// It gets its own gin engine rather than reusing `r`: the main engine carries
+	// the process-wide rate limiter and the request-metrics middleware, and a
+	// scrape must never be rate-limited (that would drop samples and make the
+	// alerting layer flap) nor recorded as application traffic (the scrape would
+	// appear in the very series it is collecting).
+	var mgmtSrv *http.Server
+	if managementPort != "" {
+		mgmtRouter := gin.New()
+		mgmtRouter.Use(gin.Recovery())
+		mgmtRouter.GET("/metrics", metricsHandler())
+		mgmtSrv = &http.Server{
+			Addr:    ":" + managementPort,
+			Handler: mgmtRouter,
+		}
+		logger.Info("Management listener starting — /metrics is served here ONLY, not on the application port",
+			zap.String("management_port", managementPort))
+		go func() {
+			if err := mgmtSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Fatal("Failed to start management server", zap.Error(err))
+			}
+		}()
+	}
+
 	// Block until the root context is cancelled (SIGINT/SIGTERM).
 	<-ctx.Done()
 	logger.Info("Shutdown signal received, draining connections")
@@ -236,6 +279,11 @@ func main() {
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", zap.Error(err))
+	}
+	if mgmtSrv != nil {
+		if err := mgmtSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Management server shutdown error", zap.Error(err))
+		}
 	}
 	// cancel() is already deferred above, which stops the rate limiter ticker.
 }
