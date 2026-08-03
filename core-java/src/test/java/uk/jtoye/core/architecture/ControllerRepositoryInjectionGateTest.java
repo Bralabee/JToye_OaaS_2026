@@ -3,14 +3,12 @@ package uk.jtoye.core.architecture;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
-import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.data.repository.Repository;
 import org.springframework.web.bind.annotation.RestController;
 import uk.jtoye.gatefixtures.CompliantControllerFixture;
 import uk.jtoye.gatefixtures.ControllerInjectingRepositoryFixture;
 
+import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Parameter;
@@ -22,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -65,14 +64,35 @@ import static org.assertj.core.api.Assertions.fail;
  * class and the type a field/parameter actually has, so comments, Javadoc {@code {@link}} tags and
  * annotation-name prefixes are invisible to it.
  *
+ * <h2>...and not Spring's own component scanner either — a measured hole</h2>
+ *
+ * The first cut of this gate enumerated controllers with
+ * {@code ClassPathScanningCandidateComponentProvider} + an {@code AnnotationTypeFilter}, which is
+ * the conventional way to ask Spring "which classes are {@code @RestController}". It silently
+ * returned 23 classes and <b>omitted {@code uk.jtoye.core.tenant.DevTenantController}</b>, which is
+ * annotated {@code @RestController} and is production source. The scanner evaluates
+ * {@code @Conditional} metadata, and {@code @Profile({"dev", "local"})} does not match the plain
+ * {@code StandardEnvironment} a test-constructed scanner carries — so the class was skipped as
+ * "not a candidate component". Nothing in the output said so.
+ *
+ * <p>That hole matters more than its size suggests: a dev/admin-profile controller is exactly the
+ * kind that gets a repository wired straight into it, and a gate that cannot see it would have
+ * reported a clean tree. So enumeration here is done from the {@code src/main/java} source tree
+ * instead — every production top-level class plus its nested classes, loaded WITHOUT initialisation
+ * and filtered on the reflected annotation. That is condition-agnostic (no profile can hide a
+ * class), main-only by construction, and finds nested controllers. {@code DevTenantController} is
+ * pinned as a named positive control so this specific regression cannot come back unnoticed.
+ *
  * <h2>Why this gate cannot match itself</h2>
  *
  * It matches on <i>reflected annotations and reflected member types</i>, never on source text, so
- * naming {@code Repository} throughout this file's own prose is inert. Beyond that the scan is
- * restricted to classes whose source exists under {@code src/main/java}, and the deliberately
- * broken fixture it uses to prove it can fail lives in {@code uk.jtoye.gatefixtures} — outside the
- * scanned base package entirely. {@link #theScanIsRestrictedToMainAndExcludesTheGatesOwnFixtures()}
- * asserts both facts rather than assuming them.
+ * naming {@code Repository} throughout this file's own prose is inert — this file could contain the
+ * word ten thousand times and the gate would not notice. Beyond that, enumeration walks
+ * {@code src/main/java} only, and the deliberately broken fixture it uses to prove it can fail
+ * lives in {@code core-java/src/test/java/uk/jtoye/gatefixtures} — under neither
+ * {@code src/main/java} nor the {@code uk.jtoye.core} package Spring component-scans.
+ * {@link #theScanIsRestrictedToMainAndExcludesTheGatesOwnFixtures()} asserts that rather than
+ * assuming it.
  *
  * <h2>Exemption policy (#501 acceptance criterion)</h2>
  *
@@ -104,9 +124,6 @@ import static org.assertj.core.api.Assertions.fail;
  */
 class ControllerRepositoryInjectionGateTest {
 
-    /** Spring's component-scan root — {@code @SpringBootApplication} sits on {@code uk.jtoye.core.CoreApplication}. */
-    private static final String BASE_PACKAGE = "uk.jtoye.core";
-
     /**
      * Documented, deliberate exemption mechanism (#501). EMPTY — no controller is exempt today.
      *
@@ -118,21 +135,38 @@ class ControllerRepositoryInjectionGateTest {
     static final Set<String> EXEMPT_CONTROLLERS = Set.of();
 
     /**
-     * Below this, the scan is broken rather than the tree clean. The tree carried 24
+     * Below this, enumeration is broken rather than the tree clean. Measured 24
      * {@code @RestController} classes under {@code src/main/java} when this gate was written; the
-     * floor is set well under that so ordinary deletions do not trip it, but far enough above zero
-     * that a scan returning nothing (wrong base package, empty classpath, changed output layout)
-     * fails instead of reporting a vacuous pass.
+     * floor sits well under that so ordinary deletions do not trip it, but far enough above zero
+     * that an enumeration returning nothing (wrong source root, empty classpath, changed output
+     * layout) fails instead of reporting a vacuous pass.
      */
     private static final int MIN_EXPECTED_MAIN_CONTROLLERS = 15;
 
     /**
-     * Named positive controls — the seeded matches that prove the scan can see what it claims to.
-     * {@code CoreApplication} is here specifically because it is the class a {@code *Controller.java}
-     * filename glob misses; {@code WebhookDeliveryController} is the #444 class itself.
+     * Floor on the number of production source files walked. Independent of the controller count:
+     * it catches a source root that resolves to a real-but-wrong directory, where the controller
+     * count could plausibly land above its own floor by accident.
+     */
+    private static final int MIN_EXPECTED_MAIN_SOURCE_FILES = 200;
+
+    /**
+     * Named positive controls — the seeded matches that prove enumeration sees what it claims to.
+     * Each one is here because a plausible implementation MISSES it, measured on this tree:
+     * <ul>
+     *   <li>{@code CoreApplication} — missed by a {@code *Controller.java} filename glob;</li>
+     *   <li>{@code DevTenantController} — missed by Spring's own
+     *       {@code ClassPathScanningCandidateComponentProvider}, because {@code @Profile} fails
+     *       condition evaluation under a default environment;</li>
+     *   <li>{@code WebhookDeliveryController} — the #444 class itself, and the one a text search
+     *       for "Repository" wrongly reports as an offender because its Javadoc names the
+     *       repository it no longer injects.</li>
+     * </ul>
+     * If a control is genuinely renamed, update this list — never delete the assertion.
      */
     private static final List<String> SCAN_POSITIVE_CONTROLS = List.of(
             "uk.jtoye.core.CoreApplication",
+            "uk.jtoye.core.tenant.DevTenantController",
             "uk.jtoye.core.webhook.WebhookDeliveryController",
             "uk.jtoye.core.shop.ShopController");
 
@@ -196,38 +230,73 @@ class ControllerRepositoryInjectionGateTest {
         return found;
     }
 
-    // ---------------------------------------------------------------- scanner
+    // ------------------------------------------------------------ enumeration
 
     /**
-     * Every {@code @RestController} under {@link #BASE_PACKAGE} whose source lives in
-     * {@code src/main/java}. The source-file test is what keeps test-only controller stubs (there
-     * are several, e.g. the {@code ThrowingController} beans in the exception-handler tests) out of
-     * a gate that is about production architecture. It fails CLOSED: if the source root cannot be
-     * located the set empties and {@link #theScanSeesTheRealControllerSurface()} goes red.
+     * Every production top-level class, derived from the {@code src/main/java} tree. Deriving the
+     * candidate set from SOURCE rather than from a component scan is what makes the enumeration
+     * condition-agnostic: no {@code @Profile}, {@code @Conditional} or
+     * {@code @ConditionalOnProperty} can hide a class from a directory walk.
      */
-    private static Set<String> mainRestControllerNames() {
-        ClassPathScanningCandidateComponentProvider scanner =
-                new ClassPathScanningCandidateComponentProvider(false);
-        scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+    private static List<String> mainTopLevelClassNames() {
+        Path root = mainSourceRoot();
+        try (Stream<Path> files = Files.walk(root)) {
+            return files.filter(p -> p.toString().endsWith(".java"))
+                    .map(p -> root.relativize(p).toString())
+                    .filter(rel -> !rel.endsWith("package-info.java") && !rel.endsWith("module-info.java"))
+                    .map(rel -> rel.substring(0, rel.length() - ".java".length()).replace('/', '.'))
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            return fail("Cannot walk %s: %s — enumeration failed, so no pass can be reported.", root, e);
+        }
+    }
 
-        Path mainRoot = mainSourceRoot();
+    /**
+     * Loads WITHOUT running static initialisers. Initialising several hundred production classes
+     * outside a Spring context is both slow and a side-effect risk; the gate only needs each
+     * class's annotations and declared member types, none of which require initialisation.
+     */
+    private static Class<?> loadWithoutInitialising(String fqcn) throws ClassNotFoundException {
+        return Class.forName(fqcn, false, ControllerRepositoryInjectionGateTest.class.getClassLoader());
+    }
+
+    /** Names of every {@code @RestController} in production source, nested classes included. */
+    private static Set<String> mainRestControllerNames() {
         Set<String> names = new TreeSet<>();
-        for (BeanDefinition definition : scanner.findCandidateComponents(BASE_PACKAGE)) {
-            String fqcn = definition.getBeanClassName();
-            if (fqcn != null && hasSourceUnder(mainRoot, fqcn)) {
-                names.add(fqcn);
+        List<String> unloadable = new ArrayList<>();
+        for (String fqcn : mainTopLevelClassNames()) {
+            try {
+                collectRestControllers(loadWithoutInitialising(fqcn), names);
+            } catch (ClassNotFoundException | NoClassDefFoundError e) {
+                unloadable.add(fqcn + " (" + e.getClass().getSimpleName() + ")");
             }
         }
+        assertThat(unloadable)
+                .as("Production classes present in src/main/java that could not be loaded from the "
+                        + "test classpath. Each one is a controller this gate cannot see, so this "
+                        + "must be empty rather than tolerated — an unreadable class is an "
+                        + "unchecked one, and 'found nothing' is never 'clean'.")
+                .isEmpty();
         return names;
+    }
+
+    private static void collectRestControllers(Class<?> clazz, Set<String> into) {
+        if (clazz.isAnnotationPresent(RestController.class)) {
+            into.add(clazz.getName());
+        }
+        for (Class<?> nested : clazz.getDeclaredClasses()) {
+            collectRestControllers(nested, into);
+        }
     }
 
     private static Collection<Class<?>> mainRestControllers() {
         Collection<Class<?>> classes = new LinkedHashSet<>();
         for (String fqcn : mainRestControllerNames()) {
             try {
-                classes.add(Class.forName(fqcn));
+                classes.add(loadWithoutInitialising(fqcn));
             } catch (ClassNotFoundException e) {
-                fail("Scanner reported %s but it could not be loaded: %s", fqcn, e);
+                fail("Enumerated %s but it could not be loaded: %s", fqcn, e);
             }
         }
         return classes;
@@ -262,44 +331,57 @@ class ControllerRepositoryInjectionGateTest {
     // ------------------------------------------------------------- instrument
 
     @Test
-    @DisplayName("instrument - the scan sees the real production controller surface")
+    @DisplayName("instrument - enumeration sees the real production controller surface")
     void theScanSeesTheRealControllerSurface() {
-        Set<String> scanned = mainRestControllerNames();
+        List<String> sourceFiles = mainTopLevelClassNames();
+        assertThat(sourceFiles)
+                .as("Walked %d production source files. Below %d the source root has resolved to a "
+                        + "real-but-wrong directory, and a controller count that happens to clear "
+                        + "its own floor would still be measuring the wrong tree.",
+                        sourceFiles.size(), MIN_EXPECTED_MAIN_SOURCE_FILES)
+                .hasSizeGreaterThanOrEqualTo(MIN_EXPECTED_MAIN_SOURCE_FILES);
 
+        Set<String> scanned = mainRestControllerNames();
         assertThat(scanned)
-                .as("The @RestController scan under %s returned %d classes. 'Found nothing' is not "
-                        + "'clean': below %d this is a broken scan (wrong base package, empty "
-                        + "classpath, changed build output layout) and every assertion below it "
-                        + "would pass vacuously.",
-                        BASE_PACKAGE, scanned.size(), MIN_EXPECTED_MAIN_CONTROLLERS)
+                .as("Enumeration returned %d @RestController classes from src/main/java. 'Found "
+                        + "nothing' is not 'clean': below %d this is broken enumeration (wrong "
+                        + "source root, empty classpath, changed output layout) and every assertion "
+                        + "below it would pass vacuously. Found: %s",
+                        scanned.size(), MIN_EXPECTED_MAIN_CONTROLLERS, scanned)
                 .hasSizeGreaterThanOrEqualTo(MIN_EXPECTED_MAIN_CONTROLLERS);
 
         assertThat(scanned)
-                .as("Seeded positive controls. CoreApplication is listed on purpose: it IS a "
-                        + "@RestController and it is exactly the class a '*Controller.java' filename "
-                        + "glob misses, so its presence proves this scan is stronger than the "
-                        + "filename approach rather than merely different. If a control was renamed, "
-                        + "update SCAN_POSITIVE_CONTROLS — do not delete the assertion.")
+                .as("Seeded positive controls — each is a class some plausible implementation "
+                        + "MISSES, so their presence proves this enumeration is strictly stronger "
+                        + "than the filename glob AND than Spring's own component scanner, not "
+                        + "merely different. See SCAN_POSITIVE_CONTROLS for which misses which. If "
+                        + "a control was genuinely renamed, update the list — never delete the "
+                        + "assertion.")
                 .containsAll(SCAN_POSITIVE_CONTROLS);
     }
 
     @Test
-    @DisplayName("instrument - the scan is main-only and excludes this gate's own fixtures")
+    @DisplayName("instrument - enumeration is main-only and excludes this gate's own fixtures")
     void theScanIsRestrictedToMainAndExcludesTheGatesOwnFixtures() {
         Set<String> scanned = mainRestControllerNames();
 
         assertThat(scanned)
-                .as("The deliberately-broken fixture must never enter the scan. If it did, this "
+                .as("The deliberately-broken fixture must never enter enumeration. If it did, this "
                         + "gate would be permanently RED on a correct tree — the recorded "
                         + "'expected-0 that is actually 1 on the correct tree' trap — and the first "
                         + "person to hit it would delete the gate rather than the fixture.")
                 .doesNotContain(ControllerInjectingRepositoryFixture.class.getName(),
                         CompliantControllerFixture.class.getName());
 
+        // Enumeration walks src/main/java, so main-only holds by construction rather than by
+        // filtering. This re-derives it independently from the test tree: several test classes DO
+        // declare @RestController stubs (the ThrowingController beans in the exception-handler
+        // tests), and none of them may be gated as production architecture. It is the assertion
+        // that would catch someone repointing the walk at a broader root.
         Path testRoot = sourceRoot("test");
         for (String fqcn : scanned) {
             assertThat(hasSourceUnder(testRoot, fqcn))
-                    .as("%s was scanned as a production controller but its source is under "
+                    .as("%s was enumerated as a production controller but its source is under "
                             + "src/test/java. Test-only controller stubs must not be gated.", fqcn)
                     .isFalse();
         }
