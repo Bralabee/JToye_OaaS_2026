@@ -21,7 +21,7 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
 | Open PRs | **none** (measured, not assumed) |
-| Open issues | **86** — re-measured 2026-08-03. Was 63; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; #442 closed by #472 |
+| Open issues | **86** — re-measured 2026-08-03 (7 open PRs, all a concurrent session's). Was 63; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; #442 closed by #472 |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
@@ -290,7 +290,37 @@ this by hand** — no gate in this repo would have caught a single one of the tw
   suspecting the product.
 - **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. GTM-01.
 - **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
-- **Toolchain: 4 DRIFT + 1 UNKNOWN**, none applied. `docker-ce` restarts the daemon — stack down first.
+- **Toolchain: 2 DRIFT + 1 UNKNOWN**, none applied — re-measured 2026-08-03, down from 4 DRIFT.
+  `conda` 26.1.1→26.5.3 and `ms-fabric-cli` 1.2.0→1.6.1; `antigravity` is UNKNOWN because it is a
+  **manual** channel the probe cannot query — a recorded decision, not a gap. `docker-ce` restarts
+  the daemon — stack down first.
+
+---
+
+## 3.1 Housekeeping, 2026-08-03 — a concurrent session now runs 9 agent worktrees here
+
+- **`.claude/worktrees/` was not gitignored: 9 live worktrees, 70,498 untracked files**, each a full
+  working copy holding one of the concurrent session's open PR branches. `git add .` in this checkout
+  staged all of it. Fixed in **#482**, scoped to `.claude/worktrees/` and **not** `.claude/`, because
+  the project convention reserves `.claude/skills/` for tracked project skills.
+  **This is not hypothetical:** earlier the same day a *named-path* `git add AGENTS.md` swept 369
+  lines of that session's uncommitted work into an unrelated commit and merged it (#469, reverted by
+  #470). Same hazard, ~200× the blast radius, reachable by the most ordinary command in git.
+  **`git diff --staged` before every commit in this checkout.** The `N insertions / 0 deletions` line
+  is the tell — pure insertions on a file you only edited means content arrived that you did not write.
+- **`check-changelog-contract` was RED ON `main` itself**, not merely on one PR — so it failed on
+  every open PR that merged base (six of theirs plus one of mine). Backfilled in **#491**.
+  The cause is the sequencing trap already recorded in §0.2, and it has now caught **three** PRs:
+  the gate keys on the merged PR's own `(#NNN)`, which does not exist until `gh pr create` prints it,
+  so an entry written before merge is impossible and one written after is easy to forget.
+  **When a gate goes red on your PR, check `origin/main` before assuming you caused it.**
+- **Branch cleanup deleted nothing, and that was correct.** 8 branches have open PRs and are checked
+  out in live worktrees; 9 are worktree scaffolding; 2 have no PR at all. PR state is the authority
+  here — squash-merge makes `git branch --merged` lie.
+- **One orphaned branch worth a look: `feature/faster-integration-tests-parallelism`** — a single
+  unpushed commit, *"perf(test): parallelize integrationTest to cut ~39m runtime to ~15m"*, no PR,
+  not in a worktree. Directly relevant: the integration suite was **measured at 47 minutes** on #472,
+  and #444 will pay the same. Not pushed — it is not this session's work to publish.
 
 ---
 
