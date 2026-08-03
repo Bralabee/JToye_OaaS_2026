@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The metrics finding pointed at the one profile that was already safe (#472) — 2026-08-03
+
+SEC-02/F-M7 said the metrics endpoint, the OpenAPI document and the edge metrics endpoint were unauthenticated in every profile "including prod". Re-verified before implementing, per the SEC-01/A1 precedent — **two of the three claims are falsified**, and the environment that was actually exposed is one the finding never mentions.
+
+#### Fixed
+- **Staging was the weakest profile (#442).** Unlike prod it set no `management.server.port`, so metrics, `env` and `configprops` rode the **published application port**; `health.show-details` was `always`, making full health detail anonymous; and `application-staging.yml` **explicitly enables springdoc**, so the entire API surface was anonymously readable on a deployed environment. Given the same management-port treatment as prod.
+- **The OpenAPI/Swagger matchers are gated to local-development profiles.** They were `permitAll` with no profile condition.
+- **edge-go gained a second listener for `/metrics`** (`EDGE_MANAGEMENT_PORT`). Unset means byte-identical current behaviour. It gets its own gin engine deliberately: a scrape must not be rate-limited (dropped samples make alerts flap) nor recorded as application traffic (the scrape would appear in the series it collects). `/health` and `/ready` stay on the main port — the kubelet probes target them there.
+
+#### Notes
+- **FALSIFIED, and deliberately not "fixed": metrics in prod.** `application-prod.yml` binds actuator to a separate management port and the k8s Service publishes only the application port, so it was never reachable. `ManagementPortMetricsIntegrationTest` already proved this in both directions. Implementing the filed fix would have authenticated an unreachable endpoint while staging stayed open.
+- **FALSIFIED for the default config: the OpenAPI document in prod.** springdoc is off there (`SWAGGER_ENABLED:false`). The gate is defence in depth for the operator who switches it on to debug — recorded as that, not as closing a live hole.
+- **Authentication was the wrong fix and was rejected on evidence.** `prometheus.yml.tmpl` declares no `basic_auth` and no `authorization` for either job, so authenticating these endpoints would have blinded the Phase 27 alerting layer **silently** — the failure the issue's own acceptance criteria warn about. Port isolation instead.
+- **Two defects in the fix itself, both caught by running the break arm, neither visible by reading the code.** (i) The first test **could not fail** — it asserted "not 200" and passed identically with the fix reverted, because springdoc being off makes everything 404. (ii) `!isProd` **left staging open**, and testing prod alone would have shipped that gap; the condition is now a local-development allowlist AND the absence of a deployed profile, because the allowlist alone is defeated by this repo's own `@ActiveProfiles({"prod","test"})` idiom.
+- One assertion is labelled **NOT load-bearing** rather than counted: `configprops` passed in *both* arms, because that path was never `permitAll` and is covered by `anyRequest().authenticated()` on either port.
+- Verified on the **delivered runtime**, not the tree: after rebuild, `up{job=~"core-java|edge-go"}` both `1` and the three alert gates rc=0. The Java integration suite was deliberately **not** run in full — only the four affected classes, by filter.
+- **Deliberately not done:** `k8s/` ships no monitoring manifests (DPLY-03), so nothing scrapes edge-go there. Setting `EDGE_MANAGEMENT_PORT` in k8s with no scraper would be configuration theatre; the seam exists and the wiring belongs with the monitoring work.
+
+
 ### The session ended after five minutes, and the public header never asked (#466) — 2026-08-03
 
 One reported symptom — *"going home when logged in logs me out"* — turned out to be **two** defects, and the browser falsification run before writing any code showed the filed diagnosis was half right. The session *does* survive the navigation; it is destroyed by a 300s timer. Fixing only the header would have left the report looking unfixed, because after five minutes the header would correctly say "Sign in".

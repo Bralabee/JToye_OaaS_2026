@@ -24,6 +24,7 @@ import org.springframework.web.client.RestOperations;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -135,11 +136,64 @@ public class SecurityConfig {
                 // fails. Health-group endpoints expose only aggregate status
                 // (show-details=when-authorized), so anonymous access leaks nothing.
                 auth.requestMatchers("/", "/health", "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // issue #97 [P2-6]: /api/v1/public/** is the canonical versioned
                     // alias of the legacy /public/** surface — both must stay public.
                     .requestMatchers("/public/**", "/api/v1/public/**").permitAll()
                     .requestMatchers("/ws/**").permitAll();
+
+                // issue #442 [SEC-02 / F-M7]: the API description is now gated to
+                // NON-PROD. It was permitAll with no profile condition, and unlike
+                // the actuator surface below it is served on the PUBLIC app port
+                // (9090) — the one the k8s Service actually publishes. That made it
+                // the only part of that finding which genuinely reached a deployed
+                // instance: the whole API surface, plus (per #440) a tenant-selection
+                // header it should not advertise, readable without a credential.
+                //
+                // Nothing legitimate needs it anonymous. The breaking-change gate
+                // builds the document from a Gradle task (generateOpenApiSpec ->
+                // OpenApiSnapshotTest, Testcontainers, `test` profile), never by
+                // fetching a running production instance — verified before this
+                // change, because gating a surface some CI job silently depends on
+                // is how a security fix turns into a red pipeline nobody can explain.
+                //
+                // Gated on a DEVELOPMENT-PROFILE ALLOWLIST, not on !isProd, and the
+                // difference is load-bearing. application-staging.yml explicitly
+                // enables springdoc ("Enable Swagger in staging for API testing"),
+                // so a !isProd condition would have left the full API surface
+                // anonymous on staging — a deployed, potentially reachable
+                // environment — while reading as if it had been fixed. The issue's
+                // own fix direction says non-DEVELOPMENT profiles, not non-prod.
+                //
+                // Fails closed: an unrecognised or absent profile gets the gated
+                // behaviour. `test` is required in this list — OpenApiSnapshotTest
+                // fetches /v3/api-docs via MockMvc under @ActiveProfiles("test") to
+                // build the contract snapshot, and dropping it would break the
+                // breaking-change gate rather than secure anything.
+                //
+                // In every other profile these fall through to
+                // anyRequest().authenticated() below, so an operator with a token
+                // can still read the spec.
+                // Two conditions, and BOTH are necessary — this is not belt-and-braces.
+                //
+                // The allowlist alone fails closed on an unknown profile but is
+                // defeated by the repo's own prod-test idiom, which activates
+                // {"prod","test"} together (SecurityHeadersProdProfileTest) so the
+                // prod branch runs without needing a real Redis. Keying on "test"
+                // being present would make those tests exercise the DEV path and
+                // silently stop testing prod.
+                //
+                // The deployed-profile check alone handles that, but would leave an
+                // unrecognised profile name (say "qa") permitAll.
+                //
+                // Together: permitted only when the profile set looks like local
+                // development AND contains no deployed profile.
+                List<String> active = Arrays.asList(env.getActiveProfiles());
+                boolean looksLocal = active.stream()
+                        .anyMatch(p -> p.equals("dev") || p.equals("test") || p.equals("local"));
+                boolean isDeployedProfile = active.contains("prod") || active.contains("staging");
+                if (looksLocal && !isDeployedProfile) {
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll();
+                }
                 // issue #98 [P2-7] item 4: /actuator/prometheus permitAll is now
                 // UNCONDITIONAL. In prod the actuator endpoints are served ONLY on
                 // the internal management port (management.server.port, default
