@@ -48,6 +48,25 @@ was checked against the tree first; two were wrong.
 Two of nine filed claims survived unchanged in #305. That issue closes as
 already-fixed with evidence, not as work.
 
+## Verification failures recorded during this task
+
+Not filed claims — MY OWN measurements, wrong three times while checking whether
+`hoverOnlyWhenSupported` took effect. All three said the fix was inert. It works.
+
+| # | what was measured | why it was wrong |
+|---|---|---|
+| 1 | `@media\(hover:hover\)` matched nothing | pattern had no space; the un-minified form has one. Evidence about the PATTERN, not the CSS |
+| 2 | `rg -c` read as an occurrence count | `-c` counts LINES, and minified CSS is nearly one line |
+| 3 | "byte-identical before/after, so the flag is inert" | the "before" file was fetched AFTER the rebuild. The baseline was the treatment |
+
+Settled by a structure-aware postcss walk **validated first against a
+known-different pair** (Tailwind CLI, flag on vs off → 65/0 and 0/65), then
+pointed at the real question → Next build 65/0, served artifact 65/0.
+
+The transferable rule: **a text search cannot answer a question about nesting**,
+and "is this rule inside a media query" is a nesting question. That is why the
+shipped assertion lives in the CSSOM, in a browser, and not in a grep.
+
 ## Tasks
 
 - **T1** — Make `playwright.config.ts` the single base-URL authority: delete the

@@ -26,6 +26,29 @@
  * rebuild the frontend image before they mean anything — `docker compose ... build
  * frontend` then recreate. That is the "artifact vs running thing" rule; a source
  * edit alone will leave these red.
+ *
+ * ── WHY THE ASSERTION IS MADE IN A BROWSER AND NOT BY GREPPING THE CSS ─────────
+ *
+ * Because grepping the CSS was tried first, and gave the WRONG ANSWER THREE TIMES
+ * in a row while verifying this very change. Each failure looked like a result:
+ *
+ *   1. `@media\(hover:hover\)` matched nothing, read as "no gating exists".
+ *      The pattern had no space; the un-minified form has one. A pattern-shape
+ *      false negative — evidence about the PATTERN, not about the CSS.
+ *   2. `rg -c` was read as an occurrence count. It counts LINES, and minified CSS
+ *      is nearly one line, so the number meant nothing it appeared to mean.
+ *   3. A file labelled "before the change" had in fact been fetched AFTER the
+ *      rebuild, so a genuine difference showed up as "byte-identical, therefore
+ *      the flag is inert". That conclusion was written down before it was checked.
+ *
+ * All three said the fix did not work. It does. What settled it was a
+ * structure-aware instrument (a postcss walk) VALIDATED FIRST against a
+ * known-different pair — Tailwind CLI builds with the flag on and off, which
+ * measured 65/0 and 0/65. Only then was it pointed at the real question.
+ *
+ * The general rule, and the reason this file exists: a text search cannot answer
+ * a question about NESTING, and "is this rule inside a media query" is a nesting
+ * question. Assert it where the structure is real — in the CSSOM.
  */
 
 import { test, expect } from "@playwright/test"
