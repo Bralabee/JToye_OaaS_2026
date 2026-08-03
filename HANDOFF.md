@@ -21,11 +21,11 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
 | Open PRs | **none** (measured, not assumed) |
-| Open issues | **87** — was 63; this session filed **23** council issues (#438–#454) + **7** owner-reported (#457–#463) |
+| Open issues | **87** — was 63; filed **23** council issues (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed, #457 + #465 closed by PR #466 |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
-| Test baseline | `docs/metrics.json` **1930** — re-measured, not carried forward. It was 1927 an hour earlier; the concurrent session moved it |
+| Test baseline | `docs/metrics.json` **1943** as of PR #466 (was 1930, and 1927 an hour before that). **Re-measure it; do not carry this number forward** — it has moved three times in a day |
 | Runtime | 4/4 built services FRESH, re-asserted after the concurrent session's merges |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
@@ -202,7 +202,7 @@ before §0.1's: the council findings are mostly correctness and infrastructure; 
 
 | issue | items | what it is |
 |---|---|---|
-| **#457 is OPEN** | 1b, 9 | Public header is **session-blind** — `/` and `/track` *read as* logged out. P1 |
+| **#457 is CLOSED** (PR #466, 2026-08-03) | 1b, 9 | Public header was **session-blind**. Browser-falsified and confirmed — **and it was hiding #465** (below) |
 | **#458 is OPEN** | 1a, 2, 3, 4 | Signed-in nav shows `For operators` + `Track order` ungated; tracking belongs in the profile, auto-populated, with a dispatch notification |
 | **#459 is OPEN** | 6 | Basket survives sign-out → a second customer on the same browser inherits it |
 | **#460 is OPEN** | 7 | **No concept of locality.** A phase, not a patch. P1 |
@@ -214,12 +214,19 @@ Item 12 (README review) went as a **comment on #449**, which already owns the en
 
 **Four had a different mechanism than the symptom — this is the part worth carrying:**
 
-- **"Going home logs me out" is not a logout.** `StorefrontNav` — the only component that renders
-  customer session state — is mounted **only** by `app/shop/layout.tsx:43`. `/` and `/track` render
-  `PublicShell` → `PublicHeader`, which contains **zero** references to `getCustomerSession`. The
-  session is a `localStorage` marker nothing in the navigation path clears. **Not yet browser-proven**,
-  and #457 makes that its first acceptance criterion — if the session really is lost it is a far more
-  serious bug, and nobody should touch auth on the strength of the symptom.
+- **"Going home logs me out" was BOTH — and the browser run is what separated them.** ~~Not yet
+  browser-proven~~ — **proven 2026-08-03, and the diagnosis above was half right.** `PublicHeader`
+  really did contain zero session references, and the session really did survive the navigation
+  (control arm: returning to `/shop` restored signed-in chrome; `/shop/orders` resolved the identity
+  server-side). But the same run found the session **also dies on a 300s timer regardless of
+  activity** — filed as **#465**, fixed with #457 in PR #466. Both are CLOSED.
+
+  **This is the entry to carry.** Insisting on the browser arm before writing code is what turned one
+  symptom into two defects. Had the header been fixed on the strength of the filing alone, the report
+  would have persisted and read as unfixed — after five minutes the header would correctly say
+  "Sign in", because the customer genuinely was logged out. The refresh token had been sitting
+  HttpOnly for 30 days, never redeemed; the only `grant_type: "refresh_token"` in the frontend was
+  `auth.ts`, the **operator** path on a different realm.
 - **The basket cannot cross shops** — `cart-provider.tsx` keys `jtoye-cart-{shopSlug}`, the payload
   carries its own slug, and the parser rejects a mismatch (`:57-61`). It crosses **identities** because
   `customerLogout()` clears four keys (`customer-auth.ts:94-98`) and not the cart. One device, public
@@ -347,15 +354,22 @@ docker exec jtoye_oaas_2026-core-java-1 sh -c \
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Recommended next move: #457 — and settle it in a browser before writing anything.** It is a P1, it
-is probably a one-component fix (a session-blind header, §2.4), and until it is confirmed nobody knows
-whether the customer session actually survives navigation. That answer changes the size of the work by
-an order of magnitude, and it is ten minutes with a browser. **Do not fix it from the symptom.**
+**#457 is DONE (PR #466) — and it paid for the method.** Settling it in a browser first, as the issue
+demanded, turned one symptom into two defects and found **#465** (the session ended at 300s regardless
+of activity, with a 30-day refresh token never redeemed). Both closed. Keep doing this: the ten-minute
+browser arm is what stopped a correct-looking header fix from shipping over a live P1.
 
-**Then #442 (F-M7)** — the only Group B finding whose `permitAll` is not profile-gated, so the only one
-that reaches production, and it needs no decision from §4. Its trap is in its acceptance criteria: a
-fix that authenticates the metrics endpoint without giving Prometheus a way in **silently blinds the
-whole Phase 27 alerting layer**, and nothing turns red when that happens.
+**Recommended next move: #442 (F-M7)** — the only Group B finding whose `permitAll` is not
+profile-gated, so the only one that reaches production, and it needs no decision from §4. Its trap is
+in its acceptance criteria: a fix that authenticates the metrics endpoint without giving Prometheus a
+way in **silently blinds the whole Phase 27 alerting layer**, and nothing turns red when that happens.
+
+**Also newly filed: #467** — `/api/customer-orders` 502s on the compose stack (`CORE_API_INTERNAL_URL`
+unset; `localhost` in-container is the container's own loopback, and `extra_hosts` does not beat it),
+and the UI renders that failure as *"No orders found for this email"*. **An error displayed as an
+empty state** — invisible to the user, to a screenshot, and to any test asserting the page renders.
+Found while browser-verifying #466, pre-existing.
+
 
 **Then #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped Phase-22 feature that
 has never worked, and the finding names the cause in one line (no `@Transactional`, so
