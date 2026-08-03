@@ -31,6 +31,16 @@ import {
  * explicit <Link href="..."> literals (not a mapped array) so the link-graph
  * connectivity is greppable and each route reads as a first-class inbound link.
  *
+ * Persona gating (#458): /for-operators and /track are rendered only when there
+ * is NO customer session. A signed-in customer has self-selected — the operator
+ * pitch is noise on their surface, and the GUEST order lookup behind /track
+ * (order number + email) is redundant when the system already knows their
+ * orders. This header shares the gate with StorefrontNav on purpose: #457 exists
+ * because the two headers disagreed about the session once already, and fixing
+ * only /shop would recreate that split the moment a signed-in shopper clicked
+ * the wordmark. Neither destination is deleted — both stay in the PublicFooter
+ * on every surface, and /track sits behind every My Orders card.
+ *
  * Sign-in contract: the unqualified "Sign in" CTA is the CUSTOMER one and goes to
  * /shop/signin. It used to point at /auth/signin — the OPERATOR page, on a
  * different Keycloak realm — while the footer's "Vendor sign in" pointed at that
@@ -85,15 +95,19 @@ export function PublicHeader() {
             <Link href="/shop" className={desktopLink(isActive("/shop"))}>
               Shops
             </Link>
-            <Link
-              href="/for-operators"
-              className={desktopLink(isActive("/for-operators"))}
-            >
-              For operators
-            </Link>
-            <Link href="/track" className={desktopLink(isActive("/track"))}>
-              Track order
-            </Link>
+            {!profile && (
+              <>
+                <Link
+                  href="/for-operators"
+                  className={desktopLink(isActive("/for-operators"))}
+                >
+                  For operators
+                </Link>
+                <Link href="/track" className={desktopLink(isActive("/track"))}>
+                  Track order
+                </Link>
+              </>
+            )}
             {profile ? (
               <>
                 <Link
@@ -166,19 +180,25 @@ export function PublicHeader() {
                     Shops
                   </Link>
                 </SheetClose>
-                <SheetClose asChild>
-                  <Link
-                    href="/for-operators"
-                    className={mobileLink(isActive("/for-operators"))}
-                  >
-                    For operators
-                  </Link>
-                </SheetClose>
-                <SheetClose asChild>
-                  <Link href="/track" className={mobileLink(isActive("/track"))}>
-                    Track order
-                  </Link>
-                </SheetClose>
+                {/* Separate code path from the desktop row — the #458 gate has
+                    to be repeated here or the link stays live on mobile. */}
+                {!profile && (
+                  <>
+                    <SheetClose asChild>
+                      <Link
+                        href="/for-operators"
+                        className={mobileLink(isActive("/for-operators"))}
+                      >
+                        For operators
+                      </Link>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Link href="/track" className={mobileLink(isActive("/track"))}>
+                        Track order
+                      </Link>
+                    </SheetClose>
+                  </>
+                )}
                 {profile ? (
                   <>
                     <SheetClose asChild>
