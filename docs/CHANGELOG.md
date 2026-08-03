@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dev-stack infra ports bound to loopback, monitoring credential rotated (#510) — 2026-08-03
+
+Closes #438, #439 and #441 — three QA-council infrastructure-exposure findings, fixed together because all three edit the same Compose/monitoring surface. Deliberately described without reproduction commands, port/credential pairings or role attributes: this repository is public and the issues were sanitised when filed.
+
+#### Security
+- **#438 — the dev Postgres port was published on all interfaces** and reachable by a role that bypasses RLS. Off-loopback, a connection authenticated and read 128 rows from `orders` with no tenant context. Now loopback-only, and the credential was rotated **live** — the previous one now fails authentication for both roles, verified against the running database rather than from a file.
+- **#439 — Grafana accepted factory-default admin credentials.** The root cause was not what the compose file suggests: the credential was always *injected*, but the injected value **was** the default (confirmed by hashing it against the literal). Grafana only applies a configured password when it first creates the admin user, so editing `.env` alone would have changed nothing — it was reset against the running container.
+- **#441 — 16 infra ports published on all interfaces, and the mail archive was unauthenticated**, returning 200 with 33 captured messages. Now 0/16 reachable off-loopback, 16/16 still on loopback.
+
+#### Added
+- `scripts/check-infra-exposure.sh` — enumerates bind addresses from Compose's own parse. Every infra port is now prefixed `${JTOYE_BIND_HOST:-127.0.0.1}`: default-secure, with `0.0.0.0` still available as an explicit opt-in the gate then fails on loudly. `infra/docker-compose.yml` is covered too, because that is the path `scripts/start-dev.sh` actually drives — leaving it would have made the fix bypassable through the documented start command.
+
+#### Notes
+- **The gate is NOT wired into CI, and that is a stated limitation rather than an oversight.** Part of it needs a live broker, so it could only ever VOID on a runner — the same reason `check-runtime-freshness` deliberately stays out of CI. Verified rc=0 with `.env` present and rc=2 (VOID, fail-closed) without. **So nothing currently stops someone re-adding `0.0.0.0` in a PR**; the static half could run against `.env.example`, and that is recorded rather than bolted on here.
+- **Restricting bind addresses can break the canonical local dev + E2E runtime**, so the stack was recreated — a compose-file edit is not picked up by `docker compose start` — and re-verified from the **containers**, not the file. Playwright 119 passed / 6 skipped / 6 failed, all six attributed: 2 pass on re-run (a concurrent agent rebuilt the frontend mid-run), 4 belong to a spec targeting a port nothing publishes (#505). Monitoring survived the exporter credential rotation with all 8 targets `up=1` **and `pg_up=1`** — the second assertion matters, because this repo has a recorded case of a target reading healthy while collecting nothing.
+- **A disclosure sweep in this work was itself vacuous on first run.** `rg` is a shell function, so it does not exist inside a script; every category returned a confident 0 from `command not found`. A seeded control caught it, and rewritten against `/usr/bin/grep` all nine patterns fire on seeded text and return 0 on the branch. The identical trap reappeared later in a citation-repointing helper, which reported success while changing nothing.
+- **Citation shifts compound across lanes.** Both compose files moved line numbers, on top of #508's +11: mailhog was 541 on main, 552 after #508, 591 after this lane alone, **602 combined**. Fifteen citations were re-pointed by locating each cited *subject* in the merged tree — no single offset is correct when two independent changes move different parts of one file. `check-doc-citations` rc=0, 62/62 verified, uncheckable=0. The compose files themselves merged with **no conflict**: #508 owned the `frontend` service's `environment:` block, this lane owned `ports:`.
+
+
 ### Five backend defects in one Testcontainers run (#509) — 2026-08-03
 
 Closes #444, #486, #440, #448 and #500, and closes #484 as invalid. Batched deliberately: the `Integration Tests (Testcontainers RLS)` job is path-filtered to `core-java/**` and measures 46–49 min, so five separate PRs would have cost ~4 hours of runner time. #440/#448/#500 ran last and alone, because they are the only changes touching the OpenAPI contract and the snapshot must be regenerated exactly once, after everything else is present.

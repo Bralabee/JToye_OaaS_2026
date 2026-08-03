@@ -165,8 +165,21 @@ time; the gate is not flaky, the world moved. Backfilled in #434; the gate now c
 > already-public and rotate on that basis; do not treat this edit as a containment.
 
 **SEC-02 is DONE as of 2026-08-02: all five Group B findings now have issues** — **#438 is OPEN**,
-**#439 is OPEN**, **#440 is OPEN**, **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit is no longer
-one `rm` away from being lost.
+**#439 is OPEN**, **#440 is CLOSED** (PR #509), **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit
+is no longer one `rm` away from being lost.
+
+**#440's finding was partly FALSIFIED when it was worked** — a third instance of the pattern this
+document already records twice. *"Survives to production"* is **false**: `OpenApiConfig` is
+`@Profile("!prod")` and prod sets `api-docs.enabled: false`. *"Unauthenticated"* is **false** for a
+deployed environment: anonymous spec reads are permitted only when `looksLocal && !isDeployedProfile`.
+What was genuinely exposed is **staging** — which the finding never mentions. Re-verify before
+implementing; the filed location was wrong, exactly as F-M7's was.
+
+**#438, #439 and #441 are being closed by PR #510**, which binds every infra port to loopback behind
+`${JTOYE_BIND_HOST:-127.0.0.1}` and rotates the monitoring credential live. Note its gate,
+`scripts/check-infra-exposure.sh`, is **not wired into CI** — part of it needs a live broker, so it
+could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing
+currently stops someone re-adding `0.0.0.0` in a PR.**
 
 **They are deliberately sanitised, and that is a constraint on whoever works them.** This repository
 is **public**, which is the same reason `SECURITY-FINDINGS.md` was git-excluded. The issues carry the
@@ -475,7 +488,7 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 19 x rc=0. A VOID (2) is not a pass.
+# EXPECT 20 x rc=0. A VOID (2) is not a pass.
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
 # Both gates print their own remedy. Neither is a regression.

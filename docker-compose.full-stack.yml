@@ -7,6 +7,35 @@
 #   docker-compose -f docker-compose.full-stack.yml up
 #
 # See docs/DOCKER_QUICK_START.md for detailed instructions
+#
+# PUBLISHED-PORT BIND ADDRESS (issues #438 / #441)
+# ------------------------------------------------
+# Every INFRASTRUCTURE port below is published on ${JTOYE_BIND_HOST}, which
+# defaults to 127.0.0.1 — loopback only. Previously they carried no bind address
+# at all, which Docker expands to 0.0.0.0, so the database, cache, broker
+# management UI, object storage, identity provider and the captured-email archive
+# were all reachable from any network the workstation happened to join.
+#
+# Loopback is transparent for the way this stack is actually used, and that was
+# MEASURED rather than assumed before the change:
+#   - the browser, Playwright and the host CLI all reach these services over
+#     127.0.0.1, which is unaffected;
+#   - container-to-container traffic uses compose service names on the
+#     jtoye-network bridge and never touches a published port;
+#   - the `extra_hosts: host-gateway` aliases do NOT provide a working path to a
+#     published port from these containers — they sit on the jtoye-network
+#     bridge, from which the default-bridge gateway is not routable. A probe from
+#     the frontend container to the gateway address timed out, and to
+#     `localhost` was refused, BEFORE this change. Nothing regressed because
+#     nothing was using it.
+#
+# Set JTOYE_BIND_HOST=0.0.0.0 in .env for the deliberate cases (testing the
+# storefront from a phone on the same LAN, for example). That is an explicit,
+# auditable opt-in rather than the silent default it used to be.
+#
+# The APPLICATION tier (core-java, edge-go, frontend, mcp-server) is deliberately
+# NOT rebound here — see scripts/check-infra-exposure.sh, which records each
+# exemption with its reason and fails closed on any service not covered.
 
 services:
   # PostgreSQL Database
@@ -28,7 +57,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5433:5432"
+      # Loopback-only by default (#438). The account reachable on this port
+      # holds role attributes that bypass row-level security, so an
+      # all-interfaces bind removed the tenant-isolation backstop that every
+      # other layer assumes is there. Rotate alongside this change; see the
+      # issue for the rest.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/db/init:/docker-entrypoint-initdb.d
@@ -99,7 +133,10 @@ services:
       KC_HOSTNAME_STRICT: "false"
       JAVA_OPTS: "-Xms512m -Xmx1024m"
     ports:
-      - "8085:8080"
+      # Loopback-only by default (#441). KC_HOSTNAME stays `localhost`, so the
+      # public issuer string is unchanged and tokens keep validating; in-cluster
+      # callers already use the internal http://keycloak:8080 host.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:8085:8080"
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       # Phase 18: second realm import (jtoye-customers). --import-realm creates realms
@@ -128,7 +165,8 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
-      - "6379:6379"
+      # Loopback-only by default (#441) — session + cache store.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -162,9 +200,13 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS must be set}
     ports:
-      - "5672:5672"   # AMQP
-      - "15672:15672" # Management UI
-      - "61613:61613" # STOMP
+      # Loopback-only by default (#441). The management UI already refuses
+      # product-default credentials — that control is working and this change
+      # must not disturb it, so scripts/check-infra-exposure.sh assertion D
+      # re-checks it as a regression guard.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:5672:5672"   # AMQP
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:15672:15672" # Management UI
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:61613:61613" # STOMP
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
@@ -438,8 +480,12 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Console UI
+      # Loopback-only by default (#441). S3_PUBLIC_URL stays
+      # http://localhost:9000/... — the BROWSER loads those images from the
+      # host, and the image components render a plain <img>, so nothing
+      # server-side inside a container ever fetches this port.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9000:9000"   # S3 API
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9001:9001"   # Console UI
     volumes:
       - minio_data:/data
     healthcheck:
@@ -512,7 +558,11 @@ services:
       # That is why its volume held no model for weeks (24K, empty manifests)
       # while `ollama list` reported healthy: the healthcheck runs INSIDE the
       # container and never touches the network, so nothing detected it.
-      - "${OLLAMA_HOST_PORT:-11435}:11434"
+      #
+      # Loopback-only by default (#441), which costs nothing here: the comment
+      # above already records that NOTHING in the stack uses this published
+      # port — it exists so a developer can curl the model API from the host.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:${OLLAMA_HOST_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -553,8 +603,14 @@ services:
     container_name: jtoye-mailhog
     restart: unless-stopped
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI
+      # Loopback-only by default (#441). This is the sharpest of the infra
+      # ports: the API is unauthenticated by design and the archive holds real
+      # captured order-confirmation and notification email from the dev tenants,
+      # so an all-interfaces bind published customer names and addresses to the
+      # local network with no credential at all. Same data that #84 went to some
+      # trouble to make erasable, reachable by another route.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:1025:1025"   # SMTP
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:8025:8025"   # Web UI
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8025"]
       interval: 30s
