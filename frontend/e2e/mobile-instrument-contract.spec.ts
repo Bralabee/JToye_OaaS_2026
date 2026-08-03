@@ -110,9 +110,11 @@ async function hoverRuleAudit(page: import("@playwright/test").Page) {
 }
 
 test.describe("Playwright mobile project — emulation contract", () => {
-  test("mobile project reports a COARSE pointer and real touch points", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== "mobile", "asserts the mobile project's own emulation")
-
+  // Tagged, not `test.skip`-ed on project name. A runtime skip would enumerate
+  // under the other project and then skip, adding a permanent entry to the suite's
+  // skip count that means "not applicable here" — which playwright.config.ts
+  // states a skip must never mean. The tag makes it never enumerate at all.
+  test("mobile project reports a COARSE pointer and real touch points @mobile-only", async ({ page }) => {
     await page.goto("/")
     const state = await pointerState(page)
 
@@ -125,9 +127,7 @@ test.describe("Playwright mobile project — emulation contract", () => {
     expect(state.ontouchstart, "touch events must be present").toBe(true)
   })
 
-  test("desktop project still reports a FINE pointer that can hover", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== "desktop", "asserts the desktop project's own emulation")
-
+  test("desktop project still reports a FINE pointer that can hover @desktop-only", async ({ page }) => {
     await page.goto("/")
     const state = await pointerState(page)
 

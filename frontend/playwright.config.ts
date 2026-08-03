@@ -58,6 +58,13 @@ export default defineConfig({
     },
     {
       name: "desktop",
+      // The mirror of the mobile project's grepInvert, for the same reason and
+      // added when the first genuinely mobile-only block appeared (#503's
+      // coarse-pointer assertion). Without it that block could only be handled
+      // with a runtime `test.skip(project !== "mobile")`, which puts a permanent
+      // "not applicable here" entry into the skip count — precisely what the
+      // comment above says a skip must never mean.
+      grepInvert: /@mobile-only/,
       use: {
         browserName: "chromium",
         viewport: { width: 1440, height: 900 },
