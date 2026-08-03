@@ -7,9 +7,9 @@
 
 import { test, expect, type Page } from "@playwright/test"
 
-// Honour PLAYWRIGHT_BASE_URL (dev stack runs on :3100; the MCP server holds
-// :3000). Hardcoding :3000 tested the wrong app — and, on a shared host, could
-// hit a cohabiting service. Mirrors the default in playwright.config.ts.
+// Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors the
+// default in playwright.config.ts. The "MCP server holds :3000" claim this
+// comment used to carry is false — mcp-server publishes :9100 (#505).
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const KEYCLOAK = process.env.PLAYWRIGHT_KEYCLOAK_URL || "http://localhost:8085"
 // Target a DETERMINISTIC seeded shop (DemoDataSeeder, UIX-05). The old

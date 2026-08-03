@@ -1,8 +1,13 @@
 /**
  * Phase 17 VOPS-01 + VOPS-02 Playwright E2E.
  *
- * Targets the local dev stack on port 3100 (frontend) and the core-java API
- * on port 8080 (default). The backend MUST be seeded with at least one
+ * Targets whatever `playwright.config.ts` resolves `baseURL` to — this spec
+ * declares no port of its own. It used to default to `:3100`, which nothing on
+ * the Compose stack publishes, so `page.goto` failed before the Stripe skip
+ * condition was ever reached and four blocks reported as FAILURES that the repo
+ * had recorded as deliberate skips (#505). Measured 2026-08-03: frontend 3000,
+ * core-java 9090, edge-go 8089, mcp-server 9100 — no 3100 anywhere.
+ * The backend MUST be seeded with at least one
  * CONFIRMED order whose payment_reference is a Stripe test-mode payment
  * intent — the docker-compose dev-data SQL seed normally creates such an
  * order; if the seed is absent the success path will skip cleanly.
@@ -35,15 +40,18 @@ import {
   skipWithoutVendorPassword,
 } from "./vendor-credentials"
 
-const BASE_URL =
-  process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100"
+// No local BASE_URL constant on purpose: every navigation below is RELATIVE, so
+// Playwright resolves it against the config's `baseURL`. That makes the config
+// the single authority rather than one of several, which is the defect #505
+// found. Enforced by scripts/check-e2e-baseurl-contract.sh.
+//
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account, mapping
 // to tenant 00000000-…-000000000001 via the realm's tenant_id attribute. The
 // credential comes from e2e/vendor-credentials.ts (never committed).
 
 async function vendorLogin(page: import("@playwright/test").Page) {
   skipWithoutVendorPassword()
-  await page.goto(`${BASE_URL}/auth/signin`)
+  await page.goto("/auth/signin")
   // NOT networkidle: the app keeps SSE/realtime connections open, so
   // networkidle never fires — wait for the DOM and the concrete controls.
   await page.waitForLoadState("domcontentloaded")
@@ -82,7 +90,7 @@ test.describe("Phase 17 — vendor refund flow", () => {
     await vendorLogin(page)
 
     // 1. Open the orders list
-    await page.goto(`${BASE_URL}/dashboard/orders`)
+    await page.goto("/dashboard/orders")
     // Element-based wait (networkidle never fires with SSE open): the page
     // is ready when the heading renders; rows may stream in after.
     await page.waitForLoadState("domcontentloaded")
@@ -173,7 +181,7 @@ test.describe("Phase 17 — vendor refund flow", () => {
   test("Issue refund button is hidden on a DRAFT order", async ({ page }) => {
     await vendorLogin(page)
 
-    await page.goto(`${BASE_URL}/dashboard/orders`)
+    await page.goto("/dashboard/orders")
     // Element-based wait (networkidle never fires with SSE open): the page
     // is ready when the heading renders; rows may stream in after.
     await page.waitForLoadState("domcontentloaded")

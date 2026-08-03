@@ -28,8 +28,8 @@
  *   ac55-fixture-delayed     PENDING, 30 min old      -> the "Taking longer" section
  *
  * Run:
- *   PLAYWRIGHT_BASE_URL=http://localhost:3100 E2E_VENDOR_PASSWORD=… \
- *     npx playwright test --project=mobile media-review-320.spec
+ *   E2E_VENDOR_PASSWORD=… npx playwright test --project=mobile media-review-320.spec
+ *
  *
  * Waits are `domcontentloaded` + explicit element waits, never networkidle: the
  * dashboard holds SSE/STOMP connections open so the network never goes idle

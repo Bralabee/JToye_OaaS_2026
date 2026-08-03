@@ -6,8 +6,8 @@
  * snapshot tests (csp-headers.test.ts + header-snapshot.test.ts) wired by
  * Task 12-02-06. Run this spec locally before merging a CSP change:
  *
- *   PLAYWRIGHT_BASE_URL=http://localhost:3100 \
- *     npx playwright test e2e/csp-no-violations.spec.ts
+ *   npx playwright test e2e/csp-no-violations.spec.ts   # uses the config baseURL (:3000)
+ *
  *
  * Or in staging (Task 12-02-07 manual gate, step 2):
  *
