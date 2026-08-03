@@ -423,3 +423,51 @@ describe("fetchMyShops — pages the whole shop list (#282)", () => {
     ).toBeInTheDocument()
   })
 })
+
+/**
+ * Issue #288 — a non-GROUP_ADMIN whose grants were all revoked fell through to a
+ * controlled `<select value="all">` with NO matching option: a blank, broken-looking
+ * control that never explained why. The backend already denies every scoped request;
+ * the screen just could not say so.
+ */
+describe("ShopSwitcher — zero-access non-GROUP_ADMIN (#288)", () => {
+  it("renders an explanatory no-access notice instead of a blank select", async () => {
+    mockAccess({ shops: [], groupAdmin: false, grantedShopIds: [] })
+    renderSwitcher(<ShopSwitcher />)
+
+    const notice = await screen.findByTestId("shop-switcher-no-access")
+    expect(notice).toHaveTextContent(/no shop access/i)
+    // …and says what to do about it.
+    expect(notice).toHaveTextContent(/group admin/i)
+    // The dead control is gone — an empty <select> IS the defect.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  })
+
+  // The mobile top bar is a FIXED h-14 (56px) row and the switcher sits in a
+  // max-w-[55%] (~206px) column, so at 375px this sentence wraps to ~4 lines and
+  // would spill out of a bar that cannot grow — permanently, for this user. The chip
+  // carries it visually there; the sentence stays in the accessibility tree.
+  it("keeps the explanation laid out in the sidebar and visually-hidden in the mobile top bar", async () => {
+    mockAccess({ shops: [], groupAdmin: false, grantedShopIds: [] })
+    const { unmount } = renderSwitcher(<ShopSwitcher variant="topbar" />)
+
+    expect(await screen.findByText(/ask a group admin/i)).toHaveClass("sr-only")
+    unmount()
+
+    renderSwitcher(<ShopSwitcher variant="sidebar" />)
+    expect(await screen.findByText(/ask a group admin/i)).not.toHaveClass("sr-only")
+  })
+
+  // Over-reach guard: a GROUP_ADMIN with no shops yet is NOT locked out — they hold
+  // tenant-wide access and need the "All shops" context to create the first shop.
+  // (This case also passes against the pre-fix code; it constrains the fix, it does
+  // not demonstrate it.)
+  it("leaves a GROUP_ADMIN who has no shops yet on the 'All shops' control", async () => {
+    mockAccess({ shops: [], groupAdmin: true, grantedShopIds: null })
+    renderSwitcher(<ShopSwitcher />)
+
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement
+    expect(select.value).toBe("all")
+    expect(screen.queryByTestId("shop-switcher-no-access")).not.toBeInTheDocument()
+  })
+})
