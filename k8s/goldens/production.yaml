@@ -10,6 +10,7 @@ metadata:
 ---
 apiVersion: v1
 data:
+  api.internal.url: http://core-java:9090
   api.url: https://api.olajay.co.uk
   cors.allowed-origins: https://app.olajay.co.uk
   db.port: "5432"
@@ -761,6 +762,11 @@ spec:
       - env:
         - name: NODE_ENV
           value: production
+        - name: CORE_API_INTERNAL_URL
+          valueFrom:
+            configMapKeyRef:
+              key: api.internal.url
+              name: app-config
         - name: NEXTAUTH_URL
           valueFrom:
             configMapKeyRef:
@@ -790,6 +796,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: keycloak.issuer.uri
+              name: app-config
+        - name: NEXT_PUBLIC_KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.public.issuer.uri
               name: app-config
         image: ghcr.io/bralabee/jtoye-frontend:2.1.0
         imagePullPolicy: IfNotPresent
