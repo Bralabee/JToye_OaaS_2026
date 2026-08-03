@@ -94,6 +94,16 @@ WITH_STACK=0
 for arg in "$@"; do
   case "$arg" in
     --with-stack) WITH_STACK=1 ;;
+    # Emit REQUIRED_VARS, one per line, and exit. This exists so a CI job that
+    # must MANUFACTURE these credentials can read the list from the same place
+    # the gate reads it, instead of keeping a copy.
+    #
+    # A copy is not hypothetical drift: PR #510 added GRAFANA_ADMIN_PASSWORD and
+    # POSTGRES_EXPORTER_PASSWORD to REQUIRED_VARS and did not add them to
+    # e2e-nightly.yml's generator, so the next scheduled run would have failed
+    # preflight on two CHANGE_ME values inherited from .env.example. The two
+    # lists drifted within hours of each other.
+    --list-required) printf '%s\n' "${REQUIRED_VARS[@]}"; exit 0 ;;
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) ENV_FILE="$arg" ;;
   esac
@@ -180,21 +190,34 @@ done
 # variables name the same role, the two password variables must agree.
 echo "Checking credential pairs that name the same role actually agree..."
 CREDENTIAL_PAIRS=(
-  "POSTGRES_USER:POSTGRES_PASSWORD|KC_DB_USERNAME:KC_DB_PASSWORD"
+  # userVarA | userVarB | passVarA | passVarB | default for userVarB ('-' = none)
+  "POSTGRES_USER|KC_DB_USERNAME|POSTGRES_PASSWORD|KC_DB_PASSWORD|-"
+  # The exporter's role DEFAULTS to jtoye — see the DATA_SOURCE_NAME line in
+  # infra/monitoring/docker-compose.monitoring.yml, which reads
+  # ${POSTGRES_EXPORTER_USER:-jtoye}. So an unset POSTGRES_EXPORTER_USER is not
+  # "unconstrained", it is the SAME role as POSTGRES_USER, and its password must
+  # agree. The default is mirrored here rather than derived; if that compose line
+  # ever changes, change this too. Not currently broken — recorded because it is
+  # one edit away from being the same failure, and the exporter defines no
+  # healthcheck, so a dead one is indistinguishable from a live one at a glance.
+  "POSTGRES_USER|POSTGRES_EXPORTER_USER|POSTGRES_PASSWORD|POSTGRES_EXPORTER_PASSWORD|jtoye"
 )
 PAIRS_CHECKED=0
 for pair in "${CREDENTIAL_PAIRS[@]}"; do
-  left="${pair%%|*}"; right="${pair##*|}"
-  u_a="${left%%:*}";  p_a="${left##*:}"
-  u_b="${right%%:*}"; p_b="${right##*:}"
+  IFS='|' read -r u_a u_b p_a p_b default_u_b <<< "$pair"
   val_u_a="${!u_a-}"; val_u_b="${!u_b-}"
   val_p_a="${!p_a-}"; val_p_b="${!p_b-}"
+
+  # Apply the documented compose default before deciding the pair is unevaluable.
+  if [ -z "$val_u_b" ] && [ "$default_u_b" != "-" ]; then
+    val_u_b="$default_u_b"
+  fi
 
   # An unset user variable is not "no conflict" — it means this check could not
   # be evaluated, and a check that cannot be evaluated must say so, never pass
   # silently. "Found nothing" is never "clean".
   if [ -z "$val_u_a" ] || [ -z "$val_u_b" ]; then
-    fail "Cannot evaluate the ${p_a}/${p_b} pairing: ${u_a} and/or ${u_b} is unset"
+    fail "Cannot evaluate the ${p_a}/${p_b} pairing: ${u_a} and/or ${u_b} is unset and has no documented default"
     ERRORS=$((ERRORS + 1))
     continue
   fi
