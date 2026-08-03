@@ -19,14 +19,14 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
+| `JToye_OaaS_2026` | **3 PRs merged 2026-08-03 by a parallel-agent run: #508 (frontend), #509 (core-java), #510 (infra)** — 12 issues closed. Earlier the same day: #434, #435, #436, #443, #455, plus a concurrent session's #437/#456. HEAD deliberately **not** quoted |
 | Open PRs | **0** (measured 2026-08-03). The six-PR QC'd merge train is **complete**: **#480 is CLOSED**, **#474 is CLOSED**, **#478 is CLOSED**, **#477 is CLOSED**, **#479 is CLOSED**, **#476 is CLOSED**, closing issues #418, #287, #279, #390, #445, #282, #288 and #290. #476 was held to last because it was the only one with no real-browser proof; the verification then passed — the #288 no-access block measures `h=38`, bottom `46.5` inside the 56px bar (contained by 9.5px), and the `sr-only` choice was proven load-bearing by counterfactual (the sidebar classes at 375px spill **25.5px** over the page heading). **Re-measure before trusting this cell** |
 | Open issues | **85** — re-measured 2026-08-03 after the train finished; it moved in **both** directions across the day (63 → 86 → 92 → 89 → 85) as the council backlog was filed and the train closed issues, which is why no single figure here is safe to carry. **#442 is CLOSED** (#472), **#473 is CLOSED** (issue #302), **#475 is CLOSED** (issue #274). Re-run `gh issue list --state open --limit 300 --json number --jq length` — the default `--limit` is **30**, which silently undercounts |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
-| Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
-| Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
+| Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy**. The two without health status define no healthcheck — that is **not** unhealthy. **Infra ports are now loopback-only** (#510): Postgres, Redis, RabbitMQ, MinIO, MailHog, Keycloak, Grafana, Prometheus, Alertmanager and both exporters bind `127.0.0.1`. App-tier ports (core-java 9090, frontend 3000, edge-go 8089, mcp-server 9100) stay on all interfaces as **named, reasoned exemptions** |
+| Gates | **20 scripts now** (was 19 — #510 adds `check-infra-exposure.sh`). **19 green, 1 VOID.** `check-e2e-skip-budget` is **rc=2 and correctly so**, and is now *staler* than when this line was first written: #456 added one spec and #508 added more, so the stored Playwright report describes a skip set that no longer exists. **A VOID is not a pass.** Remedy: re-run the suite (~20 min). ⚠ `check-infra-exposure` **is not wired into CI** — part of it needs a live broker, so it could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing stops someone re-adding `0.0.0.0` in a PR** |
 | Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
-| Runtime | 4/4 built services FRESH, re-asserted after the concurrent session's merges |
+| Runtime | **4/4 built services FRESH, 0 unverified** — re-asserted after #508/#509/#510 by rebuilding core-java and frontend and **recreating** their containers. Both directions recorded: the gate was **rc=1** before, naming both stale images with their build-input commits, and rc=0 after. Proven by content as well as by gate — `ProblemDetailResponseCustomizer`, `TenantHeaderSchemeCustomizer` and `WebhookDeliveryService` all read back from **inside** the running `app.jar`, with a `NotARealClass` control returning 0 so the probe is not one that always says yes |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
 > checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
@@ -39,6 +39,69 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 ---
 
 ## 0. ⚠ READ FIRST
+
+### 0.0 The parallel-agent run of 2026-08-03 — and the seven findings that were WRONG AS FILED
+
+Eight specialised agents in isolated worktrees, assembled into **three** PRs, **12 issues closed**.
+The batching was the point: the `Integration Tests (Testcontainers RLS)` job is path-filtered to
+`core-java/**` and measured **45 min** on #509. Five backend issues went into that one run instead of
+five; #508 and #510 reported the same job at **0 min**, path-skipped. Frontend-only PRs cost ~3 min
+total, so **batching is worth it for `core-java/**` and buys nothing elsewhere.**
+
+**The single most transferable result: SEVEN filed claims were falsified while being worked.** Not one
+was caught by a test passing — every one came from running the fail direction first.
+
+| issue | what the filing said | what was true |
+|---|---|---|
+| **#484** | `unless="#result == null"` cannot fire for `Optional.empty()` | **Premise false.** Spring unwraps the Optional *before* evaluating `unless` (`CacheAspectSupport:600-601` → `:552` → `:897`). Its recommended fix throws `EL1004E` on every SUCCESSFUL lookup and disables the products cache — **and the issue's own acceptance criterion would have gone GREEN on that broken tree**, because a disabled cache also holds zero entries. Closed as invalid; a regression guard shipped instead |
+| **#444** | replay 404s for the same reason as the log | **Half true, and the false half is the dangerous one.** Un-keyed replay was broken; **keyed replay PASSED on the unfixed tree** — and the keyed path is the one the frontend api-client uses, since it auto-retries with a key. A fix validated only there would have gone green over a live defect |
+| **#444** | `TenantSetLocalAspect` "never fires" | It *does* fire, then returns early on `!isActualTransactionActive()`. `SimpleJpaRepository` opens its transaction **inside** the Spring Data proxy, after the advice returned. That is why annotating the *caller* fixes it and "make the aspect pin harder" would not |
+| **#440** | unauthenticated spec survives to **production** | **False.** `OpenApiConfig` is `@Profile("!prod")`, prod sets `api-docs.enabled: false`, and anonymous reads need `looksLocal && !isDeployedProfile`. The real exposure was **staging**, which the finding never mentions |
+| **#448** | 105 responses point at success DTOs | **Misread its own number.** 105 is the *total* 4xx/5xx; **96** pointed at success DTOs, 9 declared no body. Two sub-claims also false |
+| **#500** | 3 bare `notFound()` sites in one controller | **12 sites across 7 controllers.** Fixing only the named one would have made #448's spec promise a body that 9 other sites never send |
+| **#463** | `/shop` is a server-rendered 12 ms control | **False.** `frontend/app/shop/page.tsx:1` is `"use client"` and fetches on mount — the 12 ms was the HTML shell. So there was **no** server-rendered control in the comparison, and the owner's *"the same applies to all pages"* is **broader** than the issue recorded (#507) |
+
+**This is now the fourth, fifth, sixth and seventh instance of the pattern §2.1 already records twice**
+(SEC-01/A1's falsified root cause, F-M7/#442's falsified location). **Re-verify before implementing is
+not advice here; it is the difference between a fix and a no-op over a live defect.**
+
+### 0.0.1 Parallelism: what the previous handoff got wrong, and the two rules that made it work
+
+§2.6 said *"do not parallelise this cluster."* **The file sets refute it.** The only genuine collision
+was #467 ↔ #463, which both rewrite `frontend/app/shop/orders/page.tsx` — those went to one agent.
+#459 and #458 are disjoint from those and from each other, and **all branches merged with zero
+conflicts**. Check the actual file sets before declaring a cluster unparallelisable.
+
+Two coordination rules did the real work, and both **prevent** conflicts rather than resolving them:
+
+1. **No agent may touch `docs/metrics.json` or `docs/CHANGELOG.md`.** Regenerate once per lane at
+   assembly. A per-branch edit collides on the same lines and silently deletes a sibling's.
+   Corroboration worth keeping: in both lanes the agents' *independent* predictions summed to exactly
+   what `docs-freshness.sh --write` produced (+15/+25/+10 → 548; +9/+9/+4/+19 → +41).
+2. **Where two agents must share a file, give each an explicit region.**
+   `docker-compose.full-stack.yml` was split `environment:` (#508) vs `ports:` (#510) — **merged with
+   no conflict.**
+
+### 0.0.2 Four traps this run hit in practice
+
+- **`Closes #A, #B, #C` closes only #A.** GitHub needs the keyword before *each* reference. #508 read
+  `Closes #459, #463, #467`; #459 closed and the other two silently did not. **Check issue state after
+  a merge** — and note `gh issue view` lags a merge by seconds, so a stale OPEN read may just be lag.
+- **A line-number citation breaks whenever anything above it moves, and the shifts COMPOUND.** mailhog
+  was cited at 541; it became 552 after #508, 591 after #510 alone, **602 combined**. Re-point by
+  locating the cited *subject*, never by applying an offset.
+- **`rg`/`grep` do not exist inside `bash script.sh`** — they are shell functions. A citation-repointing
+  helper reported success while changing **nothing** (`git status` empty), and a disclosure sweep
+  returned a confident 0 from `command not found`. Use `/usr/bin/grep` inside scripts, and seed a
+  control.
+- **Docker's `LastTagTime` is UTC; `git log %cI` is local.** An ad-hoc staleness comparison called
+  edge-go STALE on a **59-minute** gap that was purely the offset. Normalise to epoch — or just run
+  `check-runtime-freshness.sh`, which already does.
+
+**And the process miss worth repeating:** the CI `docs-freshness` job runs **seven** scripts, not the
+three obvious ones. Verifying `docs-freshness` + `check-doc-metrics` + `check-doc-citations` locally
+and calling it green missed `check-handoff-contract`, which then went red in CI. **Run the workflow's
+real step list.**
 
 ### 0.1 The QA council's findings are not in the repository
 
@@ -164,9 +227,9 @@ time; the gate is not flaky, the world moved. Backfilled in #434; the gate now c
 > it from a public repository's history, and this is recorded rather than quietly edited. Treat it as
 > already-public and rotate on that basis; do not treat this edit as a containment.
 
-**SEC-02 is DONE as of 2026-08-02: all five Group B findings now have issues** — **#438 is OPEN**,
-**#439 is OPEN**, **#440 is CLOSED** (PR #509), **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit
-is no longer one `rm` away from being lost.
+**SEC-02 is COMPLETE as of 2026-08-03: all five Group B findings are CLOSED** — **#438 is CLOSED**,
+**#439 is CLOSED**, **#441 is CLOSED** (all PR #510), **#440 is CLOSED** (PR #509), **#442 is CLOSED**
+(PR #472). The audit is no longer one `rm` away from being lost, and it is no longer outstanding.
 
 **#440's finding was partly FALSIFIED when it was worked** — a third instance of the pattern this
 document already records twice. *"Survives to production"* is **false**: `OpenApiConfig` is
