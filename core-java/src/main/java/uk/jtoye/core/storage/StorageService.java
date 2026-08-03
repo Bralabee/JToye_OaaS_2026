@@ -18,6 +18,9 @@ import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.exception.UnreadableImageException;
 
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
@@ -92,6 +95,13 @@ public class StorageService {
      * <p>Issue #445: the stored object is the NORMALIZED WebP derivative, never the raw upload
      * (see {@link #validateAndNormalize}). The key therefore always ends {@code .webp} and the
      * object's {@code Content-Type} is the produced type, not the client's header.
+     *
+     * <p>Issue #489 scope note: this path is NOT affected. Its key carries a per-upload
+     * {@code UUID.randomUUID()}, so no two uploads ever share a key and the {@code immutable}
+     * cache-control below has always been an honest statement about the object. The issue
+     * named it alongside {@link #uploadNamed}; only {@code uploadNamed} was keyed
+     * deterministically. Pinned by
+     * {@code ShopBrandImageKeyTest.productGalleryKeyWasAlreadyUniquePerUpload}.
      */
     public String upload(UUID tenantId, String pathPrefix, UUID entityId, MultipartFile file, ImageType imageType) {
         byte[] imageBytes = validateAndNormalize(file, imageType);
@@ -114,18 +124,51 @@ public class StorageService {
     }
 
     /**
-     * Upload a file with a fixed name (e.g. logo, banner).
+     * Upload a NAMED brand image (shop logo, shop banner) at a CONTENT-ADDRESSED key.
      *
      * <p>Issue #445: as {@link #upload}, the stored object is the normalized WebP derivative.
      * The caller ({@code ShopService.uploadLogo} / {@code uploadBanner}) deletes the previous
      * object by its stored URL BEFORE calling this, so the extension change from the source
      * format to {@code .webp} cannot orphan the old object.
+     *
+     * <p><b>Issue #489 — why the key carries a sha256.</b> The key used to be
+     * {@code <tenant>/shops/<shopId>/logo.webp}: fixed for the life of the shop, while the
+     * object was (and still is) served {@code public, max-age=31536000, immutable}. That
+     * combination is a contradiction — {@code immutable} tells every browser and CDN the bytes
+     * at this URL will never change, and a vendor re-uploading their logo changed exactly
+     * those bytes. The vendor could then keep seeing the old logo for up to a year with no
+     * in-product way to force a refresh. #445 made it unconditional: before it the extension
+     * followed the client's filename, so a jpeg→png swap happened to dodge the collision.
+     *
+     * <p>The fix is option 1 of the issue — content addressing, the same device the Phase-24
+     * {@code media_asset} model already uses for quarantine keys ({@code <tenant>/quarantine/
+     * <sha256>.<ext>}). The key becomes {@code <tenant>/<prefix>/<entityId>/<name>-<sha256>.webp}
+     * and {@code immutable} becomes true BY CONSTRUCTION: the bytes at a key are the bytes the
+     * key was derived from. Dropping {@code immutable} (option 2) would have paid for the fix
+     * with the storefront's LCP; a query-string cache-buster (option 3) would have left the
+     * object genuinely mislabelled.
+     *
+     * <p>Two properties of the key are load-bearing and are pinned by
+     * {@code ShopBrandImageKeyTest}:
+     * <ul>
+     *   <li>the hash is of the STORED DERIVATIVE, not of the raw upload — so a later change to
+     *       the {@code jtoye.media.*} budget, which produces different derivative bytes from
+     *       the same source file, also lands on a different key rather than silently
+     *       overwriting an object promised immutable;</li>
+     *   <li>the {@code <name>-} segment is retained — the same image uploaded as both logo and
+     *       banner must stay two objects, or {@code removeLogo} would delete the banner too.</li>
+     * </ul>
+     *
+     * <p>No migration is needed for shops still holding a {@code .../logo.webp} url: the url is
+     * stored on the shop row and keeps resolving, and the caller's delete-by-stored-url runs
+     * before this method, so the next upload retires the old key cleanly.
      */
     public String uploadNamed(UUID tenantId, String pathPrefix, UUID entityId, String name, MultipartFile file) {
         ImageType imageType = "logo".equals(name) ? ImageType.LOGO : ImageType.BANNER;
         byte[] imageBytes = validateAndNormalize(file, imageType);
 
-        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + name + DERIVATIVE_EXTENSION;
+        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/"
+                + name + "-" + sha256Hex(imageBytes) + DERIVATIVE_EXTENSION;
 
         s3Client.putObject(
                 PutObjectRequest.builder()
@@ -184,6 +227,12 @@ public class StorageService {
      * PUT when the object already exists (HeadObject) so repeated dev boots don't
      * re-upload. The magic-byte {@link #detectContentType} check is retained as a
      * sanity guard against a corrupt/non-image asset.
+     *
+     * <p>Issue #489 scope note: the key IS deterministic here, but the {@code immutable}
+     * cache-control is still honest, because the HeadObject short-circuit above means the
+     * bytes at that key are written once and never replaced. (Should that skip ever be
+     * removed, this becomes the same defect {@link #uploadNamed} had, and the same content
+     * addressing is the fix.)
      */
     public String putSeedImage(UUID tenantId, String filename, byte[] bytes, String contentType) {
         if (bytes == null || bytes.length == 0) {
@@ -270,6 +319,11 @@ public class StorageService {
      * Store {@code bytes} at a server-generated {@code objectKey} (e.g. quarantine
      * key on accept, or {@code <tenant>/media/<id>.webp} for an ACTIVE derivative)
      * and return its browser-reachable public URL.
+     *
+     * <p>Issue #489 scope note: the async pipeline's keys are already collision-free per
+     * distinct content — the quarantine key IS the raw sha256, and a derivative key carries
+     * the asset id, which a fresh upload always gets fresh (the dedup path reuses the row only
+     * for byte-identical raw input). So {@code immutable} is honest on this path too.
      */
     public String putBytes(String objectKey, byte[] bytes, String contentType) {
         s3Client.putObject(
@@ -454,6 +508,21 @@ public class StorageService {
         if (normalized.width() < imageType.minWidth || normalized.height() < imageType.minHeight) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     imageType.message + " (uploaded: " + normalized.width() + "x" + normalized.height() + ")");
+        }
+    }
+
+    /**
+     * Lowercase hex SHA-256 of {@code data} — the content address used by
+     * {@link #uploadNamed}'s object key (issue #489). Same digest and encoding as
+     * {@code MediaUploadController.sha256Hex}, which produces {@code media_asset.sha256}
+     * and the Phase-24 quarantine key, so the two content-addressing schemes agree.
+     */
+    private static String sha256Hex(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandated by the JLS-required MessageDigest set; unreachable on any JRE.
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 
