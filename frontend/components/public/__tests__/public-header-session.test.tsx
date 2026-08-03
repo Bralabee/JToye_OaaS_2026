@@ -11,7 +11,7 @@
  * These assert the RENDERED result, not props: a component test that stubbed the
  * session shape rather than the seam would pass over exactly this bug.
  */
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import { usePathname } from "next/navigation"
 import { PublicHeader } from "@/components/public/public-header"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -101,5 +101,70 @@ describe("PublicHeader customer session awareness", () => {
     render(<PublicHeader />)
 
     expect(await screen.findByText("Alice")).toBeInTheDocument()
+  })
+})
+
+/**
+ * Issue #458 — the same persona gate as StorefrontNav, on the shared header.
+ *
+ * Fixing only /shop would have recreated the exact split #457 exists to prevent:
+ * a signed-in shopper clicking the wordmark lands on `/`, which renders THIS
+ * component, and would have met the operator pitch again one click later.
+ */
+describe("PublicHeader persona gating (#458)", () => {
+  const SIGNED_IN = {
+    profile: { sub: "u1", email: "alice@example.com", name: "Alice", emailVerified: true },
+    expiresAt: Math.floor(Date.now() / 1000) + 300,
+  }
+
+  it("hides 'For operators' from a signed-in customer on the desktop row", async () => {
+    mockedSession.mockResolvedValue(SIGNED_IN)
+    render(<PublicHeader />)
+    expect(await screen.findByText("Alice")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /^for operators$/i })).not.toBeInTheDocument()
+  })
+
+  it("hides the standalone 'Track order' guest lookup from a signed-in customer", async () => {
+    mockedSession.mockResolvedValue(SIGNED_IN)
+    render(<PublicHeader />)
+    expect(await screen.findByText("Alice")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /^track order$/i })).not.toBeInTheDocument()
+  })
+
+  it("hides both inside the mobile sheet too — a separate code path", async () => {
+    mockedSession.mockResolvedValue(SIGNED_IN)
+    render(<PublicHeader />)
+    expect(await screen.findByText("Alice")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }))
+
+    expect(screen.queryByRole("link", { name: /^for operators$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /^track order$/i })).not.toBeInTheDocument()
+    // ...while the customer's own door is still there.
+    expect(screen.getByRole("link", { name: /my orders/i })).toHaveAttribute(
+      "href",
+      "/shop/orders"
+    )
+  })
+
+  it("CONTROL: an anonymous visitor still gets both doors, desktop and sheet", async () => {
+    mockedSession.mockResolvedValue(null)
+    render(<PublicHeader />)
+    await waitFor(() => expect(mockedSession).toHaveBeenCalled())
+
+    expect(screen.getByRole("link", { name: /^for operators$/i })).toHaveAttribute(
+      "href",
+      "/for-operators"
+    )
+    expect(screen.getByRole("link", { name: /^track order$/i })).toHaveAttribute(
+      "href",
+      "/track"
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }))
+    expect(screen.getByRole("link", { name: /^for operators$/i })).toHaveAttribute(
+      "href",
+      "/for-operators"
+    )
   })
 })

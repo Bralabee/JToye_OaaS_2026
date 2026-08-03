@@ -15,6 +15,12 @@
  * Separate from vendor NextAuth to avoid config conflicts.
  */
 
+import {
+  clearStoredCarts,
+  forgetCustomerId,
+  rememberCustomerId,
+} from "@/lib/cart-identity"
+
 // Phase 18: customer identity lives in its own realm (jtoye-customers), decoupled
 // from the B2B staff/vendor realm (jtoye-dev). Use the dedicated customer base URL,
 // falling back ONLY to the jtoye-customers dev default — never to
@@ -78,7 +84,7 @@ function decodeJwtPayload(token: string): IdTokenClaims | null {
   }
 }
 
-function setMarker(expiresAt: number) {
+function setMarker(expiresAt: number, sub?: string | null) {
   if (typeof window === "undefined") return
   try {
     localStorage.setItem(MARKER_KEY, "true")
@@ -86,6 +92,11 @@ function setMarker(expiresAt: number) {
   } catch {
     /* storage may be unavailable (private mode) — ignore */
   }
+  // WHO is signed in, not just THAT somebody is. The basket is stamped with it
+  // so a second customer on the same browser cannot inherit the first one's
+  // (#459). Its own try/catch, so a storage failure on the marker above cannot
+  // skip it and leave the two out of step.
+  rememberCustomerId(sub)
 }
 
 function clearMarker() {
@@ -99,6 +110,23 @@ function clearMarker() {
   } catch {
     /* ignore */
   }
+  forgetCustomerId()
+}
+
+/**
+ * What an explicit SIGN-OUT tears down — strictly more than a session simply
+ * going away.
+ *
+ * clearMarker() alone is what every "the session is gone" path wants: a lapsed
+ * or unrenewable token must not cost a shopper their basket, and this endpoint
+ * is probed on every public page view. Sign-out is the one moment that also
+ * means "this device may be about to change hands", so it is the one moment the
+ * baskets go too (#459). Keeping the two apart is the whole fix: clearing carts
+ * from clearMarker() would empty a live basket every time a refresh hiccuped.
+ */
+function clearSignedOutState() {
+  clearMarker()
+  clearStoredCarts()
 }
 
 /**
@@ -306,7 +334,7 @@ export async function handleCallback(
       emailVerified: payload.email_verified || false,
     }
 
-    setMarker(expiresAt)
+    setMarker(expiresAt, profile.sub)
     clearAuthTransients()
 
     return profile
@@ -351,8 +379,11 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
       clearMarker()
       return null
     }
-    // Refresh the marker so subsequent synchronous checks agree with server
-    if (data.expiresAt) setMarker(data.expiresAt)
+    // Refresh the marker so subsequent synchronous checks agree with server.
+    // Carries the subject too: this is the path a RENEWED session comes back
+    // through, and an identity that silently went missing there would make
+    // every subsequent basket write look anonymous.
+    if (data.expiresAt) setMarker(data.expiresAt, data.profile?.sub)
     return { profile: data.profile, expiresAt: data.expiresAt || 0 }
   } catch {
     return null
@@ -361,8 +392,9 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
 
 /**
  * Customer logout — clears HttpOnly cookies on the server, clears the
- * localStorage marker, then follows the Keycloak end-session URL built by
- * the server (so the raw id token never reaches the browser).
+ * localStorage marker AND every stored basket, then follows the Keycloak
+ * end-session URL built by the server (so the raw id token never reaches the
+ * browser).
  */
 export async function customerLogout() {
   try {
@@ -386,12 +418,15 @@ export async function customerLogout() {
       credentials: "include",
     })
 
-    clearMarker()
+    clearSignedOutState()
     if (typeof window !== "undefined") {
       window.location.href = logoutUrl
     }
   } catch {
-    clearMarker()
+    // The server round-trip failed, but the user asked to sign out — the local
+    // teardown must still happen, or a failed logout is exactly the shared
+    // device that keeps the previous customer's basket.
+    clearSignedOutState()
     if (typeof window !== "undefined") {
       window.location.href = "/shop"
     }

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect } from "react"
+import { Suspense, useState, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { m } from "framer-motion"
@@ -13,7 +13,7 @@ import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 
-interface OrderStatus {
+export interface OrderStatus {
   orderNumber: string
   status: string
   shopName: string
@@ -31,6 +31,37 @@ const STEPS = [
   { key: "COMPLETED", label: "Completed", icon: CheckCircle2 },
 ]
 
+/** Statuses that are still in flight — what a shopper actually came here for. */
+export const ACTIVE_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"]
+
+/**
+ * Which of a signed-in customer's own orders should the tracking view open on?
+ *
+ * Extracted (and exported) so the selection rule is unit-testable without
+ * rendering the page — same idiom as `deriveOrdersView` on the My Orders page.
+ *
+ * - `wanted` (the `?order=` deep link) wins when it is one of THEIR orders. It
+ *   is matched against the caller's own list rather than fetched by number, so
+ *   this path can never surface an order belonging to somebody else.
+ * - Otherwise: the most recent ACTIVE order, because "where is my food" is the
+ *   question being asked. Only if nothing is in flight does it fall back to the
+ *   most recent order overall, so the page is never blank for a real customer.
+ */
+export function pickTrackedOrder(
+  orders: OrderStatus[],
+  wanted?: string | null
+): OrderStatus | null {
+  if (wanted) {
+    return orders.find((o) => o.orderNumber === wanted) ?? null
+  }
+  const active = orders.filter((o) => ACTIVE_STATUSES.includes(o.status))
+  const pool = active.length > 0 ? active : orders
+  const byNewest = [...pool].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+  return byNewest[0] ?? null
+}
+
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
@@ -38,6 +69,14 @@ function formatPrice(pennies: number): string {
 // Guest order lookup (Surface H): order number + email, NO forced sign-in.
 // Uses the IDOR-hardened public endpoint (email is mandatory proof-of-ownership,
 // AUDIT-W0-02). A customer session only pre-fills the email; it is never required.
+//
+// #458: a SIGNED-IN customer no longer types anything. The session-authenticated
+// proxy (/api/customer-orders -> core /public/orders/mine) already returns their
+// own orders — proven by the HttpOnly access-token cookie, with no email
+// parameter anywhere on that surface — so the page opens straight onto the order
+// they are most likely asking about. The guest form below is UNCHANGED and still
+// demands order number + email; it is simply not the first thing a signed-in
+// customer sees.
 export default function TrackOrderPage() {
   return (
     <PublicShell>
@@ -73,13 +112,44 @@ function TrackOrderContent() {
     }
   })
 
-  // Convenience pre-fill from a customer session — never a requirement.
+  const [order, setOrder] = useState<OrderStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // True once the page has opened itself on one of the signed-in customer's own
+  // orders. Drives the "no typing required" surface; a guest never reaches it.
+  const [autoResolved, setAutoResolved] = useState(false)
+  const [showManualForm, setShowManualForm] = useState(false)
+
+  // Session pre-fill + #458 auto-population, in one pass.
+  //
+  // Pre-fill of the email is a convenience and never a requirement (unchanged).
+  // What is new: for a customer with a live session we also ask the
+  // session-authenticated proxy for THEIR orders and open on the right one.
+  // Nothing here is reachable without the HttpOnly cookie, so the guest path
+  // below is untouched — including its mandatory email challenge.
   useEffect(() => {
-    if (email) return
     let cancelled = false
-    getCustomerSession().then((session) => {
-      if (cancelled) return
-      if (session?.profile?.email) setEmail(session.profile.email)
+    getCustomerSession().then(async (session) => {
+      const sessionEmail = session?.profile?.email
+      if (cancelled || !sessionEmail) return
+      setEmail((prev) => prev || sessionEmail)
+
+      try {
+        const res = await fetch("/api/customer-orders?size=50", {
+          credentials: "include",
+          cache: "no-store",
+        })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { content?: OrderStatus[] }
+        if (cancelled) return
+        const picked = pickTrackedOrder(data.content ?? [], searchParams.get("order"))
+        if (!picked) return
+        setOrder(picked)
+        setOrderNumber(picked.orderNumber)
+        setAutoResolved(true)
+      } catch {
+        /* fall through to the manual form — never a dead end */
+      }
     })
     return () => {
       cancelled = true
@@ -87,19 +157,29 @@ function TrackOrderContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [order, setOrder] = useState<OrderStatus | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
   // Auto-search when the URL carries the order number and the email is
   // available from any out-of-band source (sessionStorage handoff / legacy
   // param) — e.g. arriving from the confirmation page link (WR-09).
+  //
+  // This used to be a MOUNT-ONLY effect reading `email`, which is "" at mount
+  // whenever the address comes from the cookie-backed session (it resolves a
+  // tick later). So the one case it was written for — a signed-in customer
+  // following an order link — never fired and landed on an empty form. Same
+  // failure mode as WR-07 on the per-shop tracking page. It now runs when the
+  // email ARRIVES, guarded by a ref so it still fires exactly once.
+  const autoSearched = useRef(false)
   useEffect(() => {
-    if (searchParams.get("order") && email) {
-      handleSearch()
+    if (autoSearched.current) return
+    // Already opened on one of the customer's own orders — nothing to look up.
+    if (order) {
+      autoSearched.current = true
+      return
     }
+    if (!searchParams.get("order") || !email) return
+    autoSearched.current = true
+    handleSearch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [email, order])
 
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -140,10 +220,39 @@ function TrackOrderContent() {
   const currentStep = order ? STEPS.findIndex((s) => s.key === order.status) : -1
   const isCancelled = order?.status === "CANCELLED"
 
+  // A signed-in customer is shown their order, not a form. The form is still
+  // one tap away (they may be chasing a guest order placed on another address).
+  const formHidden = autoResolved && !showManualForm
+
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
-      {/* Search form */}
-      <form onSubmit={handleSearch} className="rounded-xl bg-white border border-cream-100 p-5 shadow-sm">
+      {formHidden && (
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-bold text-oxblood">Your order</h1>
+            <p className="mt-1 text-xs text-slate-500">
+              Signed in — we found this one for you. No order number needed.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="track-show-manual-form"
+            onClick={() => setShowManualForm(true)}
+            className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Track a different order
+          </button>
+        </div>
+      )}
+
+      {/* Search form — the GUEST path, unchanged: order number AND email are
+          both required, and the email is the proof-of-ownership the public
+          endpoint demands (AUDIT-W0-02). Only its VISIBILITY is conditional. */}
+      <form
+        onSubmit={handleSearch}
+        hidden={formHidden}
+        className="rounded-xl bg-white border border-cream-100 p-5 shadow-sm"
+      >
         <h1 className="text-xl font-bold text-oxblood">Track your order</h1>
         <p className="mt-1 mb-4 text-xs text-slate-500">
           Enter your order number and the email you used — no sign-in needed.
@@ -197,9 +306,21 @@ function TrackOrderContent() {
         </div>
       )}
 
-      {/* Result */}
+      {/* Result. Entrance is opacity + a 0.97 scale over 240ms on a strong
+          ease-out curve: it enters, so ease-out (instant movement) rather than
+          ease-in, and it is well under the 300ms UI ceiling. NOT scale(0) —
+          nothing in the real world appears from nothing. The transform half is
+          dropped automatically under prefers-reduced-motion by the app-wide
+          <MotionConfig reducedMotion="user">, leaving the opacity fade that
+          still explains "something arrived". */}
       {order && (
-        <div className="mt-6 space-y-4">
+        <m.div
+          key={order.orderNumber}
+          initial={{ opacity: 0, scale: 0.97, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+          className="mt-6 space-y-4"
+        >
           {/* Shop + total */}
           <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -208,6 +329,7 @@ function TrackOrderContent() {
                 <p className="text-xs text-slate-500">
                   {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
                 </p>
+                <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
@@ -219,7 +341,14 @@ function TrackOrderContent() {
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {/* An INDEFINITELY looping animation, so it is stopped under
+                      prefers-reduced-motion (Tailwind emits a real
+                      `@media (prefers-reduced-motion: reduce)` block for this
+                      variant). The dot and its label stay — reduced motion means
+                      gentler, not less information. `animate-pulse` is invisible
+                      to framer-motion's MotionConfig, which only governs `m.*`
+                      props, so it has to be gated in CSS. */}
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse motion-reduce:animate-none" />
                   {STEPS[currentStep]?.label || order.status}
                 </span>
               )}
@@ -271,20 +400,31 @@ function TrackOrderContent() {
               </div>
               <p className="mt-2 text-center text-xs text-slate-400">
                 <span className="inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
                   Auto-refreshing
                 </span>
               </p>
             </div>
           )}
-        </div>
+        </m.div>
       )}
 
-      {/* Back link */}
-      <div className="mt-8 text-center">
+      {/* Back links. A signed-in customer gets their order history too — the
+          nav no longer carries a standalone "Track order" for them (#458), so
+          the return path to the profile has to be on the page itself. */}
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-center">
+        {autoResolved && (
+          <Link
+            href="/shop/orders"
+            className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-700"
+          >
+            <Package className="h-4 w-4" />
+            All my orders
+          </Link>
+        )}
         <Link
           href="/shop"
-          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+          className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-700"
         >
           <Store className="h-4 w-4" />
           Browse shops
