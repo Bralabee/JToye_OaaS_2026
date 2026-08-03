@@ -152,6 +152,27 @@ jobs:
           [ -n "$mq_pw" ] || { echo "FATAL: RABBITMQ_DEFAULT_PASS not found in .env after generation" >&2; exit 1; }
           echo "RABBITMQ_PASSWORD=${mq_pw}" >> .env
 
+          # .env.example is written for a REAL deployment, so it points SMTP at
+          # smtp.example.com:587. Copying it here overrides compose's own
+          # `${SMTP_HOST:-mailhog}` / `${SMTP_PORT:-1025}` defaults, and core-java
+          # then tries to reach a host that does not exist from inside a
+          # container. MailHealthIndicator fails, /actuator/health goes DOWN, the
+          # container healthcheck fails, and `depends_on: service_healthy` takes
+          # the whole stack down with it.
+          #
+          # A developer .env does not hit this because it simply OMITS these keys
+          # and lets compose's defaults apply — the working configuration here is
+          # the absence of a value, which is exactly what copying an example file
+          # destroys.
+          {
+            echo "SMTP_HOST=mailhog"
+            echo "SMTP_PORT=1025"
+            echo "SMTP_USERNAME="
+            echo "SMTP_PASSWORD="
+            echo "SMTP_AUTH=false"
+            echo "SMTP_STARTTLS=false"
+          } >> .env
+
           # KC_SEED_USER_PASSWORD is imported into the realm as a USER PASSWORD
           # (infra/keycloak/realm-export.template.json), so it must satisfy that
           # realm's own passwordPolicy:
