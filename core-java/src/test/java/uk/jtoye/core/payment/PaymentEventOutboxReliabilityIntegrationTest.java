@@ -10,7 +10,11 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.config.ScheduledTaskHolder;
+import org.springframework.scheduling.config.TaskManagementConfigUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -25,6 +29,7 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -65,13 +70,17 @@ import static org.mockito.Mockito.verify;
  *       a commit publishes exactly once with the pre-#93 wire format.</li>
  * </ol>
  *
- * <p>The scheduled flusher/resurrection intervals are pushed to 24h so tests
- * drive both passes manually and deterministically.
+ * <p>Every {@code @Scheduled} trigger in this context is removed
+ * ({@link NoScheduledTriggersTestConfig}) so the tests below are the only
+ * caller of the flusher and own the whole timeline — see issue #418 and the
+ * note on {@link #configureProperties} for why parking the interval was not
+ * enough on its own.
  */
 @SpringBootTest
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+@Import(NoScheduledTriggersTestConfig.class)
 class PaymentEventOutboxReliabilityIntegrationTest {
 
     @Container
@@ -83,9 +92,18 @@ class PaymentEventOutboxReliabilityIntegrationTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
-        // Park the schedules a day out: @Scheduled fires once at startup
-        // against an empty table, then never again during the test run, so
-        // each test drives flushPending()/resurrectFailed() by hand.
+        // #418: these two lines USED to be the whole story, and the comment that
+        // sat here claimed the schedule "fires once at startup against an empty
+        // table, then never again during the test run". The second half is true;
+        // the first half is the bug. @Scheduled(fixedDelayString=...) leaves
+        // initialDelay at 0, so the startup run fires at context refresh — i.e.
+        // concurrently with this class's first @BeforeEach, NOT before it — and
+        // that run raced the test for the very rows it was asserting on.
+        //
+        // They are kept as defence in depth (they bound the blast radius to a
+        // single pass if the @Import above is ever dropped), but the @Import is
+        // what actually makes this deterministic, and the guard test
+        // schedulingIsInert_soTheTestOwnsTheFlusherTimeline is what keeps it so.
         registry.add("payment.outbox.flush-interval-ms", () -> "86400000");
         registry.add("payment.outbox.resurrect-interval-ms", () -> "86400000");
         registry.add("payment.outbox.backoff-base-ms", () -> "5000");
@@ -99,6 +117,7 @@ class PaymentEventOutboxReliabilityIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private ApplicationContext applicationContext;
 
     @MockBean private RabbitTemplate rabbitTemplate;
 
@@ -135,6 +154,49 @@ class PaymentEventOutboxReliabilityIntegrationTest {
         return jdbcTemplate.queryForMap(
                 "SELECT status, attempts, poison, next_attempt_at, sent_at FROM payment_event_outbox WHERE id = ?",
                 id);
+    }
+
+    // ------------------------------------------------------------------
+    // #418 regression lock: nothing but this class may drive the flusher
+    // ------------------------------------------------------------------
+
+    /**
+     * The premise every other test in this class rests on. Each of them calls
+     * {@code flushPending()}/{@code resurrectFailed()} and then asserts an
+     * exact publish count and an exact row status — which only means anything
+     * if the test is the sole caller. It was not: the parked intervals in
+     * {@link #configureProperties} suppress the repeat but not the
+     * {@code initialDelay=0} startup run, so a
+     * second, invisible flusher pass ran on the {@code scheduling-N} thread
+     * over the same rows and the same {@code @MockBean RabbitTemplate}.
+     *
+     * <p>Measured on the amplified interleaving (2026-08-03, 300 samples),
+     * that second writer produced all three of:
+     * {@code TooManyActualInvocations} with both invocations at
+     * {@code publishRow:305} (matching PR #415), a row still {@code PENDING}
+     * at the drain assertion because the scheduler held it under
+     * {@code FOR UPDATE SKIP LOCKED} (which pre-#422 surfaced as
+     * {@code WantedButNotInvoked}, matching PR #417), and a row already
+     * {@code SENT} at the resurrection assertion.
+     *
+     * <p>This asserts the cause, not a timing window: the bean
+     * {@code @EnableScheduling} registers to discover {@code @Scheduled}
+     * methods is absent, so no trigger of any kind exists to fire. Deleting
+     * the {@code @Import} on this class fails this test.
+     */
+    @Test
+    @DisplayName("no @Scheduled trigger is live in this context — the test owns the flusher timeline")
+    void schedulingIsInert_soTheTestOwnsTheFlusherTimeline() {
+        assertThat(applicationContext.containsBean(
+                TaskManagementConfigUtils.SCHEDULED_ANNOTATION_PROCESSOR_BEAN_NAME))
+                .as("@EnableScheduling's annotation processor must be removed from this context; "
+                        + "while it is present every @Scheduled method in the application — 10 of "
+                        + "them — fires once at context refresh, concurrently with this class's "
+                        + "first test, no matter how far out its interval is parked")
+                .isFalse();
+        assertThat(applicationContext.getBeanNamesForType(ScheduledTaskHolder.class))
+                .as("with the processor gone there is nothing left holding scheduled tasks")
+                .isEmpty();
     }
 
     // ------------------------------------------------------------------

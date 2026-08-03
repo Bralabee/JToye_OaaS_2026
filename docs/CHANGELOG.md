@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Eight integration suites were racing their own `@Scheduled` workers (#480) — 2026-08-03
+
+Closes #418. The flake was real, both CI failure modes came from one cause, and **the issue body and its own retraction were each half right**.
+
+#### Fixed
+- **`NoScheduledTriggersTestConfig` removes the `internalScheduledAnnotationProcessor` bean definition** — the bean `@EnableScheduling` registers to discover `@Scheduled` methods — so nothing is ever scheduled in these suites. The workers stay ordinary beans, directly callable, which is how the suites already drive them. **No sleeps, no retries, no widened timeouts; `times(1)`/`times(2)` untouched; no production code changed.**
+
+#### Notes
+- **Parking an interval is not disabling scheduling.** The body claimed the test does not disable scheduling (it does, via `@DynamicPropertySource`, which the author's grep missed); the retraction then rejected the race on the strength of that same line. But `@Scheduled(fixedDelayString=…)` leaves `initialDelay` at **0**, so the first execution fires at context refresh *regardless of the delay*. Parking suppresses the second run onward, never the first — a probe on the unmodified tree with both intervals at 86400000 still reported **10 live scheduled tasks**. The issue's own suggested fix (`@TestPropertySource` with parked intervals) would not have worked.
+- **The retraction's supporting evidence was vacuous.** "No scheduled trace inside the failure window" cannot distinguish *did not run* from *ran over an empty tenant list*, because a flush pass with nothing to do logs nothing.
+- **The race is two writers on the same rows through the same mock**: the test thread calling `flushPending()`/`resurrectFailed()`, and a `scheduling-N` thread running the identical method over the same `payment_event_outbox` rows, publishing through the same `@MockBean RabbitTemplate` the assertion counts. Three interleavings, all reproduced — double-publish → `TooManyActualInvocations`; `FOR UPDATE SKIP LOCKED` starving the explicit flush → row still `PENDING`; a drain between resurrect and read → `SENT` where `PENDING` was expected. Both CI errors, in opposite directions, from one cause.
+- **A 20-run green baseline is not evidence for a low-percent flake, and is not treated as any.** The reproduction is an *amplified* arm (`flush-interval-ms=1`): 300 samples → **72** failures, repeated → **25**. The decisive arm keeps the amplifier on *with* the fix: 300 samples → **0**, so the post-fix zero is not luck.
+- Falsification recorded for the guard itself: passes clean (6 tests) → **fails** with `Expecting value to be false but was true` when the `@Import` is deleted → restored, hash identical → passes.
+
 ### Every gitleaks allowlist was inert, and file logging never started in k8s (#473, #475) — 2026-08-03
 
 Two fixes that merged without changelog entries, backfilled here from their commit messages so `check-changelog-contract` — which was **red on `main`** and therefore blocking every open PR — goes green. Both are *silently-inert guard* defects: the configuration was present and read as correct, and neither did anything.

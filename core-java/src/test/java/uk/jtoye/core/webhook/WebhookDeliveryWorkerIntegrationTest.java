@@ -31,6 +31,7 @@ import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -65,7 +66,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
-@Import(WebhookDeliveryWorkerIntegrationTest.MockWebClientConfig.class)
+// #418: deliverDue() is @Scheduled and is also driven by hand here; the parked
+// webhook.delivery.interval-ms suppresses the repeat but not the initialDelay=0
+// startup run, which would deliver against the same mocked WebClient.
+@Import({WebhookDeliveryWorkerIntegrationTest.MockWebClientConfig.class,
+        NoScheduledTriggersTestConfig.class})
 class WebhookDeliveryWorkerIntegrationTest {
 
     @Container
