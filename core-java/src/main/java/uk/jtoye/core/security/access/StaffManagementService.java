@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -288,10 +289,43 @@ public class StaffManagementService {
                     targetUserId, id, tenantId);
         }
 
-        shopStaffRepository.delete(row);
+        try {
+            shopStaffRepository.delete(row);
+            // Issue #486: flush HERE rather than letting the DELETE go at commit. Without it the
+            // row-count failure is raised after this method returns, outside any catch we could
+            // write, and the request ends as an untyped error from the transaction boundary.
+            shopStaffRepository.flush();
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(id, ex);
+        }
         evictAfterCommit(targetUserId);
         log.info("Revoked grant {} ({} shop {}) from user {} in tenant {}",
                 id, row.getRole(), row.getShopId(), targetUserId, tenantId);
+    }
+
+    /**
+     * Issue #486 — the staff half of the defect class #390 fixed for promotions/announcements;
+     * see {@code CustomerService.deleteCustomer} for the full reasoning. The grant was there when
+     * {@link #revoke} read it and gone when it wrote, so Hibernate's row-count check failed
+     * ({@code Batch update returned unexpected row count from update [0] ... delete from
+     * shop_staff where id=?}). Two GROUP_ADMINs revoking the same grant, or one double-clicking
+     * Revoke, is ordinary vendor activity — and the caller must be told the grant is gone, not
+     * told to re-read and retry a row that will never come back.
+     *
+     * <p>{@link ShopStaff} carries no JPA {@code @Version}, so the predicate is {@code id = ?}
+     * alone and zero affected rows can only mean the row is not visible to this transaction. The
+     * 409 {@link OptimisticLockingFailureException} handler in {@code GlobalExceptionHandler}
+     * stays in place for genuinely versioned entities.
+     *
+     * <p>The message is byte-identical to the absent-at-read-time 404 in {@link #revoke}, so the
+     * response is not an existence oracle for another tenant's grants (same reasoning as
+     * T-23-12-03). {@link #evictAfterCommit} is deliberately NOT reached on this path: nothing was
+     * written here, and the transaction that DID remove the row runs its own eviction.
+     */
+    private ResourceNotFoundException vanishedMidTransaction(UUID id, OptimisticLockingFailureException ex) {
+        log.info("Staff grant {} was removed by another transaction before this write landed: {}",
+                id, ex.getMessage());
+        return new ResourceNotFoundException("Staff grant not found: " + id);
     }
 
     // ---------------------------------------------------------------------

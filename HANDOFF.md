@@ -165,8 +165,21 @@ time; the gate is not flaky, the world moved. Backfilled in #434; the gate now c
 > already-public and rotate on that basis; do not treat this edit as a containment.
 
 **SEC-02 is DONE as of 2026-08-02: all five Group B findings now have issues** — **#438 is OPEN**,
-**#439 is OPEN**, **#440 is OPEN**, **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit is no longer
-one `rm` away from being lost.
+**#439 is OPEN**, **#440 is CLOSED** (PR #509), **#441 is OPEN**, **#442 is CLOSED** (PR #472). The audit
+is no longer one `rm` away from being lost.
+
+**#440's finding was partly FALSIFIED when it was worked** — a third instance of the pattern this
+document already records twice. *"Survives to production"* is **false**: `OpenApiConfig` is
+`@Profile("!prod")` and prod sets `api-docs.enabled: false`. *"Unauthenticated"* is **false** for a
+deployed environment: anonymous spec reads are permitted only when `looksLocal && !isDeployedProfile`.
+What was genuinely exposed is **staging** — which the finding never mentions. Re-verify before
+implementing; the filed location was wrong, exactly as F-M7's was.
+
+**#438, #439 and #441 are being closed by PR #510**, which binds every infra port to loopback behind
+`${JTOYE_BIND_HOST:-127.0.0.1}` and rotates the monitoring credential live. Note its gate,
+`scripts/check-infra-exposure.sh`, is **not wired into CI** — part of it needs a live broker, so it
+could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing
+currently stops someone re-adding `0.0.0.0` in a PR.**
 
 **They are deliberately sanitised, and that is a constraint on whoever works them.** This repository
 is **public**, which is the same reason `SECURITY-FINDINGS.md` was git-excluded. The issues carry the
@@ -217,12 +230,19 @@ before §0.1's: the council findings are mostly correctness and infrastructure; 
 | issue | items | what it is |
 |---|---|---|
 | **#457 is CLOSED** (PR #466, 2026-08-03) | 1b, 9 | Public header was **session-blind**. Browser-falsified and confirmed — **and it was hiding #465** (below) |
-| **#458 is OPEN** | 1a, 2, 3, 4 | Signed-in nav shows `For operators` + `Track order` ungated; tracking belongs in the profile, auto-populated, with a dispatch notification |
-| **#459 is OPEN** | 6 | Basket survives sign-out → a second customer on the same browser inherits it |
+| **#458 is OPEN** (PR #508, 2026-08-03 — **partial**) | 1a, 2, 3, 4 | Nav gating shipped, desktop **and** mobile sheet, plus `/track` auto-population. **Stays open for the dispatch notification**, which is not a copy change: `OrderStatus` has no `DISPATCHED` value and `OrderStateMachineConfig` has no such edge. That gap surfaced a separate live defect — DELIVERY customers emailed *"ready for collection"* — filed as #502 |
+| **#459 is CLOSED** (PR #508, 2026-08-03) | 6 | Cart payloads now carry the owning `sub` and are cleared on sign-out; anonymous carry-forward preserved. The naive fix — clearing in `clearMarker()` — satisfies the headline criterion and **breaks** anonymous carry-forward and the post-order clear, demonstrated by break arm |
 | **#460 is OPEN** | 7 | **No concept of locality.** A phase, not a patch. P1 |
 | **#461 is OPEN** | 8, 10 | No payment processing; pay-on-collection must become channel-issued payment links. P1 |
 | **#462 is OPEN** | 11 | No second factor, no verified contact channel |
-| **#463 is OPEN** | 5 | *My Orders* spinner is client-side rendering, **not** a slow API |
+| **#463 is CLOSED** (PR #508, 2026-08-03) | 5 | `/shop/orders` is now a server component: time-to-content **2562 ms → 1001 ms**, CLS **1.0149 → 0.0052**, client fetches on load **1 → 0**, at the repo's own throttled mobile profile. Its premise was wrong — `/shop` is **also** `"use client"`, so there was no server-rendered control in the comparison; the systemic half (20 more pages) is #507 |
+| **#467 is CLOSED** (PR #508, 2026-08-03) | — | The orders API 502 rendered as *"No orders found"*. Config alone could not fix it: `NEXT_PUBLIC_API_URL` is inlined at build time into the **server** bundle too, so only a non-`NEXT_PUBLIC_` variable works. k8s has the same shape and is UNMEASURED — #506 |
+
+> ⚠ **#463 and #467 had to be closed BY HAND.** #508's body read `Closes #459, #463, #467`, and GitHub's
+> auto-close requires the keyword before **each** reference — a comma-separated list after one `Closes`
+> closes only the first. #459 closed; the other two silently did not. The same shape was sitting in two
+> sibling PRs and was fixed there before merge. **Check issue state after a merge; do not assume the
+> body did what it reads like it did.**
 
 Item 12 (README review) went as a **comment on #449**, which already owns the entry-doc surface.
 
@@ -298,16 +318,30 @@ arise from real rows; a DB-seeded run is still owed.
 
 ### 2.6 What the next session should actually pick up
 
-85 issues open (9 P1 / 36 P2 / 32 P3). The seven the owner reported by USING the app — #458, #459,
-#460, #461, #462, #463 and #467 — are all still OPEN and were never in scope. Those are what they see.
+**Superseded on 2026-08-03 — this section's advice was acted on, and one line of it was wrong.**
 
-**Start with #467**: `/api/customer-orders` 502s on the compose stack and the page renders "No orders
-found", so it lies to a customer about their own orders. It is reproducible on the running stack now.
+Of the seven the owner reported by USING the app: **#467, #463 and #459 are CLOSED** (PR #508),
+**#458 is partially done** (nav gating shipped; dispatch notification deferred). **#460, #461 and
+#462 remain OPEN and were deliberately not staffed** — none is an engineering task yet. #460 needs an
+ADR, #461 is blocked on Stripe test-mode keys, #462 needs a product decision; two of those three are
+already §4 blocking decisions. Putting agents on them would have produced code prejudging decisions
+that have not been made.
 
-**Do not parallelise this cluster.** Unlike the train's set, these overlap heavily (customer nav,
-basket, orders and auth all touch the same surfaces). Sequence them, use fewer agents, and verify each
-in a real browser against the live stack rather than trusting jsdom — §2.4's twelve findings exist
-because nothing but hands-on use found them.
+**"Do not parallelise this cluster" was overbroad, and the file-level evidence refutes it.** The only
+genuine collision was #467 ↔ #463, which both rewrite `frontend/app/shop/orders/page.tsx` — those two
+went to a single agent. #459 (`cart-provider.tsx` + `customer-auth.ts`) and #458 (`storefront-nav.tsx`
++ `app/track/page.tsx`) are file-disjoint from those and from each other, and all three branches
+merged with **zero conflicts**. Check the actual file sets before declaring a cluster unparallelisable.
+
+**What was right, and is worth keeping:** *verify each in a real browser against the live stack rather
+than trusting jsdom.* That is what turned #458's nav work into the discovery that no `DISPATCHED`
+state exists (#502), and what proved #459's naive fix breaks anonymous carry-forward.
+
+**Two coordination rules the parallel run established**, both of which prevented conflicts rather than
+resolving them: agents were barred from `docs/metrics.json` and `docs/CHANGELOG.md` (regenerated once
+per lane at assembly instead), and where two agents had to share a file they were each given an
+explicit region — `docker-compose.full-stack.yml` was split `environment:` vs `ports:` and merged
+clean.
 
 ---
 
@@ -454,7 +488,7 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 19 x rc=0. A VOID (2) is not a pass.
+# EXPECT 20 x rc=0. A VOID (2) is not a pass.
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
 # Both gates print their own remedy. Neither is a regression.

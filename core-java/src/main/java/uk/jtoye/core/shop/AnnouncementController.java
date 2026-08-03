@@ -14,6 +14,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.shop.dto.AnnouncementDto;
 import uk.jtoye.core.shop.dto.CreateAnnouncementRequest;
 
@@ -64,7 +65,7 @@ public class AnnouncementController {
             @Parameter(description = "Announcement ID") @PathVariable UUID id) {
         return announcementService.getAnnouncementById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Announcement not found: " + id));
     }
 
     @PostMapping

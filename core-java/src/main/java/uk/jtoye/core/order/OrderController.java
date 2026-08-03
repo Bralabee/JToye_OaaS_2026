@@ -2,6 +2,8 @@ package uk.jtoye.core.order;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
@@ -111,7 +114,7 @@ public class OrderController {
     public ResponseEntity<OrderDto> getOrderById(@PathVariable UUID id) {
         return orderService.getOrderById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
     }
 
     /**
@@ -123,7 +126,7 @@ public class OrderController {
     public ResponseEntity<OrderDetailDto> getOrderDetail(@PathVariable UUID id) {
         return orderService.getOrderDetailById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
     }
 
     /**
@@ -191,6 +194,14 @@ public class OrderController {
     }
 
     // ========== State Transition Endpoints ==========
+    //
+    // issue #448: all six transitions funnel through OrderService.transitionOrder, so
+    // they share one error contract, declared explicitly below because springdoc cannot
+    // read it off @RestControllerAdvice. The 409 is the one the issue calls out by name:
+    // #434 added an OptimisticLockingFailureException handler for two writers racing the
+    // same @Version-bearing order row, and nothing in the published spec said so.
+    // InsufficientStockException maps to the same 409, which is why the description
+    // names both causes rather than just the race.
 
     /**
      * Submit draft order for processing.
@@ -200,6 +211,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/submit")
     @Operation(summary = "Submit order", description = "Submit a draft order for processing (DRAFT → PENDING)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> submitOrder(@PathVariable UUID id) {
         OrderDto order = orderService.submitOrder(id);
         return ResponseEntity.ok(order);
@@ -213,6 +231,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/confirm")
     @Operation(summary = "Confirm order", description = "Confirm a pending order (PENDING → CONFIRMED)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> confirmOrder(@PathVariable UUID id) {
         OrderDto order = orderService.confirmOrder(id);
         return ResponseEntity.ok(order);
@@ -226,6 +251,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/start-preparation")
     @Operation(summary = "Start preparation", description = "Start preparing a confirmed order (CONFIRMED → PREPARING)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> startPreparation(@PathVariable UUID id) {
         OrderDto order = orderService.startPreparation(id);
         return ResponseEntity.ok(order);
@@ -239,6 +271,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/mark-ready")
     @Operation(summary = "Mark as ready", description = "Mark a preparing order as ready (PREPARING → READY)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> markOrderReady(@PathVariable UUID id) {
         OrderDto order = orderService.markOrderReady(id);
         return ResponseEntity.ok(order);
@@ -252,6 +291,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/complete")
     @Operation(summary = "Complete order", description = "Complete a ready order (READY → COMPLETED)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> completeOrder(@PathVariable UUID id) {
         OrderDto order = orderService.completeOrder(id);
         return ResponseEntity.ok(order);
@@ -265,6 +311,13 @@ public class OrderController {
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel order", description = "Cancel an order at any stage (ANY → CANCELLED)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Transition applied"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+    })
     public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id) {
         OrderDto order = orderService.cancelOrder(id);
         return ResponseEntity.ok(order);
