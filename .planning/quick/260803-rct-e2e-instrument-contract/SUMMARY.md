@@ -109,18 +109,31 @@ Falsified: fixture off page 1 → old check **6 (passes)**, new check **0 (fails
 - Runtime rebuilt from this branch: 4/4 FRESH; the running container serves
   **65 gated / 0 ungated** hover utilities.
 
-## The CI experiment (#512), measured
+## The CI experiment (#512), measured — TWO samples per side
 
-| | baseline #509 | #512 | delta |
-|---|---|---|---|
-| Integration Tests job | 45m52s | **31m27s** | **−14m25s (−31.4%)** |
-| tests / failures / ignored | 479 / 0 / 6 | **479 / 0 / 6** | identical |
+| | baseline #509 (1 fork) | #512 (2 forks) |
+|---|---|---|
+| sample 1 | 45m52s | 31m27s |
+| sample 2 | **45m44s** | **27m13s** |
+| mean | **45m48s** | **29m20s** |
+| spread | **8s** | 4m14s |
+| tests / failures / ignored | 479 / 0 / 6 (both) | 479 / 0 / 6 (both) |
 
-Mechanism confirmed from the job log, not inferred:
-`nproc: 4` · `integrationTest: availableProcessors=4, maxParallelForks=2, forkEvery=4`.
-That also confirms the premise the change rests on — the old `/4` divisor would
-have resolved to `4/4 = 1`, inert on CI.
+**Mean delta −16m28s (−36.0%); the ranges do not overlap**, so the floor is
+worst-experiment vs best-baseline = **−14m17s (−31.2%)**.
 
-Caveats stated rather than buried: one run against one baseline run, so variance
-is unknown; and it is not the local 2.6x, because that was 4 forks across 16 cores
-and this is 2 sharing 4.
+Mechanism confirmed, and the CONTROL confirmed from the baseline's own source
+rather than assumed: `git show 7fad1c9:core-java/build.gradle.kts` has
+`setForkEvery(4)` and **no `maxParallelForks`** (Gradle default 1). The baseline
+log carries no `doFirst` line because that logging ships in #512, so reading the
+control from the tree is the only honest route. Experiment log:
+`nproc: 4` · `availableProcessors=4, maxParallelForks=2, forkEvery=4` — which also
+confirms the premise, since the old `/4` divisor gives `4/4 = 1`.
+
+The baseline being stable to **8 seconds** across runs 3.5h apart is what makes
+the delta trustworthy. The experiment's larger spread is expected: two forks
+contending for four cores introduces scheduling variance a serial run lacks.
+
+Still not established: both samples are re-executions of the SAME commit, so this
+measures runner-to-runner variance, not commit-to-commit. And it is not the local
+2.6x — that was 4 forks across 16 cores, this is 2 sharing 4.
