@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The three legacy image endpoints stored raw client bytes (#479) — 2026-08-03
+
+Closes #445. `POST /products/{id}/images`, `POST /shops/{id}/logo` and `POST /shops/{id}/banner` all reached MinIO through two `StorageService` methods that bypassed the Phase-24 normaliser. All three are reachable in production with no profile gate.
+
+#### Fixed
+- **All three redirected through the Phase-24 normaliser at the `StorageService` choke point**, not in the three callers — so no future caller can bypass it either. EXIF/GPS strip, decompression-bomb guard and WebP transcode now apply.
+- **Content-Type is no longer the client's declared value.** The object was written with `.contentType(file.getContentType())`, so a file with valid PNG magic bytes declared as `text/html` was stored *and served* as `text/html` from a bucket that is `mc anonymous set download` — **stored XSS on a public origin**. The Phase-24 methods immediately below already carried a comment saying the type must be the detected one and **never** `file.getContentType()`; the legacy methods above did the opposite. This is a finding the issue missed, and it is rated more serious than the payload-size gap the issue led with.
+- `GlobalExceptionHandler` gains one **additive** RFC 7807 handler — 422 with a stable `DECOMPRESSION_BOMB` code. No existing handler modified. 422 rather than 400 or 413 because the request is well-formed and the file *is* under the byte cap; it is the decoded raster that would be enormous, which is a semantic rejection.
+
+#### Notes
+- **Where the issue is inaccurate: magic-byte sniffing was NOT bypassed.** `StorageService.validateAndRead` has sniffed against an allowlist since before Phase 24 and decode-verified via `ImageIO.read`, so a text payload renamed `.jpg` was already refused with a 400. Two tests are labelled `PRE-EXISTING PASS:` so the distinction survives in the codebase rather than in a PR description. Genuinely absent were the EXIF strip, the bomb guard and the transcode.
+- **Nothing retired.** Logo and banner have live callers in `frontend/app/dashboard/shops/page.tsx`; `/products/{id}/images` has no in-repo caller but is in the published OpenAPI snapshot behind a scope, so an external machine client cannot be ruled out.
+- **Displaced goods accounted for.** The uploader offers GIF while the async pipeline's allowlist vetoes it, so rejecting server-side would have broken a working path: the legacy path admits GIF and transcodes to static WebP. **Animation is not preserved** — a real loss, deliberately chosen as smaller than a 400. The async pipeline's veto is unchanged and now pinned by a test. The key extension is always `.webp` and `ShopService` deletes the old object before uploading, so no orphan. The min-dimension rule is preserved but moved *behind* the bomb guard and measured on the derivative — the old check's `ImageIO.read` over raw bytes **was** the bomb vector.
+- **Shop logo/banner are deliberately not routed into the async `media_asset` pipeline.** `media_asset` is product-shaped (`product_id`, `is_primary`, the `product_media` join), so a shop owner would need a new join table — a migration, escalated rather than decided.
+- Fail direction on the unfixed tree: **11 tests, 9 failed**, including `expected: "image/webp" but was: "text/html"` for the stored-XSS case.
+
 ### A promotion that vanishes mid-transaction now answers 404, not 409 (#477) — 2026-08-03
 
 Closes #390. **The root cause is not what the issue title says.** Both services already handled the simple absent-id case correctly — `findById().orElseThrow(ResourceNotFoundException)` at `PromotionService:109/126` and `AnnouncementService:113/130` — so a random UUID was always a typed 404.
