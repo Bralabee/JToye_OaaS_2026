@@ -100,12 +100,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * decoration. The CONTROL arms (a live customer still deletes/updates, a live grant still revokes)
  * are the other half: without them, "answer 404 to everything" would pass this suite.
  *
- * <p><strong>Two deliberate asymmetries in what is asserted.</strong> The staff 404 is a full RFC
- * 7807 body ({@code type = .../errors/not-found}) because {@code StaffController} lets
- * {@code ResourceNotFoundException} reach {@code GlobalExceptionHandler}. The customer 404 is a
- * BARE 404 with an empty body, because {@code CustomerController} catches the exception itself and
- * returns {@code ResponseEntity.notFound().build()}. That pre-existing untyped-404 divergence is
- * out of scope for #486 and is asserted as it actually behaves, not as it ought to.
+ * <p><strong>The customer/staff asymmetry recorded here is now GONE (#500).</strong> When #486
+ * wrote this class, the staff 404 carried a full RFC 7807 body ({@code type = .../errors/not-found})
+ * because {@code StaffController} let {@code ResourceNotFoundException} reach
+ * {@code GlobalExceptionHandler}, while the customer 404 was a bare, empty-bodied 404 because
+ * {@code CustomerController} caught the exception itself. That divergence was deliberately left
+ * alone and asserted as it actually behaved, not as it ought to. #500 removed the local catch, so
+ * both surfaces now answer with the same typed body, and {@code CustomerController} no longer
+ * catches the exception at all. The customer arms below assert only the status, which stays
+ * correct either way — the typed body they now also receive is pinned by
+ * {@code TypedNotFoundBodyIntegrationTest}, which is where that contract lives.
  *
  * <p>Harness mirrors {@code MarketingMissingRowStatusIntegrationTest}: real Postgres 15 + the
  * Flyway-managed RLS schema, NOT {@code @Transactional} (seeded rows must commit, and each service

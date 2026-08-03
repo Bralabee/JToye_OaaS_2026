@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
@@ -70,7 +71,7 @@ public class ShopController {
             @Parameter(description = "Shop ID") @PathVariable UUID id) {
         return shopService.getShopById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + id));
     }
 
     /**

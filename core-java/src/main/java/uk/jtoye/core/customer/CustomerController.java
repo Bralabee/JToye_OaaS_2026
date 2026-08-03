@@ -65,7 +65,7 @@ public class CustomerController {
             @Parameter(description = "Customer ID") @PathVariable UUID id) {
         return customerService.getCustomerById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + id));
     }
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [AI-02]: new customers:write scope (D-02)
@@ -116,12 +116,9 @@ public class CustomerController {
     public ResponseEntity<CustomerDto> update(
             @Parameter(description = "Customer ID") @PathVariable UUID id,
             @Parameter(description = "Customer update request") @Valid @RequestBody UpdateCustomerRequest req) {
-        try {
-            CustomerDto dto = customerService.updateCustomer(id, req);
-            return ResponseEntity.ok(dto);
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.notFound().build();
-        }
+        // issue #500: no local catch. ResourceNotFoundException reaches GlobalExceptionHandler,
+        // which is the single place that builds the RFC 7807 body.
+        return ResponseEntity.ok(customerService.updateCustomer(id, req));
     }
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
@@ -134,12 +131,9 @@ public class CustomerController {
     })
     public ResponseEntity<Void> delete(
             @Parameter(description = "Customer ID") @PathVariable UUID id) {
-        try {
-            customerService.deleteCustomer(id);
-            return ResponseEntity.noContent().build();
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.notFound().build();
-        }
+        // issue #500: see update() above — the typed body is GlobalExceptionHandler's job.
+        customerService.deleteCustomer(id);
+        return ResponseEntity.noContent().build();
     }
 
     public record CustomerDto(

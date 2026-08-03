@@ -14,6 +14,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.shop.dto.CreatePromotionRequest;
 import uk.jtoye.core.shop.dto.PromotionDto;
 
@@ -64,7 +65,7 @@ public class PromotionController {
             @Parameter(description = "Promotion ID") @PathVariable UUID id) {
         return promotionService.getPromotionById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion not found: " + id));
     }
 
     @PostMapping
