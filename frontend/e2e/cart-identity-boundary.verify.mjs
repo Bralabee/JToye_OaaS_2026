@@ -285,6 +285,42 @@ async function sharedBrowserFlow(browser) {
       asB.empty && asB.itemCount === 0,
       `empty=${asB.empty} items=${asB.itemCount} titles=${JSON.stringify(asB.titles)}`
     )
+
+    // --- C1b: the SECOND mechanism, on its own.
+    // C1 above is satisfied by the sign-out clear, so it says nothing about the
+    // identity binding underneath. This is the sign-out that never happened —
+    // a closed tab, a cleared cookie, a refresh the IdP declined — reconstructed
+    // by putting a basket owned by A back on disk while B is signed in.
+    const subA = sessA?.profile?.sub
+    const subB = sessB?.profile?.sub
+
+    // FAIL ARM FIRST: the same seed owned by B must render, or "empty" below
+    // could just mean "seeding does not work".
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.evaluate(
+      ([k, payload]) => window.localStorage.setItem(k, payload),
+      [cartKey(SHOP), JSON.stringify({ shopSlug: SHOP, owner: subB, items: [seedItem("owned-by-b")] })]
+    )
+    const ownB = await cartPageState(page, SHOP)
+    check(
+      "C1b.0",
+      "a basket owned by B DOES render for B (fail arm for C1b)",
+      !ownB.empty && ownB.titles.some((t) => t.includes("owned-by-b")),
+      `empty=${ownB.empty} titles=${JSON.stringify(ownB.titles)}`
+    )
+
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.evaluate(
+      ([k, payload]) => window.localStorage.setItem(k, payload),
+      [cartKey(SHOP), JSON.stringify({ shopSlug: SHOP, owner: subA, items: [seedItem("owned-by-a")] })]
+    )
+    const ownA = await cartPageState(page, SHOP)
+    check(
+      "C1b",
+      "a basket still owned by A is rejected for B even with no sign-out in between",
+      ownA.empty && !ownA.titles.some((t) => t.includes("owned-by-a")),
+      `empty=${ownA.empty} titles=${JSON.stringify(ownA.titles)}`
+    )
   } catch (err) {
     const msg = err && err.message ? err.message : String(err)
     console.log(`  FAIL  C2/C1 threw: ${msg}`)
