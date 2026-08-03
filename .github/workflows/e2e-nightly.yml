@@ -118,7 +118,7 @@ jobs:
           # to that script's REQUIRED_VARS and not to this loop, so the next run
           # would have failed preflight on CHANGE_ME values inherited from
           # .env.example. One list, one source of truth.
-          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD"
+          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD"
           required=$(bash scripts/verify-env.sh --list-required)
           [ -n "$required" ] || { echo "FATAL: verify-env.sh --list-required produced nothing" >&2; exit 1; }
 
@@ -142,6 +142,15 @@ jobs:
           [ -n "$pg_pw" ] || { echo "FATAL: POSTGRES_PASSWORD not found in .env after generation" >&2; exit 1; }
           echo "KC_DB_PASSWORD=${pg_pw}" >> .env
           echo "POSTGRES_EXPORTER_PASSWORD=${pg_pw}" >> .env
+
+          # Not only Postgres. RABBITMQ_DEFAULT_USER (what the broker is
+          # provisioned with) and RABBITMQ_USER (what core-java presents) are
+          # both 'jtoye', so their passwords must agree too. Independent values
+          # give ACCESS_REFUSED *after* Tomcat has started, which reads as a
+          # healthy container for a few seconds before the context aborts.
+          mq_pw=$(sed -n 's/^RABBITMQ_DEFAULT_PASS=//p' .env | tail -n1)
+          [ -n "$mq_pw" ] || { echo "FATAL: RABBITMQ_DEFAULT_PASS not found in .env after generation" >&2; exit 1; }
+          echo "RABBITMQ_PASSWORD=${mq_pw}" >> .env
 
           # KC_SEED_USER_PASSWORD is imported into the realm as a USER PASSWORD
           # (infra/keycloak/realm-export.template.json), so it must satisfy that

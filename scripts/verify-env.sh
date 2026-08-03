@@ -201,6 +201,13 @@ CREDENTIAL_PAIRS=(
   # one edit away from being the same failure, and the exporter defines no
   # healthcheck, so a dead one is indistinguishable from a live one at a glance.
   "POSTGRES_USER|POSTGRES_EXPORTER_USER|POSTGRES_PASSWORD|POSTGRES_EXPORTER_PASSWORD|jtoye"
+  # Not only Postgres. RABBITMQ_DEFAULT_USER is the account the broker is
+  # PROVISIONED with; RABBITMQ_USER is the one core-java PRESENTS. Both are
+  # 'jtoye'. Generated independently they never match and core-java dies at
+  # `ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN`,
+  # after Tomcat has already started — so the container looks alive for a few
+  # seconds before the context aborts.
+  "RABBITMQ_DEFAULT_USER|RABBITMQ_USER|RABBITMQ_DEFAULT_PASS|RABBITMQ_PASSWORD|-"
 )
 PAIRS_CHECKED=0
 for pair in "${CREDENTIAL_PAIRS[@]}"; do
@@ -224,7 +231,7 @@ for pair in "${CREDENTIAL_PAIRS[@]}"; do
 
   PAIRS_CHECKED=$((PAIRS_CHECKED + 1))
   if [ "$val_u_a" = "$val_u_b" ] && [ "$val_p_a" != "$val_p_b" ]; then
-    fail "${u_a} and ${u_b} are both '${val_u_a}' — the same database role — but ${p_a} and ${p_b} differ (values redacted). Postgres creates that role with ${p_a}; anything connecting with ${p_b} will get 'password authentication failed'."
+    fail "${u_a} and ${u_b} are both '${val_u_a}' — the same account — but ${p_a} and ${p_b} differ (values redacted). The service is PROVISIONED with ${p_a}; anything connecting with ${p_b} is refused."
     ERRORS=$((ERRORS + 1))
   fi
 done
