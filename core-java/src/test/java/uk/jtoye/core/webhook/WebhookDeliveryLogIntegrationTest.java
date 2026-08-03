@@ -95,6 +95,8 @@ class WebhookDeliveryLogIntegrationTest {
     private static final UUID SUB_C = UUID.fromString("00000000-0000-0000-0000-0000000005c1");
     /** Tenant A, replay with an Idempotency-Key. */
     private static final UUID SUB_D = UUID.fromString("00000000-0000-0000-0000-0000000005d1");
+    /** Tenant A, un-keyed replay in isolation (no preceding log read). */
+    private static final UUID SUB_E = UUID.fromString("00000000-0000-0000-0000-0000000005e1");
 
     private static final UUID DEL_DELIVERED = UUID.fromString("00000000-0000-0000-0000-00000000de11");
     private static final UUID DEL_RETRYING = UUID.fromString("00000000-0000-0000-0000-00000000de22");
@@ -104,6 +106,7 @@ class WebhookDeliveryLogIntegrationTest {
     private static final UUID DEL_B_OWN = UUID.fromString("00000000-0000-0000-0000-00000000de55");
     private static final UUID DEL_REPLAY_SRC = UUID.fromString("00000000-0000-0000-0000-00000000de66");
     private static final UUID DEL_REPLAY_KEYED_SRC = UUID.fromString("00000000-0000-0000-0000-00000000de77");
+    private static final UUID DEL_REPLAY_UNKEYED_SRC = UUID.fromString("00000000-0000-0000-0000-00000000de88");
 
     private static boolean seeded = false;
 
@@ -121,6 +124,7 @@ class WebhookDeliveryLogIntegrationTest {
         insertSubscription(SUB_B, TENANT_B);
         insertSubscription(SUB_C, TENANT_A);
         insertSubscription(SUB_D, TENANT_A);
+        insertSubscription(SUB_E, TENANT_A);
 
         // Tenant A's log: exactly the shape the council observed in production —
         // a delivered row, a retrying row at attempt 6 with a real remote 503,
@@ -136,6 +140,7 @@ class WebhookDeliveryLogIntegrationTest {
 
         insertDelivery(DEL_REPLAY_SRC, TENANT_A, SUB_C, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
         insertDelivery(DEL_REPLAY_KEYED_SRC, TENANT_A, SUB_D, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
+        insertDelivery(DEL_REPLAY_UNKEYED_SRC, TENANT_A, SUB_E, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
 
         // Seeding ran as the Testcontainers SUPERUSER (bypasses FORCE RLS).
         // Downgrade so every request below faces genuinely enforced RLS.
@@ -309,6 +314,29 @@ class WebhookDeliveryLogIntegrationTest {
         assertThat(countVisibleDeliveries(TENANT_A, SUB_C))
                 .as("the replay row is durably persisted for tenant A")
                 .isEqualTo(2);
+    }
+
+    /**
+     * AC #2, isolated — the un-keyed replay POST on its own, with no preceding
+     * log read. This is the arm that separates the two halves of the filed root
+     * cause: the KEYED replay path was already correct before the fix (
+     * {@code IdempotencyService.execute} is {@code @Transactional} and pins the
+     * tenant GUC explicitly), while the un-keyed path ran with no transaction at
+     * all and 404'd on a row that provably existed. Keep both arms — a single
+     * "replay works" test would have hidden which half was broken.
+     */
+    @Test
+    @WithMockUser
+    @DisplayName("un-keyed replay does not 404 on a delivery that exists")
+    void replay_withoutIdempotencyKey_doesNot404() throws Exception {
+        assertThat(countVisibleDeliveries(TENANT_A, SUB_E))
+                .as("the source delivery provably exists before the replay is attempted")
+                .isEqualTo(1);
+
+        mockMvc.perform(post("/api/v1/webhooks/" + SUB_E + "/deliveries/" + DEL_REPLAY_UNKEYED_SRC + "/replay")
+                        .header("X-Tenant-Id", TENANT_A.toString()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.replayOf").value(DEL_REPLAY_UNKEYED_SRC.toString()));
     }
 
     /** AC #2 — the Idempotency-Key path replays once and is safe to retry. */
