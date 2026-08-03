@@ -30,6 +30,7 @@ import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
 import uk.jtoye.core.media.exception.PayloadTooLargeException;
 import org.slf4j.Logger;
@@ -428,6 +429,28 @@ public class GlobalExceptionHandler {
                 HttpStatus.PAYLOAD_TOO_LARGE, "Upload exceeds the maximum permitted size");
         problem.setTitle("Payload Too Large");
         problem.setType(URI.create("https://jtoye.uk/errors/payload-too-large"));
+        return problem;
+    }
+
+    /**
+     * Issue #445 — the decompression-bomb guard now runs on the SYNCHRONOUS upload endpoints
+     * ({@code POST /products/{id}/images}, {@code /shops/{id}/logo}, {@code /shops/{id}/banner})
+     * as well as inside the async worker, so for the first time it can escape to a request thread.
+     *
+     * <p>422 rather than 400 or 413: the request is well-formed and the file is genuinely under
+     * the byte cap — it is the DECODED raster that would be enormous, which is a semantic
+     * rejection, not a syntax or size one. The stable {@code .../errors/decompression-bomb} type
+     * lets a machine client branch without parsing prose (D-06 / agent-readiness).
+     *
+     * <p>On the async path this exception never reaches here: {@code MediaProcessingWorker}
+     * catches it and maps it to {@code status=FAILED} + a vendor-visible failure reason.
+     */
+    @ExceptionHandler(DecompressionBombException.class)
+    public ProblemDetail handleDecompressionBomb(DecompressionBombException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Image Rejected");
+        problem.setType(URI.create("https://jtoye.uk/errors/decompression-bomb"));
+        problem.setProperty("code", "DECOMPRESSION_BOMB");
         return problem;
     }
 

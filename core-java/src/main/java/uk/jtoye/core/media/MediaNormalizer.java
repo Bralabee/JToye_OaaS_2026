@@ -22,8 +22,11 @@ import java.util.Set;
  *
  * <ol>
  *   <li><b>(b) sniff</b> — reuse the 4-signature magic-byte allowlist and accept
- *       only jpeg/png/webp for the STORED derivative (gif is deliberately vetoed;
- *       never trust {@code file.getContentType()}); mitigates T-24-02.</li>
+ *       only the caller's allowlisted types for the STORED derivative (the async
+ *       product pipeline uses {@link #STRICT_INPUT_TYPES}, which vetoes gif; the
+ *       legacy synchronous endpoints use {@link #LEGACY_SYNC_INPUT_TYPES}, which
+ *       admits and transcodes it — never trust {@code file.getContentType()} in
+ *       either case); mitigates T-24-02.</li>
  *   <li><b>(c) bomb guard</b> — header-only dimension read via
  *       {@link ImageReader#getWidth}/{@link ImageReader#getHeight} and reject
  *       above {@code jtoye.media.max-megapixels} BEFORE any pixel buffer is
@@ -49,12 +52,27 @@ public class MediaNormalizer {
     // storage/StorageService.detectContentType (RESEARCH "Don't Hand-Roll": no Tika).
     private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
     private static final byte[] PNG_MAGIC = {(byte) 0x89, 0x50, 0x4E, 0x47};
+    private static final byte[] GIF_MAGIC = {0x47, 0x49, 0x46};
     private static final byte[] RIFF_MAGIC = {0x52, 0x49, 0x46, 0x46};
     private static final byte[] WEBP_MAGIC = {0x57, 0x45, 0x42, 0x50};
 
-    // Allowlist for the STORED derivative: jpeg/png/webp only. gif is intentionally
-    // excluded (a gif's animation/first-frame is not a product-image derivative).
-    private static final Set<String> ALLOWED_INPUT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    /**
+     * Default allowlist for the STORED derivative of the async PRODUCT pipeline: jpeg/png/webp
+     * only. gif is intentionally excluded (a gif's animation/first-frame is not a product-image
+     * derivative). This is the set {@link #normalize(byte[])} uses, so the 24-03 accept path's
+     * behaviour is unchanged.
+     */
+    public static final Set<String> STRICT_INPUT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+
+    /**
+     * Allowlist for the legacy SYNCHRONOUS upload endpoints (issue #445): the same set plus gif,
+     * matching the {@code jtoye.storage.allowed-content-types} those endpoints have always
+     * declared and the {@code accept=} list the vendor file picker offers. A gif is transcoded
+     * to a static WebP derivative like any other input — it is NOT stored raw. Animation is not
+     * preserved; the alternative (rejecting a type the picker offers) is a worse trade.
+     */
+    public static final Set<String> LEGACY_SYNC_INPUT_TYPES =
+            Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
 
     // cwebp method (compression effort) 0-6; 6 = best compression for the storefront
     // derivative. Not a size/quality *budget* — an encoder effort constant.
@@ -73,11 +91,25 @@ public class MediaNormalizer {
      * @throws DecompressionBombException declared dimensions exceed the megapixel cap
      */
     public NormalizedImage normalize(byte[] raw) {
+        return normalize(raw, STRICT_INPUT_TYPES);
+    }
+
+    /**
+     * As {@link #normalize(byte[])}, but with an explicit input allowlist so the legacy
+     * synchronous endpoints can keep accepting gif ({@link #LEGACY_SYNC_INPUT_TYPES}) while the
+     * async product pipeline keeps vetoing it ({@link #STRICT_INPUT_TYPES}). Stages (c)-(f) —
+     * bomb guard, decode-verify, EXIF-dropping re-encode, WebP output — are identical for both:
+     * whatever the allowlist admits, only the normalized derivative is ever produced.
+     *
+     * @throws UnreadableImageException  input is not in {@code allowedInputTypes} or fails decode
+     * @throws DecompressionBombException declared dimensions exceed the megapixel cap
+     */
+    public NormalizedImage normalize(byte[] raw, Set<String> allowedInputTypes) {
         // (b) magic-byte sniff + allowlist veto — never trust the client content-type.
         String detected = detectContentType(raw);
-        if (detected == null || !ALLOWED_INPUT_TYPES.contains(detected)) {
+        if (detected == null || !allowedInputTypes.contains(detected)) {
             throw new UnreadableImageException(
-                    "Upload is not an allowed image type (jpeg/png/webp); detected=" + detected);
+                    "Upload is not an allowed image type " + allowedInputTypes + "; detected=" + detected);
         }
 
         // (c) header-only decompression-bomb guard — BEFORE any decode.
@@ -150,7 +182,11 @@ public class MediaNormalizer {
         }
     }
 
-    /** Magic-byte content-type sniff — jpeg/png/webp (+gif detection, which the allowlist then vetoes). */
+    /**
+     * Magic-byte content-type sniff — jpeg/png/gif/webp. gif is DETECTED here (so a caller can
+     * choose to admit it) but is absent from {@link #STRICT_INPUT_TYPES}, which is what vetoes it
+     * on the async product pipeline.
+     */
     private static String detectContentType(byte[] data) {
         if (data == null || data.length < 12) {
             return null;
@@ -160,6 +196,9 @@ public class MediaNormalizer {
         }
         if (startsWith(data, PNG_MAGIC)) {
             return "image/png";
+        }
+        if (startsWith(data, GIF_MAGIC)) {
+            return "image/gif";
         }
         if (startsWith(data, RIFF_MAGIC) && regionMatches(data, 8, WEBP_MAGIC)) {
             return "image/webp";

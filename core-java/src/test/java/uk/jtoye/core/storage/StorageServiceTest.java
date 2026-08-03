@@ -13,6 +13,8 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import uk.jtoye.core.media.MediaNormalizer;
+import uk.jtoye.core.media.MediaProperties;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -52,7 +54,7 @@ class StorageServiceTest {
         properties.getS3().setBucket("jtoye-images");
         properties.getS3().setPublicUrl("http://localhost:9000/jtoye-images");
 
-        storageService = new StorageService(s3Client, properties);
+        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     /**
@@ -94,7 +96,9 @@ class StorageServiceTest {
         assertTrue(url.contains(tenantId.toString()));
         assertTrue(url.contains("products"));
         assertTrue(url.contains(entityId.toString()));
-        assertTrue(url.endsWith(".jpg"));
+        // Issue #445: the key extension is the DERIVATIVE's, not the client filename's — only the
+        // normalized WebP is stored, so a ".jpg" upload is served from a ".webp" key.
+        assertTrue(url.endsWith(".webp"), "expected a .webp derivative key, got: " + url);
 
         // Verify S3 was called with correct bucket
         ArgumentCaptor<PutObjectRequest> captor = ArgumentCaptor.forClass(PutObjectRequest.class);
@@ -195,7 +199,8 @@ class StorageServiceTest {
         String url = storageService.upload(tenantId, "products", entityId, file);
 
         assertNotNull(url);
-        assertTrue(url.endsWith(".png"));
+        // Issue #445: a PNG upload is normalized to WebP too — see the note on the key test above.
+        assertTrue(url.endsWith(".webp"), "expected a .webp derivative key, got: " + url);
     }
 
     @Test

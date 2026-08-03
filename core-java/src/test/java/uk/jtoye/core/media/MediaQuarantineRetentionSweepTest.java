@@ -40,7 +40,9 @@ class MediaQuarantineRetentionSweepTest {
     void setUp() {
         StorageProperties properties = new StorageProperties();
         properties.getS3().setBucket("jtoye-images");
-        storageService = new StorageService(s3Client, properties);
+        // This test only exercises deleteByKeyChecked, which never touches the normalizer;
+        // the collaborator is wired only because issue #445 made it a constructor dependency.
+        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     @Test

@@ -14,10 +14,9 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import uk.jtoye.core.media.MediaNormalizer;
+import uk.jtoye.core.media.exception.UnreadableImageException;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
@@ -28,6 +27,16 @@ public class StorageService {
 
     private final S3Client s3Client;
     private final StorageProperties properties;
+    private final MediaNormalizer mediaNormalizer;
+
+    /**
+     * Issue #445: every synchronous upload is stored as the Phase-24 normalized derivative, so
+     * both the object key's extension and its Content-Type are fixed and server-produced. These
+     * are format identifiers, not a tunable budget — the budget itself (dimensions, quality,
+     * megapixel cap) lives in {@code jtoye.media.*} and is read by {@link MediaNormalizer}.
+     */
+    private static final String DERIVATIVE_CONTENT_TYPE = "image/webp";
+    private static final String DERIVATIVE_EXTENSION = ".webp";
 
     // Magic bytes for image format verification
     private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
@@ -64,9 +73,10 @@ public class StorageService {
             "webp", "image/webp"
     );
 
-    public StorageService(S3Client s3Client, StorageProperties properties) {
+    public StorageService(S3Client s3Client, StorageProperties properties, MediaNormalizer mediaNormalizer) {
         this.s3Client = s3Client;
         this.properties = properties;
+        this.mediaNormalizer = mediaNormalizer;
     }
 
     /**
@@ -78,50 +88,57 @@ public class StorageService {
 
     /**
      * Upload an image with type-specific dimension validation.
+     *
+     * <p>Issue #445: the stored object is the NORMALIZED WebP derivative, never the raw upload
+     * (see {@link #validateAndNormalize}). The key therefore always ends {@code .webp} and the
+     * object's {@code Content-Type} is the produced type, not the client's header.
      */
     public String upload(UUID tenantId, String pathPrefix, UUID entityId, MultipartFile file, ImageType imageType) {
-        byte[] imageBytes = validateAndRead(file, imageType);
+        byte[] imageBytes = validateAndNormalize(file, imageType);
 
-        String extension = getExtension(file.getOriginalFilename());
-        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + UUID.randomUUID() + extension;
+        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + UUID.randomUUID() + DERIVATIVE_EXTENSION;
 
         s3Client.putObject(
                 PutObjectRequest.builder()
                         .bucket(properties.getS3().getBucket())
                         .key(key)
-                        .contentType(file.getContentType())
+                        .contentType(DERIVATIVE_CONTENT_TYPE)
                         .cacheControl("public, max-age=31536000, immutable")
                         .build(),
                 RequestBody.fromBytes(imageBytes)
         );
 
         String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
-        log.info("Uploaded {} image: {} ({} bytes)", imageType, publicUrl, imageBytes.length);
+        log.info("Uploaded {} image: {} ({} bytes, normalized WebP)", imageType, publicUrl, imageBytes.length);
         return publicUrl;
     }
 
     /**
      * Upload a file with a fixed name (e.g. logo, banner).
+     *
+     * <p>Issue #445: as {@link #upload}, the stored object is the normalized WebP derivative.
+     * The caller ({@code ShopService.uploadLogo} / {@code uploadBanner}) deletes the previous
+     * object by its stored URL BEFORE calling this, so the extension change from the source
+     * format to {@code .webp} cannot orphan the old object.
      */
     public String uploadNamed(UUID tenantId, String pathPrefix, UUID entityId, String name, MultipartFile file) {
         ImageType imageType = "logo".equals(name) ? ImageType.LOGO : ImageType.BANNER;
-        byte[] imageBytes = validateAndRead(file, imageType);
+        byte[] imageBytes = validateAndNormalize(file, imageType);
 
-        String extension = getExtension(file.getOriginalFilename());
-        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + name + extension;
+        String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + name + DERIVATIVE_EXTENSION;
 
         s3Client.putObject(
                 PutObjectRequest.builder()
                         .bucket(properties.getS3().getBucket())
                         .key(key)
-                        .contentType(file.getContentType())
+                        .contentType(DERIVATIVE_CONTENT_TYPE)
                         .cacheControl("public, max-age=31536000, immutable")
                         .build(),
                 RequestBody.fromBytes(imageBytes)
         );
 
         String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
-        log.info("Uploaded {} image: {} ({} bytes)", imageType, publicUrl, imageBytes.length);
+        log.info("Uploaded {} image: {} ({} bytes, normalized WebP)", imageType, publicUrl, imageBytes.length);
         return publicUrl;
     }
 
@@ -329,9 +346,31 @@ public class StorageService {
     }
 
     /**
-     * Validates the file (size, type, magic bytes, dimensions) and returns its bytes.
+     * Validate the upload and return the bytes that may be stored — the NORMALIZED WebP
+     * derivative, never the raw upload (issue #445 / QA-A F-H3-RAWIMG).
+     *
+     * <p>Before this, the three legacy synchronous endpoints
+     * ({@code POST /products/{id}/images}, {@code /shops/{id}/logo}, {@code /shops/{id}/banner})
+     * PUT the client's bytes verbatim with the client's declared {@code Content-Type}. That
+     * contradicted the Phase-24 design decision that <em>raw uploads are never canonical</em>,
+     * and skipped three guards the async pipeline applies: the header-read decompression-bomb
+     * cap, the EXIF/GPS strip, and the WebP transcode. All three now run here, at the single
+     * choke point every one of those endpoints passes through, so no current or future caller
+     * of {@link #upload}/{@link #uploadNamed} can bypass them.
+     *
+     * <p>Order is load-bearing:
+     * <ol>
+     *   <li>empty / size / magic-byte allowlist first — these were already enforced and their
+     *       400 contract (message included) is preserved verbatim;</li>
+     *   <li>then {@link MediaNormalizer#normalize(byte[], java.util.Set)}, whose FIRST act is the
+     *       header-only megapixel guard — so a bomb is refused BEFORE any pixel buffer is
+     *       allocated. The old code decoded first ({@code ImageIO.read} inside the dimension
+     *       check), which is precisely the vector;</li>
+     *   <li>the minimum-dimension rule LAST, against the derivative. That rule exists so a
+     *       served image is not embarrassingly small, and the derivative is what is served.</li>
+     * </ol>
      */
-    private byte[] validateAndRead(MultipartFile file, ImageType imageType) {
+    private byte[] validateAndNormalize(MultipartFile file, ImageType imageType) {
         if (file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is empty");
         }
@@ -340,7 +379,7 @@ public class StorageService {
                     "File too large. Maximum size: " + (properties.getMaxFileSizeBytes() / 1_048_576) + "MB");
         }
 
-        // Read bytes once — reuse for magic check, dimension check, and upload
+        // Read bytes once — reuse for the magic check and the normalize pass
         byte[] imageBytes;
         try {
             imageBytes = file.getBytes();
@@ -357,13 +396,28 @@ public class StorageService {
                     "Invalid image format. Allowed: JPEG, PNG, WebP, GIF");
         }
         if (claimedType != null && !claimedType.equals(detectedType)) {
-            log.warn("Content-type mismatch: claimed={} detected={}. Using detected type.", claimedType, detectedType);
+            // No longer merely cosmetic: the claimed type is now DISCARDED rather than written
+            // onto the public object, closing the stored-content-type spoof (T-24-02) on this path.
+            log.warn("Content-type mismatch: claimed={} detected={}. Storing the produced type ({}).",
+                    claimedType, detectedType, DERIVATIVE_CONTENT_TYPE);
         }
 
-        // Verify image dimensions
-        validateDimensions(imageBytes, imageType);
+        // Bomb guard -> decode-verify -> EXIF-dropping re-encode -> WebP derivative.
+        MediaNormalizer.NormalizedImage normalized;
+        try {
+            normalized = mediaNormalizer.normalize(imageBytes, MediaNormalizer.LEGACY_SYNC_INPUT_TYPES);
+        } catch (UnreadableImageException e) {
+            // Preserve the pre-existing 400 contract for an undecodable/unsupported image.
+            // DecompressionBombException deliberately propagates: it is a NEW rejection with no
+            // prior contract, and GlobalExceptionHandler maps it to a typed RFC 7807 422.
+            log.warn("Rejected {} upload: {}", imageType, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Could not read image. The file may be corrupted.");
+        }
 
-        return imageBytes;
+        validateDerivativeDimensions(normalized, imageType);
+
+        return normalized.derivativeBytes();
     }
 
     /**
@@ -385,31 +439,21 @@ public class StorageService {
     }
 
     /**
-     * Validate image dimensions meet minimum requirements for the image type.
+     * Validate that the DERIVATIVE meets the minimum requirements for the image type.
+     *
+     * <p>Issue #445: this used to run {@code ImageIO.read} over the raw upload — a full decode,
+     * which is the decompression-bomb vector it now sits behind. The normalizer has already
+     * decoded and re-encoded under the {@code jtoye.media.*} budget by the time this runs, so
+     * the dimensions are read from its output for free; there is no second decode, and the rule
+     * is now applied to the image users actually receive.
+     *
+     * <p>The old "oversized image, consider client-side compression" WARN is gone because it can
+     * no longer fire: {@code max-dimension} bounds every derivative below that threshold.
      */
-    private void validateDimensions(byte[] imageBytes, ImageType imageType) {
-        try {
-            BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
-            if (image == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Could not read image. The file may be corrupted.");
-            }
-
-            int width = image.getWidth();
-            int height = image.getHeight();
-
-            if (width < imageType.minWidth || height < imageType.minHeight) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        imageType.message + " (uploaded: " + width + "x" + height + ")");
-            }
-
-            // Warn on excessively large images (not a hard error — client should compress)
-            if (width > 4096 || height > 4096) {
-                log.warn("Oversized image uploaded: {}x{} — consider client-side compression", width, height);
-            }
-        } catch (IOException e) {
+    private void validateDerivativeDimensions(MediaNormalizer.NormalizedImage normalized, ImageType imageType) {
+        if (normalized.width() < imageType.minWidth || normalized.height() < imageType.minHeight) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Could not read image. The file may be corrupted.");
+                    imageType.message + " (uploaded: " + normalized.width() + "x" + normalized.height() + ")");
         }
     }
 
@@ -429,9 +473,7 @@ public class StorageService {
         return true;
     }
 
-    private String getExtension(String filename) {
-        if (filename == null) return ".jpg";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : ".jpg";
-    }
+    // getExtension(String) removed with issue #445: the stored object's extension is no longer
+    // derived from the CLIENT-supplied filename. Every synchronous upload is stored as the
+    // normalized WebP derivative, so the extension is DERIVATIVE_EXTENSION unconditionally.
 }

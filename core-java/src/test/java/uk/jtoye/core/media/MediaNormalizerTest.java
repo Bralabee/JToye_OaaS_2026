@@ -60,6 +60,24 @@ class MediaNormalizerTest {
                 .isInstanceOf(UnreadableImageException.class);
     }
 
+    /**
+     * Issue #445 added a gif magic-byte signature + an allowlist parameter so the LEGACY
+     * synchronous endpoints can transcode gif. This pins the async product pipeline's behaviour
+     * as unchanged: the default entry point still vetoes gif, and it must fail at the ALLOWLIST
+     * (not merely at detection), which is why the fixture is a real, decodable gif.
+     */
+    @Test
+    void defaultAllowlistStillVetoesGifForTheProductPipeline() throws Exception {
+        byte[] gif = gifOf(800, 600);
+        assertThat(normalizer.normalize(gif, MediaNormalizer.LEGACY_SYNC_INPUT_TYPES).derivativeBytes())
+                .as("the legacy allowlist admits and transcodes the very same bytes")
+                .startsWith(RIFF);
+
+        assertThatThrownBy(() -> normalizer.normalize(gif))
+                .isInstanceOf(UnreadableImageException.class)
+                .hasMessageContaining("image/gif");
+    }
+
     @Test
     void encodesToWebpWithinBudget() throws Exception {
         byte[] jpeg = jpegOf(2000, 1500);
@@ -106,13 +124,21 @@ class MediaNormalizerTest {
     // ------------------------------------------------------------------
 
     private static byte[] jpegOf(int w, int h) throws Exception {
+        return encodeGradient(w, h, "jpg");
+    }
+
+    private static byte[] gifOf(int w, int h) throws Exception {
+        return encodeGradient(w, h, "gif");
+    }
+
+    private static byte[] encodeGradient(int w, int h, String format) throws Exception {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
         g.setPaint(new GradientPaint(0, 0, Color.ORANGE, w, h, Color.BLUE));
         g.fillRect(0, 0, w, h);
         g.dispose();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(img, "jpg", baos);
+        ImageIO.write(img, format, baos);
         return baos.toByteArray();
     }
 
