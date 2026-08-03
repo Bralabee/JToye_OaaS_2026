@@ -81,6 +81,28 @@ public class PublicUnsubscribeController {
 
     private static final Logger log = LoggerFactory.getLogger(PublicUnsubscribeController.class);
 
+    // OpenAPI 3 cannot express two operations at one path+method, so springdoc
+    // MERGES the two POST handlers into a single documented operation — taking
+    // one method's @Operation text and the other's parameters (observed:
+    // summary from the JSON handler, operationId `unsubscribeOneClick_1`).
+    // Which one wins is a declaration-order detail nobody should have to know,
+    // so both handlers carry the SAME text and the merged document is correct
+    // whichever way springdoc resolves it. The four query params are
+    // `required = false` on BOTH for the same reason: the merged operation
+    // documents a JSON body AND four query params, and marking the params
+    // required would tell an API consumer it must send both. It must send
+    // exactly one of the two.
+    private static final String POST_SUMMARY = "Unsubscribe (one-click POST)";
+
+    private static final String POST_DESCRIPTION =
+            "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently. "
+                    + "Send the four fields EITHER as a JSON body (preferred — keeps the token and the recipient "
+                    + "email out of the request line, and so out of every access log) OR as query parameters, which "
+                    + "is what RFC 8058 one-click clients must do because RFC 8058 fixes their request body to "
+                    + "'List-Unsubscribe=One-Click' and leaves no slot for the token. Supply one shape or the other; "
+                    + "the JSON body wins if both are present. A request missing any field returns status 'invalid' "
+                    + "without writing, exactly as a bad token does.";
+
     private final UnsubscribeTokenService tokenService;
     private final SuppressionService suppressionService;
 
@@ -119,9 +141,7 @@ public class PublicUnsubscribeController {
      * null-valued body via {@code MethodParameter.isOptional()}.
      */
     @PostMapping(value = "/unsubscribe", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Unsubscribe (JSON body)",
-            description = "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression "
-                    + "idempotently. The token and email travel in the body so they are never captured by access logs.")
+    @Operation(summary = POST_SUMMARY, description = POST_DESCRIPTION)
     public ResponseEntity<UnsubscribeResponse> unsubscribe(
             @RequestBody Optional<UnsubscribeRequest> body,
             @RequestParam(name = "tenant", required = false) UUID tenant,
@@ -139,16 +159,21 @@ public class PublicUnsubscribeController {
      * {@code List-Unsubscribe=One-Click} as {@code application/x-www-form-urlencoded},
      * so the identifying fields can only be in the URI. Kept permanently: see the
      * class Javadoc.
+     *
+     * <p>The params are {@code required = false} so the MERGED OpenAPI operation
+     * can describe them honestly as optional — a JSON caller sends none of them.
+     * The cost is that a malformed one-click POST now answers {@code invalid}
+     * instead of a 400 naming the first missing parameter, which is the better
+     * answer on a no-auth endpoint anyway: {@link #process} rejects an
+     * incomplete request exactly as it rejects a bad token, revealing nothing.
      */
     @PostMapping("/unsubscribe")
-    @Operation(summary = "Unsubscribe (RFC 8058 one-click POST)",
-            description = "The List-Unsubscribe-Post target for mail providers. RFC 8058 fixes the request body, so "
-                    + "these fields must travel in the URI; prefer the JSON-body variant from any client you control.")
+    @Operation(summary = POST_SUMMARY, description = POST_DESCRIPTION)
     public ResponseEntity<UnsubscribeResponse> unsubscribeOneClick(
-            @RequestParam("tenant") UUID tenant,
-            @RequestParam("email") String email,
-            @RequestParam("category") NotificationCategory category,
-            @RequestParam("token") String token) {
+            @RequestParam(name = "tenant", required = false) UUID tenant,
+            @RequestParam(name = "email", required = false) String email,
+            @RequestParam(name = "category", required = false) NotificationCategory category,
+            @RequestParam(name = "token", required = false) String token) {
         return process(tenant, email, category, token);
     }
 

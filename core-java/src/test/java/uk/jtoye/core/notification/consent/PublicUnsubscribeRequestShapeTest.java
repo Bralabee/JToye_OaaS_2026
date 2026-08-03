@@ -127,17 +127,33 @@ class PublicUnsubscribeRequestShapeTest {
     }
 
     @Test
-    @DisplayName("an incomplete JSON body is rejected as 'invalid' without a write")
-    void jsonBodyPost_missingFields_isInvalid_andWritesNothing() throws Exception {
+    @DisplayName("an incomplete request — either shape — is 'invalid' without a write")
+    void incompleteRequest_isInvalid_andWritesNothing() throws Exception {
+        // Partial JSON body.
         mockMvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"category\":\"MARKETING\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("invalid"));
 
+        // Empty JSON body.
         mockMvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("invalid"));
+
+        // Bare POST, no body and no params. The one-click handler's params are
+        // `required = false` so the merged OpenAPI operation can honestly say
+        // the query params are optional (a JSON caller sends none) — which means
+        // this lands on the same PII-free "invalid" answer rather than a 400
+        // naming the first missing parameter.
+        mockMvc.perform(post(ENDPOINT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("invalid"));
+
+        // Partial query params.
+        mockMvc.perform(post(ENDPOINT).param("category", CATEGORY.name()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("invalid"));
 
