@@ -1,376 +1,70 @@
-"use client"
-
-import { useEffect, useState, useCallback, useMemo } from "react"
-import Link from "next/link"
+import type { Metadata } from "next"
+import { cookies } from "next/headers"
+import { ACCESS_COOKIE, ID_COOKIE, REFRESH_COOKIE } from "@/lib/customer-auth-cookies"
 import {
-  Package, Clock, CheckCircle2, ChefHat, CircleDot,
-  XCircle, ArrowRight, Loader2, Store
-} from "lucide-react"
-import { getCustomerSession } from "@/lib/customer-auth"
-import { RequireCustomerAuth } from "@/components/storefront/require-customer-auth"
-
-export interface OrderSummary {
-  orderNumber: string
-  status: string
-  shopName: string
-  totalAmountPennies: number
-  itemCount: number
-  createdAt: string
-  updatedAt: string
-}
-
-export const ORDERS_PAGE_SIZE = 10
-
-export const ORDER_STATUS_OPTIONS = [
-  "ALL",
-  "PENDING",
-  "CONFIRMED",
-  "PREPARING",
-  "READY",
-  "COMPLETED",
-  "CANCELLED",
-] as const
-
-export type OrderStatusFilter = typeof ORDER_STATUS_OPTIONS[number]
+  displayEmailFromIdToken,
+  loadCustomerOrders,
+} from "@/lib/customer-orders-server"
+import { CustomerSignInPrompt } from "@/components/storefront/customer-signin-prompt"
+import { OrdersClient } from "./orders-client"
 
 /**
- * Pure filter + pagination derivation for the customer orders page.
- * Extracted so it can be unit-tested without rendering the React component.
+ * "My Orders" — SERVER component (issues #463, #467).
  *
- * - statusFilter === "ALL" disables the status filter.
- * - dateFrom is an ISO yyyy-mm-dd string (from <input type="date">). Empty
- *   string disables the date filter. Orders with createdAt earlier than
- *   the start of the selected day are excluded.
- * - pageSize must be > 0; callers should use ORDERS_PAGE_SIZE.
- * - totalPages is clamped to at least 1 so the UI always has a label.
- * - paged returns the slice for the requested page. An overflow page
- *   (page > totalPages) returns an empty slice — the UI effect resets
- *   `page` to 1 when the filters change.
+ * This page was `"use client"` on line 1, so nothing at all rendered from the
+ * server: the customer waited through bundle -> hydrate -> effect -> fetch
+ * before seeing anything but a spinner. Measured at the repo's throttled mobile
+ * profile (390px / 4x CPU / ~Fast 3G), even the "My Orders" heading took ~2.5s
+ * to appear, on an API that answers in 13-17ms warm. That is a rendering
+ * strategy problem, not a data one, which is why the fix is here rather than in
+ * a query.
+ *
+ * The session's access token is an HttpOnly cookie, which a server component can
+ * read — so the orders can be fetched and rendered as HTML before the JS bundle
+ * has even arrived. `orders-client.tsx` then hydrates over the top and takes
+ * over filtering, pagination and live refresh.
+ *
+ * The root layout already sets `dynamic = "force-dynamic"` app-wide for the CSP
+ * nonce, and reading cookies() is itself dynamic, so there is nothing to cache
+ * and no per-customer data can leak into a shared render.
  */
-export function deriveOrdersView(
-  orders: OrderSummary[],
-  opts: {
-    statusFilter: OrderStatusFilter | string
-    dateFrom: string
-    page: number
-    pageSize: number
-  }
-): { filtered: OrderSummary[]; paged: OrderSummary[]; totalPages: number } {
-  const fromTs = opts.dateFrom ? new Date(opts.dateFrom).getTime() : null
-  const filtered = orders.filter((o) => {
-    if (opts.statusFilter !== "ALL" && o.status !== opts.statusFilter) return false
-    if (fromTs !== null && !Number.isNaN(fromTs)) {
-      const created = new Date(o.createdAt).getTime()
-      if (Number.isNaN(created) || created < fromTs) return false
-    }
-    return true
-  })
-  const pageSize = opts.pageSize > 0 ? opts.pageSize : 1
-  const start = Math.max(0, (opts.page - 1) * pageSize)
-  return {
-    filtered,
-    paged: filtered.slice(start, start + pageSize),
-    totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
-  }
+
+export const metadata: Metadata = {
+  title: "My Orders — J'Toye",
+  description: "Track your orders and view your order history.",
+  // A signed-in, per-customer surface. Nothing here should ever be indexed, and
+  // there is no canonical version of it to point a crawler at.
+  robots: { index: false, follow: false },
 }
 
-function formatPrice(pennies: number): string {
-  return `£${(pennies / 100).toFixed(2)}`
-}
+export default async function CustomerOrdersPage() {
+  const jar = await cookies()
+  const access = jar.get(ACCESS_COOKIE)?.value
+  const refresh = jar.get(REFRESH_COOKIE)?.value
+  const email = displayEmailFromIdToken(jar.get(ID_COOKIE)?.value)
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
-  })
-}
-
-const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
-  PENDING: { icon: Clock, color: "text-amber-500 bg-amber-50", label: "Received" },
-  CONFIRMED: { icon: CircleDot, color: "text-blue-500 bg-blue-50", label: "Confirmed" },
-  PREPARING: { icon: ChefHat, color: "text-amber-800 bg-amber-50", label: "Preparing" },
-  READY: { icon: Package, color: "text-emerald-500 bg-emerald-50", label: "Ready" },
-  COMPLETED: { icon: CheckCircle2, color: "text-slate-400 bg-slate-50", label: "Completed" },
-  CANCELLED: { icon: XCircle, color: "text-red-500 bg-red-50", label: "Cancelled" },
-}
-
-function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?: string; email?: string }) {
-  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
-  const Icon = cfg.icon
-  const isActive = !["COMPLETED", "CANCELLED"].includes(order.status)
-  // WR-09: never embed the customer email in tracking URLs (PII in query
-  // strings lands in history/proxy logs/analytics). It is handed over via a
-  // sessionStorage handoff on click; the destination pages also pre-fill from
-  // the cookie-backed customer session.
-  const trackUrl = shopSlug
-    ? `/shop/${shopSlug}/orders/${order.orderNumber}`
-    : `/track?order=${order.orderNumber}`
-
-  return (
-    <Link
-      href={trackUrl}
-      onClick={() => {
-        try {
-          if (email) sessionStorage.setItem("jtoye-track-email", email)
-        } catch {
-          /* ignore — destination falls back to session pre-fill / prompt */
-        }
-      }}
-      className="block group"
-    >
-      <div className={`rounded-xl bg-white border ${isActive ? "border-amber-300 shadow-sm" : "border-cream-100"} p-4 transition-all group-hover:shadow-md group-hover:-translate-y-0.5`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${cfg.color}`}>
-                <Icon className="h-3 w-3" />
-                {cfg.label}
-                {isActive && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
-              </span>
-            </div>
-            <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
-          </div>
-          <div className="flex items-center gap-1 text-slate-400 group-hover:text-amber-600 transition-colors mt-1">
-            <span className="text-xs font-medium">{isActive ? "Track" : "View"}</span>
-            <ArrowRight className="h-4 w-4" />
-          </div>
-        </div>
-
-        {/* Mini order number */}
-        <p className="mt-2 text-xs font-mono text-slate-300 truncate">{order.orderNumber}</p>
-      </div>
-    </Link>
-  )
-}
-
-export default function CustomerOrdersPage() {
-  return (
-    <RequireCustomerAuth message="Sign in to view your order history and track deliveries.">
-      <CustomerOrdersContent />
-    </RequireCustomerAuth>
-  )
-}
-
-function CustomerOrdersContent() {
-  const [orders, setOrders] = useState<OrderSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [email, setEmail] = useState<string | null>(null)
-
-  // The email is display/track-handoff only — it plays NO part in fetching.
-  useEffect(() => {
-    let cancelled = false
-    getCustomerSession().then((session) => {
-      if (cancelled) return
-      if (session) setEmail(session.profile.email)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      // Issue #179 defect 1: GET /public/orders demands the AUDIT-W0-02
-      // `verify` proof (a recent order number), which a customer session does
-      // not hold — calling it with only ?email= 400s and rendered this page
-      // permanently empty. Orders are now fetched through the session-
-      // authenticated proxy (/api/customer-orders → core /public/orders/mine):
-      // the HttpOnly access-token cookie is the proof, forwarded server-side,
-      // and the server derives the email from the verified token. No email or
-      // verify parameter exists on this surface.
-      // Issue #95: the endpoint is paginated (Spring Page response) and the
-      // server caps page size at 100. Request the max so the client-side
-      // filter/pagination below keeps working over the 100 most recent orders.
-      const res = await fetch("/api/customer-orders?size=100", {
-        credentials: "include",
-        cache: "no-store",
-      })
-      if (!res.ok) {
-        setOrders([])
-        return
-      }
-      const data = (await res.json()) as { content?: OrderSummary[] }
-      setOrders(data.content ?? [])
-    } catch {
-      setOrders([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // RequireCustomerAuth only mounts this component for a live session, so the
-  // cookie-backed fetch can run immediately on mount.
-  useEffect(() => {
-    fetchOrders()
-  }, [fetchOrders])
-
-  // Auto-refresh for active orders
-  useEffect(() => {
-    const hasActive = orders.some(o => !["COMPLETED", "CANCELLED"].includes(o.status))
-    if (!hasActive) return
-    const interval = setInterval(fetchOrders, 15000)
-    return () => clearInterval(interval)
-  }, [orders, fetchOrders])
-
-  // Filter + pagination state (STFR-05)
-  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("ALL")
-  const [dateFrom, setDateFrom] = useState<string>("")
-  const [page, setPage] = useState(1)
-
-  // Reset to page 1 whenever filters change
-  useEffect(() => {
-    setPage(1)
-  }, [statusFilter, dateFrom])
-
-  const { paged, filtered, totalPages } = useMemo(
-    () => deriveOrdersView(orders, { statusFilter, dateFrom, page, pageSize: ORDERS_PAGE_SIZE }),
-    [orders, statusFilter, dateFrom, page]
-  )
-
-  const activeOrders = paged.filter(o => !["COMPLETED", "CANCELLED"].includes(o.status))
-  const pastOrders = paged.filter(o => ["COMPLETED", "CANCELLED"].includes(o.status))
-  const hasAnyActiveOnScreen = orders.some(o => !["COMPLETED", "CANCELLED"].includes(o.status))
-
-  if (loading) {
+  // No session material at all — an anonymous visitor or a fully aged-out
+  // session. Answer from the server: the wall is in the first paint instead of
+  // behind a spinner that resolves into it.
+  if (!access && !refresh) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-        <p className="mt-3 text-sm text-slate-500">Loading your orders...</p>
-      </div>
+      <CustomerSignInPrompt
+        message="Sign in to view your order history and track deliveries."
+        nextPath="/shop/orders"
+      />
     )
   }
 
-  return (
-    <div className="mx-auto max-w-lg px-4 sm:px-6 py-6">
-      <h1 className="text-xl font-bold text-slate-900">My Orders</h1>
-      <p className="text-sm text-slate-500 mt-1">
-        {orders.length} order{orders.length !== 1 ? "s" : ""}
-        {email && <span className="text-slate-400"> &middot; {email}</span>}
-      </p>
+  // Access token expired, refresh token still alive (#465 — the access cookie's
+  // maxAge is the 300s token lifetime, so it simply vanishes mid-session).
+  // Renewing means SETTING cookies, which Next only permits in a route handler
+  // or server action — not here. Hand to the island, which drives
+  // /api/customer-auth/session and then fetches. `initial: null` is precisely
+  // this case and nothing else.
+  if (!access) {
+    return <OrdersClient initial={null} email={email} />
+  }
 
-      {/* Filters (STFR-05) */}
-      {orders.length > 0 && (
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</span>
-            <select
-              data-testid="orders-status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as OrderStatusFilter)}
-              className="mt-1 w-full rounded-lg border border-cream-100 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-            >
-              {ORDER_STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s === "ALL" ? "All statuses" : (STATUS_CONFIG[s]?.label ?? s)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">From date</span>
-            <input
-              type="date"
-              data-testid="orders-date-from"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-cream-100 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-          </label>
-        </div>
-      )}
-
-      {/* Filter result summary */}
-      {orders.length > 0 && (
-        <p className="mt-3 text-xs text-slate-400">
-          Showing {paged.length} of {filtered.length} filtered order{filtered.length !== 1 ? "s" : ""}
-        </p>
-      )}
-
-      {/* Active orders */}
-      {activeOrders.length > 0 && (
-        <section className="mt-6">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-            Active ({activeOrders.length})
-          </h2>
-          <div className="space-y-3">
-            {activeOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} email={email || undefined} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Past orders */}
-      {pastOrders.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-            Past ({pastOrders.length})
-          </h2>
-          <div className="space-y-3">
-            {pastOrders.map((order) => (
-              <OrderCard key={order.orderNumber} order={order} email={email || undefined} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {orders.length === 0 && (
-        <div className="mt-12 text-center">
-          <Package className="mx-auto h-12 w-12 text-slate-200" />
-          <p className="mt-3 text-sm text-slate-500">No orders found for this email.</p>
-          <Link
-            href="/shop"
-            className="mt-4 inline-flex items-center gap-2 text-sm text-amber-700 hover:text-amber-800"
-          >
-            <Store className="h-4 w-4" />
-            Browse shops
-          </Link>
-        </div>
-      )}
-
-      {/* Pagination controls */}
-      {filtered.length > 0 && (
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            data-testid="orders-prev-page"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-          >
-            Previous
-          </button>
-          <span className="text-xs text-slate-500" data-testid="orders-page-label">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            type="button"
-            data-testid="orders-next-page"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages || totalPages === 0}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-          >
-            Next
-          </button>
-        </div>
-      )}
-
-      {filtered.length === 0 && orders.length > 0 && (
-        <p className="mt-8 text-center text-sm text-slate-500">No orders match the selected filters.</p>
-      )}
-
-      {/* Auto-refresh indicator */}
-      {hasAnyActiveOnScreen && (
-        <p className="mt-6 text-center text-xs text-slate-400">
-          <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Live updates every 15 seconds
-          </span>
-        </p>
-      )}
-    </div>
-  )
+  const initial = await loadCustomerOrders(access)
+  return <OrdersClient initial={initial} email={email} />
 }

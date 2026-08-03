@@ -1,17 +1,21 @@
 /**
- * Unit tests for the pure filter + pagination derivation used by
- * frontend/app/shop/orders/page.tsx (STFR-05).
+ * Unit tests for the pure filter + pagination derivation behind "My Orders"
+ * (STFR-05).
  *
- * Intentionally pure-logic only — no React rendering. The orders page
- * requires RequireCustomerAuth + publicApiClient + NextAuth session, which
- * is out of scope for a gap-closure unit spec. See 10-03-PLAN §Task 2.
+ * Intentionally pure-logic only — no React rendering.
+ *
+ * Issue #463 moved these helpers out of app/shop/orders/page.tsx and into
+ * lib/customer-orders.ts. The page is now an async SERVER component, and
+ * importing one into Jest drags in next/headers and the cookie jar for no
+ * benefit; the logic is isomorphic, so it belongs in a module the server
+ * component, the client island and this spec can all import.
  */
 
 import {
   deriveOrdersView,
   ORDERS_PAGE_SIZE,
   type OrderSummary,
-} from "@/app/shop/orders/page"
+} from "@/lib/customer-orders"
 
 function mkOrder(i: number, status: string, createdAt: string): OrderSummary {
   return {

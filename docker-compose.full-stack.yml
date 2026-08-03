@@ -390,6 +390,17 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:9090
+      # Issue #467: server-side core API base for route handlers running INSIDE
+      # this container. NEXT_PUBLIC_API_URL above is the BROWSER's view and is
+      # unusable here — the `extra_hosts: localhost:host-gateway` entry below
+      # does NOT win, because the container's own /etc/hosts already maps
+      # `127.0.0.1 localhost` first, so `http://localhost:9090` resolves to this
+      # container's loopback and is refused. Measured in jtoye-frontend:
+      #   wget http://localhost:9090/actuator/health -> connect: Connection refused
+      #   wget http://core-java:9090/actuator/health -> {"status":"UP",...}
+      # Without this, /api/customer-orders 502s on every request and My Orders
+      # renders the failure as an empty state.
+      CORE_API_INTERNAL_URL: http://core-java:9090
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}

@@ -1,7 +1,20 @@
 "use client"
 
-import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react"
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from "react"
 import { useStoredState } from "@/hooks/use-stored-state"
+import {
+  CUSTOMER_ID_KEY,
+  canAdoptCart,
+  cartStorageKey,
+  getCurrentCustomerId,
+} from "@/lib/cart-identity"
 
 export interface CartItem {
   productId: string
@@ -15,6 +28,12 @@ export interface CartItem {
 interface CartState {
   items: CartItem[]
   shopSlug: string
+  /**
+   * The customer id that last wrote this basket, or null when it was written
+   * anonymously. Absent on payloads stored before #459 — `canAdoptCart` reads
+   * that absence as anonymous, so shipping this does not empty live baskets.
+   */
+  owner?: string | null
 }
 
 interface CartContextValue {
@@ -30,12 +49,38 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null)
 
-function getStorageKey(slug: string) {
-  return `jtoye-cart-${slug}`
-}
-
 /** Stable identity, so it can never itself trigger a state change. */
 const EMPTY_ITEMS: CartItem[] = []
+
+/**
+ * The two questions a stored payload has to answer before its items are shown:
+ * is it THIS shop's basket, and is it THIS person's basket.
+ *
+ * `undefined` means reject — useStoredState falls back to an empty cart.
+ */
+function parseCart(raw: string, slug: string): CartItem[] | undefined {
+  const parsed = JSON.parse(raw) as CartState
+  // Stored shape carries its own slug; a mismatched payload is rejected so a
+  // stale key can never surface another shop's basket.
+  if (parsed.shopSlug !== slug) return undefined
+  // ...and its own owner, so a shared browser cannot surface another
+  // CUSTOMER's basket (#459). See lib/cart-identity.ts for why "nobody is
+  // signed in" deliberately does NOT reject.
+  if (!canAdoptCart(parsed.owner, getCurrentCustomerId())) return undefined
+  return parsed.items || []
+}
+
+/** A full read of a shop's stored basket, with both rules applied. */
+function readCart(slug: string): CartItem[] {
+  if (typeof window === "undefined") return EMPTY_ITEMS
+  try {
+    const raw = window.localStorage.getItem(cartStorageKey(slug))
+    if (raw === null) return EMPTY_ITEMS
+    return parseCart(raw, slug) ?? EMPTY_ITEMS
+  } catch {
+    return EMPTY_ITEMS
+  }
+}
 
 export function CartProvider({
   shopSlug,
@@ -49,18 +94,19 @@ export function CartProvider({
   // the cross-shop leak it closes. Keeping it there rather than here means the
   // next storage-backed piece of state gets it right for free.
   const [items, setItems] = useStoredState<CartItem[]>(
-    getStorageKey(shopSlug),
+    cartStorageKey(shopSlug),
     EMPTY_ITEMS,
     {
-      // Stored shape carries its own slug; a mismatched payload is rejected so
-      // a stale key can never surface another shop's basket.
-      parse: (raw) => {
-        const parsed = JSON.parse(raw) as CartState
-        if (parsed.shopSlug !== shopSlug) return undefined
-        return parsed.items || []
-      },
+      parse: (raw) => parseCart(raw, shopSlug),
+      // Stamp the writer's identity, so the next read can tell "the same
+      // person who was browsing anonymously" from "a different person on the
+      // same device" — a distinction that is invisible at sign-in time.
       serialize: (value) =>
-        JSON.stringify({ shopSlug, items: value } satisfies CartState),
+        JSON.stringify({
+          shopSlug,
+          owner: getCurrentCustomerId(),
+          items: value,
+        } satisfies CartState),
       // Broadcast so same-document listeners (the nav basket badge) update
       // without subscribing to this context.
       onPersist: (value) => {
@@ -80,6 +126,35 @@ export function CartProvider({
       },
     }
   )
+
+  // A shared browser is often a shared browser with two tabs open. `storage`
+  // fires only in the OTHER documents of this origin, so this never runs during
+  // a normal single-tab sign-in and cannot disturb the carry-forward — it fires
+  // when a sibling tab signs somebody out (which clears the baskets) or signs a
+  // different customer in. Re-reading re-applies both rules; the basket already
+  // rendered here would otherwise sit on screen owned by the previous person.
+  //
+  // Both keys are watched, not just the identity one: a sign-out removes the
+  // identity marker AND the baskets, and nothing orders the two events, so
+  // reacting to only one of them can re-read between the two removals and see
+  // the doomed basket as adoptable.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const key = cartStorageKey(shopSlug)
+    const onStorage = (e: StorageEvent) => {
+      // e.key === null is localStorage.clear() — everything, including us.
+      if (e.key !== null && e.key !== CUSTOMER_ID_KEY && e.key !== key) return
+      setItems((prev) => {
+        const next = readCart(shopSlug)
+        // Bail out when nothing actually changed. Without this, two tabs on the
+        // same shop ping-pong forever: each re-read produces a fresh array, the
+        // write effect persists it, and the sibling tab reacts to that write.
+        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+      })
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [shopSlug, setItems])
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {
     setItems((prev) => {
