@@ -228,8 +228,15 @@ export function OrdersClient({
   // carries that weaker signal.
   const [staleRefresh, setStaleRefresh] = useState(false)
   const [signedOut, setSignedOut] = useState(false)
+  // Synced in an effect, never during render: a render-phase ref write is unsafe
+  // under React 19 concurrent rendering (a render can be discarded or replayed),
+  // and the ESLint rule that catches it fails the build. An effect is sufficient
+  // here because the only reader is fetchOrders, which runs from the poll, the
+  // retry button or mount-renewal — all after commit, never during render.
   const loadRef = useRef(load)
-  loadRef.current = load
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
 
   /** One fetch path, shared by mount-renewal, poll and retry. */
   const fetchOrders = useCallback(async (): Promise<OrdersLoad> => {
@@ -327,14 +334,25 @@ export function OrdersClient({
   }, [hasActive, refresh])
 
   // Filter + pagination state (STFR-05)
-  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("ALL")
-  const [dateFrom, setDateFrom] = useState<string>("")
+  const [statusFilter, setStatusFilterValue] = useState<OrderStatusFilter>("ALL")
+  const [dateFrom, setDateFromValue] = useState<string>("")
   const [page, setPage] = useState(1)
 
-  // Reset to page 1 whenever filters change
-  useEffect(() => {
+  // Page reset happens in the setters, NOT in an effect. Resetting via
+  // `useEffect(() => setPage(1), [statusFilter, dateFrom])` is the obvious shape
+  // and is what the ESLint gate rejects: a synchronous setState inside an effect
+  // renders the new filter against the OLD page first, then renders again — a
+  // cascading render, and a visible flash of the wrong page on a slow device.
+  // Changing a filter and going to page 1 are one user intent, so they belong in
+  // one state update.
+  const setStatusFilter = useCallback((value: OrderStatusFilter) => {
+    setStatusFilterValue(value)
     setPage(1)
-  }, [statusFilter, dateFrom])
+  }, [])
+  const setDateFrom = useCallback((value: string) => {
+    setDateFromValue(value)
+    setPage(1)
+  }, [])
 
   const { paged, filtered, totalPages } = useMemo(
     () => deriveOrdersView(orders, { statusFilter, dateFrom, page, pageSize: ORDERS_PAGE_SIZE }),
