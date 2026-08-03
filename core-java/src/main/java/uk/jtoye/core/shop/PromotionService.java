@@ -2,6 +2,7 @@ package uk.jtoye.core.shop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -113,7 +114,11 @@ public class PromotionService {
 
         promotionMapper.updateEntity(request, entity);
 
-        entity = promotionRepository.saveAndFlush(entity);
+        try {
+            entity = promotionRepository.saveAndFlush(entity);
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(id, ex);
+        }
 
         log.info("Updated promotion '{}' with ID {}", entity.getLabel(), entity.getId());
 
@@ -128,8 +133,43 @@ public class PromotionService {
         // VSA-02 (D-02): parent-lookup — marketing delete requires SHOP_MANAGER.
         shopAccessService.require(entity.getShopId(), ShopRole.SHOP_MANAGER);
 
-        promotionRepository.delete(entity);
+        try {
+            promotionRepository.delete(entity);
+            // Issue #390: flush HERE rather than letting the DELETE go at commit. Without it the
+            // row-count failure is raised after this method returns, outside any catch we could
+            // write, and the request ends as an untyped error from the transaction boundary.
+            promotionRepository.flush();
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(id, ex);
+        }
 
         log.info("Deleted promotion '{}' with ID {}", entity.getLabel(), entity.getId());
+    }
+
+    /**
+     * Issue #390 — the row was there when we read it and gone when we wrote it, so Hibernate's
+     * row-count check failed ({@code Batch update returned unexpected row count from update [0]}).
+     * That is a missing resource, not a server fault and not a conflict to retry: a client that
+     * re-reads finds nothing and a client that retries gets the same answer forever.
+     *
+     * <p>Reachable by ordinary concurrent vendor activity — two staff deleting the same promotion,
+     * a double-click, a retry after a slow response — and previously it left the request as an
+     * untyped 5xx that inflated the {@code HighErrorRate} 5xx ratio with non-errors.
+     *
+     * <p><strong>Why 404 is unconditionally right here.</strong> {@link ShopPromotion} carries no
+     * JPA {@code @Version}, so the statement's predicate is {@code id = ?} alone (confirmed in the
+     * provider message: {@code delete from shop_promotions where id=?}). Zero affected rows can
+     * therefore mean exactly one thing — no such row is visible to this transaction. It cannot mean
+     * "stale version", which is the case {@code GlobalExceptionHandler}'s 409 handler exists for;
+     * that handler stays in place for {@code @Version}-carrying entities and is not weakened here.
+     *
+     * <p>The message is byte-identical to the absent-at-read-time 404 above, so a caller cannot
+     * distinguish the two and no timing information leaks. The provider message names the table and
+     * is logged, never returned (same reasoning as the 409 handler).
+     */
+    private ResourceNotFoundException vanishedMidTransaction(UUID id, OptimisticLockingFailureException ex) {
+        log.info("Promotion {} was removed by another transaction before this write landed: {}",
+                id, ex.getMessage());
+        return new ResourceNotFoundException("Promotion not found: " + id);
     }
 }

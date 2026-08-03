@@ -2,6 +2,7 @@ package uk.jtoye.core.shop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -117,7 +118,11 @@ public class AnnouncementService {
 
         announcementMapper.updateEntity(request, entity);
 
-        entity = announcementRepository.saveAndFlush(entity);
+        try {
+            entity = announcementRepository.saveAndFlush(entity);
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(id, ex);
+        }
 
         log.info("Updated announcement '{}' with ID {}", entity.getTitle(), entity.getId());
 
@@ -132,8 +137,35 @@ public class AnnouncementService {
         // VSA-02 (D-02): parent-lookup — marketing delete requires SHOP_MANAGER.
         shopAccessService.require(entity.getShopId(), ShopRole.SHOP_MANAGER);
 
-        announcementRepository.delete(entity);
+        try {
+            announcementRepository.delete(entity);
+            // Issue #390: flush HERE rather than letting the DELETE go at commit. Without it the
+            // row-count failure is raised after this method returns, outside any catch we could
+            // write, and the request ends as an untyped error from the transaction boundary.
+            announcementRepository.flush();
+        } catch (OptimisticLockingFailureException ex) {
+            throw vanishedMidTransaction(id, ex);
+        }
 
         log.info("Deleted announcement '{}' with ID {}", entity.getTitle(), entity.getId());
+    }
+
+    /**
+     * Issue #390 — the announcement half of the same defect; see
+     * {@link PromotionService#deletePromotion} for the full reasoning. The row was there when we
+     * read it and gone when we wrote it, so Hibernate's row-count check failed
+     * ({@code Batch update returned unexpected row count from update [0] ... delete from
+     * shop_announcements where id=?} — the statement in the issue's log). That is a missing
+     * resource, not a server fault and not a conflict worth retrying.
+     *
+     * <p>{@link ShopAnnouncement} carries no JPA {@code @Version}, so the predicate is
+     * {@code id = ?} alone and zero affected rows can only mean the row is not visible to this
+     * transaction. The 409 {@code OptimisticLockingFailureException} handler in
+     * {@code GlobalExceptionHandler} stays in place for genuinely versioned entities.
+     */
+    private ResourceNotFoundException vanishedMidTransaction(UUID id, OptimisticLockingFailureException ex) {
+        log.info("Announcement {} was removed by another transaction before this write landed: {}",
+                id, ex.getMessage());
+        return new ResourceNotFoundException("Announcement not found: " + id);
     }
 }
