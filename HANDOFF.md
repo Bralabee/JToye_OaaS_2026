@@ -20,8 +20,8 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **5 PRs merged by this session: #434, #435, #436, #443, #455.** A concurrent session merged **#437** and **#456**. HEAD deliberately **not** quoted |
-| Open PRs | **7** (measured 2026-08-03). Six are a QC'd merge train — #480, #474, #478, #476, #477, #479 — being merged one at a time, smallest test-count delta first; the seventh is this refresh. **Re-measure; this cell is stale by design while the train runs.** A concurrent session merged **#491** and **#482** while this cell was being written, which is also what pushed H-3 over budget |
-| Open issues | **92** — re-measured 2026-08-03, after the count below was written. Was 63, then 86; filed **23** council (#438–#454) + **7** owner-reported (#457–#463). Since: #465 + #467 filed; #457 + #465 closed by #466; **#442 is CLOSED** (#472); **#473 is CLOSED** (issue #302) and **#475 is CLOSED** (issue #274). The train will close eight more — do not carry this number |
+| Open PRs | **3** (measured 2026-08-03), all the tail of a six-PR QC'd merge train run smallest-test-delta-first. Merged so far: **#480 is CLOSED**, **#474 is CLOSED**, **#478 is CLOSED**. Remaining order is **#477, #479, then #476** — #476 was moved to last deliberately: it is the only PR in the set with no real-browser proof (jsdom + a production build), and its #288 zero-access empty state at 375px is *reasoned* from the mobile bar's measured `h-14` constraint, **not photographed**. It is under live browser verification and is held until that verdict lands. **Re-measure; this cell is stale by design while the train runs** |
+| Open issues | **89** — re-measured 2026-08-03, third measurement of the day (63 → 86 → 92 → 89, moving in both directions as the council backlog was filed and the train closed issues). **#442 is CLOSED** (#472), **#473 is CLOSED** (issue #302), **#475 is CLOSED** (issue #274); the train has since closed **#418**, **#287** and **#279**. Do not carry this number — re-run `gh issue list --state open --limit 300 --json number --jq length`, and note the default `--limit` is 30, which silently undercounts |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy** |
 | Gates | **18 green, 1 VOID** of 19 — `check-e2e-skip-budget` is **rc=2 and correctly so**: #456 added `frontend/e2e/marketing-dish-scroller.spec.ts` and the stored Playwright report predates it, so the gate refuses to certify a skip set that may no longer exist. **A VOID is not a pass.** Remedy: re-run the suite (§3). Not run here — it needs ~20 min against the stack the concurrent session is using |
@@ -267,10 +267,10 @@ this by hand** — no gate in this repo would have caught a single one of the tw
 
 ## 3. Carried forward — still true, not re-measured unless noted
 
-- **#418's mechanism is now known, and this document had it wrong.** The line that used to sit here said
-  the suite does *not* race its own `@Scheduled` flusher, because `@DynamicPropertySource` parks both
-  intervals at 24h. **That reasoning is refuted by PR #480** (open at the time of writing, first in the
-  train): `@Scheduled(fixedDelayString=…)` leaves `initialDelay` at **0**, so the first execution fires
+- **#418 is CLOSED, its mechanism is now known, and this document had it wrong.** The line that used to
+  sit here said the suite does *not* race its own `@Scheduled` flusher, because `@DynamicPropertySource`
+  parks both intervals at 24h. **That reasoning is refuted by PR #480**, now merged:
+  `@Scheduled(fixedDelayString=…)` leaves `initialDelay` at **0**, so the first execution fires
   at context refresh *regardless of the interval*. Parking suppresses the second run onward, never the
   first — a probe with both intervals at 86400000 still found **10 live scheduled tasks**. The earlier
   supporting evidence was vacuous too: a flush pass over an empty tenant list logs nothing, so "no
@@ -288,6 +288,26 @@ this by hand** — no gate in this repo would have caught a single one of the tw
   because the cost lands on everyone else the instant it merges; and **two sessions diagnosed and fixed
   this independently within the hour** — the second only discovered the first when `gh pr merge`
   refused. Before writing a fix for a *shared* red gate, re-read `origin/main`.
+- **The standing policy that came out of it: every feat/fix PR carries its OWN changelog entry, added
+  before it merges.** The gate keys on the **squash-merge subject's trailing `(#NNN)`** —
+  `PR_RE='\(#([0-9]+)\)$'`, anchored to end of line — so a branch whose subject ends `(#279)` will be
+  demanded as **#478**, its merge number, not its issue number. Verified, not assumed:
+  `grep -oP '\(#([0-9]+)\)$' <<< '…(#418) (#480)'` returns `(#480)`. The number exists the moment
+  `gh pr create` prints it, so "you cannot write it before the PR exists" is false — only "before the
+  PR is *opened*" is. Each entry in the #480/#474/#478 train was falsified by building the squash
+  commit locally (`git merge --squash` + a commit carrying the predicted subject) and running the gate
+  with `CHANGELOG_BASE_REF` pointed at it: clean → PASS, citation mangled → **FAIL naming that exact
+  PR**, restored → PASS. Note the gate **cannot** check the citation pre-merge from the branch itself
+  (its range ends at `origin/main`, where the PR is absent), so a green run on the branch proves
+  nothing about it — the simulation is the only real evidence.
+- **Never run a gate from the main checkout — it is usually BEHIND `origin/main`.**
+  `check-changelog-contract` resolves its commit *range* from `origin/main` but reads
+  `docs/CHANGELOG.md` from the **working tree**. Run from a tree two commits behind, it compared a
+  current range against a stale file and reported #474 and #480 as uncited — both of which were
+  present and correct. Measured 2026-08-03; the same run from an up-to-date tree was rc=0, 30 of 30.
+  A gate reading a stale tree fails in whichever direction the staleness happens to point, which is
+  **worse than not running it**, because the output looks authoritative. Before trusting any verdict,
+  pass or fail, assert the tree's identity: `git rev-parse HEAD` vs `git rev-parse origin/main`.
 - **A new E2E spec landed un-run, and the skip-budget gate caught it.** #456 added
   `frontend/e2e/marketing-dish-scroller.spec.ts`; `check-e2e-skip-budget` now returns **rc=2 VOID**
   because the stored report is older than the specs it describes. That is the gate working — a stale
