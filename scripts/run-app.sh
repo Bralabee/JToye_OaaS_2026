@@ -11,7 +11,7 @@
 #      "CRITICAL SECURITY ERROR: Application is using PostgreSQL superuser 'jtoye'";
 #      with DB_USER=jtoye_app it reaches "DATABASE SECURITY VALIDATION PASSED".
 #
-#   2. It also used to `export DB_PASSWORD=secret`. That literal no longer authenticates:
+#   2. It also used to export a hardcoded DB_PASSWORD. That literal no longer authenticates:
 #      `psql -h localhost -p 5433 -U jtoye` returns
 #      "FATAL: password authentication failed". It read as working for a long time only
 #      because it was tested with `docker exec ... psql -h 127.0.0.1`, and the container's
