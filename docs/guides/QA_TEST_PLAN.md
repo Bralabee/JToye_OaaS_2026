@@ -1064,7 +1064,7 @@ curl -s -H "Authorization: Bearer $TOKEN_A" \
 
 ### Automated Test Scripts
 
-**Location:** `scripts/testing/`
+**Location:** `scripts/`
 
 ```bash
 # Run all automated tests

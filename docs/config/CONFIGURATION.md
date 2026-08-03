@@ -202,7 +202,7 @@ spring:
 
 ### Pre-configured Realm
 
-The project includes `infra/keycloak/realm-export.json` with:
+The project includes `infra/keycloak/realm-export.template.json` with:
 
 **Realm:** `jtoye-dev`
 
@@ -487,6 +487,6 @@ echo $TOKEN | cut -d. -f2 | base64 -d | jq .iss
 ---
 
 **See Also:**
-- [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md) - Environment variable setup
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Production deployment
-- [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md) - Security assessment
+- [ENVIRONMENT_SETUP.md](../guides/ENVIRONMENT_SETUP.md) - Environment variable setup
+- [DEPLOYMENT_GUIDE.md](../guides/DEPLOYMENT_GUIDE.md) - Production deployment
+- [SECURITY_AUDIT_REPORT.md](../reports/SECURITY_AUDIT_REPORT.md) - Security assessment

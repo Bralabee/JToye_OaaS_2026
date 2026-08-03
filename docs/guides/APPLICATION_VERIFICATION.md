@@ -256,7 +256,7 @@ None required - application is production-ready for single-tenant testing.
 - `README.md` - Updated with correct ports and paths
 - `docs/setup/SETUP.md` - General setup instructions
 - `docs/setup/INTELLIJ_SETUP.md` - IntelliJ-specific configuration
-- `docs/setup/CHANGELOG.md` - Version history
+- `docs/CHANGELOG.md` - Version history
 - `docs/setup/IMPLEMENTATION_SUMMARY.md` - Technical implementation details
 
 ## Conclusion

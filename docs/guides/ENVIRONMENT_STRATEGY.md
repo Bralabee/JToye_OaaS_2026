@@ -87,8 +87,8 @@ Kubernetes Cluster (staging namespace)
 ```
 
 **Configuration Source:**
-- Kubernetes ConfigMaps (`k8s/staging/configmap.yaml`)
-- Kubernetes Secrets (`k8s/staging/sealed-secrets.yaml`)
+- Kubernetes ConfigMaps (`k8s/staging/configmap-patch.yaml`)
+- Kubernetes Secrets (`k8s/base/secrets-template.yaml.example` (see `docs/runbooks/sealed-secrets.md`))
 - Environment variables from K8s manifests
 
 ---
@@ -126,8 +126,8 @@ Kubernetes Cluster (production namespace)
 ```
 
 **Configuration Source:**
-- Kubernetes ConfigMaps (`k8s/production/configmap.yaml`)
-- Sealed Secrets (`k8s/production/sealed-secrets.yaml`)
+- Kubernetes ConfigMaps (`k8s/production/configmap-patch.yaml`)
+- Sealed Secrets (`k8s/base/secrets-template.yaml.example` (see `docs/runbooks/sealed-secrets.md`))
 - External Secrets Operator (AWS Secrets Manager, Vault)
 
 ---
@@ -188,7 +188,7 @@ DB_PORT=5432
 | `NEXTAUTH_URL` | `http://localhost:3000` | `https://app-staging.olajay.co.uk` | `https://app.olajay.co.uk` | NextAuth base URL |
 | `NEXTAUTH_SECRET` | Dev random | K8s Secret | K8s Secret | **32+ chars random** |
 | `KEYCLOAK_ISSUER` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.olajay.co.uk/realms/jtoye-prod` | `https://auth.olajay.co.uk/realms/jtoye-prod` | Must match token issuer |
-| `KEYCLOAK_CLIENT_SECRET` | `core-api-secret-2026` | K8s Secret | K8s Secret | From Keycloak |
+| `KEYCLOAK_CLIENT_SECRET` | From your `.env` | K8s Secret | K8s Secret | From Keycloak; never a literal in a doc |
 
 #### **Edge Go (API Gateway)**
 
@@ -224,7 +224,7 @@ KEYCLOAK_ISSUER=http://localhost:8085/realms/jtoye-dev
 
 ### Staging
 
-**Kubernetes ConfigMap (`k8s/staging/configmap.yaml`):**
+**Kubernetes ConfigMap (`k8s/staging/configmap-patch.yaml`):**
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -267,7 +267,7 @@ data:
 
 ### Production
 
-**Kubernetes ConfigMap (`k8s/production/configmap.yaml`):**
+**Kubernetes ConfigMap (`k8s/production/configmap-patch.yaml`):**
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -323,8 +323,8 @@ git add .env.production
 
 **Development:**
 - Use `.env` files (gitignored)
-- Simple passwords acceptable (`secret`, `password123`)
-- Document in `docs/CREDENTIALS.md`
+- Passwords still come from `.env`, never from a doc — `scripts/verify-env.sh` rejects weak values
+- Document variable NAMES in `.env.example`; the values live only in your `.env`
 
 **Staging:**
 - Use Kubernetes Secrets
@@ -681,7 +681,7 @@ Now that your project is environment-aware:
 
 **See Also:**
 - [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md) - Local development setup
-- [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration reference
+- [CONFIGURATION.md](../config/CONFIGURATION.md) - Detailed configuration reference
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Kubernetes deployment
 - [QUICK_START.md](QUICK_START.md) - Getting started
 

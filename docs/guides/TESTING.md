@@ -566,7 +566,7 @@ cd infra/load-testing
 ./load-test.sh
 ```
 
-See [load-testing/README.md](../infra/load-testing/README.md) for details.
+See [load-testing/README.md](../../infra/load-testing/README.md) for details.
 
 ---
 

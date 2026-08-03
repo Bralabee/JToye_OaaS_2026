@@ -30,12 +30,19 @@ All API endpoints require authentication except `/health` and `/actuator/health`
 ### Get JWT Token
 
 ```bash
+set -a; . ./.env; set +a
+
 curl -X POST http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token \
   -d 'grant_type=password' \
-  -d 'client_id=test-client' \
+  -d "client_id=$KEYCLOAK_CLIENT_ID" \
+  -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
   -d 'username=tenant-a-user' \
-  -d 'password=password123'
+  -d "password=$KC_SEED_USER_PASSWORD"
 ```
+
+The client is confidential: omit `client_secret` and you get
+`{"error":"unauthorized_client"}`, which reads like a bad password but is not.
+There is no `test-client` in the realm.
 
 **Response:**
 ```json
@@ -540,5 +547,5 @@ curl http://localhost:9090/api/v1/shops \
 
 **For implementation details, see:**
 - [SECURITY_ARCHITECTURE.md](SECURITY_ARCHITECTURE.md) - RLS and multi-tenancy
-- [USER_GUIDE.md](USER_GUIDE.md) - End-user workflows
+- [USER_GUIDE.md](../guides/USER_GUIDE.md) - End-user workflows
 - Swagger UI - Interactive API testing

@@ -115,7 +115,7 @@ For detailed production deployment steps, refer to `DEPLOYMENT_GUIDE.md`.
 
 ## 6. Project History & Credentials
 *   **Changelog**: See [CHANGELOG.md](../CHANGELOG.md) for version history.
-*   **Credentials**: See [CREDENTIALS.md](../config/CREDENTIALS.md) for development credentials and test users.
+*   **Credentials**: See [CREDENTIALS.md](../../.env.example) for development credentials and test users.
 
 ---
 

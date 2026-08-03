@@ -15,17 +15,37 @@ This guide demonstrates how to test the multi-tenant JWT authentication system w
 
 ## Quick Test
 
-Run the diagnostic script to verify everything is working:
+Mint a token and use it. This replaces a former reference to
+`scripts/testing/diagnose-jwt-issue.sh`, which does not exist anywhere in the repository — the
+guide's opening command could not run.
+
 ```bash
-bash scripts/testing/diagnose-jwt-issue.sh
+set -a; . ./.env; set +a
+
+TOK=$(curl -s -d grant_type=password \
+  -d "client_id=$KEYCLOAK_CLIENT_ID" -d "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+  -d username=tenant-a-user -d "password=$KC_SEED_USER_PASSWORD" \
+  http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token | jq -r .access_token)
+
+# 1. the token carries a tenant_id claim
+echo "$TOK" | cut -d. -f2 | base64 -d 2>/dev/null | jq -r '.tenant_id'
+
+# 2. a JWT-only request works — no X-Tenant-Id header needed
+curl -s -o /dev/null -w 'with token: %{http_code}\n' \
+  -H "Authorization: Bearer $TOK" http://localhost:9090/api/v1/shops
+
+# 3. and the same request without one does not
+curl -s -o /dev/null -w 'no token  : %{http_code}\n' http://localhost:9090/api/v1/shops
 ```
 
 Expected output:
 ```
-=== Diagnosis ===
-✓ JWT has tenant_id claim: 00000000-0000-0000-0000-000000000001
-✓ JWT-only request works! JwtTenantFilter is functioning correctly
+00000000-0000-0000-0000-000000000001
+with token: 200
+no token  : 401
 ```
+
+Run step 3 as well as step 2. A 200 on its own does not show the filter is enforcing anything.
 
 ## Detailed Testing
 
