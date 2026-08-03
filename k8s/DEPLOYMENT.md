@@ -568,8 +568,12 @@ mistaken for a fourth overlay by the other gates' discovery loop.
 
 The single inventory of **every** gate this repository runs, old and new. The two
 sections above ("K8s static gates", "Runtime-parity gates") remain the detailed
-reference for their own gates; this section is the map, plus the three gates Phase 27
+reference for their own gates; this section is the map, plus the gates Phase 27
 added and the two it deliberately left out of CI.
+
+**Adding a gate means adding a row here.** The sentence above claims this list is
+complete, so a gate with no row makes the doc assert something false — and a stale
+inventory is worse than no inventory, because it is read as coverage.
 
 **All of them share one exit-code convention.** It is stated once here and holds
 everywhere:
@@ -594,6 +598,14 @@ everywhere:
 | **`scripts/check-dependency-horizons.sh`** | **`ops-contracts`** | Every pinned image and toolchain carries a live support horizon. Past horizon, inside the 90-day warn window, stale cache, wrong slug, catalogue-vs-vendor conflict, manifest↔source drift either way, or a lapsed `manual_review` all fail. Plan 27-00, finding F-6. |
 | **`scripts/check-alert-rules.sh`** | **`ops-contracts`** | `promtool check rules`, plus every live rule carrying its labels and annotations and having a `## <AlertName>` runbook heading. Plan 27-03, finding F-8: *"there is no CI validation of `alerts.yml` at all"*. |
 | **`scripts/check-doc-citations.sh`** | **`ops-contracts`** | Every `` `file:line` `` citation in a **live** doc resolves to a line that says what the doc claims. Measured before it existed: **1 of 11** STACK.md dependency citations was still correct, and 12 more used a bare `build.gradle.kts` that resolves to the 22-line **root** file rather than core-java's. `check-doc-versions.sh` cannot see this — it compares version *strings* and has no notion of where a claim points. Scans live-claim docs only (override with `CITATION_DOCS`); historical records under `.planning/phases/**` are excluded by design, since validating them would force a choice between a red gate and rewriting the record. |
+| **`scripts/check-image-supply-chain.sh`** | **`ops-contracts`** | The container-image gate's red/green tracks our own code. Pins `fail-fast: false` on the publish matrix (default fail-fast made a frontend-only CVE `cancel` the clean core-java and edge-go legs), the table-vs-sarif split that keeps every gating Trivy step on **fixable CRITICAL/HIGH only** (`format: sarif` makes Trivy scan *all* severities, so a sarif step with an `exit-code` would gate on LOW/MEDIUM), a `package-ecosystem: "docker"` dependabot entry for **every** tracked Dockerfile, and that the daily scan in `base-image-freshness.yml` still asks the gate's exact question — same flags, same pinned action. Issue #276. Static: reads YAML and the git index, runs no scanner, makes no network call. |
+
+**What this gate does *not* tell you.** It asserts the *mechanism*, never today's
+findings. Green here is entirely compatible with every published image being
+vulnerable — only the scan says otherwise, and that runs daily in
+`.github/workflows/base-image-freshness.yml`, which is **not** a required check and
+must never gain a `pull_request:` trigger: it scans *published* images, so nothing in
+a PR's diff could ever change its answer.
 
 Run the whole static set locally before pushing:
 
@@ -608,6 +620,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
   && bash scripts/check-dependency-horizons.sh \
   && bash scripts/check-alert-rules.sh \
   && bash scripts/check-doc-citations.sh \
+  && bash scripts/check-image-supply-chain.sh \
   && echo ALL_STATIC_GATES_GREEN
 ```
 
