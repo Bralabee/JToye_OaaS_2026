@@ -44,6 +44,16 @@ export default defineConfig({
         browserName: "chromium",
         viewport: { width: 390, height: 844 },
         isMobile: true,
+        // REQUIRED, not decorative (#503). `isMobile` alone leaves Chromium
+        // reporting `pointer: fine` and `maxTouchPoints: 0`, so `(pointer:
+        // coarse)` never matches and this project is blind BY CONSTRUCTION to
+        // every defect whose symptom is "behaves like a mouse on a touch
+        // device" — including the ungated `hover:` it exists to catch.
+        //
+        // Do not assume this took effect: e2e/mobile-instrument-contract.spec.ts
+        // ASSERTS the resulting media-query state. Enforced by
+        // scripts/check-playwright-mobile-contract.sh.
+        hasTouch: true,
       },
     },
     {

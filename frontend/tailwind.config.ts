@@ -2,6 +2,25 @@ import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
+  // Gate every `hover:` utility behind `@media (hover: hover)` (#503).
+  //
+  // Without this Tailwind emits bare `hover:` rules that apply on touch devices,
+  // where a tap LATCHES the hover state until the user taps elsewhere — a button
+  // that stays highlighted after being pressed. Measured on the build before this
+  // change: 65 `.hover\:` utilities, exactly 1 of them gated, and that one only
+  // because a developer hand-wrote the arbitrary variant
+  // `[@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md`. About ten such
+  // hand-written workarounds exist (app/page.tsx, app/shop/orders/orders-client.tsx)
+  // — this makes the other 64 correct by default.
+  //
+  // Those hand-written sites are deliberately LEFT IN PLACE: they additionally
+  // require `pointer: fine`, which is strictly narrower than this flag, so
+  // removing them would widen behaviour rather than tidy it.
+  //
+  // Default in Tailwind v4; a `future` opt-in on the v3.4 line this repo pins.
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   darkMode: ["class"],
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
