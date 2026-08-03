@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 	"time"
 
@@ -92,27 +93,36 @@ func TestClient_SyncBatch_Success(t *testing.T) {
 			t.Errorf("Expected X-Tenant-Id: tenant-123, got %s", tenantHeader)
 		}
 
-		// Verify request body
-		var req BatchSyncRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Verify request body against core's LITERAL wire names, not against
+		// BatchSyncRequest. Decoding into the client's own struct made this
+		// assertion self-consistent: both sides moved together, so it stayed
+		// green for months while the edge sent `tenant_id` and core-java read
+		// `tenantId` (issue #337). A raw map cannot agree by construction.
+		var raw map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 			t.Errorf("Failed to decode request: %v", err)
 		}
 
-		if req.TenantID != "tenant-123" {
-			t.Errorf("Expected tenant_id: tenant-123, got %s", req.TenantID)
+		var tenant string
+		if err := json.Unmarshal(raw["tenantId"], &tenant); err != nil {
+			t.Errorf("body has no `tenantId` (core-java's BatchSyncRequest field); got keys %v", rawKeys(raw))
+		} else if tenant != "tenant-123" {
+			t.Errorf("Expected tenantId: tenant-123, got %s", tenant)
 		}
 
-		if len(req.Items) != 2 {
-			t.Errorf("Expected 2 items, got %d", len(req.Items))
+		var items []map[string]any
+		if err := json.Unmarshal(raw["items"], &items); err != nil {
+			t.Errorf("body has no `items`; got keys %v", rawKeys(raw))
+		} else if len(items) != 2 {
+			t.Errorf("Expected 2 items, got %d", len(items))
 		}
 
-		// Send success response
+		// Respond exactly as core-java does. Hand-written JSON on purpose:
+		// core serialises processedCount with default Jackson naming, and the
+		// edge publishes processed_count, so encoding the edge's own struct
+		// here would once again make the round-trip agree with itself.
 		w.WriteHeader(http.StatusAccepted)
-		resp := BatchSyncResponse{
-			Status:         "accepted",
-			ProcessedCount: 2,
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{"status":"accepted","processedCount":2}`))
 	}))
 	defer server.Close()
 
@@ -400,4 +410,15 @@ func TestClient_NewClient(t *testing.T) {
 	if client.breaker == nil {
 		t.Error("Expected circuit breaker to be initialized")
 	}
+}
+
+// rawKeys lists the top-level keys of a decoded body so a failed wire-name
+// assertion says what WAS sent, not just what was missing.
+func rawKeys(m map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
