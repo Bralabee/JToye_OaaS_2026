@@ -617,8 +617,10 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 24 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
-#   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.)
+# EXPECT 25 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+#   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
+#   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
+#   BACKUP image to postgres:18 against a 15 server with every CI check green.)
 # MEASURED 2026-08-04 after the Wave-1 train + a runtime sync: 24/24 rc=0.
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
