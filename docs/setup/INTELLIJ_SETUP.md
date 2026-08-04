@@ -129,6 +129,6 @@ You can also set:
 - `DB_HOST=localhost` (database host)
 - `DB_NAME=jtoye` (database name)
 - `DB_USER=jtoye` (database user)
-- `DB_PASSWORD=secret` (database password)
+- `DB_PASSWORD` (database password — take the value from your `.env`, do not type a literal)
 
 But **`DB_PORT=5433` is the critical one** that must be set!

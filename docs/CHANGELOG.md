@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The first-run commands never ran, and a contract check found a live bug on its first run (#520) — 2026-08-04
+
+Closes #449, #276 and #337. Lane E of a 15-agent Wave-1 run — the only lane with a genuine file overlap (`ci-cd.yaml`, claimed by #276 and #337; auto-merged and then verified semantically, because a clean auto-merge of YAML can still be wrong).
+
+#### Fixed
+- **#449 — the documented first-run path did not run as written.** Every row executed before and after, never re-read: `docker-compose … ps` rc=**127** → rc=0; `curl :9090/customers` **404** → `/api/v1/customers` **200**; `./scripts/run-app.sh` rc=1 `password authentication failed` → `Started CoreApplication`; `admin`/`admin123` at Keycloak **401** → env-sourced **200**; `psql -U postgres` `FATAL: role "postgres" does not exist` → rc=0; the README build badge and issues link **404 → 200**.
+- **#276 — the Trivy image gate had no refresh path**, and default `fail-fast` turned one leg's CVE into `cancelled` for the other two. A scheduled base-image scan now files the finding, and a static gate asserts the three properties that make it survivable — all of which are one-line YAML edits from silently regressing.
+- **#337 — nothing checked the edge↔core boundary**, and the new check found a live bug on its **first run**: core serialises `BatchSyncResponse.processedCount`, the edge decoded `processed_count`, and Go's `encoding/json` returns no error for a field it cannot place — so **every successful batch sync reported 0 items processed**.
+
+#### Added
+- `scripts/check-edge-core-contract.sh` + `TestEdgeCoreContract` — reflects over the edge's real client types against core's reviewed OpenAPI snapshot, so it cannot drift from the code it guards. Endpoint discovery is `go/ast`, not text search, because `rg`/`grep` do not exist under exec and return zero results indistinguishable from a genuine absence.
+- `scripts/check-image-supply-chain.sh` + `base-image-freshness.yml` — a scheduled scan whose flags and pinned action must still match the gate's, because *a detector that has drifted reports "clean" about a different question*.
+
+#### Notes
+- **#449 counted 16, not 17** — the council's own enumeration (`DOC-01…14, 27, 29`) is 16 while its summary says 17, and its table classes DOC-15 differently again. It also found **8 broken items the sweep missed**, including a `run-app.sh` password that does not authenticate at all and a TESTING_GUIDE whose **first command** does not exist in the repo.
+- **The reason the sweep missed them is an instrument that cannot fail.** `docker exec … psql -h 127.0.0.1` returns a row for *any* password, because `pg_hba` matches `host all all 127.0.0.1/32 trust` before the image's appended scram line. That invalidates the council's own DOC-04 evidence — and it was found independently, twice in one session, by two agents working unrelated issues.
+- **A guide that "proved" RLS as the superuser.** TESTING_GUIDE §5 ran its isolation check as `jtoye`, which bypasses RLS: 18 rows where it claimed 0. As `jtoye_app` it is 0, and 17/1 with the tenant GUC set. Its "expect 0" was also wrong for `shops`, which has a public-read policy.
+- **#276 was PARTIALLY-FALSIFIED**: three supporting facts were stale (line number, `node:20-alpine` → it is `node:24-alpine`, and the dependabot docker rules already existed), and the gate runs `format: 'table'` not sarif, so the recorded "gated ALL severities" defect does not apply here. Two findings it did not have: `build-and-push` is `push`/`release`-only, so **the image gate never runs on a pull request**, and two tracked Dockerfiles had no dependabot coverage.
+- **A gate that was pointed away from the file it was meant to guard.** `check-doc-versions` *passed* a seeded README version drift — it covered CLAUDE/AGENTS/STACK but not README. The same drift in `AGENTS.md` went red, so the gate worked; it was aimed elsewhere. Now 89 claims/3 docs → 90/4. Stated limit: it matches `MapStruct 1.6.3` but not a prose floor like `**Go 1.26+**`.
+- **Gate count 22 → 24**, and `check-handoff-contract` H-1 caught the stale `EXPECT 22` the moment the two new scripts merged — exactly as the previous handoff predicted. Re-measured, not guessed.
+- **Two stale version claims corrected**, escalated by the #449 agent rather than edited by it, and verified before changing: `Go: 1.25-alpine` → `1.26-alpine` (`edge-go/Dockerfile:10` is `golang:1.26-alpine`, `go.mod` reads `go 1.26.0`), and `Docker Compose 1.40+` → `Compose v2+` (1.40 is a **v1** version string; the v1 binary is not installed, and #449's own work converted these docs to the `docker compose` subcommand — the requirement line was contradicting the instructions beside it).
+- **`gitleaks` is not installed locally, so #449's secret-scanning criterion is UNRUN, not passed.** Mitigated by removing 8 credential literals and adding none — recorded as unverified rather than claimed.
+- **#337's fault-injection half is deferred with a proposed shape, not quietly dropped.** It belongs in `integration-tests` with toxiproxy, since the dependencies the row names are core-java's; a fault test that never takes one down is worse than none.
+- Counts regenerated once with `--write`: go_test_funcs 77→78, files 9→10, total 2092→2093.
+
 ### Lane D — the k8s lane, and a defect that existed only in the merge (#521) — 2026-08-04
 
 Closes #293, #506, #271, #298, #299, #303. Three branches assembled and verified as a **merged tree**, which is the point: the merge produced a gate failure no individual branch could have shown.

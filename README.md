@@ -3,8 +3,8 @@
 **Multi-tenant SaaS platform for UK retail management with Row-Level Security**
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/jtoye/oaas/actions)
-[![Tests](https://img.shields.io/badge/tests-2106%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
+[![Tests](https://img.shields.io/badge/tests-2107%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -18,8 +18,8 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
-| **Backend** | Spring Boot 3, Java 21, MapStruct 1.5.5, Redis Caching, Spring State Machine |
-| **Edge** | Go 1.25, Gin, Circuit Breakers, Rate Limiting |
+| **Backend** | Spring Boot 3, Java 21, MapStruct 1.6.3, Redis Caching, Spring State Machine |
+| **Edge** | Go 1.26, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
@@ -27,7 +27,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ### Key Features
 
 ✅ **Multi-Tenancy** - PostgreSQL RLS with JWT-based isolation
-✅ **Full CRUD** - 14 REST controllers (Shops, Products, Orders, Customers, Payments, Financial Transactions, Sync, etc.)
+✅ **Full CRUD** - 27 REST controllers (Shops, Products, Orders, Customers, Payments, Financial Transactions, Sync, Media, Webhooks, Onboarding, etc.)
 ✅ **Service Layer Architecture** - Clean separation with Service-Repository pattern
 ✅ **Type-Safe Mapping** - MapStruct for compile-time DTO conversion
 ✅ **Redis Caching** - Tenant-aware caching with performance boost
@@ -35,48 +35,64 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ✅ **State Machine** - Order workflow management
 ✅ **Rate Limiting** - Tenant-aware Bucket4j + Redis enforcement
 ✅ **Audit Trail** - Hibernate Envers on all entities
-✅ **Modern UI** - 5 responsive dashboards with animations
+✅ **Modern UI** - 16 responsive dashboard routes with animations
 ✅ **Production Ready** - Docker, Kubernetes, CI/CD pipeline
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (2 Minutes)
+### Option 1: Docker (recommended)
 
-✅ **No configuration required!** Everything runs in containers.
+Everything runs in containers. You need a `.env` first — `docker-compose.full-stack.yml` has 18
+hard-required variables and will not even render its config without them.
 
 ```bash
-docker-compose -f docker-compose.full-stack.yml up
+# 1. Create your .env from the template and fill in every CHANGE_ME value
+cp .env.example .env
+bash scripts/verify-env.sh          # fails loudly on anything missing or weak
+
+# 2. Start the stack
+docker compose -f docker-compose.full-stack.yml up -d --build
 ```
+
+> Compose **v2** (`docker compose`, a docker subcommand). The standalone `docker-compose` v1 binary
+> is not installed on supported setups and exits `127 command not found`.
 
 **Access:**
 - UI: http://localhost:3000
-- API: http://localhost:9090
+- API: http://localhost:9090 (business endpoints are under `/api/v1` — see below)
 - Keycloak: http://localhost:8085
 
-**Login:** `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD` (from your `.env`)
+**Login:** `tenant-a-user` / the value of `KC_SEED_USER_PASSWORD` (from your `.env`).
+The sign-in page is a single **Sign in with Keycloak** button — you type credentials on Keycloak's
+page, not on ours.
 
-### Option 2: Local Development (10 Minutes)
+### Option 2: Local Development (backend outside Docker)
 
-⚠️ **Requires environment setup first!**
+Runs the Core API from source against the containerised backing services.
 
 ```bash
 # 1. Copy environment templates
+cp .env.example .env                  # fill in the CHANGE_ME values
 cp frontend/.env.local.example frontend/.env.local
 cp core-java/.env.example core-java/.env
 cp edge-go/.env.example edge-go/.env
-cp infra/.env.example infra/.env
 
-# 2. Start infrastructure
-cd infra && docker-compose up -d && cd ..
+# 2. Start the backing services only (Postgres, Keycloak, Redis, RabbitMQ)
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
-# 3. Start backend
+# 3. Start backend (reads .env; runs as jtoye_app, never the jtoye superuser)
 ./scripts/run-app.sh
 
 # 4. Start frontend (new terminal)
 cd frontend && npm install && npm run dev
 ```
+
+> Use the full-stack compose file for step 2, **not** `cd infra && docker compose up -d`.
+> `infra/docker-compose.yml` declares its own `jtoye-postgres` / `jtoye-keycloak` containers on the
+> same host ports (5433, 8085), so it collides with the canonical stack, and it starts neither Redis
+> nor RabbitMQ — which `application.yml` expects on `localhost`.
 
 📖 **Detailed Guide:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
 
@@ -150,15 +166,23 @@ cd frontend && npm install && npm run dev
 
 ### Core Features
 
-**REST API (14 controllers) — representative endpoints:**
-- `/shops` - Retail location management
-- `/products` - Product catalog with allergen tracking
-- `/orders` - Order lifecycle with state machine
-- `/customers` - Customer profiles
-- `/financial-transactions` - Transaction tracking
-- `/sync/batch` - High-volume data synchronization
-- `/dev/tenants` - Tenant management (dev only)
-- `/health` - Health check endpoint
+**REST API (27 controllers) — representative endpoints.** The business API is served under
+`/api/v1`; the prefix is applied by `WebConfig.configurePathMatch`, so it does not appear in any
+`@RequestMapping` and requesting the bare path returns `404`:
+
+- `/api/v1/shops` - Retail location management
+- `/api/v1/products` - Product catalog with allergen tracking
+- `/api/v1/orders` - Order lifecycle with state machine
+- `/api/v1/customers` - Customer profiles
+- `/api/v1/financial-transactions` - Transaction tracking
+- `/api/v1/sync/batch` - High-volume data synchronization
+- `/api/v1/onboarding` - Vendor onboarding state machine
+
+Not under the prefix (these 404 if you add it):
+
+- `/health`, `/actuator/**` - Health and metrics
+- `/v3/api-docs`, `/swagger-ui.html` - OpenAPI surface
+- `/public/**` - Public storefront (also reachable at `/api/v1/public/**`)
 
 **Frontend Dashboards:**
 - Dashboard - Overview metrics
@@ -176,7 +200,6 @@ DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED
 
 **Docker Support:**
 - Multi-stage Dockerfiles for all services
-- Size-optimized images (core: 200MB, edge: 15MB, frontend: 150MB)
 - Health checks and graceful shutdown
 - Non-root users for security
 
@@ -209,8 +232,14 @@ DRAFT → PENDING → CONFIRMED → PREPARING → READY → COMPLETED
 ```sql
 CREATE POLICY tenant_isolation ON shops
   FOR ALL TO jtoye_app
-  USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+  USING (tenant_id = current_tenant_id());
 ```
+
+`current_tenant_id()` is a helper that reads the `app.current_tenant_id` GUC and returns `NULL`
+rather than raising `22P02` when it is unset or malformed — so a bad GUC fails *filtered*, not
+*errored*. Do not write the raw `current_setting('app.current_tenant_id')::uuid` cast: migration
+V51 removed it from every remaining policy, and `RlsContractTest.noPolicyUsesRawTenantGucCast`
+sweeps `pg_policy` to stop it coming back.
 
 **Compliance:**
 - ✅ Natasha's Law - Full ingredient and allergen labeling
@@ -231,11 +260,11 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
 - Backend (Java): 1370 `@Test` methods across 235 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
-- Edge (Go): 77 `Test*` functions across 9 files ✅
+- Edge (Go): 78 `Test*` functions across 10 files ✅
 - Frontend (Jest): 562 `it/test` blocks across 76 files ✅
 - Frontend E2E (Playwright): 49 `test()` blocks across 15 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 2106 logical test invocations** ✅
+- **Total: 2107 logical test invocations** ✅
 
 Database schema version: **V60** (Flyway).
 
@@ -245,8 +274,6 @@ Database schema version: **V60** (Flyway).
 > asserts the numbers quoted *in this file* (and in `CLAUDE.md` / `AGENTS.md`)
 > against `docs/metrics.json`. Before the second gate existed this block had
 > drifted to `921` while the tree was at `1895` — the first gate never read it.
-
-**Production Readiness:** 100/100
 
 **Features:**
 - [x] Full CRUD operations
@@ -270,10 +297,10 @@ Database schema version: **V60** (Flyway).
 
 ### Prerequisites
 
-- **Java 21** (Eclipse Temurin recommended)
+- **Java 21** (Eclipse Temurin recommended). JDK 25 is incompatible with Gradle 8.10.
 - **Node.js 24+** (with npm)
-- **Go 1.25+**
-- **Docker & Docker Compose**
+- **Go 1.26+** (`edge-go/go.mod` declares `go 1.26.0`)
+- **Docker** with **Compose v2** (`docker compose`, not the standalone `docker-compose` v1 binary)
 
 ### Project Structure
 
@@ -332,7 +359,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Links
 
 - **Documentation:** [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md)
-- **Issues:** [GitHub Issues](https://github.com/jtoye/oaas/issues)
+- **Issues:** [GitHub Issues](https://github.com/Bralabee/JToye_OaaS_2026/issues)
 - **Changelog:** [CHANGELOG.md](docs/CHANGELOG.md)
 
 ---

@@ -80,6 +80,22 @@ updates:
         update-types: ["version-update:semver-major"]
 
   # --- Container base images (Docker) ---
+  #
+  # ONE ENTRY PER DIRECTORY THAT CONTAINS A Dockerfile. There must be no gap:
+  # scripts/check-image-supply-chain.sh derives the directory list from the git
+  # index and fails when one is unlisted here. Measured 2026-08-03 (#276), before
+  # that gate existed: the repo had five tracked Dockerfiles and three entries —
+  # /mcp-server and /infra/backups had no base-image update path at all, and
+  # nothing said so.
+  #
+  # WHAT THIS DOES AND DOES NOT COVER, because the difference is the whole of
+  # #276. Dependabot's docker updater moves the TAG STRING (node:24 -> node:25).
+  # It does NOT and cannot refresh the CONTENT of a floating tag — `node:24-alpine`
+  # is republished upstream with new package versions under the same name, and
+  # there is no version bump for Dependabot to propose. That content drift is what
+  # flips the CI Trivy image gate red with no code change, and it is covered by a
+  # different mechanism: .github/workflows/base-image-freshness.yml, which scans
+  # the published images daily with the gate's exact flags.
   - package-ecosystem: "docker"
     directory: "/core-java"
     schedule:
@@ -100,6 +116,34 @@ updates:
 
   - package-ecosystem: "docker"
     directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # mcp-server is NOT in ci-cd.yaml's build-and-push matrix, so its image is
+  # never Trivy-scanned by CI — which is precisely why it needs the update path.
+  # Its runner stage is node:24-alpine and, unlike frontend/Dockerfile, it keeps
+  # npm (it runs `npm ci --omit=dev`). Measured 2026-08-03 against the CI gate's
+  # exact flags, `node:24-alpine` scores 6 findings (5 HIGH + 1 CRITICAL), every
+  # one of them inside npm's own bundled dependency tree. Nothing in CI would
+  # report that today.
+  - package-ecosystem: "docker"
+    directory: "/mcp-server"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # infra/backups is postgres:15-bookworm (Debian, not Alpine) and holds the
+  # backup job that #119 exists over. Same reasoning: an image with no update
+  # path rots silently.
+  - package-ecosystem: "docker"
+    directory: "/infra/backups"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
