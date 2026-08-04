@@ -126,7 +126,13 @@ export function StorefrontNav() {
               {cartCount}
             </m.span>
           )}
-          <span className="sr-only">{cartCount} items in basket</span>
+          {/* Renders to zero pixels, so no screenshot or visible-text assertion
+              can catch a wrong plural here — this announced "1 items in basket"
+              (#272). Same conditional idiom as cart-drawer.tsx and the cart page,
+              which describe the SAME basket. */}
+          <span className="sr-only">
+            {cartCount} item{cartCount !== 1 ? "s" : ""} in basket
+          </span>
         </Link>
       )}
 
