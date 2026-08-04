@@ -71,3 +71,29 @@ export interface PublicAnnouncement {
   body: string | null
   validUntil: string | null
 }
+
+/**
+ * Everything `/shop/[slug]` renders, in one payload (issues #507, #447).
+ *
+ * Declared HERE rather than beside its loader in `lib/storefront-server.ts`
+ * because the client island receives it as a prop. A `"use client"` file
+ * importing even a type from the server module would put that module on the
+ * client boundary, and that module resolves the INTERNAL core host — the exact
+ * infrastructure detail its own header says must not reach a browser bundle.
+ */
+export interface ShopDetail {
+  shop: PublicShop
+  products: ProductsByCategory
+  reviews: Review[]
+  reviewCount: number
+  avgRating: number
+  promotions: PublicPromotion[]
+  announcements: PublicAnnouncement[]
+  /**
+   * Computed on the SERVER and passed down rather than recomputed during
+   * hydration: the open/closed pill is then present in the served HTML (it also
+   * feeds the JSON-LD), and the two renders cannot disagree if the clock crosses
+   * an opening boundary between them.
+   */
+  isOpen: boolean
+}

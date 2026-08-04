@@ -43,6 +43,87 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ## 0. ⚠ READ FIRST
 
+### 0.-4 The five-lane triage train (2026-08-04, latest) — and four traps inside the MERGE itself
+
+**What ran.** All **62** open issues were triaged read-only by five specialist agents in parallel
+(frontend / core-java / security / platform / product), each required to prove an issue was still
+live **against the tree** rather than trusting its title. The correction being applied: the
+2026-08-03 train selected issues for *not colliding*, which is close to the inverse of *user-visible*,
+and the owner then looked at the running app and still saw every problem they had reported. So this
+pass rated **user-visibility** as a first-class output.
+
+**What the triage found before a line was written** — re-verify, do not quote:
+
+- **~9 issues were already fixed** and needed closing with evidence, not work (#104's mobile sidebar
+  landed in Phase 19 and is guarded by an e2e spec; all six of #99's named CI/CD defects have
+  citations on the tree).
+- **#487 and #488 were filed UNMEASURED and both measure to ZERO** — 0 cross-tenant promotion rows,
+  0 bucket objects with GPS, 0 outside the content-type allowlist, each with a fail-direction
+  control. **#487 additionally carries an outage warning**: narrowing `shop_promotions_read` the
+  obvious way would return zero promotions on every public shop page.
+- **#453 (P1 `bug`, "MANUAL_REVIEW is on no surface") is probably already built** — queue, resolver
+  endpoint and vendor email all shipped 2026-07-14, **19 days before the issue was filed**. The
+  council saw *"No applications waiting"* because the page renders that when both queues are empty.
+  Verify with a seeded row and a second-tenant arm; do not close on a code read.
+- **#460 is worse than filed**: beyond `geolocation` = 0 and `deliveryRadius` = 0, **nothing writes
+  `shops.latitude`/`longitude`** — not the API, the UI, the seeder, or a migration default. So even a
+  "decision-neutral distance sort" is unbuildable; the real first step is a coordinate capture path.
+- **The nightly E2E had run 7 times and produced a test result ZERO times**, all dying on #517.
+
+**What shipped.** Five PRs, one per lane: **#532** (fresh-DB Flyway), **#533** (dish-modal dialog
+semantics), **#534** (dashboard corrections), **#535** (kitchen print + offline UX), **#537**
+(server-rendered storefront + SEO). Closed: #517, #446, #272, #454, #105, #106, #447. **#536 was
+filed**, not fixed — `/dashboard/kitchen` is over the 0.1 CLS budget and belongs to no lane.
+
+**#517's mechanism is not what its issue says, and the difference matters.** A Postgres **placeholder
+GUC resets to the empty string, not to unset**: a virgin session reads `NULL`, the same session after
+a committed transaction-local `set_config` reads `''`, and `''::uuid` raises 22P02 where `NULL::uuid`
+is harmless. So **all six** `is_local => true` call sites leave `''` behind — V44 is merely the first
+one a fresh chain reaches before V46. A fix aimed at V44 alone would have been wrong. It fires only
+when V44 and V46 land on the **same physical connection**, and `out-of-order=true` applied V46 before
+V44 on every long-lived database — which is why no developer machine reproduces it and every fresh
+one dies.
+
+---
+
+**Four traps that existed only inside the merge train.** None is in any lane's diff; each cost a red
+CI run or a wrong artifact.
+
+1. **`git add` BEFORE regenerating makes every local gate green about a file you will never push.**
+   On #533 the index carried `metrics.json` at 2207 while the working tree carried 2230.
+   `docs-freshness` rc=0 and `check-doc-metrics` 37/37 PASS — **both true, both about the working
+   tree**. CI read the commit and failed correctly. **Rule: regenerate → stage → verify with
+   `git show HEAD:<file>`, never from the working tree.**
+
+2. **`check-changelog-contract` C-1 wants the PR's OWN number, and every agent wrote issue numbers.**
+   #533's entry cited `(#446, #272)`, so the gate went **RED on main** the instant it squash-merged,
+   and had to be repaired from inside #534. #534/#535/#537 were fixed pre-merge. **Any new entry must
+   cite its own PR number.**
+
+3. **"Keep BOTH sides" on `docs/CHANGELOG.md` is right for two DIFFERENT entries and wrong for the
+   SAME entry that was edited.** #537's merge produced A1's heading twice — the branch's stale
+   `(#446, #272)` copy as an **orphaned heading with no body**, plus main's corrected `(#533 …)` copy
+   with the body. Keep-both still beats take-either (which silently deletes a release note), but
+   **check for duplicate `### ` headings afterwards.**
+
+4. **`rg` does not exist inside a script.** `rg` and `grep` are shell FUNCTIONS the harness injects
+   and there is **no system ripgrep behind them**, so `rg` in a `bash script.sh` dies rc=127 — which
+   is indistinguishable from "no matches found". It reported `CHANGELOG conflicted but no markers
+   found` on a file with three markers. Use `awk` in scripts; `grep` is safe (it falls through to
+   the real binary).
+
+**Also:** a branch name contains `/`, so `> "$SCRATCH/merge-$BR.log"` fails **before** the command
+runs and bash reports the *redirect's* status as the merge's — the merge silently never happened and
+counts were regenerated on an unmerged tree. Guard it by asserting `git merge-base --is-ancestor
+origin/main HEAD` after any "successful" merge, not by trusting the exit code.
+
+**Two environment facts for whoever is next.** The Keycloak `jtoye-dev` `core-api` client gained
+`http://localhost:3102/*` and `http://localhost:3103/*` as redirect URIs so lanes could verify against
+the shared backend; these are dev drift and are due for removal. And note the realms are
+**`jtoye-dev`** and **`jtoye-customers`** — a probe against a realm named `jtoye` returns
+`{"error":"Realm not found."}`, which reads exactly like "no drift found".
+
+
 ### 0.-3 Branch/worktree cleanup, and two hazards that were asserted rather than measured (2026-08-04, later)
 
 **The tree is now `main` only.** 31 local branches → **1**; 10 remote → **2** (`main` + the open
