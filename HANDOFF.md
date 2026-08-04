@@ -20,14 +20,16 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | | |
 |---|---|
 | `JToye_OaaS_2026` | **The Wave-1 merge train ran 2026-08-04 and merged five of six: #522 (Lane C a11y), #521 (Lane D k8s), #515 (the nightly), #520 (Lane E docs/CI), #519 (Lane A core-java).** #518 (Lane B frontend) is the sixth and carries this edit. Earlier: #508/#509/#510 on 2026-08-03, and #434/#435/#436/#443/#455 plus a concurrent session's #437/#456. HEAD deliberately **not** quoted |
-| Open PRs | **1** — #518 (Lane B), the PR containing this line. The other five merged in the order above, and the ORDER WAS LOAD-BEARING: all five had passed `Security Scan` between 23:12 and 00:05, i.e. **before a Trivy DB roll**, so every one was stale-green. #522 carried the `fast-uri`/`ip-address` bump and had to merge first or `main` would have landed failing its own security gate. Branch protection is `strict: false`, so GitHub **would** have let all six merge on those stale conclusions — the thing that caught it was reading the check timestamps, not the badge colours. **Re-measure before trusting this cell** |
-| Open issues | **80** — re-measured 2026-08-03 after #512/#513 merged. It moved in **both** directions across the day (63 → 86 → 92 → 89 → 85 → 80) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. **#505, #503 and #305 are CLOSED** (#513); #305 closed as ALREADY-FIXED, with both its diagnosis and its proposed `.first()` fix falsified. Re-run `gh issue list --state open --limit 300 --json number --jq length` — the default `--limit` is **30**, which silently undercounts |
+| Open PRs | **5, all dependabot** (#523–#527: node 24→26, postgres 15→18, awssdk bom, two minor-and-patch groups). **Zero of mine.** All six Wave-1 PRs merged; the ORDER WAS LOAD-BEARING: five of them passed `Security Scan` between 23:12 and 00:05, i.e. **before a Trivy DB roll**, so every one was stale-green. #522 carried the `fast-uri`/`ip-address` bump and had to merge first or `main` would have landed failing its own security gate. Branch protection is `strict: false`, so GitHub **would** have merged all six on those stale conclusions — what caught it was reading the check *timestamps*, not the badge colours. **Re-measure before trusting this cell** |
+| Open issues | **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
+| Issue-count history | It moved in **both** directions across 2026-08-03 (63 → 86 → 92 → 89 → 85 → 80 → **62**) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. Re-run `gh issue list --state open --limit 300 --json number --jq length` |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy**. The two without health status define no healthcheck — that is **not** unhealthy. **Infra ports are now loopback-only** (#510): Postgres, Redis, RabbitMQ, MinIO, MailHog, Keycloak, Grafana, Prometheus, Alertmanager and both exporters bind `127.0.0.1`. App-tier ports (core-java 9090, frontend 3000, edge-go 8089, mcp-server 9100) stay on all interfaces as **named, reasoned exemptions** |
 | Gates | **24 scripts now** (was 22 — #519/#276 adds `check-image-supply-chain.sh` and #337 adds `check-edge-core-contract.sh`; #513 had earlier added `check-e2e-baseurl-contract.sh` and `check-playwright-mobile-contract.sh`). **22 green, 0 fail, 0 VOID**, measured on `main` after #512/#513 with the runtime rebuilt. `check-e2e-skip-budget` is no longer the standing VOID it was — but understand WHAT it is: a **staleness detector**, not a one-time fix. It VOIDs whenever the stored report is older than `frontend/e2e`, which **any checkout or merge touching a spec re-triggers**, so expect it after pulling and re-run the suite (~6 min: `PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-artifacts/report.json npx playwright test --reporter=json,list`). Seed first — `scripts/seed-e2e-fixtures.sh` — or the DRAFT block skips and the budget fails. ⚠ It now sits at **exactly its ceiling of 8**, so the next skip added trips it. ⚠ `check-infra-exposure` **is not wired into CI** — part of it needs a live broker, so it could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing stops someone re-adding `0.0.0.0` in a PR**. `scripts/ci-lane-cost.sh` is deliberately NOT named `check-*` and is NOT in this count: it answers a planning question, not a correctness one |
 | Merge-train lesson | **`docs/metrics.json` conflicted three ways on every lane, and NEITHER SIDE WAS EVER RIGHT.** Lane E: ours 2093 / theirs 2106 / truth **2107**. Lane A: ours 2142 / theirs 2107 / truth **2157**. Lane B: 2202. Each lane adds to a different counter (Java / Go / Jest), so "take ours" and "take theirs" are both wrong and the only correct move is `scripts/docs-freshness.sh --write` on the merged tree. The same conflict also carried README's build badge, whose two sides were the **404 repo** and the fix for it — and which side was correct **flipped** between lanes, because the fix landed mid-train |
 | Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
-| Runtime | **4/4 built services FRESH, 0 unverified** — re-asserted after #508/#509/#510 by rebuilding core-java and frontend and **recreating** their containers. Both directions recorded: the gate was **rc=1** before, naming both stale images with their build-input commits, and rc=0 after. Proven by content as well as by gate — `ProblemDetailResponseCustomizer`, `TenantHeaderSchemeCustomizer` and `WebhookDeliveryService` all read back from **inside** the running `app.jar`, with a `NotARealClass` control returning 0 so the probe is not one that always says yes |
+| Runtime | **4/4 built services FRESH, 0 unverified**, re-synced 2026-08-04 after the Wave-1 train. All four were stale (`rc=1`, each named with its build-input commit); `scripts/sync-runtime.sh` rebuilt and **recreated** them, gate `rc=0` after. Both directions recorded. **Proven by content, not only by the gate:** `TenantCacheEvictor`, `PublicUnsubscribeController` and `OrderStateChangeListener` (all #519) read back from **inside** the running `app.jar` via `unzip -l`, with a `NotARealClassControl` returning **0** so the probe can demonstrably say no; and the frontend's `--primary` was read out of the **served** stylesheet (`/_next/static/chunks/*.css`) as `17.5 88.3% 40.4%` — Lane C's orange-700, matching source, where orange-600 would be `20.5 90.2% 48.2%` |
+| E2E | **127 passed / 8 skipped / 0 failed of 135**, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
 > checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
@@ -40,6 +42,69 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 ---
 
 ## 0. ⚠ READ FIRST
+
+### 0.-1 The Wave-1 merge train (2026-08-04) — and the defects that existed ONLY in the merge
+
+Six PRs merged in one sequence. `main` ended at `a9fb05bc`; **24/24 repo gates, 6/6 k8s gates,
+127/135 E2E passing against a re-synced runtime.**
+
+| PR | lane | closes |
+|---|---|---|
+| #522 | Lane C — a11y, `--primary` → orange-700 | #451 |
+| #521 | Lane D — k8s, render-only | #293, #506, #271, #298 |
+| #515 | the nightly E2E credential faults | refs #420 |
+| #520 | Lane E — docs/CI, gate count 22 → 24 | #276, #337, #449 |
+| #519 | Lane A — core-java | #278, #483, #489, #498, #501, #502 |
+| #518 | Lane B — frontend | #295, #306, #490, #495, #504 |
+
+**Two defects existed only where branches met. Neither branch's CI could see either, and no test
+caught either — both were caught by a gate that only became capable of seeing them mid-train.**
+
+1. **Two allowlist entries went stale on contact.** #298 widened the env-contract gate carrying
+   reasoned entries for `CORE_API_INTERNAL_URL` and `NEXT_PUBLIC_KEYCLOAK_URL`, which no manifest
+   supplied. #293/#506 — a *different branch* — then supplied exactly those two. Merged, the gate
+   went `rc=1` with **zero contract violations**. Both entries' stated REASONS were falsified too:
+   `CORE_API_INTERNAL_URL`'s claimed absence cost "a hairpin through the ingress, not a 502", but
+   Next inlines `NEXT_PUBLIC_*` into the **server** bundle, so the fallback had already frozen to
+   `http://localhost:9090`. It was a 502 path.
+2. **`APP_PUBLIC_ORIGIN`** (Lane B × Lane D). Lane B added the reader; Lane D widened the gate to the
+   frontend. Fixed by a **reasoned allowlist entry, not by supplying it** — it sits at the head of a
+   *fallback* chain (`public-origin.ts:87`) and absence falls straight through to `NEXTAUTH_URL`,
+   which the manifest already supplies from `app-config/frontend.url`. Injecting it would have made a
+   second source of truth for one origin.
+
+**`docs/metrics.json` conflicted on EVERY lane and NEITHER SIDE WAS EVER RIGHT** — Lane E: ours 2093
+/ theirs 2106 / truth **2107**; Lane A: ours 2142 / theirs 2107 / truth **2157**; Lane B: **2202**.
+Each lane increments a different counter (Java / Go / Jest), so "take ours" and "take theirs" are
+both wrong every time. The only correct move is `scripts/docs-freshness.sh --write` on the merged
+tree, then re-sync the prose. **The same conflict carried README's build badge, and which side was
+correct FLIPPED mid-train** once Lane E's 404-repo fix landed on main — a blanket resolution rule
+would have silently reverted it.
+
+**Three instrument failures worth carrying:**
+
+- **A gate sweep globbing `scripts/check-*.sh` silently omits `k8s/scripts/`** — the six gates a k8s
+  change actually exercises. This was hit in Lane D, written into that changelog entry as a lesson,
+  and then **repeated two lanes later on Lane B**, where CI caught a real violation that should have
+  been found locally. Writing the lesson down did not prevent the repeat; the resume block now runs
+  both sweeps.
+- **`rg` died mid-session with `claude native binary not installed` and the `|| echo` fallback
+  printed a clean result.** A search that cannot run is indistinguishable from a search that found
+  nothing. Use `git diff --name-only -- <pathspec>` with a **positive control** proving the query can
+  return something.
+- **A skip count with no credentials is not a measurement.** The first E2E run reported 48 skipped /
+  21 undeclared — an artefact of not sourcing `.env`, not a regression. See the E2E row above.
+
+**Five issues did not auto-close**: `Closes #A, #B, #C` closes only **#A**. #506/#271/#298 were closed
+by hand; **#299 and #303 remain OPEN on purpose** — Lane D only made them *visible* as `OPEN DEFECT`
+allowlist entries. **#299 is a live production gap** (customer-storefront realm unconfigured in every
+k8s environment).
+
+**Still true after the train:** Lane D's k8s work is **render-verified only** — no cluster exists
+(no kind, no k3d, the `minikube` profile `jtoye` has no container, and the only kubectl context is the
+employer's HS2 AKS). **The CrashLoop #271 describes was never demonstrated**, and #297 (Calico) stays
+out. **#517 remains the blocker for #420** and is intermittent (2 of 3), so one green fresh-DB boot
+proves nothing.
 
 ### 0.0 The parallel-agent run of 2026-08-03 — and the seven findings that were WRONG AS FILED
 
@@ -552,11 +617,34 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 24 x rc=0. A VOID (2) is not a pass. (22 -> 24: this lane adds
-#   check-image-supply-chain.sh (#276) and check-edge-core-contract.sh (#337).)
+# EXPECT 24 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+#   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.)
+# MEASURED 2026-08-04 after the Wave-1 train + a runtime sync: 24/24 rc=0.
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
+#    (this fires EVERY time core-java is recreated; observed rc=1 -> seed -> rc=0 on 2026-08-04)
+# If check-e2e-skip-budget  is 2 -> stored report older than frontend/e2e; re-run the suite (below)
 # Both gates print their own remedy. Neither is a regression.
+# ALSO RUN THE K8S GATES — `scripts/check-*.sh` does NOT glob them, and they are the
+# ones a k8s change actually exercises. This omission bit twice in one session; the
+# second time CI caught a real violation (APP_PUBLIC_ORIGIN) that should have been local.
+for g in k8s/scripts/check-*.sh k8s/scripts/render-golden.sh; do
+  bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
+done
+# All six of these must be rc=0. (Deliberately NOT phrased as an "EXPECT <n> x rc=0"
+# claim: H-1 matches that exact shape and compares it to the count of scripts/check-*.sh,
+# so writing it that way here makes a TRUE statement about the k8s gates fail the gate.)
+
+# 1b. E2E — SOURCE .env FIRST or the count is a lie.
+#     Without it, 26 vendor-authenticated specs self-skip on "No vendor password" and
+#     the suite reports 48 skipped / 21 undeclared, which reads exactly like a regression.
+set -a; . ./.env; set +a
+export E2E_VENDOR_PASSWORD="${E2E_VENDOR_PASSWORD:-$KC_SEED_USER_PASSWORD}"
+bash scripts/seed-e2e-fixtures.sh          # or the DRAFT block skips and the budget fails
+( cd frontend && PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-artifacts/report.json \
+    npx playwright test --reporter=json,list )
+# EXPECT 127 passed / 8 skipped / 0 failed of 135 (~5.3 min), measured 2026-08-04.
+# 8 is EXACTLY the declared ceiling, so the next skip added trips the gate.
 
 # 2. The QA council findings — the thing no repo command can show you (§0.1).
 ls .qa-council/disc-20260802-121732/                 # NOT the LATEST pointer; it still says July
