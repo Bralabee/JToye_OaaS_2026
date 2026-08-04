@@ -8,6 +8,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 
 import java.time.format.DateTimeFormatter;
@@ -74,14 +75,52 @@ public class EmailNotificationService {
                 — J'Toye""");
     }
 
+    /**
+     * READY copy, branched on how the order is fulfilled (#502).
+     *
+     * <p>This transition previously sent collection-only copy unconditionally, so
+     * every DELIVERY customer was told to come and pick the order up. That is not
+     * a rare path: {@code orders.fulfilment_type} is {@code NOT NULL DEFAULT
+     * 'DELIVERY'} (V45) and {@code Order} defaults the field to
+     * {@link FulfilmentType#DELIVERY}, so every order created outside the
+     * storefront checkout — which is the only writer that sets the value
+     * explicitly — is a DELIVERY order.
+     *
+     * <p>A {@code null} type resolves to the DELIVERY copy, matching the column
+     * default. The asymmetry is deliberate: "come and collect" is the actively
+     * harmful answer when the fulfilment mode is unknown, so it is never the
+     * fallback.
+     *
+     * <p><b>#458 note:</b> the DELIVERY copy says the order is ready and will be
+     * on its way, NOT that it is out for delivery. There is no {@code DISPATCHED}
+     * value on {@code OrderStatus} and no such edge in
+     * {@code OrderStateMachineConfig}, so READY cannot truthfully claim the order
+     * has left the shop. "Out for delivery" is left free for the real dispatch
+     * state if #458 introduces one.
+     */
     @Async
-    public void sendOrderReady(OrderStateChangeEvent event, String recipientEmail) {
-        sendNotification(event, recipientEmail,
-                "Order " + event.orderNumber() + " — Ready!",
-                """
-                Your order %s is ready for collection!
+    public void sendOrderReady(OrderStateChangeEvent event, String recipientEmail,
+                                FulfilmentType fulfilmentType) {
+        String subject = "Order " + event.orderNumber() + " — Ready!";
 
-                Please pick it up at your earliest convenience.
+        if (fulfilmentType == FulfilmentType.COLLECTION) {
+            sendNotification(event, recipientEmail, subject,
+                    """
+                    Your order %s is ready for collection!
+
+                    Please pick it up at your earliest convenience.
+
+                    %s
+
+                    — J'Toye""");
+            return;
+        }
+
+        sendNotification(event, recipientEmail, subject,
+                """
+                Your order %s is ready and will be on its way to you shortly.
+
+                There's no need to come to the shop — we'll deliver it to the address on your order.
 
                 %s
 

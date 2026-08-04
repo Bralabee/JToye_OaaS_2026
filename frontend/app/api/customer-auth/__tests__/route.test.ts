@@ -65,10 +65,18 @@ describe("/api/customer-auth/login", () => {
 })
 
 describe("/api/customer-auth/logout", () => {
-  it("clears all three cookies with maxAge=0", async () => {
-    const res = await logoutPOST()
-    expect(res.status).toBe(200)
+  const realFetch = global.fetch
+  afterEach(() => {
+    global.fetch = realFetch
+  })
 
+  function logoutRequest(cookies: Record<string, string> = {}): NextRequest {
+    const req = new NextRequest("http://localhost/api/customer-auth/logout", { method: "POST" })
+    for (const [k, v] of Object.entries(cookies)) req.cookies.set(k, v)
+    return req
+  }
+
+  function assertCookiesCleared(res: Response) {
     const setCookie = res.headers.getSetCookie
       ? res.headers.getSetCookie()
       : [res.headers.get("set-cookie") || ""]
@@ -83,6 +91,53 @@ describe("/api/customer-auth/logout", () => {
     }
     // maxAge=0 or Max-Age=0 depending on serializer
     expect(joined).toMatch(/Max-Age=0/i)
+  }
+
+  it("clears all three cookies with maxAge=0", async () => {
+    const res = await logoutPOST(logoutRequest())
+    expect(res.status).toBe(200)
+    assertCookiesCleared(res)
+  })
+
+  // #504: the app-side clear is only half of sign-out. The IdP session has to
+  // die too, and it must not depend on the front-channel redirect being right.
+  it("revokes the refresh token at the IdP before clearing the cookies", async () => {
+    const spy = jest.fn(async () => new Response(null, { status: 204 }))
+    global.fetch = spy as unknown as typeof fetch
+    const prev = process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+    process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = "http://keycloak:8080/realms/jtoye-customers"
+    try {
+      const res = await logoutPOST(logoutRequest({ "jtoye-customer-refresh": "refresh-xyz" }))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: true, idp: "ok" })
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(String((spy.mock.calls[0] as unknown as [string])[0])).toContain(
+        "/protocol/openid-connect/logout"
+      )
+      assertCookiesCleared(res)
+    } finally {
+      if (prev === undefined) delete process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+      else process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = prev
+    }
+  })
+
+  // The failure direction that matters most: a shopper who pressed Sign out has
+  // to end up signed out of the app even when the IdP is unreachable.
+  it("still clears the cookies when the IdP call fails", async () => {
+    global.fetch = (async () => {
+      throw new Error("ECONNREFUSED")
+    }) as unknown as typeof fetch
+    const prev = process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+    process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = "http://keycloak:8080/realms/jtoye-customers"
+    try {
+      const res = await logoutPOST(logoutRequest({ "jtoye-customer-refresh": "refresh-xyz" }))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: true, idp: "failed" })
+      assertCookiesCleared(res)
+    } finally {
+      if (prev === undefined) delete process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+      else process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = prev
+    }
   })
 })
 

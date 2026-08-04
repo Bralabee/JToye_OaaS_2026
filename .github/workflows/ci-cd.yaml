@@ -682,6 +682,23 @@ jobs:
           chmod +x ./scripts/check-edge-core-contract.sh
           ./scripts/check-edge-core-contract.sh
 
+      #   7. check-postgres-major-parity.sh — the backup tooling's PostgreSQL major
+      #      must equal the server's, at every site that declares either. Added after
+      #      dependabot #525 bumped infra/backups/Dockerfile to postgres:18 while every
+      #      server stayed on 15, with ALL CI green. Measured against the live 15.17
+      #      server: a postgres:18 pg_dump succeeds, and postgres:15 pg_restore then
+      #      refuses the result with "unsupported version (1.16) in file header" — so
+      #      backups keep succeeding and silently stop being restorable by the server's
+      #      own client. k8s-backup.sh's own `pg_restore --list` cannot catch this: it
+      #      runs inside the image that produced the dump, so it agrees by construction.
+      #      This gate does NOT forbid postgres 18 — it forbids the halves diverging.
+      #      Sites are declared in scripts/gates/postgres-major-parity.conf; a declared
+      #      site that matches nothing is a VOID (2), never a silent pass.
+      - name: Assert postgres server and backup tooling agree on a major version
+        run: |
+          chmod +x ./scripts/check-postgres-major-parity.sh
+          ./scripts/check-postgres-major-parity.sh
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan

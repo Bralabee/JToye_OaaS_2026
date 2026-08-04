@@ -102,14 +102,37 @@ describe("Public unsubscribe page (Surface C)", () => {
     expect(container.innerHTML).not.toContain(RAW_TOKEN)
   })
 
-  it("POSTs the token to the public endpoint (never the authed apiClient)", async () => {
+  it("POSTs the token in the BODY, never the query string (#278)", async () => {
+    // Regression guard for #278. Passing these as axios `params` puts them in
+    // the query string, which nginx-ingress copies verbatim into `$request` and
+    // APM agents copy into full-URL spans — the HMAC token and the recipient
+    // email end up in plaintext in every access log on the path. They must
+    // travel in the request body, which no access log records.
     mockedPublicApiClient.post.mockResolvedValue({ data: { status: "unsubscribed" } })
     render(<UnsubscribeContent />)
     await waitFor(() => expect(mockedPublicApiClient.post).toHaveBeenCalled())
     const call = mockedPublicApiClient.post.mock.calls[0]
+
+    // Still the public (no-Bearer) client, still the same endpoint.
     expect(String(call[0])).toContain("/public/unsubscribe")
+
+    // The four fields are the axios `data` argument — serialised as the body.
+    const body = call[1] as Record<string, string> | null | undefined
+    expect(body).toEqual({
+      tenant: "00000000-0000-0000-0000-000000000001",
+      email: "recipient@example.com",
+      category: "MARKETING",
+      token: RAW_TOKEN,
+    })
+
+    // ...and NOTHING is passed as a query param. `params` is the leak vector,
+    // so assert its absence explicitly rather than inferring it from the body.
     const config = call[2] as { params?: Record<string, string> } | undefined
-    expect(config?.params?.token).toBe(RAW_TOKEN)
-    expect(config?.params?.category).toBe("MARKETING")
+    expect(config?.params).toBeUndefined()
+
+    // Belt and braces: no argument to post() may carry the token as a query
+    // string, whatever shape a future refactor gives the config object.
+    expect(String(call[0])).not.toContain(RAW_TOKEN)
+    expect(JSON.stringify(config ?? {})).not.toContain(RAW_TOKEN)
   })
 })
