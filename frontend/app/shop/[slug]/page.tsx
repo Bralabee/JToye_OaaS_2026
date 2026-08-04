@@ -110,7 +110,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
   return (
     <>
       <article
-        className="group bg-white rounded-xl border border-cream-100 overflow-hidden transition-all hover:shadow-md hover:border-amber-200 cursor-pointer active:scale-[0.99]"
+        className="group relative bg-white rounded-xl border border-cream-100 overflow-hidden transition-all hover:shadow-md hover:border-amber-200 cursor-pointer active:scale-[0.99]"
         onClick={() => setModalOpen(true)}
       >
         <div className="flex gap-0">
@@ -167,13 +167,13 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               ) : quantity === 0 ? (
                 <button
                   onClick={(e) => handleAddToCart(e)}
-                  className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
+                  className="relative z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
                 >
                   <PlusIcon className="h-3 w-3" />
                   Add
                 </button>
               ) : (
-                <div className="inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink" onClick={(e) => e.stopPropagation()}>
+                <div className="relative z-10 inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => updateQuantity(product.id, quantity - 1)}
                     className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
@@ -219,6 +219,31 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
             )}
           </div>
         </div>
+
+        {/* Keyboard-reachable dialog trigger (#446).
+            The card was a plain `<article onClick>`: a mouse could open the dish
+            detail, a keyboard could not open it AT ALL, and because nothing was
+            focused at open time there was no element for a dialog to restore
+            focus to on close.
+
+            A stretched invisible button rather than `role="button"` on the
+            article: `role="button"` makes its descendants presentational, which
+            would have taken the real "Add" control away from assistive tech —
+            trading one a11y defect for another. Rendered LAST so it stacks over
+            the (positioned) image column; the genuinely interactive controls sit
+            at `z-10` above it. It has no box of its own, so layout is unchanged. */}
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={modalOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            setModalOpen(true)
+          }}
+          className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500"
+        >
+          <span className="sr-only">View details for {product.title}</span>
+        </button>
       </article>
 
       {/* Detail modal */}

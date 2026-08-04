@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
+import * as DialogPrimitive from "@radix-ui/react-dialog"
 import {
   X, ChevronLeft, ChevronRight, Star, Timer,
   AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
@@ -44,6 +45,8 @@ export function ProductDetailModal({
   onDecrement,
 }: ProductDetailModalProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  // Whoever had focus when the dialog opened — see onCloseAutoFocus below.
+  const openerRef = useRef<HTMLElement | null>(null)
 
   const images = product.imageUrls?.length > 0
     ? product.imageUrls
@@ -68,32 +71,61 @@ export function ProductDetailModal({
     .map((t) => t.trim())
     .filter(Boolean) || []
 
-  if (!isOpen) return null
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <DialogPrimitive.Root
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogPrimitive.Portal>
+        {/* The BACKDROP and the CENTRING BOX are one element now.
+            Previously they were two sibling `fixed inset-0 z-50` divs, which is
+            what made this the only hand-rolled overlay in the repo (#446/#272):
+            neither carried a dialog role, so there was no Escape handling, no
+            focus trap, no focus restore and no scroll lock. Radix supports
+            Content nested inside Overlay, and merging them keeps the rendered
+            geometry byte-identical (same classes, same padding, same z-index)
+            while the outside-click dismiss that the old wrapper's `onClick`
+            provided is now Radix's own `onPointerDownOutside`.
 
-      {/* Modal */}
-      <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-        onClick={onClose}
-      >
-        <div
-          className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
-          onClick={(e) => e.stopPropagation()}
-        >
+            Deliberately built on the PRIMITIVES rather than `@/components/ui/dialog`:
+            that wrapper hard-codes a centred `translate` panel plus
+            `data-[state]:animate-in/out`, so adopting it would both break the
+            mobile bottom-sheet layout and introduce motion this port must not
+            change. */}
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <DialogPrimitive.Content
+            /* Radix inerts the rest of the page with `hideOthers()` (aria-hidden
+               on every outside node) and does NOT emit aria-modal. Both are
+               legitimate, and screen readers honour aria-modal, so state it
+               explicitly rather than relying on one mechanism. */
+            aria-modal="true"
+            onOpenAutoFocus={() => {
+              // Runs BEFORE Radix moves focus into the panel, so this is still
+              // the element that opened the dialog.
+              openerRef.current = document.activeElement as HTMLElement | null
+            }}
+            onCloseAutoFocus={(event) => {
+              // Radix's modal default is preventDefault() + focus its own
+              // <Dialog.Trigger>. This dialog is driven by a controlled `isOpen`
+              // prop instead of a Radix Trigger, so that ref is null and focus
+              // was measured landing on <body> after Escape — a keyboard user
+              // loses their place in the menu. Restore the opener explicitly.
+              event.preventDefault()
+              const opener = openerRef.current
+              if (opener && opener.isConnected) opener.focus()
+            }}
+            className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col focus:outline-none"
+          >
           {/* Close button */}
-          <button
-            onClick={onClose}
+          <DialogPrimitive.Close
             className="absolute top-3 right-3 z-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
           >
             <X className="h-5 w-5" />
-          </button>
+            {/* The control was previously an unnamed icon-only button. */}
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
 
           {/* Image carousel. The fixed-ratio window comes from AspectFrame —
               see the note there for why hand-rolling it silently produced a
@@ -111,13 +143,17 @@ export function ProductDetailModal({
               {hasMultipleImages && (
                 <>
                   <button
+                    type="button"
                     onClick={prevImage}
+                    aria-label="Previous image"
                     className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
                   <button
+                    type="button"
                     onClick={nextImage}
+                    aria-label="Next image"
                     className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/30 backdrop-blur-sm hover:bg-black/50 text-white rounded-full p-1.5 transition-colors"
                   >
                     <ChevronRight className="h-5 w-5" />
@@ -131,7 +167,10 @@ export function ProductDetailModal({
                   {images.map((_, i) => (
                     <button
                       key={i}
+                      type="button"
                       onClick={() => setCurrentImageIndex(i)}
+                      aria-label={`Show image ${i + 1} of ${images.length}`}
+                      aria-current={i === currentImageIndex}
                       className={`h-2 w-2 rounded-full transition-colors ${
                         i === currentImageIndex
                           ? "bg-white"
@@ -148,7 +187,9 @@ export function ProductDetailModal({
                   {images.map((url, i) => (
                     <button
                       key={i}
+                      type="button"
                       onClick={() => setCurrentImageIndex(i)}
+                      aria-label={`Show image ${i + 1} of ${images.length}`}
                       className={`h-10 w-10 rounded-lg overflow-hidden ring-2 transition-all ${
                         i === currentImageIndex
                           ? "ring-white scale-105"
@@ -179,7 +220,9 @@ export function ProductDetailModal({
             {/* Title + price row */}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                {/* Renders the same <h2>; being the Radix Title is what wires
+                    the dialog's aria-labelledby to the dish name. */}
+                <DialogPrimitive.Title className="text-xl font-bold text-slate-900 flex items-center gap-2">
                   {product.featured && (
                     <Star className="h-4 w-4 text-amber-500 fill-amber-500 flex-shrink-0" />
                   )}
@@ -187,7 +230,7 @@ export function ProductDetailModal({
                   {outOfStock && (
                     <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
                   )}
-                </h2>
+                </DialogPrimitive.Title>
               </div>
               <span className="text-xl font-bold text-slate-900 whitespace-nowrap">
                 {formatPrice(product.pricePennies)}
@@ -219,9 +262,15 @@ export function ProductDetailModal({
             {product.description && (
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">About</h3>
-                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                  {product.description}
-                </p>
+                {/* asChild keeps the exact same <p>; it just becomes the node
+                    the dialog's aria-describedby points at. Radix 1.1.23 tracks
+                    description PRESENCE, so omitting it (no product description)
+                    simply leaves aria-describedby unset — no console warning. */}
+                <DialogPrimitive.Description asChild>
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+                    {product.description}
+                  </p>
+                </DialogPrimitive.Description>
               </div>
             )}
 
@@ -281,14 +330,18 @@ export function ProductDetailModal({
                 <span className="text-sm text-slate-600">In cart</span>
                 <div className="flex items-center gap-3">
                   <button
+                    type="button"
                     onClick={onDecrement}
+                    aria-label={`Remove one ${product.title} from cart`}
                     className="h-10 w-10 rounded-full bg-cream hover:bg-cream-100 flex items-center justify-center transition-all active:scale-95"
                   >
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="text-lg font-bold w-8 text-center">{quantity}</span>
                   <button
+                    type="button"
                     onClick={onIncrement}
+                    aria-label={`Add one more ${product.title} to cart`}
                     className="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink flex items-center justify-center transition-all active:scale-95"
                   >
                     <Plus className="h-4 w-4" />
@@ -300,8 +353,9 @@ export function ProductDetailModal({
               </div>
             )}
           </div>
-        </div>
-      </div>
-    </>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Overlay>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }

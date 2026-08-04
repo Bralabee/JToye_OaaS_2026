@@ -15,7 +15,7 @@
 
 import { render, screen, fireEvent, act } from "@testing-library/react"
 import type { ReactElement } from "react"
-import { ShopSwitcher } from "../shop-switcher"
+import { ShopSwitcher, shopSwitcherApplies } from "../shop-switcher"
 import { ShopSwitcherProvider } from "../shop-switcher-provider"
 import {
   getShopContext,
@@ -535,5 +535,84 @@ describe("ShopSwitcher — notes under the control fit the fixed mobile bar (#49
     expect(inSidebar).not.toHaveClass("sr-only")
     expect(inSidebar).toHaveClass("mt-1.5")
     expect(screen.queryByTestId("shop-switcher-stale-glyph")).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * #450 item 5b — the switcher is ONE control mounted TWICE (desktop sidebar +
+ * mobile top bar), and neither mount is ever removed: each is hidden by a
+ * responsive class. A single literal `id` therefore put two nodes carrying
+ * `#shop-context-select` into every dashboard document — measured at 2 on all 13
+ * routes probed in the running app. That is invalid HTML, and it makes
+ * `label[for]` resolve to whichever node the parser reached first, which on a
+ * phone is the `display:none` sidebar copy.
+ */
+describe("duplicate DOM id (#450 item 5b)", () => {
+  it("gives each mount its own id, and each label points at its own select", async () => {
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    const { container } = render(
+      <ShopSwitcherProvider>
+        <ShopSwitcher variant="sidebar" />
+        <ShopSwitcher variant="topbar" />
+      </ShopSwitcherProvider>
+    )
+    await screen.findAllByRole("combobox")
+
+    const ids = [...container.querySelectorAll("select")].map((s) => s.id)
+    expect(ids).toHaveLength(2)
+    // The assertion that fails on the pre-fix tree: both ids were the same literal.
+    expect(new Set(ids).size).toBe(2)
+    // Counted the way the defect was measured in the browser.
+    expect(container.querySelectorAll("#shop-context-select")).toHaveLength(1)
+
+    // Every label resolves to a select, and no two resolve to the same one.
+    const labelled = [...container.querySelectorAll("label[for]")].map((l) =>
+      l.getAttribute("for")
+    )
+    expect(labelled).toHaveLength(2)
+    expect(new Set(labelled).size).toBe(2)
+    for (const forId of labelled) {
+      expect(container.querySelector(`select#${forId}`)).not.toBeNull()
+    }
+  })
+
+  it("keeps the published `#shop-context-select` selector on the mobile top bar", async () => {
+    // e2e/dashboard-mobile.spec.ts locates the control by this id inside
+    // `[data-testid="mobile-topbar"]` and in `main`. The default variant IS the
+    // top bar, so the canonical id has to stay there and the sidebar take the
+    // suffixed one — otherwise that spec silently stops finding anything.
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    const { container } = renderSwitcher(<ShopSwitcher />)
+    await screen.findByRole("combobox")
+    expect(container.querySelector("#shop-context-select")).not.toBeNull()
+  })
+})
+
+/**
+ * #450 item 1 — the switcher rendered on the onboarding page but acted on
+ * nothing: the QA council measured a switch there firing 0 API calls, against a
+ * control arm on /products that re-fetched shop-scoped. Onboarding is per-TENANT.
+ */
+describe("shopSwitcherApplies (#450 item 1)", () => {
+  it("is false for the onboarding sub-tree and true everywhere else", () => {
+    expect(shopSwitcherApplies("/dashboard/onboarding")).toBe(false)
+    expect(shopSwitcherApplies("/dashboard/onboarding/approvals")).toBe(false)
+
+    // The control arm: shop-scoped surfaces keep the switcher.
+    expect(shopSwitcherApplies("/dashboard")).toBe(true)
+    expect(shopSwitcherApplies("/dashboard/products")).toBe(true)
+    expect(shopSwitcherApplies("/dashboard/orders")).toBe(true)
+    expect(shopSwitcherApplies("/dashboard/kitchen")).toBe(true)
+  })
+
+  it("does not match a sibling route that merely starts with the same characters", () => {
+    // A prefix test written as a bare startsWith would swallow this one.
+    expect(shopSwitcherApplies("/dashboard/onboarding-report")).toBe(true)
+  })
+
+  it("renders the switcher when the pathname is unknown", () => {
+    // Fails in the safe direction: an unreadable route must not remove chrome.
+    expect(shopSwitcherApplies(null)).toBe(true)
+    expect(shopSwitcherApplies(undefined)).toBe(true)
   })
 })
