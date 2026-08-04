@@ -141,7 +141,7 @@ export function BusinessModelGuide() {
 
       <nav aria-label="Guide topics" className="sticky top-0 z-30 border-b border-slate-200 bg-cream/95 backdrop-blur print:static">
         <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
-          <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Read</span>
+          <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-600">Read</span>
           {navItems.map(([id, label]) => (
             <a key={id} href={`#${id}`} className="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
               {label}
@@ -187,7 +187,7 @@ export function BusinessModelGuide() {
               <p className="mt-5 max-w-md leading-7 text-slate-600">This is a planning calculator, not a forecast. It keeps the variable-price test honest: revenue = £39 + 0.5% of GTV; COGS = £9 + 0.1% of GTV.</p>
               <label htmlFor="gtv" className="mt-8 block text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Monthly GTV: {money(gtv)}</label>
               <input id="gtv" aria-label="Monthly GTV" type="range" min="0" max="50000" step="1000" value={gtv} onChange={(event) => setGtv(Number(event.target.value))} className="mt-4 w-full accent-orange-600" />
-              <div className="mt-3 flex justify-between text-xs text-slate-500"><span>£0</span><span>£50k</span></div>
+              <div className="mt-3 flex justify-between text-xs text-slate-600"><span>£0</span><span>£50k</span></div>
             </div>
             <div className="overflow-hidden border-[3px] border-oxblood bg-cream shadow-[8px_8px_0_theme(colors.slate.200)]">
               <div className="flex items-center justify-between border-b border-oxblood px-5 py-3 text-xs font-bold uppercase tracking-[0.14em]"><span>Monthly contribution ticket</span><Clipboard size={15} /></div>
@@ -197,7 +197,7 @@ export function BusinessModelGuide() {
                 <Metric label="Contribution" value={money(economics.contribution)} emphasis />
                 <Metric label="Contribution margin" value={`${economics.margin.toFixed(0)}%`} />
               </dl>
-              <p className="border-t border-slate-200 px-5 py-3 text-xs leading-5 text-slate-500">The COGS formula is a planning assumption for allocated hosting, notifications and routine support. It excludes card processing, acquisition, tax, central engineering and exceptional support.</p>
+              <p className="border-t border-slate-200 px-5 py-3 text-xs leading-5 text-slate-600">The COGS formula is a planning assumption for allocated hosting, notifications and routine support. It excludes card processing, acquisition, tax, central engineering and exceptional support.</p>
             </div>
           </div>
         </section>
@@ -208,7 +208,7 @@ export function BusinessModelGuide() {
             <div><h2 id="boundaries-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Be unusually clear about what the product does not do.</h2><p className="mt-5 leading-7 text-slate-600">The credibility gain comes from giving operators a useful system without claiming an ecosystem. The first offer is SaaS and bounded assistance—not a substitute for legal, food-safety, payment or employment advice.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <BoundaryList title="We can support" icon={<Check className="text-emerald-700" />} items={["Direct ordering and kitchen coordination", "Catering workflows as a discovery track", "Vendor-controlled menus and customer data", "Configured onboarding within a clear cap"]} />
-              <BoundaryList title="We reject" icon={<X className="text-amber-600" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "Merchant-of-record or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
+              <BoundaryList title="We reject" icon={<X className="text-amber-700" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "Merchant-of-record or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
             </div>
           </div>
           <aside className="mt-8 flex gap-4 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><ShieldCheck className="mt-0.5 shrink-0" /><p><strong>Target boundary—not current payment capability:</strong> a documented connected-account charge flow must make the vendor the seller, merchant of record and payment recipient. The vendor sets prices, controls recipes and allergen accuracy, and fulfils directly or through its own courier; J&apos;Toye invoices software separately. The current platform-account flow must not receive or settle funds for multiple vendors until the architecture, contracts and specialist review are complete.</p></aside>
@@ -218,13 +218,13 @@ export function BusinessModelGuide() {
 
         <section id="evidence" aria-labelledby="evidence-heading" className="mt-20 scroll-mt-20 border-t border-slate-200 pt-12">
           <SectionLabel number="05" label="Evidence ledger" />
-          <div className="flex flex-wrap items-end justify-between gap-5"><div><h2 id="evidence-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">What we know, what we infer, what we must earn.</h2><p className="mt-3 text-sm leading-6 text-slate-500">Confidence labels distinguish external constraints from commercial hypotheses. Filter them before making a claim.</p></div><div role="group" aria-label="Evidence confidence filter" className="flex flex-wrap gap-2 print:hidden">{(["All", "High", "Working assumption", "To validate"] as const).map((filter) => <button key={filter} type="button" aria-pressed={confidenceFilter === filter} onClick={() => setConfidenceFilter(filter)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${confidenceFilter === filter ? "border-oxblood bg-oxblood text-white" : "border-slate-300 bg-cream hover:bg-cream"}`}>{filter}</button>)}</div></div>
-          <div className="mt-8 grid gap-4 md:grid-cols-2">{visibleEvidence.map((item) => <article key={item.title} className="border border-slate-200 bg-cream p-5"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${confidenceStyles[item.confidence]}`}>{item.confidence}</span><h3 className="mt-4 text-xl font-extrabold tracking-[-0.02em]">{item.title}</h3><p className="mt-3 text-sm leading-6 text-slate-500">{item.detail}</p></article>)}</div>
+          <div className="flex flex-wrap items-end justify-between gap-5"><div><h2 id="evidence-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">What we know, what we infer, what we must earn.</h2><p className="mt-3 text-sm leading-6 text-slate-600">Confidence labels distinguish external constraints from commercial hypotheses. Filter them before making a claim.</p></div><div role="group" aria-label="Evidence confidence filter" className="flex flex-wrap gap-2 print:hidden">{(["All", "High", "Working assumption", "To validate"] as const).map((filter) => <button key={filter} type="button" aria-pressed={confidenceFilter === filter} onClick={() => setConfidenceFilter(filter)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${confidenceFilter === filter ? "border-oxblood bg-oxblood text-white" : "border-slate-300 bg-cream hover:bg-cream"}`}>{filter}</button>)}</div></div>
+          <div className="mt-8 grid gap-4 md:grid-cols-2">{visibleEvidence.map((item) => <article key={item.title} className="border border-slate-200 bg-cream p-5"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${confidenceStyles[item.confidence]}`}>{item.confidence}</span><h3 className="mt-4 text-xl font-extrabold tracking-[-0.02em]">{item.title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p></article>)}</div>
         </section>
 
         <section aria-labelledby="comparison-heading" className="mt-16">
           <h2 id="comparison-heading" className="sr-only">Alternative model comparison</h2>
-          <div className="overflow-x-auto border-y border-oxblood"><table className="w-full min-w-[640px] text-left text-sm"><caption className="caption-top mb-4 text-left text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Alternative model comparison</caption><thead className="border-b border-oxblood text-xs uppercase tracking-[0.12em]"><tr><th className="p-3">Model</th><th className="p-3">Decision</th><th className="p-3">Why</th></tr></thead><tbody>{alternatives.map(([model, decision, reason]) => <tr key={model} className="border-b border-slate-200 last:border-b-0"><td className="p-3 font-bold">{model}</td><td className="p-3"><span className={decision === "Recommended" ? "font-bold text-emerald-700" : "font-bold text-amber-600"}>{decision}</span></td><td className="p-3 leading-6 text-slate-500">{reason}</td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto border-y border-oxblood"><table className="w-full min-w-[640px] text-left text-sm"><caption className="caption-top mb-4 text-left text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Alternative model comparison</caption><thead className="border-b border-oxblood text-xs uppercase tracking-[0.12em]"><tr><th className="p-3">Model</th><th className="p-3">Decision</th><th className="p-3">Why</th></tr></thead><tbody>{alternatives.map(([model, decision, reason]) => <tr key={model} className="border-b border-slate-200 last:border-b-0"><td className="p-3 font-bold">{model}</td><td className="p-3"><span className={decision === "Recommended" ? "font-bold text-emerald-700" : "font-bold text-amber-700"}>{decision}</span></td><td className="p-3 leading-6 text-slate-600">{reason}</td></tr>)}</tbody></table></div>
         </section>
 
         <section id="gates" aria-labelledby="gates-heading" className="mt-20 scroll-mt-20 border-t border-slate-200 pt-12">
@@ -247,8 +247,8 @@ export function BusinessModelGuide() {
             ["UK Finance — Payment Markets 2025", "https://www.ukfinance.org.uk/system/files/2025-10/Payment%20Markets%20Report%20Summary.pdf"],
             ["ECB — SPACE 2024 payment study", "https://www.ecb.europa.eu/stats/ecb_surveys/space/html/ecb.space2024~19d46f0f17.en.html"],
             ["Jumia Food closure evidence", "https://techcrunch.com/2023/12/14/jumia-discontinues-food-delivery-across-seven-markets-shifts-focus-to-expanding-physical-goods-business/"],
-          ].map(([label, href]) => <li key={href}><a className="group inline-flex items-start gap-2 font-semibold text-slate-700 underline decoration-amber-300 decoration-2 underline-offset-4 hover:text-amber-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500" href={href} target="_blank" rel="noreferrer">{label}<ExternalLink className="mt-1 shrink-0" size={14} /></a></li>)}</ul></div>
-          <p className="mt-10 border-t border-dashed border-slate-300 pt-5 text-xs uppercase tracking-[0.11em] text-slate-500">Research cutoff: 10 July 2026 · Review before expanding geography, payment role or product scope.</p>
+          ].map(([label, href]) => <li key={href}><a className="group inline-flex items-start gap-2 font-semibold text-slate-700 underline decoration-amber-300 decoration-2 underline-offset-4 hover:text-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500" href={href} target="_blank" rel="noreferrer">{label}<ExternalLink className="mt-1 shrink-0" size={14} /></a></li>)}</ul></div>
+          <p className="mt-10 border-t border-dashed border-slate-300 pt-5 text-xs uppercase tracking-[0.11em] text-slate-600">Research cutoff: 10 July 2026 · Review before expanding geography, payment role or product scope.</p>
         </section>
       </div>
 
@@ -258,21 +258,21 @@ export function BusinessModelGuide() {
 }
 
 function SectionLabel({ number, label }: { number: string; label: string }) {
-  return <p className="mb-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-600"><span>{number}</span><span className="h-px w-10 bg-amber-500" />{label}</p>
+  return <p className="mb-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-700"><span>{number}</span><span className="h-px w-10 bg-amber-500" />{label}</p>
 }
 
 function CohortCard({ title, signal, problems, capabilities }: { title: string; signal: string; problems: string[]; capabilities: string[] }) {
-  return <article className="border-t-[5px] border-emerald-600 bg-cream p-6 shadow-[5px_5px_0_theme(colors.slate.200)]"><p className="text-xs font-bold uppercase tracking-[0.13em] text-slate-500">{signal}</p><h3 className="mt-2 text-2xl font-bold tracking-[-0.03em]">{title}</h3><div className="mt-6 grid gap-5 sm:grid-cols-2"><div><h4 className="text-xs font-bold uppercase tracking-[0.12em] text-amber-600">Problems to solve</h4><ul className="mt-3 space-y-2 text-sm leading-6 text-slate-500">{problems.map((item) => <li key={item} className="flex gap-2"><ArrowDownRight className="mt-1 shrink-0 text-amber-600" size={14} />{item}</li>)}</ul></div><div><h4 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">Pilot workflow</h4><ul className="mt-3 space-y-2 text-sm leading-6 text-slate-500">{capabilities.map((item) => <li key={item} className="flex gap-2"><Check className="mt-1 shrink-0 text-emerald-700" size={14} />{item}</li>)}</ul></div></div></article>
+  return <article className="border-t-[5px] border-emerald-600 bg-cream p-6 shadow-[5px_5px_0_theme(colors.slate.200)]"><p className="text-xs font-bold uppercase tracking-[0.13em] text-slate-600">{signal}</p><h3 className="mt-2 text-2xl font-bold tracking-[-0.03em]">{title}</h3><div className="mt-6 grid gap-5 sm:grid-cols-2"><div><h4 className="text-xs font-bold uppercase tracking-[0.12em] text-amber-700">Problems to solve</h4><ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">{problems.map((item) => <li key={item} className="flex gap-2"><ArrowDownRight className="mt-1 shrink-0 text-amber-700" size={14} />{item}</li>)}</ul></div><div><h4 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">Pilot workflow</h4><ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">{capabilities.map((item) => <li key={item} className="flex gap-2"><Check className="mt-1 shrink-0 text-emerald-700" size={14} />{item}</li>)}</ul></div></div></article>
 }
 
 function Metric({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
-  return <div className="p-4"><dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt><dd className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${emphasis ? "text-amber-600" : ""}`}>{value}</dd></div>
+  return <div className="p-4"><dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">{label}</dt><dd className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${emphasis ? "text-amber-700" : ""}`}>{value}</dd></div>
 }
 
 function BoundaryList({ title, icon, items }: { title: string; icon: React.ReactNode; items: string[] }) {
-  return <article className="border border-slate-200 bg-cream p-5"><h3 className="flex items-center gap-2 font-bold">{icon}{title}</h3><ul className="mt-4 space-y-3 text-sm leading-6 text-slate-500">{items.map((item) => <li key={item}>{item}</li>)}</ul></article>
+  return <article className="border border-slate-200 bg-cream p-5"><h3 className="flex items-center gap-2 font-bold">{icon}{title}</h3><ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">{items.map((item) => <li key={item}>{item}</li>)}</ul></article>
 }
 
 function Gate({ number, title, gate, stop }: { number: string; title: string; gate: string; stop: string }) {
-  return <article className="relative border border-slate-200 bg-cream p-6"><p className="text-xs font-bold uppercase tracking-[0.13em] text-amber-600">{number}</p><h3 className="mt-3 text-xl font-bold tracking-[-0.02em]">{title}</h3><p className="mt-4 text-sm leading-6 text-slate-600"><strong>Gate:</strong> {gate}</p><p className="mt-4 border-t border-slate-200 pt-4 text-sm leading-6 text-orange-800"><strong>Stop criterion:</strong> {stop}</p></article>
+  return <article className="relative border border-slate-200 bg-cream p-6"><p className="text-xs font-bold uppercase tracking-[0.13em] text-amber-700">{number}</p><h3 className="mt-3 text-xl font-bold tracking-[-0.02em]">{title}</h3><p className="mt-4 text-sm leading-6 text-slate-600"><strong>Gate:</strong> {gate}</p><p className="mt-4 border-t border-slate-200 pt-4 text-sm leading-6 text-orange-800"><strong>Stop criterion:</strong> {stop}</p></article>
 }

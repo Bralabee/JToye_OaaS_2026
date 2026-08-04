@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { IconButton } from "@/components/ui/icon-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -522,7 +523,7 @@ function OrdersPageInner() {
               </CardDescription>
             </div>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(0) }}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[160px]" aria-label="Filter orders by status">
                 <SelectValue placeholder="Filter status" />
               </SelectTrigger>
               <SelectContent>
@@ -688,7 +689,7 @@ function OrdersPageInner() {
                 onValueChange={(value) => setValue("shopId", value)}
                 disabled={!!contextShopId}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="Shop for this order">
                   <SelectValue placeholder="Select a shop" />
                 </SelectTrigger>
                 <SelectContent>
@@ -784,7 +785,7 @@ function OrdersPageInner() {
                       value={item.productId}
                       onValueChange={(value) => updateOrderItem(index, "productId", value)}
                     >
-                      <SelectTrigger className="bg-white">
+                      <SelectTrigger className="bg-white" aria-label={`Product for order item ${index + 1}`}>
                         <SelectValue placeholder="Select product" />
                       </SelectTrigger>
                       <SelectContent>
@@ -804,15 +805,13 @@ function OrdersPageInner() {
                       className="bg-white"
                     />
                   </div>
-                  <Button
+                  <IconButton
                     type="button"
-                    size="sm"
-                    variant="ghost"
                     onClick={() => removeOrderItem(index)}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    label={`Remove item ${index + 1} from this order`}
+                    icon={<Trash2 className="h-4 w-4" />}
+                  />
                 </div>
               ))}
             </div>

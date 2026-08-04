@@ -19,7 +19,7 @@ export default function StorefrontError({
       <h2 className="text-xl font-semibold text-slate-900">
         Something went wrong
       </h2>
-      <p className="mt-2 text-sm text-slate-500">
+      <p className="mt-2 text-sm text-slate-600">
         We couldn&apos;t load this page. Please try again.
       </p>
       <div className="mt-6 flex gap-3">

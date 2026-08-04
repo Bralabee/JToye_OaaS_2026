@@ -287,7 +287,7 @@ export function ReviewQueue() {
             <Button variant="outline" onClick={() => setReplaceTarget(null)}>
               Cancel
             </Button>
-            <Button asChild className="bg-orange-600 text-white hover:bg-orange-700">
+            <Button asChild className="bg-orange-700 text-white hover:bg-orange-800">
               <Link href="/dashboard/products" onClick={() => setReplaceTarget(null)}>
                 Go to products
               </Link>

@@ -12,7 +12,7 @@ export function CompanyLegalLine({ className = "" }: { className?: string }) {
   const c = getCompanyInfo()
   if (!c.legalName || !c.companyNumber) return null
   return (
-    <p className={`text-xs text-slate-500 dark:text-slate-400 ${className}`.trim()}>
+    <p className={`text-xs text-slate-600 dark:text-slate-400 ${className}`.trim()}>
       {c.legalName} is a company registered in {c.registrationJurisdiction}{" "}
       (company no. {c.companyNumber})
       {c.registeredOffice ? `. Registered office: ${c.registeredOffice}` : ""}.{" "}

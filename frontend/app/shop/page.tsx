@@ -87,11 +87,11 @@ function ShopCard({ shop }: { shop: PublicShop }) {
             <h3 className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
               {shop.name}
             </h3>
-            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-600 transition-colors flex-shrink-0 mt-0.5" />
+            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-700 transition-colors flex-shrink-0 mt-0.5" />
           </div>
 
           {shop.description && (
-            <p className="mt-1 text-sm text-slate-500 line-clamp-2 leading-relaxed">
+            <p className="mt-1 text-sm text-slate-600 line-clamp-2 leading-relaxed">
               {shop.description}
             </p>
           )}
@@ -114,7 +114,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           )}
 
           {/* Meta row */}
-          <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
+          <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
             {shop.address && (
               <span className="inline-flex items-center gap-1 truncate">
                 <MapPin className="h-3 w-3 flex-shrink-0" />
@@ -130,7 +130,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
 
           <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
             {shop.deliveryFeePennies > 0 ? (
-              <span className="text-slate-500">
+              <span className="text-slate-600">
                 Delivery {formatPennies(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
                   <span className="text-emerald-600 ml-1">
@@ -314,14 +314,14 @@ function ShopDiscovery() {
             placeholder="Try “jollof”, “vegan” or your postcode…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-500 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
+            className="w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-600 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-cream hover:text-oxblood focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-cream hover:text-oxblood focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             >
               <X className="h-4 w-4" />
             </button>
@@ -447,7 +447,7 @@ function ShopDiscovery() {
               >
                 Previous
               </button>
-              <span className="text-sm text-slate-500 px-3">
+              <span className="text-sm text-slate-600 px-3">
                 {page + 1} of {totalPages}
               </span>
               <button

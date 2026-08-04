@@ -231,7 +231,7 @@ export function ProductDetailModal({
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">Ingredients</h3>
                 <IngredientText
                   text={product.ingredientsText}
-                  className="block text-sm text-slate-500 leading-relaxed"
+                  className="block text-sm text-slate-600 leading-relaxed"
                 />
               </div>
             )}
@@ -240,7 +240,7 @@ export function ProductDetailModal({
             {allergenList.length > 0 && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
                 <div className="flex items-center gap-1.5 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertTriangle className="h-4 w-4 text-amber-700" />
                   <h3 className="text-sm font-semibold text-amber-800">
                     Allergen Information
                   </h3>
@@ -264,7 +264,7 @@ export function ProductDetailModal({
             {outOfStock ? (
               <button
                 disabled
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-300 text-slate-500 font-semibold py-3 px-4 cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-300 text-slate-600 font-semibold py-3 px-4 cursor-not-allowed"
               >
                 Out of Stock
               </button>
@@ -278,7 +278,7 @@ export function ProductDetailModal({
               </button>
             ) : (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">In cart</span>
+                <span className="text-sm text-slate-600">In cart</span>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={onDecrement}
