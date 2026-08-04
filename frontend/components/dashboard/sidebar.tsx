@@ -24,7 +24,7 @@ import {
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
-import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
+import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 
 export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -84,10 +84,14 @@ export function Sidebar() {
       </div>
 
       {/* Shop-context switcher (VSA-03) — persisted per-device (D-07); a
-          GROUP_ADMIN lands on "All shops" (D-06). */}
-      <div className="border-b border-slate-800 px-3 py-3">
-        <ShopSwitcher variant="sidebar" />
-      </div>
+          GROUP_ADMIN lands on "All shops" (D-06). Omitted, border and all, on
+          the per-tenant onboarding sub-tree, where it acts on nothing
+          (#450 item 1 — see `shopSwitcherApplies`). */}
+      {shopSwitcherApplies(pathname) && (
+        <div className="border-b border-slate-800 px-3 py-3">
+          <ShopSwitcher variant="sidebar" />
+        </div>
+      )}
 
       {/* User Info */}
       {session?.user && (

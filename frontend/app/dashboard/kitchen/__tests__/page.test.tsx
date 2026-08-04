@@ -10,7 +10,7 @@
  *  - age-border colour logic is preserved (green for a fresh order)
  */
 
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react"
 import KitchenPage from "../page"
 import { useStomp } from "@/hooks/use-stomp"
 
@@ -63,6 +63,15 @@ jest.mock("@/components/ui/select", () => {
     SelectContent: passthrough,
     SelectItem,
   }
+})
+
+// jsdom has no printer: `window.print` exists but throws "Not implemented". Replace
+// it so the #105 print path can be asserted rather than swallowed by the try/catch.
+beforeAll(() => {
+  Object.defineProperty(window, "print", { value: jest.fn(), writable: true })
+})
+beforeEach(() => {
+  ;(window.print as jest.Mock).mockClear()
 })
 
 // AudioContext mock so playBeep() does not explode the test runner
@@ -366,8 +375,14 @@ describe("KitchenPage", () => {
       expect(mockGet).toHaveBeenCalledWith(expect.stringContaining("shopId=shop-live"))
     )
     // The selector no longer lists draft/junk shops.
-    expect(screen.getByText("Brixton Village Grill")).toBeInTheDocument()
-    expect(screen.queryByText("Draft Junk Shop")).not.toBeInTheDocument()
+    //
+    // Scoped to the <select> since #450 5d: the board now ALSO prints the shop name
+    // in its header ("Showing tickets for …"), so a bare getByText matches twice and
+    // throws. Narrowing to the selector is strictly more precise than the original —
+    // it asserts what the assertion was always about (what the dropdown offers),
+    // rather than "this string is somewhere on the page".
+    expect(within(select).getByText("Brixton Village Grill")).toBeInTheDocument()
+    expect(within(select).queryByText("Draft Junk Shop")).not.toBeInTheDocument()
   })
 
   it("falls back to listing all shops when none are published (never selector-empty)", async () => {
@@ -379,7 +394,149 @@ describe("KitchenPage", () => {
 
     const select = (await screen.findByTestId("shop-select")) as HTMLSelectElement
     await waitFor(() => expect(select.value).toBe("shop-d1"))
-    expect(screen.getByText("Draft One")).toBeInTheDocument()
-    expect(screen.getByText("Draft Two")).toBeInTheDocument()
+    expect(within(select).getByText("Draft One")).toBeInTheDocument()
+    expect(within(select).getByText("Draft Two")).toBeInTheDocument()
+  })
+
+  // --- #450 5d: the board no longer lies about which shop it is showing ---
+
+  it("names the boarded shop in the header, not only in the 200px selector", async () => {
+    stubApiWithShops([
+      shopEntry("shop-live", "Brixton Village Grill", true),
+      shopEntry("shop-b", "Peckham Jollof Co.", true),
+    ])
+    render(<KitchenPage />)
+
+    // waitFor, not findByTestId: the element exists from the first render reading
+    // "No shop selected", so findBy* resolves on that and asserts too early.
+    await waitFor(() =>
+      expect(screen.getByTestId("kds-board-shop")).toHaveTextContent(
+        "Showing tickets for Brixton Village Grill"
+      )
+    )
+  })
+
+  // --- #106: liveness is stated, not implied by a 10px dot ---
+
+  it("renders a feed pill carrying the state as a word and a last-updated clock", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+
+    const pill = await screen.findByTestId("kds-feed-pill")
+    await waitFor(() => expect(pill.textContent).toMatch(/\d{2}:\d{2}:\d{2}/))
+    expect(pill).toHaveTextContent("Live")
+    // No banner while the feed is healthy — a warning that is always on is noise.
+    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+  })
+
+  it("raises a banner with a refresh action when the socket is down", async () => {
+    ;(useStomp as jest.Mock).mockReturnValue({ connected: false, reconnecting: true })
+    stubApi([])
+    render(<KitchenPage />)
+
+    const banner = await screen.findByTestId("kds-feed-banner")
+    expect(banner).toHaveAttribute("role", "alert")
+    expect(banner).toHaveTextContent(/Reconnecting/i)
+    expect(screen.getByRole("button", { name: /refresh now/i })).toBeInTheDocument()
+    ;(useStomp as jest.Mock).mockReturnValue({ connected: true, reconnecting: false })
+  })
+
+  it("re-reads the orders list when the refresh action is pressed", async () => {
+    stubApi(["CONFIRMED"])
+    ;(useStomp as jest.Mock).mockReturnValue({ connected: false, reconnecting: true })
+    render(<KitchenPage />)
+
+    await screen.findByTestId("kds-feed-banner")
+    const before = mockGet.mock.calls.filter(([u]: [string]) =>
+      (u as string).startsWith("/api/v1/orders?")
+    ).length
+
+    // Plain fireEvent, NOT `await act(async () => …)`. Under React 19 the async act
+    // wrapper never settles around any click that leads to a requestAnimationFrame —
+    // measured: it hung until the 5s test timeout on the print clicks below, and it is
+    // the same shape here. `waitFor` already wraps its polling in act.
+    fireEvent.click(screen.getByRole("button", { name: /refresh now/i }))
+
+    await waitFor(() =>
+      expect(
+        mockGet.mock.calls.filter(([u]: [string]) =>
+          (u as string).startsWith("/api/v1/orders?")
+        ).length
+      ).toBeGreaterThan(before)
+    )
+    ;(useStomp as jest.Mock).mockReturnValue({ connected: true, reconnecting: false })
+  })
+
+  // --- #485: the board pages, and its requests carry page= ---
+
+  it("asks for orders with an explicit page, keeping shopId first", async () => {
+    stubApi(["CONFIRMED"])
+    render(<KitchenPage />)
+
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/api\/v1\/orders\?shopId=shop-1&page=0&size=\d+&sort=createdAt,desc$/)
+      )
+    )
+  })
+
+  it("pages the SHOP list too, instead of a single hardcoded size=100", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith(expect.stringContaining("/api/v1/shops?page=0&size="))
+    )
+    const shopCalls = mockGet.mock.calls
+      .map(([u]: [string]) => u as string)
+      .filter((u) => u.startsWith("/api/v1/shops"))
+    expect(shopCalls.every((u) => !u.includes("?size=100"))).toBe(true)
+  })
+
+  // --- #105: printing ---
+
+  it("offers a print control per ticket and one for the whole board", async () => {
+    stubApi(["CONFIRMED", "PREPARING"])
+    render(<KitchenPage />)
+
+    await screen.findAllByText(/Alice/)
+    expect(
+      await screen.findAllByRole("button", { name: /^Print ticket/i })
+    ).toHaveLength(2)
+    expect(screen.getByRole("button", { name: /print all/i })).toBeEnabled()
+  })
+
+  it("disables Print all on an empty board — there is nothing to print", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+    expect(await screen.findByRole("button", { name: /print all/i })).toBeDisabled()
+  })
+
+  it("mounts a ticket sheet carrying the order's real items when a ticket is printed", async () => {
+    stubApi(["CONFIRMED"])
+    render(<KitchenPage />)
+
+    await screen.findByText("ORD-order-0")
+    expect(screen.queryByTestId("kds-print-root")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Print ticket/i }))
+
+    const sheet = await screen.findByTestId("kds-print-root")
+    expect(within(sheet).getAllByTestId("kitchen-ticket")).toHaveLength(1)
+    expect(sheet).toHaveTextContent("ORD-order-0")
+    expect(sheet).toHaveTextContent("Burger")
+    // The sheet is committed first and printed a frame later, so this waits.
+    await waitFor(() => expect(window.print).toHaveBeenCalled())
+  })
+
+  it("puts every visible ticket on the sheet when Print all is used", async () => {
+    stubApi(["CONFIRMED", "PREPARING"])
+    render(<KitchenPage />)
+
+    await screen.findAllByText(/Alice/)
+    fireEvent.click(screen.getByRole("button", { name: /print all/i }))
+
+    const sheet = await screen.findByTestId("kds-print-root")
+    expect(within(sheet).getAllByTestId("kitchen-ticket")).toHaveLength(2)
   })
 })

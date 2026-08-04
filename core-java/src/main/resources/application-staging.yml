@@ -51,6 +51,13 @@ spring:
     # to false once flyway_schema_history shows version 44 applied here.
     out-of-order: true
     baseline-on-migrate: false
+    # Issue #517: url/user/password + init-sqls (the sentinel tenant GUC that
+    # keeps a FRESH database from dying at V46 with 22P02, on a DataSource that
+    # is Flyway's own so the sentinel can never reach the app's Hikari pool) are
+    # declared ONCE in application.yml and inherited here. Do NOT restate them —
+    # a second copy is a divergence waiting to happen. If you add a key to this
+    # block, you are overriding the base, not replacing it.
+    # Proven inherited by FreshChainMigrationIntegrationTest.
 
 server:
   error:

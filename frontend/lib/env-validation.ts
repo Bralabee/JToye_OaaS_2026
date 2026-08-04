@@ -34,6 +34,12 @@ interface EnvVars {
   // server-startup validator never reads it, and its absence is not a
   // misconfiguration worth an operator signal. See `resolveShopsPageSize`.
   NEXT_PUBLIC_SHOPS_PAGE_SIZE: string;
+
+  // Kitchen-display order paging (#485, call site kitchen/page.tsx:229). Same
+  // classification and the same reasons as NEXT_PUBLIC_SHOPS_PAGE_SIZE above:
+  // browser-side, safely defaulted, so it is in neither required nor optional.
+  // See `resolveKitchenOrdersPageSize`.
+  NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE: string;
 }
 
 const requiredEnvVars: (keyof EnvVars)[] = [
@@ -104,6 +110,36 @@ export const DEFAULT_SHOPS_PAGE_SIZE = 200;
 export function resolveShopsPageSize(raw?: string): number {
   const parsed = Number(raw?.trim());
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SHOPS_PAGE_SIZE;
+}
+
+/**
+ * Orders-per-request default for the kitchen board when
+ * `NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE` is unset (#485).
+ *
+ * 100 is not a guess and not "the literal that was already there" — it is the
+ * MAXIMUM this API will serve. Measured against the live core-java on 2026-08-04
+ * for a shop with 125 orders:
+ *
+ *     GET /api/v1/orders?shopId=…&size=100 -> content 100, size 100, totalPages 2, last false
+ *     GET /api/v1/orders?shopId=…&size=500 -> content 100, size 100, totalPages 2, last false
+ *
+ * Asking for more returns the same 100 rows, so raising the number cannot recover
+ * the tail — only following `last`/`totalPages` can. Hence the default sits at the
+ * clamp (fewest requests per board load) and the fix is paging, not a bigger fetch.
+ */
+export const DEFAULT_KITCHEN_ORDERS_PAGE_SIZE = 100;
+
+/**
+ * Resolve the kitchen board's orders page size from config (#485, GLOBAL_RULE_6).
+ * Same validation contract as {@link resolveShopsPageSize}: anything that is not a
+ * positive integer falls back to the default rather than producing a request the
+ * API would reject, because a misconfigured knob must not be able to blank the KDS.
+ */
+export function resolveKitchenOrdersPageSize(raw?: string): number {
+  const parsed = Number(raw?.trim());
+  return Number.isInteger(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_KITCHEN_ORDERS_PAGE_SIZE;
 }
 
 export function validateEnvironment(): void {
