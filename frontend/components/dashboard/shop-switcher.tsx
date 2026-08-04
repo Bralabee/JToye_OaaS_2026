@@ -23,6 +23,37 @@ import { useShopSwitcherData } from "@/components/dashboard/shop-switcher-provid
  * `variant="sidebar"` styles it for the always-dark desktop sidebar chrome;
  * `variant="topbar"` (default) is theme-adaptive for the mobile top bar.
  */
+
+/**
+ * Dashboard sub-trees where the shop-context switcher has nothing to act on, so
+ * mounting it would be a dead control (#450 item 1).
+ *
+ * Onboarding is per-TENANT: `app/dashboard/onboarding/page.tsx` never reads
+ * `useShopContext()` — it carries its own `shopId` field for the application it
+ * is creating — and the approvals queue under it lists the tenant's
+ * applications, not one shop's. The QA council measured the consequence: a
+ * switch on that page fired **0** API calls, against a control arm on
+ * `/products` that re-fetched shop-scoped. A control that visibly changes and
+ * changes nothing is worse than no control, so it is not rendered here.
+ *
+ * This is a PRESENTATION rule only. The saved context is untouched — it is still
+ * whatever the user last chose, and it is honoured again the moment they leave
+ * this sub-tree. Which shop is active stays server-decided.
+ *
+ * Prefix-matched, so a future `/dashboard/onboarding/<something>` inherits the
+ * rule instead of silently reintroducing the dead control.
+ */
+const TENANT_SCOPED_PREFIXES = ["/dashboard/onboarding"]
+
+export function shopSwitcherApplies(pathname: string | null | undefined): boolean {
+  // Unknown route → render. Hiding chrome on a pathname we could not read would
+  // fail in the direction that removes a working control.
+  if (!pathname) return true
+  return !TENANT_SCOPED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  )
+}
+
 export function ShopSwitcher({
   variant = "topbar",
   className,
@@ -76,6 +107,27 @@ export function ShopSwitcher({
    * the whole bug. A fourth note gets the same treatment by construction.
    */
   const note = (laidOut: string) => (variant === "topbar" ? "sr-only" : laidOut)
+
+  /**
+   * #450 item 5b — the id must be unique per MOUNT, not per component.
+   *
+   * This is one control rendered twice (desktop sidebar + mobile top bar), and
+   * BOTH are always in the DOM: each is hidden by a responsive class, not
+   * unmounted. So a single literal id produced two nodes on every dashboard
+   * route (measured: `document.querySelectorAll('#shop-context-select').length`
+   * === 2 on all 13), which is invalid HTML and makes `label[for]` associate
+   * with whichever one the parser saw first — on mobile, the one that is
+   * `display:none`.
+   *
+   * `useId()` is the React-idiomatic fix and is deliberately NOT used: the id is
+   * a published selector (`e2e/dashboard-mobile.spec.ts` locates the control by
+   * `#shop-context-select` in three places, and that file belongs to another
+   * lane). The default `topbar` variant therefore keeps the canonical id and the
+   * sidebar takes the suffixed one — unique, stable, and no published selector
+   * moves.
+   */
+  const selectId =
+    variant === "sidebar" ? "shop-context-select-sidebar" : "shop-context-select"
 
   if (loading) {
     return (
@@ -156,7 +208,7 @@ export function ShopSwitcher({
 
   return (
     <div className={cn("min-w-0", className)} data-testid="shop-switcher">
-      <label htmlFor="shop-context-select" className="sr-only">
+      <label htmlFor={selectId} className="sr-only">
         Shop context
       </label>
       <div className="relative">
@@ -180,7 +232,7 @@ export function ShopSwitcher({
           />
         )}
         <select
-          id="shop-context-select"
+          id={selectId}
           value={selected}
           onChange={(e) => onSelect(e.target.value)}
           className={cn(

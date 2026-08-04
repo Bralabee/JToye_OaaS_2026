@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { fetchMyShops } from "@/lib/shops-api"
 import {
@@ -60,6 +61,180 @@ const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = [
 ]
 
 const ALL_SHOPS_VALUE = ""
+
+/**
+ * Static page chrome, hoisted so the loading state can render the REAL strings
+ * rather than grey bars standing in for them (see `StaffLoading`). Headings and
+ * descriptions do not depend on the fetch, so withholding them buys nothing and
+ * costs a layout shift when they arrive.
+ */
+const PAGE_TITLE = "Staff & access"
+const PAGE_SUBTITLE = "Who can work on which shop"
+
+/**
+ * #450 item 2 — this used to read "…invite them to log in once".
+ *
+ * There is no invite. Nothing on this page, or anywhere else in the product,
+ * sends one: `user_directory` is populated when a person signs in for the first
+ * time, and the picker below can only offer people who are already in it. The
+ * old sentence described a control that does not exist, so the one thing a group
+ * admin could not learn from this screen was the thing they had to do next.
+ *
+ * Building the invite flow is a separate, decision-gated piece of work. Until it
+ * exists the copy says plainly what happens and what the admin has to arrange
+ * out-of-band.
+ */
+const GRANT_DESCRIPTION =
+  "Team members appear here only after they have signed in once with their own " +
+  "J'Toye account — this page cannot send them an invite. Ask them to sign in " +
+  "first, then grant them a shop and a role."
+
+const GRANT_HINT =
+  "Group admin always applies to every shop. Granting the same access twice is " +
+  "safe — it will not create a duplicate."
+
+const CURRENT_ACCESS_DESCRIPTION =
+  "Changes apply to the person's next request. An already-open live view (a " +
+  "kitchen or order stream) can keep updating for up to 5 minutes until it " +
+  "reconnects."
+
+/**
+ * Field labels, shared by the form and by its loading counterpart — the labels
+ * are part of what makes the two the same height, so they must not be able to
+ * drift apart.
+ */
+const FIELD_LABELS = {
+  user: "Team member",
+  shop: "Shop",
+  role: "Role",
+} as const
+
+/**
+ * Loading state, shaped like the page it precedes (#454).
+ *
+ * It replaced a centred 128px spinner, which is the whole of the CLS defect:
+ * that spinner occupied ~150px and then handed over to a ~1190px page at 390px,
+ * so everything below it — the three cards and the shell footer — moved on
+ * arrival. Measured at the repo's declared throttle profile (390px, Fast-3G, 4x
+ * CPU; budget `CLS < 0.1`, webhooks-webperf.spec.ts:37) the route scored
+ * **0.1805**, the worst in the app.
+ *
+ * The fix is not "a skeleton" generically — a wrongly-sized skeleton shifts just
+ * as much. Two things make this one hold its place:
+ *
+ *  1. It is built from the SAME `Card`/`CardHeader`/`CardContent`/`Table`
+ *     primitives as the loaded page, so padding, borders, radius and the
+ *     `space-y-6` rhythm are identical by construction rather than by
+ *     hand-copied pixel values, and it tracks the real page across breakpoints
+ *     (the grant grid is 1-up at 390px and 3-up at md, in both).
+ *  2. Everything that does not depend on the fetch — the h1, the subtitle, all
+ *     three card titles and descriptions, the three field labels — is rendered
+ *     for real. Only genuinely unknown data (the option lists, the directory
+ *     rows, the grants table) is bars.
+ *
+ * The bars use the shared `Skeleton` (shimmer keyframe, `motion-reduce:
+ * animate-none`) rather than this file's older bare `animate-spin`, which is the
+ * direction that component was added for.
+ */
+function StaffLoading() {
+  return (
+    <div className="space-y-6" data-testid="staff-loading" aria-busy="true">
+      <div>
+        <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
+        <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-orange-600" />
+            Grant access
+          </CardTitle>
+          <CardDescription>{GRANT_DESCRIPTION}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            {Object.values(FIELD_LABELS).map((label) => (
+              <div key={label} className="space-y-1.5">
+                <span className="block text-sm font-medium text-slate-700">
+                  {label}
+                </span>
+                {/* Same h-10 box as the <select> it stands in for. */}
+                <Skeleton className="h-10 w-full rounded-md" />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            {/* Static, so rendered for real — it wraps to five lines at 390px and
+                a one-bar stand-in left an 80px hole under the fields. */}
+            <p className="text-xs text-slate-500">{GRANT_HINT}</p>
+            {/* The button is NOT rendered: a real one here would look pressable
+                and do nothing. Sized to it instead (h-10, "Grant access"). */}
+            <Skeleton className="h-10 w-[121px] shrink-0 rounded-md" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-orange-600" />
+            Team directory
+          </CardTitle>
+          {/* The count is the one unknown in this header. */}
+          <Skeleton className="h-4 w-44" />
+        </CardHeader>
+        <CardContent>
+          <ul className="divide-y divide-slate-100">
+            {[0, 1].map((i) => (
+              <li key={i} className="flex items-center justify-between py-3">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Current access</CardTitle>
+          <CardDescription>{CURRENT_ACCESS_DESCRIPTION}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Person</TableHead>
+                <TableHead>Shop</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[0, 1].map((i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-28" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-16" />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Skeleton className="ml-auto h-4 w-14" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 function lastSeenLabel(lastSeen: string | null): string {
   if (!lastSeen) return "Never signed in"
@@ -214,19 +389,15 @@ export default function StaffPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-orange-600"></div>
-      </div>
-    )
+    return <StaffLoading />
   }
 
   if (forbidden) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-4xl font-bold text-slate-900">Staff &amp; access</h1>
-          <p className="mt-2 text-slate-600">Who can work on which shop</p>
+          <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
+          <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
         </div>
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -247,8 +418,8 @@ export default function StaffPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl font-bold text-slate-900">Staff &amp; access</h1>
-        <p className="mt-2 text-slate-600">Who can work on which shop</p>
+        <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
+        <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
       </div>
 
       {notice && (
@@ -268,10 +439,7 @@ export default function StaffPage() {
             <UserPlus className="h-5 w-5 text-orange-600" />
             Grant access
           </CardTitle>
-          <CardDescription>
-            Team members appear here after they sign in for the first time — invite
-            them to log in once, then grant them a shop and a role.
-          </CardDescription>
+          <CardDescription>{GRANT_DESCRIPTION}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
@@ -280,7 +448,7 @@ export default function StaffPage() {
                 htmlFor="staff-user"
                 className="text-sm font-medium text-slate-700"
               >
-                Team member
+                {FIELD_LABELS.user}
               </label>
               <select
                 id="staff-user"
@@ -306,7 +474,7 @@ export default function StaffPage() {
                 htmlFor="staff-shop"
                 className="text-sm font-medium text-slate-700"
               >
-                Shop
+                {FIELD_LABELS.shop}
               </label>
               <select
                 id="staff-shop"
@@ -328,7 +496,7 @@ export default function StaffPage() {
                 htmlFor="staff-role"
                 className="text-sm font-medium text-slate-700"
               >
-                Role
+                {FIELD_LABELS.role}
               </label>
               <select
                 id="staff-role"
@@ -346,10 +514,7 @@ export default function StaffPage() {
           </div>
 
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
-              Group admin always applies to every shop. Granting the same access twice
-              is safe — it will not create a duplicate.
-            </p>
+            <p className="text-xs text-slate-500">{GRANT_HINT}</p>
             <Button onClick={handleGrant} disabled={submitting}>
               Grant access
             </Button>
@@ -400,11 +565,7 @@ export default function StaffPage() {
       <Card>
         <CardHeader>
           <CardTitle>Current access</CardTitle>
-          <CardDescription>
-            Changes apply to the person&apos;s next request. An already-open live
-            view (a kitchen or order stream) can keep updating for up to 5 minutes
-            until it reconnects.
-          </CardDescription>
+          <CardDescription>{CURRENT_ACCESS_DESCRIPTION}</CardDescription>
         </CardHeader>
         <CardContent>
           {holdsSelfGrant && (

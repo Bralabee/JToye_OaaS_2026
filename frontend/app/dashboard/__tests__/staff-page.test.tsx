@@ -139,9 +139,11 @@ describe("Staff management screen (VSA-04)", () => {
     expect(screen.getByText("Group admin")).toBeInTheDocument()
     expect(screen.getByText("Staff")).toBeInTheDocument()
 
-    // D-09: the directory is login-populated — a short list must not read as a bug.
+    // D-09: the directory is login-populated — a short list must not read as a
+    // bug. The wording changed in #450 item 2 (the old sentence promised an
+    // invite that does not exist); the property being asserted has not.
     expect(
-      screen.getByText(/appear here after they sign in/i)
+      screen.getByText(/appear here only after they have signed in/i)
     ).toBeInTheDocument()
   })
 
@@ -414,5 +416,95 @@ describe("Staff management screen (VSA-04)", () => {
 
     expect(screen.getAllByText(/up to 5 minutes/i).length).toBeGreaterThan(0)
     expect(screen.queryByText(/take effect immediately/i)).not.toBeInTheDocument()
+  })
+
+  /**
+   * #450 item 2 — the grant card used to promise "invite them to log in once".
+   * There is no invite anywhere in the product: `user_directory` is populated on
+   * first sign-in, and the picker can only offer people already in it. The copy
+   * has to describe that, and must not describe a control that does not exist.
+   */
+  it("does not promise an invite it cannot send", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    // The word the pre-fix copy used, in the sense it used it.
+    expect(screen.queryByText(/invite them/i)).not.toBeInTheDocument()
+
+    // …and there is genuinely no invite control to justify such copy. Scoped to
+    // buttons/links, so the sentence that DENIES an invite cannot satisfy this.
+    const invitish = [
+      ...screen.queryAllByRole("button", { name: /invite/i }),
+      ...screen.queryAllByRole("link", { name: /invite/i }),
+    ]
+    expect(invitish).toHaveLength(0)
+
+    // What it says instead: sign-in first, and this page cannot invite.
+    expect(screen.getByText(/signed in once with their own/i)).toBeInTheDocument()
+    expect(screen.getByText(/cannot send them an invite/i)).toBeInTheDocument()
+  })
+})
+
+/**
+ * #454 — CLS. The route measured 0.1805 at the repo's declared throttle profile
+ * (390px / Fast-3G / 4x CPU; budget `CLS < 0.1`, webhooks-webperf.spec.ts:37),
+ * the worst in the app, because the loading state was a centred 128px spinner
+ * that handed over to a ~1200px page.
+ *
+ * jsdom has no layout, so these cases prove the MECHANISM — that the loading
+ * state is the page's own shape rather than a spinner. The geometry itself is
+ * asserted in e2e/dashboard-interface-corrections.spec.ts, which measures CLS in
+ * a real browser at that profile.
+ */
+describe("staff loading state (#454)", () => {
+  /** Hold both fetches open so the loading branch is what renders. */
+  function renderLoading() {
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as never)
+    mockedFetchMyShops.mockImplementation((() => new Promise(() => {})) as never)
+    return render(<StaffPage />)
+  }
+
+  it("renders a content-shaped skeleton, not a bare spinner", () => {
+    const { container } = renderLoading()
+
+    const loading = screen.getByTestId("staff-loading")
+    expect(loading).toHaveAttribute("aria-busy", "true")
+    // The spinner this replaced. Its absence is the fix.
+    expect(container.querySelector(".animate-spin")).toBeNull()
+    // The same vertical rhythm as the loaded page, so the swap moves nothing.
+    expect(loading).toHaveClass("space-y-6")
+    // Three cards, in the same order as the loaded page.
+    expect(container.querySelectorAll(".rounded-lg.border")).toHaveLength(3)
+  })
+
+  it("renders the static chrome for real, and bars only where data is unknown", () => {
+    renderLoading()
+
+    // Static: heading, subtitle, all three card titles, both descriptions and
+    // the field labels are known before the fetch, so withholding them would buy
+    // nothing and cost a shift when they arrive.
+    expect(
+      screen.getByRole("heading", { name: /staff & access/i, level: 1 })
+    ).toBeInTheDocument()
+    expect(screen.getByText("Who can work on which shop")).toBeInTheDocument()
+    expect(screen.getByText("Grant access")).toBeInTheDocument()
+    expect(screen.getByText("Team directory")).toBeInTheDocument()
+    expect(screen.getByText("Current access")).toBeInTheDocument()
+    expect(screen.getByText(/cannot send them an invite/i)).toBeInTheDocument()
+    expect(screen.getByText(/up to 5 minutes/i)).toBeInTheDocument()
+    // "Shop" and "Role" are also table column headers, hence getAllByText.
+    for (const label of ["Team member", "Shop", "Role"]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+    }
+    // The grants table keeps its real column headers, so the table box is the
+    // same width and height it will be when rows arrive.
+    for (const head of ["Person", "Shop", "Role", "Actions"]) {
+      expect(screen.getAllByText(head).length).toBeGreaterThan(0)
+    }
+
+    // Unknown: no <select> is rendered, and no pressable "Grant access" button —
+    // a real one here would look actionable and do nothing.
+    expect(screen.queryAllByRole("combobox")).toHaveLength(0)
+    expect(screen.queryByRole("button", { name: /grant access/i })).toBeNull()
   })
 })
