@@ -47,9 +47,14 @@ async function dialogState(page: Page) {
         ? (document.getElementById(labelledBy)?.textContent ?? "").trim()
         : null,
       bodyOverflow: getComputedStyle(document.body).overflow,
-      // Radix's other inertness mechanism. Asserted alongside aria-modal so a
-      // regression in either is visible, and neither is trusted on its own.
-      pageAriaHidden:
+      // Radix's other inertness mechanism (`hideOthers` from the aria-hidden
+      // package). Measured on this page: it inerts <main> but NOT <header> —
+      // the header contains the basket's aria-live="polite" region, and the
+      // library deliberately leaves live regions announceable. See the note on
+      // the assertion below; <main> is the honest thing to assert here.
+      mainAriaHidden:
+        document.querySelector("main")?.getAttribute("aria-hidden") ?? null,
+      headerAriaHidden:
         document.querySelector("header")?.getAttribute("aria-hidden") ?? null,
       activeTag: active?.tagName ?? null,
       activeName:
@@ -63,6 +68,19 @@ async function dialogState(page: Page) {
 /** The first dish card's dialog trigger. */
 function firstTrigger(page: Page) {
   return page.getByRole("button", { name: /^View details for / }).first()
+}
+
+/**
+ * The trigger's accessible name. Read from aria-label OR text content, because
+ * this control is named by an `sr-only` child rather than an attribute — an
+ * earlier version of this file read only `aria-label`, got `null`, and failed
+ * three blocks against a CORRECT tree. Comparing a name to `null` is a test
+ * defect that looks exactly like a product defect.
+ */
+async function accessibleNameOf(locator: ReturnType<typeof firstTrigger>) {
+  return locator.evaluate(
+    (el) => el.getAttribute("aria-label") || (el.textContent || "").trim()
+  )
 }
 
 test.describe("Storefront dish modal — dialog contract", () => {
@@ -80,7 +98,7 @@ test.describe("Storefront dish modal — dialog contract", () => {
     expect(before.bodyOverflow).not.toBe("hidden")
 
     const trigger = firstTrigger(page)
-    const triggerName = (await trigger.getAttribute("aria-label")) ?? (await trigger.innerText())
+    const triggerName = await accessibleNameOf(trigger)
     await trigger.click()
 
     const open = await dialogState(page)
@@ -91,8 +109,18 @@ test.describe("Storefront dish modal — dialog contract", () => {
     // the whole point.
     expect(open.accessibleName, "dialog must be named by the dish title").toBeTruthy()
     expect(triggerName).toContain(open.accessibleName!)
-    // Both inertness mechanisms.
-    expect(open.pageAriaHidden, "content behind the dialog must be aria-hidden").toBe("true")
+    // The second inertness mechanism, asserted alongside aria-modal so neither
+    // is trusted on its own.
+    //
+    // Scoped to <main> ON PURPOSE, and the scope is a measurement not a
+    // convenience: `hideOthers` leaves <header> announceable because the basket
+    // affordance inside it is an aria-live region, which the library will not
+    // silence. That is shared Radix/aria-hidden behaviour — identical for the
+    // cart drawer and all four existing dialogs — so it is recorded here rather
+    // than worked around locally. It is not a hole in the contract: aria-modal
+    // confines the AT virtual cursor to the dialog, and the focus trap asserted
+    // below keeps the keyboard out of the header.
+    expect(open.mainAriaHidden, "page content must be inert behind the dialog").toBe("true")
     // Body scroll lock: the page must not scroll behind the overlay.
     expect(open.bodyOverflow, 'body overflow stayed "visible" pre-fix').toBe("hidden")
   })
@@ -126,7 +154,7 @@ test.describe("Storefront dish modal — dialog contract", () => {
 
   test("Escape closes it and returns focus to the trigger", async ({ page }) => {
     const trigger = firstTrigger(page)
-    const triggerName = await trigger.getAttribute("aria-label")
+    const triggerName = await accessibleNameOf(trigger)
     await trigger.click()
     await expect(page.getByRole("dialog")).toBeVisible()
 
@@ -138,18 +166,25 @@ test.describe("Storefront dish modal — dialog contract", () => {
     expect(closed.dialogCount).toBe(0)
     // Scroll lock released — a lock that is never released is its own bug.
     expect(closed.bodyOverflow).not.toBe("hidden")
-    expect(closed.pageAriaHidden).toBeNull()
+    expect(closed.mainAriaHidden).toBeNull()
+
     // Focus restored to the exact control that opened it, so a keyboard user
     // resumes at the dish they were on rather than at the top of the document.
-    expect(closed.activeTag).toBe("BUTTON")
-    expect(closed.activeName).toBe(triggerName)
+    // RETRYING assertions, not a one-shot read: Radix restores focus during the
+    // FocusScope unmount, which lands slightly after the dialog leaves the DOM.
+    // A single read raced it and reported BODY on desktop while mobile passed —
+    // the sort of viewport-dependent flake that gets rerun until it is green.
+    await expect(trigger).toBeFocused()
+    await expect
+      .poll(async () => (await dialogState(page)).activeName)
+      .toBe(triggerName)
   })
 
   test("can be opened and closed with the keyboard alone", async ({ page }) => {
     // The route that did not exist at all pre-fix: the card was a plain
     // <article onClick>, unreachable by Tab and unresponsive to Enter.
     const trigger = firstTrigger(page)
-    const triggerName = await trigger.getAttribute("aria-label")
+    const triggerName = await accessibleNameOf(trigger)
 
     await trigger.focus()
     await expect(trigger).toBeFocused()
@@ -161,7 +196,10 @@ test.describe("Storefront dish modal — dialog contract", () => {
 
     await page.keyboard.press("Escape")
     await expect(page.getByRole("dialog")).toHaveCount(0)
-    expect((await dialogState(page)).activeName).toBe(triggerName)
+    await expect(trigger).toBeFocused()
+    await expect
+      .poll(async () => (await dialogState(page)).activeName)
+      .toBe(triggerName)
   })
 
   test("still dismisses on a backdrop click", async ({ page }) => {

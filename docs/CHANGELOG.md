@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The storefront dish modal becomes a real dialog, and the basket stops saying "1 items" (#446, #272) — 2026-08-04
+
+Closes **#446** and **#272**. #272's second half was the same defect as #446 — one fix, both issues.
+
+#### Fixed
+- **`frontend/components/storefront/product-detail-modal.tsx`** — the last hand-rolled overlay in the codebase (two bare `fixed inset-0 z-50` divs with click handlers) is now a Radix Dialog, the pattern the repo already uses in four other places. It gains `role="dialog"`, `aria-modal="true"`, an accessible name wired to the dish title, `aria-describedby` on the dish description, Escape-to-dismiss, a focus trap, focus restore, and body scroll lock. Every icon-only control (close, carousel arrows, dot indicators, thumbnails, quantity steppers) gains an accessible name; previously they all announced as bare "button" — on the screen that carries the allergen panel.
+- **`frontend/app/shop/[slug]/page.tsx`** — the dish card was an `<article onClick>`, so the modal **could not be opened without a mouse at all**, and nothing was focused at open time for a dialog to restore focus to. The card gains a stretched invisible trigger button.
+- **`frontend/components/storefront/storefront-nav.tsx`** — the basket announced "1 items in basket". Now uses the same `item{n !== 1 ? "s" : ""}` idiom as `cart-drawer.tsx` and the cart page, which describe the same basket.
+
+#### Notes
+- **Measured, not read off the JSX.** Pre-fix, live at 390px: `role="dialog"` **0**, `aria-modal` **0**, Escape left the overlay count **2 → 2**, `body` overflow stayed `visible`, `document.activeElement` was **BODY** before *and* after opening, and **10 of 12** Tab presses from inside the modal landed outside it — the 10th on the "Track order" nav link *behind* the overlay. Every assertion in `e2e/storefront-dish-modal-a11y.spec.ts` was run against the pre-fix tree and observed failing before it was trusted.
+- **Two things the port did not get for free**, both found by measuring rather than by reading the library's README. Radix inerts the page with `hideOthers()` and **does not emit `aria-modal` at all**, so it is now stated explicitly *alongside* that mechanism. And Radix's modal `onCloseAutoFocus` `preventDefault()`s the `FocusScope` restore in order to focus its own `<Dialog.Trigger>` — this dialog is driven by a controlled `isOpen` prop, so that ref is `null` and focus was measured landing on `<body>` after Escape. The opener is captured on open and restored explicitly.
+- **A stretched button, not `role="button"` on the card.** `role="button"` makes its descendants presentational, which would have taken the card's own "Add" control away from assistive tech — trading one accessibility defect for another.
+- **Built on the Radix primitives, not `components/ui/dialog.tsx`.** That wrapper hard-codes a centred `translate` panel plus `data-[state]:animate-in/out`, so adopting it would have broken the mobile bottom-sheet layout *and* introduced motion. This is a semantics port: measured across the break arm, the panel rect (`390x703 @ y=141`), border radius (`16px`) and backdrop (`rgba(0,0,0,0.6)`, `blur(4px)`) are **identical** before and after, and no transition was added or changed.
+- **Why `sr-only` text needs its own kind of test.** The "1 items" bug renders to zero pixels, so no screenshot, visual diff, or assertion on visible text could ever have caught it — and the count of exactly **1** is the only one that distinguishes correct from broken, so a test at 0 or 3 would have passed on the defective code.
+- **The Jest additions assert rendered attributes only, and say so in the file.** Escape dismissing an overlay, focus being trapped, and scroll locking are runtime behaviours jsdom cannot demonstrate; a green component run is not evidence for any of them.
+
 ### A gate for the PostgreSQL major that a comment was supposed to hold (#529) — 2026-08-04
 
 Refs dependabot #525. **No product change** — this adds `scripts/check-postgres-major-parity.sh`, taking the repo to **25 gates**.
