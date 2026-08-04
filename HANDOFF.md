@@ -19,8 +19,8 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **The Wave-1 merge train ran 2026-08-04 and merged five of six: #522 (Lane C a11y), #521 (Lane D k8s), #515 (the nightly), #520 (Lane E docs/CI), #519 (Lane A core-java).** #518 (Lane B frontend) is the sixth and carries this edit. Earlier: #508/#509/#510 on 2026-08-03, and #434/#435/#436/#443/#455 plus a concurrent session's #437/#456. HEAD deliberately **not** quoted |
-| Open PRs | **5, all dependabot** (#523–#527: node 24→26, postgres 15→18, awssdk bom, two minor-and-patch groups). **Zero of mine.** All six Wave-1 PRs merged; the ORDER WAS LOAD-BEARING: five of them passed `Security Scan` between 23:12 and 00:05, i.e. **before a Trivy DB roll**, so every one was stale-green. #522 carried the `fast-uri`/`ip-address` bump and had to merge first or `main` would have landed failing its own security gate. Branch protection is `strict: false`, so GitHub **would** have merged all six on those stale conclusions — what caught it was reading the check *timestamps*, not the badge colours. **Re-measure before trusting this cell** |
+| `JToye_OaaS_2026` | **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
+| Open PRs | **2** — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
 | Open issues | **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
 | Issue-count history | It moved in **both** directions across 2026-08-03 (63 → 86 → 92 → 89 → 85 → 80 → **62**) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. Re-run `gh issue list --state open --limit 300 --json number --jq length` |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
@@ -42,6 +42,50 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 ---
 
 ## 0. ⚠ READ FIRST
+
+### 0.-2 The backup pipeline could not restore, and nothing in the repo could see it (2026-08-04)
+
+Dependabot #525 bumped `infra/backups/Dockerfile` to `postgres:18-bookworm` while every server in the
+tree stayed on **15.17**, and **every CI check was green**. Measured against the live server:
+
+| | |
+|---|---|
+| `postgres:18` `pg_dump -Fc` against 15.17 | works — 469,421 bytes |
+| `postgres:15` `pg_restore --list` on that dump | **rc=1** `unsupported version (1.16) in file header` |
+| `postgres:15` on a pg15 dump (control) | rc=0 |
+| `postgres:18` on a pg15 dump (direction) | rc=0 |
+
+Tooling reads its own major and **older, never newer**. Backups keep succeeding and stop being
+restorable by the server's own client — visible only during a recovery.
+
+**Two things now close it, both in #529:**
+
+- `scripts/check-postgres-major-parity.sh` — 25th gate, in `ops-contracts`. 8 declared sites in
+  `scripts/gates/postgres-major-parity.conf`. Anchored on line prefixes, **not** a bare `postgres:`
+  token, because `docker-compose.full-stack.yml:130` holds `jdbc:postgresql://postgres:5432/` (a bare
+  token extracts **5432** as a major) and `infra/backups/Dockerfile:4` holds a *historical*
+  `postgres:15-alpine` comment that must stay 15 forever.
+- `scripts/restore-drill.sh` — **the first restore rehearsal this repo has run.** 40 tables / 8095
+  rows / flyway 60/60 into a throwaway server. Deliberately not `check-*` (needs a live DB + Docker).
+
+**`pg_restore --list` was never evidence.** It reads the archive HEADER and loads zero rows, and
+`k8s-backup.sh:66` runs it *inside the image that produced the dump* — agreeing by construction twice.
+
+**The drill is built around RLS blinding the verifier.** A count as a non-BYPASSRLS role with no
+tenant GUC returns fewer rows silently, rc=0; count both sides that way and `0 == 0` passes over a
+restore that loaded nothing. Defences: both sides BYPASSRLS, a `MIN_ROWS` floor, and a **control**
+(`media_asset_aud`: BYPASSRLS **2224**, unpinned **741**).
+
+WARNING — **`DB_USER` means two different things.** `.env` `DB_USER` = `jtoye_app` (**not** BYPASSRLS);
+the CronJob's comes from secret key **`backup-username`** = `jtoye_backup`. Using the wrong one makes
+`pg_dump` fail with *"query would be affected by row-level security policy for table customers"*,
+which reads like a production fault and is not one. The drill asserts the role attribute first.
+
+**#525 is not wrong forever — it is out of order.** That bump is REQUIRED to perform a 15 to 18
+upgrade (the logical path dumps with the new tooling). PostgreSQL 15 is supported to **2027-11-11**,
+18 to 2030-11-14. Bring it back with the server, the tag, the CronJob and both horizon rows moving
+together, and run the drill before and after.
+
 
 ### 0.-1 The Wave-1 merge train (2026-08-04) — and the defects that existed ONLY in the merge
 
