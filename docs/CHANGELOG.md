@@ -32,6 +32,70 @@ Closes #449, #276 and #337. Lane E of a 15-agent Wave-1 run — the only lane wi
 - **#337's fault-injection half is deferred with a proposed shape, not quietly dropped.** It belongs in `integration-tests` with toxiproxy, since the dependencies the row names are core-java's; a fault test that never takes one down is worse than none.
 - Counts regenerated once with `--write`: go_test_funcs 77→78, files 9→10, total 2092→2093.
 
+### Lane D — the k8s lane, and a defect that existed only in the merge (#521) — 2026-08-04
+
+Closes #293, #506, #271, #298, #299, #303. Three branches assembled and verified as a **merged tree**, which is the point: the merge produced a gate failure no individual branch could have shown.
+
+#### Fixed
+- **#293 / #506 — the frontend was missing two runtime origins.** `#506` is the sharper of the two: `frontend/lib/customer-orders-server.ts` resolves core as `CORE_API_INTERNAL_URL || NEXT_PUBLIC_API_URL || "http://localhost:9090"`, and the middle term is **frozen at build time** — Next inlines every literal `process.env.NEXT_PUBLIC_*` reference into the **server** bundle as well as the client one. Measured in the built artifact: only `CORE_API_INTERNAL_URL` survives as a runtime lookup, so server-side fetches from a frontend pod resolved to `localhost:9090` and reached nothing. Re-adding `NEXT_PUBLIC_API_URL` as a runtime env would reach NOTHING (D-18) and is deliberately not the fix. `#293` supplies the IdP origin the enforcing CSP is built from.
+- **#271 — the NetworkPolicy Postgres egress port was a literal.** Now derived from one render-time declaration (`app-config db.port`) through the `replacements:` block, into the egress rules of both `20-core-java.yaml` and `40-datastores.yaml`. `DB_PORT` deliberately **stays** on the `postgres-credentials` Secret: that is DEF-1's fix and moving it would make the port a committed-manifest edit again. The residual contract (`postgres-credentials/port == app-config db.port`) is *enforced*, not merely documented — `scripts/k8s-local-secrets.sh` refuses to create the Secret when the two disagree.
+- **Two allowlist entries went stale the moment the lane merged.** `#298` widened `check-env-contract.sh` to all three built services and carried reasoned entries for two names no manifest supplied; `#293`/`#506` — a *different branch* — then supplied exactly those two. The merged tree came up **rc=1 with zero contract violations**. Both entries' stated *reasons* were falsified too: `CORE_API_INTERNAL_URL`'s claimed absence cost "a hairpin through the ingress, not a 502" (it was a 502 path, per the measurement above), and `NEXT_PUBLIC_KEYCLOAK_URL`'s ended "No k8s manifest does" (one now does). Fixed by removing the excuses, which is the remedy the gate itself prescribes — not by weakening the gate.
+
+#### Changed
+- **`check-env-contract.sh` now covers core-java, edge-go *and* the frontend (#298).** The core-java-only limit was not cosmetic: `JWT_EXPECTED_ISSUER` had been read by `edge-go` since the issuer/JWKS decoupling fix (#87) and **no manifest ever supplied it** — a core-java-only gate could not have caught it. The frontend had the mirror-image problem, `NEXT_PUBLIC_API_URL` injected as a runtime env where it could never reach the bundle, i.e. dead config a naive "is it injected?" check scores as GOOD. Each service gets its own parser, every extractor is self-tested against a synthetic control, so a regex matching nothing exits **2 (VOID)** rather than certifying a clean contract over a service it never parsed. `#299`/`#303`'s unconfigured customer realm is now *visible* to it, carried as printed `OPEN DEFECT` entries rather than silent omissions.
+- **`ci-cd.yaml` stopped calling that step core-java-only.** Not cosmetic either — the step name is what a reviewer reads in the Actions UI when the gate reds, and a frontend D-18 failure would have surfaced under a heading claiming to be about core-java.
+
+#### Notes
+- **Every claim in this lane is render-level. No packet was ever allowed or denied.** There is no cluster to run it against: no `kind`, no `k3d`, the `minikube` profile `jtoye` is registered but its container no longer exists, and the only kubectl context is off-limits. **The CrashLoop #271 describes remains undemonstrated**, and NetworkPolicies are enforced nowhere observable — minikube's default CNI does not implement them, so **#297 (Calico) is deliberately not folded in**. Render-only was the scope chosen by the owner before assembly, not an oversight.
+- **The goldens auto-merged, which proves nothing about a generated file.** Break arm: perturbing one byte of `k8s/goldens/staging.yaml` → rc=1; restored and verified by `git hash-object` against the clean hash → rc=0. Verified by content rather than `git diff --stat`, which is empty both when a file is restored and when it was never written. Clean → break → clean, all three arms.
+- **`check-env-contract.sh` needed no synthetic break arm** — it was observed failing (rc=1) on the merged tree and passing (rc=0) after the fix, which is stronger evidence than a manufactured one.
+- **A gate sweep globbing `scripts/check-*.sh` silently omits `k8s/scripts/`** — exactly the six gates this lane changes. The first sweep here reported 21/22 green while the k8s suite had never been run; the real failure surfaced only after the second glob. A verification whose search path excludes the thing under test is vacuous, however green.
+- **The backlog moved as a side effect.** Five findings were carried only as allowlist entries and in no issue; two are now genuinely fixed, leaving three — `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `CSP_UPGRADE_INSECURE_REQUESTS`.
+- `docs/metrics.json` regenerated once for the lane and **unchanged**: Lane D adds no test blocks, so no prose re-sync was needed and this PR cannot conflict with the other Wave-1 lanes on it.
+### Lane C — AA contrast forced a design-system palette shift (#522) — 2026-08-04
+
+Closes #451. One branch, fast-forwarded, so the assembled tree is byte-identical to the branch the measurements were taken on.
+
+#### Changed
+- **`--primary` moves from orange-600 to orange-700, design-system-wide.** Forced rather than chosen: white-on-orange-600 measures **3.56:1**, under AA for normal text, and there is **no foreground lighter than white**. The owner accepted the palette shift over the alternative — a separate `--primary-strong` token used only behind text — on 2026-08-04.
+- Table "no data" cells routed through `--muted-foreground` instead of a hardcoded grey.
+
+#### Added
+- **`components/ui/icon-button.tsx`** — icon-only controls now carry an accessible name **by construction** rather than by remembering an `aria-label` at each call site. The recurring defect was never one missing label; it was that nothing made the label structural.
+- `__tests__/contrast-tokens.test.ts` — asserts the token pairs themselves, so a future palette edit that reintroduces a sub-AA pairing fails at test time rather than at an audit months later.
+
+#### Results
+| | before | after |
+|---|---|---|
+| desktop axe findings | 257 | **58** |
+| mobile axe findings | 270 | **31** |
+| critical / serious | — | **0 / 0** |
+| routes regressed | — | **0** |
+
+#### Notes
+- **A naive axe sweep scores `button-name: 0` on the dashboard, and that is an ARTEFACT, not a pass.** The vendor account renders "No shop access" on every dashboard route, so the tables never mount and there are no buttons to name. Measured against a populated account separately: **64 → 0**. Any future sweep reporting 0 on a dashboard route must first prove the instrument can see the rows — the same shape as an RLS-blinded verification query returning 0 on a full table.
+- **The metrics baseline was measured, not quoted.** The handoff records `jest_blocks 593 / files 79 / total 2137`; that is the **Lane B branch's** figure and Lane B is unmerged, so `origin/main` was really at `548 / 74 / 2092`. Taking the handoff number as the baseline would have produced an entry wrong by 45 and a `check-doc-metrics` failure at the far end. Per-lane deltas compose as deltas, never as absolutes.
+- **`rg` died mid-assembly with `claude native binary not installed`, and the `|| echo` fallback printed a clean result.** The check "does this branch touch `docs/metrics.json` or `docs/CHANGELOG.md`?" reported "(clean)" because the search **failed**, not because it found nothing — the two are indistinguishable from the exit status alone. Re-run through `git diff --name-only -- <pathspec>` with a positive control proving the query could return something. A search tool that cannot run is not a search that found nothing.
+- **Not claimed:** no browser run was performed during this assembly, and `check-runtime-freshness` is rc=1 by design because the lane changed frontend source. The axe figures are #451's own, carried on proven byte-identity (`git diff --stat wave1/fe-451-tokens HEAD` empty) rather than re-measured.
+
+### The nightly E2E has never once succeeded, and the preflight could not see why (#515) — 2026-08-03
+
+Refs #420. `e2e-nightly.yml` is the half of #420 that runs all 126 specs against a real stack, because the per-PR job runs 2 of 126. HANDOFF.md recorded it as *"has still never run — dispatch it once manually"*. **Falsified:** it fired on schedule on 2026-08-02 and 2026-08-03 and both runs failed in **4m13s**, against a workflow that budgets ~20 min for the stack and ~20 min for the suite. Nobody looked, because the handoff said there was nothing to look at.
+
+#### Fixed
+- **Two credentials named the same Postgres role and were generated independently.** `POSTGRES_USER=jtoye` and `KC_DB_USERNAME=jtoye` are one role; the generator emitted a separate `openssl rand` per variable, so `POSTGRES_PASSWORD` and `KC_DB_PASSWORD` could never match. Every run died at `FATAL: password authentication failed for user "jtoye"` and core-java never started. The two paired values are now **derived** from the generated one by reading it back out of the file just written, so they cannot drift.
+- **`infra/db/init/00-create-db.sql` created `jtoye_app` with a hardcoded `PASSWORD 'secret'`.** core-java connects as that role using `DB_PASSWORD`, so on a fresh volume it could only ever authenticate if `DB_PASSWORD` happened to be that literal — a second fault that would have surfaced ~40 minutes after the first was fixed. Both roles now take their password from the environment via psql `\getenv`, interpolated through `format(%L)` so a quote cannot terminate the statement. **This also explains a drift nobody had noticed:** the dev machine's `DB_PASSWORD` is not `'secret'` and its stack works, so that role had been altered out of band — `docker compose up` on a clean machine did not reproduce a working stack.
+- **The generator's variable list and the preflight's `REQUIRED_VARS` were two lists that had to agree, and they drifted within hours.** #510 added `GRAFANA_ADMIN_PASSWORD` and `POSTGRES_EXPORTER_PASSWORD` to the gate and not to the generator, so the next run would have failed preflight on two `CHANGE_ME` values. The generator now **reads** the list via a new `verify-env.sh --list-required`, failing closed on an empty result. (Both recorded runs predate #510's merge at 18:14, which is why their logs show the stack build failing rather than the preflight.)
+
+#### Added
+- **`verify-env.sh` cross-variable check (d).** Checks (a)–(c) validate each variable *in isolation* — set, non-weak, long enough — and all three passed on the `.env` that broke every nightly run. The new check asserts that variables naming the same role agree, and treats an unevaluable pair as a failure rather than a silent pass. It also covers `${POSTGRES_EXPORTER_USER:-jtoye}`, which is the same role again whenever it is unset; not currently broken (verified live, `pg_up 1`), but one edit away, and the exporter declares no healthcheck so a dead one looks exactly like a live one.
+
+#### Notes
+- **This is Proof Standard #5 in the preflight itself:** the gate asserted the property it happened to measure, not the behaviour it existed to protect. It is the same lesson as the note already sitting in `REQUIRED_VARS` about #438/#439 — *"it could not fire on a variable it was not looking at"* — one level up: it could not fire on a **relationship** it was not looking at.
+- **The first probe built to prove any of this was vacuous, and only its control arm caught it.** Connecting over `127.0.0.1`, *every* password returned rc=0 — `pg_hba` is first-match-wins and matches `host all all 127.0.0.1/32 trust` before the image's appended `scram-sha-256` line. The rewritten probe connects by hostname from a separate container, which is what the real services do; a wrong password then returns rc=2. Had the control been skipped, the "fix" would have been verified by an instrument incapable of failing.
+- **Six arms, closing clean arm last:** real `.env` rc=0 · pair forced to differ rc=1 naming it · pair blanked rc=1 refusing to pass · the pre-fix generator replayed verbatim rc=1 with four failures · the post-fix generator rc=0 · real `.env` again rc=0. Init repair proven separately: `jtoye_app` + `DB_PASSWORD` rc=0 (was rc=2), + `'secret'` rc=2 (was rc=0), `DB_PASSWORD` unset exits **3** rather than half-initialising.
+- Adding eight lines to the compose file shifted eight line-number citations in `.planning/codebase/`. Re-pointed by locating each cited **subject**; the offsets agreeing afterwards is corroboration, not the method.
+
 ### The E2E instruments were wrong, and three lessons became executable (#513) — 2026-08-03
 
 Closes #505 and #503; closes #305 as already-fixed. All three are defects in the **instrument**, not the product — the class where a green suite certifies surface it cannot observe.

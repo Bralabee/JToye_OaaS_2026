@@ -351,7 +351,7 @@ export default function WebhookDetailPage() {
               )}
               <Button
                 size="sm"
-                className="min-h-11 bg-orange-500 text-white hover:bg-orange-600 sm:min-h-0"
+                className="min-h-11 bg-orange-700 text-white hover:bg-orange-800 sm:min-h-0"
                 disabled={busy}
                 onClick={handlePauseResume}
               >

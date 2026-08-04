@@ -2,6 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+   Colour-token contrast contract (#451 / QA-A F-M4-A11Y)
+   ---------------------------------------------------------------------------
+   Every token below that is used as TEXT, or as a BACKGROUND behind text, is
+   measured against WCAG 2.1 SC 1.4.3 (4.5:1 normal text, 3:1 large) on BOTH
+   light surfaces this product ships:
+
+       #ffffff  (card / dashboard)      #FBF6F0  (brand cream, public + storefront)
+
+   Clearing white but not cream is the trap that produced most of the 220
+   `color-contrast` violations in the baseline: slate-500 is 4.76 on white and
+   4.43 on cream, so the same token passed on the dashboard and failed on every
+   public page. A token is only correct here if it clears BOTH.
+
+   The brand palette is NOT abandoned — oxblood #3A0B0D, Work Sans and the
+   amber/orange appetite accent all stay. What changed is the SHADE chosen
+   within the same accent ramp, one step deeper, so white text can sit on it:
+
+       --primary  orange-600 #ea580c -> orange-700 #c2410c   white 3.56 -> 5.18
+       --destructive  red-500 #ef4444 -> red-600 #dc2626     #fafaf9 3.60 -> 4.62
+       --muted-foreground slate-500  -> slate-600            cream 4.43 -> 7.05
+       --trust     emerald-600 #059669 -> emerald-700 #047857  white 3.77 -> 5.48
+
+   #ea580c is retained where it is DECORATIVE only (see --ember-bright): a
+   non-text graphic needs 3:1 (SC 1.4.11), which it clears at 3.56 on white.
+   Enforced by `__tests__/contrast-tokens.test.ts`, which recomputes these
+   ratios from this file rather than trusting the comment.
+   --------------------------------------------------------------------------- */
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -10,25 +39,35 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    /* Brand primary: flame orange-600 #ea580c (locked sketch-001 palette,
-       .planning/sketches/themes/default.css) */
-    --primary: 20.5 90.2% 48.2%;
+    /* Brand primary: flame orange-700 #c2410c (same flame ramp as the locked
+       sketch-001 palette, one step deeper). orange-600 #ea580c carries white
+       text at only 3.56:1 — it is the single most-used text background in the
+       app (Button default variant, active sidebar item), so it had to clear
+       4.5:1. #c2410c = 5.18:1. Its DECORATIVE sibling is --ember-bright. */
+    --primary: 17.5 88.3% 40.4%;
     --primary-foreground: 60 9.1% 97.8%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* slate-600 #475569, not slate-500 — slate-500 is 4.43:1 on brand cream. */
+    --muted-foreground: 215.3 19.3% 34.5%;
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    /* red-600 #dc2626, not red-500 #ef4444 (3.60:1 under --destructive-foreground). */
+    --destructive: 0 72.2% 50.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 20.5 90.2% 48.2%;
+    --ring: 17.5 88.3% 40.4%;
     --radius: 0.5rem;
 
     /* Extended brand tokens (sketch-001) */
-    --trust: #059669;
+    /* emerald-700 — used as a TEXT colour / text background, so 4.5:1 applies. */
+    --trust: #047857;
+    /* GRAPHICS ONLY (3:1, SC 1.4.11) — never put text on or in these two.
+       #10b981 is 2.28:1 on white and #f97316 is 2.80:1; both are decorative
+       accents (glow, rules, chart fills), which is why they keep the brighter
+       value the brand direction asked for. */
     --trust-bright: #10b981;
     --ember-bright: #f97316;
     --shadow-glow-ember: 0 8px 32px rgba(249, 115, 22, 0.35);
@@ -41,7 +80,11 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 20.5 90.2% 48.2%;
+    /* Same orange-700 as light: --primary-foreground is near-white in BOTH
+       themes, so the pairing that had to reach 4.5:1 is theme-independent.
+       --muted-foreground below is deliberately NOT darkened here — on a dark
+       surface slate-400 is the light end of the pair and already correct. */
+    --primary: 17.5 88.3% 40.4%;
     --primary-foreground: 60 9.1% 97.8%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -53,7 +96,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 20.5 90.2% 48.2%;
+    --ring: 17.5 88.3% 40.4%;
   }
 }
 

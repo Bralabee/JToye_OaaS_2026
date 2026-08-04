@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { IconButton } from "@/components/ui/icon-button"
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
 
 interface PaginationProps {
@@ -40,25 +41,26 @@ export function Pagination({
       <p className="text-sm text-slate-600">
         Showing {start}-{end} of {totalElements}
       </p>
-      <div className="flex items-center gap-1">
-        <Button
+      {/* nav + aria-label: four of these controls are icon-only, so without a
+          name a screen reader announced four consecutive "button"s (#451). The
+          page-number buttons already carry text, but `aria-current` is what
+          tells a non-visual user WHICH page they are on — the orange fill does
+          not survive into the accessibility tree. */}
+      <nav className="flex items-center gap-1" aria-label="Pagination">
+        <IconButton
           variant="outline"
-          size="sm"
           onClick={() => onPageChange(0)}
           disabled={currentPage === 0}
-          className="h-8 w-8 p-0"
-        >
-          <ChevronsLeft className="h-4 w-4" />
-        </Button>
-        <Button
+          label="Go to first page"
+          icon={<ChevronsLeft className="h-4 w-4" />}
+        />
+        <IconButton
           variant="outline"
-          size="sm"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 0}
-          className="h-8 w-8 p-0"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
+          label="Go to previous page"
+          icon={<ChevronLeft className="h-4 w-4" />}
+        />
         {pages.map((page) => (
           <Button
             key={page}
@@ -66,29 +68,27 @@ export function Pagination({
             size="sm"
             onClick={() => onPageChange(page)}
             className="h-8 w-8 p-0"
+            aria-label={`Go to page ${page + 1}`}
+            aria-current={page === currentPage ? "page" : undefined}
           >
             {page + 1}
           </Button>
         ))}
-        <Button
+        <IconButton
           variant="outline"
-          size="sm"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage >= totalPages - 1}
-          className="h-8 w-8 p-0"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button
+          label="Go to next page"
+          icon={<ChevronRight className="h-4 w-4" />}
+        />
+        <IconButton
           variant="outline"
-          size="sm"
           onClick={() => onPageChange(totalPages - 1)}
           disabled={currentPage >= totalPages - 1}
-          className="h-8 w-8 p-0"
-        >
-          <ChevronsRight className="h-4 w-4" />
-        </Button>
-      </div>
+          label="Go to last page"
+          icon={<ChevronsRight className="h-4 w-4" />}
+        />
+      </nav>
     </div>
   )
 }

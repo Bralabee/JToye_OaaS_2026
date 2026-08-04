@@ -314,10 +314,20 @@ jobs:
   #      Hikari pool (+ Keycloak + backup + exporter) must fit Postgres
   #      max_connections with >=20% headroom, and the core-java HPA must not
   #      scale on memory (#94).
-  #   3. check-env-contract.sh — the two-direction core-java env contract
-  #      (D-07/D-08): no env is injected that no application*.yml reads (DEF-4),
-  #      and no placeholder with a local-only or missing default is left
-  #      unsupplied without a REASONED allowlist entry (DEF-6). Needs GNU
+  #   3. check-env-contract.sh — the two-direction env contract for ALL THREE
+  #      built services: core-java, edge-go and the frontend (D-07/D-08,
+  #      widened from core-java-only by #298 — the same bug class was live in
+  #      edge-go and invisible to a core-java-only gate: JWT_EXPECTED_ISSUER
+  #      had been read since #87 and no manifest ever supplied it).
+  #      Direction (a): no env is injected that the service does not read
+  #      (DEF-4). Direction (b): nothing the service reads is left unsupplied
+  #      without a REASONED allowlist entry (DEF-6). The frontend additionally
+  #      encodes the build-time/runtime channel split — a NEXT_PUBLIC_* name
+  #      that is BOTH Dockerfile-ARG-declared and injected as a runtime `env:`
+  #      is dead config and is not allowlistable (D-18).
+  #      Every extractor is self-tested against a synthetic control, so a regex
+  #      that matches nothing exits 2 (VOID) rather than reporting a clean
+  #      contract over a service it never actually parsed. Needs GNU
   #      `grep -P`, which ubuntu-latest provides; it exits 2 without it.
   #   4. check-render-invariants.sh — RENDER-level assertions that pin the
   #      Phase 26 fixes: no hardcoded Postgres port, no EnvVar with both `value`
@@ -352,7 +362,7 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
-      - name: Assert the core-java env contract holds in both directions (D-07/D-08)
+      - name: Assert the core-java, edge-go and frontend env contracts hold in both directions (D-07/D-08)
         run: |
           chmod +x ./k8s/scripts/check-env-contract.sh
           ./k8s/scripts/check-env-contract.sh

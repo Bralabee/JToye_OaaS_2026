@@ -269,7 +269,7 @@ export default function WebhooksPage() {
         </div>
         <Button
           onClick={() => setCreateOpen(true)}
-          className="w-full gap-2 bg-orange-500 text-white hover:bg-orange-600 sm:w-auto"
+          className="w-full gap-2 bg-orange-700 text-white hover:bg-orange-800 sm:w-auto"
         >
           <Plus className="h-4 w-4" />
           Add endpoint
