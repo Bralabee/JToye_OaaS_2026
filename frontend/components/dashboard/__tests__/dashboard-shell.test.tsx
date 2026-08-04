@@ -6,8 +6,13 @@
  */
 
 import { render, screen, within } from "@testing-library/react"
+import { usePathname } from "next/navigation"
 import { DashboardShell } from "../dashboard-shell"
 import { ShopSwitcherProvider } from "../shop-switcher-provider"
+
+// jest.setup.js already mocks next/navigation with `usePathname: () => '/'`;
+// grab the mock so individual cases can put the shell on a real route.
+const mockedUsePathname = usePathname as jest.MockedFunction<typeof usePathname>
 
 // The real Sidebar pulls in next-auth, next/navigation etc. We stub the Sidebar
 // COMPONENT but keep the real module's `navigation` export — MobileTabBar imports
@@ -25,6 +30,12 @@ jest.mock("@/lib/shops-api", () => ({
 }))
 
 describe("DashboardShell", () => {
+  // Leave the shared next/navigation mock as jest.setup.js left it, so a case
+  // that pins a route cannot leak into the ones after it.
+  afterEach(() => {
+    mockedUsePathname.mockReturnValue("/")
+  })
+
   it("renders sidebar chrome and child content", () => {
     render(
       <DashboardShell>
@@ -80,6 +91,39 @@ describe("DashboardShell", () => {
     }
     expect(
       within(tabBar).getByRole("button", { name: /more navigation/i })
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * #450 item 1. The switcher was mounted on EVERY dashboard route, including
+   * the per-tenant onboarding page, which never reads the shop context — the QA
+   * council measured a switch there firing 0 API calls. The bar keeps its fixed
+   * h-14, so dropping the control moves no other chrome.
+   */
+  it("omits the top-bar switcher on the per-tenant onboarding sub-tree", () => {
+    mockedUsePathname.mockReturnValue("/dashboard/onboarding")
+    const { unmount } = render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    const topbar = screen.getByTestId("mobile-topbar")
+    // The bar itself is untouched — only the dead control is gone.
+    expect(topbar).toHaveClass("md:hidden")
+    expect(within(topbar).getByText("J'Toye")).toBeInTheDocument()
+    expect(within(topbar).queryByTestId("shop-switcher")).not.toBeInTheDocument()
+    unmount()
+
+    // Control arm — without this the case above passes on a shell that never
+    // renders the switcher at all.
+    mockedUsePathname.mockReturnValue("/dashboard/products")
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    expect(
+      within(screen.getByTestId("mobile-topbar")).getByTestId("shop-switcher")
     ).toBeInTheDocument()
   })
 })

@@ -1,9 +1,10 @@
 "use client"
 
 import { Store } from "lucide-react"
+import { usePathname } from "next/navigation"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
-import { ShopSwitcher } from "@/components/dashboard/shop-switcher"
+import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
 import type { ReactNode } from "react"
@@ -21,6 +22,9 @@ import type { ReactNode } from "react"
  * navigation. `pb-20` on the container clears the fixed bar.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  const showShopSwitcher = shopSwitcherApplies(pathname)
+
   return (
     // One provider above BOTH switchers (sidebar + mobile top bar): a single
     // fetch and a single hydration writer (WR-06). Renders no DOM of its own, so
@@ -39,9 +43,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         >
           <Store className="h-6 w-6 shrink-0 text-blue-500" aria-hidden="true" />
           <span className="shrink-0 font-bold text-slate-900 dark:text-slate-100">J&apos;Toye</span>
-          <div className="ml-auto min-w-0 max-w-[55%]">
-            <ShopSwitcher variant="topbar" />
-          </div>
+          {/* Omitted on the per-tenant onboarding sub-tree, where the control
+              acts on nothing (#450 item 1). The bar keeps its fixed h-14, so
+              dropping it moves no other chrome. */}
+          {showShopSwitcher && (
+            <div className="ml-auto min-w-0 max-w-[55%]">
+              <ShopSwitcher variant="topbar" />
+            </div>
+          )}
         </div>
         <div className="container mx-auto p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100">
           {children}
