@@ -676,7 +676,7 @@ Phases 29–32 do not start until these land. **None are engineering tasks.**
 
 | decision | state |
 |---|---|
-| **Production domain** | `jtoye.co.uk` never registered; `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records |
+| **Production domain** | **SETTLED 2026-08-04, measured — the old row was wrong.** `jtoye.co.uk` **is registered** (owner-confirmed; NS `dns1/dns2.registrar-servers.com`, A `162.255.119.30`) and **resolves**: `http://jtoye.co.uk` → **200**, redirecting to `www.` on `72.251.11.125`, with an **empty `<title>`** — a registrar placeholder, not the app. **`https://` FAILS: no TLS cert.** So the blocker is no longer registration; it is **TLS + repointing DNS at real hosting**. Separately still true: **`olajay.co.uk` resolves to nothing** (`dig +short A` empty, with `google.com` answering on the same run to prove the resolver works), and `FRONTEND_PUBLIC_*` still point at it. Do not flip `DEPLOY_*_ENABLED` on "it's registered" — a 200 from a parking page is not a deployment target. |
 | **Hosting target** | Your Azure sub is `c483d353`; the employer HS2 sub is off-limits. A live `snackpass-*` Container Apps stack already runs this product |
 | **Stripe test-mode keys** | Empty on every stack. Gates Phase 30 **entirely** |
 | **ADR-0002 sign-off** | Still `Proposed` — gates PITR / DPLY-04 |
