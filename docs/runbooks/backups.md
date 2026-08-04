@@ -165,16 +165,45 @@ Pushgateway is wired into the stack (see [#90](#deferred-work-90)):
 
 A backup that has never been restored is a hypothesis, not a safeguard.
 
-- **Quarterly restore drill (mandatory):** restore the latest dump into a
-  throwaway database and confirm the app boots and core tables are populated.
+- **Quarterly restore drill (mandatory) — run the script:**
   ```bash
+  bash scripts/restore-drill.sh          # 0 = verified · 1 = restore is WRONG · 2 = VOID
+  ```
+  It dumps with the tooling `infra/backups/Dockerfile` actually declares, as the
+  BYPASSRLS role the CronJob actually uses, restores into a **throwaway** server of
+  the deployed major, and compares **per-table row counts plus the Flyway migration
+  count** between source and restore. Measured 2026-08-04: 40 tables / 8095 rows /
+  flyway 60/60, restored clean. Record the date + result in the ops log.
+
+  <details><summary>Why the previous manual recipe was replaced (keep for reference)</summary>
+
+  ```bash
+  # SUPERSEDED — kept so the difference is visible, not because it should be run.
   docker exec jtoye-postgres createdb -U jtoye jtoye_restore_test
   gunzip -c <latest>.sql.gz | docker exec -i jtoye-postgres psql -U jtoye -d jtoye_restore_test
   docker exec jtoye-postgres psql -U jtoye -d jtoye_restore_test -c '\dt' | head
   docker exec jtoye-postgres dropdb -U jtoye jtoye_restore_test
   ```
-  Record the drill date + result in the ops log. A drill that restores cleanly is
-  the only proof the pipeline works end-to-end.
+
+  Four problems, each of which lets a broken backup pass:
+
+  1. **It restores into the LIVE server.** `createdb` on `jtoye-postgres` puts drill
+     data beside production data and makes the blast radius of a typo the real
+     database. The script uses a disposable container with no published ports.
+  2. **Wrong artifact format.** The k8s CronJob writes **custom format** (`pg_dump -Fc`,
+     `k8s-backup.sh:55`); `gunzip -c … | psql` only reads a plain-SQL dump. The
+     documented drill could not have opened the artifact the pipeline produces.
+  3. **`\dt | head` is a truncating filter used as proof.** It lists table *names*,
+     never row counts, and `head` cuts the list. A restore that creates 40 empty
+     tables passes it. The script compares counts per table and fails on any
+     difference.
+  4. **It says nothing about RLS.** Most tables are ENABLE + FORCE RLS, so a count
+     run as a non-BYPASSRLS role with no tenant GUC silently returns fewer rows —
+     measured here as **741 vs 2224** on `media_asset_aud`. Count both sides that
+     way and a hollow restore compares equal. The script counts as a BYPASSRLS role
+     and runs a **control** proving the blind method really is blind before it will
+     report success.
+  </details>
 - **After any change to `backup.sh` or the DB schema:** run a one-off restore
   drill before relying on the next nightly dump.
 - **Monthly spot-check:** `--verify` the newest dump (cheap, catches silent
