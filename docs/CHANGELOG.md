@@ -27,6 +27,31 @@ Closes #293, #506, #271, #298, #299, #303. Three branches assembled and verified
 - **A gate sweep globbing `scripts/check-*.sh` silently omits `k8s/scripts/`** — exactly the six gates this lane changes. The first sweep here reported 21/22 green while the k8s suite had never been run; the real failure surfaced only after the second glob. A verification whose search path excludes the thing under test is vacuous, however green.
 - **The backlog moved as a side effect.** Five findings were carried only as allowlist entries and in no issue; two are now genuinely fixed, leaving three — `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `CSP_UPGRADE_INSECURE_REQUESTS`.
 - `docs/metrics.json` regenerated once for the lane and **unchanged**: Lane D adds no test blocks, so no prose re-sync was needed and this PR cannot conflict with the other Wave-1 lanes on it.
+### Lane C — AA contrast forced a design-system palette shift (#522) — 2026-08-04
+
+Closes #451. One branch, fast-forwarded, so the assembled tree is byte-identical to the branch the measurements were taken on.
+
+#### Changed
+- **`--primary` moves from orange-600 to orange-700, design-system-wide.** Forced rather than chosen: white-on-orange-600 measures **3.56:1**, under AA for normal text, and there is **no foreground lighter than white**. The owner accepted the palette shift over the alternative — a separate `--primary-strong` token used only behind text — on 2026-08-04.
+- Table "no data" cells routed through `--muted-foreground` instead of a hardcoded grey.
+
+#### Added
+- **`components/ui/icon-button.tsx`** — icon-only controls now carry an accessible name **by construction** rather than by remembering an `aria-label` at each call site. The recurring defect was never one missing label; it was that nothing made the label structural.
+- `__tests__/contrast-tokens.test.ts` — asserts the token pairs themselves, so a future palette edit that reintroduces a sub-AA pairing fails at test time rather than at an audit months later.
+
+#### Results
+| | before | after |
+|---|---|---|
+| desktop axe findings | 257 | **58** |
+| mobile axe findings | 270 | **31** |
+| critical / serious | — | **0 / 0** |
+| routes regressed | — | **0** |
+
+#### Notes
+- **A naive axe sweep scores `button-name: 0` on the dashboard, and that is an ARTEFACT, not a pass.** The vendor account renders "No shop access" on every dashboard route, so the tables never mount and there are no buttons to name. Measured against a populated account separately: **64 → 0**. Any future sweep reporting 0 on a dashboard route must first prove the instrument can see the rows — the same shape as an RLS-blinded verification query returning 0 on a full table.
+- **The metrics baseline was measured, not quoted.** The handoff records `jest_blocks 593 / files 79 / total 2137`; that is the **Lane B branch's** figure and Lane B is unmerged, so `origin/main` was really at `548 / 74 / 2092`. Taking the handoff number as the baseline would have produced an entry wrong by 45 and a `check-doc-metrics` failure at the far end. Per-lane deltas compose as deltas, never as absolutes.
+- **`rg` died mid-assembly with `claude native binary not installed`, and the `|| echo` fallback printed a clean result.** The check "does this branch touch `docs/metrics.json` or `docs/CHANGELOG.md`?" reported "(clean)" because the search **failed**, not because it found nothing — the two are indistinguishable from the exit status alone. Re-run through `git diff --name-only -- <pathspec>` with a positive control proving the query could return something. A search tool that cannot run is not a search that found nothing.
+- **Not claimed:** no browser run was performed during this assembly, and `check-runtime-freshness` is rc=1 by design because the lane changed frontend source. The axe figures are #451's own, carried on proven byte-identity (`git diff --stat wave1/fe-451-tokens HEAD` empty) rather than re-measured.
 
 ### The E2E instruments were wrong, and three lessons became executable (#513) — 2026-08-03
 

@@ -75,7 +75,9 @@ export function MobileTabBar({ className }: { className?: string }) {
   const tabClass = (active: boolean) =>
     cn(
       "flex flex-1 flex-col items-center justify-center gap-0.5 min-h-11 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500",
-      active ? "text-orange-600" : "text-slate-500 hover:text-slate-700"
+      // orange-700: the active label is 12px text on white, so 4.5:1 applies and
+      // orange-600 reached only 3.56 (#451). Matches the --primary token.
+      active ? "text-orange-700" : "text-slate-500 hover:text-slate-700"
     )
 
   return (
@@ -143,7 +145,7 @@ export function MobileTabBar({ className }: { className?: string }) {
                     className={cn(
                       "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                       active
-                        ? "bg-orange-50 text-orange-600 dark:bg-slate-800"
+                        ? "bg-orange-50 text-orange-700 dark:bg-slate-800"
                         : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
                     )}
                   >
