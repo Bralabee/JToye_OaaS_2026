@@ -159,7 +159,22 @@ test.describe("Shop Menu & Product Cards", () => {
     // Jollof Rice is featured, so it appears in BOTH the "Popular" section and
     // its "Mains" category (as name + description) — scope to the first match.
     await expect(page.locator("text=Jollof Rice").first()).toBeVisible({ timeout: 5000 })
-    await expect(page.locator("text=Popular")).toBeVisible()
+
+    // The HEADING, not a substring match over the whole document.
+    //
+    // `locator("text=Popular")` was a strict, unscoped, case-insensitive
+    // SUBSTRING match, asserted at `domcontentloaded` with no settling time.
+    // Since #537 server-rendered this page, React streams the tree and parks a
+    // second copy of it in `<div id="S:n" hidden>` until the swap script runs —
+    // so during that window "Popular" legitimately matches twice and strict mode
+    // fails immediately. Measured on the live stack over 25 loads: `text=`
+    // returned 2 matches 7-15 times; `getByRole("heading")` returned exactly 1
+    // every time, because the buffered copy is inside `[hidden]` and therefore
+    // out of the accessibility tree. The visible page has always had exactly one.
+    //
+    // It is also the assertion that was meant all along, and it no longer breaks
+    // if a vendor writes "popular" into a promotion or a dish description.
+    await expect(page.getByRole("heading", { name: "Popular" })).toBeVisible()
     await expect(page.locator("text=Halal").first()).toBeVisible()
     await expect(page.locator("text=£8.99").first()).toBeVisible()
   })
