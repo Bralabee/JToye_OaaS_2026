@@ -60,7 +60,12 @@ export interface FeedState {
   stale: boolean
   /** Age of the data in ms, or null before the first successful read. */
   ageMs: number | null
-  /** True when the board should raise a banner rather than just tint the pill. */
+  /**
+   * True when the board should raise a banner rather than just tint the pill.
+   *
+   * Deliberately FALSE during a cold load — see {@link deriveFeedState}. The pill
+   * still shows the honest status; only the space-taking banner is withheld.
+   */
   alerting: boolean
 }
 
@@ -88,7 +93,24 @@ export function deriveFeedState(input: FeedInputs): FeedState {
     status = "offline"
   }
 
-  return { status, stale, ageMs, alerting: status !== "live" || stale }
+  // A COLD LOAD IS NOT AN ALERT. Between first paint and the first successful read
+  // the socket has not connected yet and no data has arrived, so the naive rule
+  // (`status !== "live"`) raises the banner on every single page load and drops it a
+  // second later. That is wrong twice over:
+  //
+  //   - it cries wolf. A warning the kitchen sees on every load is a warning the
+  //     kitchen stops reading, which costs exactly the moments this feature exists for.
+  //   - it is a measured layout-shift regression. At the repo's declared throttle
+  //     profile (375px, Fast-3G, 4x CPU) the banner mounting and unmounting during
+  //     load took /dashboard/kitchen from CLS 0.2408 to 0.7321 — the banner pushes the
+  //     whole ticket grid down and then lets it snap back.
+  //
+  // A read that FAILED is different: that is a fact about this load, not an absence of
+  // one, and it alerts immediately. The pill is unaffected either way — it always shows
+  // the honest status, and it occupies the same box in every state, so it cannot shift.
+  const settled = lastSyncedAt !== null || lastSyncFailed
+
+  return { status, stale, ageMs, alerting: settled && (status !== "live" || stale) }
 }
 
 /** Absolute wall-clock stamp — the thing a cook glances at. Locale-pinned so the

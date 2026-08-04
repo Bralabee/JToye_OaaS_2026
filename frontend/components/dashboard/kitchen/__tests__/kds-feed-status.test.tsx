@@ -139,15 +139,30 @@ describe("KdsFeedBanner", () => {
     expect(screen.getByRole("button", { name: /refreshing/i })).toBeDisabled()
   })
 
-  it("says so plainly when nothing has loaded yet", () => {
+  it("says so plainly when the FIRST read failed and nothing has loaded", () => {
     render(
       <KdsFeedBanner
-        state={state({ online: false, lastSyncedAt: null })}
+        state={state({ online: false, lastSyncedAt: null, lastSyncFailed: true })}
         lastSyncedAt={null}
         onRefresh={noop}
         refreshing={false}
       />
     )
     expect(screen.getByTestId("kds-feed-banner")).toHaveTextContent("No orders have loaded yet")
+  })
+
+  it("stays silent during a cold load — the socket simply has not connected YET", () => {
+    // The regression this guards: raising the banner on `!connected` alone made it
+    // flash on every page load and then vanish, which is both a cry-wolf warning and
+    // a measured CLS breach (0.2408 -> 0.7321 at the declared throttle profile).
+    render(
+      <KdsFeedBanner
+        state={state({ connected: false, reconnecting: false, lastSyncedAt: null })}
+        lastSyncedAt={null}
+        onRefresh={noop}
+        refreshing={false}
+      />
+    )
+    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
   })
 })

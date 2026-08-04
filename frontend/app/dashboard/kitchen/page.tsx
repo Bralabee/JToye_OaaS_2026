@@ -531,9 +531,31 @@ export default function KitchenPage() {
   )
 
   if (loading) {
+    // Keep the HEADER, and reserve the grid's space rather than centring a spinner in
+    // an otherwise empty page. The old version rendered a 128px spinner and then
+    // swapped the entire board in underneath it, which is a whole-page layout shift on
+    // every load — at the repo's declared throttle profile it was the single largest
+    // contributor to /dashboard/kitchen's CLS. The `min-h` band below is deliberately
+    // the same order of height as the first row of tickets, so the grid lands roughly
+    // where the placeholder was instead of pushing everything down.
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900">Kitchen Display</h1>
+            <KdsBoardShopName shopName={null} />
+            <p className="mt-0.5 text-sm text-slate-500">
+              Live order feed &mdash; bump orders through preparation stages
+            </p>
+          </div>
+        </div>
+        <div
+          className="flex min-h-[16rem] items-center justify-center"
+          role="status"
+          aria-label="Loading kitchen orders"
+        >
+          <div className="h-16 w-16 motion-safe:animate-spin rounded-full border-b-2 border-t-2 border-primary" />
+        </div>
       </div>
     )
   }
@@ -666,9 +688,23 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* Order cards grid */}
-      {sortedOrders.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
+      {/* Order cards grid.
+          `loading` above only covers the SHOP list; the orders arrive after it, so the
+          board used to render "No active orders" in the gap and then replace it with a
+          full grid. That is a claim the board had not yet checked — the same class of
+          untruth as #450 5d — and it was the largest remaining layout shift on the
+          route, measured at the declared throttle profile. `lastSyncedAt === null` is
+          exactly "orders have never been read", so it drives both fixes at once. */}
+      {lastSyncedAt === null && sortedOrders.length === 0 ? (
+        <div
+          className="flex min-h-[16rem] items-center justify-center"
+          role="status"
+          aria-label="Loading kitchen orders"
+        >
+          <div className="h-16 w-16 motion-safe:animate-spin rounded-full border-b-2 border-t-2 border-primary" />
+        </div>
+      ) : sortedOrders.length === 0 ? (
+        <div className="flex min-h-[16rem] flex-col items-center justify-center py-24 text-center">
           <ChefHat className="mb-4 h-16 w-16 text-slate-300" />
           <h3 className="mb-2 text-xl font-semibold text-slate-900">
             No active orders

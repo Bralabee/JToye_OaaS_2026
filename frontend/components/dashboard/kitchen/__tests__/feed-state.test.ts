@@ -80,6 +80,30 @@ describe("deriveFeedState", () => {
     expect(s.alerting).toBe(false)
   })
 
+  it("does not ALERT during a cold load, while still naming the status honestly", () => {
+    // Measured regression guard. Between first paint and the first read the socket is
+    // not up yet, so the naive `status !== "live"` rule raised the banner on every
+    // load and dropped it a second later — /dashboard/kitchen went from CLS 0.2408 to
+    // 0.7321 at the declared throttle profile because the banner pushed the ticket
+    // grid down and then let it snap back.
+    const s = deriveFeedState({
+      ...base,
+      connected: false,
+      reconnecting: false,
+      lastSyncedAt: null,
+    })
+    expect(s.status).toBe("offline") // the pill still tells the truth
+    expect(s.alerting).toBe(false) // the space-taking banner does not appear
+  })
+
+  it("DOES alert on a cold load whose first read failed", () => {
+    // The other half of the pair: a failed read is a fact about this load, not the
+    // absence of one. Without this the suppression above would swallow a real failure.
+    const s = deriveFeedState({ ...base, lastSyncedAt: null, lastSyncFailed: true })
+    expect(s.status).toBe("error")
+    expect(s.alerting).toBe(true)
+  })
+
   it("clamps a clock that ran backwards to an age of zero rather than a negative", () => {
     const s = deriveFeedState({ ...base, now: NOW - 5000 })
     expect(s.ageMs).toBe(0)
