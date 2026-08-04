@@ -50,7 +50,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
 - Next.js 16.2.12 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.83.0 - Form state management
+- React Hook Form 7.84.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 3.4.1 - Utility-first CSS framework
 - Radix UI - Headless component library
@@ -64,7 +64,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Spring Boot Test - Testing utilities and test containers
 - Jest 29.7.0 - JavaScript test runner
 - @testing-library/react - React component testing
-- @playwright/test 1.62.0 - E2E browser automation
+- @playwright/test 1.62.1 - E2E browser automation
 - Spring Boot Gradle Plugin 3.5.16 - JAR packaging
 - Flyway - Database migration management
 - Lombok - Boilerplate reduction (code generation)

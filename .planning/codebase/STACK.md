@@ -57,7 +57,7 @@
 **Frontend:**
 - Next.js 16.2.12 - React framework, file-based routing, standalone output
 - React 19 + React DOM 19
-- React Hook Form 7.83.0 + @hookform/resolvers 5.2.2
+- React Hook Form 7.84.0 + @hookform/resolvers 5.2.2
 - Next-Auth 5.0.0-beta.32 - Keycloak OIDC session handling
 - TailwindCSS 3.4.1 + tailwind-merge 3.4.0 + tailwindcss-animate 1.0.7
 - Radix UI primitives (alert-dialog, dialog, dropdown-menu, label, select, slot, tabs, toast)
@@ -65,7 +65,7 @@
 - @stomp/stompjs 7.3.0 - Browser STOMP client for KDS WebSocket (added in v2.1)
 - Framer Motion 12.43.0 - Animations
 - Recharts 3.10.1 - Admin dashboard charts
-- date-fns 4.1.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 0.562.0
+- date-fns 4.4.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 1.28.0
 
 **Edge Gateway:**
 - Gin v1.12.0 - HTTP routing and middleware (`edge-go/go.mod:6`)
@@ -81,7 +81,7 @@
 - H2 - Lightweight in-memory JPA tests
 - Jest 29.7.0 + jest-environment-jsdom 30.3.0 - JS test runner
 - @testing-library/react 16.3.0, @testing-library/jest-dom 6.1.5, @testing-library/user-event 14.5.1
-- @playwright/test 1.62.0 - E2E browser automation
+- @playwright/test 1.62.1 - E2E browser automation
 - Go `testing` stdlib + table-driven tests
 
 **Build & Development:**
