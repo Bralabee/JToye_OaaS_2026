@@ -594,7 +594,7 @@ You own `k8s/`, `infra/`, the compose files, and the monitoring stack for J'Toye
 
 ## What is actually running
 
-Seventeen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres:15-alpine`,
+Sixteen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres:15-alpine`,
 `redis:7-alpine`, `keycloak:24.0.5`, `minio`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
 `alertmanager:v0.27.0`, `grafana:10.2.2`, `ollama`, and two exporters. There is a committed
 `k8s/local` overlay and a minikube machine at `~/.minikube/machines/jtoye`.
