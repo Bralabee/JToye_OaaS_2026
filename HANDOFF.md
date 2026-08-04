@@ -43,6 +43,58 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ## 0. ⚠ READ FIRST
 
+### 0.-3 Branch/worktree cleanup, and two hazards that were asserted rather than measured (2026-08-04, later)
+
+**The tree is now `main` only.** 31 local branches → **1**; 10 remote → **2** (`main` + the open
+dependabot #523); 16 worktrees → **1**. `.claude/worktrees/` is empty. No unpushed commits anywhere.
+
+The 15 `wave1/*` branches were **fully absorbed** into `main` and are deleted. Do not go looking for
+them. That verdict was contested and had to be settled with the right instrument:
+
+- `git diff main...wave1/x` reported **185–1080 insertions "not in main"** and was quoted as evidence
+  of a gap in the merge train. **It is the wrong instrument** — three-dot shows changes made *on the
+  branch*, and stays large whenever `main` moves on. It structurally cannot answer "is this in main".
+- The question that can be answered: take every line the branch **added** relative to its own
+  merge-base, and look for it in `main`'s current file. Result: **13/15 fully absorbed**; `ci-276`'s
+  one straggler is `docker/login-action@…v4.5.2` where `main` already has **v4.6.0** (branch behind,
+  not ahead); `k8s-298-299-303`'s two are `Reviewed omission` entries for `CORE_API_INTERNAL_URL` and
+  `NEXT_PUBLIC_KEYCLOAK_URL` — and `main` **supplies both as real env entries** in
+  `k8s/base/frontend-deployment.yaml` + the goldens, closing #292/#293. Merging them back would be a
+  regression: re-documenting as "acceptable omission" two vars that are now set.
+- **The instrument was falsified before it was trusted**: against `origin/main~25` the same check
+  reports **6993/7194 added lines absent (97%)**, against current `main` **0%**. It can say
+  OUTSTANDING at scale, so ABSORBED is a real verdict, not a check incapable of failing.
+
+**`git branch -d` cannot retire a squash-merged branch and says so misleadingly.** It refused every
+`wave1/*` as *"not fully merged"* while their content was demonstrably in `main`. `-D` is required,
+and is only safe **after** a content proof — ancestry is the wrong authority here. Contrast the 15
+`worktree-agent-*` branches, which `-d` accepted because they *were* true ancestors. Two branch
+families, same repo, opposite correct tool.
+
+**A destructive step invalidates the audit that preceded it.** Deleting the 8 merged `batch/*` remote
+branches stranded all 15 `wave1/*`: their commits were reachable only *through* those branches, so
+they silently became local-only. The pre-deletion unpushed audit said "clean" and stayed true only
+until the delete ran. **Re-run Phase 13 after any branch deletion, not just before.** They were pushed
+as backup, then deleted again once absorption was proven — that round trip was correct, not waste.
+
+**Two hazards in the previous handoff's orbit were measured and did not survive:**
+
+1. **"A GSD update wipes `~/.claude/hooks|agents|skills`"** — this is `update.md` *prose*, not observed
+   behaviour. GSD's installer last ran **2026-07-27 12:15**; custom files older than that survived it
+   with original mtimes (`block-git-commit.sh` 04-15, `warn-version-stragglers.py` 06-20,
+   `block-secrets.sh` 07-14, `carl-hook.py` 07-25, `skills/ui-ux-pro-max` 03-04). `gsd-user-files-backup/`
+   was never refreshed on 07-27, so the backup step did not even run. Custom hooks were moved out to
+   `~/.claude/guard-hooks/` on the strength of the prose, then **reverted** — `settings.json` is back to
+   its pre-move hash `0d20e0fb`. Do not redo this. Agents/skills *cannot* be relocated anyway: they are
+   found by directory convention, with no path registration in `settings.json`.
+2. **`feature/faster-integration-tests-parallelism` was NOT orphaned work** — see §3, row corrected.
+
+**One live-config change did land** (outside this repo): `block-main-branch.sh` now permits branch
+**deletions** from `main` — narrowly, never for `main`/`master`, never alongside a commit/merge.
+Shipped in dotfiles PR #64. It had a real bug on first use in anger: newline-splitting ran *before*
+backslash-continuation folding, so every wrapped multi-branch delete was blocked. Fixed; harness
+30 → 38 cases with 3 break arms (12/10/4 failures, each isolating one clause).
+
 ### 0.-2 The backup pipeline could not restore, and nothing in the repo could see it (2026-08-04)
 
 Dependabot #525 bumped `infra/backups/Dockerfile` to `postgres:18-bookworm` while every server in the
@@ -587,23 +639,34 @@ clean.
   suspecting the product.
 - **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. GTM-01.
 - **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
-- **Toolchain: 2 DRIFT + 1 UNKNOWN**, none applied — re-measured 2026-08-03, down from 4 DRIFT.
-  `conda` 26.1.1→26.5.3 and `ms-fabric-cli` 1.2.0→1.6.1. `antigravity` is UNKNOWN because it is a
-  **manual** channel the probe cannot query — a recorded decision, not a gap. `docker-ce` restarts
-  the daemon — stack down first.
+- **Toolchain: 3 DRIFT + 1 UNKNOWN**, none applied — **re-measured 2026-08-04** (was 2 DRIFT on 08-03;
+  the conda target moved and copilot appeared). `conda` 26.1.1→**26.7.0**, `ms-fabric-cli` 1.2.0→1.6.1,
+  `@github/copilot` 1.0.77→1.0.78. `antigravity` is UNKNOWN because it is a **manual** channel the probe
+  cannot query — a recorded decision, not a gap. `docker-ce` restarts the daemon — stack down first.
+  Housekeeping surfaces drift and does not converge it; apply via `update.sh --tier N` deliberately.
 - **`.claude/worktrees/` was not gitignored: 9 live agent worktrees, 70,498 untracked files**, each a
   full working copy holding one of the merge train's branches. A plain `git add .` in this checkout
   staged all of it. Fixed in **#482**, scoped to `.claude/worktrees/` and **not** `.claude/`, because
   the project convention reserves `.claude/skills/` for tracked project skills.
+  **As of 2026-08-04 the directory is EMPTY** — all 15 worktrees removed (see §0.-3). Each was verified
+  clean (0 uncommitted, 0 untracked) and unheld by any process (`lsof +D`) *before* removal, because the
+  absorption analysis that cleared their branches examined **commits only** and is blind to a dirty
+  working tree. The gitignore fix stays: the hazard returns the moment an agent run recreates them.
   **The habit matters more than the fix.** The same hazard fired earlier the same day at 369 lines
   through a *named-path* `git add AGENTS.md`, which merged another session's uncommitted work as
   #469 and had to be reverted by #470 — a named path proves *which file*, never *which lines*. So:
   **`git diff --staged` before every commit here**, and treat `N insertions / 0 deletions` on a file
   you only edited as content that arrived from someone else.
-- **Orphaned and worth someone's attention: `feature/faster-integration-tests-parallelism`** — one
-  unpushed commit, *"perf(test): parallelize integrationTest to cut ~39m runtime to ~15m"*, no PR,
-  not in a worktree. The suite was **measured at 47 minutes** on #472 (02:10:20→02:57:34) and #444
-  will pay the same. Deliberately not pushed — publishing another session's work is its author's call.
+- ~~**Orphaned and worth someone's attention: `feature/faster-integration-tests-parallelism`**~~
+  **RESOLVED 2026-08-04 — it was not orphaned work, it was superseded work, and it is deleted.**
+  Its single commit `c142b90c` is the *earlier unpushed attempt* that **#512 (`d95239dc`) explicitly
+  supersedes** — #512's own message names it: *"an earlier unpushed attempt used
+  `availableProcessors()/4` … INERT ON CI"*. Pushing it would have opened a PR that **conflicts** in
+  `core-java/build.gradle.kts`, and whose only merge-in-its-favour reverts the divisor `/2 → /4`,
+  re-breaking the speed-up on CI. Proven before deleting: `git merge-base --is-ancestor` → not an
+  ancestor (so genuinely not in `main`), `git merge-tree` → CONFLICT on exactly the lines #512 rewrote,
+  and `main` line 218 already reads `availableProcessors() / 2`. The 47-minute measurement stands; #512
+  is the fix for it.
 
 ---
 
@@ -632,6 +695,9 @@ staging deploy today would be wholly unmonitored.
 
 - **Branch `main`**, 0 behind, **clean** — the `.idea` residue that made this line read `dirty=4` for
   two days is gone as of #435. A dirty tree now means *your* change.
+- **Branches/worktrees (2026-08-04):** **1 local** (`main`), **2 remote** (`main` + dependabot #523),
+  **1 worktree**. Zero unpushed commits. Everything else was retired — see §0.-3 for what was proven
+  before deleting, and for why `git branch -d` refused branches whose content was already in `main`.
 - **Live stack:** 16 jtoye containers — 11 from `docker-compose.full-stack.yml` + 5 from
   `infra/monitoring/docker-compose.monitoring.yml`. **14 report healthy**;
   `jtoye-redis-exporter` and `jtoye-postgres-exporter` report no health status because their images
