@@ -61,14 +61,47 @@ async function vendorLogin(page: Page) {
   await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
 }
 
-/** The dashboard chrome has settled: both switcher mounts have resolved. */
+/**
+ * The LIVE app tree.
+ *
+ * Next keeps the outgoing shell in the document, marked `hidden`, while a
+ * navigation settles — so `document` can briefly hold TWO complete dashboard
+ * shells and four switcher mounts. Counting `#shop-context-select` across the
+ * whole document therefore reports 2 on a correctly-fixed build, which would
+ * make the duplicate-id assertion below fail for a reason that has nothing to do
+ * with the defect. `e2e/dashboard-mobile.spec.ts` scopes to the same selector,
+ * for the same reason.
+ */
+const LIVE = "body > div:not([hidden])"
+
+/**
+ * The dashboard chrome has settled: both switcher mounts have resolved past
+ * their loading skeleton.
+ *
+ * Visibility is asserted on the TOP BAR mount specifically. The sidebar copy is
+ * first in DOM order but `hidden md:flex`, so a `.first()` visibility wait is
+ * unsatisfiable at a phone viewport — it fails on a perfectly healthy page.
+ */
 async function switcherSettled(page: Page) {
-  await expect(page.locator('[data-testid="shop-switcher"]').first()).toBeVisible({
-    timeout: 20_000,
-  })
+  await expect(
+    page.locator(`${LIVE} [data-testid="mobile-topbar"] [data-testid="shop-switcher"]`)
+  ).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.locator(`${LIVE} select[id^='shop-context-select']`)
+  ).toHaveCount(2, { timeout: 20_000 })
 }
 
-test.describe("Dashboard interface corrections (#450)", () => {
+/**
+ * `@mobile-only` — the desktop project's `grepInvert` skips this file, and that
+ * is deliberate rather than a coverage gap. Every block here pins its own 390px
+ * `isMobile` viewport, so running them again under the desktop project measures
+ * the same thing twice; what it does NOT duplicate is the load on a shared API
+ * that rate-limits at 100 requests/minute per tenant. Measured 2026-08-04:
+ * running both projects back to back exhausted the bucket, the switcher fell
+ * back to its zero-grant state, and the duplicate-id block failed for a reason
+ * that had nothing to do with the code under test.
+ */
+test.describe("Dashboard interface corrections (#450) @mobile-only", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true })
 
   test.beforeEach(async ({ page }) => {
@@ -80,23 +113,28 @@ test.describe("Dashboard interface corrections (#450)", () => {
       await page.goto(path, { waitUntil: "domcontentloaded" })
       await switcherSettled(page)
 
-      const state = await page.evaluate(() => ({
-        // The control has to be in its <select> state, or the count below is 0
-        // for the wrong reason and the assertion passes over a dead page.
-        selects: document.querySelectorAll("select[id^='shop-context-select']").length,
-        duplicates: document.querySelectorAll("#shop-context-select").length,
-        labels: [...document.querySelectorAll("label[for^='shop-context-select']")].map(
-          (l) => l.getAttribute("for")
-        ),
-      }))
+      const state = await page.evaluate((live) => {
+        const root = document.querySelector(live)
+        if (!root) return null
+        return {
+          // The control has to be in its <select> state, or the count below is 0
+          // for the wrong reason and the assertion passes over a dead page.
+          selects: root.querySelectorAll("select[id^='shop-context-select']").length,
+          duplicates: root.querySelectorAll("#shop-context-select").length,
+          labels: [...root.querySelectorAll("label[for^='shop-context-select']")].map(
+            (l) => l.getAttribute("for")
+          ),
+        }
+      }, LIVE)
 
-      expect(state.selects, `${path}: both switcher mounts render a <select>`).toBe(2)
-      expect(state.duplicates, `${path}: #shop-context-select is unique`).toBe(1)
+      expect(state, `${path}: the live app tree was found`).not.toBeNull()
+      expect(state!.selects, `${path}: both switcher mounts render a <select>`).toBe(2)
+      expect(state!.duplicates, `${path}: #shop-context-select is unique`).toBe(1)
       // Two labels, two distinct targets, and each target exists.
-      expect(state.labels).toHaveLength(2)
-      expect(new Set(state.labels).size, `${path}: labels target distinct ids`).toBe(2)
-      for (const id of state.labels) {
-        await expect(page.locator(`select#${id}`)).toHaveCount(1)
+      expect(state!.labels).toHaveLength(2)
+      expect(new Set(state!.labels).size, `${path}: labels target distinct ids`).toBe(2)
+      for (const id of state!.labels) {
+        await expect(page.locator(`${LIVE} select#${id}`)).toHaveCount(1)
       }
     }
   })
@@ -119,16 +157,18 @@ test.describe("Dashboard interface corrections (#450)", () => {
     for (const { path } of TENANT_ROUTES) {
       await page.goto(path, { waitUntil: "domcontentloaded" })
       // Wait for the page itself, so "not found" cannot mean "not rendered yet".
-      await expect(page.locator("main h1").first()).toBeVisible({ timeout: 20_000 })
-      await expect(page.locator('[data-testid="shop-switcher"]')).toHaveCount(0)
-      await expect(page.locator("select[id^='shop-context-select']")).toHaveCount(0)
+      await expect(page.locator(`${LIVE} main h1`).first()).toBeVisible({
+        timeout: 20_000,
+      })
+      await expect(page.locator(`${LIVE} [data-testid="shop-switcher"]`)).toHaveCount(0)
+      await expect(page.locator(`${LIVE} select[id^='shop-context-select']`)).toHaveCount(0)
     }
 
     // Control arm — without it this passes on a build that dropped the switcher
     // everywhere, which is a regression, not a fix.
     await page.goto("/dashboard/products", { waitUntil: "domcontentloaded" })
     await switcherSettled(page)
-    await expect(page.locator('[data-testid="shop-switcher"]')).toHaveCount(2)
+    await expect(page.locator(`${LIVE} [data-testid="shop-switcher"]`)).toHaveCount(2)
   })
 
   test("2 — the staff page does not promise an invite it cannot send", async ({ page }) => {
@@ -151,7 +191,7 @@ test.describe("Dashboard interface corrections (#450)", () => {
  * not relaxed: the acceptance criterion forbids moving the budget to meet the
  * measurement.
  */
-test.describe("Throttled-mobile CLS — /dashboard/staff (#454)", () => {
+test.describe("Throttled-mobile CLS — /dashboard/staff (#454) @mobile-only", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true })
 
   test("holds CLS under the 0.1 budget at 390px / Fast-3G / 4x CPU", async ({
