@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A fresh database could not be provisioned on the first try (#532) — 2026-08-04
+
+Closes #517. First boot against an empty database failed Flyway V46 with `SQLSTATE 22P02, invalid input syntax for type uuid: ""` and self-healed on restart, so the symptom in Kubernetes was a CrashLoopBackOff that cleared itself. The nightly E2E stack (#420) hit it on every run from an empty volume and has produced a test result **zero** times in seven dispatches.
+
+#### Fixed
+- **`core-java/src/main/resources/application.yml`** — `spring.flyway.init-sqls` pins a sentinel tenant GUC (`SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000'`) for the whole migration run, and `spring.flyway.url`/`user`/`password` (placeholders onto the same `spring.datasource.*` keys) make Spring Boot hand Flyway a **dedicated, non-pooling `SimpleDriverDataSource`**. `application-staging.yml` / `application-prod.yml` inherit both and carry a note saying so rather than a second copy.
+
+#### Notes
+- **The mechanism is a property of Postgres placeholder GUCs, not of any one migration.** Measured on `postgres:15`: a virgin session reads `NULL` from `current_setting('app.current_tenant_id', true)`; the same session **after** a committed transaction-local `set_config` reads `''`. `NULL::uuid` is harmless, `''::uuid` raises 22P02. So **any** of the six `is_local => true` `set_config` calls in the chain leaves `''` behind on that connection — V44 is simply the first one a fresh chain reaches before V46. The issue body declined to guess which call was responsible; the answer is that the question was the wrong shape.
+- **Why it is intermittent, and why no developer machine reproduces it.** It fires only when V44 and V46 land on the **same physical connection**. And `out-of-order=true` applied V46 *before* V44 on every long-lived database, which is the opposite order to a fresh chain — `installed_rank 45 -> version 46`, `46 -> version 44`.
+- **V33, V44 and V46 are all applied on live databases**, so none could be edited and no new migration could reorder them. V51 already repoints that policy at the safe `current_tenant_id()` helper — five migrations too late to protect V46. The fix had to be config.
+- **The DataSource half is load-bearing, not decoration.** Flyway runs `initSql` on **every** connection it opens (`FlywayExecutor` installs it as a `connectionInitializer`) and a plain `SET` is *session*-scoped. On the shared Hikari pool that connection returns still carrying the GUC — Hikari resets autoCommit/isolation/readOnly/catalog/networkTimeout, not custom GUCs. Measured both ways on the real autoconfiguration: with `spring.flyway.url` set, four connections borrowed concurrently from the app pool all read `<null>`; with only that key removed, one comes back reading the sentinel. A leaked tenant GUC on an RLS system is a worse hazard than the bug being fixed.
+- **The sentinel is provably not a tenant id.** Every tenant id comes from `uuid_generate_v4()`/`UUID.randomUUID()`, both of which always set the version nibble to 4, and V13 seeds `...0001`/`...0002`. It matches no row, so it is semantically identical to the NULL the policies already evaluate: nothing is widened.
+
+#### Added
+- **`core-java/src/test/java/uk/jtoye/core/integration/FreshChainMigrationIntegrationTest.java`** — five tests, all running the chain as `rls_migrator` (`NOSUPERUSER NOBYPASSRLS`, mirroring the `jtoye_app` that `infra/db/init/00-create-db.sql` creates with a bare `CREATE ROLE ... LOGIN`), with `rolsuper`/`rolbypassrls` asserted false before each arm.
+
+#### Notes — falsifiability
+- **A default Testcontainers migration test here would have been vacuous.** The identical chain passes cleanly as the Testcontainers bootstrap SUPERUSER, which bypasses even FORCE RLS — it would have gone green on the broken tree. The role downgrade is the whole test.
+- **Two of the five tests are permanently-encoded control arms**, not one-off runs: `withoutTheSentinelTheSameFreshChainStillDiesAtV46` requires the defect to STILL reproduce without the sentinel, and `sharingTheAppPoolWouldLeakTheSentinelIntoRequestConnections` requires the shared-pool variant to demonstrably leak. A green suite therefore cannot mean "the checks are incapable of failing".
+- **The init-sql is read out of `application.yml`, never hardcoded**, so deleting the property makes the test fail rather than pass.
+- **Three break arms, clean → arms → clean.** Deleting `init-sqls` fails 4 of 5. Pointing it at a decoy GUC name — so the structural assertions pass and the migration path is genuinely exercised — reproduces the real thing through Flyway: `FlywayMigrateException: Script V46__outbox_reliability.sql failed / SQL State : 22P02 / ERROR: invalid input syntax for type uuid: "" / Line : 39`. Deleting `url`/`user`/`password` fails 3 of 5. Every restore was verified by `git hash-object` and by grepping for the break token, never by `git diff --stat`, which is empty both when a file is restored and when it was never written.
+- **The same arm produced the pollution evidence by accident.** With the shared pool and a sentinel that misses its target, the four pooled connections read `["<null>", "", "<null>", "<null>"]` — that `""` is V44's own defensive reset riding a Flyway connection back into the application pool.
+- **The chain was reproduced outside JUnit first**, V1→V60 in version order through `psql` on one connection, one transaction per migration: without the sentinel `rc=3`, `V46...:43: ERROR: invalid input syntax for type uuid: ""`, 27 public tables and a dead chain; with it `rc=0`, `CHAIN-COMPLETE`, 40 tables, V46's two columns and V60's `quarantine_expires_at` all present. The only remaining diagnostic in the green run is V44's designed non-superuser LEAKPROOF `WARNING`.
+
+#### Notes — what this does NOT do
+- **It does not close the bug class.** A raw `::uuid` cast that is live only *transiently* mid-chain stays invisible to `RlsContractTest.noPolicyUsesRawTenantGucCast`, which sweeps the **current** policy set. This makes the chain safe; it does not make the next mid-chain raw cast safe.
+- **`check-connection-math.sh` passes at 155 of a 157 budget line.** Flyway's connections used to come out of the Hikari pool and were inside that budget; they are now 1–2 additive ones at boot. The gate already models every replica at its *full* pool of 12, which a replica is not while still migrating, so the peaks do not stack — but the budget was not widened and the accounting changed.
+- **`check-runtime-freshness` and `check-container-config-drift` VOID (rc=2) by location** — run from a git worktree, `docker compose config` cannot resolve the project's `.env`. Neither is treated as a pass. The live 16-container stack was not rebuilt, recreated or restarted; `application.yml` lives inside the fat jar, so the running stack does not carry this change until it is rebuilt.
+
 ### A gate for the PostgreSQL major that a comment was supposed to hold (#529) — 2026-08-04
 
 Refs dependabot #525. **No product change** — this adds `scripts/check-postgres-major-parity.sh`, taking the repo to **25 gates**.
