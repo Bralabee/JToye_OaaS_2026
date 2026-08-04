@@ -812,7 +812,7 @@ different hat, not a new one.
 
 **The whole council backlog is now filed — #438–#454, 23 issues.** A coverage sweep maps all 34
 findings to filed / already-fixed / deliberately-Group-C, with **0 unaccounted** and a control token
-proving the sweep discriminates. Two findings — **#453 is OPEN** (F-H6, High) and **#454 is OPEN**
+proving the sweep discriminates. Two findings — **#453 is OPEN** (F-H6, High) and **#454 is CLOSED** (fixed in #534)
 (F-M6) — appear in `findings.json` and the report prose but **in no group in `plan.md`**: the council
 found them and never routed them. They were caught only by that sweep. If you run a council again,
 diff `findings.json` against the groups in `plan.md` before trusting the adjudication.
