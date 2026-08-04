@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Pagination } from "@/components/ui/pagination"
-import { Megaphone, Plus, Pencil, Trash2, Calendar } from "lucide-react"
+import { Megaphone, Plus, Pencil, Trash2, Calendar, Filter, Info } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import type {
   Promotion,
@@ -164,6 +164,136 @@ type AnnouncementFormData = z.infer<typeof announcementSchema>
 // --- Filter types ---
 
 type StatusFilter = "all" | "active" | "upcoming" | "expired"
+
+// --- #306: telling the truth about a client-side filter ---
+
+/**
+ * The header count for a list whose status filter runs CLIENT-side over the
+ * current server page.
+ *
+ * The bug this closes (#306): the header rendered `totalElements` — the
+ * server's UNFILTERED total — regardless of the filter, so selecting "Active"
+ * showed "3 promotions in total" above a table of 2 rows. That is wrong at
+ * ANY size, including a single page, which is why the count is fixed here
+ * rather than deferred with the paging half.
+ *
+ * `totalPages` decides whether a caveat is warranted, and it matters that it
+ * is checked rather than assumed. On a single page the client-side filter has
+ * seen every row, so `shown` is the exact and complete answer — captioning a
+ * correct view with "on this page" would be a lie in the other direction, and
+ * a caveat a vendor sees on every correct view is one they learn to ignore.
+ */
+function listCountDescription(args: {
+  noun: string
+  total: number
+  totalPages: number
+  shown: number
+  status: StatusFilter
+  scope: string
+}): string {
+  const { noun, total, totalPages, shown, status, scope } = args
+  const nouns = (n: number) => (n === 1 ? noun : `${noun}s`)
+
+  // Unfiltered: byte-identical to the pre-#306 string. The default view is the
+  // one every vendor sees, and it was never wrong.
+  if (status === "all") return `${total} ${nouns(total)}${scope}`
+
+  // One page — the client-side filter is complete, so this count is exact.
+  if (totalPages <= 1) return `${shown} ${status} of ${total} ${nouns(total)}${scope}`
+
+  // More pages exist that this filter never saw. Say which number is which.
+  return `${shown} ${status} on this page — of ${total} ${nouns(total)}${scope}`
+}
+
+/**
+ * True when the status filter is narrowing only part of the set, i.e. the
+ * vendor is being shown an arbitrary subset and needs telling.
+ */
+function isFilterPageLocal(status: StatusFilter, totalPages: number): boolean {
+  return status !== "all" && totalPages > 1
+}
+
+/**
+ * Disclosure for the half of #306 that CANNOT be fixed in the browser.
+ *
+ * `GET /promotions` and `GET /announcements` take no status parameter — the
+ * live API returns the identical unfiltered page for `?status=active` and for
+ * `?status=nonsense`, so sending one would look like a fix and change nothing.
+ * Until those endpoints grow a date-window predicate, a multi-page list under a
+ * status filter genuinely shows an arbitrary subset. The vendor is told so
+ * rather than left to infer it from a count that no longer adds up.
+ *
+ * The live region is mounted unconditionally so the announcement is reliable:
+ * an `aria-live` element inserted at the same moment as its text is announced
+ * inconsistently across screen readers. `empty:` keeps the spacing honest when
+ * there is nothing to say.
+ */
+function PageLocalFilterNotice({
+  status,
+  totalPages,
+  noun,
+}: {
+  status: StatusFilter
+  totalPages: number
+  noun: string
+}) {
+  return (
+    <div role="status" aria-live="polite" className="mb-4 empty:mb-0">
+      {isFilterPageLocal(status, totalPages) && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            The <strong className="font-semibold">{status}</strong> filter narrows this
+            page only. Other pages may hold more {status} {noun}s — page through to see
+            them.
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Shown when a status filter matches nothing on the current page but the list
+ * itself is not empty.
+ *
+ * Before #306 this branch did not exist: the table rendered its header row over
+ * zero body rows and said nothing. Measured on the live stack with the seeded
+ * tenant (2 active + 1 expired promotion, 0 upcoming) — clicking "Upcoming"
+ * produced a captioned but bodyless table under a header still reading "3
+ * promotions in total". An empty result is a legitimate answer; a blank band is
+ * not, so this names the reason and offers the way back.
+ */
+function NoFilterMatches({
+  status,
+  noun,
+  total,
+  complete,
+  onClear,
+}: {
+  status: StatusFilter
+  noun: string
+  total: number
+  complete: boolean
+  onClear: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <Filter className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+      <h3 className="mb-2 text-lg font-semibold text-slate-900">
+        No {status} {noun}s{complete ? "" : " on this page"}
+      </h3>
+      <p className="mb-4 max-w-sm text-sm text-slate-500">
+        {complete
+          ? `None of your ${total} ${total === 1 ? noun : `${noun}s`} are ${status} right now.`
+          : `Nothing on this page is ${status}. Other pages may have some — the filter only sees the page you are on.`}
+      </p>
+      <Button onClick={onClear} variant="outline">
+        Show all {noun}s
+      </Button>
+    </div>
+  )
+}
 
 // --- Component ---
 
@@ -509,10 +639,19 @@ export default function MarketingPage() {
   // arriving here are already the selected shop's — and the count and pager now
   // describe that same set instead of the whole tenant's.
   //
-  // The STATUS filter below is deliberately still client-side. It is the same
-  // defect class (filtering one page of a paginated result, so "3 active" really
-  // means "3 active on this page"), but it is a SEPARATE defect from WR-04 and is
-  // tracked on its own rather than silently folded in here — issue #306.
+  // #306: the STATUS filter is still client-side, because it cannot be anything
+  // else from here. `GET /promotions` and `GET /announcements` accept no status
+  // parameter — verified against the live API on 2026-08-03, where
+  // `?status=active` and `?status=nonsense-value-xyz` both returned the same
+  // unfiltered page (totalElements=3) as no parameter at all. Sending one would
+  // be a fail-open no-op that merely LOOKS like a fix. The server-side
+  // date-window predicate is a backend change and is escalated, not faked here.
+  //
+  // What this file CAN own, and now does, is not lying about it: the header
+  // count describes the rows actually on screen (`listCountDescription`), a
+  // multi-page narrow says so out loud (`PageLocalFilterNotice`), and a filter
+  // that matches nothing renders a reason instead of a bodyless table
+  // (`NoFilterMatches`).
   const contextShopName = contextShopId
     ? shops.find((s) => s.id === contextShopId)?.name || "Selected shop"
     : undefined
@@ -612,13 +751,24 @@ export default function MarketingPage() {
             </Button>
           </div>
 
+          <PageLocalFilterNotice
+            status={statusFilter}
+            totalPages={promoTotalPages}
+            noun="promotion"
+          />
+
           <Card>
             <CardHeader>
               <CardTitle>Promotions</CardTitle>
               <CardDescription>
-                {promoTotalElements} promotion
-                {promoTotalElements !== 1 ? "s" : ""}
-                {contextShopId ? ` in ${contextShopName}` : " in total"}
+                {listCountDescription({
+                  noun: "promotion",
+                  total: promoTotalElements,
+                  totalPages: promoTotalPages,
+                  shown: filteredPromotions.length,
+                  status: statusFilter,
+                  scope: contextShopId ? ` in ${contextShopName}` : " in total",
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -636,6 +786,14 @@ export default function MarketingPage() {
                     Create Promotion
                   </Button>
                 </div>
+              ) : filteredPromotions.length === 0 ? (
+                <NoFilterMatches
+                  status={statusFilter}
+                  noun="promotion"
+                  total={promoTotalElements}
+                  complete={promoTotalPages <= 1}
+                  onClear={() => setStatusFilter("all")}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -760,13 +918,24 @@ export default function MarketingPage() {
             </Button>
           </div>
 
+          <PageLocalFilterNotice
+            status={announcementStatusFilter}
+            totalPages={announcementsTotalPages}
+            noun="announcement"
+          />
+
           <Card>
             <CardHeader>
               <CardTitle>Announcements</CardTitle>
               <CardDescription>
-                {announcementsTotalElements} announcement
-                {announcementsTotalElements !== 1 ? "s" : ""}
-                {contextShopId ? ` in ${contextShopName}` : " in total"}
+                {listCountDescription({
+                  noun: "announcement",
+                  total: announcementsTotalElements,
+                  totalPages: announcementsTotalPages,
+                  shown: filteredAnnouncements.length,
+                  status: announcementStatusFilter,
+                  scope: contextShopId ? ` in ${contextShopName}` : " in total",
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -784,6 +953,14 @@ export default function MarketingPage() {
                     Create Announcement
                   </Button>
                 </div>
+              ) : filteredAnnouncements.length === 0 ? (
+                <NoFilterMatches
+                  status={announcementStatusFilter}
+                  noun="announcement"
+                  total={announcementsTotalElements}
+                  complete={announcementsTotalPages <= 1}
+                  onClear={() => setAnnouncementStatusFilter("all")}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>

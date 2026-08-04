@@ -45,16 +45,29 @@ const shops = [
   { id: SHOP_B, name: "Brixton Bakery", published: true },
 ]
 
+/**
+ * Directory emails are MASKED at the DTO boundary (23-12 / WR-10,
+ * `DirectoryEntryDto.maskEmail`: first local-part character + `***` + the full
+ * domain). `ga@vendor.co.uk` is therefore a response the API cannot produce, and
+ * fixtures carrying it describe a shape that does not occur — which matters here
+ * because #290 was PRECISELY a masked-email rendering bug ("j***@vendor.co.uk
+ * (j***@vendor.co.uk)"), a class an unmasked fixture cannot catch. These are the
+ * exact strings `maskEmail("ga@vendor.co.uk")` / `maskEmail("sam@vendor.co.uk")`
+ * return.
+ */
+const EMAIL_GA = "g***@vendor.co.uk"
+const EMAIL_SAM = "s***@vendor.co.uk"
+
 const directory = [
   {
     userId: USER_GA,
-    email: "ga@vendor.co.uk",
+    email: EMAIL_GA,
     displayName: "Ada Owner",
     lastSeen: "2026-07-19T10:00:00Z",
   },
   {
     userId: USER_SAM,
-    email: "sam@vendor.co.uk",
+    email: EMAIL_SAM,
     displayName: "Sam Cook",
     lastSeen: "2026-07-18T09:00:00Z",
   },
@@ -111,8 +124,15 @@ describe("Staff management screen (VSA-04)", () => {
     expect(mockedApiClient.get).toHaveBeenCalledWith("/api/v1/staff")
 
     // Directory identities are visible...
-    expect(screen.getByText("sam@vendor.co.uk")).toBeInTheDocument()
+    const shownEmail = screen.getByText(EMAIL_SAM)
+    expect(shownEmail).toBeInTheDocument()
     expect(screen.getByText("Ada Owner")).toBeInTheDocument()
+
+    // …in the MASKED form the API actually returns. Without this, the fixtures can
+    // drift back to `sam@vendor.co.uk` — a response shape that cannot occur — and
+    // every case here still passes, because they all read the same constant. This
+    // is the assertion that fires on that drift.
+    expect(shownEmail.textContent).toMatch(/^[^@]\*\*\*@[^@]+$/)
 
     // ...and the grants resolve to human-readable shop + role.
     expect(screen.getAllByText("Peckham Kitchen").length).toBeGreaterThan(0)
@@ -197,9 +217,9 @@ describe("Staff management screen (VSA-04)", () => {
       data: { directory, grants: [grants[0]] },
     } as never)
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /revoke sam@vendor.co.uk/i })
-    )
+    // The row's accessible name is the MASKED address (`Revoke ${email}` over a
+    // DirectoryEntryDto), so this locator only resolves against a faithful fixture.
+    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_SAM}` }))
 
     await waitFor(() => {
       expect(mockedApiClient.delete).toHaveBeenCalledWith(
@@ -224,7 +244,7 @@ describe("Staff management screen (VSA-04)", () => {
     })
 
     // T-23-06-02: no directory PII on a 403 — and no crash/blank.
-    expect(screen.queryByText("sam@vendor.co.uk")).not.toBeInTheDocument()
+    expect(screen.queryByText(EMAIL_SAM)).not.toBeInTheDocument()
     expect(screen.queryByText("Sam Cook")).not.toBeInTheDocument()
     expect(
       screen.queryByRole("button", { name: /grant access/i })
@@ -239,9 +259,7 @@ describe("Staff management screen (VSA-04)", () => {
       httpError(409, "/last-group-admin")
     )
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /revoke ga@vendor.co.uk/i })
-    )
+    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_GA}` }))
 
     await waitFor(() => {
       expect(
@@ -295,7 +313,7 @@ describe("Staff management screen (VSA-04)", () => {
 
     // Revoke path 409 → removal wording (distinct).
     mockedApiClient.delete.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
-    fireEvent.click(screen.getByRole("button", { name: /revoke ga@vendor.co.uk/i }))
+    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_GA}` }))
     await waitFor(() =>
       expect(
         screen.getByText(/remove the last group admin/i)
@@ -364,7 +382,7 @@ describe("Staff management screen (VSA-04)", () => {
   // "Name (masked-email)" — one name, one address. Constrains the de-dupe so it
   // cannot be "fixed" by dropping the email from the label entirely.
   it("labels a named member as 'name (masked email)' — email still present, still once", async () => {
-    const MASKED = "s***@vendor.co.uk"
+    const MASKED = EMAIL_SAM
     mockedApiClient.get.mockResolvedValue({
       data: {
         directory: [

@@ -471,3 +471,69 @@ describe("ShopSwitcher — zero-access non-GROUP_ADMIN (#288)", () => {
     expect(screen.queryByTestId("shop-switcher-no-access")).not.toBeInTheDocument()
   })
 })
+
+/**
+ * #495 / #490 — the OTHER two notes under the switcher, which #476 gated only for
+ * the #288 sentence.
+ *
+ * The mobile top bar is a fixed `h-14` (56px) `items-center` flex row. A note laid
+ * out there does not merely spill past the border — it re-centres the column and
+ * LIFTS the `<select>` out of the bar. Measured in the running app at 375px on a
+ * Pixel 7 profile, relative to the bar's top edge:
+ *
+ *   as shipped, "Apply to all shops"  badge bottom 59 (bar is 56) — select top −5
+ *   as shipped, D-13 stale sentence   note  bottom 95 (bar is 56) — select
+ *                                     top −40 / bottom −2, i.e. entirely above the
+ *                                     viewport and untouchable
+ *
+ * jsdom has no layout, so these cases can only assert the MECHANISM (`sr-only` in
+ * the bar, laid out in the sidebar) — the geometry itself is asserted in a real
+ * browser by e2e/dashboard-mobile.spec.ts's 375px case.
+ */
+describe("ShopSwitcher — notes under the control fit the fixed mobile bar (#495, #490)", () => {
+  it("keeps the group-wide 'Apply to all shops' badge out of the bar's flow (#495)", async () => {
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    const { unmount } = renderSwitcher(<ShopSwitcher variant="topbar" />)
+
+    const inBar = await screen.findByTestId("apply-to-all")
+    // Still announced — the affordance is hidden visually, not removed.
+    expect(inBar).toHaveTextContent(/apply to all/i)
+    expect(inBar).toHaveClass("sr-only")
+    // …and carries none of the flow-layout classes that caused the 3px spill.
+    expect(inBar).not.toHaveClass("mt-1.5")
+    expect(inBar).not.toHaveClass("inline-flex")
+    unmount()
+
+    // The sidebar has vertical room, so nothing is taken away there.
+    renderSwitcher(<ShopSwitcher variant="sidebar" />)
+    const inSidebar = await screen.findByTestId("apply-to-all")
+    expect(inSidebar).not.toHaveClass("sr-only")
+    expect(inSidebar).toHaveClass("mt-1.5")
+  })
+
+  it("keeps the D-13 stale-selection notice out of the bar's flow, with a visible amber glyph in its place (#490)", async () => {
+    window.localStorage.setItem("shopContext", "revoked-shop-id")
+    mockAccess({ shops: [SHOP_A, SHOP_B], groupAdmin: true })
+    const { unmount } = renderSwitcher(<ShopSwitcher variant="topbar" />)
+
+    const inBar = await screen.findByTestId("shop-switcher-stale")
+    // role="alert" + sr-only still announces; it is not silently dropped.
+    expect(inBar).toHaveAttribute("role", "alert")
+    expect(inBar).toHaveTextContent(/no longer available/i)
+    expect(inBar).toHaveClass("sr-only")
+    expect(inBar).not.toHaveClass("mt-1.5")
+    // A SIGHTED mobile user is not left with a silently-reset selection: the
+    // switcher's leading glyph becomes the amber alert mark (absolutely
+    // positioned, so it costs the 56px bar no height).
+    expect(screen.getByTestId("shop-switcher-stale-glyph")).toBeInTheDocument()
+    unmount()
+
+    // The sidebar keeps the sentence, so it needs no glyph substitute.
+    window.localStorage.setItem("shopContext", "revoked-shop-id")
+    renderSwitcher(<ShopSwitcher variant="sidebar" />)
+    const inSidebar = await screen.findByTestId("shop-switcher-stale")
+    expect(inSidebar).not.toHaveClass("sr-only")
+    expect(inSidebar).toHaveClass("mt-1.5")
+    expect(screen.queryByTestId("shop-switcher-stale-glyph")).not.toBeInTheDocument()
+  })
+})

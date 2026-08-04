@@ -12,6 +12,7 @@ import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 
@@ -122,18 +123,57 @@ class EmailNotificationServiceTest {
     // --- Order ready ---
 
     @Test
-    @DisplayName("sendOrderReady - Subject contains Ready and body mentions collection")
-    void testSendOrderReady() {
+    @DisplayName("sendOrderReady - COLLECTION keeps the existing subject and collection copy")
+    void testSendOrderReadyCollection() {
         OrderStateChangeEvent event = createTestEvent("ORD-300",
                 OrderStatus.PREPARING, OrderStatus.READY);
 
-        service.sendOrderReady(event, RECIPIENT);
+        service.sendOrderReady(event, RECIPIENT, FulfilmentType.COLLECTION);
 
         verify(mailSender).send(messageCaptor.capture());
         SimpleMailMessage msg = messageCaptor.getValue();
 
         assertEquals("Order ORD-300 \u2014 Ready!", msg.getSubject());
         assertTrue(msg.getText().contains("ready for collection"));
+    }
+
+    @Test
+    @DisplayName("sendOrderReady - DELIVERY says it will be delivered and never says collect (#502)")
+    void testSendOrderReadyDelivery() {
+        OrderStateChangeEvent event = createTestEvent("ORD-301",
+                OrderStatus.PREPARING, OrderStatus.READY);
+
+        service.sendOrderReady(event, RECIPIENT, FulfilmentType.DELIVERY);
+
+        verify(mailSender).send(messageCaptor.capture());
+        SimpleMailMessage msg = messageCaptor.getValue();
+
+        assertEquals("Order ORD-301 \u2014 Ready!", msg.getSubject());
+        assertTrue(msg.getText().contains("deliver it to the address on your order"));
+        assertFalse(msg.getText().toLowerCase().contains("collect"),
+                "a DELIVERY customer must never be told to collect (#502)");
+        assertTrue(msg.getText().contains("/track?order=ORD-301"));
+    }
+
+    /**
+     * {@code orders.fulfilment_type} is {@code NOT NULL DEFAULT 'DELIVERY'} (V45),
+     * so null is unreachable through the schema \u2014 but if it ever were, the copy
+     * must not fall back to "come and collect", which is the actively harmful
+     * answer when the fulfilment mode is unknown.
+     */
+    @Test
+    @DisplayName("sendOrderReady - null fulfilment type falls back to DELIVERY copy (#502)")
+    void testSendOrderReadyNullFulfilmentType() {
+        OrderStateChangeEvent event = createTestEvent("ORD-302",
+                OrderStatus.PREPARING, OrderStatus.READY);
+
+        service.sendOrderReady(event, RECIPIENT, null);
+
+        verify(mailSender).send(messageCaptor.capture());
+        SimpleMailMessage msg = messageCaptor.getValue();
+
+        assertFalse(msg.getText().toLowerCase().contains("collect"));
+        assertTrue(msg.getText().contains("we'll deliver it"));
     }
 
     // --- Order completed ---
