@@ -2,10 +2,33 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { PublicFooter } from "@/components/public/public-footer"
+import { resolvePublicOrigin } from "@/lib/public-origin"
 
-export const metadata: Metadata = {
-  title: "J'Toye — Discover Local Vendors",
-  description: "Browse and order from independent food vendors near you",
+/**
+ * Storefront-wide metadata DEFAULTS.
+ *
+ * This used to be the only metadata anywhere under /shop, which is how `/shop`
+ * and all three `/shop/[slug]` pages came to agree on one `<title>` across 4/4
+ * cells (#447 / F-H9-SEOMETA). Both of those routes now export their own
+ * `generateMetadata`, which overrides everything here; what remains below is the
+ * fallback for the storefront's utility routes (cart, checkout, sign-in, OIDC
+ * callback) — none of which is indexable anyway (`app/robots.ts`).
+ *
+ * `metadataBase` is set HERE rather than repeated per page so every relative
+ * canonical and OG URL under /shop resolves against one injected origin. It is a
+ * function, not a constant, so the value is read per request at RUNTIME:
+ * `NEXTAUTH_URL` is a plain server env that each environment sets correctly,
+ * unlike a `NEXT_PUBLIC_*` which Next inlines at build time. `undefined` is a
+ * deliberate outcome, not a failure — Next then emits root-relative URLs, which
+ * are correct on whatever host served the page, and no hostname is guessed.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const origin = resolvePublicOrigin()
+  return {
+    metadataBase: origin ? new URL(origin) : undefined,
+    title: "J'Toye — Discover Local Vendors",
+    description: "Browse and order from independent food vendors near you",
+  }
 }
 
 /**

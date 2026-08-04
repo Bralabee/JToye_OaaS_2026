@@ -8,9 +8,24 @@
  * Fake timers drive the bounded auto-retry: we render under a 429, assert the
  * busy copy, then flip the mock to a real empty response and advance the retry
  * timer to prove the empty state only appears for a genuine empty 200.
+ *
+ * WHAT #507 CHANGED HERE, AND WHY THE CONTRACT IS UNCHANGED. These blocks used
+ * to render `app/shop/page.tsx` and `app/shop/[slug]/page.tsx` directly. Both
+ * are now async SERVER components that `fetch` from the core API, which jsdom
+ * cannot execute — so they render the client islands instead, with
+ * `initial={null}`.
+ *
+ * `initial={null}` is not a test convenience: it is exactly the production state
+ * this suite is about. When the server's own call is rate-limited it deliberately
+ * does NOT guess an answer — it defers, passes no seed, and the island runs the
+ * very retry-and-backoff path asserted below. So the same behaviour is under
+ * test, one component down, on the path a 429 actually takes.
+ *
+ * The server half of the same rule (429 -> defer, and specifically NOT
+ * "notfound") is covered separately in lib/__tests__/storefront-server.test.ts,
+ * so neither half can regress unnoticed.
  */
 
-import { Suspense } from "react"
 import { act, render, screen } from "@testing-library/react"
 import { BASE_DELAY_MS } from "@/lib/public-fetch-retry"
 
@@ -37,8 +52,8 @@ jest.mock("@/components/storefront/cart-provider", () => ({
   CartProvider: ({ children }: { children: React.ReactNode }) => children,
 }))
 
-import ShopDiscoveryPage from "@/app/shop/page"
-import ShopDetailPage from "@/app/shop/[slug]/page"
+import { ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
+import { ShopDetailClient } from "@/app/shop/[slug]/shop-detail-client"
 
 const rateLimited429 = { response: { status: 429, headers: {} } }
 
@@ -67,7 +82,7 @@ describe("/shop list — 429 handling", () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
-      render(<ShopDiscoveryPage />)
+      render(<ShopDiscoveryClient initial={null} initialQuery="" />)
     })
     await flush()
 
@@ -79,7 +94,7 @@ describe("/shop list — 429 handling", () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
-      render(<ShopDiscoveryPage />)
+      render(<ShopDiscoveryClient initial={null} initialQuery="" />)
     })
     await flush()
     expect(screen.getByText(/retrying/i)).toBeInTheDocument()
@@ -101,11 +116,7 @@ describe("/shop/[slug] detail — 429 handling", () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
-      render(
-        <Suspense fallback={<div>loading</div>}>
-          <ShopDetailPage params={Promise.resolve({ slug: "x" })} />
-        </Suspense>
-      )
+      render(<ShopDetailClient slug="x" initial={null} />)
     })
     await flush()
 

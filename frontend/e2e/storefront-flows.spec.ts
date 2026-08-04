@@ -181,7 +181,9 @@ test.describe("Shop Menu & Product Cards", () => {
       for (const section of Array.from(document.querySelectorAll("section"))) {
         const heading = section.querySelector("h2")?.textContent?.trim() || ""
         if (/popular/i.test(heading)) continue
-        section.querySelectorAll("article h4").forEach((h) => {
+        // h3 since #447: the dish title used to be an h4 under an h2 category,
+        // skipping a heading level. Same element, same text, one level up.
+        section.querySelectorAll("article h3").forEach((h) => {
           const t = h.textContent?.trim()
           if (t) titles.push(t)
         })
