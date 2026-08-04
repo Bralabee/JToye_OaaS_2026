@@ -120,3 +120,206 @@
     background-position: -200% 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   KDS press feedback
+   ---------------------------------------------------------------------------
+   The kitchen display is driven by fingers on a wall-mounted or handheld screen,
+   often through a glove, in a room where the operator cannot always hear the tap.
+   The 3% press scale is the only confirmation the interface gives that it heard.
+
+   Written here rather than as `active:scale-[0.97] ease-[cubic-bezier(...)]`
+   utilities for one measured reason: Tailwind 3.4 emits
+   "the class `ease-[cubic-bezier(0.23,1,0.32,1)]` is ambiguous and matches multiple
+   utilities" for that arbitrary value — the dev server prints it on every build of
+   this repo already. A plain class carries the strong ease-out curve with no warning
+   and no config change.
+
+   Reduced motion keeps the feedback (it is functional, not decorative) but makes it
+   instant rather than animated — "fewer and gentler", not "none".
+   --------------------------------------------------------------------------- */
+.kds-press {
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.kds-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kds-press {
+    transition-duration: 0ms;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Kitchen ticket printing (#105)
+   ---------------------------------------------------------------------------
+   Before this, the frontend had ZERO `@media print` outside a marketing document
+   and ZERO `window.print` anywhere, so a vendor with a receipt printer had nothing
+   to send to it.
+
+   The ticket sheet is portalled to `document.body` as `#kds-print-root` (see
+   components/dashboard/kitchen/use-kitchen-print.tsx), which is what lets one rule
+   hide the entire dashboard chrome without editing the shell.
+
+   The `body:has(#kds-print-root)` guard is load-bearing, not decoration. Without it
+   these rules would hide every direct child of <body> on ANY print, so a user who
+   pressed Ctrl+P before ever printing a ticket would get a blank sheet. Scoping the
+   whole block to "a ticket sheet is currently mounted" means the un-printed state
+   keeps the browser's normal behaviour.
+
+   72mm column: the printable width of a standard 80mm thermal roll, and a sane
+   narrow column on A4. Monochrome and un-branded on purpose — a printer is
+   black-on-white and toner is not a design surface.
+   --------------------------------------------------------------------------- */
+
+/* On screen the sheet exists but is never shown; it stays mounted after a print so
+   a re-print costs nothing (kitchens re-print constantly). */
+#kds-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 8mm;
+  }
+
+  body:has(#kds-print-root) > *:not(#kds-print-root) {
+    display: none !important;
+  }
+
+  body:has(#kds-print-root) {
+    background: #fff;
+  }
+
+  #kds-print-root {
+    display: block;
+    width: 72mm;
+    margin: 0;
+    padding: 0;
+    color: #000;
+    background: #fff;
+    font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .kds-ticket {
+    break-after: page;
+    page-break-after: always;
+    padding-bottom: 6mm;
+  }
+  .kds-ticket:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  /* Never split a ticket across two pages — half a ticket is worse than none. */
+  .kds-ticket,
+  .kds-ticket__items li,
+  .kds-ticket__address {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .kds-ticket__head {
+    border-bottom: 2px solid #000;
+    padding-bottom: 2mm;
+    margin-bottom: 3mm;
+    text-align: center;
+  }
+  .kds-ticket__shop {
+    font-size: 10pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  /* The order number is the single thing read from a rail at arm's length. */
+  .kds-ticket__ref {
+    font-size: 22pt;
+    font-weight: 700;
+    line-height: 1.1;
+    margin: 1mm 0;
+    /* `anywhere` and NOT `break-all`: a long ORD-…-…-… reference must wrap at its
+       hyphens, which are real reading boundaries, and only split mid-token if there
+       is no hyphen at all. Measured with break-all on a 30-character seeded reference:
+       it split as "ORD-00000000-20" / "260802-A531FAF0", cutting the date in half. */
+    overflow-wrap: anywhere;
+  }
+  .kds-ticket__fulfilment {
+    font-size: 12pt;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    margin: 0;
+  }
+
+  .kds-ticket__meta {
+    display: grid;
+    grid-template-columns: 22mm 1fr;
+    gap: 0.6mm 2mm;
+    font-size: 9pt;
+    margin: 0 0 3mm;
+  }
+  .kds-ticket__meta > div {
+    display: contents;
+  }
+  .kds-ticket__meta dt {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .kds-ticket__meta dd {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .kds-ticket__items {
+    list-style: none;
+    margin: 0 0 3mm;
+    padding: 2mm 0;
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+  }
+  .kds-ticket__items li {
+    display: flex;
+    gap: 2.5mm;
+    align-items: baseline;
+    padding: 1mm 0;
+    font-size: 13pt;
+    line-height: 1.25;
+  }
+  /* Quantity leads, fixed width, heaviest weight on the ticket after the ref —
+     a mis-read "2x" is a remade dish. */
+  .kds-ticket__qty {
+    flex: 0 0 10mm;
+    font-weight: 700;
+    font-size: 14pt;
+  }
+  .kds-ticket__name {
+    flex: 1 1 auto;
+  }
+
+  .kds-ticket__notes,
+  .kds-ticket__address {
+    font-size: 10pt;
+    border: 1px solid #000;
+    padding: 2mm;
+    margin: 0 0 3mm;
+  }
+  .kds-ticket__notes span:first-child,
+  .kds-ticket__address span:first-child {
+    display: block;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 8pt;
+    margin-bottom: 1mm;
+  }
+  .kds-ticket__address p {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .kds-ticket__foot {
+    font-size: 8pt;
+    text-align: center;
+    margin: 0;
+  }
+}

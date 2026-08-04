@@ -258,5 +258,48 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
       await waitFor(() => expect(kitchenBoardCalls().length).toBeGreaterThan(0))
       expect(kitchenBoardCalls().some((url) => url.includes(`shopId=${SHOP_A}`))).toBe(true)
     })
+
+    // #450 sub-item 5d. The fallback ABOVE is deliberately unchanged — a KDS is a
+    // screen in one kitchen, its live subscription is per shop
+    // (`/topic/kitchen.{tenant}.{shop}`), and merging shops would put Peckham's
+    // orders in front of Brixton's cooks. What was wrong was never the fallback; it
+    // was that nothing said it had happened. These two assert the saying.
+    it("names the boarded shop even though the switcher says All shops", async () => {
+      mockedGetShopContext.mockReturnValue("all")
+
+      render(<KitchenPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId("kds-board-shop")).toHaveTextContent(
+          "Showing tickets for Peckham Kitchen"
+        )
+      )
+    })
+
+    it("says the board is single-shop and how many shops are missing from it", async () => {
+      mockedGetShopContext.mockReturnValue("all")
+
+      render(<KitchenPage />)
+
+      const notice = await screen.findByTestId("kds-all-shops-notice")
+      expect(notice).toHaveTextContent("All shops")
+      expect(notice).toHaveTextContent("one shop at a time")
+      expect(notice).toHaveTextContent("Peckham Kitchen")
+      expect(notice).toHaveTextContent("your other shop are not on this screen")
+    })
+
+    it("does NOT claim a mismatch when the switcher already names one shop", async () => {
+      // The notice exists to explain a contradiction. With a specific shop selected
+      // there is none, and an always-on notice is one the kitchen stops reading.
+      mockedGetShopContext.mockReturnValue(SHOP_B)
+
+      render(<KitchenPage />)
+
+      await waitFor(() => expect(kitchenBoardCalls().length).toBeGreaterThan(0))
+      expect(screen.queryByTestId("kds-all-shops-notice")).not.toBeInTheDocument()
+      expect(screen.getByTestId("kds-board-shop")).toHaveTextContent(
+        "Showing tickets for Brixton Bakery"
+      )
+    })
   })
 })

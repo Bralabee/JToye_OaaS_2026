@@ -40,9 +40,19 @@ async function vendorLogin(page: Page) {
   skipWithoutVendorPassword()
   await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
   const ssoButton = page.getByRole("button", { name: /sign in with keycloak/i })
-  if ((await ssoButton.count()) === 0) {
-    test.skip(true, "No sign-in method found on /auth/signin — unknown auth flow")
-  }
+  // #106: this used to `test.skip(true, "No sign-in method found …")` when the button
+  // was absent, which turns a genuine sign-in regression — the page failing to render
+  // its only auth control — into a silent green skip. A missing sign-in button IS the
+  // failure, so it fails, and it names what to look at.
+  //
+  // The skip that remains is `skipWithoutVendorPassword()` above, which fires only on
+  // a MISSING CREDENTIAL (an environment fact, not a product fact) and is the one the
+  // skip-budget gate declares.
+  await expect(
+    ssoButton,
+    "no 'Sign in with Keycloak' button on /auth/signin — the sign-in page is broken, " +
+      "or the auth flow changed and this spec needs updating"
+  ).toHaveCount(1)
   await ssoButton.waitFor({ state: "visible", timeout: 10_000 })
   // Let React hydrate before clicking — a click on `domcontentloaded` can land
   // before the onClick handler is attached and silently no-op (login hangs).
@@ -113,6 +123,31 @@ const orderSummaryResponse = {
   ],
 }
 
+/**
+ * A paging-honest fake page (#485). The live API clamps `size` at 100 — measured
+ * 2026-08-04: `?size=500` against a 125-order shop returned 100 rows with
+ * `size: 100`. Reproducing the clamp here means a "fix" that only asks for a bigger
+ * page cannot pass this spec.
+ */
+const SERVER_MAX_PAGE_SIZE = 100
+function pageOf<T>(rows: T[], url: string) {
+  const q = new URL(url).searchParams
+  const page = Number(q.get("page") ?? 0)
+  const size = Math.min(Number(q.get("size") ?? 20), SERVER_MAX_PAGE_SIZE)
+  const start = page * size
+  const content = rows.slice(start, start + size)
+  const totalPages = Math.max(1, Math.ceil(rows.length / size))
+  return {
+    content,
+    totalElements: rows.length,
+    totalPages,
+    size,
+    number: page,
+    first: page === 0,
+    last: page + 1 >= totalPages,
+  }
+}
+
 const orderDetailResponse = {
   id: "order-1",
   tenantId: "tenant-1",
@@ -163,11 +198,20 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
         body: JSON.stringify(shopsResponse),
       })
     )
+    // #485: the board pages now, so the fake HONOURS ?page= and ?size=. A stub that
+    // ignored them would return everything on page 0 and pass against the bug.
     await context.route(`${API}/api/v1/orders?**`, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(orderSummaryResponse),
+        body: JSON.stringify(pageOf(orderSummaryResponse.content, route.request().url())),
+      })
+    )
+    await context.route(`${API}/api/v1/orders/*/start-preparation`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...orderDetailResponse, status: "PREPARING" }),
       })
     )
     await context.route(`${API}/api/v1/orders/*/detail`, (route) =>
@@ -256,5 +300,206 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // Delivery-address block renders for a DELIVERY order (19-01 fulfilment DTO).
     await expect(page.getByTestId("delivery-address")).toBeVisible()
     await expect(page.getByText("SE15 5BS")).toBeVisible()
+  })
+
+  // ---------------------------------------------------------------------------
+  // #106 — the KDS e2e now BUMPS, and exercises a real disconnect and recovery.
+  //
+  // The issue's own words: "The KDS e2e never clicks a bump button and the reconnect
+  // spec is opt-in-skipped." Everything below clicks.
+  // ---------------------------------------------------------------------------
+
+  test("clicking bump advances the ticket and posts the transition", async ({ page }) => {
+    const bumpCalls: string[] = []
+    await page.route(`${API}/api/v1/orders/*/start-preparation`, (route) => {
+      bumpCalls.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...orderDetailResponse, status: "PREPARING" }),
+      })
+    })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    const bump = page.getByRole("button", { name: /Start Preparing/i })
+    await expect(bump).toBeVisible()
+
+    await bump.click()
+
+    // The optimistic update moves the card to the next stage, and the POST really fired.
+    await expect(page.getByRole("button", { name: /Mark Ready/i })).toBeVisible()
+    await expect(page.getByText("Preparing")).toBeVisible()
+    // POLLED, not read once: the card advances OPTIMISTICALLY, i.e. before the POST is
+    // even issued, so a bare `expect(bumpCalls.length)` here is a race. Measured — it
+    // won on desktop and lost on mobile in the same run.
+    await expect.poll(() => bumpCalls.length, { timeout: 10_000 }).toBeGreaterThan(0)
+    expect(bumpCalls[0]).toContain("/order-1/start-preparation")
+  })
+
+  test("going offline raises a stale banner with a last-updated stamp, and coming back clears it", async ({
+    page,
+    context,
+  }) => {
+    // THIS test alone runs against the live stack, with every stub lifted.
+    //
+    // A recovery assertion needs a socket that was genuinely up first, and the STOMP
+    // topic is derived from the data: with the fixture shop the page subscribes to
+    // `/topic/kitchen.tenant-1.shop-1`, a tenant that does not exist, and the relay
+    // drops the connection — the pill sat on "Reconnecting" forever (measured). Real
+    // shop, real tenant, real topic, real socket.
+    //
+    // The spec already requires the live stack (it performs a real SSO login), so this
+    // adds no new dependency, and if the relay is down the test goes RED — the correct
+    // outcome for a test of the live order feed.
+    await context.unroute("**/ws**")
+    await context.unroute(`${API}/api/v1/shops**`)
+    await context.unroute(`${API}/api/v1/orders?**`)
+    await context.unroute(`${API}/api/v1/orders/*/detail`)
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+
+    // ONLINE: a pill reading Live, with a real wall clock, and no banner.
+    const pill = page.getByTestId("kds-feed-pill")
+    await expect(pill).toBeVisible()
+    await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/)
+    await expect(pill).toContainText("Live", { timeout: 20_000 })
+    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+
+    // OFFLINE — induced for real. `context.route()` cannot do this: it does not
+    // intercept WebSocket handshakes, so aborting a ws glob leaves the STOMP client
+    // connected and the page still reading "Connected" (measured).
+    await context.setOffline(true)
+
+    const banner = page.getByTestId("kds-feed-banner")
+    await expect(banner).toBeVisible({ timeout: 15_000 })
+    await expect(banner).toHaveAttribute("role", "alert")
+    await expect(banner).toContainText(/Offline|Not updating|out of date/i)
+    // The stamp the board had none of before #106.
+    await expect(banner).toContainText(/Last updated \d{2}:\d{2}:\d{2}/)
+    await expect(page.getByTestId("kds-stale-age")).toBeVisible()
+    await expect(page.getByRole("button", { name: /refresh now/i })).toBeVisible()
+
+    // RECOVERY: the banner must go away on its own. A warning that outlives its cause
+    // is how a kitchen learns to ignore warnings.
+    await context.setOffline(false)
+    await expect(banner).toHaveCount(0, { timeout: 20_000 })
+    await expect(pill).toContainText("Live")
+  })
+
+  // ---------------------------------------------------------------------------
+  // #105 — a kitchen ticket can be printed, and it is the PRINT stylesheet that
+  // makes it a ticket. Asserted under `emulateMedia({ media: "print" })`, because a
+  // screen screenshot says nothing about `@media print`.
+  // ---------------------------------------------------------------------------
+
+  test("a ticket can be printed, and the print stylesheet hides the dashboard chrome", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    await expect(page.getByText("Alice")).toBeVisible()
+
+    // With no ticket queued, printing must still yield the BOARD rather than a blank
+    // page — the `body:has(#kds-print-root)` guard in globals.css. Falsifiable: drop
+    // the guard and the app root goes `display: none` here.
+    await page.emulateMedia({ media: "print" })
+    expect(await page.locator("#kds-print-root").count()).toBe(0)
+    expect(
+      await page.evaluate(() =>
+        [...document.body.children]
+          .filter((el) => el.tagName === "DIV")
+          .every((el) => getComputedStyle(el).display === "none")
+      )
+    ).toBe(false)
+    await page.emulateMedia({ media: "screen" })
+
+    // Print one ticket.
+    await page.getByRole("button", { name: /^Print ticket/i }).first().click()
+    const sheet = page.locator("#kds-print-root")
+    await expect(sheet).toHaveCount(1)
+    // Invisible on screen — the sheet must never leak into the board.
+    expect(await sheet.evaluate((el) => getComputedStyle(el).display)).toBe("none")
+
+    await page.emulateMedia({ media: "print" })
+    const printed = await page.evaluate(() => {
+      const root = document.getElementById("kds-print-root")!
+      const ref = document.querySelector(".kds-ticket__ref")!
+      return {
+        rootDisplay: getComputedStyle(root).display,
+        rootWidth: getComputedStyle(root).width,
+        refText: ref.textContent,
+        refFontSize: getComputedStyle(ref).fontSize,
+        // Every ordinary <body> child must be gone; only the sheet survives.
+        appChromeHidden: [...document.body.children]
+          .filter((el) => el.id !== "kds-print-root" && el.tagName === "DIV")
+          .every((el) => getComputedStyle(el).display === "none"),
+      }
+    })
+    expect(printed.rootDisplay).toBe("block")
+    expect(printed.appChromeHidden).toBe(true)
+    expect(printed.refText).toBe("ORD-TEST-0001")
+    // 72mm at 96dpi = 272.126px — the printable width of an 80mm thermal roll.
+    expect(parseFloat(printed.rootWidth)).toBeGreaterThan(270)
+    expect(parseFloat(printed.rootWidth)).toBeLessThan(275)
+    // 22pt = 29.33px. The order reference is the thing read from a rail.
+    expect(parseFloat(printed.refFontSize)).toBeGreaterThan(28)
+
+    await expect(page.getByTestId("kitchen-ticket")).toHaveCount(1)
+    await expect(page.locator(".kds-ticket__qty").first()).toHaveText("2×")
+    await page.emulateMedia({ media: "screen" })
+  })
+
+  // ---------------------------------------------------------------------------
+  // #450 sub-item 5d — the board says whose tickets it is showing.
+  // ---------------------------------------------------------------------------
+
+  test("the board names its shop, and explains itself in the All-shops context", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    await expect(page.getByTestId("kds-board-shop")).toContainText(
+      "Showing tickets for Test Shop"
+    )
+
+    // The fixture tenant has exactly one shop, so there is no mismatch to explain and
+    // the notice must NOT appear. Asserting the quiet case as well as the loud one is
+    // what stops the notice becoming permanent furniture.
+    await page.evaluate(() => window.localStorage.setItem("shopContext", "all"))
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByTestId("kds-board-shop")).toBeVisible()
+    const notice = page.getByTestId("kds-all-shops-notice")
+    await expect(notice).toContainText("one shop at a time")
+    await expect(notice).not.toContainText("not on this screen")
+  })
+
+  // ---------------------------------------------------------------------------
+  // #485 (kitchen/page.tsx:229) — a live ticket past the first page still boards.
+  // ---------------------------------------------------------------------------
+
+  test("a kitchen ticket that exists only on page 1 still reaches the board", async ({
+    page,
+  }) => {
+    // 125 orders; the only CONFIRMED one is at index 110, i.e. page 1 at size 100.
+    // Before #485 the board issued one `?size=100` and this ticket never rendered.
+    const deep = Array.from({ length: 125 }, (_, i) => ({
+      ...orderSummaryResponse.content[0],
+      id: i === 110 ? "order-1" : `bulk-${i}`,
+      status: i === 110 ? "CONFIRMED" : "COMPLETED",
+    }))
+    const requested: string[] = []
+    await page.route(`${API}/api/v1/orders?**`, (route) => {
+      requested.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pageOf(deep, route.request().url())),
+      })
+    })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+
+    await expect(page.getByText("ORD-TEST-0001")).toBeVisible({ timeout: 20_000 })
+    expect(requested.some((u) => /[?&]page=1\b/.test(u))).toBe(true)
+    // And it stops when the server says so — a fix that pages forever is another bug.
+    expect(requested.some((u) => /[?&]page=2\b/.test(u))).toBe(false)
   })
 })

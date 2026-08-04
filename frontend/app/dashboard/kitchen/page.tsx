@@ -1,11 +1,31 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { m, AnimatePresence } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useStomp } from "@/hooks/use-stomp"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { fetchAllMyShops } from "@/lib/shops-api"
+import {
+  KITCHEN_STATUSES,
+  fetchActiveKitchenOrders,
+  fetchKitchenOrderDetails,
+} from "@/lib/kitchen-orders-api"
+import {
+  deriveFeedState,
+  KITCHEN_CLOCK_TICK_MS,
+  KITCHEN_POLL_INTERVAL_MS,
+} from "@/components/dashboard/kitchen/feed-state"
+import {
+  KdsFeedBanner,
+  KdsFeedPill,
+} from "@/components/dashboard/kitchen/kds-feed-status"
+import {
+  KdsAllShopsNotice,
+  KdsBoardShopName,
+} from "@/components/dashboard/kitchen/kds-board-scope"
+import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
 import {
   Card,
   CardContent,
@@ -29,9 +49,9 @@ import {
   ArrowRight,
   CheckCircle2,
   Package,
+  Printer,
 } from "lucide-react"
 import type {
-  Order,
   OrderDetail,
   OrderStatus,
   OrderStateChangeEvent,
@@ -110,8 +130,10 @@ function playBeep() {
 }
 
 // --- Kitchen statuses we track ---
-
-const KITCHEN_STATUSES: OrderStatus[] = ["CONFIRMED", "PREPARING", "READY"]
+//
+// Moved to lib/kitchen-orders-api.ts (#485) so the paging loop that filters on them
+// and the page that renders them cannot drift apart. Re-exported nowhere: the import
+// above is the single definition.
 
 export default function KitchenPage() {
   const { toast } = useToast()
@@ -123,7 +145,7 @@ export default function KitchenPage() {
   // VSA-03: the global switcher is the single source of truth for which shop the
   // board shows. The local <Select> below stays for on-board convenience, but it
   // no longer owns an independent default. `null` = All shops.
-  const { contextShopId } = useShopContext()
+  const { contextShopId, isAllShops } = useShopContext()
 
   // Orders map: orderId -> OrderDetail
   const [ordersMap, setOrdersMap] = useState<Map<string, OrderDetail>>(new Map())
@@ -136,11 +158,27 @@ export default function KitchenPage() {
     return false
   })
 
-  // Tick counter for re-rendering elapsed times every 30s
-  const [, setTick] = useState(0)
+  // Tick counter for re-rendering elapsed times and the last-updated age.
+  // Was 30s; now KITCHEN_CLOCK_TICK_MS (10s) because the staleness stamp added for
+  // #106 has to be truthful to within a glance, and a 30s-granular "2m ago" on a
+  // board someone is deciding to trust is not.
+  const [tick, setTick] = useState(0)
 
   // Loading state
   const [loading, setLoading] = useState(true)
+
+  // --- #106: feed liveness ---
+  //
+  // `lastSyncedAt` advances on every SUCCESSFUL read, so it is positive evidence the
+  // board is current; `syncFailed` records a read that threw. Neither depends on the
+  // socket's opinion of itself, which was measured lying (see feed-state.ts).
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
+  const [syncFailed, setSyncFailed] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [online, setOnline] = useState(true)
+
+  // --- #485: the board is showing only part of this shop's orders ---
+  const [ordersTruncated, setOrdersTruncated] = useState(false)
 
   // Ref for mute to avoid stale closure in WS callback
   const mutedRef = useRef(muted)
@@ -172,8 +210,12 @@ export default function KitchenPage() {
   useEffect(() => {
     const fetchShops = async () => {
       try {
-        const res = await apiClient.get("/api/v1/shops?size=100")
-        const shopList: Shop[] = res.data.content || []
+        // #485 (call site :175): was a single `/api/v1/shops?size=100`, which treated
+        // page 0 as the whole list — a tenant past 100 shops silently lost the tail,
+        // so a shop could be missing from the KDS selector with no error. This is the
+        // SAME endpoint and the SAME truncation #282 fixed for the switcher, so it
+        // reuses that loop rather than inventing a second one.
+        const shopList: Shop[] = await fetchAllMyShops()
         // QA-council FIX-4 (M2 + L2): a blind shopList[0] default could select
         // a draft/junk shop, making the kitchen look idle while real orders
         // waited on a published shop — and the selector listed every draft.
@@ -222,36 +264,69 @@ export default function KitchenPage() {
 
   // --- Fetch all active orders for selected shop ---
 
-  const fetchOrders = useCallback(async () => {
-    if (!selectedShopId) return
-    try {
-      const res = await apiClient.get(
-        `/api/v1/orders?shopId=${selectedShopId}&size=100&sort=createdAt,desc`
-      )
-      const allOrders: Order[] = res.data.content || []
-      const activeOrders = allOrders.filter((o) =>
-        KITCHEN_STATUSES.includes(o.status)
-      )
+  const fetchOrders = useCallback(
+    /**
+     * @param incremental re-use the detail already held for any ticket whose id AND
+     *        status are unchanged. The liveness poll added for #106 runs on this path,
+     *        which keeps a quiet board at ONE request per minute instead of one per
+     *        minute per ticket — on a board of eighteen that is the difference between
+     *        19 requests/min and 1, against a tenant rate limit of 100/min.
+     *        Every other caller (shop switch, reconnect resync, manual refresh) takes
+     *        the full path, so a detail edit that did not change status is still picked
+     *        up the next time anything of consequence happens.
+     */
+    async (incremental = false) => {
+      if (!selectedShopId) return
+      try {
+        // #485 (call site :229): was a single `?size=100`, so a shop past 100 lifetime
+        // orders lost every ticket after the first page — silently, with no error and
+        // no indicator. Raising the number cannot fix it: the API clamps page size at
+        // 100 (measured; see fetchActiveKitchenOrders). This follows the list instead,
+        // and reports back when even its own page bound was hit so the board can SAY so.
+        const { orders: activeOrders, truncated } =
+          await fetchActiveKitchenOrders(selectedShopId)
 
-      // Fetch detail for each active order
-      const detailPromises = activeOrders.map((o) =>
-        apiClient.get(`/api/v1/orders/${o.id}/detail`).then((r) => r.data as OrderDetail)
-      )
-      const details = await Promise.all(detailPromises)
+        const held = ordersMapRef.current
+        const needDetail = incremental
+          ? activeOrders.filter((o) => held.get(o.id)?.status !== o.status)
+          : activeOrders
+        const fetched = await fetchKitchenOrderDetails(needDetail)
+        const byId = new Map(fetched.map((d) => [d.id, d]))
 
-      const newMap = new Map<string, OrderDetail>()
-      for (const d of details) {
-        newMap.set(d.id, d)
+        const newMap = new Map<string, OrderDetail>()
+        for (const o of activeOrders) {
+          const detail = byId.get(o.id) ?? held.get(o.id)
+          if (detail) newMap.set(o.id, detail)
+        }
+        setOrdersMap(newMap)
+        setOrdersTruncated(truncated)
+        // #106: a successful read is the ONLY thing that advances the stamp.
+        setLastSyncedAt(Date.now())
+        setSyncFailed(false)
+      } catch {
+        // #106: record the failure in the feed state as well as toasting it. A toast is
+        // gone in five seconds; a kitchen board that stopped updating is wrong until
+        // someone fixes it, so the page has to keep saying so.
+        setSyncFailed(true)
+        toast({
+          variant: "destructive",
+          title: "Error loading orders",
+          description: "Could not fetch kitchen orders.",
+        })
       }
-      setOrdersMap(newMap)
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Error loading orders",
-        description: "Could not fetch kitchen orders.",
-      })
+    },
+    [selectedShopId, toast]
+  )
+
+  /** Operator-triggered refresh from the stale banner (#106). */
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await fetchOrders()
+    } finally {
+      setRefreshing(false)
     }
-  }, [selectedShopId, toast])
+  }, [fetchOrders])
 
   useEffect(() => {
     if (selectedShopId) {
@@ -262,12 +337,54 @@ export default function KitchenPage() {
     }
   }, [selectedShopId, fetchOrders])
 
-  // --- Timer for elapsed time updates (30s) ---
+  // --- Timer for elapsed time + last-updated age (#106) ---
 
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 30000)
+    const interval = setInterval(() => setTick((t) => t + 1), KITCHEN_CLOCK_TICK_MS)
     return () => clearInterval(interval)
   }, [])
+
+  // --- Polling safety net (#106) ---
+  //
+  // The socket is the FAST path, not the TRUSTED one. Measured against the live stack:
+  // with the browser held offline for twelve seconds the board still read "Connected",
+  // because the STOMP client had not yet noticed. A periodic read gives the page a
+  // fact it owns — either it lands (the stamp advances, the board is genuinely
+  // current) or it does not (the banner appears). Cheap: one request plus one per
+  // active ticket, once a minute.
+  useEffect(() => {
+    if (!selectedShopId) return
+    const interval = setInterval(() => {
+      fetchOrders(true)
+    }, KITCHEN_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [selectedShopId, fetchOrders])
+
+  // --- Browser connectivity (#106) ---
+  //
+  // `navigator.onLine` flips synchronously on the browser's own events, so this
+  // reaches the operator long before a socket timeout would. Read after mount so SSR
+  // and the first client render agree.
+  useEffect(() => {
+    setOnline(navigator.onLine)
+    const goOffline = () => setOnline(false)
+    const goOnline = () => {
+      setOnline(true)
+      // Re-read IMMEDIATELY rather than waiting out the poll interval. Measured
+      // before this line existed: after a 110-second offline spell the board sat on
+      // "Not updating" for the rest of the minute even though the network was back,
+      // because `syncFailed` is only cleared by a successful read and the next one was
+      // up to 60s away. A board that keeps warning after the problem is fixed teaches
+      // the kitchen to ignore the warning.
+      fetchOrders()
+    }
+    window.addEventListener("online", goOnline)
+    window.addEventListener("offline", goOffline)
+    return () => {
+      window.removeEventListener("online", goOnline)
+      window.removeEventListener("offline", goOffline)
+    }
+  }, [fetchOrders])
 
   // --- Derive WebSocket topic ---
 
@@ -285,6 +402,11 @@ export default function KitchenPage() {
   const handleWsMessage = useCallback(
     (event: OrderStateChangeEvent) => {
       const { orderId, newStatus, previousStatus } = event
+
+      // #106: a frame off the socket is proof the feed is alive right now — advance
+      // the stamp so a busy kitchen never sees a stale warning over live tickets.
+      setLastSyncedAt(Date.now())
+      setSyncFailed(false)
 
       // If new status is a kitchen status, fetch detail and add/update
       if (KITCHEN_STATUSES.includes(newStatus)) {
@@ -374,19 +496,39 @@ export default function KitchenPage() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
 
-  // --- Connection status dot ---
+  // --- #450 5d: whose board is this? ---
 
-  const connectionDot = connected
-    ? "bg-green-500"
-    : reconnecting
-      ? "bg-yellow-500"
-      : "bg-gray-400"
+  const selectedShop = shops.find((s) => s.id === selectedShopId) ?? null
+  const selectedShopName = selectedShop?.name ?? null
 
-  const connectionLabel = connected
-    ? "Connected"
-    : reconnecting
-      ? "Reconnecting..."
-      : "Disconnected"
+  // --- #105: printing ---
+
+  const { print, clear: clearPrintSheet, sheet: printSheet } =
+    useKitchenPrint(selectedShopName)
+
+  // Never let a ticket for one kitchen stay re-printable from another kitchen's board.
+  useEffect(() => {
+    clearPrintSheet()
+  }, [selectedShopId, clearPrintSheet])
+
+  // --- #106: feed liveness ---
+  //
+  // `tick` is in the dep list on purpose: the derivation reads a clock, so it has to
+  // be recomputed on the same 10s beat that re-renders the ticket ages, or a board
+  // left alone would keep reporting the age it had when it last re-rendered.
+  const feedState = useMemo(
+    () =>
+      deriveFeedState({
+        online,
+        connected,
+        reconnecting,
+        lastSyncedAt,
+        lastSyncFailed: syncFailed,
+        now: Date.now(),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock beat; Date.now() is read fresh on each one
+    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick]
+  )
 
   if (loading) {
     return (
@@ -399,20 +541,25 @@ export default function KitchenPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-4xl font-bold text-slate-900">Kitchen Display</h1>
-          <p className="mt-1 text-slate-600">
+          {/* #450 5d: the board names its shop before it says anything else about
+              itself. This used to be inferable only from a 200px <Select> in the
+              corner, while the dashboard switcher next to it said "All shops".
+              The original tagline is kept below rather than displaced — it explains
+              what the board is FOR to someone seeing it the first time, which the
+              shop name does not. */}
+          <KdsBoardShopName shopName={selectedShopName} />
+          <p className="mt-0.5 text-sm text-slate-500">
             Live order feed &mdash; bump orders through preparation stages
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Connection status */}
-          <div className="flex items-center gap-2 text-sm text-slate-600" title={connectionLabel}>
-            <span className={`h-2.5 w-2.5 rounded-full ${connectionDot}`} />
-            <span className="hidden sm:inline">{connectionLabel}</span>
-          </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* #106: the connection state, legible from a wall mount. Replaces a
+              h-2.5 w-2.5 dot whose label was `hidden sm:inline`. */}
+          <KdsFeedPill state={feedState} lastSyncedAt={lastSyncedAt} />
 
           {/* Shop selector */}
           {shops.length > 0 && (
@@ -433,12 +580,26 @@ export default function KitchenPage() {
             </Select>
           )}
 
+          {/* #105: print every ticket on the board, one per page — the start-of-shift
+              and printer-jam case. Per-ticket printing lives on each card. */}
+          <Button
+            variant="outline"
+            onClick={() => print(sortedOrders)}
+            disabled={sortedOrders.length === 0}
+            title="Print all tickets on this board"
+            className="kds-press"
+          >
+            <Printer className="mr-2 h-5 w-5" />
+            Print all
+          </Button>
+
           {/* Mute toggle */}
           <Button
             variant="outline"
             size="icon"
             onClick={toggleMute}
             title={muted ? "Unmute alerts" : "Mute alerts"}
+            className="kds-press"
           >
             {muted ? (
               <VolumeX className="h-5 w-5" />
@@ -448,6 +609,62 @@ export default function KitchenPage() {
           </Button>
         </div>
       </div>
+
+      {/* #106: the stale/offline banner. Rendered above the tickets because it
+          qualifies every ticket underneath it.
+
+          It animates because an element that pops into a live board mid-service
+          reads as a rendering glitch, not a warning — the purpose is "prevent a
+          jarring change", not decoration. Enter is 200ms ease-out (fast start:
+          the operator is looking at the board, and this must register); exit is
+          140ms, deliberately quicker, because the system responding is not
+          something anyone needs to watch. `MotionConfig reducedMotion="user"`
+          in motion-provider.tsx already strips the movement for anyone who
+          asked for that. */}
+      <AnimatePresence initial={false}>
+        {feedState.alerting && (
+          <m.div
+            key="kds-feed-banner"
+            initial={{ opacity: 0, transform: "translateY(-8px)" }}
+            animate={{
+              opacity: 1,
+              transform: "translateY(0px)",
+              transition: { duration: 0.2, ease: [0.23, 1, 0.32, 1] },
+            }}
+            exit={{
+              opacity: 0,
+              transform: "translateY(-8px)",
+              transition: { duration: 0.14, ease: [0.23, 1, 0.32, 1] },
+            }}
+          >
+            <KdsFeedBanner
+              state={feedState}
+              lastSyncedAt={lastSyncedAt}
+              onRefresh={handleManualRefresh}
+              refreshing={refreshing}
+            />
+          </m.div>
+        )}
+      </AnimatePresence>
+
+      {/* #450 5d: name the mismatch rather than letting the operator find it. */}
+      {isAllShops && (
+        <KdsAllShopsNotice shopName={selectedShopName} shopCount={shops.length} />
+      )}
+
+      {/* #485: the board bound out before the API said the list had ended. Say so —
+          an incomplete board that admits it is a different thing from one that lies. */}
+      {ordersTruncated && (
+        <div
+          role="status"
+          data-testid="kds-truncated-notice"
+          className="rounded-lg border-2 border-amber-500 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
+        >
+          This shop has more order history than the board reads in one go. Older
+          tickets may not be shown &mdash; check the Orders screen if a ticket is
+          missing.
+        </div>
+      )}
 
       {/* Order cards grid */}
       {sortedOrders.length === 0 ? (
@@ -544,18 +761,39 @@ export default function KitchenPage() {
                         {elapsedText(order.createdAt)}
                       </div>
     
-                      {/* Bump button */}
-                      {action && (
+                      {/* Actions. The bump keeps the full width it has always had —
+                          it is the one control pressed a hundred times a service, and
+                          #105's print must not shrink it. Print sits beside it as an
+                          icon button with an accessible name.
+
+                          Both are h-11 (44px): the shadcn default is h-10, which
+                          measured 40x40 for the print button on a 375px iPhone SE
+                          profile — under the 44px minimum for a target pressed by a
+                          cook's thumb. Enlarging the bump alongside it is not a trade,
+                          it is the same control with more of it to hit. */}
+                      <div className="flex items-stretch gap-2">
+                        {action && (
+                          <Button
+                            className={`h-11 w-full ${action.color} text-white kds-press`}
+                            onClick={() => handleBump(order.id, order.status)}
+                          >
+                            {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}
+                            {order.status === "PREPARING" && <Package className="mr-2 h-4 w-4" />}
+                            {order.status === "READY" && <CheckCircle2 className="mr-2 h-4 w-4" />}
+                            {action.label}
+                          </Button>
+                        )}
                         <Button
-                          className={`w-full ${action.color} text-white`}
-                          onClick={() => handleBump(order.id, order.status)}
+                          variant="outline"
+                          size="icon"
+                          onClick={() => print([order])}
+                          aria-label={`Print ticket ${order.orderNumber || order.id.substring(0, 6)}`}
+                          title="Print ticket"
+                          className="h-11 w-11 flex-shrink-0 kds-press"
                         >
-                          {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}
-                          {order.status === "PREPARING" && <Package className="mr-2 h-4 w-4" />}
-                          {order.status === "READY" && <CheckCircle2 className="mr-2 h-4 w-4" />}
-                          {action.label}
+                          <Printer className="h-4 w-4" />
                         </Button>
-                      )}
+                      </div>
                     </CardContent>
                   </Card>
                 </m.div>
@@ -564,6 +802,10 @@ export default function KitchenPage() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* #105: the ticket sheet, portalled to <body> so one @media print rule in
+          globals.css can hide the dashboard chrome without editing the shell. */}
+      {printSheet}
     </div>
   )
 }
