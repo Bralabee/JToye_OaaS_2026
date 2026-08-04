@@ -74,8 +74,15 @@ const MAX_SHOP_PAGES = 50
  * short page (fewer items than requested), or {@link MAX_SHOP_PAGES}. The short-page
  * and empty-page exits mean a response with no paging metadata at all still
  * terminates after one request.
+ *
+ * Exported for #485: the kitchen board's own `?size=100` shop fetch is the same
+ * truncation on the same endpoint, and the fix direction there is explicitly "reuse
+ * the mechanism PR #476 introduced rather than inventing a second one". The KDS calls
+ * this directly rather than `fetchMyShops()` because it has no use for
+ * `GET /api/v1/staff/me` and a kitchen screen should not carry a request — or a
+ * failure mode — it does not need.
  */
-async function fetchAllMyShops(): Promise<Shop[]> {
+export async function fetchAllMyShops(): Promise<Shop[]> {
   const size = resolveShopsPageSize(process.env.NEXT_PUBLIC_SHOPS_PAGE_SIZE)
   const shops: Shop[] = []
 
