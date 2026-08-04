@@ -6,6 +6,7 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -105,7 +106,25 @@ public class PaymentService {
 
     /**
      * Create a Stripe PaymentIntent for a DRAFT order.
-     * Returns the client secret for frontend confirmation.
+     * Returns the PaymentIntent id (persist it) and the client secret (send it
+     * to the browser) — see {@link PaymentIntentResult}.
+     *
+     * <p><b>The order MUST already be persisted (issue #538).</b> The intent's
+     * {@code order_id} metadata is the only link the {@code
+     * payment_intent.succeeded} webhook has back to the local row, and the
+     * order id is also the Stripe idempotency key below. Calling this with a
+     * transient order used to dereference a null UUID and 500 the checkout on
+     * every Stripe-configured environment; the guard makes that a named,
+     * greppable failure instead of a {@code NullPointerException} in a metadata
+     * builder.
+     *
+     * <p><b>Idempotency.</b> {@code Stripe.maxNetworkRetries} defaults to 2 and
+     * the SDK emits an {@code Idempotency-Key} header only when the caller
+     * supplies one — it never generates one. Without a key, one checkout could
+     * leave up to three PaymentIntents at Stripe. The order's UUID is the
+     * natural key: it is stable for the lifetime of the order and is not reused
+     * by a retried checkout (a failed attempt rolls its order back, so the retry
+     * gets a fresh id and legitimately deserves a fresh intent).
      *
      * <p><b>Charge routing (issue #102, ADR-0001 Decision 2):</b> when the
      * order's tenant is a MARKETPLACE vendor with an ENABLED connected
@@ -116,9 +135,18 @@ public class PaymentService {
      * WHITE_LABEL tenants and tenants without an enabled connected account
      * keep today's pooled-account behaviour unchanged (their direct-charge
      * flow is a future slice; see StripeConnectService).
+     *
+     * @throws IllegalStateException if the order has not been persisted
      */
     @CircuitBreaker(name = "stripe")
-    public String createPaymentIntent(Order order) throws StripeException {
+    public PaymentIntentResult createPaymentIntent(Order order) throws StripeException {
+        if (order.getId() == null) {
+            throw new IllegalStateException(
+                    "createPaymentIntent requires a persisted order — order "
+                            + order.getOrderNumber() + " has no id. Persist the order BEFORE "
+                            + "creating its PaymentIntent (issue #538).");
+        }
+
         PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
                 .setAmount(order.getTotalAmountPennies())
                 .setCurrency(stripeProperties.getCurrency())
@@ -144,7 +172,13 @@ public class PaymentService {
             }
         });
 
-        PaymentIntent intent = PaymentIntent.create(builder.build());
+        // See the "Idempotency" note above: without this header an SDK network
+        // retry can create a second (and third) PaymentIntent for one checkout.
+        RequestOptions requestOptions = RequestOptions.builder()
+                .setIdempotencyKey(intentIdempotencyKey(order))
+                .build();
+
+        PaymentIntent intent = PaymentIntent.create(builder.build(), requestOptions);
 
         if (destination.isPresent()) {
             log.info("Created destination-charge PaymentIntent {} for order {} (amount: {} pennies, destination: {})",
@@ -154,7 +188,20 @@ public class PaymentService {
                     intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies());
         }
 
-        return intent.getClientSecret();
+        return new PaymentIntentResult(intent.getId(), intent.getClientSecret());
+    }
+
+    /**
+     * Stripe idempotency key for an order's PaymentIntent creation. Namespaced
+     * so it can never collide with a key minted for some other Stripe resource
+     * on the same account (Stripe scopes idempotency keys per account, not per
+     * endpoint).
+     *
+     * <p>Package-private so {@code PaymentServiceTest} asserts the SAME
+     * expression the production call uses, rather than a copy of it.
+     */
+    static String intentIdempotencyKey(Order order) {
+        return "order-payment-intent-" + order.getId();
     }
 
     /**
