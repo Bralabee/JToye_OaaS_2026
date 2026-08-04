@@ -377,11 +377,70 @@ test.describe("Dashboard mobile shell (390px)", () => {
  * visible); this locks that in AND proves the newly-mounted VSA-03 shop-context
  * switcher (top bar) reintroduces no horizontal overflow. NOT a new drawer.
  */
+/**
+ * The bar's own geometry, plus every descendant that escapes it.
+ *
+ * The bar is a fixed `h-14` (56px) `items-center` flex row, so a note laid out in
+ * the switcher column does not merely spill past the border — it RE-CENTRES the
+ * column and lifts the `<select>` off the top of the screen. Both directions
+ * therefore matter, which is why this returns `top` as well as `bottom`.
+ */
+async function topbarGeometry(page: Page) {
+  return page.evaluate(() => {
+    const bar = document.querySelector(
+      'body > div:not([hidden]) [data-testid="mobile-topbar"]'
+    ) as HTMLElement | null
+    if (!bar) return null
+    const br = bar.getBoundingClientRect()
+    const rel = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      return {
+        testid: el.getAttribute("data-testid") || el.id || el.tagName.toLowerCase(),
+        top: +(r.top - br.top).toFixed(2),
+        bottom: +(r.bottom - br.top).toFixed(2),
+        h: +r.height.toFixed(2),
+      }
+    }
+    return {
+      barHeight: +br.height.toFixed(2),
+      select: document.querySelector(
+        'body > div:not([hidden]) [data-testid="mobile-topbar"] #shop-context-select'
+      )
+        ? rel(
+            document.querySelector(
+              'body > div:not([hidden]) [data-testid="mobile-topbar"] #shop-context-select'
+            )!
+          )
+        : null,
+      // Only elements that take part in layout — an `sr-only` note is clipped to
+      // 1x1 and absolutely positioned, so it legitimately reports inside the bar.
+      escaping: [...bar.querySelectorAll("*")]
+        .map(rel)
+        .filter((c) => c.bottom > br.height + 1 || c.top < -1),
+    }
+  })
+}
+
 test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression", () => {
   test.use({ viewport: { width: 375, height: 812 }, isMobile: true })
 
   test.beforeEach(async ({ context, page }) => {
     await setupStubs(context)
+    // The catch-all above answers GET /api/v1/staff/me with an empty Page, so
+    // `groupAdmin` reads false and the D-08 "Apply to all shops" badge — the
+    // #495 defect — never renders. The real `admin-user` IS a group admin, so
+    // this stub is the faithful shape, and it is registered LAST so it wins.
+    await context.route(`${API}/api/v1/staff/me`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          userId: "00000000-0000-0000-0000-0000000000aa",
+          groupAdmin: true,
+          grantedShopIds: null,
+        }),
+      })
+    )
     await vendorLogin(page)
   })
 
@@ -408,5 +467,43 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
     expect(geom.docScrollWidth).toBeLessThanOrEqual(geom.viewportWidth + 1)
     // Content spans (near) full width — the sidebar steals nothing at 375px.
     expect(geom.mainWidth).toBeGreaterThanOrEqual(300)
+
+    // ---- #495 / #490: nothing in the fixed 56px bar escapes it ----------------
+    // jsdom has no layout, so the Jest cases can only assert the mechanism
+    // (`sr-only` in the topbar variant). THIS is the assertion about the actual
+    // geometry, and it is the one that was failing: measured on main at 375px,
+    // the "Apply to all shops" badge sat at bottom 59 against a 56px bar.
+    await expect(live(page).locator("main #shop-context-select")).toBeVisible({
+      timeout: 10_000,
+    })
+    const bar = await topbarGeometry(page)
+    expect(bar).not.toBeNull()
+    expect(bar!.barHeight).toBe(56)
+    // The D-08 badge must be present, or this proves nothing about #495.
+    await expect(live(page).locator("main [data-testid='apply-to-all']")).toHaveCount(1)
+    expect(bar!.escaping).toEqual([])
+    // …and the control itself is still inside the bar, not lifted above it.
+    expect(bar!.select!.top).toBeGreaterThanOrEqual(0)
+    expect(bar!.select!.bottom).toBeLessThanOrEqual(56)
+
+    // ---- the same, in the D-13 stale state (#490) -----------------------------
+    // Driven through the REAL seam: `shopContext` holding a shop the caller is no
+    // longer granted is exactly what localStorage contains after a revocation.
+    // Measured on main this put the notice's bottom at 95 and the <select> at
+    // top -40 / bottom -2 — the control was entirely above the viewport.
+    await page.evaluate(() =>
+      localStorage.setItem("shopContext", "00000000-0000-0000-0000-0000deadbeef")
+    )
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(live(page).locator("main #shop-context-select")).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(
+      live(page).locator("main [data-testid='shop-switcher-stale']")
+    ).toHaveCount(1)
+    const stale = await topbarGeometry(page)
+    expect(stale!.escaping).toEqual([])
+    expect(stale!.select!.top).toBeGreaterThanOrEqual(0)
+    expect(stale!.select!.bottom).toBeLessThanOrEqual(56)
   })
 })
