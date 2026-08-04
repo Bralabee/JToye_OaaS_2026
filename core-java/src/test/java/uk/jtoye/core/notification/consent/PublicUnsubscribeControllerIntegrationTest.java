@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -113,6 +114,48 @@ class PublicUnsubscribeControllerIntegrationTest {
                 .andExpect(jsonPath("$.status").value("invalid"));
 
         assertThat(suppressionCount()).as("a forged token must not write a suppression row").isZero();
+    }
+
+    @Test
+    void jsonBodyPost_writesTheSuppressionRow_underRealRls() throws Exception {
+        // Issue #278: the canonical browser POST now carries its fields in a JSON
+        // body so they never enter the request line. Binding is pinned by
+        // PublicUnsubscribeRequestShapeTest; this proves the body shape still
+        // reaches the tenant-pinned @Transactional write against real Postgres
+        // with the RLS policy live — a mock cannot show that.
+        String token = tokenService.tokenFor(tenant, email, category);
+        String body = """
+                {"tenant":"%s","email":"%s","category":"%s","token":"%s"}
+                """.formatted(tenant, email, category.name(), token);
+
+        mockMvc.perform(post("/api/v1/public/unsubscribe")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("unsubscribed"));
+
+        assertThat(suppressionCount()).as("the JSON-body POST writes exactly one suppression row").isEqualTo(1);
+    }
+
+    @Test
+    void rfc8058OneClickPost_stillWritesTheRow_forLinksAlreadyInInboxes() throws Exception {
+        // Every message already delivered carries List-Unsubscribe with the
+        // fields in the URI, and RFC 8058 fixes the POST body to the literal
+        // "List-Unsubscribe=One-Click" — so the query-param shape can never be
+        // retired. Proven end-to-end, not just at the binding layer.
+        String token = tokenService.tokenFor(tenant, email, category);
+
+        mockMvc.perform(post("/api/v1/public/unsubscribe")
+                        .param("tenant", tenant.toString())
+                        .param("email", email)
+                        .param("category", category.name())
+                        .param("token", token)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("List-Unsubscribe=One-Click"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("unsubscribed"));
+
+        assertThat(suppressionCount()).as("a mail-provider one-click POST still opts the recipient out").isEqualTo(1);
     }
 
     @Test

@@ -2,9 +2,10 @@
  * COMMS-03 E2E — public one-click unsubscribe flow (Surface C).
  *
  * Proves the unsubscribe link resolves and confirms opt-out end-to-end from the
- * browser: the public page reads `?tenant=&email=&category=&token=`, POSTs the
- * token to the no-auth backend, and renders the resulting state. No auth, no
- * dashboard chrome, no sign-in prompt.
+ * browser: the public page reads `?tenant=&email=&category=&token=` from ITS OWN
+ * url, POSTs them to the no-auth backend in a JSON body (#278 — never as query
+ * params, which access logs capture verbatim), and renders the resulting state.
+ * No auth, no dashboard chrome, no sign-in prompt.
  *
  * The backend is STUBBED so the two outcomes are deterministic: a genuine
  * end-to-end token can only be minted server-side from the configured HMAC
@@ -25,11 +26,29 @@ const TENANT = "00000000-0000-0000-0000-000000000001"
 const EMAIL = "recipient@example.com"
 
 async function stubUnsubscribe(context: BrowserContext) {
-  // The page POSTs to {/public,/api/v1/public}/unsubscribe with the token as a
-  // query param. Return the state the backend would return for that token:
-  // a VALID-* token verifies (unsubscribed), anything else fails (invalid).
+  // The page POSTs to {/public,/api/v1/public}/unsubscribe. Return the state the
+  // backend would return for that token: a VALID-* token verifies
+  // (unsubscribed), anything else fails (invalid).
+  //
+  // The token is read from the JSON BODY (issue #278) — it is deliberately no
+  // longer in the query string, because a query string is copied verbatim into
+  // every access log on the path. The query-param read is kept as a fallback so
+  // this stub mirrors the backend, which still accepts that shape for the RFC
+  // 8058 one-click links already sitting in customers' inboxes.
   await context.route("**/public/unsubscribe**", (route) => {
-    const token = new URL(route.request().url()).searchParams.get("token") || ""
+    const request = route.request()
+
+    let token = ""
+    try {
+      const body = request.postDataJSON() as { token?: string } | null
+      token = body?.token ?? ""
+    } catch {
+      // Not JSON (e.g. an RFC 8058 form-encoded one-click POST) — fall through.
+    }
+    if (!token) {
+      token = new URL(request.url()).searchParams.get("token") || ""
+    }
+
     const valid = token.startsWith("VALID")
     return route.fulfill({
       status: 200,
