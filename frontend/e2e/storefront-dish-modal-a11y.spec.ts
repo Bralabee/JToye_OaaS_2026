@@ -48,12 +48,47 @@ async function dialogState(page: Page) {
         : null,
       bodyOverflow: getComputedStyle(document.body).overflow,
       // Radix's other inertness mechanism (`hideOthers` from the aria-hidden
-      // package). Measured on this page: it inerts <main> but NOT <header> —
-      // the header contains the basket's aria-live="polite" region, and the
-      // library deliberately leaves live regions announceable. See the note on
-      // the assertion below; <main> is the honest thing to assert here.
+      // package). Measured on this page: it inerts the page content but NOT
+      // <header> — the header contains the basket's aria-live="polite" region,
+      // and the library deliberately leaves live regions announceable.
       mainAriaHidden:
         document.querySelector("main")?.getAttribute("aria-hidden") ?? null,
+      /**
+       * IS THE PAGE CONTENT INERT? — the property, not the node carrying it.
+       *
+       * This was `mainAriaHidden === "true"` and that turned out to pin the
+       * wrong thing. `hideOthers` keeps `[aria-live]` elements AND `script`
+       * elements out of the hidden set, and it does so by adding them as
+       * TARGETS — which marks all of their ancestors as "keep" and makes the
+       * walk recurse INTO those ancestors instead of hiding them. From
+       * node_modules/aria-hidden (verbatim):
+       *
+       *   // we should not hide aria-live elements ... and script elements,
+       *   // as they have no impact on accessibility.
+       *   targets.push(...parentNode.querySelectorAll('[aria-live], script'))
+       *
+       * So the moment `/shop/[slug]` gained a `<script type="application/ld+json">`
+       * for its schema.org markup (#447), `<main>` became a keep-ancestor and
+       * the attribute moved one level down onto main's content `<div>`.
+       * Measured both ways on the same build: with the JSON-LD removed, 16/16
+       * of this file pass; with it present, only these two blocks failed.
+       *
+       * Nothing about the customer's experience changed — the library's own
+       * comment is the reason: a script has no accessible representation, and
+       * everything that does is still hidden. So this asserts the contract
+       * ("the page behind the dialog is inert") rather than one node's
+       * attribute. It still fails pre-fix, where NOTHING was hidden at all.
+       */
+      pageContentInert: (() => {
+        const main = document.querySelector("main")
+        if (!main) return false
+        if (main.getAttribute("aria-hidden") === "true") return true
+        const rendered = Array.from(main.children).filter((c) => c.tagName !== "SCRIPT")
+        return (
+          rendered.length > 0 &&
+          rendered.every((c) => c.getAttribute("aria-hidden") === "true")
+        )
+      })(),
       headerAriaHidden:
         document.querySelector("header")?.getAttribute("aria-hidden") ?? null,
       activeTag: active?.tagName ?? null,
@@ -120,7 +155,13 @@ test.describe("Storefront dish modal — dialog contract", () => {
     // than worked around locally. It is not a hole in the contract: aria-modal
     // confines the AT virtual cursor to the dialog, and the focus trap asserted
     // below keeps the keyboard out of the header.
-    expect(open.mainAriaHidden, "page content must be inert behind the dialog").toBe("true")
+    //
+    // Asserted as the PROPERTY rather than as `main[aria-hidden]`: the library
+    // moves the attribute one node deeper as soon as <main> contains a
+    // `<script>` (schema.org JSON-LD, #447), with no change to what is
+    // announced. Full derivation, and the two measurements that isolated it,
+    // in the `pageContentInert` note above.
+    expect(open.pageContentInert, "page content must be inert behind the dialog").toBe(true)
     // Body scroll lock: the page must not scroll behind the overlay.
     expect(open.bodyOverflow, 'body overflow stayed "visible" pre-fix').toBe("hidden")
   })
