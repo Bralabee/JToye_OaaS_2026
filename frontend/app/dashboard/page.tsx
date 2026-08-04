@@ -315,7 +315,8 @@ export default function DashboardPage() {
                   <div className="text-3xl font-bold text-slate-900">
                     <StatValue value={stat.value} />
                   </div>
-                  <div className="flex items-center text-sm text-green-600">
+                  {/* green-700, not green-600 — 3.30:1 on white, below AA (#451). */}
+                  <div className="flex items-center text-sm text-green-700">
                     <TrendingUp className="mr-1 h-4 w-4" />
                     Active
                   </div>

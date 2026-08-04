@@ -32,11 +32,18 @@
 #   (line 401), Mailhog SMTP 1025 (line 480). The realm is `jtoye-dev`, the realm
 #   compose imports.
 #
-# NOT HERE ON PURPOSE: DB_HOST / DB_PORT
-#   Those are not app-config keys at all. They come from the
-#   `postgres-credentials` Secret, whose `host`/`port` keys the deployment reads
-#   via secretKeyRef (DEF-1, plan 26-01). scripts/k8s-local-secrets.sh (plan
-#   26-05) creates that Secret with host=host.minikube.internal and port=5433.
+# NOT HERE ON PURPOSE: DB_HOST, and the DB_PORT env var
+#   Neither is an app-config key. Both come from the `postgres-credentials`
+#   Secret, whose `host`/`port` keys the deployment reads via secretKeyRef
+#   (DEF-1, plan 26-01). scripts/k8s-local-secrets.sh (plan 26-05) creates that
+#   Secret with host=host.minikube.internal and port=$K8S_LOCAL_DB_PORT (5433).
+#
+#   `db.port` BELOW IS NOT A REVERSAL OF THAT (issue #271). It does not feed any
+#   env var and no container reads it; it is the RENDER-TIME declaration the
+#   NetworkPolicy egress rules are derived from, because a Secret VALUE can never
+#   appear in a kustomize render. The Secret stays authoritative for what the
+#   pods dial. The two must agree, and scripts/k8s-local-secrets.sh REFUSES to
+#   create the Secret when they do not.
 # =============================================================================
 apiVersion: v1
 kind: ConfigMap
@@ -109,6 +116,20 @@ data:
   redis.host: "host.minikube.internal"
   rabbitmq.host: "host.minikube.internal"
   stomp.broker.relay-host: "host.minikube.internal"
+
+  # --- Postgres port for the NetworkPolicy derivation (issue #271) -----------
+  # 5433 is the compose-published host Postgres port (docker-compose.full-stack.yml
+  # line 31, shifted off 5432 to dodge the cohabiting OlaJay stack) and the .env
+  # K8S_LOCAL_DB_PORT default. It is the ONLY key in this file that no container
+  # reads: its consumer is the `replacements:` block in kustomization.yaml, which
+  # writes it into the Postgres egress rule of both NetworkPolicies.
+  #
+  # It must equal K8S_LOCAL_DB_PORT, which is what scripts/k8s-local-secrets.sh
+  # puts in the postgres-credentials Secret and therefore what the pods actually
+  # dial. That script asserts the equality and refuses on a mismatch — a divergence
+  # here is exactly the two-places-one-fact shape #271 was filed about, so it is
+  # enforced rather than described.
+  db.port: "5433"
 
   # --- Media storage: pod-reachable vs BROWSER-reachable --------------------
   #

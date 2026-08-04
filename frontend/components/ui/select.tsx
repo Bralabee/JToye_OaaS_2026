@@ -10,9 +10,22 @@ const SelectGroup = SelectPrimitive.Group
 
 const SelectValue = SelectPrimitive.Value
 
+/**
+ * A `SelectTrigger` renders `role="combobox"` with NO accessible name of its
+ * own — `<SelectValue placeholder="Filter status" />` is a placeholder, and axe
+ * (correctly) does not accept a placeholder as a name. Every such trigger was a
+ * `button-name` critical (#451).
+ *
+ * So the name is required at the TYPE level: pass `aria-label`, or
+ * `aria-labelledby` pointing at a visible `<Label>`. The union makes omitting
+ * both a compile error, and `npm run build` runs tsc — a gate, not a comment.
+ */
+type SelectTriggerProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> &
+  ({ "aria-label": string } | { "aria-labelledby": string })
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
+  SelectTriggerProps
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}

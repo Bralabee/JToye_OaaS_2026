@@ -56,6 +56,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Read by infra/db/init/00-create-db.sql via psql \getenv to create the
+      # non-owner RLS role `jtoye_app` with the SAME password core-java presents.
+      # That role used to be created with a hardcoded 'secret', so any stack
+      # whose DB_PASSWORD was not that literal could not authenticate on a fresh
+      # volume — the failure e2e-nightly.yml hit every night. Guarded with `:?`
+      # so a missing value fails at compose-parse time rather than producing a
+      # role whose password nothing knows.
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (used to create the jtoye_app role)}
     ports:
       # Loopback-only by default (#438). The account reachable on this port
       # holds role attributes that bypass row-level security, so an

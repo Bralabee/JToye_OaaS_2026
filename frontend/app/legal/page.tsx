@@ -54,7 +54,7 @@ export default function LegalPage() {
       </dl>
 
       <p className="mt-10 text-sm">
-        <Link href="/" className="font-medium text-amber-600 hover:text-amber-700">
+        <Link href="/" className="font-medium text-amber-700 hover:text-amber-800">
           ← Back to J&apos;Toye
         </Link>
       </p>

@@ -64,16 +64,37 @@ func NewClient(baseURL string, logger *zap.Logger) *Client {
 	}
 }
 
-// BatchSyncRequest represents a batch sync request
+// BatchSyncRequest is the body sent to core's POST /api/v1/sync/batch.
+// Field names are CORE's (camelCase) — this struct never leaves the edge in
+// any other direction, so it is free to speak core's dialect exactly.
 type BatchSyncRequest struct {
-	TenantID string                   `json:"tenant_id"`
+	TenantID string                   `json:"tenantId"`
 	Items    []map[string]interface{} `json:"items"`
 }
 
-// BatchSyncResponse represents the response from batch sync
+// BatchSyncResponse is the EDGE-facing shape, returned verbatim to the
+// gateway's own callers and documented as SyncBatchResponse in
+// edge-go/docs/swagger.json. Its snake_case names are a published contract
+// and are deliberately NOT changed to match core.
 type BatchSyncResponse struct {
 	Status         string `json:"status"`
 	ProcessedCount int    `json:"processed_count"`
+}
+
+// coreBatchSyncResponse is core's wire shape for the same payload.
+//
+// Two types rather than one because the two contracts genuinely differ:
+// core-java serialises uk.jtoye.core.sync.dto.BatchSyncResponse with default
+// Jackson naming (`processedCount`), while the edge publishes
+// `processed_count`. Decoding core's body straight into BatchSyncResponse
+// silently produced ProcessedCount=0 on every successful batch — Go's
+// encoding/json case-insensitive match does not bridge an underscore, and it
+// reports no error for a field it cannot place. Found by the edge↔core
+// contract gate (issue #337); the pre-existing client test could not see it
+// because its stub core encoded the edge's own struct.
+type coreBatchSyncResponse struct {
+	Status         string `json:"status"`
+	ProcessedCount int    `json:"processedCount"`
 }
 
 // SyncBatch sends a batch sync request to the Core API
@@ -118,8 +139,17 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 			return nil, fmt.Errorf("unexpected status %d: %s", httpResp.StatusCode, string(body))
 		}
 
-		if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		var wire coreBatchSyncResponse
+		if err := json.NewDecoder(httpResp.Body).Decode(&wire); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		// Translate core's camelCase wire shape into the edge's published
+		// snake_case shape. One assignment per field, so a new core field
+		// cannot be silently dropped here without the contract gate noticing.
+		resp = &BatchSyncResponse{
+			Status:         wire.Status,
+			ProcessedCount: wire.ProcessedCount,
 		}
 
 		return resp, nil

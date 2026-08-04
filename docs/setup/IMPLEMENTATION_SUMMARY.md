@@ -295,7 +295,7 @@ Features:
 bash scripts/dev.sh
 
 # Option 2: Manual start
-cd infra && docker compose up -d
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ./gradlew :core-java:bootRun
 cd edge-go && go run ./cmd/edge
 ```

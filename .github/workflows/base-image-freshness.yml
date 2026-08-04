@@ -1,0 +1,319 @@
+name: Base Image Freshness
+
+# WHY THIS EXISTS (#276)
+#
+#   The `Trivy image gate` in ci-cd.yaml compares TWO moving things, neither of
+#   which is in this repo:
+#
+#     - the CONTENT of a floating base tag (node:24-alpine, eclipse-temurin:
+#       21-jre-alpine, golang:1.26-alpine) — the tag string is pinned, what it
+#       resolves to is not;
+#     - Trivy's vulnerability DB, which refreshes DAILY.
+#
+#   So the gate flips red on its own schedule, on a commit that changed nothing.
+#   Measured on two consecutive main runs (e01e654 2026-07-26 01:41, d964a85
+#   10:03): both failed on frontend base-image CVEs with no code change between
+#   them. This is the image-scan instance of a shape already recorded for the
+#   FILESYSTEM Trivy scan.
+#
+#   Two things make that worse than a normal red:
+#
+#     1. build-and-push carries `if: github.event_name == 'push' || ... release`,
+#        so the image gate NEVER RUNS ON A PULL REQUEST. An author cannot observe
+#        it before merge. The first sighting is on main, after the fact, by
+#        whoever merged next — someone with no connection to the cause.
+#     2. The discovery is therefore always a surprise attached to an unrelated
+#        change, which is exactly the condition under which a gate gets weakened
+#        rather than satisfied.
+#
+#   This workflow moves the discovery ONTO ITS OWN SCHEDULE, and gives anyone a
+#   `workflow_dispatch` button to run the gate's exact question on demand — the
+#   observation path a PR author otherwise does not have.
+#
+# WHAT IT SCANS, AND WHY THAT AND NOT SOMETHING ELSE
+#
+#   The PUBLISHED images (ghcr.io/<owner>/jtoye-<service>:latest), with the CI
+#   gate's exact flags and the SAME PINNED trivy-action. That makes the answer
+#   here identical to the answer the gate will give on the next push to main —
+#   which is the whole point. Two alternatives were considered and rejected:
+#
+#     - Scanning the BASE images from the Dockerfile FROM lines. Rejected: our
+#       runner stages deliberately remediate the base (frontend removes npm's
+#       bundled dependencies; core-java apk-upgrades named packages), so a raw
+#       base scan reports findings we have ALREADY fixed. Measured 2026-08-03:
+#       `node:24-alpine` scores 6 (5 HIGH + 1 CRITICAL) under the gate's flags,
+#       every one of them inside /usr/local/lib/node_modules/npm — all six are
+#       already deleted by frontend/Dockerfile's runner stage. A base scan would
+#       have opened an issue about a problem that does not exist in our image.
+#     - Rebuilding the images here. Rejected: the frontend build REFUSES to run
+#       without NEXT_PUBLIC_* build-args (frontend/Dockerfile's CR-02 guard), so
+#       an unset repo variable would make this workflow permanently red for a
+#       reason that has nothing to do with base-image freshness — a gate that
+#       fails for the wrong reason gets disabled. A rebuild is instead the FIRST
+#       TRIAGE STEP in the issue this workflow opens, because a floating tag
+#       means a plain rebuild often picks up an already-fixed base.
+#
+# THIS WORKFLOW IS NOT A REQUIRED CHECK AND MUST NEVER BECOME ONE. It has no
+# `pull_request` trigger, so it cannot gate a PR. Its job is to tell you early;
+# ci-cd.yaml's gate is what actually blocks the publish.
+#
+# EXIT BEHAVIOUR. Findings -> the leg fails AND an issue is opened/updated.
+# Unable to scan (image absent, registry unreachable, trivy missing) -> the leg
+# fails with a VOID: message. "Could not check" is never "clean" — do not add
+# `continue-on-error` or `|| true` to any step below.
+
+on:
+  schedule:
+    # Daily, 06:15 UTC. DAILY and not weekly on purpose: the vulnerability DB
+    # moves daily, so a weekly cadence leaves up to seven days in which the next
+    # push to main is the thing that discovers the rot. The cost is three image
+    # pulls; the issue de-duplication below stops a standing finding from opening
+    # a new issue every morning.
+    - cron: '15 6 * * *'
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: >-
+          Optional explicit image reference to scan INSTEAD of the published
+          :latest set (e.g. ghcr.io/owner/jtoye-frontend:main-abc1234, or a
+          public base such as node:24-alpine). Use this to ask the gate's exact
+          question about one image without pushing anything.
+        required: false
+        type: string
+      open_issue:
+        description: 'Open/update a tracking issue when findings are present'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan-published-images:
+    name: Scan published image (${{ matrix.service }})
+    # An explicit image_ref is a one-off question about ONE image, so the
+    # per-service matrix is collapsed to a single leg in that mode.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      # Needed by the issue step below. Declared at job level because this
+      # repo's default GITHUB_TOKEN is restricted — an inherited default would
+      # make `gh issue` fail with a 403 that reads like a missing issue.
+      issues: write
+    strategy:
+      # Same reasoning as build-and-push (#276): one service's rot must not
+      # cancel the scan of the other two and hide their state.
+      fail-fast: false
+      matrix:
+        service: [core-java, edge-go, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve the image reference to scan
+        id: ref
+        env:
+          OVERRIDE: ${{ inputs.image_ref }}
+          SERVICE: ${{ matrix.service }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OVERRIDE:-}" ]; then
+            # Only the first matrix leg does the work in override mode, so a
+            # single dispatch does not scan the same ref three times.
+            if [ "${SERVICE}" != "core-java" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "image_ref=" >> "$GITHUB_OUTPUT"
+              echo "Override supplied; this leg is a no-op (leg core-java runs it)."
+              exit 0
+            fi
+            REF="${OVERRIDE}"
+          else
+            REF="ghcr.io/${OWNER}/jtoye-${SERVICE}:latest"
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "Will scan: ${REF}"
+
+      - name: Log in to Container Registry
+        if: steps.ref.outputs.skip == 'false'
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # VOID arm. Trivy reports an unresolvable image as an error, but the job
+      # log then reads like a scanner problem rather than "this image was never
+      # published". Resolving the manifest FIRST turns that into one unambiguous
+      # line. Fails the leg — an image we cannot inspect is not an image we have
+      # any evidence about.
+      - name: Assert the image exists before scanning (VOID arm)
+        if: steps.ref.outputs.skip == 'false'
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          # rc is captured on the SAME statement as the command, and via `|| rc=$?`
+          # rather than a following `; rc=$?`: under `set -e` a failing command
+          # substitution in an assignment exits the shell BEFORE the next
+          # statement runs, so the trailing form would never reach its own
+          # handler and the VOID message below would never be printed.
+          rc=0
+          out=$(docker manifest inspect "${IMAGE_REF}" 2>&1) || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "VOID: cannot resolve manifest for ${IMAGE_REF} (rc=${rc})." >&2
+            echo "      Either it has never been published, or the token cannot read it." >&2
+            echo "      This is NOT a clean result — nothing was scanned." >&2
+            echo "${out}" >&2
+            exit 2
+          fi
+          if [ -z "${out}" ]; then
+            echo "VOID: empty manifest for ${IMAGE_REF} — unparseable, nothing scanned." >&2
+            exit 2
+          fi
+          echo "Manifest resolved for ${IMAGE_REF}."
+
+      # THE GATE'S EXACT QUESTION. Every input below is copied from the
+      # `Trivy image gate` step in ci-cd.yaml, and the action is pinned to the
+      # SAME sha. If those two drift apart this workflow starts answering a
+      # different question from the one that blocks the publish, which is the
+      # one failure mode that would make it worthless. scripts/check-image-supply-chain.sh
+      # asserts they stay identical.
+      - name: Trivy image scan — the ci-cd.yaml gate's exact flags
+        id: scan
+        if: steps.ref.outputs.skip == 'false'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.ref.outputs.image_ref }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # Runs only when the SCAN step failed, i.e. there are fixable CRITICAL/HIGH
+      # findings. Conditioned on `steps.scan.outcome` and not on a bare
+      # `failure()`: a bare failure() would also fire when the VOID arm above
+      # tripped, and then this would file an issue asserting "found fixable
+      # CVEs" about an image that was never scanned at all. When the VOID arm
+      # trips, `scan` is SKIPPED, so its outcome is 'skipped', not 'failure' —
+      # the two cases stay separated. On a scheduled run this always fires; on a
+      # manual dispatch it needs open_issue=true so an exploratory scan files
+      # nothing.
+      - name: Open or refresh the tracking issue
+        if: >-
+          failure() && steps.scan.outcome == 'failure'
+          && (github.event_name == 'schedule' || inputs.open_issue)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
+          SERVICE: ${{ matrix.service }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Base-image CVEs block publishing: jtoye-${SERVICE}"
+
+          # De-duplicate by EXACT title against open issues. `gh issue list --search`
+          # is substring-ish, so the exact match is done here in the shell rather
+          # than trusted from the search. Note the here-string: a `| grep -q`
+          # pipeline would invert under `pipefail` (grep exits on first match,
+          # the writer takes SIGPIPE, pipefail promotes it to 141) and this guard
+          # would fail OPEN, filing a duplicate every single morning.
+          lrc=0
+          existing=$(gh issue list --state open --limit 100 \
+                       --json number,title \
+                       --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>&1) || lrc=$?
+          if [ "${lrc}" -ne 0 ]; then
+            # Say so out loud rather than treating "could not look" as "none
+            # found". The create below then files a possible duplicate, which is
+            # the right way round: a duplicate issue is recoverable, a silently
+            # unreported CVE is not.
+            echo "WARN: could not list open issues (rc=${lrc}); de-duplication is DISABLED for this run." >&2
+            echo "${existing}" >&2
+            existing=""
+          fi
+
+          # The heredoc body is indented to the SAME column as the `run: |` block
+          # scalar. YAML strips that common indentation, so the shell receives the
+          # lines at column 0 and the markdown is not turned into code blocks. A
+          # body written flush-left here would terminate the block scalar and make
+          # the whole workflow file unparseable — which is exactly what happened on
+          # the first draft, and what scripts/check-image-supply-chain.sh caught by
+          # exiting 2 (VOID) rather than passing over an unreadable file.
+          body_file="$(mktemp)"
+          cat > "${body_file}" <<'EOF'
+          The daily base-image freshness scan found fixable CRITICAL/HIGH
+          vulnerabilities in a published image. The `Trivy image gate` in
+          `.github/workflows/ci-cd.yaml` uses the same flags and the same pinned
+          action, so **the next push to `main` will fail this leg** — on whatever
+          commit happens to land, which will have nothing to do with the cause.
+
+          ### Triage, in order
+
+          1. **Rebuild first, before changing anything.** The Dockerfile `FROM`
+             lines pin floating tags, so the published image can be carrying a base
+             that upstream has already respun. Re-running `build-and-push` on an
+             unchanged tree genuinely fixes a large share of these. If it does,
+             nothing further is needed.
+          2. **If a rebuild does not clear it, add the named package to the runner
+             stage's remediation line.** This is the lever, and it is already
+             exercised in both images that have needed it:
+             `core-java/Dockerfile` carries
+             `apk upgrade --no-cache libexpat p11-kit p11-kit-trust`, and
+             `frontend/Dockerfile` carries
+             `apk --no-cache upgrade libcrypto3 libssl3` plus the removal of npm's
+             bundled dependency tree from the runner stage. The packages are named
+             DELIBERATELY rather than blanket-upgraded; see the comment block in
+             `core-java/Dockerfile` for why, and do not replace it with a bare
+             `apk upgrade`.
+          3. **If the finding is not in an apk package** (for example a
+             language-level dependency bundled inside the base image), check whether
+             the component is used at runtime at all. `frontend/Dockerfile` deletes
+             npm from the runner stage for exactly this reason — that removes the
+             whole finding class instead of chasing each CVE. Measured 2026-08-03:
+             all six of `node:24-alpine`'s findings under the gate's flags live in
+             npm's bundled tree, and that one line clears every one of them.
+          4. **If none of the above can make it pass, STOP and escalate.** A gate
+             that no change to this repository can satisfy is a broken gate, not a
+             strict one, and the fix is a policy decision — not a quiet `--severity`
+             edit or a suppression file added under deadline pressure.
+
+          ### What NOT to do
+
+          Do not widen `severity`, drop `ignore-unfixed`, or move the gate back to
+          `format: sarif` with an `exit-code` — sarif mode makes Trivy scan ALL
+          severities, so the gate would then fire on LOW/MEDIUM too. That regression
+          is guarded by `scripts/check-image-supply-chain.sh`.
+
+          Do not close this issue because CI went green on a rerun. The DB moves
+          daily; green today says nothing about tomorrow. Close it when the image no
+          longer carries the finding.
+
+          EOF
+          {
+            echo "**Image:** \`${IMAGE_REF}\`"
+            echo ""
+            echo "**Scan run:** ${RUN_URL}"
+            echo ""
+            echo "Full Trivy table is in the \`Trivy image scan\` step of that run."
+          } >> "${body_file}"
+
+          if [ -n "${existing}" ]; then
+            # One number per line; refresh the first (there should only be one).
+            # Pure parameter expansion rather than `| head -n 1`: head exits after
+            # the first line, the writer takes SIGPIPE, and pipefail promotes that
+            # to 141 — which under `set -e` would kill the step instead of filing
+            # the comment.
+            num="${existing%%$'\n'*}"
+            gh issue comment "${num}" --body-file "${body_file}"
+            echo "Refreshed existing issue #${num}."
+          else
+            gh issue create --title "${TITLE}" --body-file "${body_file}" \
+              --label ci --label security || {
+              # A missing label must not swallow the report.
+              echo "Label-qualified create failed; retrying without labels." >&2
+              gh issue create --title "${TITLE}" --body-file "${body_file}"
+            }
+          fi

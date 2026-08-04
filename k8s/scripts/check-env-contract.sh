@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# check-env-contract.sh — the two-direction core-java env contract gate.
+# check-env-contract.sh — the two-direction env contract gate for ALL THREE
+# built services: core-java, edge-go and the frontend.
 #
 # WHY THIS EXISTS (Phase 26, D-07 / D-08 — the DEF-4 and DEF-6 bug classes)
 #
@@ -22,22 +23,31 @@
 #   working-looking default, and nothing ever compared the two sides. This gate
 #   compares them. A one-time fix without a gate is a fix that returns.
 #
-# THE TWO DIRECTIONS
+# WHY IT NOW COVERS THREE SERVICES (issue #298)
 #
-#   (a) INJECTED-BUT-UNREAD. Every env NAME injected by
-#       k8s/base/core-java-deployment.yaml must appear as an uppercase ${}
-#       placeholder in some core-java/src/main/resources/application*.yml, or be
-#       on the direction-(a) allowlist with a reason. This direction IS DEF-4:
-#       a manifest feeding an env that no config reads.
+#   Until 2026-08-03 this gate read core-java ONLY, and said so. That limit was
+#   not cosmetic: the SAME bug class was live in edge-go and invisible here.
+#   edge-go/cmd/edge/main.go:141 has read JWT_EXPECTED_ISSUER since the issuer/
+#   JWKS decoupling fix (issue #87), and NO k8s manifest ever supplied it — plan
+#   26-02 wired it by hand, and a core-java-only gate could not have caught it.
+#   The frontend had the mirror-image problem (D-18): NEXT_PUBLIC_API_URL was
+#   injected as a RUNTIME env where it could never reach the browser bundle,
+#   i.e. dead config that a naive "is it injected?" check would score as GOOD.
 #
-#   (b) EXPECTED-BUT-UNSUPPLIED. Every uppercase ${} placeholder Spring reads
-#       must either be injected by the manifest, or have a default that is safe
-#       outside a developer laptop:
-#         - no default at all + not injected -> FAIL (would hard-fail boot);
-#         - ANY default in the local-only word list + not injected -> FAIL
-#           (the DEF-6 shape);
-#         - anything else -> pass by rule (a safe non-local default), counted so
-#           the size of the un-supplied inventory stays visible.
+#   So each service gets its own parser, and the frontend additionally gets the
+#   build-time/runtime distinction encoded (see the FRONTEND section).
+#
+# THE TWO DIRECTIONS (the same two, per service)
+#
+#   (a) INJECTED-BUT-UNREAD. Every env NAME the service's k8s Deployment
+#       injects must be READ by that service's source/config, or be on the
+#       service's direction-(a) allowlist with a reason. This direction IS
+#       DEF-4: a manifest feeding an env that nothing reads.
+#
+#   (b) EXPECTED-BUT-UNSUPPLIED. Every env NAME the service READS must either
+#       be supplied by the manifest (or, for the frontend only, by the enforced
+#       BUILD-ARG channel), or be on the service's direction-(b) allowlist with
+#       a reason. Per-service refinements are documented in each section.
 #
 # ALLOWLIST HYGIENE IS PART OF THE GATE (D-08 says "reasoned", not "listed")
 #   - an entry with a blank / whitespace-only reason FAILS;
@@ -45,17 +55,12 @@
 #   - an entry that is no longer needed FAILS as STALE — the variable is now
 #     injected, or is now read, or no longer has a local-only default, or has
 #     disappeared from the config entirely.
+#   - a reason that starts with the marker OPEN DEFECT must cite an issue
+#     number (#NNN). Those entries are NOT "reviewed omissions" — they are
+#     tracked live gaps, and the gate prints them under their own heading on
+#     every run so they cannot pass as settled.
 #   So the allowlist cannot rot into a permanent excuse-store; it stays a
 #   reviewed inventory that a human signed off on for a stated reason.
-#
-# COVERAGE LIMITATION — core-java ONLY.
-#   This gate reads k8s/base/core-java-deployment.yaml and
-#   core-java/src/main/resources/application*.yml. It does NOT cover edge-go
-#   (Go `os.Getenv`) or the frontend (Next.js `process.env`), each of which needs
-#   its own parser. That extension is a recorded deferred idea
-#   ("Env-contract gate coverage for edge-go and frontend",
-#   .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-CONTEXT.md
-#   <deferred>). Do not assume wider coverage than core-java.
 #
 # TEST-COUNT NOTE
 #   A bash gate under k8s/scripts/ contributes 0 to docs/metrics.json:
@@ -69,7 +74,7 @@
 #   1. Injected envs are matched anchored to the env-list item indent
 #      (`^\s+- name: NAME$`, all-uppercase rest-of-line). The container name,
 #      port names and HPA metric names are lowercase, so they do not match.
-#   2. The placeholder regex tolerates ONE level of nesting. A naive
+#   2. The Spring placeholder regex tolerates ONE level of nesting. A naive
 #      `\$\{([A-Z_]+):([^}]*)\}` mis-terminates on the real nested defaults in
 #      application.yml (the two expected-issuer chains and the four STOMP
 #      credential chains), truncating the name/default split. Nested INNER
@@ -78,13 +83,20 @@
 #   3. The uppercase filter IS the env-vs-property discriminator:
 #      ${spring.application.name} and ${jtoye.security...} are Spring PROPERTY
 #      references, not env vars, and [A-Z0-9_]+ excludes them.
-#   4. FULL-LINE YAML comments are stripped before extraction. A comment that
-#      merely MENTIONS a placeholder would otherwise make direction (a) believe
-#      a dead env is read — application.yml really does contain the text
-#      `${RABBITMQ_USER:guest}` inside an explanatory comment, i.e. exactly the
-#      masking case. Trailing (same-line) comments are deliberately NOT stripped:
-#      a `#` can legitimately appear inside a quoted value, and no placeholder
-#      currently appears in a trailing comment in any application*.yml.
+#   4. FULL-LINE comments are stripped before extraction, in YAML, in Go and in
+#      TypeScript. A comment that merely MENTIONS a placeholder would otherwise
+#      make direction (a) believe a dead env is read. All three cases are real
+#      on this tree:
+#        - application.yml contains `${RABBITMQ_USER:guest}` inside prose;
+#        - frontend/lib/customer-orders-server.ts:27 contains the text
+#          `process.env.NEXT_PUBLIC_*` inside a block comment;
+#        - edge-go/cmd/edge/main.go carries several `// NAME is ...` lines.
+#      Trailing (same-line) comments are deliberately NOT stripped: a `#` or a
+#      `//` can legitimately appear inside a quoted value or a URL, and cutting
+#      at one would silently SHORTEN real code — which produces a false
+#      "not read" and therefore a false direction-(a) violation. The residual
+#      risk (a name mentioned only in a trailing comment) is accepted and does
+#      not occur on this tree.
 #   5. One name can carry SEVERAL different defaults across profiles (real cases
 #      exist). Defaults are collected as a SET per name and the local-only rule
 #      trips if ANY member matches — matched per-default, never against a joined
@@ -92,6 +104,11 @@
 #   6. Local-only means bare words as much as URLs. `minioadmin` and a bare-word
 #      broker default are the DEF-4/DEF-6 signature; a URL-only regex misses
 #      both.
+#   7. Every extractor is SELF-TESTED against a synthetic control string before
+#      it is trusted (see selftest_regex). A regex that silently matches nothing
+#      returns an EMPTY set, which is indistinguishable from "this service is
+#      perfectly configured" — the exact shape that makes a gate vacuous. An
+#      extractor that cannot match its own control exits 2 (VOID), never 0.
 #
 # Requires: bash >= 4.3 (associative arrays + namerefs), GNU grep with -P (PCRE),
 #           sed, find. ubuntu-latest (the CI runner) ships bash 5.x.
@@ -105,36 +122,98 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-DEPLOYMENT="$REPO_ROOT/k8s/base/core-java-deployment.yaml"
-APP_DIR="$REPO_ROOT/core-java/src/main/resources"
+CORE_DEPLOYMENT="$REPO_ROOT/k8s/base/core-java-deployment.yaml"
+CORE_APP_DIR="$REPO_ROOT/core-java/src/main/resources"
+EDGE_DEPLOYMENT="$REPO_ROOT/k8s/base/edge-go-deployment.yaml"
+EDGE_SRC_DIR="$REPO_ROOT/edge-go"
+FE_DEPLOYMENT="$REPO_ROOT/k8s/base/frontend-deployment.yaml"
+FE_SRC_DIR="$REPO_ROOT/frontend"
+FE_DOCKERFILE="$REPO_ROOT/frontend/Dockerfile"
+FE_ENV_VALIDATION="$REPO_ROOT/frontend/lib/env-validation.ts"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
 
 # ===========================================================================
-# ALLOWLIST — direction (a): injected by k8s, read by no application*.yml.
+# CORE-JAVA ALLOWLIST — direction (a): injected by k8s, read by no
+# application*.yml.
 #
 # Format: NAME|reason. A blank reason, a duplicate, or an entry that is no
 # longer needed (not injected any more, or now genuinely read) fails the gate.
 # NEVER widen this list to make the gate pass: if the gate is right and the
 # manifest is wrong, fix the manifest.
 # ===========================================================================
-ALLOW_INJECTED_UNREAD=(
+ALLOW_CORE_A=(
   'SPRING_PROFILES_ACTIVE|Spring relaxed-binding environment variable, not a ${} placeholder. Spring Boot binds it directly onto spring.profiles.active before any property source is read, so it correctly appears in no application*.yml. It is load-bearing (26-CONTEXT.md D-10 keeps every k8s environment on the prod profile) and must not be removed to satisfy direction (a).'
 )
 
 # ===========================================================================
-# ALLOWLIST — direction (b): read by Spring, supplied by no manifest, and the
-# default is local-only (or absent). Each entry is a REVIEWED omission.
+# CORE-JAVA ALLOWLIST — direction (b): read by Spring, supplied by no manifest,
+# and the default is local-only, absent, or an unresolved property chain. Each
+# entry is a REVIEWED omission.
 #
 # Format: NAME|reason. Same hygiene rules as above. An entry here that becomes
 # manifest-supplied, or whose defaults stop being local-only, fails as STALE so
 # the inventory cannot silently rot.
 # ===========================================================================
-ALLOW_UNSUPPLIED_LOCAL_DEFAULT=(
-  'OLLAMA_URL|Reviewed omission: there is no in-cluster Ollama, and the media vision stage is advisory-only behind jtoye.media.vision.enabled, which defaults false (Phase 24 IMG-03 — a vision failure never rejects an upload, it only flags for review). Supplying this would point core-java at a host that does not exist; leaving the unreachable default keeps the stage inert, which is the intended k8s behaviour.'
-  'ZIPKIN_ENDPOINT|Reviewed omission: no in-cluster Zipkin/OTLP collector is deployed, and Micrometer tracing export is best-effort — spans are dropped silently and no request path degrades. Revisit when an observability phase actually adds a collector; until then a supplied-but-wrong endpoint would be worse than an unreachable default.'
-  'CUSTOMER_KC_ISSUER_URI|Reviewed omission, explicitly deferred in 26-CONTEXT.md <deferred> ("Customer-storefront realm in k8s"). The whole customer-storefront realm is unconfigured in EVERY k8s environment, so supplying only this one issuer would half-wire it and make a broken realm look configured. Belongs with the storefront/CID work, not with this phase.'
+ALLOW_CORE_B=(
+  'OLLAMA_URL|Reviewed omission (issue #303): there is no in-cluster Ollama, and the media vision stage is advisory-only behind jtoye.media.vision.enabled, which defaults false (Phase 24 IMG-03 — a vision failure never rejects an upload, it only flags for review). Supplying this would point core-java at a host that does not exist; leaving the unreachable default keeps the stage inert, which is the intended k8s behaviour. Revisit only when a phase actually deploys or points at a real inference endpoint — inventing a value first is the DEF-6 defect class in reverse.'
+  'ZIPKIN_ENDPOINT|Reviewed omission (issue #303): no in-cluster Zipkin/OTLP collector is deployed, and Micrometer tracing export is best-effort — spans are dropped silently and no request path degrades. A supplied-but-wrong endpoint would be worse than an unreachable default. Revisit when the observability phase actually adds a collector (overlaps #98); until then this entry, not a manifest value, is the record.'
+  'CUSTOMER_KC_ISSUER_URI|OPEN DEFECT #299 — the customer-storefront realm is unconfigured in EVERY k8s environment (base, staging, production and local). This is a tracked live gap, NOT a reasoned omission. It is carried here rather than half-fixed because supplying only this one issuer would make a broken realm look configured; the whole set (this, CUSTOMER_JWT_EXPECTED_ISSUER, and the frontend CUSTOMER_KEYCLOAK_* trio) has to land together with the storefront/CID work.'
+  'CUSTOMER_JWT_EXPECTED_ISSUER|OPEN DEFECT #299 — same realm, same gap. Its default is the property chain ${jtoye.security.customer-jwt.issuer-uri}, which resolves to ${CUSTOMER_KC_ISSUER_URI:http://localhost:8085/realms/jtoye-customers}, i.e. transitively local-only. Before the chained-default rule existed this name scored as "pass by rule (safe non-local default)" and #299 was HALF-INVISIBLE to its own gate.'
+)
+
+# ===========================================================================
+# EDGE-GO ALLOWLIST — direction (a): injected by k8s, read by no Go source.
+# ===========================================================================
+ALLOW_EDGE_A=()
+
+# ===========================================================================
+# EDGE-GO ALLOWLIST — direction (b): read by edge-go, supplied by no manifest.
+#
+# Go has no "hard fail on unresolved placeholder" equivalent — an unset env is
+# simply "", and every read site here supplies its own fallback. So absence is
+# never a boot failure; it is a SILENT behaviour change, which is exactly the
+# DEF-6 shape. Each omission therefore has to be stated, not inferred.
+# ===========================================================================
+ALLOW_EDGE_B=(
+  'EDGE_JWT_AUDIENCE|Reviewed omission: unset falls back to the fail-closed constant defaultJWTAudience = "core-api" (edge-go/internal/middleware/jwt.go:31), which is the audience this platform actually mints. Absence never DISABLES the aud check (issue #87 P1-5, threat T-bl2-02) — it only selects the default — so injecting it would restate the default and add a value that can drift out of step with the realm.'
+  'JWKS_REFRESH_INTERVAL|Reviewed omission: optional cadence override for the JWKS re-fetch. Unset uses defaultJWKSRefreshInterval = 5m; an unparseable value logs a WARN and keeps the default. Absence is the intended, safe state.'
+  'RATE_LIMIT_RPS|Reviewed omission: per-replica DoS-guard tuning knob (default 20). This valve is deliberately NOT the per-tenant quota — Core Bucket4j is the authoritative limit — so a cluster-wide value here would express a policy the edge does not own.'
+  'RATE_LIMIT_BURST|Reviewed omission: the burst half of the same per-replica DoS guard (default 40). Same reasoning as RATE_LIMIT_RPS.'
+  'EDGE_MANAGEMENT_PORT|Reviewed omission, and one that MUST STAY AN OMISSION. Leaving it unset is load-bearing: edge-go/cmd/edge/main.go:213-216 registers /metrics on the application port only while this is empty, and that is exactly where the Phase 27 scrape config targets it with no credentials. Injecting a value here would move the route to a second listener and silently blind the alerting layer — the failure issue #442 (SEC-02 / F-M7) explicitly warns about. Do not "fix" this entry by supplying the variable.'
+  'WHATSAPP_APP_SECRET|Reviewed omission: the Meta WhatsApp intake is not provisioned in any k8s environment. Absence is FAIL-CLOSED by design — edge-go/cmd/edge/handlers.go:209-213 refuses the webhook with 500 "webhook signing not configured" rather than skipping signature verification — so an unconfigured cluster rejects unsigned webhooks instead of accepting them. Belongs with the phase that provisions the Meta integration; supplying part of the set would half-wire it.'
+  'WHATSAPP_DEFAULT_SHOP_ID|Reviewed omission: part of the same unprovisioned WhatsApp intake set as WHATSAPP_APP_SECRET. The route is fail-closed on the secret before any of these are used.'
+  'WHATSAPP_DEFAULT_TENANT_ID|Reviewed omission: part of the same unprovisioned WhatsApp intake set. Scopes the edge->Core service-token call that stands in for the (impossible) caller JWT.'
+  'WHATSAPP_SERVICE_CLIENT_ID|Reviewed omission: part of the same unprovisioned WhatsApp intake set. Its Keycloak client does not exist in the k8s realms either, so a value here would name a client that cannot authenticate.'
+  'WHATSAPP_SERVICE_CLIENT_SECRET|Reviewed omission: part of the same unprovisioned WhatsApp intake set, and it would additionally require a Secret that no k8s environment creates.'
+)
+
+# ===========================================================================
+# FRONTEND ALLOWLIST — direction (a): injected by k8s, read by no frontend
+# source and not declared in env-validation.ts.
+# ===========================================================================
+ALLOW_FE_A=()
+
+# ===========================================================================
+# FRONTEND ALLOWLIST — direction (b): read by the frontend, supplied by
+# neither the manifest nor the enforced build-arg channel.
+# ===========================================================================
+ALLOW_FE_B=(
+  'NEXT_RUNTIME|Reviewed omission: set by the Next.js runtime itself, never by an operator. frontend/instrumentation.ts:12 reads it only to tell the nodejs runtime from the edge runtime. Injecting it would override a value Next.js owns.'
+  'CSP_REPORT_ONLY|Reviewed omission, and one that must stay an omission in staging/production: unset means the Content-Security-Policy is ENFORCING (frontend/middleware.ts:33). Setting it to "true" would downgrade the policy to report-only cluster-wide. The only legitimate value is a temporary local one.'
+  'CSP_UPGRADE_INSECURE_REQUESTS|Reviewed omission with a known caveat: unset means the CSP omits upgrade-insecure-requests. frontend/lib/security-headers.ts:33-40 records that real HTTPS deployments SHOULD set it to "true", so staging/production are leaving a hardening directive on the table. It is deliberately off in base because the base render is shared with the local overlay, which serves http and would break MinIO images at http://localhost:9000 under an unconditional upgrade. Needs a per-overlay value, not a base one.'
+  'CUSTOMER_KEYCLOAK_ISSUER|OPEN DEFECT #299 — the customer-storefront realm is unconfigured in EVERY k8s environment. Read by frontend/lib/customer-token-refresh.ts:42 for the customer refresh-token exchange; supplied by docker-compose only. This is a tracked live gap, NOT a reasoned omission. Note that #299 named three variables and this is one of THREE MORE it did not name.'
+  'CUSTOMER_KEYCLOAK_ISSUER_INTERNAL|OPEN DEFECT #299 — same realm, same gap. The pod-reachable half of the customer issuer split (frontend/lib/customer-token-refresh.ts:41). Unsupplied, the refresh falls through to CUSTOMER_KEYCLOAK_ISSUER, which is itself unsupplied.'
+  'CUSTOMER_KEYCLOAK_CLIENT_ID|OPEN DEFECT #299 — same realm, same gap. frontend/lib/customer-token-refresh.ts:48 falls back to the literal "storefront-client", so the refresh silently assumes a client id instead of being configured with one.'
+  'NEXT_PUBLIC_SITE_URL|Reviewed omission with a known caveat: frontend/app/sitemap.ts:11 falls back to http://localhost:3100, so sitemap.xml advertises a loopback origin in every k8s environment. This is a DEF-6-shaped SEO gap rather than a runtime failure (no request path degrades). It cannot be fixed by a runtime env: entry — it is a NEXT_PUBLIC_* with no Dockerfile ARG, so it needs the same frontend runtime-config decision as NEXT_PUBLIC_KEYCLOAK_URL, or a new build-arg.'
+  'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY|Reviewed omission with a known caveat: frontend/app/shop/[slug]/checkout/page.tsx:69-70 makes Stripe conditional on it, so an absent key disables card checkout rather than breaking the page. docker-compose passes it through as a runtime value with an empty default; no k8s path supplies it and it has no Dockerfile ARG. Card checkout is therefore inert in k8s. Belongs with the payments-enablement work, which also owns the Stripe secret.'
+  'NEXT_PUBLIC_SHOPS_PAGE_SIZE|Reviewed omission: deliberately in neither requiredEnvVars nor optionalEnvVars (frontend/lib/env-validation.ts:29-36). resolveShopsPageSize() falls back to DEFAULT_SHOPS_PAGE_SIZE = 200 for anything that is not a positive integer, and the caller pages until the API says there is no more, so absence costs nothing.'
+  'NEXT_PUBLIC_WEBHOOK_RETENTION_DAYS|Reviewed omission: display-only copy on the webhooks pages, defaulted to "30" at both read sites. A wrong value would only mis-word a hint; absence cannot break a request path.'
+  'NEXT_PUBLIC_COMPANY_LEGAL_NAME|Reviewed omission: frontend/lib/company.ts:38 falls back to a committed default. These four company-identity values are footer copy, not configuration a cluster needs to resolve.'
+  'NEXT_PUBLIC_COMPANY_NUMBER|Reviewed omission: frontend/lib/company.ts:39 falls back to a committed default. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
+  'NEXT_PUBLIC_COMPANY_REGISTRATION|Reviewed omission: frontend/lib/company.ts:41 falls back to a committed default. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
+  'NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE|Reviewed omission: frontend/lib/company.ts:42 falls back to "" and the renderer omits the line entirely. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
 )
 
 # Bare words and hostnames that are only ever correct on a developer laptop.
@@ -160,90 +239,46 @@ if ! printf 'probe\n' | grep -qP 'pro\w+' 2> /dev/null; then
     parse_fail "GNU 'grep -P' (PCRE) is required — the placeholder regex needs a non-capturing group and a lookahead. On ubuntu-latest (the CI runner) and any GNU grep this is available; on BSD/macOS grep it is not."
 fi
 
-[[ -f "$DEPLOYMENT" ]] || parse_fail "manifest not found: $DEPLOYMENT"
-[[ -d "$APP_DIR" ]]    || parse_fail "config directory not found: $APP_DIR"
-
-mapfile -t APP_FILES < <(find "$APP_DIR" -maxdepth 1 -type f -name 'application*.yml' | sort)
-(( ${#APP_FILES[@]} > 0 )) || parse_fail "no application*.yml found under $APP_DIR"
+for f in "$CORE_DEPLOYMENT" "$EDGE_DEPLOYMENT" "$FE_DEPLOYMENT" "$FE_DOCKERFILE" "$FE_ENV_VALIDATION"; do
+    [[ -f "$f" ]] || parse_fail "required input not found: $f"
+done
+for d in "$CORE_APP_DIR" "$EDGE_SRC_DIR" "$FE_SRC_DIR"; do
+    [[ -d "$d" ]] || parse_fail "required source directory not found: $d"
+done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # ---------------------------------------------------------------------------
-# Direction-(a) input: env names injected by the manifest
+# selftest_regex — PARSING NOTE 7.
+#
+# Prove an extractor CAN match before believing what it did not match. Every
+# extraction below returns a set, and an empty set reads exactly like a
+# perfectly-configured service. A regex broken by a refactor, a locale, or a
+# grep that quietly lacks PCRE would hand back that empty set and this gate
+# would print PASS over three unexamined services.
 # ---------------------------------------------------------------------------
-mapfile -t INJECTED_NAMES < <(
-    grep -oP '^\s+- name: \K[A-Z0-9_]+(?=\s*$)' "$DEPLOYMENT" | sort -u
-)
-(( ${#INJECTED_NAMES[@]} > 0 )) \
-    || parse_fail "extracted 0 injected env names from $DEPLOYMENT — the '- name: NAME' shape changed and this gate is now blind. Fix the parser, do not delete the gate."
-
-declare -A IS_INJECTED=()
-for n in "${INJECTED_NAMES[@]}"; do IS_INJECTED["$n"]=1; done
-
-# ---------------------------------------------------------------------------
-# Direction-(b) input: uppercase ${} placeholders across all profiles
-# ---------------------------------------------------------------------------
-STRIPPED="$TMP/application-all.stripped.yml"
-for f in "${APP_FILES[@]}"; do
-    # Strip FULL-LINE comments only (see PARSING NOTES 4).
-    sed -E 's/^[[:space:]]*#.*$//' "$f"
-done > "$STRIPPED"
-
-# Tolerates one level of nesting in the default (PARSING NOTES 2).
-PLACEHOLDER_RE='\$\{([A-Z0-9_]+)(?::((?:[^{}]|\$\{[^}]*\})*))?\}'
-# Inner (non-nested) form, used to recover names that only appear as a fallback.
-INNER_RE='\$\{[A-Z0-9_]+(?::[^{}]*)?\}'
-
-mapfile -t PLACEHOLDER_MATCHES < <(grep -ohP "$PLACEHOLDER_RE" "$STRIPPED" | sort -u)
-(( ${#PLACEHOLDER_MATCHES[@]} > 0 )) \
-    || parse_fail "extracted 0 \${} placeholders from ${#APP_FILES[@]} application*.yml file(s) — the extraction regex is broken and this gate is now blind. Fix the parser, do not delete the gate."
-
-declare -A IS_READ=()      # name -> 1 : appears as a placeholder somewhere
-declare -A HAS_NODEF=()    # name -> 1 : at least one occurrence has NO default
-declare -A DEFAULT_SET=()  # name -> newline-joined set of observed defaults
-
-record_one() {
-    # record_one '${NAME}' | '${NAME:default}'
-    local m="$1" body name def
-    body="${m:2}"        # strip the leading '${'
-    body="${body%\}}"    # strip the trailing '}'
-
-    if [[ "$body" == *:* ]]; then
-        name="${body%%:*}"
-        def="${body#*:}"
-    else
-        name="$body"
-        def=""
-    fi
-
-    [[ "$name" =~ ^[A-Z0-9_]+$ ]] \
-        || parse_fail "extracted a non-env placeholder name '$name' from '$m' — the regex and the uppercase filter disagree."
-
-    IS_READ["$name"]=1
-
-    if [[ "$body" == *:* ]]; then
-        # Set semantics: never append the same default twice (PARSING NOTES 5).
-        if [[ $'\n'"${DEFAULT_SET["$name"]-}" != *$'\n'"$def"$'\n'* ]]; then
-            DEFAULT_SET["$name"]="${DEFAULT_SET["$name"]-}$def"$'\n'
-        fi
-    else
-        HAS_NODEF["$name"]=1
-    fi
+selftest_regex() {
+    # selftest_regex <label> <regex> <control-input> <expected-match>
+    local label="$1" re="$2" input="$3" expected="$4" got
+    got="$(printf '%s\n' "$input" | grep -oP "$re" | head -1 || true)"
+    [[ "$got" == "$expected" ]] \
+        || parse_fail "extractor self-test FAILED for $label: control input '$input' should yield '$expected' but yielded '${got:-<nothing>}'. The regex matches nothing, so every set it produces would be empty and this gate would report a clean contract over an unexamined service. Fix the regex, do not delete the gate."
 }
 
-for m in "${PLACEHOLDER_MATCHES[@]}"; do
-    record_one "$m"
-    # One level of nesting: recover the inner placeholder(s) from the default,
-    # so a name used only as a fallback still counts as read.
-    if [[ "$m" == *':${'* ]]; then
-        while IFS= read -r inner; do
-            [[ -n "$inner" ]] && record_one "$inner"
-        done < <(printf '%s\n' "${m#*:}" | grep -ohP "$INNER_RE" || true)
-    fi
-done
+# Anchored env-list item, shared by all three manifests (PARSING NOTE 1).
+INJECTED_RE='^\s+- name: \K[A-Z0-9_]+(?=\s*$)'
+selftest_regex 'k8s injected env name' "$INJECTED_RE" '        - name: JTOYE_GATE_SELFTEST' 'JTOYE_GATE_SELFTEST'
 
-mapfile -t PLACEHOLDER_NAMES < <(printf '%s\n' "${!IS_READ[@]}" | sort)
+extract_injected() {
+    # extract_injected <manifest> <service-label>
+    local manifest="$1" label="$2"
+    local -a names
+    mapfile -t names < <(grep -oP "$INJECTED_RE" "$manifest" | sort -u)
+    (( ${#names[@]} > 0 )) \
+        || parse_fail "extracted 0 injected env names from $manifest ($label) — the '- name: NAME' shape changed and this gate is now blind for that service. Fix the parser, do not delete the gate."
+    printf '%s\n' "${names[@]}"
+}
 
 # ---------------------------------------------------------------------------
 # Local-only default detection
@@ -251,28 +286,25 @@ mapfile -t PLACEHOLDER_NAMES < <(printf '%s\n' "${!IS_READ[@]}" | sort)
 #   bare-word credential hits as a whole value, without matching a longer word
 #   that merely contains it.
 # ---------------------------------------------------------------------------
-matched_local_default() {
-    # matched_local_default <name> -> echoes "word<TAB>default" of the FIRST
-    # local-only member found, returns 1 if none.
-    local name="$1" def word esc
-    while IFS= read -r def; do
-        [[ -n "$def" ]] || continue
-        for word in "${LOCAL_ONLY_WORDS[@]}"; do
-            esc="${word//./\\.}"
-            if grep -qE "(^|[^[:alnum:]])${esc}([^[:alnum:]]|\$)" <<< "$def"; then
-                printf '%s\t%s\n' "$word" "$def"
-                return 0
-            fi
-        done
-    done <<< "${DEFAULT_SET["$name"]-}"
+is_local_only_value() {
+    # is_local_only_value <value> -> echoes the matched word, returns 1 if none
+    local def="$1" word esc
+    [[ -n "$def" ]] || return 1
+    for word in "${LOCAL_ONLY_WORDS[@]}"; do
+        esc="${word//./\\.}"
+        if grep -qE "(^|[^[:alnum:]])${esc}([^[:alnum:]]|\$)" <<< "$def"; then
+            printf '%s\n' "$word"
+            return 0
+        fi
+    done
     return 1
 }
 
 # ---------------------------------------------------------------------------
-# Allowlist parsing + hygiene
+# Allowlist parsing + hygiene (shared by all six lists)
 # ---------------------------------------------------------------------------
-declare -A ALLOW_A=() ALLOW_B=()
 HYGIENE_ERRORS=()
+OPEN_DEFECTS=()   # "service<TAB>direction<TAB>NAME" for every OPEN DEFECT entry
 
 parse_allowlist() {
     # parse_allowlist <name-of-target-map> <label> <entry>...
@@ -294,6 +326,10 @@ parse_allowlist() {
             HYGIENE_ERRORS+=("$label: entry '$name' has a blank reason. D-08 requires a REASONED allowlist — an unexplained entry is indistinguishable from a forgotten defect.")
             continue
         fi
+        if [[ "$reason" == OPEN\ DEFECT* ]] && [[ ! "$reason" =~ \#[0-9]+ ]]; then
+            HYGIENE_ERRORS+=("$label: entry '$name' is marked OPEN DEFECT but cites no issue number (#NNN). A tracked gap that names no tracker is an untracked gap.")
+            continue
+        fi
         if [[ -n "${MAP["$name"]-}" ]]; then
             HYGIENE_ERRORS+=("$label: duplicate entry '$name'")
             continue
@@ -302,138 +338,554 @@ parse_allowlist() {
     done
 }
 
-parse_allowlist ALLOW_A 'allowlist (a)' "${ALLOW_INJECTED_UNREAD[@]}"
-parse_allowlist ALLOW_B 'allowlist (b)' "${ALLOW_UNSUPPLIED_LOCAL_DEFAULT[@]}"
+note_open_defects() {
+    # note_open_defects <name-of-map> <service> <direction>
+    local -n M="$1"
+    local svc="$2" dir="$3" n
+    for n in $(printf '%s\n' "${!M[@]}" | sort); do
+        [[ "${M["$n"]}" == OPEN\ DEFECT* ]] && OPEN_DEFECTS+=("$svc	$dir	$n")
+    done
+    return 0
+}
 
-# Staleness: an allowlist entry that is no longer needed is a defect, because it
-# hides the fact that the reviewed inventory has moved on.
-for name in $(printf '%s\n' "${!ALLOW_A[@]}" | sort); do
-    if [[ -z "${IS_INJECTED["$name"]-}" ]]; then
-        HYGIENE_ERRORS+=("allowlist (a): STALE entry '$name' — no manifest injects that env any more, so the exemption is dead. Remove the entry.")
-    elif [[ -n "${IS_READ["$name"]-}" ]]; then
-        HYGIENE_ERRORS+=("allowlist (a): STALE entry '$name' — some application*.yml now reads it as a \${} placeholder, so it is no longer an injected-but-unread env. Remove the entry.")
-    fi
-done
+# ===========================================================================
+# SERVICE 1 — core-java
+#
+# Read set  : uppercase ${} placeholders across every application*.yml.
+# Injected  : k8s/base/core-java-deployment.yaml.
+# Direction (b) refinement, in evaluation order:
+#   - no default at all + not injected            -> FAIL (hard-fails boot)
+#   - ANY default in the local-only word list      -> FAIL (the DEF-6 shape)
+#   - default is an UNRESOLVED property chain      -> FAIL (added for #299)
+#   - anything else                                -> pass by rule, counted
+#
+# The chained-default rule exists because CUSTOMER_JWT_EXPECTED_ISSUER's default
+# is `${jtoye.security.customer-jwt.issuer-uri}` — a Spring PROPERTY reference,
+# not a value. This gate does not resolve property chains, and pretending an
+# unresolved chain is a "safe non-local default" is how half of #299 stayed
+# invisible to the very gate that carried the other half in its allowlist.
+# Exactly two placeholders on this tree have that shape, and both are the
+# expected-issuer family, i.e. the #87 / #299 bug class itself.
+# ===========================================================================
+mapfile -t CORE_INJECTED < <(extract_injected "$CORE_DEPLOYMENT" 'core-java')
 
-for name in $(printf '%s\n' "${!ALLOW_B[@]}" | sort); do
-    if [[ -z "${IS_READ["$name"]-}" ]]; then
-        HYGIENE_ERRORS+=("allowlist (b): STALE entry '$name' — no application*.yml reads that placeholder any more, so the exemption is dead. Remove the entry.")
-    elif [[ -n "${IS_INJECTED["$name"]-}" ]]; then
-        HYGIENE_ERRORS+=("allowlist (b): STALE entry '$name' — a manifest now SUPPLIES it, so it is no longer an unsupplied omission. Remove the entry rather than leaving a standing excuse for a variable that is already fixed.")
-    elif [[ -z "${HAS_NODEF["$name"]-}" ]] && ! matched_local_default "$name" > /dev/null; then
-        HYGIENE_ERRORS+=("allowlist (b): STALE entry '$name' — its default(s) are no longer local-only and it is not default-less, so it would pass by rule without an exemption. Remove the entry.")
-    fi
-done
+mapfile -t CORE_APP_FILES < <(find "$CORE_APP_DIR" -maxdepth 1 -type f -name 'application*.yml' | sort)
+(( ${#CORE_APP_FILES[@]} > 0 )) || parse_fail "no application*.yml found under $CORE_APP_DIR"
 
-# ---------------------------------------------------------------------------
-# Direction (a): injected but unread
-# ---------------------------------------------------------------------------
-A_VIOLATIONS=()
-A_ALLOWED=0
-A_OK=0
-for name in "${INJECTED_NAMES[@]}"; do
-    if [[ -n "${IS_READ["$name"]-}" ]]; then
-        (( ++A_OK ))
-    elif [[ -n "${ALLOW_A["$name"]-}" ]]; then
-        (( ++A_ALLOWED ))
+CORE_STRIPPED="$TMP/application-all.stripped.yml"
+for f in "${CORE_APP_FILES[@]}"; do
+    # Strip FULL-LINE comments only (PARSING NOTE 4).
+    sed -E 's/^[[:space:]]*#.*$//' "$f"
+done > "$CORE_STRIPPED"
+
+# Tolerates one level of nesting in the default (PARSING NOTE 2).
+PLACEHOLDER_RE='\$\{([A-Z0-9_]+)(?::((?:[^{}]|\$\{[^}]*\})*))?\}'
+# Inner (non-nested) form, used to recover names that only appear as a fallback.
+INNER_RE='\$\{[A-Z0-9_]+(?::[^{}]*)?\}'
+selftest_regex 'spring placeholder' "$PLACEHOLDER_RE" 'x: ${JTOYE_GATE_SELFTEST:${a.b.c}}' '${JTOYE_GATE_SELFTEST:${a.b.c}}'
+
+mapfile -t PLACEHOLDER_MATCHES < <(grep -ohP "$PLACEHOLDER_RE" "$CORE_STRIPPED" | sort -u)
+(( ${#PLACEHOLDER_MATCHES[@]} > 0 )) \
+    || parse_fail "extracted 0 \${} placeholders from ${#CORE_APP_FILES[@]} application*.yml file(s) — the extraction regex is broken and this gate is now blind. Fix the parser, do not delete the gate."
+
+declare -A CORE_IS_INJECTED=() CORE_IS_READ=() CORE_HAS_NODEF=() CORE_DEFAULTS=() CORE_IS_CHAINED=()
+for n in "${CORE_INJECTED[@]}"; do CORE_IS_INJECTED["$n"]=1; done
+
+record_core_placeholder() {
+    # record_core_placeholder '${NAME}' | '${NAME:default}'
+    local m="$1" body name def
+    body="${m:2}"        # strip the leading '${'
+    body="${body%\}}"    # strip the trailing '}'
+
+    if [[ "$body" == *:* ]]; then
+        name="${body%%:*}"
+        def="${body#*:}"
     else
-        A_VIOLATIONS+=("$name")
+        name="$body"
+        def=""
+    fi
+
+    [[ "$name" =~ ^[A-Z0-9_]+$ ]] \
+        || parse_fail "extracted a non-env placeholder name '$name' from '$m' — the regex and the uppercase filter disagree."
+
+    CORE_IS_READ["$name"]=1
+
+    if [[ "$body" == *:* ]]; then
+        # An unresolved Spring PROPERTY reference is not a value (see the
+        # section header). Recorded separately from the default set.
+        if [[ "$def" =~ ^\$\{[a-z][a-zA-Z0-9_.\-]*\}$ ]]; then
+            CORE_IS_CHAINED["$name"]=1
+        fi
+        # Set semantics: never append the same default twice (PARSING NOTE 5).
+        if [[ $'\n'"${CORE_DEFAULTS["$name"]-}" != *$'\n'"$def"$'\n'* ]]; then
+            CORE_DEFAULTS["$name"]="${CORE_DEFAULTS["$name"]-}$def"$'\n'
+        fi
+    else
+        CORE_HAS_NODEF["$name"]=1
+    fi
+}
+
+for m in "${PLACEHOLDER_MATCHES[@]}"; do
+    record_core_placeholder "$m"
+    # One level of nesting: recover the inner placeholder(s) from the default,
+    # so a name used only as a fallback still counts as read.
+    if [[ "$m" == *':${'* ]]; then
+        while IFS= read -r inner; do
+            [[ -n "$inner" ]] && record_core_placeholder "$inner"
+        done < <(printf '%s\n' "${m#*:}" | grep -ohP "$INNER_RE" || true)
     fi
 done
 
-# ---------------------------------------------------------------------------
-# Direction (b): expected but unsupplied
-# ---------------------------------------------------------------------------
-B_NODEF_VIOLATIONS=()
-B_LOCAL_VIOLATIONS=()
-B_ALLOWED=0
-B_SUPPLIED=0
-B_PASS_BY_RULE=0
-for name in "${PLACEHOLDER_NAMES[@]}"; do
-    if [[ -n "${IS_INJECTED["$name"]-}" ]]; then
-        (( ++B_SUPPLIED ))
-        continue
-    fi
+mapfile -t CORE_READ_NAMES < <(printf '%s\n' "${!CORE_IS_READ[@]}" | sort)
 
-    hit=""
-    if [[ -n "${HAS_NODEF["$name"]-}" ]]; then
-        if [[ -n "${ALLOW_B["$name"]-}" ]]; then
-            (( ++B_ALLOWED ))
-        else
-            B_NODEF_VIOLATIONS+=("$name")
+core_matched_local_default() {
+    # core_matched_local_default <name> -> "word<TAB>default" of the FIRST
+    # local-only member found, returns 1 if none.
+    local name="$1" def word
+    while IFS= read -r def; do
+        [[ -n "$def" ]] || continue
+        if word="$(is_local_only_value "$def")"; then
+            printf '%s\t%s\n' "$word" "$def"
+            return 0
         fi
-        continue
-    fi
+    done <<< "${CORE_DEFAULTS["$name"]-}"
+    return 1
+}
 
-    if hit="$(matched_local_default "$name")"; then
-        if [[ -n "${ALLOW_B["$name"]-}" ]]; then
-            (( ++B_ALLOWED ))
-        else
-            B_LOCAL_VIOLATIONS+=("$name	${hit}")
-        fi
-        continue
-    fi
+# ===========================================================================
+# SERVICE 2 — edge-go
+#
+# Read set : every env NAME passed as a string literal to os.Getenv,
+#            os.LookupEnv, or the getEnv/getEnvInt wrappers, across
+#            edge-go/**/*.go EXCLUDING *_test.go (a test's throwaway
+#            JTOYE_TEST_* name is not a deployment contract).
+# Injected : k8s/base/edge-go-deployment.yaml.
+#
+# Direction (b) is the STRONG form — read and not injected is a violation
+# unless allowlisted — and that is deliberate. The weak form ("only complain
+# about a local-only default literal") would have been VACUOUS for this gate's
+# own motivating example: JWT_EXPECTED_ISSUER's default is the VARIABLE
+# keycloakIssuer, not a localhost literal, so a default-shape rule could never
+# have seen the very defect that justified extending the gate here.
+# Local-only default literals are still detected — they escalate the message.
+# ===========================================================================
+mapfile -t EDGE_INJECTED < <(extract_injected "$EDGE_DEPLOYMENT" 'edge-go')
 
-    (( ++B_PASS_BY_RULE ))
+GO_READ_RE='\b(?:os\.Getenv|os\.LookupEnv|getEnv|getEnvInt|getEnvBool|getEnvDuration)\(\s*"\K[A-Z][A-Z0-9_]*(?=")'
+GO_DEFAULT_RE='\bgetEnv\(\s*"[A-Z][A-Z0-9_]*"\s*,\s*"[^"]*"'
+selftest_regex 'go env read'    "$GO_READ_RE"    'v := getEnv("JTOYE_GATE_SELFTEST", "x")' 'JTOYE_GATE_SELFTEST'
+selftest_regex 'go env default' "$GO_DEFAULT_RE" 'v := getEnv("JTOYE_GATE_SELFTEST", "http://localhost:1")' 'getEnv("JTOYE_GATE_SELFTEST", "http://localhost:1"'
+
+mapfile -t EDGE_GO_FILES < <(find "$EDGE_SRC_DIR" -type f -name '*.go' -not -name '*_test.go' | sort)
+(( ${#EDGE_GO_FILES[@]} > 0 )) \
+    || parse_fail "found 0 non-test .go files under $EDGE_SRC_DIR — edge-go would score a perfect contract on an empty read set."
+
+EDGE_STRIPPED="$TMP/edge-go-all.stripped.go"
+for f in "${EDGE_GO_FILES[@]}"; do
+    # Strip FULL-LINE comments only (PARSING NOTE 4): `// ...` and the body of
+    # a block comment (` * ...` / `/* ... */` on its own line).
+    sed -E 's@^[[:space:]]*(//|\*|/\*).*$@@' "$f"
+done > "$EDGE_STRIPPED"
+
+declare -A EDGE_IS_INJECTED=() EDGE_IS_READ=() EDGE_DEFAULT=()
+for n in "${EDGE_INJECTED[@]}"; do EDGE_IS_INJECTED["$n"]=1; done
+
+mapfile -t EDGE_READ_NAMES < <(grep -ohP "$GO_READ_RE" "$EDGE_STRIPPED" | sort -u)
+(( ${#EDGE_READ_NAMES[@]} > 0 )) \
+    || parse_fail "extracted 0 env reads from ${#EDGE_GO_FILES[@]} edge-go .go file(s) — the os.Getenv/getEnv shape changed and this gate is now blind for edge-go. Fix the parser, do not delete the gate."
+for n in "${EDGE_READ_NAMES[@]}"; do EDGE_IS_READ["$n"]=1; done
+
+while IFS= read -r hit; do
+    [[ -n "$hit" ]] || continue
+    # hit looks like: getEnv("NAME", "DEFAULT"
+    ename="${hit#*\"}"; ename="${ename%%\"*}"
+    edef="${hit#*,}"; edef="${edef#*\"}"; edef="${edef%\"*}"
+    [[ -n "${EDGE_DEFAULT["$ename"]-}" ]] || EDGE_DEFAULT["$ename"]="$edef"
+done < <(grep -ohP "$GO_DEFAULT_RE" "$EDGE_STRIPPED" || true)
+
+# ===========================================================================
+# SERVICE 3 — frontend
+#
+# THE BUILD-TIME / RUNTIME DISTINCTION IS THE WHOLE POINT HERE (issue #298).
+#
+# Next.js inlines every LITERAL `process.env.NEXT_PUBLIC_*` reference into the
+# bundle at Docker BUILD time, for the names that are PRESENT in the build
+# environment. So for a NEXT_PUBLIC_* name that frontend/Dockerfile declares as
+# an ARG, a runtime `env:` entry in the Deployment reaches NOTHING — it is DEAD
+# CONFIG, and a naive "is it injected?" check would score it as correctly
+# supplied, i.e. report the opposite of the truth. That is D-18 (Phase 26),
+# where NEXT_PUBLIC_API_URL was injected at runtime, reached nothing, and
+# additionally MASKED the boot-time validator.
+#
+# Hence two channels, and two rules:
+#   - build-arg channel : `ARG NAME` in frontend/Dockerfile. Enforced end to
+#     end — the Dockerfile refuses to build on an empty required build-arg,
+#     scripts/k8s-local-up.sh dies on one, and ci-cd.yaml passes them from repo
+#     variables. A NEXT_PUBLIC_* name on this channel is SUPPLIED.
+#   - runtime channel   : `env:` in k8s/base/frontend-deployment.yaml. Correct
+#     for server-side names, and for the NEXT_PUBLIC_* names that deliberately
+#     have NO ARG (frontend/Dockerfile explains, with measured evidence, that
+#     leaving a name absent at build time is what keeps it runtime-resolvable).
+#
+#   Direction (a2) therefore fails a NEXT_PUBLIC_* name that is injected at
+#   RUNTIME while ALSO being declared as a build ARG — that combination is
+#   provably dead config, and it is the exact shape D-18 removed.
+#
+# Read set : literal `process.env.NAME` across the frontend APPLICATION tree
+#   (e2e specs, __tests__, *.test.*, *.spec.*, playwright/jest config excluded —
+#   a Playwright fixture variable is not a deployment contract), UNION the names
+#   declared in env-validation.ts's requiredEnvVars/optionalEnvVars arrays.
+#   The union is load-bearing: env-validation.ts reads its list through the
+#   DYNAMIC form `process.env[envVar]`, which is not statically resolvable, and
+#   NEXTAUTH_SECRET appears NOWHERE else in the application tree. Without the
+#   array parse it would be scored injected-but-unread — a false direction-(a)
+#   violation against a correct manifest.
+# ===========================================================================
+mapfile -t FE_INJECTED < <(extract_injected "$FE_DEPLOYMENT" 'frontend')
+
+TS_READ_RE='\bprocess\.env\.\K[A-Z][A-Z0-9_]*'
+TS_LIST_RE="'\K[A-Z][A-Z0-9_]*(?=')"
+ARG_RE='^ARG \K[A-Z][A-Z0-9_]*(?=\s*$)'
+selftest_regex 'ts process.env read' "$TS_READ_RE" 'const x = process.env.JTOYE_GATE_SELFTEST || ""' 'JTOYE_GATE_SELFTEST'
+selftest_regex 'ts declared list'    "$TS_LIST_RE" "  'JTOYE_GATE_SELFTEST'," 'JTOYE_GATE_SELFTEST'
+selftest_regex 'dockerfile build arg' "$ARG_RE"    'ARG JTOYE_GATE_SELFTEST' 'JTOYE_GATE_SELFTEST'
+
+mapfile -t FE_APP_FILES < <(
+    find "$FE_SRC_DIR" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mjs' -o -name '*.js' \) \
+        -not -path '*/node_modules/*' \
+        -not -path '*/.next/*' \
+        -not -path "$FE_SRC_DIR/e2e/*" \
+        -not -path '*/__tests__/*' \
+        -not -name '*.test.*' \
+        -not -name '*.spec.*' \
+        -not -name 'playwright.config.ts' \
+        -not -name 'jest.setup.js' \
+        -not -name 'jest.config.js' \
+    | sort
+)
+(( ${#FE_APP_FILES[@]} > 0 )) \
+    || parse_fail "found 0 frontend application source files under $FE_SRC_DIR — the frontend would score a perfect contract on an empty read set."
+
+FE_STRIPPED="$TMP/frontend-all.stripped.ts"
+for f in "${FE_APP_FILES[@]}"; do
+    # Strip FULL-LINE comments only (PARSING NOTE 4). The block-comment body
+    # form ` * ...` is required: frontend/lib/customer-orders-server.ts:27
+    # contains the literal text `process.env.NEXT_PUBLIC_*` inside one.
+    sed -E 's@^[[:space:]]*(//|\*|/\*).*$@@' "$f"
+done > "$FE_STRIPPED"
+
+declare -A FE_IS_INJECTED=() FE_IS_READ=() FE_IS_BUILD_ARG=()
+for n in "${FE_INJECTED[@]}"; do FE_IS_INJECTED["$n"]=1; done
+
+mapfile -t FE_LITERAL_READS < <(grep -ohP "$TS_READ_RE" "$FE_STRIPPED" | sort -u)
+(( ${#FE_LITERAL_READS[@]} > 0 )) \
+    || parse_fail "extracted 0 process.env reads from ${#FE_APP_FILES[@]} frontend source file(s) — the extraction regex is broken and this gate is now blind for the frontend. Fix the parser, do not delete the gate."
+for n in "${FE_LITERAL_READS[@]}"; do FE_IS_READ["$n"]=1; done
+
+# The DYNAMIC form: names declared in env-validation.ts's two arrays.
+FE_DECLARED_SRC="$TMP/frontend-declared-lists.ts"
+sed -n '/const requiredEnvVars/,/\];/p;/const optionalEnvVars/,/\];/p' "$FE_ENV_VALIDATION" > "$FE_DECLARED_SRC"
+mapfile -t FE_DECLARED < <(grep -ohP "$TS_LIST_RE" "$FE_DECLARED_SRC" | sort -u)
+(( ${#FE_DECLARED[@]} > 0 )) \
+    || parse_fail "extracted 0 declared env names from the requiredEnvVars/optionalEnvVars arrays in $FE_ENV_VALIDATION — env-validation.ts reads them through the dynamic process.env[expr] form, so losing them makes every one of them look injected-but-unread. Fix the parser, do not delete the gate."
+for n in "${FE_DECLARED[@]}"; do FE_IS_READ["$n"]=1; done
+
+mapfile -t FE_BUILD_ARGS < <(grep -oP "$ARG_RE" "$FE_DOCKERFILE" | sort -u)
+(( ${#FE_BUILD_ARGS[@]} > 0 )) \
+    || parse_fail "extracted 0 'ARG NAME' build args from $FE_DOCKERFILE — with an empty build-arg channel every NEXT_PUBLIC_* name would look unsupplied AND no runtime injection could ever be flagged as dead config. Fix the parser, do not delete the gate."
+for n in "${FE_BUILD_ARGS[@]}"; do FE_IS_BUILD_ARG["$n"]=1; done
+
+mapfile -t FE_READ_NAMES < <(printf '%s\n' "${!FE_IS_READ[@]}" | sort)
+
+# ===========================================================================
+# Allowlist parsing (after every read/injected set exists, because the STALE
+# rules are evaluated against them)
+# ===========================================================================
+declare -A A_CORE_A=() A_CORE_B=() A_EDGE_A=() A_EDGE_B=() A_FE_A=() A_FE_B=()
+
+parse_allowlist A_CORE_A 'core-java allowlist (a)' ${ALLOW_CORE_A[@]+"${ALLOW_CORE_A[@]}"}
+parse_allowlist A_CORE_B 'core-java allowlist (b)' ${ALLOW_CORE_B[@]+"${ALLOW_CORE_B[@]}"}
+parse_allowlist A_EDGE_A 'edge-go allowlist (a)'   ${ALLOW_EDGE_A[@]+"${ALLOW_EDGE_A[@]}"}
+parse_allowlist A_EDGE_B 'edge-go allowlist (b)'   ${ALLOW_EDGE_B[@]+"${ALLOW_EDGE_B[@]}"}
+parse_allowlist A_FE_A   'frontend allowlist (a)'  ${ALLOW_FE_A[@]+"${ALLOW_FE_A[@]}"}
+parse_allowlist A_FE_B   'frontend allowlist (b)'  ${ALLOW_FE_B[@]+"${ALLOW_FE_B[@]}"}
+
+note_open_defects A_CORE_A 'core-java' '(a)'
+note_open_defects A_CORE_B 'core-java' '(b)'
+note_open_defects A_EDGE_A 'edge-go'   '(a)'
+note_open_defects A_EDGE_B 'edge-go'   '(b)'
+note_open_defects A_FE_A   'frontend'  '(a)'
+note_open_defects A_FE_B   'frontend'  '(b)'
+
+# --- staleness: core-java ---------------------------------------------------
+for name in $(printf '%s\n' "${!A_CORE_A[@]}" | sort); do
+    if [[ -z "${CORE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java allowlist (a): STALE entry '$name' — no manifest injects that env any more, so the exemption is dead. Remove the entry.")
+    elif [[ -n "${CORE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java allowlist (a): STALE entry '$name' — some application*.yml now reads it as a \${} placeholder, so it is no longer an injected-but-unread env. Remove the entry.")
+    fi
 done
 
-# ---------------------------------------------------------------------------
+for name in $(printf '%s\n' "${!A_CORE_B[@]}" | sort); do
+    if [[ -z "${CORE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java allowlist (b): STALE entry '$name' — no application*.yml reads that placeholder any more, so the exemption is dead. Remove the entry.")
+    elif [[ -n "${CORE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java allowlist (b): STALE entry '$name' — a manifest now SUPPLIES it, so it is no longer an unsupplied omission. Remove the entry rather than leaving a standing excuse for a variable that is already fixed.")
+    elif [[ -z "${CORE_HAS_NODEF["$name"]-}" ]] \
+         && [[ -z "${CORE_IS_CHAINED["$name"]-}" ]] \
+         && ! core_matched_local_default "$name" > /dev/null; then
+        HYGIENE_ERRORS+=("core-java allowlist (b): STALE entry '$name' — its default(s) are no longer local-only, it is not default-less, and it is not an unresolved property chain, so it would pass by rule without an exemption. Remove the entry.")
+    fi
+done
+
+# --- staleness: edge-go -----------------------------------------------------
+for name in $(printf '%s\n' "${!A_EDGE_A[@]}" | sort); do
+    if [[ -z "${EDGE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("edge-go allowlist (a): STALE entry '$name' — k8s/base/edge-go-deployment.yaml no longer injects it. Remove the entry.")
+    elif [[ -n "${EDGE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("edge-go allowlist (a): STALE entry '$name' — edge-go now reads it, so it is no longer injected-but-unread. Remove the entry.")
+    fi
+done
+
+for name in $(printf '%s\n' "${!A_EDGE_B[@]}" | sort); do
+    if [[ -z "${EDGE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("edge-go allowlist (b): STALE entry '$name' — no edge-go source reads it any more, so the exemption is dead. Remove the entry.")
+    elif [[ -n "${EDGE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("edge-go allowlist (b): STALE entry '$name' — the manifest now SUPPLIES it. Remove the entry rather than leaving a standing excuse for a variable that is already fixed.")
+    fi
+done
+
+# --- staleness: frontend ----------------------------------------------------
+for name in $(printf '%s\n' "${!A_FE_A[@]}" | sort); do
+    if [[ -z "${FE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("frontend allowlist (a): STALE entry '$name' — k8s/base/frontend-deployment.yaml no longer injects it. Remove the entry.")
+    elif [[ -n "${FE_IS_READ["$name"]-}" ]] && [[ -z "${FE_IS_BUILD_ARG["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("frontend allowlist (a): STALE entry '$name' — the frontend now reads it and it is not a build-time-only name, so it is no longer injected-but-unread. Remove the entry.")
+    fi
+done
+
+for name in $(printf '%s\n' "${!A_FE_B[@]}" | sort); do
+    if [[ -z "${FE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("frontend allowlist (b): STALE entry '$name' — no frontend source reads it and env-validation.ts does not declare it, so the exemption is dead. Remove the entry.")
+    elif [[ -n "${FE_IS_INJECTED["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("frontend allowlist (b): STALE entry '$name' — the manifest now SUPPLIES it at runtime. Remove the entry rather than leaving a standing excuse for a variable that is already fixed.")
+    elif [[ "$name" == NEXT_PUBLIC_* ]] && [[ -n "${FE_IS_BUILD_ARG["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("frontend allowlist (b): STALE entry '$name' — frontend/Dockerfile now declares it as a build ARG, so it is supplied through the enforced build-arg channel. Remove the entry.")
+    fi
+done
+
+# ===========================================================================
+# Direction (a) — injected but unread, per service
+# ===========================================================================
+CORE_A_VIOLATIONS=(); CORE_A_ALLOWED=0; CORE_A_OK=0
+for name in "${CORE_INJECTED[@]}"; do
+    if [[ -n "${CORE_IS_READ["$name"]-}" ]]; then
+        (( ++CORE_A_OK ))
+    elif [[ -n "${A_CORE_A["$name"]-}" ]]; then
+        (( ++CORE_A_ALLOWED ))
+    else
+        CORE_A_VIOLATIONS+=("$name")
+    fi
+done
+
+EDGE_A_VIOLATIONS=(); EDGE_A_ALLOWED=0; EDGE_A_OK=0
+for name in "${EDGE_INJECTED[@]}"; do
+    if [[ -n "${EDGE_IS_READ["$name"]-}" ]]; then
+        (( ++EDGE_A_OK ))
+    elif [[ -n "${A_EDGE_A["$name"]-}" ]]; then
+        (( ++EDGE_A_ALLOWED ))
+    else
+        EDGE_A_VIOLATIONS+=("$name")
+    fi
+done
+
+FE_A_VIOLATIONS=(); FE_A_DEADCONFIG=(); FE_A_ALLOWED=0; FE_A_OK=0
+for name in "${FE_INJECTED[@]}"; do
+    if [[ "$name" == NEXT_PUBLIC_* ]] && [[ -n "${FE_IS_BUILD_ARG["$name"]-}" ]]; then
+        # (a2) build-time name injected at runtime: dead config even though the
+        # code "reads" it. This is D-18 and it is not allowlistable — the fix is
+        # to delete the runtime env: entry and pass the build-arg instead.
+        FE_A_DEADCONFIG+=("$name")
+    elif [[ -n "${FE_IS_READ["$name"]-}" ]]; then
+        (( ++FE_A_OK ))
+    elif [[ -n "${A_FE_A["$name"]-}" ]]; then
+        (( ++FE_A_ALLOWED ))
+    else
+        FE_A_VIOLATIONS+=("$name")
+    fi
+done
+
+# ===========================================================================
+# Direction (b) — expected but unsupplied, per service
+# ===========================================================================
+CORE_B_NODEF=(); CORE_B_LOCAL=(); CORE_B_CHAINED=()
+CORE_B_ALLOWED=0; CORE_B_SUPPLIED=0; CORE_B_BYRULE=0
+for name in "${CORE_READ_NAMES[@]}"; do
+    if [[ -n "${CORE_IS_INJECTED["$name"]-}" ]]; then
+        (( ++CORE_B_SUPPLIED ))
+        continue
+    fi
+    if [[ -n "${CORE_HAS_NODEF["$name"]-}" ]]; then
+        if [[ -n "${A_CORE_B["$name"]-}" ]]; then (( ++CORE_B_ALLOWED )); else CORE_B_NODEF+=("$name"); fi
+        continue
+    fi
+    if hit="$(core_matched_local_default "$name")"; then
+        if [[ -n "${A_CORE_B["$name"]-}" ]]; then (( ++CORE_B_ALLOWED )); else CORE_B_LOCAL+=("$name	${hit}"); fi
+        continue
+    fi
+    if [[ -n "${CORE_IS_CHAINED["$name"]-}" ]]; then
+        if [[ -n "${A_CORE_B["$name"]-}" ]]; then (( ++CORE_B_ALLOWED )); else CORE_B_CHAINED+=("$name"); fi
+        continue
+    fi
+    (( ++CORE_B_BYRULE ))
+done
+
+EDGE_B_VIOLATIONS=(); EDGE_B_ALLOWED=0; EDGE_B_SUPPLIED=0
+for name in "${EDGE_READ_NAMES[@]}"; do
+    if [[ -n "${EDGE_IS_INJECTED["$name"]-}" ]]; then
+        (( ++EDGE_B_SUPPLIED ))
+    elif [[ -n "${A_EDGE_B["$name"]-}" ]]; then
+        (( ++EDGE_B_ALLOWED ))
+    else
+        edef="${EDGE_DEFAULT["$name"]-}"
+        if word="$(is_local_only_value "$edef")"; then
+            EDGE_B_VIOLATIONS+=("$name	LOCAL-ONLY default '$edef' (token '$word')")
+        else
+            EDGE_B_VIOLATIONS+=("$name	default '${edef:-<none/non-literal>}'")
+        fi
+    fi
+done
+
+FE_B_VIOLATIONS=(); FE_B_ALLOWED=0; FE_B_SUPPLIED_RUNTIME=0; FE_B_SUPPLIED_BUILD=0
+for name in "${FE_READ_NAMES[@]}"; do
+    if [[ -n "${FE_IS_INJECTED["$name"]-}" ]]; then
+        (( ++FE_B_SUPPLIED_RUNTIME ))
+    elif [[ "$name" == NEXT_PUBLIC_* ]] && [[ -n "${FE_IS_BUILD_ARG["$name"]-}" ]]; then
+        (( ++FE_B_SUPPLIED_BUILD ))
+    elif [[ -n "${A_FE_B["$name"]-}" ]]; then
+        (( ++FE_B_ALLOWED ))
+    else
+        if [[ "$name" == NEXT_PUBLIC_* ]]; then
+            FE_B_VIOLATIONS+=("$name	NEXT_PUBLIC_* with no Dockerfile ARG and no runtime env: — supplied by NEITHER channel")
+        else
+            FE_B_VIOLATIONS+=("$name	server-side runtime env supplied by no manifest")
+        fi
+    fi
+done
+
+# ===========================================================================
 # Classification summary — printed before any verdict so a reviewer sees the
 # shape of the inventory without reading the code.
-# ---------------------------------------------------------------------------
-echo "core-java env contract (D-07 / D-08)"
+# ===========================================================================
+echo "env contract (D-07 / D-08, extended to all three services by #298)"
+echo
+echo "core-java"
 echo "  manifest : k8s/base/core-java-deployment.yaml"
-echo "  config   : ${#APP_FILES[@]} application*.yml file(s) under core-java/src/main/resources/"
+echo "  config   : ${#CORE_APP_FILES[@]} application*.yml file(s) under core-java/src/main/resources/"
+printf '  (a) %-44s %d\n' 'injected env names'                   "${#CORE_INJECTED[@]}"
+printf '  (a) %-44s %d\n' 'read by some application*.yml'        "$CORE_A_OK"
+printf '  (a) %-44s %d\n' 'allowlisted (reasoned)'               "$CORE_A_ALLOWED"
+printf '  (a) %-44s %d\n' 'VIOLATIONS'                           "${#CORE_A_VIOLATIONS[@]}"
+printf '  (b) %-44s %d\n' 'distinct ${} placeholders'            "${#CORE_READ_NAMES[@]}"
+printf '  (b) %-44s %d\n' 'supplied by the manifest'             "$CORE_B_SUPPLIED"
+printf '  (b) %-44s %d\n' 'allowlisted (reasoned)'               "$CORE_B_ALLOWED"
+printf '  (b) %-44s %d\n' 'pass by rule (safe non-local default)' "$CORE_B_BYRULE"
+printf '  (b) %-44s %d\n' 'VIOLATIONS (no default at all)'       "${#CORE_B_NODEF[@]}"
+printf '  (b) %-44s %d\n' 'VIOLATIONS (local-only default)'      "${#CORE_B_LOCAL[@]}"
+printf '  (b) %-44s %d\n' 'VIOLATIONS (unresolved property chain)' "${#CORE_B_CHAINED[@]}"
 echo
-echo "Direction (a) — injected by k8s, read by no application*.yml (the DEF-4 shape):"
-printf '  %-42s %d\n' 'injected env names'                "${#INJECTED_NAMES[@]}"
-printf '  %-42s %d\n' 'read by some application*.yml'     "$A_OK"
-printf '  %-42s %d\n' 'allowlisted (reasoned omission)'   "$A_ALLOWED"
-printf '  %-42s %d\n' 'VIOLATIONS'                        "${#A_VIOLATIONS[@]}"
+echo "edge-go"
+echo "  manifest : k8s/base/edge-go-deployment.yaml"
+echo "  source   : ${#EDGE_GO_FILES[@]} non-test .go file(s) under edge-go/"
+printf '  (a) %-44s %d\n' 'injected env names'                   "${#EDGE_INJECTED[@]}"
+printf '  (a) %-44s %d\n' 'read by edge-go source'               "$EDGE_A_OK"
+printf '  (a) %-44s %d\n' 'allowlisted (reasoned)'               "$EDGE_A_ALLOWED"
+printf '  (a) %-44s %d\n' 'VIOLATIONS'                           "${#EDGE_A_VIOLATIONS[@]}"
+printf '  (b) %-44s %d\n' 'distinct env names read'              "${#EDGE_READ_NAMES[@]}"
+printf '  (b) %-44s %d\n' 'supplied by the manifest'             "$EDGE_B_SUPPLIED"
+printf '  (b) %-44s %d\n' 'allowlisted (reasoned)'               "$EDGE_B_ALLOWED"
+printf '  (b) %-44s %d\n' 'VIOLATIONS'                           "${#EDGE_B_VIOLATIONS[@]}"
 echo
-echo "Direction (b) — expected by Spring, supplied by no manifest (the DEF-6 shape):"
-printf '  %-42s %d\n' 'distinct ${} placeholders'         "${#PLACEHOLDER_NAMES[@]}"
-printf '  %-42s %d\n' 'supplied by the manifest'          "$B_SUPPLIED"
-printf '  %-42s %d\n' 'allowlisted (reasoned omission)'   "$B_ALLOWED"
-printf '  %-42s %d\n' 'pass by rule (safe non-local default)' "$B_PASS_BY_RULE"
-printf '  %-42s %d\n' 'VIOLATIONS (no default at all)'    "${#B_NODEF_VIOLATIONS[@]}"
-printf '  %-42s %d\n' 'VIOLATIONS (local-only default)'   "${#B_LOCAL_VIOLATIONS[@]}"
+echo "frontend"
+echo "  manifest : k8s/base/frontend-deployment.yaml (runtime channel)"
+echo "  build    : frontend/Dockerfile — ${#FE_BUILD_ARGS[@]} ARG name(s) (build-time channel)"
+echo "  source   : ${#FE_APP_FILES[@]} application file(s) + ${#FE_DECLARED[@]} name(s) declared in env-validation.ts"
+printf '  (a) %-44s %d\n' 'injected env names'                   "${#FE_INJECTED[@]}"
+printf '  (a) %-44s %d\n' 'read by frontend source/declaration'  "$FE_A_OK"
+printf '  (a) %-44s %d\n' 'allowlisted (reasoned)'               "$FE_A_ALLOWED"
+printf '  (a) %-44s %d\n' 'VIOLATIONS (injected, never read)'    "${#FE_A_VIOLATIONS[@]}"
+printf '  (a) %-44s %d\n' 'VIOLATIONS (build-time name, dead at runtime)' "${#FE_A_DEADCONFIG[@]}"
+printf '  (b) %-44s %d\n' 'distinct env names read'              "${#FE_READ_NAMES[@]}"
+printf '  (b) %-44s %d\n' 'supplied at runtime (env:)'           "$FE_B_SUPPLIED_RUNTIME"
+printf '  (b) %-44s %d\n' 'supplied at build (Dockerfile ARG)'   "$FE_B_SUPPLIED_BUILD"
+printf '  (b) %-44s %d\n' 'allowlisted (reasoned)'               "$FE_B_ALLOWED"
+printf '  (b) %-44s %d\n' 'VIOLATIONS'                           "${#FE_B_VIOLATIONS[@]}"
 echo
 
-# ---------------------------------------------------------------------------
+if (( ${#OPEN_DEFECTS[@]} > 0 )); then
+    echo "OPEN DEFECTS carried in the allowlists — tracked live gaps, NOT reasoned omissions."
+    echo "These are printed on every run so a green gate never reads as a settled contract:"
+    while IFS=$'\t' read -r svc dir nm; do
+        echo "  - [$svc $dir] $nm"
+    done < <(printf '%s\n' "${OPEN_DEFECTS[@]}")
+    echo
+fi
+
+# ===========================================================================
 # Verdict
-# ---------------------------------------------------------------------------
+# ===========================================================================
 VIOLATION=0
 
 if (( ${#HYGIENE_ERRORS[@]} > 0 )); then
-    echo "ALLOWLIST HYGIENE — the allowlist itself is not in a reviewable state:" >&2
+    echo "ALLOWLIST HYGIENE — an allowlist is not in a reviewable state:" >&2
     for e in "${HYGIENE_ERRORS[@]}"; do echo "  - $e" >&2; done
     echo >&2
     VIOLATION=1
 fi
 
-if (( ${#A_VIOLATIONS[@]} > 0 )); then
-    echo "DIRECTION (a) VIOLATION — env injected by the manifest but read by NO application*.yml:" >&2
-    for name in "${A_VIOLATIONS[@]}"; do
-        echo "  - $name" >&2
+report_direction_a() {
+    # report_direction_a <service> <read-surface> <name>...
+    local svc="$1" surface="$2"; shift 2
+    (( $# > 0 )) || return 0
+    echo "DIRECTION (a) VIOLATION [$svc] — env injected by the manifest but read by $surface:" >&2
+    local n; for n in "$@"; do echo "  - $n" >&2; done
+    echo >&2
+    echo "  This is exactly DEF-4: a manifest feeding an env that nothing reads." >&2
+    echo "  The injected value reaches NOTHING and the service silently uses its own" >&2
+    echo "  literal default instead — which is why the class survived review, CI and a" >&2
+    echo "  live rehearsal. Fix the env NAME in the manifest to match the name the code" >&2
+    echo "  actually reads (do NOT rename the secret key), or add the read to the code." >&2
+    echo "  Only add an allowlist entry if the env is genuinely runtime-native." >&2
+    echo >&2
+    VIOLATION=1
+}
+
+report_direction_a 'core-java' 'NO application*.yml'          ${CORE_A_VIOLATIONS[@]+"${CORE_A_VIOLATIONS[@]}"}
+report_direction_a 'edge-go'   'NO edge-go source'            ${EDGE_A_VIOLATIONS[@]+"${EDGE_A_VIOLATIONS[@]}"}
+report_direction_a 'frontend'  'NO frontend source'           ${FE_A_VIOLATIONS[@]+"${FE_A_VIOLATIONS[@]}"}
+
+if (( ${#FE_A_DEADCONFIG[@]} > 0 )); then
+    echo "DIRECTION (a) VIOLATION [frontend] — BUILD-TIME name injected as a RUNTIME env (dead config, D-18):" >&2
+    for name in "${FE_A_DEADCONFIG[@]}"; do
+        echo "  - $name  (declared 'ARG $name' in frontend/Dockerfile)" >&2
     done
     echo >&2
-    echo "  This is exactly DEF-4: a manifest feeding an env that no config reads." >&2
-    echo "  The injected value reaches NOTHING and Spring silently uses its own" >&2
-    echo "  literal default instead — which is why the class survived review, CI and a" >&2
-    echo "  live rehearsal. Fix the env NAME in k8s/base/core-java-deployment.yaml to" >&2
-    echo "  match the \${PLACEHOLDER} the config actually reads (do NOT rename the" >&2
-    echo "  secret key), or add the placeholder to application*.yml. Only add an" >&2
-    echo "  allowlist entry if the env is genuinely Spring-native (relaxed binding)." >&2
+    echo "  Next.js inlines literal process.env.NEXT_PUBLIC_* references into the bundle" >&2
+    echo "  at BUILD time, so a runtime env: entry for a build-arg name reaches NOTHING." >&2
+    echo "  Worse, it MASKS the boot-time validator: env-validation.ts reads its list via" >&2
+    echo "  the dynamic process.env[envVar] form, which Next.js does NOT inline, so the" >&2
+    echo "  injected runtime value satisfies the required-var check while every inlined" >&2
+    echo "  literal in the app is still undefined. That is defect D-18 verbatim." >&2
+    echo "  Fix: DELETE the env: entry from k8s/base/frontend-deployment.yaml and pass" >&2
+    echo "  the value as --build-arg (see .github/workflows/ci-cd.yaml build-and-push and" >&2
+    echo "  scripts/k8s-local-up.sh). This is deliberately NOT allowlistable." >&2
     echo >&2
     VIOLATION=1
 fi
 
-if (( ${#B_NODEF_VIOLATIONS[@]} > 0 )); then
-    echo "DIRECTION (b) VIOLATION — placeholder with NO default that no manifest supplies:" >&2
-    for name in "${B_NODEF_VIOLATIONS[@]}"; do
-        echo "  - $name" >&2
-    done
+if (( ${#CORE_B_NODEF[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [core-java] — placeholder with NO default that no manifest supplies:" >&2
+    for name in "${CORE_B_NODEF[@]}"; do echo "  - $name" >&2; done
     echo >&2
     echo "  Spring cannot resolve these, so the container hard-fails at boot." >&2
     echo "  Supply them from app-config or a Secret in k8s/base/core-java-deployment.yaml." >&2
@@ -441,11 +893,11 @@ if (( ${#B_NODEF_VIOLATIONS[@]} > 0 )); then
     VIOLATION=1
 fi
 
-if (( ${#B_LOCAL_VIOLATIONS[@]} > 0 )); then
-    echo "DIRECTION (b) VIOLATION — placeholder whose default is LOCAL-ONLY and that no manifest supplies:" >&2
+if (( ${#CORE_B_LOCAL[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [core-java] — placeholder whose default is LOCAL-ONLY and that no manifest supplies:" >&2
     while IFS=$'\t' read -r name word def; do
         echo "  - $name  (default: '$def'  — local-only token: '$word')" >&2
-    done < <(printf '%s\n' "${B_LOCAL_VIOLATIONS[@]}")
+    done < <(printf '%s\n' "${CORE_B_LOCAL[@]}")
     echo >&2
     echo "  This is the DEF-6 shape: outside a developer laptop the default is wrong," >&2
     echo "  and the failure is SILENT — media writes go nowhere, email goes to a" >&2
@@ -457,8 +909,58 @@ if (( ${#B_LOCAL_VIOLATIONS[@]} > 0 )); then
     VIOLATION=1
 fi
 
-if (( VIOLATION != 0 )); then
-    fail "the core-java env contract is broken — see the violations above. Fix the manifest or the config; only widen an allowlist when the omission is genuinely reviewed and you can state why."
+if (( ${#CORE_B_CHAINED[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [core-java] — placeholder whose ONLY default is an unresolved property chain:" >&2
+    for name in "${CORE_B_CHAINED[@]}"; do
+        echo "  - $name  (default: '$(printf '%s' "${CORE_DEFAULTS["$name"]-}" | tr -d '\n')')" >&2
+    done
+    echo >&2
+    echo "  The default is a Spring PROPERTY reference, not a value. This gate does not" >&2
+    echo "  resolve property chains, so it cannot certify the chain terminates in" >&2
+    echo "  something safe outside a laptop — and on this tree one such chain terminates" >&2
+    echo "  in a localhost literal (#299). Treating an unresolved chain as a 'safe" >&2
+    echo "  non-local default' is how that half of #299 stayed invisible. Either supply" >&2
+    echo "  the value, or add an ALLOWLIST entry naming where the chain lands." >&2
+    echo >&2
+    VIOLATION=1
 fi
 
-echo "PASS: ${#INJECTED_NAMES[@]} injected env names all read by application*.yml (${A_ALLOWED} reasoned exemption(s)); ${#PLACEHOLDER_NAMES[@]} placeholders carry no unsupplied local-only or missing default (${B_ALLOWED} reasoned exemption(s))."
+if (( ${#EDGE_B_VIOLATIONS[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [edge-go] — env read by edge-go that no manifest supplies:" >&2
+    while IFS=$'\t' read -r name detail; do
+        echo "  - $name  ($detail)" >&2
+    done < <(printf '%s\n' "${EDGE_B_VIOLATIONS[@]}")
+    echo >&2
+    echo "  Go has no unresolved-placeholder boot failure: an unset env is just \"\" and" >&2
+    echo "  the read site quietly takes its fallback. That is precisely why this needs a" >&2
+    echo "  gate — JWT_EXPECTED_ISSUER was read here from the issue #87 fix onward while" >&2
+    echo "  NO manifest supplied it, and every k8s environment silently validated 'iss'" >&2
+    echo "  against the JWKS host. Either inject it in" >&2
+    echo "  k8s/base/edge-go-deployment.yaml, or add an ALLOWLIST entry WITH A REASON." >&2
+    echo >&2
+    VIOLATION=1
+fi
+
+if (( ${#FE_B_VIOLATIONS[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [frontend] — env read by the frontend that NEITHER channel supplies:" >&2
+    while IFS=$'\t' read -r name detail; do
+        echo "  - $name  ($detail)" >&2
+    done < <(printf '%s\n' "${FE_B_VIOLATIONS[@]}")
+    echo >&2
+    echo "  The frontend has TWO supply channels and they are not interchangeable:" >&2
+    echo "    - a NEXT_PUBLIC_* name is inlined at BUILD time, so it needs an 'ARG NAME'" >&2
+    echo "      in frontend/Dockerfile plus a --build-arg from CI / k8s-local-up.sh;" >&2
+    echo "      a runtime env: entry for such a name is DEAD CONFIG (D-18)." >&2
+    echo "    - a server-side name is read from the container environment, so it needs" >&2
+    echo "      an env: entry in k8s/base/frontend-deployment.yaml." >&2
+    echo "  Pick the channel that matches the name, or add an ALLOWLIST entry WITH A" >&2
+    echo "  REASON stating what the code does when the value is absent." >&2
+    echo >&2
+    VIOLATION=1
+fi
+
+if (( VIOLATION != 0 )); then
+    fail "the env contract is broken — see the violations above. Fix the manifest, the build args or the code; only widen an allowlist when the omission is genuinely reviewed and you can state why."
+fi
+
+echo "PASS: core-java ${#CORE_INJECTED[@]} injected / ${#CORE_READ_NAMES[@]} read; edge-go ${#EDGE_INJECTED[@]} injected / ${#EDGE_READ_NAMES[@]} read; frontend ${#FE_INJECTED[@]} injected / ${#FE_BUILD_ARGS[@]} build-arg / ${#FE_READ_NAMES[@]} read. Both directions hold for all three services, with $((CORE_A_ALLOWED + CORE_B_ALLOWED + EDGE_A_ALLOWED + EDGE_B_ALLOWED + FE_A_ALLOWED + FE_B_ALLOWED)) allowlisted omission(s), of which ${#OPEN_DEFECTS[@]} are tracked OPEN DEFECTS listed above."

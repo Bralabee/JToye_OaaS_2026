@@ -116,7 +116,7 @@ echo "Token: $TOKEN"
 
 **Create:**
 ```bash
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -129,19 +129,19 @@ curl -X POST http://localhost:9090/shops \
 **Read (List):**
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/shops | jq
+  http://localhost:9090/api/v1/shops | jq
 ```
 
 **Read (Single):**
 ```bash
 SHOP_ID=<id-from-create>
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/shops/$SHOP_ID | jq
+  http://localhost:9090/api/v1/shops/$SHOP_ID | jq
 ```
 
 **Update:**
 ```bash
-curl -X PUT http://localhost:9090/shops/$SHOP_ID \
+curl -X PUT http://localhost:9090/api/v1/shops/$SHOP_ID \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -153,7 +153,7 @@ curl -X PUT http://localhost:9090/shops/$SHOP_ID \
 
 **Delete:**
 ```bash
-curl -X DELETE http://localhost:9090/shops/$SHOP_ID \
+curl -X DELETE http://localhost:9090/api/v1/shops/$SHOP_ID \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -161,7 +161,7 @@ curl -X DELETE http://localhost:9090/shops/$SHOP_ID \
 
 **Create:**
 ```bash
-curl -X POST http://localhost:9090/products \
+curl -X POST http://localhost:9090/api/v1/products \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -176,20 +176,20 @@ curl -X POST http://localhost:9090/products \
 **List with pagination:**
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:9090/products?page=0&size=10" | jq
+  "http://localhost:9090/api/v1/products?page=0&size=10" | jq
 ```
 
 **Search by SKU:**
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:9090/products?sku=YAM-5KG" | jq
+  "http://localhost:9090/api/v1/products?sku=YAM-5KG" | jq
 ```
 
 #### Orders API
 
 **Create Order:**
 ```bash
-curl -X POST http://localhost:9090/orders \
+curl -X POST http://localhost:9090/api/v1/orders \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -204,25 +204,25 @@ curl -X POST http://localhost:9090/orders \
 ```bash
 ORDER_ID=<id-from-create>
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/orders/$ORDER_ID | jq
+  http://localhost:9090/api/v1/orders/$ORDER_ID | jq
 ```
 
 **Transition Order State:**
 ```bash
 # DRAFT → PENDING
-curl -X POST http://localhost:9090/orders/$ORDER_ID/confirm \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/confirm \
   -H "Authorization: Bearer $TOKEN"
 
 # PENDING → CONFIRMED
-curl -X POST http://localhost:9090/orders/$ORDER_ID/prepare \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/prepare \
   -H "Authorization: Bearer $TOKEN"
 
 # CONFIRMED → PREPARING
-curl -X POST http://localhost:9090/orders/$ORDER_ID/ready \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/ready \
   -H "Authorization: Bearer $TOKEN"
 
 # PREPARING → READY
-curl -X POST http://localhost:9090/orders/$ORDER_ID/complete \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/complete \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -230,7 +230,7 @@ curl -X POST http://localhost:9090/orders/$ORDER_ID/complete \
 
 **Create:**
 ```bash
-curl -X POST http://localhost:9090/customers \
+curl -X POST http://localhost:9090/api/v1/customers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -247,7 +247,7 @@ curl -X POST http://localhost:9090/customers \
 
 **Sync Batch (from Edge):**
 ```bash
-curl -X POST http://localhost:9090/sync/batch \
+curl -X POST http://localhost:9090/api/v1/sync/batch \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -284,7 +284,7 @@ TOKEN_A=$(curl -s \
   -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant A Shop","address":"A Street"}'
@@ -300,7 +300,7 @@ TOKEN_B=$(curl -s \
   -d "password=$KC_SEED_USER_PASSWORD" \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
-curl -X POST http://localhost:9090/shops \
+curl -X POST http://localhost:9090/api/v1/shops \
   -H "Authorization: Bearer $TOKEN_B" \
   -H "Content-Type: application/json" \
   -d '{"name":"Tenant B Shop","address":"B Avenue"}'
@@ -309,11 +309,11 @@ curl -X POST http://localhost:9090/shops \
 **3. Verify isolation:**
 ```bash
 # Tenant A sees only their data
-curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/shops | jq '.content[].name'
+curl -s -H "Authorization: Bearer $TOKEN_A" http://localhost:9090/api/v1/shops | jq '.content[].name'
 # Output: ["Tenant A Shop"]
 
 # Tenant B sees only their data
-curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/shops | jq '.content[].name'
+curl -s -H "Authorization: Bearer $TOKEN_B" http://localhost:9090/api/v1/shops | jq '.content[].name'
 # Output: ["Tenant B Shop"]
 ```
 
@@ -331,7 +331,7 @@ TOKEN=$(curl -s \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 # 1. Create order (DRAFT)
-ORDER_ID=$(curl -s -X POST http://localhost:9090/orders \
+ORDER_ID=$(curl -s -X POST http://localhost:9090/api/v1/orders \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"customerName":"Test User"}' | jq -r .id)
@@ -339,28 +339,28 @@ ORDER_ID=$(curl -s -X POST http://localhost:9090/orders \
 echo "Order ID: $ORDER_ID"
 
 # 2. Confirm (DRAFT → PENDING)
-curl -X POST http://localhost:9090/orders/$ORDER_ID/confirm \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/confirm \
   -H "Authorization: Bearer $TOKEN"
 
 # 3. Check state
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/orders/$ORDER_ID | jq .status
+  http://localhost:9090/api/v1/orders/$ORDER_ID | jq .status
 
 # 4. Prepare (PENDING → CONFIRMED)
-curl -X POST http://localhost:9090/orders/$ORDER_ID/prepare \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/prepare \
   -H "Authorization: Bearer $TOKEN"
 
 # 5. Ready (CONFIRMED → PREPARING)
-curl -X POST http://localhost:9090/orders/$ORDER_ID/ready \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/ready \
   -H "Authorization: Bearer $TOKEN"
 
 # 6. Complete (PREPARING → READY → COMPLETED)
-curl -X POST http://localhost:9090/orders/$ORDER_ID/complete \
+curl -X POST http://localhost:9090/api/v1/orders/$ORDER_ID/complete \
   -H "Authorization: Bearer $TOKEN"
 
 # 7. Verify final state
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/orders/$ORDER_ID | jq '{id: .id, status: .status}'
+  http://localhost:9090/api/v1/orders/$ORDER_ID | jq '{id: .id, status: .status}'
 ```
 
 ### Test Frontend UI
@@ -413,7 +413,7 @@ TOKEN=$(curl -s -d 'grant_type=password' -d 'client_id=core-api' \
   "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token" | jq -r .access_token)
 
 for i in {1..5}; do
-  curl -s -X POST http://localhost:9090/shops \
+  curl -s -X POST http://localhost:9090/api/v1/shops \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"Shop $i\",\"address\":\"$i Test Street\"}"
@@ -426,7 +426,7 @@ PRODUCTS=("YAM-5KG:Nigerian Yam 5kg:15.99" "RICE-2KG:Basmati Rice 2kg:8.99" "OIL
 
 for product in "${PRODUCTS[@]}"; do
   IFS=':' read -r sku title price <<< "$product"
-  curl -s -X POST http://localhost:9090/products \
+  curl -s -X POST http://localhost:9090/api/v1/products \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"sku\":\"$sku\",\"title\":\"$title\",\"pricePennies\":1599,\"ingredientsText\":\"100% natural\",\"allergenMask\":0}"
@@ -566,7 +566,7 @@ cd infra/load-testing
 ./load-test.sh
 ```
 
-See [load-testing/README.md](../infra/load-testing/README.md) for details.
+See [load-testing/README.md](../../infra/load-testing/README.md) for details.
 
 ---
 
@@ -578,7 +578,7 @@ See [load-testing/README.md](../infra/load-testing/README.md) for details.
 
 **Fix:**
 ```bash
-cd infra && docker-compose up -d
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 # Wait 10 seconds for startup
 ./gradlew :core-java:test
 ```

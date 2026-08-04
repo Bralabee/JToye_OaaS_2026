@@ -52,7 +52,7 @@ open core-java/build/reports/jacoco/test/html/index.html
 bash scripts/dev.sh
 
 # Option 2: Manual start for verification
-cd infra && docker compose up -d
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ./gradlew :core-java:bootRun &
 cd edge-go && go run ./cmd/edge &
 ```

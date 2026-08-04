@@ -32,7 +32,7 @@ export function CustomerSignInPrompt({
         <ShoppingBag className="h-8 w-8 text-amber-700" />
       </div>
       <h2 className="text-xl font-bold text-slate-900 mb-2">Sign in to continue</h2>
-      <p className="text-sm text-slate-500 mb-6">
+      <p className="text-sm text-slate-600 mb-6">
         {message || "You need to be signed in to view your orders and track deliveries."}
       </p>
       {/* Links to the sign-in PAGE rather than firing customerLogin() straight at

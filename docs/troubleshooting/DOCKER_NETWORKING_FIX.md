@@ -20,11 +20,11 @@ Performed network diagnostics:
 
 ```bash
 # DNS resolution works ✅
-$ docker exec jtoye-core-java getent hosts postgres
+$ docker compose -f docker-compose.full-stack.yml exec core-java getent hosts postgres
 172.22.0.3        postgres  postgres
 
 # But packets cannot reach the container ❌
-$ docker exec jtoye-core-java ping -c 2 172.22.0.3
+$ docker compose -f docker-compose.full-stack.yml exec core-java ping -c 2 172.22.0.3
 PING 172.22.0.3 (172.22.0.3): 56 data bytes
 --- 172.22.0.3 ping statistics ---
 2 packets transmitted, 0 packets received, 100% packet loss
@@ -75,7 +75,7 @@ docker compose -f docker-compose.full-stack.yml up -d
 sleep 30
 
 # Test connectivity
-docker exec jtoye-core-java ping -c 2 postgres
+docker compose -f docker-compose.full-stack.yml exec core-java ping -c 2 postgres
 
 # Should see successful ping responses
 # PING 172.22.0.3 (172.22.0.3): 56 data bytes

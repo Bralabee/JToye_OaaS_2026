@@ -156,7 +156,8 @@ describe("OrderDetailPanel", () => {
     expect(screen.getByText("£2.00")).toBeInTheDocument()
     // Status colour-coded text exists for both
     expect(screen.getByText("succeeded")).toHaveClass("text-emerald-700")
-    expect(screen.getByText("pending")).toHaveClass("text-orange-600")
+    // orange-700, not -600: orange-600 is 3.56:1 on white and failed AA (451).
+    expect(screen.getByText("pending")).toHaveClass("text-orange-700")
   })
 
   it("hides 'Issue refund' button on a DRAFT order", () => {

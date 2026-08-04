@@ -94,6 +94,16 @@ WITH_STACK=0
 for arg in "$@"; do
   case "$arg" in
     --with-stack) WITH_STACK=1 ;;
+    # Emit REQUIRED_VARS, one per line, and exit. This exists so a CI job that
+    # must MANUFACTURE these credentials can read the list from the same place
+    # the gate reads it, instead of keeping a copy.
+    #
+    # A copy is not hypothetical drift: PR #510 added GRAFANA_ADMIN_PASSWORD and
+    # POSTGRES_EXPORTER_PASSWORD to REQUIRED_VARS and did not add them to
+    # e2e-nightly.yml's generator, so the next scheduled run would have failed
+    # preflight on two CHANGE_ME values inherited from .env.example. The two
+    # lists drifted within hours of each other.
+    --list-required) printf '%s\n' "${REQUIRED_VARS[@]}"; exit 0 ;;
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) ENV_FILE="$arg" ;;
   esac
@@ -163,8 +173,139 @@ for var in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
+# ---- (d) cross-variable consistency -----------------------------------------
+# Checks (a)-(c) validate each variable IN ISOLATION. That is not enough, and the
+# gap had a real cost: e2e-nightly.yml generated an independent random value for
+# POSTGRES_PASSWORD and for KC_DB_PASSWORD, both of which name the SAME Postgres
+# role (POSTGRES_USER=jtoye, KC_DB_USERNAME=jtoye). Every variable was set,
+# non-weak and long enough, so this preflight passed — and the stack then died at
+# `FATAL: password authentication failed for user "jtoye"` roughly four minutes
+# later, on every scheduled run the workflow ever had.
+#
+# It is the same lesson as the #438/#439 note above, one level up: the control
+# could not fire on a RELATIONSHIP it was not looking at. A structural check can
+# pass while the thing it exists to protect is broken.
+#
+# Each entry is "userVarA:passVarA|userVarB:passVarB" and means: if the two user
+# variables name the same role, the two password variables must agree.
+echo "Checking credential pairs that name the same role actually agree..."
+CREDENTIAL_PAIRS=(
+  # userVarA | userVarB | passVarA | passVarB | default for userVarB ('-' = none)
+  "POSTGRES_USER|KC_DB_USERNAME|POSTGRES_PASSWORD|KC_DB_PASSWORD|-"
+  # The exporter's role DEFAULTS to jtoye — see the DATA_SOURCE_NAME line in
+  # infra/monitoring/docker-compose.monitoring.yml, which reads
+  # ${POSTGRES_EXPORTER_USER:-jtoye}. So an unset POSTGRES_EXPORTER_USER is not
+  # "unconstrained", it is the SAME role as POSTGRES_USER, and its password must
+  # agree. The default is mirrored here rather than derived; if that compose line
+  # ever changes, change this too. Not currently broken — recorded because it is
+  # one edit away from being the same failure, and the exporter defines no
+  # healthcheck, so a dead one is indistinguishable from a live one at a glance.
+  "POSTGRES_USER|POSTGRES_EXPORTER_USER|POSTGRES_PASSWORD|POSTGRES_EXPORTER_PASSWORD|jtoye"
+  # Not only Postgres. RABBITMQ_DEFAULT_USER is the account the broker is
+  # PROVISIONED with; RABBITMQ_USER is the one core-java PRESENTS. Both are
+  # 'jtoye'. Generated independently they never match and core-java dies at
+  # `ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN`,
+  # after Tomcat has already started — so the container looks alive for a few
+  # seconds before the context aborts.
+  "RABBITMQ_DEFAULT_USER|RABBITMQ_USER|RABBITMQ_DEFAULT_PASS|RABBITMQ_PASSWORD|-"
+)
+PAIRS_CHECKED=0
+for pair in "${CREDENTIAL_PAIRS[@]}"; do
+  IFS='|' read -r u_a u_b p_a p_b default_u_b <<< "$pair"
+  val_u_a="${!u_a-}"; val_u_b="${!u_b-}"
+  val_p_a="${!p_a-}"; val_p_b="${!p_b-}"
+
+  # Apply the documented compose default before deciding the pair is unevaluable.
+  if [ -z "$val_u_b" ] && [ "$default_u_b" != "-" ]; then
+    val_u_b="$default_u_b"
+  fi
+
+  # An unset user variable is not "no conflict" — it means this check could not
+  # be evaluated, and a check that cannot be evaluated must say so, never pass
+  # silently. "Found nothing" is never "clean".
+  if [ -z "$val_u_a" ] || [ -z "$val_u_b" ]; then
+    fail "Cannot evaluate the ${p_a}/${p_b} pairing: ${u_a} and/or ${u_b} is unset and has no documented default"
+    ERRORS=$((ERRORS + 1))
+    continue
+  fi
+
+  PAIRS_CHECKED=$((PAIRS_CHECKED + 1))
+  if [ "$val_u_a" = "$val_u_b" ] && [ "$val_p_a" != "$val_p_b" ]; then
+    fail "${u_a} and ${u_b} are both '${val_u_a}' — the same account — but ${p_a} and ${p_b} differ (values redacted). The service is PROVISIONED with ${p_a}; anything connecting with ${p_b} is refused."
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+[ "$PAIRS_CHECKED" -gt 0 ] || { fail "No credential pairs were evaluated — this check is vacuous"; ERRORS=$((ERRORS + 1)); }
+
+# ---- (e) realm password policy ----------------------------------------------
+# A credential is not merely "strong enough for us" — if it is imported into a
+# Keycloak realm it must satisfy THAT REALM's declared passwordPolicy, or realm
+# import aborts and Keycloak never starts.
+#
+# This was masked for the entire life of e2e-nightly.yml. Keycloak died at the
+# JDBC step long before it reached realm import, so the policy was never
+# evaluated. Fixing the database credentials surfaced it immediately:
+#   ERROR: Failed to start server in (development) mode
+#   ERROR: invalidPasswordMinSpecialCharsMessage
+# The generated value is `ci` + 48 hex characters: lower-case and digits only,
+# so it satisfies length/lowerCase/digits and fails upperCase and specialChars.
+# The developer .env value happens to satisfy all five, which is why every local
+# stack worked and nobody saw it.
+#
+# The policy is PARSED from the realm file rather than restated here. A copy
+# would be a second source of truth that goes stale the first time someone edits
+# the realm — and the failure mode would be this check confidently passing a
+# credential the realm is about to reject.
+echo "Checking realm-imported credentials satisfy the realm's own passwordPolicy..."
+REALM_TEMPLATE="$(dirname "$0")/../infra/keycloak/realm-export.template.json"
+if [ ! -f "$REALM_TEMPLATE" ]; then
+  fail "VOID: realm template not found at ${REALM_TEMPLATE} — cannot evaluate the password policy"
+  ERRORS=$((ERRORS + 1))
+else
+  # Which variables does the realm import as a password? Read it, do not assume.
+  policy_vars=$(/usr/bin/grep -B2 '"type" *: *"password"' "$REALM_TEMPLATE" \
+                | /usr/bin/grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u)
+  # The value line follows "type": "password", so also look just after it.
+  policy_vars="${policy_vars}
+$(/usr/bin/grep -A2 '"type" *: *"password"' "$REALM_TEMPLATE" \
+   | /usr/bin/grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u)"
+  policy_vars=$(printf '%s\n' "$policy_vars" | /usr/bin/grep -v '^$' | sort -u)
+
+  policy=$(/usr/bin/sed -n 's/.*"passwordPolicy" *: *"\([^"]*\)".*/\1/p' "$REALM_TEMPLATE" | head -n1)
+
+  if [ -z "$policy_vars" ] || [ -z "$policy" ]; then
+    fail "VOID: could not parse the realm's password variables and/or passwordPolicy from ${REALM_TEMPLATE} — refusing to pass on an unread policy"
+    ERRORS=$((ERRORS + 1))
+  else
+    for var in $policy_vars; do
+      val="${!var-}"
+      if [ -z "$val" ]; then
+        fail "VOID: ${var} is imported into the realm as a password but is unset — cannot evaluate the policy"
+        ERRORS=$((ERRORS + 1))
+        continue
+      fi
+      # Each rule is checked against the value; an UNRECOGNISED rule is reported
+      # rather than skipped, so the check can never silently under-enforce.
+      for rule in $(printf '%s' "$policy" | tr ' ' '\n' | /usr/bin/grep -v '^and$' | /usr/bin/grep -v '^$'); do
+        name="${rule%%(*}"; arg="${rule#*(}"; arg="${arg%)}"
+        [ "$name" = "$arg" ] && arg=1
+        case "$name" in
+          length)       [ "${#val}" -ge "$arg" ] || { fail "${var} violates the realm policy '${rule}' (value redacted)"; ERRORS=$((ERRORS + 1)); } ;;
+          upperCase)    case "$val" in *[A-Z]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no upper-case character (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          lowerCase)    case "$val" in *[a-z]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no lower-case character (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          digits)       case "$val" in *[0-9]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no digit (value redacted)"; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          specialChars) case "$val" in *[!a-zA-Z0-9]*) : ;; *) fail "${var} violates the realm policy '${rule}' — no special character (value redacted). A hex-only generator produces exactly this."; ERRORS=$((ERRORS + 1)) ;; esac ;;
+          notUsername)  : ;;  # usernames are per-user; not evaluable from the env alone
+          *)            fail "Unrecognised realm password rule '${rule}' — this check would silently under-enforce it"; ERRORS=$((ERRORS + 1)) ;;
+        esac
+      done
+    done
+  fi
+fi
+
 if [ "$ERRORS" -eq 0 ]; then
   pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
+  pass "All ${PAIRS_CHECKED} same-role credential pair(s) agree"
 else
   echo ""
   fail "${ERRORS} environment problem(s) found — fix the named variable(s) in ${ENV_FILE}"
