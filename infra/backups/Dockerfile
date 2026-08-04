@@ -7,7 +7,7 @@
 #
 # Build:  docker build -t ghcr.io/bralabee/jtoye-pg-backup:15 infra/backups
 # The tag must match the image referenced in k8s/base/pg-backup-cronjob.yaml.
-FROM postgres:15-bookworm
+FROM postgres:18-bookworm
 
 # pg_dump / pg_restore ship with the postgres base. Add aws-cli (Debian v1) for
 # the S3 transfer and CA certs for TLS to real S3. --no-install-recommends keeps
