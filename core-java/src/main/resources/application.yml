@@ -68,6 +68,44 @@ spring:
     # be reverted to false once every environment's flyway_schema_history
     # shows version 44 applied. See V44__fts_leakproof_and_vector_backfill.sql.
     out-of-order: true
+    # --- Issue #517: first boot on a FRESH database ---------------------------
+    # A fresh chain applies V44 BEFORE V46 (version order). V44 ends with
+    # `PERFORM set_config('app.current_tenant_id', '', true)`, and a Postgres
+    # placeholder GUC that has been touched resets to the EMPTY STRING, not to
+    # unset — measured on postgres:15: virgin session -> NULL, same session
+    # after a committed txn-local set_config -> ''. V46 then runs a bare
+    # `UPDATE payment_event_outbox`, whose policy at that point in the chain is
+    # still V33's RAW cast `current_setting('app.current_tenant_id', true)::uuid`
+    # (V51 repoints it at the safe current_tenant_id() helper — five migrations
+    # too late to protect V46). `''::uuid` raises 22P02 and boot dies. It is
+    # intermittent because it only fires when V44 and V46 land on the SAME
+    # physical connection, and invisible on long-lived databases because
+    # out-of-order applied V46 before V44 there.
+    #
+    # Fix: give Flyway a valid sentinel tenant GUC for the whole migration run.
+    # The all-zeros UUID is provably not a tenant id — every tenant id comes
+    # from uuid_generate_v4()/UUID.randomUUID(), which always set version nibble
+    # 4, and V13 seeds ...0001/...0002 — so this is semantically identical to
+    # the NULL the policies see today (matches no row, widens nothing) while
+    # being a legal uuid literal.
+    #
+    # url/user/password are set DELIBERATELY: Spring Boot only builds Flyway a
+    # dedicated, non-pooling SimpleDriverDataSource when spring.flyway.url is
+    # present (FlywayAutoConfiguration#getMigrationDataSource). Without it
+    # Flyway borrows from the application's Hikari pool, Hikari does not reset
+    # custom GUCs on return, and the session-scoped sentinel would leak into
+    # application request connections — a far worse hazard on an RLS system
+    # than the bug being fixed. The values are placeholders onto the same
+    # spring.datasource.* properties, so there is one source of truth for the
+    # credentials and nothing new to keep in sync.
+    #
+    # Inherited by every profile: application-staging.yml / application-prod.yml
+    # deliberately do NOT restate these keys (see the note in each).
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+    init-sqls:
+      - "SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000'"
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
