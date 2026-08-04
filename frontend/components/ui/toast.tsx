@@ -79,6 +79,9 @@ const ToastClose = React.forwardRef<
       className
     )}
     toast-close=""
+    // Icon-only dismiss: without a name it is announced as a bare "button" on
+    // EVERY route that raises a toast (#451). Overridable per call site.
+    aria-label="Dismiss notification"
     {...props}
   >
     <X className="h-4 w-4" />

@@ -420,7 +420,7 @@ export default function KitchenPage() {
               value={selectedShopId || ""}
               onValueChange={(v) => setSelectedShopId(v)}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[200px]" aria-label="Kitchen display shop">
                 <SelectValue placeholder="Select shop" />
               </SelectTrigger>
               <SelectContent>

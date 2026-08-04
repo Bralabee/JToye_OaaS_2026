@@ -1,286 +1,539 @@
-# Handoff: eight faults in one CI job, seven of them hidden behind each other
+# Handoff: the audit that found the bugs is itself invisible to the repo
 
-**Generated:** 2026-08-04 ~00:30 BST. Supersedes the 2026-08-02 handoff. Its §0.1 (the QA council's
-findings live only in a gitignored directory) and §4 (the four blocking decisions) are **still live**
-and carried forward here in §4 — this document does not discard them.
+**Generated:** 2026-08-02 ~20:35 BST. Supersedes #430, which was accurate for the roadmap-blindness
+session that produced it. Its §0.1 (two threads with no ticket) and §2.4 (the four blocking
+decisions) are **still live** and are carried forward here in §4 — this document does not discard them.
 
-> **The single transferable result of this session.** A 15-agent parallel run worked 20 issues, and
-> **eight filed claims were falsified while being worked** — three of which would have shipped an
-> outage or a no-op over a live defect. Not one was caught by a test passing. Every one came from
-> running the fail direction first. That is now the eleventh through eighteenth instance of a pattern
-> this repo has recorded since July; it is not advice any more, it is the base rate.
+> **§0.1 is the point of this document.** A full QA council ran on 2026-08-02 and found
+> **3 Critical / 10 High / 9 Medium / 13 Low** across Phases 22–27. Three findings have been fixed.
+> Everything else lives only in `.qa-council/disc-20260802-121732/`, which is **GITIGNORED**. It is now
+> all filed (#438–#454), but the *evidence* still exists in one untracked directory. The previous
+> handoff's lesson was that a roadmap review cannot see what has no ticket; this is the same lesson one
+> layer down — a *repo* review cannot see what is not in the repo.
 >
-> **The second result is about masking.** `e2e-nightly.yml` had never once succeeded. Fixing it took
-> **eight** separate faults, and each fix revealed the next — the stack died at Keycloak's JDBC
-> connection, so nothing downstream had *ever* been evaluated. A fault you cannot reach is a fault you
-> cannot see, and a job that fails early looks like one problem when it is eight.
+> **§2.4 is the newer and, for the product, larger story.** Twelve findings from the owner **using the
+> running app** — filed as #457–#463. Four of them had a *different mechanism* than the symptom
+> suggested, and one (#460, no concept of locality) is a missing subsystem the business model already
+> assumes. **No audit in this repo found any of them.** Every process here was green while a signed-in
+> customer could not tell they were signed in and no order took a payment.
 
 | | |
 |---|---|
-| Tree | `batch/frontend-wave1-b`, clean, 0 behind `origin/main`. **Re-measure — do not trust this cell** |
-| Open PRs | **2** — #518 (Lane B, this session) and #515 (the nightly fix). Both mine, neither merged |
-| Open issues | **82** at generation. It moved during the session (80 → 82) as #516 and #517 were filed. `gh issue list --state open --limit 300 --json number --jq length` — the default `--limit` is **30**, which silently undercounts |
-| Milestone | **v2.3 is OPEN, Phases 21–32.** Owner ruling stands (§4). Do **not** run `/gsd-complete-milestone` |
-| Live stack | Compose UP, **16** jtoye containers. `check-runtime-freshness` is **rc=1** on this branch because Lane B changed frontend source — that is correct behaviour, remedy `bash scripts/sync-runtime.sh` |
-| Gates | **22 scripts** (21 `check-*.sh` + `docs-freshness.sh`). On `batch/frontend-wave1-b`: 20 pass, and two are expected non-zero — `check-e2e-skip-budget` rc=2 (stored report older than `frontend/e2e`, which Lane B touches; **nightly-only, not in per-PR CI**) and `check-runtime-freshness` rc=1 (above). **Only seven gates run in per-PR CI**: changelog-contract, claims, doc-metrics, doc-versions, handoff-contract, project-version, docs-freshness — all seven pass |
-| Test baseline | Read `docs/metrics.json`. Regenerated once at Lane B assembly: jest_blocks 593, files 79, total 2137, Playwright 49 |
+| `JToye_OaaS_2026` | **The Wave-1 merge train ran 2026-08-04 and merged five of six: #522 (Lane C a11y), #521 (Lane D k8s), #515 (the nightly), #520 (Lane E docs/CI), #519 (Lane A core-java).** #518 (Lane B frontend) is the sixth and carries this edit. Earlier: #508/#509/#510 on 2026-08-03, and #434/#435/#436/#443/#455 plus a concurrent session's #437/#456. HEAD deliberately **not** quoted |
+| Open PRs | **1** — #518 (Lane B), the PR containing this line. The other five merged in the order above, and the ORDER WAS LOAD-BEARING: all five had passed `Security Scan` between 23:12 and 00:05, i.e. **before a Trivy DB roll**, so every one was stale-green. #522 carried the `fast-uri`/`ip-address` bump and had to merge first or `main` would have landed failing its own security gate. Branch protection is `strict: false`, so GitHub **would** have let all six merge on those stale conclusions — the thing that caught it was reading the check timestamps, not the badge colours. **Re-measure before trusting this cell** |
+| Open issues | **80** — re-measured 2026-08-03 after #512/#513 merged. It moved in **both** directions across the day (63 → 86 → 92 → 89 → 85 → 80) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. **#505, #503 and #305 are CLOSED** (#513); #305 closed as ALREADY-FIXED, with both its diagnosis and its proposed `.first()` fix falsified. Re-run `gh issue list --state open --limit 300 --json number --jq length` — the default `--limit` is **30**, which silently undercounts |
+| Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
+| Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy**. The two without health status define no healthcheck — that is **not** unhealthy. **Infra ports are now loopback-only** (#510): Postgres, Redis, RabbitMQ, MinIO, MailHog, Keycloak, Grafana, Prometheus, Alertmanager and both exporters bind `127.0.0.1`. App-tier ports (core-java 9090, frontend 3000, edge-go 8089, mcp-server 9100) stay on all interfaces as **named, reasoned exemptions** |
+| Gates | **24 scripts now** (was 22 — #519/#276 adds `check-image-supply-chain.sh` and #337 adds `check-edge-core-contract.sh`; #513 had earlier added `check-e2e-baseurl-contract.sh` and `check-playwright-mobile-contract.sh`). **22 green, 0 fail, 0 VOID**, measured on `main` after #512/#513 with the runtime rebuilt. `check-e2e-skip-budget` is no longer the standing VOID it was — but understand WHAT it is: a **staleness detector**, not a one-time fix. It VOIDs whenever the stored report is older than `frontend/e2e`, which **any checkout or merge touching a spec re-triggers**, so expect it after pulling and re-run the suite (~6 min: `PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-artifacts/report.json npx playwright test --reporter=json,list`). Seed first — `scripts/seed-e2e-fixtures.sh` — or the DRAFT block skips and the budget fails. ⚠ It now sits at **exactly its ceiling of 8**, so the next skip added trips it. ⚠ `check-infra-exposure` **is not wired into CI** — part of it needs a live broker, so it could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing stops someone re-adding `0.0.0.0` in a PR**. `scripts/ci-lane-cost.sh` is deliberately NOT named `check-*` and is NOT in this count: it answers a planning question, not a correctness one |
+| Merge-train lesson | **`docs/metrics.json` conflicted three ways on every lane, and NEITHER SIDE WAS EVER RIGHT.** Lane E: ours 2093 / theirs 2106 / truth **2107**. Lane A: ours 2142 / theirs 2107 / truth **2157**. Lane B: 2202. Each lane adds to a different counter (Java / Go / Jest), so "take ours" and "take theirs" are both wrong and the only correct move is `scripts/docs-freshness.sh --write` on the merged tree. The same conflict also carried README's build badge, whose two sides were the **404 repo** and the fix for it — and which side was correct **flipped** between lanes, because the fix landed mid-train |
+| Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
+| Runtime | **4/4 built services FRESH, 0 unverified** — re-asserted after #508/#509/#510 by rebuilding core-java and frontend and **recreating** their containers. Both directions recorded: the gate was **rc=1** before, naming both stale images with their build-input commits, and rc=0 after. Proven by content as well as by gate — `ProblemDetailResponseCustomizer`, `TenantHeaderSchemeCustomizer` and `WebhookDeliveryService` all read back from **inside** the running `app.jar`, with a `NotARealClass` control returning 0 so the probe is not one that always says yes |
+
+> ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
+> checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
+> **Re-measure every number below before repeating it**; §2.4's first entry is what happens when you
+> don't.
+
+> **Why no HEAD SHAs.** A document quoting its own repo's HEAD is stale the moment it merges.
+> §6 pairs every fact with the command that produces it: **run them, don't read them.**
 
 ---
 
 ## 0. ⚠ READ FIRST
 
-### 0.1 The nightly E2E: eight faults, and why seven were invisible
+### 0.0 The parallel-agent run of 2026-08-03 — and the seven findings that were WRONG AS FILED
 
-`e2e-nightly.yml` is the half of #420 that runs all 126 specs against a real stack; the per-PR job runs
-2 of 126. The previous handoff said it *"has still never run — dispatch it once manually."* **False.**
-It had fired on schedule on 2026-08-02 and 2026-08-03 and **both failed in 4m13s**, against a workflow
-that budgets ~20 min for the stack and ~20 min for the suite. Nobody looked, because the handoff said
-there was nothing to look at.
+Eight specialised agents in isolated worktrees, assembled into **three** PRs, **12 issues closed**.
+The batching was the point: the `Integration Tests (Testcontainers RLS)` job is path-filtered to
+`core-java/**` and measured **45 min** on #509. Five backend issues went into that one run instead of
+five; #508 and #510 reported the same job at **0 min**, path-skipped. Frontend-only PRs cost ~3 min
+total, so **batching is worth it for `core-java/**` and buys nothing elsewhere.**
 
-**PR #515 fixes eight faults. Each was hidden by the one before it.**
+**The single most transferable result: SEVEN filed claims were falsified while being worked.** Not one
+was caught by a test passing — every one came from running the fail direction first.
 
-| # | Fault | Why it was invisible |
+| issue | what the filing said | what was true |
 |---|---|---|
-| 1 | `KC_DB_PASSWORD` ≠ `POSTGRES_PASSWORD` — `POSTGRES_USER` and `KC_DB_USERNAME` are both `jtoye`, one role, generated independently | killed every run at `FATAL: password authentication failed` |
-| 2 | `infra/db/init/00-create-db.sql` created `jtoye_app` with hardcoded `PASSWORD 'secret'`; core-java connects with `DB_PASSWORD` | fault 1 killed the stack first |
-| 3 | PR #510 added `GRAFANA_ADMIN_PASSWORD` + `POSTGRES_EXPORTER_PASSWORD` to `REQUIRED_VARS` and **not** to the generator | latent; both recorded runs predate #510's 18:14 merge |
-| 4 | `${POSTGRES_EXPORTER_USER:-jtoye}` is the same role again when unset | latent; verified matching, `pg_up 1` |
-| 5 | `KC_SEED_USER_PASSWORD` is `openssl rand -hex` = lower+digits only; the realm demands `upperCase(1)` and `specialChars(1)` | **Keycloak had never survived to realm import** |
-| 6 | Flyway **V46** fails on a fresh DB (`invalid input syntax for type uuid: ""`) — filed as **#517** | never reached Flyway |
-| 7 | `RABBITMQ_PASSWORD` ≠ `RABBITMQ_DEFAULT_PASS` — same broker account | fails **after** `Tomcat started`, so the container looks alive for ~3s |
-| 8 | `.env.example` sets `SMTP_HOST=smtp.example.com`, overriding compose's correct `${SMTP_HOST:-mailhog}` | mail health DOWN → container unhealthy → `depends_on` takes the stack down |
+| **#484** | `unless="#result == null"` cannot fire for `Optional.empty()` | **Premise false.** Spring unwraps the Optional *before* evaluating `unless` (`CacheAspectSupport:600-601` → `:552` → `:897`). Its recommended fix throws `EL1004E` on every SUCCESSFUL lookup and disables the products cache — **and the issue's own acceptance criterion would have gone GREEN on that broken tree**, because a disabled cache also holds zero entries. Closed as invalid; a regression guard shipped instead |
+| **#444** | replay 404s for the same reason as the log | **Half true, and the false half is the dangerous one.** Un-keyed replay was broken; **keyed replay PASSED on the unfixed tree** — and the keyed path is the one the frontend api-client uses, since it auto-retries with a key. A fix validated only there would have gone green over a live defect |
+| **#444** | `TenantSetLocalAspect` "never fires" | It *does* fire, then returns early on `!isActualTransactionActive()`. `SimpleJpaRepository` opens its transaction **inside** the Spring Data proxy, after the advice returned. That is why annotating the *caller* fixes it and "make the aspect pin harder" would not |
+| **#440** | unauthenticated spec survives to **production** | **False.** `OpenApiConfig` is `@Profile("!prod")`, prod sets `api-docs.enabled: false`, and anonymous reads need `looksLocal && !isDeployedProfile`. The real exposure was **staging**, which the finding never mentions |
+| **#448** | 105 responses point at success DTOs | **Misread its own number.** 105 is the *total* 4xx/5xx; **96** pointed at success DTOs, 9 declared no body. Two sub-claims also false |
+| **#500** | 3 bare `notFound()` sites in one controller | **12 sites across 7 controllers.** Fixing only the named one would have made #448's spec promise a body that 9 other sites never send |
+| **#463** | `/shop` is a server-rendered 12 ms control | **False.** `frontend/app/shop/page.tsx:1` is `"use client"` and fetches on mount — the 12 ms was the HTML shell. So there was **no** server-rendered control in the comparison, and the owner's *"the same applies to all pages"* is **broader** than the issue recorded (#507) |
 
-**Faults 1, 5 and 7 are one bug three times: credentials naming the same account, generated
-independently.** `verify-env.sh` now has a cross-variable check (d) covering all three pairs, each
-shown failing. Checks (a)–(c) validate every variable *in isolation* and all three passed on the
-`.env` that broke every nightly run — Proof Standard #5 inside the preflight itself.
+**This is now the fourth, fifth, sixth and seventh instance of the pattern §2.1 already records twice**
+(SEC-01/A1's falsified root cause, F-M7/#442's falsified location). **Re-verify before implementing is
+not advice here; it is the difference between a fix and a no-op over a live defect.**
 
-**Fault 8 is the one to carry.** A working developer `.env` **omits** `SMTP_HOST` and lets compose's
-default apply. **The working configuration is the absence of a value — which is exactly what copying
-an example file destroys.** Unlike faults 1–7 this one is **not gate-covered**, and the commit says so:
-"is this hostname reachable from inside the compose network" needs a running stack.
+### 0.0.1 Parallelism: what the previous handoff got wrong, and the two rules that made it work
 
-### 0.2 #517 is now the sole blocker, and it is intermittent
+§2.6 said *"do not parallelise this cluster."* **The file sets refute it.** The only genuine collision
+was #467 ↔ #463, which both rewrite `frontend/app/shop/orders/page.tsx` — those went to one agent.
+#459 and #458 are disjoint from those and from each other, and **all branches merged with zero
+conflicts**. Check the actual file sets before declaring a cluster unparallelisable.
 
-`V46__outbox_reliability.sql` ends with a bare `UPDATE payment_event_outbox`. That table has FORCE RLS,
-and the policy live **at V46 time** is `V33__fix_rls_policies.sql:19-22`, which uses the raw
-`current_setting('app.current_tenant_id', true)::uuid` cast. `V51__rls_uuid_cast_safety.sql:84-87`
-replaces exactly that policy with the safe `current_tenant_id()` helper — **five migrations too late**.
+Two coordination rules did the real work, and both **prevent** conflicts rather than resolving them:
 
-**Measured across five dispatches, each against an empty volume:**
+1. **No agent may touch `docs/metrics.json` or `docs/CHANGELOG.md`.** Regenerate once per lane at
+   assembly. A per-branch edit collides on the same lines and silently deletes a sibling's.
+   Corroboration worth keeping: in both lanes the agents' *independent* predictions summed to exactly
+   what `docs-freshness.sh --write` produced (+15/+25/+10 → 548; +9/+9/+4/+19 → +41).
+2. **Where two agents must share a file, give each an explicit region.**
+   `docker-compose.full-stack.yml` was split `environment:` (#508) vs `ports:` (#510) — **merged with
+   no conflict.**
 
-| run | reached Flyway? | V46 |
-|---|---|---|
-| 30859595028 | no (died at realm import) | n/a |
-| 30860167178 | yes | **FAILED** |
-| 30860772616 | yes | passed |
-| 30861419445 | yes | **FAILED** |
+### 0.0.2 Four traps this run hit in practice
 
-**2 of 3.** Intermittent, and the failure is the common case. **Do not treat one green fresh-DB boot as
-proof** — the run that passed ran the same code as the runs that failed.
+- **`Closes #A, #B, #C` closes only #A.** GitHub needs the keyword before *each* reference. #508 read
+  `Closes #459, #463, #467`; #459 closed and the other two silently did not. **Check issue state after
+  a merge** — and note `gh issue view` lags a merge by seconds, so a stale OPEN read may just be lag.
+- **A line-number citation breaks whenever anything above it moves, and the shifts COMPOUND.** mailhog
+  was cited at 541; it became 552 after #508, 591 after #510 alone, **602 combined**. Re-point by
+  locating the cited *subject*, never by applying an offset.
+- **`rg`/`grep` do not exist inside `bash script.sh`** — they are shell functions. A citation-repointing
+  helper reported success while changing **nothing** (`git status` empty), and a disclosure sweep
+  returned a confident 0 from `command not found`. Use `/usr/bin/grep` inside scripts, and seed a
+  control.
+- **Docker's `LastTagTime` is UTC; `git log %cI` is local.** An ad-hoc staleness comparison called
+  edge-go STALE on a **59-minute** gap that was purely the offset. Normalise to epoch — or just run
+  `check-runtime-freshness.sh`, which already does.
 
-**Why no environment has ever hit it:** `installed_rank` on the dev DB shows `rank 45 → version 46` and
-`rank 46 → version 44` — V44 was applied **after** V46 there, because `out-of-order=true` is required
-(V44 filled a reserved slot after V45/V46 shipped). A fresh chain applies them in version order, which
-is the opposite. **The mechanism for why the GUC is `''` rather than NULL is NOT pinned** — all six
-`set_config` calls in the tree pass `is_local = true`, which should not leak. #517 says so rather than
-guessing; do not read the theory as established.
+**And the process miss worth repeating:** the CI `docs-freshness` job runs **seven** scripts, not the
+three obvious ones. Verifying `docs-freshness` + `check-doc-metrics` + `check-doc-citations` locally
+and calling it green missed `check-handoff-contract`, which then went red in CI. **Run the workflow's
+real step list.**
 
-### 0.3 Instruments that lied, this session
+### 0.1 The QA council's findings are not in the repository
 
-| what | what it actually did |
+`/qa-council` run **`disc-20260802-121732`** audited the six phases shipped since the 2026-07-14 run
+(22 comms, 23 vendor-scoped access, 24 CoW media, 25 mutating MCP, 26 k8s overlay, 27 ops + the
+RabbitMQ 3.12→4.3 replacement). It is the first full council since then.
+
+**Where it lives:** `.qa-council/disc-20260802-121732/` — `findings.json`, `plan.md`,
+`QA-COUNCIL-REPORT.md`, and per-lane evidence under `evidence/`. **`.qa-council/` is in
+`.gitignore`.** One `rm` destroys it, and no clone has ever contained it.
+
+**`.qa-council/LATEST` still points at `disc-20260714-162412`** — the July run. It will not lead you
+to the August one. Read the directory listing, not the pointer.
+
+| | |
 |---|---|
-| a Postgres auth probe over `127.0.0.1` | **rc=0 for EVERY password.** `pg_hba` is first-match-wins and matches `host all all 127.0.0.1/32 trust` before the image's appended scram line. Only the **control arm** caught it. Real services connect by hostname; the working probe used a separate container. **Found independently by two agents** — the #449 agent hit it via a break arm that refused to fail, and it invalidates the QA council's own DOC-04 evidence |
-| `grep -c ACCESS_REFUSED` over a CI log | matched **my own workflow comment** describing the bug. A rule firing on its own definition |
-| `sed -n '1,8p'` on a match list | used to prove a variable was **absent** from the realm templates. It was at line 412. Never bound a stream you are using to prove a negative |
-| `git diff | grep -E '^[-+][^-+]'` | hid 3 of 5 changed lines: a markdown bullet makes the diff line start `-- `, and the pattern excluded a second dash |
-| reading steps 15/16/17 as progress | they are `if: always()` cleanup steps. Step 7 had failed and 8–14 skipped. **A run that "reached step 17" reached nothing** |
-| four agents' metrics deltas, summed | +18+15+2+9 = **+44**; measured **+45**. Agent deltas compose as deltas and never as absolutes, and `it.each` is invisible to the literal-token counter |
+| Fixed | **F-C1 + F-H1** cross-tenant write BOLA + list leak (#433 MERGED) · **F-M1** optimistic-lock 500 (#434 MERGED) |
+| Group A remainder — **all FILED 2026-08-02**, clustered by root cause as the council adjudicated | **#444** F-H4 webhook delivery log (missing tenant GUC) · **#445** F-H3 raw-image endpoints bypass the Phase-24 pipeline · **#446** F-M3 hand-rolled dish modal · **#447** F-H8/F-H9 SEO · **#448** F-M5/F-L1 ProblemDetail · **#449** F-M8 17 docs-broken · **#450** the small-broken copy set · **#451** F-M4 419 axe violations · **#452** F-H5/F-H7 lifecycle dead-ends · **#453** F-H6 · **#454** F-M6 CLS |
+| Group B → Phase 28, **SEC-02 filed; #442 now CLOSED** | **#438** F-C2 dev Postgres bind · **#439** F-C3 Grafana default creds · **#440** F-H2 spec advertises a tenant-override header · **#441** F-H10 infra port binds + mail archive · **#442** F-M7 actuator/OpenAPI/edge — **CLOSED** by PR #472, and two of its three claims were FALSIFIED (§2.1). The other four OPEN, `security` + P1/P2 labelled, **deliberately sanitised** (§2.1) |
+| Group C → tracked | allergen text↔mask = #427 (still OPEN) · storefront social signup = #432 (still OPEN) · the low-severity set |
+
+**The single most important result, worth carrying verbatim.** Phase 28's SEC-01 was written as
+*"re-verify pentest A1"*. A1 is a real Critical cross-tenant write BOLA — but its **filed root cause
+("missing `tenant_id` / RLS") is FALSIFIED**: both tables carry `tenant_id` with ENABLE + FORCE RLS.
+The real cause was service-layer authorization in `ShopAccessService.require()`, and it also affected
+`POST /products`. **Implementing the filed fix would have shipped a no-op over a live Critical.**
+Re-verify, don't implement, is the whole reason that finding got closed correctly.
+
+**The durable fix is not "look harder".** Either give the council run a tracking issue per Group, or
+un-ignore a findings summary. Neither is done.
+
+### 0.2 Instruments that lied, this session
+
+| what I measured with | what it actually did |
+|---|---|
+| **HANDOFF.md §3's "one `shop_announcements`, one `shop_promotions` row"**, quoted to the owner as current | **Wrong by a day and wrong about the contents.** There were **6** rows, and **4 were created that same morning** as `SEC01-PROBE-*` / `VERIFY-PROBE-XT` attack probes — the council's `state.json` recorded them as *"DELIBERATELY RETAINED … evidence for SEC-01"*. A destructive step was approved on stale figures. Snapshotted to `evidence/sec-A1-residue-rows-preclean.txt` before deleting. **Re-run a handoff's measurement before repeating its numbers as current** |
+| `BUILD SUCCESSFUL` from a `--tests`-filtered gradle run | Means nothing on its own — it is also what running **zero** tests looks like. Read `tests="N" failures="N"` out of `build-local/test-results/`. (`core-java/build/` is a **stale 2025-12-27 artifact** reporting 3 false failures — the live dir is `build-local`) |
+| the changelog entry I wrote for F-M1 | **Could not satisfy its own gate.** `check-changelog-contract` keys on the merged PR's own `(#NNN)`, which does not exist until `gh pr create` prints it. The entry merged as #434 and only then went red. **Add the number after `gh pr create`, before merging** |
+| `jsonPath("$.code")` in a standalone-MockMvc test | Failed `PathNotFoundException` against a handler that is **correct in production**. `new ObjectMapper()` does not register `ProblemDetailJacksonMixin`; `Jackson2ObjectMapperBuilder.json().build()` does. Same fix `RateLimitInterceptorTest` carries for #413 |
+| 19 gates, read as a flat pass/fail | Two went red for reasons that are **correct behaviour**, not regressions: `check-runtime-freshness` after any core-java source change, and `check-alert-metrics` after any rebuild that recreates core-java. Both name their own remedy in their output. Expect them |
 
 ---
 
 ## 1. What landed
 
-### 1.1 PR #518 — Lane B (OPEN, not merged)
+### 1.1 #434 — a lost optimistic-lock race is a 409, not an opaque 500 (F-M1 / INT-03)
 
-Four issues, four agents, **fully disjoint file sets**, zero conflicts. Merged-tree verification that no
-individual agent could do: **79 suites / 630 tests / 0 failures**, `npm run build` rc=0.
+`ObjectOptimisticLockingFailureException` matched **none** of `GlobalExceptionHandler`'s 30 handlers,
+so it fell to the `Exception.class` catch-all: `500 .../errors/internal`, *"An unexpected error
+occurred"*.
 
-- **#504 — sign-out did not sign you out, and the label is wrong.** `post_logout_redirect_uri` built
-  from the container **bind address** → `http://0.0.0.0:3000/shop`. But the real finding is downstream:
-  all six IdP cookies survived and the next *Sign in* returned `credentialPrompt=false`,
-  `authenticated=true`, **same `sub` as the previous customer**. Shared device → account access.
-  **Filed as P2; it is not a P2.**
-- **#295** — Stripe Connect return/refresh 404. The issue's origin was stale (#317 moved hostnames).
-- **#495 + #490** — #490 is not an overflow, it **removes the control**: the notice's `h=64` re-centres
-  an `items-center` bar and lifts the `<select>` to `top=-40`, off-screen.
-- **#306** — PARTIALLY-FALSIFIED. The filed pagination defect cannot manifest (3 rows, page size 20),
-  but the count is wrong at one page, and `?status=` — its proposed fix — is a **proven no-op**.
+**Nothing was actually failing, which is the point.** 8 barrier-synchronised `confirm`s on one PENDING
+order measured `{200: 1, 500: 7}` while data integrity **held** — exactly one transition applied, final
+state consistent. The same duplicate and illegal transitions run **sequentially** already returned a
+typed `400`. The race was the only thing separating a correct 400 from an opaque 500.
 
-### 1.2 PR #515 — the nightly (OPEN, not merged)
+**Why it mattered operationally:** a KDS is a shared shop screen, so two staff bumping one ticket is
+the normal case — and the frontend api-client **auto-retries on 5xx**. A 500 turned ordinary contention
+into a retry storm against a row whose write had already succeeded.
 
-§0.1. **Its merge criterion was corrected in a comment**: the description says "do not merge until the
-run is green", which this branch can no longer achieve because the remaining blocker is #517. Revised:
-merge when the run reaches Flyway and fails *only* on #517. Satisfied twice.
+Declared on the **`OptimisticLockingFailureException` superclass**, not Hibernate's subclass, so a
+Spring-translated `StaleObjectStateException` and any future `@Version` entity are covered — one root
+cause, two reported symptoms (INT-03 and the security lane's A1-del), one handler.
 
-### 1.3 Two issues filed, both verified before filing
+Detail is a **fixed string**: the provider message names the table and the `version` column, so it is
+logged at WARN and never returned.
 
-- **#516** — every unsubscribe link in every email is built as the **app** origin plus the **API's**
-  path (`NotificationDispatchService.java:186`), while `k8s/base/ingress.yaml:100-108` routes that host
-  wholly to the frontend, which serves no `/api/v1` route and declares no rewrite. **Unsubscribe 404s
-  in staging, production and local.** The consent machinery behind it is built and correct. Compliance
-  exposure (PECR, Gmail bulk-sender), not cosmetic.
-- **#517** — §0.2.
+**Functional proof, same instrument as the finding, reproduced 3× on 3 distinct orders — the last on
+the merged-main runtime:**
 
----
-
-## 2. Wave 1: THREE lanes assembled into PRs, TWO still local
-
-**Assembled — PRs open, none merged.** Each verified as a *merged tree*, which no individual agent
-could do.
-
-| lane | PR | issues | merged-tree proof |
+| | codes | types | final_status |
 |---|---|---|---|
-| **B** frontend | **#518** | #504, #295, #495, #490, #306 | 79 suites / 630 tests / 0 failures · `npm run build` rc=0 |
-| **A** core-java | **#519** | #502, #489, #483, #501, #498, #278 | 132 suites / **947 tests** / 0 failures / 1 pre-existing skip |
-| **E** docs/CI | **#520** | #449, #276, #337 | `go test ./... -count=1` all six packages ok · `actionlint` rc=0 |
+| before (council, 13:20) | `{200: 1, 500: 7}` | `errors/internal` | CONFIRMED |
+| after | `{200: 1, 409: 7}` | `errors/concurrent-modification` | CONFIRMED |
 
-Plus **#515** (the nightly credential faults, §0.1). **Four PRs open, zero merged.**
+Recorded at `.qa-council/disc-20260802-121732/evidence/fm1-optlock-409-postfix.txt`.
 
-**⚠ MERGE-ORDER COUPLING — read before merging any of them.** #520 takes the gate count **22 → 24**
-(`check-image-supply-chain.sh`, `check-edge-core-contract.sh`) and updates `HANDOFF.md`'s `EXPECT 22`
-accordingly. **This document still says EXPECT 22 and is correct only until #520 merges.** Whichever of
-#518/#519/#520 merges second and third will also conflict on `docs/CHANGELOG.md` and `docs/metrics.json`
-— that is expected and the resolution is fixed: for the changelog take main's copy and **RE-INSERT**
-your entry, then assert both citations by content; for metrics re-run `scripts/docs-freshness.sh
---write` on the merged tree and re-sync the prose. Never take a side on a count.
+Falsified with opening and closing clean arms: clean 4/4 → break arm (handler de-registered) **3 of 4
+fail, control arm still passing** → restore verified **by `git hash-object`** → closing clean 4/4.
+Full unit suite **870 tests / 0 failures** (council baseline 866 + these 4, nothing else disturbed).
 
-### 2.0 STILL LOCAL — two lanes, four branches, in no PR and on no remote
+### 1.2 #435 — the `.idea` residue, and the changelog citation
 
-**Losing this checkout loses them.**
+Four IntelliJ database-tooling paths added to `.gitignore` (`dataSources.xml`,
+`dataSources.local.xml`, `dataSources/`, `db-forest-config.xml`). The tree had been permanently
+`dirty=4` since 2026-08-01, and this document's own resume block carried a footnote telling the reader
+to discount it — **which trains you to discount a dirty tree at exactly the moment it is the signal.**
 
-| lane | branches | issues | state |
-|---|---|---|---|
-| **C** frontend tokens | `wave1/fe-451-tokens` | #451 | **APPROVED 2026-08-04 — assemble it** (§2.1) |
-| **D** k8s | `wave1/k8s-293-506`, `wave1/k8s-271`, `wave1/k8s-298-299-303` | #293, #506, #271, #298, #299, #303 | render-verified only — see §2.2 |
+**Four exact paths, deliberately not a blanket `.idea/`**: the repo tracks `.idea/vcs.xml`,
+`.idea/gradle.xml` and `.idea/go.imports.xml` on purpose. Control arm: `check-ignore .idea/vcs.xml`
+still returns rc=1 after the change.
 
-**Assembly rules that are not optional** (all four prevented conflicts rather than resolving them):
+Also carries the `(#434)` citation fix described in §0.2.
 
-1. **No agent may touch `docs/metrics.json` or `docs/CHANGELOG.md`.** Regenerate/write **once per lane**
-   at assembly with `scripts/docs-freshness.sh --write`, then sync the prose in README/CLAUDE/AGENTS or
-   `check-doc-metrics` reds the PR. Never arithmetic (§0.3).
-2. **Where two agents share a file, give each an explicit region.**
-3. **The scratchpad is SHARED across agents.** Two independently wrote `commitmsg.txt`. Suffix per agent.
-4. **PRs assemble narrow, one per lane** — not for CI (`ci-lane-cost.sh` says cheap lanes save minutes)
-   but because `docs/CHANGELOG.md` has one insertion point, and "take main's copy" on a conflict there
-   **silently deletes your own entry**.
+### 1.3 The changelog gate was red on `main` before this session started
 
-### 2.1 Decisions the lanes are waiting on
-
-- **Lane C is APPROVED — the owner said go on 2026-08-04. Assemble it.** #451 moves `--primary` from
-  orange-600 to **orange-700** design-system-wide. Unavoidable for AA — white-on-orange-600 is 3.56:1
-  and there is no foreground lighter than white — and the owner accepted the palette shift over the
-  alternative (a separate `--primary-strong` used only behind text). **Do not re-litigate this.**
-  Assembly is a one-branch merge plus the standard once-per-lane regeneration; note it adds **14 jest
-  blocks**, so `docs/metrics.json` must be regenerated and the prose re-synced.
-  **Results: desktop 257→58, mobile 270→31, 0 critical / 0 serious, 0 routes regressed.**
-  It also caught a trap: the vendor account renders "No shop access" on every dashboard route, so tables
-  never mount and `button-name: 0` from a naive sweep is an **artefact**. Measured populated separately:
-  64 → 0.
-- **~~Lane E needs two stale-doc calls~~ — DONE in #520**, both verified before changing:
-  `Go: 1.25-alpine` → `1.26-alpine` (`edge-go/Dockerfile:10` is `FROM golang:1.26-alpine`, `go.mod`
-  reads `go 1.26.0`), and `Docker Compose 1.40+` → `Compose v2+` (1.40 is a **v1** version string, the
-  v1 binary is not installed here at all, and #449's own work converted these docs to the
-  `docker compose` subcommand — the requirement line was contradicting the instructions beside it).
-  **STILL OPEN, belongs to Lane D:** `ci-cd.yaml`'s step name still reads *"Assert the **core-java**
-  env contract"* after `wave1/k8s-298-299-303` widened that gate to three services. One-line rename
-  plus a comment block at `ci-cd.yaml:317-322`.
-- **~~Lane E changes the gate count~~ — DONE in #520.** 22 → 24, and `check-handoff-contract` H-1
-  caught the stale `EXPECT 22` exactly as predicted. **This document still says 22 and is correct only
-  until #520 merges** (§2).
-- **~~Lane A needs one OpenAPI regeneration~~ — DONE in #519.** One thing the branch's own report got
-  wrong and the regeneration exposed: it called the drift *"additive, not breaking"*, but the two POST
-  **operationIds were renamed** (`unsubscribe` → `unsubscribeOneClick`). Checked, not assumed — no
-  consumer in `frontend/`, `edge-go/` or `mcp-server/` keys on an operationId.
-
-### 2.2 Lane D — the one real open question
-
-All three D branches are **render-verified only**. No packet was ever allowed or denied: there is no
-minikube profile, the local CNI does not implement NetworkPolicies, and staging/production have never
-been deployed. What is proven is that the rendered manifests agree with the declared values and that
-the gates fail when they do not. **The CrashLoop #271 describes remains undemonstrated.**
-
-**⚠ OPEN QUESTION FOR THE OWNER (raised 2026-08-04, not yet answered).** The owner believes they
-*"have some k8s solution to cater for minikube or its likes"* — a cluster that would not collide with
-the Compose stack. **Ask before assembling Lane D**, because the answer changes what Lane D can claim:
-
-- if a **non-colliding cluster** exists (kind / k3d / a remote cluster — anything not sharing the dev
-  Postgres), Lane D's claims can move from render-only to **functional**, and #297 (install Calico so
-  NetworkPolicies are actually enforced) stops being unverifiable and could be folded in;
-- if not, Lane D ships render-only with that limitation stated, and #297 stays out.
-
-The constraint that forced this is in `CLAUDE.md`: run Compose **or** a local minikube, never both —
-they share the dev DB. That XOR is about *the dev database*, not about Kubernetes as such, so a cluster
-pointed at its own datastore may well dissolve it. **Do not assume either way; ask.**
+`check-changelog-contract` was **rc=1 on the first sweep of the session, before any change** — #433
+merged 2026-08-02 with no entry, after #430 recorded 19/19 green on 2026-08-01. Both were true at the
+time; the gate is not flaky, the world moved. Backfilled in #434; the gate now cites **22 of 22**.
 
 ---
 
-## 3. Findings with no home — read before planning
+## 2. Open items — this session's
 
-- **#502 is understated.** `orders.fulfilment_type` is `NOT NULL DEFAULT 'DELIVERY'`, so this was not an
-  edge case: **every** order created through the vendor/API path was told to come and collect.
-- **#337's new gate found a live bug on its first run.** The edge decoded `processed_count` against
-  core's `processedCount`; Go's `encoding/json` drops an unplaceable field silently, so **every batch
-  sync reported 0 items processed**. The pre-existing test could not see it — it encoded the stub's
-  response using the edge's *own* struct, so both sides agreed by construction.
-- **#449 counted 16, not 17** — the council's own summary and table disagree by one — and found **8
-  broken items the sweep missed**, including a README build badge pointing at a 404 repo.
-- **#298 is twice as wide as filed**: three more unsupplied customer-realm variables the issue never
-  named, and one of its three (`NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL`) is **already supplied** through the
-  enforced build-arg channel — a k8s `env:` entry for it would be dead config.
-- **Five findings carried only as allowlist entries in `check-env-contract.sh`**, in no issue:
-  `NEXT_PUBLIC_KEYCLOAK_URL`, `NEXT_PUBLIC_SITE_URL` (sitemap advertises `localhost:3100` in every k8s
-  env — overlaps #447), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `CSP_UPGRADE_INSECURE_REQUESTS`,
-  `CORE_API_INTERNAL_URL`.
-- **Two omissions that must STAY omissions.** Supplying `EDGE_MANAGEMENT_PORT` moves `/metrics` off the
-  application port and blinds the Phase 27 scrape config (no credentials declared). Setting
-  `CSP_REPORT_ONLY` downgrades the enforcing CSP cluster-wide. A naive "is it supplied?" reading of
-  either would cause an outage.
-- **#483 says do NOT apply #287's fix to `SyncService`** — that path genuinely upserts, so removing the
-  eviction ships stale reads. Only its *radius* was wrong; a break arm proves deletion is caught.
+### 2.1 The pentest backlog is now TRACKED, and A1 is ANSWERED
+
+`SECURITY-FINDINGS.md` (untracked, git-excluded; evidence at
+`~/strix_runs/host-docker-internal-9090_d8c0/`, chmod 600). Status changed this session:
+
+- **A1** — **RESOLVED as a finding, not as filed.** Real Critical, false root cause, fixed at the
+  service layer in #433. SEC-01 is answered; do not re-run it.
+- **A2** (request-header tenant fallback, CVSS 8.2) — **still real in code, dev-scoped.**
+  `TenantFilter` is `@Profile({"dev","local","test"})` and k8s sets `SPRING_PROFILES_ACTIVE=prod`.
+  Compose runs `dev`, so it is live locally. `OpenApiConfig.java:50` still **advertises** the scheme
+  unconditionally — that is council F-H2, now **#440**.
+- **B1/B2/C1** — the Compose stack publishes infra ports with no bind address. Inventory deliberately
+  not reproduced here; see the local evidence file. These are council F-C2 / F-H10, now **#438** and
+  **#441**.
+
+> **Disclosure note, added 2026-08-02.** The port inventory and the header name were spelled out in
+> this section in #430 and carried forward unreviewed into #436. They are removed from the current
+> file, but **`git log -p HANDOFF.md` still contains them** — removing text from HEAD does not remove
+> it from a public repository's history, and this is recorded rather than quietly edited. Treat it as
+> already-public and rotate on that basis; do not treat this edit as a containment.
+
+**SEC-02 is COMPLETE as of 2026-08-03: all five Group B findings are CLOSED** — **#438 is CLOSED**,
+**#439 is CLOSED**, **#441 is CLOSED** (all PR #510), **#440 is CLOSED** (PR #509), **#442 is CLOSED**
+(PR #472). The audit is no longer one `rm` away from being lost, and it is no longer outstanding.
+
+**#440's finding was partly FALSIFIED when it was worked** — a third instance of the pattern this
+document already records twice. *"Survives to production"* is **false**: `OpenApiConfig` is
+`@Profile("!prod")` and prod sets `api-docs.enabled: false`. *"Unauthenticated"* is **false** for a
+deployed environment: anonymous spec reads are permitted only when `looksLocal && !isDeployedProfile`.
+What was genuinely exposed is **staging** — which the finding never mentions. Re-verify before
+implementing; the filed location was wrong, exactly as F-M7's was.
+
+**#438, #439 and #441 are being closed by PR #510**, which binds every infra port to loopback behind
+`${JTOYE_BIND_HOST:-127.0.0.1}` and rotates the monitoring credential live. Note its gate,
+`scripts/check-infra-exposure.sh`, is **not wired into CI** — part of it needs a live broker, so it
+could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing
+currently stops someone re-adding `0.0.0.0` in a PR.**
+
+**They are deliberately sanitised, and that is a constraint on whoever works them.** This repository
+is **public**, which is the same reason `SECURITY-FINDINGS.md` was git-excluded. The issues carry the
+component, the problem class, the scope, the fix direction and falsifiable acceptance criteria — but
+**no reproduction commands, no port/credential pairings and no role attributes**. Verified after
+filing by scanning **GitHub's stored bodies**, not the local drafts, with a control token proving the
+scan was not blind. The detail lives in `.qa-council/disc-20260802-121732/evidence/sec-findings.md`.
+**Do not paste repro steps into these issues when working them.**
+
+**#442 is CLOSED (PR #472) — and the reason to keep reading it is now different.** This section used
+to say F-M7 was the one Group B finding reaching production, because its `permitAll` entries were not
+profile-gated. **That reasoning was half wrong, and re-verifying before implementing is what caught
+it.** Two of its three claims were falsified:
+
+- *metrics unauthenticated in prod* — **FALSE**: prod binds actuator to a separate
+  `management.server.port` and the k8s Service publishes only the app port. An existing test already
+  proved it both directions. Implementing the filed fix would have authenticated an unreachable
+  endpoint.
+- *OpenAPI unauthenticated in prod* — **FALSE for the default config**: springdoc is off there
+  (`SWAGGER_ENABLED:false`). Gated anyway as defence in depth, recorded as such.
+- What was genuinely exposed: the **edge gateway**, and **staging** — which the finding never
+  mentions, and which had no management port, `show-details: always`, *and* springdoc explicitly
+  enabled.
+
+**The transferable lesson, now twice in this file:** a council finding names a symptom and guesses a
+mechanism. SEC-01/A1 had a falsified root cause; F-M7 had a falsified location. Re-verify, then fix
+what is actually true — and say which parts were wrong rather than quietly fixing something else.
+
+### 2.2 The cross-tenant DB residue is GONE
+
+All 6 rows deleted via `CLEAN_RESIDUE=1 bash scripts/seed-e2e-fixtures.sh`, verified 0 remaining **with
+a blindness control** (3 promotions / 1 announcement still visible, so the verification query was not
+simply seeing nothing). Snapshot retained at `evidence/sec-A1-residue-rows-preclean.txt`.
+
+Previous handoffs described this as 2 rows. It was 6. See §0.2.
+
+### 2.3 The three most load-bearing planning files are still ungated
+
+`ROADMAP.md`, `REQUIREMENTS.md` and `STATE.md` are covered by **no gate** — unchanged from #430. A
+`check-state-freshness` asserting `STATE.md`'s current phase against `ROADMAP.md`'s progress table was
+recommended in `260801-ths`'s SUMMARY and is **still not built**.
+
+### 2.4 Twelve findings the owner got by USING the app — none of which any audit found
+
+Reported 2026-08-02 from live use, verified against the tree, filed as seven issues. Read this section
+before §0.1's: the council findings are mostly correctness and infrastructure; these are the product.
+
+| issue | items | what it is |
+|---|---|---|
+| **#457 is CLOSED** (PR #466, 2026-08-03) | 1b, 9 | Public header was **session-blind**. Browser-falsified and confirmed — **and it was hiding #465** (below) |
+| **#458 is OPEN** (PR #508, 2026-08-03 — **partial**) | 1a, 2, 3, 4 | Nav gating shipped, desktop **and** mobile sheet, plus `/track` auto-population. **Stays open for the dispatch notification**, which is not a copy change: `OrderStatus` has no `DISPATCHED` value and `OrderStateMachineConfig` has no such edge. That gap surfaced a separate live defect — DELIVERY customers emailed *"ready for collection"* — filed as #502 |
+| **#459 is CLOSED** (PR #508, 2026-08-03) | 6 | Cart payloads now carry the owning `sub` and are cleared on sign-out; anonymous carry-forward preserved. The naive fix — clearing in `clearMarker()` — satisfies the headline criterion and **breaks** anonymous carry-forward and the post-order clear, demonstrated by break arm |
+| **#460 is OPEN** | 7 | **No concept of locality.** A phase, not a patch. P1 |
+| **#461 is OPEN** | 8, 10 | No payment processing; pay-on-collection must become channel-issued payment links. P1 |
+| **#462 is OPEN** | 11 | No second factor, no verified contact channel |
+| **#463 is CLOSED** (PR #508, 2026-08-03) | 5 | `/shop/orders` is now a server component: time-to-content **2562 ms → 1001 ms**, CLS **1.0149 → 0.0052**, client fetches on load **1 → 0**, at the repo's own throttled mobile profile. Its premise was wrong — `/shop` is **also** `"use client"`, so there was no server-rendered control in the comparison; the systemic half (20 more pages) is #507 |
+| **#467 is CLOSED** (PR #508, 2026-08-03) | — | The orders API 502 rendered as *"No orders found"*. Config alone could not fix it: `NEXT_PUBLIC_API_URL` is inlined at build time into the **server** bundle too, so only a non-`NEXT_PUBLIC_` variable works. k8s has the same shape and is UNMEASURED — #506 |
+
+> ⚠ **#463 and #467 had to be closed BY HAND.** #508's body read `Closes #459, #463, #467`, and GitHub's
+> auto-close requires the keyword before **each** reference — a comma-separated list after one `Closes`
+> closes only the first. #459 closed; the other two silently did not. The same shape was sitting in two
+> sibling PRs and was fixed there before merge. **Check issue state after a merge; do not assume the
+> body did what it reads like it did.**
+
+Item 12 (README review) went as a **comment on #449**, which already owns the entry-doc surface.
+
+**Four had a different mechanism than the symptom — this is the part worth carrying:**
+
+- **"Going home logs me out" was BOTH — and the browser run is what separated them.** ~~Not yet
+  browser-proven~~ — **proven 2026-08-03, and the diagnosis above was half right.** `PublicHeader`
+  really did contain zero session references, and the session really did survive the navigation
+  (control arm: returning to `/shop` restored signed-in chrome; `/shop/orders` resolved the identity
+  server-side). But the same run found the session **also dies on a 300s timer regardless of
+  activity** — filed as **#465**, fixed with #457 in PR #466. Both are CLOSED.
+
+  **This is the entry to carry.** Insisting on the browser arm before writing code is what turned one
+  symptom into two defects. Had the header been fixed on the strength of the filing alone, the report
+  would have persisted and read as unfixed — after five minutes the header would correctly say
+  "Sign in", because the customer genuinely was logged out. The refresh token had been sitting
+  HttpOnly for 30 days, never redeemed; the only `grant_type: "refresh_token"` in the frontend was
+  `auth.ts`, the **operator** path on a different realm.
+- **The basket cannot cross shops** — `cart-provider.tsx` keys `jtoye-cart-{shopSlug}`, the payload
+  carries its own slug, and the parser rejects a mismatch (`:57-61`). It crosses **identities** because
+  `customerLogout()` clears four keys (`customer-auth.ts:94-98`) and not the cart. One device, public
+  catalogue data, no PII, no server-side exposure. Real, bounded — and the desirable
+  anonymous→signed-in carry-forward must survive the fix.
+- **Payments are not missing code.** `PublicStorefrontService:508-521` falls back to COD *by design*
+  when the provider is unconfigured. This is the empty-`STRIPE_API_KEY` state (§4). First action is
+  keys, not code.
+- **The slow page is not a slow query.** Measured: orders API **13–17 ms** warm, `/shop`
+  server-rendered **12 ms**. `/shop/orders` is `"use client"` end-to-end, so the spinner covers bundle
+  + hydration + fetch. "Optimise the query" would have been wasted work.
+
+**#460 is re-ranked above the rest.** `navigator.geolocation` = **0**, `deliveryRadius` = **0**. Shop
+`latitude`/`longitude` exist on the DTO (`:657-658`) and **nothing computes distance**; postcode search
+is a substring match over name/description/address. Birmingham and London see the same vendor list.
+Vendor visibility, delivery feasibility, distance-based fees and the local-SEO work (#447) are all
+downstream of a locality model that does not exist.
+
+**The process lesson.** Every gate was green, 23 council issues had just been filed, and none of this
+surfaced. The council audits what the code *does*; the owner used what the product *is*. **Keep doing
+this by hand** — no gate in this repo would have caught a single one of the twelve.
+
+### 2.5 The eight-PR train fixed ten issues that are all INVISIBLE at this data scale
+
+**The owner looked at the running app after the train merged and still saw the problems they had asked
+about.** They were right, and the reason is a selection error worth not repeating.
+
+The brief was "issues resolvable without colliding with each other or a concurrent session."
+Non-collision selects for *small and isolated*, which is close to the inverse of *user-visible*. The
+result: ten issues CLOSED, none of which change what anyone sees in normal use.
+
+| Issue | Why it is invisible today |
+|---|---|
+| #302, #274, #418, #287 | CI / infrastructure only |
+| #279 | forward-looking hardening — no field rendered today was ever vulnerable |
+| #390 | only observable in a delete/edit race |
+| #288 | needs a non-GROUP_ADMIN with ZERO shop grants; `shop_staff` has 2 rows, both GROUP_ADMIN/JIT |
+| #290 | needs a `user_directory` row with NULL/empty `display_name`; all 4 rows have one |
+| #282 | the cap was 200 and the tenant has 4 shops |
+| #445 | forward-only; existing objects keep their raw bytes, EXIF and client-declared Content-Type |
+
+Measured against the dev DB on 2026-08-03, not assumed. **This is also why the browser verification of
+#476 had to force all three states** — two by Playwright route interception, one via the PR's own
+`NEXT_PUBLIC_SHOPS_PAGE_SIZE=2` knob against the real backend. Nobody has yet seen any of the three
+arise from real rows; a DB-seeded run is still owed.
+
+**Nine follow-ups were filed** for work the agents found and correctly refused to do: 483, 484, 485,
+486, 487, 488, 489, 490, 495. Two carry warnings that matter more than the fix:
+
+- **483 says do NOT apply #287's fix to `SyncService`.** It carries the identical
+  `@CacheEvict(allEntries = true)`, but that path genuinely upserts (`findByName`/`findBySku` +
+  `orElseGet` at `SyncService.java:90,105`), so removing the eviction there ships stale reads. Only
+  its *radius* is wrong.
+- **487 is UNMEASURED and says so in its title.** Its first step is a read-only query, not a fix.
+
+### 2.6 What the next session should actually pick up
+
+**Superseded on 2026-08-03 — this section's advice was acted on, and one line of it was wrong.**
+
+Of the seven the owner reported by USING the app: **#467, #463 and #459 are CLOSED** (PR #508),
+**#458 is partially done** (nav gating shipped; dispatch notification deferred). **#460, #461 and
+#462 remain OPEN and were deliberately not staffed** — none is an engineering task yet. #460 needs an
+ADR, #461 is blocked on Stripe test-mode keys, #462 needs a product decision; two of those three are
+already §4 blocking decisions. Putting agents on them would have produced code prejudging decisions
+that have not been made.
+
+**"Do not parallelise this cluster" was overbroad, and the file-level evidence refutes it.** The only
+genuine collision was #467 ↔ #463, which both rewrite `frontend/app/shop/orders/page.tsx` — those two
+went to a single agent. #459 (`cart-provider.tsx` + `customer-auth.ts`) and #458 (`storefront-nav.tsx`
++ `app/track/page.tsx`) are file-disjoint from those and from each other, and all three branches
+merged with **zero conflicts**. Check the actual file sets before declaring a cluster unparallelisable.
+
+**What was right, and is worth keeping:** *verify each in a real browser against the live stack rather
+than trusting jsdom.* That is what turned #458's nav work into the discovery that no `DISPATCHED`
+state exists (#502), and what proved #459's naive fix breaks anonymous carry-forward.
+
+**Two coordination rules the parallel run established**, both of which prevented conflicts rather than
+resolving them: agents were barred from `docs/metrics.json` and `docs/CHANGELOG.md` (regenerated once
+per lane at assembly instead), and where two agents had to share a file they were each given an
+explicit region — `docker-compose.full-stack.yml` was split `environment:` vs `ports:` and merged
+clean.
 
 ---
 
-## 4. Carried forward — the blocking decisions
+## 3. Carried forward — still true, not re-measured unless noted
+
+- **#418 is CLOSED, its mechanism is now known, and this document had it wrong.** The line that used to
+  sit here said the suite does *not* race its own `@Scheduled` flusher, because `@DynamicPropertySource`
+  parks both intervals at 24h. **That reasoning is refuted by PR #480**, now merged:
+  `@Scheduled(fixedDelayString=…)` leaves `initialDelay` at **0**, so the first execution fires
+  at context refresh *regardless of the interval*. Parking suppresses the second run onward, never the
+  first — a probe with both intervals at 86400000 still found **10 live scheduled tasks**. The earlier
+  supporting evidence was vacuous too: a flush pass over an empty tenant list logs nothing, so "no
+  scheduled trace in the failure window" was never absence of execution. Amplified reproduction:
+  300 samples → 72 failures, then 25; with the fix and the amplifier still on, 300 → **0**.
+  `NoScheduledTriggersTestConfig` removes the `internalScheduledAnnotationProcessor` bean so nothing is
+  ever scheduled; no sleeps, no widened timeouts, no production code touched.
+- **A merge with no changelog entry reddens every *other* open PR, not the one that caused it.**
+  `check-changelog-contract` ranges over **merged history** (`FLOOR..origin/main`) while reading the
+  changelog from the **branch's** copy. #473 and #475 merged without entries, so from that moment every
+  open PR failed the required `docs-freshness` job with `C-1 PR #473 … no entry` — a failure naming a
+  PR the author had never touched. **#491 is CLOSED** and backfilled both entries. Three consequences
+  worth keeping: the gate is satisfiable from inside any PR (it reads *your* changelog), so it is **not**
+  the "gate forbids its own remedy" shape; a merge train must add the entry **in the merging PR**,
+  because the cost lands on everyone else the instant it merges; and **two sessions diagnosed and fixed
+  this independently within the hour** — the second only discovered the first when `gh pr merge`
+  refused. Before writing a fix for a *shared* red gate, re-read `origin/main`.
+- **The standing policy that came out of it: every feat/fix PR carries its OWN changelog entry, added
+  before it merges.** The gate keys on the **squash-merge subject's trailing `(#NNN)`** —
+  `PR_RE='\(#([0-9]+)\)$'`, anchored to end of line — so a branch whose subject ends `(#279)` will be
+  demanded as **#478**, its merge number, not its issue number. Verified, not assumed:
+  `grep -oP '\(#([0-9]+)\)$' <<< '…(#418) (#480)'` returns `(#480)`. The number exists the moment
+  `gh pr create` prints it, so "you cannot write it before the PR exists" is false — only "before the
+  PR is *opened*" is. Each entry in the #480/#474/#478 train was falsified by building the squash
+  commit locally (`git merge --squash` + a commit carrying the predicted subject) and running the gate
+  with `CHANGELOG_BASE_REF` pointed at it: clean → PASS, citation mangled → **FAIL naming that exact
+  PR**, restored → PASS. Note the gate **cannot** check the citation pre-merge from the branch itself
+  (its range ends at `origin/main`, where the PR is absent), so a green run on the branch proves
+  nothing about it — the simulation is the only real evidence.
+- **"Resolve doc conflicts by taking main's copy" is WRONG for `docs/CHANGELOG.md`, and nothing
+  would have caught it.** The blanket rule is right for `AGENTS.md`/`CLAUDE.md`/`README.md`/
+  `docs/metrics.json`, which are regenerated straight afterwards. It is wrong for the changelog:
+  once a sibling PR merges, both entries want the same insertion point under `## [Unreleased]`, so
+  taking main's copy **silently deletes your own entry**. Hit on #476's re-rebase after #479 landed.
+  The gate cannot see it — its range ends at `origin/main`, where your PR is absent — so the branch
+  stays green and the omission only surfaces *after* merge, reddening everyone else. Resolve that one
+  file by taking main's copy and **re-inserting** your entry, then assert both citations by content
+  (`grep -c '(#476)'` and `grep -c '(#479)'` each `1`) before continuing the rebase.
+- **Never run a gate from the main checkout — it is usually BEHIND `origin/main`.**
+  `check-changelog-contract` resolves its commit *range* from `origin/main` but reads
+  `docs/CHANGELOG.md` from the **working tree**. Run from a tree two commits behind, it compared a
+  current range against a stale file and reported #474 and #480 as uncited — both of which were
+  present and correct. Measured 2026-08-03; the same run from an up-to-date tree was rc=0, 30 of 30.
+  A gate reading a stale tree fails in whichever direction the staleness happens to point, which is
+  **worse than not running it**, because the output looks authoritative. Before trusting any verdict,
+  pass or fail, assert the tree's identity: `git rev-parse HEAD` vs `git rev-parse origin/main`.
+- **A new E2E spec landed un-run, and the skip-budget gate caught it.** #456 added
+  `frontend/e2e/marketing-dish-scroller.spec.ts`; `check-e2e-skip-budget` now returns **rc=2 VOID**
+  because the stored report is older than the specs it describes. That is the gate working — a stale
+  report certifying a skip set that no longer exists is a documented trap here. It is also the most
+  concrete argument yet for dispatching the nightly job below: it would have run this spec.
+- **#420 is still OPEN — its CI half.** `e2e-nightly.yml` (all 126 specs, real stack) **has still never run**
+  (`schedule` fires only on the default branch). Dispatch it once manually. Per-PR CI still runs 2 of 126.
+  Corollary seen again this session: `Integration Tests` passed in **6s** on #435 — path-filtered, a
+  skip wearing a tick. The same job took **43m51s** on #434, which is what running it looks like.
+- **The refund E2E stays skipped deliberately** — `Stripe.Refund.create` with an empty key. Needs keys,
+  not a fixture.
+- **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** Remedy:
+  `bash scripts/seed-order-metric.sh`. Hit twice this session. Expect it every time.
+- **Fixtures decay by design** — seeds write every instant relative to now. Re-run the seed before
+  suspecting the product.
+- **No `v2.3` git tag** — latest is `v2.2` while `build.gradle.kts` reads `2.3.0`. GTM-01.
+- **`financial_transactions.order_id` has no FK to `orders`**; 3 rows point at deleted orders.
+- **Toolchain: 2 DRIFT + 1 UNKNOWN**, none applied — re-measured 2026-08-03, down from 4 DRIFT.
+  `conda` 26.1.1→26.5.3 and `ms-fabric-cli` 1.2.0→1.6.1. `antigravity` is UNKNOWN because it is a
+  **manual** channel the probe cannot query — a recorded decision, not a gap. `docker-ce` restarts
+  the daemon — stack down first.
+- **`.claude/worktrees/` was not gitignored: 9 live agent worktrees, 70,498 untracked files**, each a
+  full working copy holding one of the merge train's branches. A plain `git add .` in this checkout
+  staged all of it. Fixed in **#482**, scoped to `.claude/worktrees/` and **not** `.claude/`, because
+  the project convention reserves `.claude/skills/` for tracked project skills.
+  **The habit matters more than the fix.** The same hazard fired earlier the same day at 369 lines
+  through a *named-path* `git add AGENTS.md`, which merged another session's uncommitted work as
+  #469 and had to be reverted by #470 — a named path proves *which file*, never *which lines*. So:
+  **`git diff --staged` before every commit here**, and treat `N insertions / 0 deletions` on a file
+  you only edited as content that arrived from someone else.
+- **Orphaned and worth someone's attention: `feature/faster-integration-tests-parallelism`** — one
+  unpushed commit, *"perf(test): parallelize integrationTest to cut ~39m runtime to ~15m"*, no PR,
+  not in a worktree. The suite was **measured at 47 minutes** on #472 (02:10:20→02:57:34) and #444
+  will pay the same. Deliberately not pushed — publishing another session's work is its author's call.
+
+---
+
+## 4. Carried forward from #430 — the blocking decisions
 
 Phases 29–32 do not start until these land. **None are engineering tasks.**
 
 | decision | state |
 |---|---|
-| **Production domain** | `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; `jtoye.co.uk` IS registered and is the lower-friction target. Do not flip `DEPLOY_*_ENABLED` until DNS resolves |
-| **Hosting target** | Your Azure sub is `c483d353`; the employer HS2 sub is off-limits |
-| **Stripe test-mode keys** | Empty on every stack. Gates Phase 30 entirely, and #461 |
+| **Production domain** | `jtoye.co.uk` never registered; `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records |
+| **Hosting target** | Your Azure sub is `c483d353`; the employer HS2 sub is off-limits. A live `snackpass-*` Container Apps stack already runs this product |
+| **Stripe test-mode keys** | Empty on every stack. Gates Phase 30 **entirely** |
 | **ADR-0002 sign-off** | Still `Proposed` — gates PITR / DPLY-04 |
 
-Also unscheduled: **#427** (ADR-0004 ingredient graph, 0% built) and **#428** (the catering cohort —
-Wave 1 costs no engineering time and can start today). **`k8s/` still ships zero monitoring manifests.**
+Also unscheduled: **#427 is OPEN** (ADR-0004 ingredient graph, 0% built — its finding that nothing
+reconciles `allergen_mask` against the ingredients text is a live product risk, scheduled as LGL-03 in
+Phase 31) and **#428 is OPEN** (the catering cohort, *half the stated go-to-market*, deliberately gated
+until ≥3 caterers are interviewed — **Wave 1 costs no engineering time and can start today**).
 
-**The QA council's findings still live only in `.qa-council/disc-20260802-121732/`, which is
-GITIGNORED.** `.qa-council/LATEST` still points at the July run. Read the directory, not the pointer.
+**`k8s/` still ships zero monitoring manifests** (DPLY-03, written to fail on the current tree). A
+staging deploy today would be wholly unmonitored.
 
 ---
 
 ## 5. Environment state
 
-- **Branch `batch/frontend-wave1-b`**, clean, 0 behind. 11 unassembled `wave1/*` branches are **local
-  only**.
-- **Live stack:** 16 jtoye containers. `check-runtime-freshness` rc=1 — Lane B changed frontend source.
-  Remedy: `bash scripts/sync-runtime.sh`, then `bash scripts/seed-order-metric.sh` (the order metric
-  goes blind after any rebuild that recreates core-java).
-- **Conda:** none needed — no Python application code. The `block-base-python` hook refuses bare
-  `python3` here and no `.conda-env` exists; use `conda run -n jtoye-ops` for scratch analysis.
-- **Stripe:** UNCONFIGURED. Email → Mailhog. S3 → MinIO. Broker → RabbitMQ 4.3.4.
-- **Agent worktrees** under `.claude/worktrees/` (gitignored since #482) still hold the 15 agents' trees.
+- **Branch `main`**, 0 behind, **clean** — the `.idea` residue that made this line read `dirty=4` for
+  two days is gone as of #435. A dirty tree now means *your* change.
+- **Live stack:** 16 jtoye containers — 11 from `docker-compose.full-stack.yml` + 5 from
+  `infra/monitoring/docker-compose.monitoring.yml`. **14 report healthy**;
+  `jtoye-redis-exporter` and `jtoye-postgres-exporter` report no health status because their images
+  define **no healthcheck**. That is **not** unhealthy. `keycloak-realm-render` is a one-shot init that
+  exits by design and is not counted.
+- **Runtime is CURRENT.** `sync-runtime.sh` was run *after* both merges and parity re-asserted:
+  4/4 FRESH. The F-M1 fix was then re-proven functionally against that rebuilt stack.
+- **Conda env:** none needed — no Python application code. Note the `block-base-python` hook refuses
+  bare `python3` here; there is no `.conda-env` for this repo. The F-M1 race probe was therefore
+  written in **Node**, not Python.
+- **Stripe:** UNCONFIGURED (empty key → COD only). Email → Mailhog. S3 → MinIO. Broker → RabbitMQ 4.3.4.
 
 ---
 
@@ -291,49 +544,83 @@ GITIGNORED.** `.qa-council/LATEST` still points at the July run. Read the direct
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git fetch -q origin
 b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || echo "VOID: no origin/HEAD"
-echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -l) behind=$(git rev-list --count HEAD..$b)"
+echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -l) ahead=$(git rev-list --count $b..HEAD) behind=$(git rev-list --count HEAD..$b)"
+# expect behind=0 AND dirty=0. A VOID line is NOT a pass.
 
 # 1. Every gate. Capture rc on its OWN statement — an rc read after a pipe is the pipe's.
 #    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE (compose project name comes from the directory).
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 22 x rc=0 on a clean main. On batch/frontend-wave1-b expect TWO non-zero:
-#   check-runtime-freshness rc=1 -> you changed source: bash scripts/sync-runtime.sh
-#   check-e2e-skip-budget   rc=2 -> stored report older than frontend/e2e; nightly-only
-# Neither is a regression. Both print their own remedy.
-# ⚠ Lane E adds a gate script — re-measure this number when it merges.
+# EXPECT 24 x rc=0. A VOID (2) is not a pass. (22 -> 24: this lane adds
+#   check-image-supply-chain.sh (#276) and check-edge-core-contract.sh (#337).)
+# If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
+# If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
+# Both gates print their own remedy. Neither is a regression.
 
-# 2. The eleven unassembled branches. These are LOCAL ONLY.
-git branch --list 'wave1/*'
+# 2. The QA council findings — the thing no repo command can show you (§0.1).
+ls .qa-council/disc-20260802-121732/                 # NOT the LATEST pointer; it still says July
+sed -n '1,80p' .qa-council/disc-20260802-121732/QA-COUNCIL-REPORT.md
 
-# 3. Is the nightly still blocked only by #517? Dispatch and read the FAILING STEP, not the last step —
-#    steps 15/16/17 are `if: always()` cleanup and run even on failure.
-gh workflow run e2e-nightly.yml --ref fix/e2e-nightly-credential-pairing
-gh run list --workflow=e2e-nightly.yml --limit 1
-# Expect: step 7 fails, and the core-java log shows V46 (#517) — 2 of 3 historically.
+# 3. Re-prove F-M1 is live, rather than trusting this document.
+#    Expect {"200":1,"409":7} and type errors/concurrent-modification. A 500 means the runtime is stale.
+docker exec jtoye_oaas_2026-core-java-1 sh -c \
+  'unzip -p /app/app.jar BOOT-INF/classes/uk/jtoye/core/common/GlobalExceptionHandler.class | strings' \
+  | grep -c concurrent-modification      # expect 2; a filesystem `find` returns a misleading 0
 
 # 4. Before merging ANY PR — never an inline gh-api-pipe-wc idiom
 ~/dotfiles/gates/pr-merge-guard.sh --repo Bralabee/JToye_OaaS_2026 --pr <n> --expect-head <sha>
 #    0 = safe · 1 = not safe · 2 = VOID (could not evaluate — NEVER treat as 0)
 ```
 
-**Next move, in order.**
+**#457 is DONE (PR #466) — and it paid for the method.** Settling it in a browser first, as the issue
+demanded, turned one symptom into two defects and found **#465** (the session ended at 300s regardless
+of activity, with a 30-day refresh token never redeemed). Both closed. Keep doing this: the ten-minute
+browser arm is what stopped a correct-looking header fix from shipping over a live P1.
 
-1. **Assemble Lane C** — approved, one branch (`wave1/fe-451-tokens`), +14 jest blocks. Standard recipe:
-   branch off `origin/main`, merge, `scripts/docs-freshness.sh --write`, re-sync the prose in
-   README/CLAUDE/AGENTS, run the 22 gates (expect the same two non-zero), push, PR, then add the
-   changelog entry **with the PR number** and push again.
-2. **Ask the owner about the k8s cluster (§2.2) BEFORE assembling Lane D.** The answer decides whether
-   Lane D can claim functional verification or only render.
-3. **Merge the four open PRs**, minding the order coupling in §2 — #520 moves the gate count, and the
-   second and third to merge will conflict on `docs/CHANGELOG.md` and `docs/metrics.json`.
-4. **#517 is the real blocker for #420.** A product defect, not a CI one: no environment provisions
-   cleanly on the first attempt until it is fixed, and it is **intermittent** (2 of 3), so one green
-   fresh-DB boot proves nothing.
+**#442 is DONE (PR #472), and its trap was real.** The acceptance criteria warned that authenticating
+metrics without giving Prometheus a way in blinds the Phase 27 alerting layer. Verified: the scrape
+config declares no `basic_auth` and no `authorization` for either job, so authentication was the wrong
+fix outright. Closed by **port isolation** instead — the approach prod already used. Two of the
+finding's three claims were falsified along the way (§2.1).
 
-**The one habit to carry.** Of 20 issues worked this session, **8 filings were wrong as written** and
-three of those would have shipped an outage or a no-op over a live defect. Not one was caught by a test
-passing. Reproduce the defect and run the fail direction *before* writing the fix — and when a check
-comes back clean, ask what would make it fail before believing it. Every instrument in §0.3 looked
-authoritative right up to the moment its control arm ran.
+**Recommended next move: #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped
+Phase-22 feature that has never worked, and the finding names the cause in one line (no
+`@Transactional`, so `TenantSetLocalAspect` never pins the GUC and RLS returns nothing). Needs no
+decision from §4.
+
+⚠ **#444 is core-java, so its PR WILL run the full Testcontainers suite (~47 min, measured on #472).**
+That is not a cost to avoid — RLS behaviour under a real Postgres is exactly what that suite buys, and
+this repo has a recorded trap where auth-layer changes silently break *existing* integration tests.
+Frontend-only work path-skips it in ~5s, so batching is free there and only there.
+
+**Also newly filed: #467** — `/api/customer-orders` 502s on the compose stack (`CORE_API_INTERNAL_URL`
+unset; `localhost` in-container is the container's own loopback, and `extra_hosts` does not beat it),
+and the UI renders that failure as *"No orders found for this email"*. **An error displayed as an
+empty state** — invisible to the user, to a screenshot, and to any test asserting the page renders.
+Found while browser-verifying #466, pre-existing.
+
+
+**Then #444 (F-H4)** — the webhook delivery log is permanently empty, a shipped Phase-22 feature that
+has never worked, and the finding names the cause in one line (no `@Transactional`, so
+`TenantSetLocalAspect` never pins the GUC and RLS returns nothing).
+
+**#460 and #461 need a DECISION before any code**, and both are P1. #460 (locality) is a phase, and
+§4's unresolved production-domain question touches it. #461 (payments) is blocked on Stripe test-mode
+keys — which is already one of §4's four blocking decisions, so it is the same blocker wearing a
+different hat, not a new one.
+
+**The whole council backlog is now filed — #438–#454, 23 issues.** A coverage sweep maps all 34
+findings to filed / already-fixed / deliberately-Group-C, with **0 unaccounted** and a control token
+proving the sweep discriminates. Two findings — **#453 is OPEN** (F-H6, High) and **#454 is OPEN**
+(F-M6) — appear in `findings.json` and the report prose but **in no group in `plan.md`**: the council
+found them and never routed them. They were caught only by that sweep. If you run a council again,
+diff `findings.json` against the groups in `plan.md` before trusting the adjudication.
+
+**#428 Wave 1 (catering discovery) still costs no engineering time and runs in parallel with anything.**
+
+**Merged code is not running code.** After any merge touching source: `bash scripts/sync-runtime.sh`,
+then reseed the order metric. `docker compose start` does not rebuild.
+
+**Squash-merge note:** the repo squash-merges, so `git branch --merged` and `git branch -d` call
+merged branches unmerged. Use PR state as the authority.

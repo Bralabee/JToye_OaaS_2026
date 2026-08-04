@@ -39,7 +39,15 @@ cd "$ROOT"
 # .planning/PROJECT.md is deliberately NOT gated: line ~113 is an explicitly
 # dated historical record ("Spring Boot 3.4.2 … Verified 2026-04-18 post-v2.1")
 # that is CORRECT as history and must not be rewritten to match today's tree.
-DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md)
+#
+# README.md was added 2026-08-03 (issue #449). It was the one version-bearing doc
+# nobody's gate read, and it rotted exactly as you would predict: it advertised
+# MapStruct 1.5.5 against a tree on 1.6.3, and Go 1.25 against a go.mod on
+# 1.26.0 — a floor low enough that a developer meeting it cannot build edge-go.
+# Seeding that same MapStruct drift into README while it was UNGATED left this
+# gate green, which is what makes the omission worth a comment rather than a
+# silent one-word edit.
+DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md)
 
 GRADLE="core-java/build.gradle.kts"
 PKG="frontend/package.json"

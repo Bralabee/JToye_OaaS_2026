@@ -145,7 +145,15 @@ public class OrderStateChangeListener {
                 case PENDING -> emailService.sendOrderConfirmation(event, email);
                 case CONFIRMED -> emailService.sendOrderConfirmed(event, email);
                 case PREPARING -> emailService.sendOrderPreparing(event, email);
-                case READY -> emailService.sendOrderReady(event, email);
+                // #502: READY copy depends on how the order is fulfilled. The
+                // fulfilment type is read from the Order this method already
+                // loaded rather than added to OrderStateChangeEvent — the event
+                // is a persisted outbox payload, so widening the record would
+                // leave in-flight rows deserializing with a null field and no
+                // way to tell "collection" from "old payload". Passing it as an
+                // argument keeps ONE send per transition by construction: there
+                // is a single call site, and the branch lives inside the send.
+                case READY -> emailService.sendOrderReady(event, email, order.getFulfilmentType());
                 case COMPLETED -> emailService.sendOrderCompletedNotification(event, email);
                 case CANCELLED -> emailService.sendOrderCancelledNotification(event, email);
                 default -> log.debug("No email template for status {}", event.newStatus());

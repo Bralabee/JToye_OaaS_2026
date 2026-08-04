@@ -10,8 +10,9 @@
 #     on port 9090 (actuator/prometheus).
 # Egress:
 #   - DNS to kube-dns.
-#   - jtoye-infrastructure namespace on Postgres (5432), Redis (6379),
-#     RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), MinIO (9000), Alertmanager (9093).
+#   - jtoye-infrastructure namespace on Postgres (app-config `db.port`), Redis
+#     (6379), RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), MinIO (9000),
+#     Alertmanager (9093).
 #   - Public 443/TCP for Keycloak (auth.olajay.co.uk), Stripe (api.stripe.com),
 #     Ollama remote (if configured), S3 public endpoints, image CDNs.
 #     See 15-RESEARCH.md §4 for the Stripe CIDR tradeoff rationale.
@@ -69,14 +70,54 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # In-cluster infrastructure namespace: Postgres, Redis, RabbitMQ, MinIO, Alertmanager
+    # -------------------------------------------------------------------------
+    # POSTGRES — its own egress rule, holding exactly ONE port. Issue #271.
+    #
+    # THE DEFECT THIS SHAPE FIXES. DB_PORT is Secret-driven (DEF-1, plan 26-01)
+    # so an environment can run Postgres on any port without a manifest edit.
+    # This rule is what PERMITS that connection, and it used to carry its own
+    # `5432` literal — so the moment anyone used the flexibility DEF-1 added, an
+    # enforcing CNI denied the connection and every core-java replica
+    # CrashLooped, with a NetworkPolicy denial rather than an application error.
+    # Two places encoded one fact and only one of them was config.
+    #
+    # THE PORT BELOW IS NOT AUTHORED — it is OVERWRITTEN at render time from
+    # app-config `db.port` by the `replacements:` block in
+    # k8s/base/kustomization.yaml (and in each overlay's kustomization.yaml; a
+    # base replacement does not re-run against an overlay's patched ConfigMap).
+    # The value committed here is the base default, and it is what you get if the
+    # replacement is ever removed — so do not treat editing it as the way to
+    # change the port. Change app-config `db.port`.
+    #
+    # WHY A SEPARATE RULE RATHER THAN THE FIRST PORT OF THE COMBINED RULE.
+    # NetworkPolicy egress rules are OR'ed and each rule is (peers x ports), so
+    # splitting one rule with six ports into two rules over the SAME peer permits
+    # exactly the same set of (peer, port) pairs — this is a shape change with no
+    # security change. What it buys is that the replacement's fieldPath
+    # (`spec.egress.1.ports.0.port`) means "the Postgres rule's only port"
+    # instead of "whichever port happens to be listed first", so reordering the
+    # port list below cannot silently retarget the replacement onto Redis.
+    # INV-7 in k8s/scripts/check-render-invariants.sh asserts the rendered
+    # infrastructure-egress port set EXACTLY, which catches a retarget too.
+    # -------------------------------------------------------------------------
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: jtoye-infrastructure
       ports:
         - protocol: TCP
-          port: 5432   # Postgres
+          port: 5432   # Postgres — replaced from app-config db.port
+    # In-cluster infrastructure namespace: Redis, RabbitMQ, MinIO, Alertmanager.
+    # These five are still literals. That is a KNOWN, deliberate limit of this
+    # change: #271 is about the Postgres port, and redis.port / rabbitmq.port /
+    # stomp.broker.relay-port already exist as app-config keys, so routing them
+    # the same way is a clean follow-up rather than something this change smuggles
+    # in. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-infrastructure
+      ports:
         - protocol: TCP
           port: 6379   # Redis
         - protocol: TCP

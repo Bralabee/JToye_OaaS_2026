@@ -19,6 +19,13 @@ import publicApiClient from "@/lib/public-api-client"
  *     sitemap-excluded). Only the non-PII `category` label is shown.
  *   - the enclosing `page.tsx` carries `robots: { index:false, follow:false }`
  *     and is omitted from `app/sitemap.ts`.
+ *   - the fields go in the POST **body**, never as axios `params` (issue #278).
+ *     `params` would put them in the query string, and a query string is copied
+ *     verbatim into every access log on the path — nginx-ingress logs the whole
+ *     request line as `$request`, APM agents tag full-URL spans. A body is not
+ *     part of the request line, so none of those see it. Measured before the
+ *     fix, the request line read:
+ *       POST /api/v1/public/unsubscribe?tenant=…&email=…&token=S3CRET… HTTP/1.1
  */
 
 type State = "loading" | "unsubscribed" | "already_unsubscribed" | "invalid"
@@ -55,10 +62,14 @@ export function UnsubscribeContent() {
 
     let cancelled = false
     publicApiClient
-      .post<{ status: string }>("/api/v1/public/unsubscribe", null, {
-        // Query params — the backend reads them via @RequestParam. The token
-        // and email live in the request, never in the rendered page.
-        params: { tenant, email, category, token },
+      // JSON body, NOT axios `params` (#278). The backend's JSON POST variant
+      // reads these via @RequestBody; keeping them out of the query string
+      // keeps the token and the recipient email out of every access log.
+      .post<{ status: string }>("/api/v1/public/unsubscribe", {
+        tenant,
+        email,
+        category,
+        token,
       })
       .then((res) => {
         if (cancelled) return
@@ -119,7 +130,7 @@ export function UnsubscribeContent() {
         {state === "already_unsubscribed" && (
           <div className="flex flex-col items-center py-4 text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-              <CheckCircle2 className="h-6 w-6 text-slate-500" />
+              <CheckCircle2 className="h-6 w-6 text-slate-600" />
             </span>
             <h1 className="text-2xl font-semibold leading-tight text-slate-900">
               You&apos;re already unsubscribed
@@ -134,7 +145,7 @@ export function UnsubscribeContent() {
         {state === "invalid" && (
           <div className="flex flex-col items-center py-4 text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
+              <AlertTriangle className="h-6 w-6 text-amber-700" />
             </span>
             <h1 className="text-2xl font-semibold leading-tight text-slate-900">
               This link isn&apos;t valid

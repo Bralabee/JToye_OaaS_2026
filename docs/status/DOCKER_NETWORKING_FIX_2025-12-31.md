@@ -127,6 +127,12 @@ Successfully tested all operations with proper authentication:
 ## Important Notes
 
 ### API Endpoint Structure
+
+> ⚠️ **SUPERSEDED — this section is inverted and was true only before the `/api/v1` prefix was
+> introduced.** The business API *is* under `/api/v1`; the bare paths below return `404`. See
+> [`docs/guides/DOCKER_QUICK_START.md`](../guides/DOCKER_QUICK_START.md#api-endpoints) for the
+> current rule. Retained unedited below as a dated record of what was true on 2025-12-31.
+
 **✅ Correct:** `http://localhost:9090/customers`  
 **❌ Wrong:** `http://localhost:9090/api/v1/customers`
 

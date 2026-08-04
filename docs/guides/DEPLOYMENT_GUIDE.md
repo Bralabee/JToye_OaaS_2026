@@ -38,9 +38,9 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 
 | Service | Technology | Port | Image Size | Startup Time |
 |---------|-----------|------|------------|--------------|
-| **core-java** | Spring Boot 3 + JDK 21 | 9090 | ~200MB | ~30s |
-| **edge-go** | Go 1.22 (static binary) | 8089 (Docker) / 8080 (Local) | ~15MB | ~1s |
-| **frontend** | Next.js 14 (standalone) | 3000 | ~150MB | ~5s |
+| **core-java** | Spring Boot 3 + JDK 21 | 9090 | ~880MB | ~30s |
+| **edge-go** | Go 1.26 (static binary) | 8089 (Docker) / 8080 (Local) | ~47MB | ~1s |
+| **frontend** | Next.js 16 (standalone) | 3000 | ~272MB | ~5s |
 
 **Infrastructure:**
 - PostgreSQL 15 (primary + replicas)
@@ -57,8 +57,8 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 ```bash
 # Required
 - Java 21 (Eclipse Temurin recommended)
-- Node.js 20+ (with npm)
-- Go 1.22+
+- Node.js 24+ (with npm)
+- Go 1.26+
 - Docker 24+ with Docker Compose
 - Git
 
@@ -96,7 +96,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 
 ```bash
 # 1. Start infrastructure
-cd infra && docker-compose up -d
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
 # 2. Start backend
 ./scripts/run-app.sh
@@ -111,26 +111,26 @@ npm run dev
 # - Core Backend: http://localhost:9090
 # - Edge Gateway: http://localhost:8089 (Docker) or 8080 (Local)
 # - Swagger: http://localhost:9090/swagger-ui.html
-# - Keycloak: http://keycloak-host:8085 (admin/admin123)
+# - Keycloak: http://keycloak-host:8085 (user `$KEYCLOAK_ADMIN`, password `$KEYCLOAK_ADMIN_PASSWORD` from your `.env`)
 ```
 
 ### 3.2 Full Stack with Docker Compose
 
 ```bash
 # Build all images and start services
-docker-compose -f docker-compose.full-stack.yml up -d --build
+docker compose -f docker-compose.full-stack.yml up -d --build
 
 # View logs
-docker-compose -f docker-compose.full-stack.yml logs -f
+docker compose -f docker-compose.full-stack.yml logs -f
 
 # Check service status
-docker-compose -f docker-compose.full-stack.yml ps
+docker compose -f docker-compose.full-stack.yml ps
 
 # Stop services
-docker-compose -f docker-compose.full-stack.yml down
+docker compose -f docker-compose.full-stack.yml down
 
 # Clean up (including volumes)
-docker-compose -f docker-compose.full-stack.yml down -v
+docker compose -f docker-compose.full-stack.yml down -v
 ```
 
 #### 3.2.1 Docker Networking Configuration
@@ -153,13 +153,13 @@ docker-compose -f docker-compose.full-stack.yml down -v
 **Accessing Services:**
 - Frontend: http://localhost:3000
 - Core API: http://localhost:9090 (endpoints: `/customers`, `/products`, etc.)
-- Keycloak Admin: http://localhost:8085 (admin/admin123)
+- Keycloak Admin: http://localhost:8085 (user `$KEYCLOAK_ADMIN`, password `$KEYCLOAK_ADMIN_PASSWORD` from your `.env`)
 - RabbitMQ Management: http://localhost:15672 (jtoye/rabbitmqpass123)
 
 **Test Authentication:**
 1. Open http://localhost:3000/auth/signin
 2. Click "Sign in with Keycloak"
-3. Login with: admin / admin123
+3. Login with `$KEYCLOAK_ADMIN` / `$KEYCLOAK_ADMIN_PASSWORD` (from your `.env`)
 4. You'll be redirected to the dashboard
 
 ### 3.3 Environment Variables
@@ -169,8 +169,8 @@ docker-compose -f docker-compose.full-stack.yml down -v
 export SPRING_PROFILES_ACTIVE=dev
 export DB_HOST=localhost
 export DB_PORT=5433
-export DB_USER=jtoye
-export DB_PASSWORD=secret
+export DB_USER=jtoye_app
+export DB_PASSWORD=CHANGE_ME
 export KC_ISSUER_URI=http://localhost:8085/realms/jtoye-dev
 
 # Frontend
@@ -217,7 +217,7 @@ docker push ghcr.io/jtoye/frontend:v1.0.0
 
 ```bash
 # Start services
-docker-compose -f docker-compose.full-stack.yml up -d
+docker compose -f docker-compose.full-stack.yml up -d
 
 # Wait for services to be ready
 sleep 60

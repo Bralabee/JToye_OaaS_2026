@@ -379,7 +379,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 |--------|--------------------|
 | `check-no-plaintext-secrets.sh` | `k8s/base` and every overlay build, and no build output contains a top-level `kind: Secret` or a `REPLACE_WITH_*` placeholder (outside the known non-secret `deployment.timestamp` annotation). Plaintext Secret material can never become a live kustomize resource (#100). |
 | `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter + reserved slots) fits Postgres `max_connections` with ≥20% headroom, the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
-| `check-env-contract.sh` | The core-java env contract in **both** directions: every env name the manifest injects is read by some `application*.yml` (a wrong name silently resolves to a Spring default — this is how the AMQP pool authenticated as the wrong user), and every `${PLACEHOLDER}` whose default is local-only or absent is either supplied by a manifest or carries an **explicit allowlist entry with a reason**. The allowlist is itself gated: a blank reason, a duplicate, or a now-unnecessary entry fails. Requires GNU `grep -P`. Covers **core-java only**. |
+| `check-env-contract.sh` | The env contract in **both** directions for **all three built services** (core-java, edge-go, frontend — widened from core-java-only by #298). Direction (a): every env name a Deployment injects is read by that service (a wrong name silently resolves to the service's own default — this is how the AMQP pool authenticated as the wrong user). Direction (b): every name a service reads is supplied, or carries an **explicit allowlist entry with a reason**. Per-service specifics: core-java parses `${PLACEHOLDER}`s across `application*.yml` and fails a default that is absent, local-only, **or an unresolved Spring property chain**; edge-go parses `os.Getenv`/`getEnv` literals and uses the strong form (read-and-not-injected is a violation) because the weak default-shape form would have been vacuous for `JWT_EXPECTED_ISSUER`, whose default is a variable; the frontend parses literal `process.env.NAME` **plus** the names `env-validation.ts` declares for its dynamic `process.env[expr]` reads, and encodes the **build-time/runtime split** — a `NEXT_PUBLIC_*` name is supplied by an `ARG` in `frontend/Dockerfile`, and one that is *both* ARG-declared and injected as a runtime `env:` is a non-allowlistable dead-config violation (D-18). Every extractor is self-tested against a synthetic control, so a regex that matches nothing exits **2 (VOID)** instead of reporting a clean contract over an unexamined service. The allowlists are themselves gated: a blank reason, a duplicate, a now-unnecessary entry, or an `OPEN DEFECT` reason citing no issue number all fail; `OPEN DEFECT` entries are printed under their own heading on every run. Requires GNU `grep -P`. |
 | `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1`/`minioadmin` literal in a non-local render; and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
 | `render-golden.sh` | The `kubectl kustomize k8s/staging` and `k8s/production` output is byte-identical to the reviewed goldens in `k8s/goldens/`. A `k8s/base` edit that changes either render without a regenerated golden fails the PR. |
 
@@ -568,8 +568,12 @@ mistaken for a fourth overlay by the other gates' discovery loop.
 
 The single inventory of **every** gate this repository runs, old and new. The two
 sections above ("K8s static gates", "Runtime-parity gates") remain the detailed
-reference for their own gates; this section is the map, plus the three gates Phase 27
+reference for their own gates; this section is the map, plus the gates Phase 27
 added and the two it deliberately left out of CI.
+
+**Adding a gate means adding a row here.** The sentence above claims this list is
+complete, so a gate with no row makes the doc assert something false — and a stale
+inventory is worse than no inventory, because it is read as coverage.
 
 **All of them share one exit-code convention.** It is stated once here and holds
 everywhere:
@@ -586,7 +590,7 @@ everywhere:
 |---|---|---|
 | `k8s/scripts/check-no-plaintext-secrets.sh` | `k8s-validate` | No plaintext Secret material in any kustomize build (#100). |
 | `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits `max_connections` with ≥20% headroom (#94). |
-| `k8s/scripts/check-env-contract.sh` | `k8s-validate` | The core-java env contract in both directions (D-07/D-08). |
+| `k8s/scripts/check-env-contract.sh` | `k8s-validate` | The env contract in both directions for core-java, edge-go **and** the frontend (D-07/D-08, widened by #298), including the frontend's build-time/runtime channel split. |
 | `k8s/scripts/check-render-invariants.sh` | `k8s-validate` | Render-level invariants (DB port, kube-dns selector, no localhost literal, no DB superuser). |
 | `k8s/scripts/render-golden.sh` | `k8s-validate` | staging/production renders are byte-identical to their reviewed goldens. |
 | `scripts/check-branch-behind-base.sh` | `branch-parity` | This branch contains every commit already on its base. |
@@ -594,6 +598,14 @@ everywhere:
 | **`scripts/check-dependency-horizons.sh`** | **`ops-contracts`** | Every pinned image and toolchain carries a live support horizon. Past horizon, inside the 90-day warn window, stale cache, wrong slug, catalogue-vs-vendor conflict, manifest↔source drift either way, or a lapsed `manual_review` all fail. Plan 27-00, finding F-6. |
 | **`scripts/check-alert-rules.sh`** | **`ops-contracts`** | `promtool check rules`, plus every live rule carrying its labels and annotations and having a `## <AlertName>` runbook heading. Plan 27-03, finding F-8: *"there is no CI validation of `alerts.yml` at all"*. |
 | **`scripts/check-doc-citations.sh`** | **`ops-contracts`** | Every `` `file:line` `` citation in a **live** doc resolves to a line that says what the doc claims. Measured before it existed: **1 of 11** STACK.md dependency citations was still correct, and 12 more used a bare `build.gradle.kts` that resolves to the 22-line **root** file rather than core-java's. `check-doc-versions.sh` cannot see this — it compares version *strings* and has no notion of where a claim points. Scans live-claim docs only (override with `CITATION_DOCS`); historical records under `.planning/phases/**` are excluded by design, since validating them would force a choice between a red gate and rewriting the record. |
+| **`scripts/check-image-supply-chain.sh`** | **`ops-contracts`** | The container-image gate's red/green tracks our own code. Pins `fail-fast: false` on the publish matrix (default fail-fast made a frontend-only CVE `cancel` the clean core-java and edge-go legs), the table-vs-sarif split that keeps every gating Trivy step on **fixable CRITICAL/HIGH only** (`format: sarif` makes Trivy scan *all* severities, so a sarif step with an `exit-code` would gate on LOW/MEDIUM), a `package-ecosystem: "docker"` dependabot entry for **every** tracked Dockerfile, and that the daily scan in `base-image-freshness.yml` still asks the gate's exact question — same flags, same pinned action. Issue #276. Static: reads YAML and the git index, runs no scanner, makes no network call. |
+
+**What this gate does *not* tell you.** It asserts the *mechanism*, never today's
+findings. Green here is entirely compatible with every published image being
+vulnerable — only the scan says otherwise, and that runs daily in
+`.github/workflows/base-image-freshness.yml`, which is **not** a required check and
+must never gain a `pull_request:` trigger: it scans *published* images, so nothing in
+a PR's diff could ever change its answer.
 
 Run the whole static set locally before pushing:
 
@@ -608,6 +620,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
   && bash scripts/check-dependency-horizons.sh \
   && bash scripts/check-alert-rules.sh \
   && bash scripts/check-doc-citations.sh \
+  && bash scripts/check-image-supply-chain.sh \
   && echo ALL_STATIC_GATES_GREEN
 ```
 

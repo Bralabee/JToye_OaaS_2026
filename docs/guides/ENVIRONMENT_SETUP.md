@@ -35,9 +35,14 @@ J'Toye OaaS uses environment variables to configure:
 Before running the application, you need to create environment files:
 
 ### ✅ For Full-Stack Docker Setup (Easiest)
-- [ ] No environment files needed!
-- [ ] Docker Compose has all values hardcoded
+- [ ] `cp .env.example .env` at the repo root and fill in every `CHANGE_ME`
+- [ ] `bash scripts/verify-env.sh` passes
 - [ ] Skip to [Running with Docker](#running-with-docker)
+
+> `docker-compose.full-stack.yml` declares **18 hard-required** variables in `${VAR:?}` form.
+> Without a `.env` even `docker compose config` fails with
+> `required variable POSTGRES_PASSWORD is missing a value`, so this is the first step and not an
+> optional one.
 
 ### ✅ For Local Development (Individual Services)
 - [ ] Create `frontend/.env.local` from `frontend/.env.local.example`
@@ -213,7 +218,7 @@ NEXT_PUBLIC_API_URL=http://localhost:9090
 
 # Keycloak OAuth2
 KEYCLOAK_CLIENT_ID=core-api
-KEYCLOAK_CLIENT_SECRET=core-api-secret-2026
+KEYCLOAK_CLIENT_SECRET=CHANGE_ME
 KEYCLOAK_ISSUER=http://localhost:8085/realms/jtoye-dev
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8085/realms/jtoye-dev
 
@@ -245,8 +250,8 @@ NEXTAUTH_SECRET=your-nextauth-secret-change-in-production
 DB_HOST=localhost
 DB_PORT=5433
 DB_NAME=jtoye
-DB_USER=jtoye
-DB_PASSWORD=secret
+DB_USER=jtoye_app
+DB_PASSWORD=CHANGE_ME
 
 # Server
 SERVER_PORT=9090
@@ -295,12 +300,12 @@ PORT=8080
 DB_HOST=postgres
 DB_PORT=5432
 DB_NAME=jtoye
-DB_USER=jtoye
-DB_PASSWORD=secret
+DB_USER=jtoye_app
+DB_PASSWORD=CHANGE_ME
 
 # Keycloak
 KC_ADMIN=admin
-KC_ADMIN_PASSWORD=admin123
+KC_ADMIN_PASSWORD=CHANGE_ME
 KC_REALM=jtoye-dev
 ```
 
@@ -341,16 +346,16 @@ git status
 
 ### 3. Test Configuration
 
-**Option A: Full-Stack Docker (No .env needed)**
+**Option A: Full-Stack Docker (requires the repo-root `.env`)**
 ```bash
-docker-compose -f docker-compose.full-stack.yml up
+docker compose -f docker-compose.full-stack.yml up
 ```
 
 **Option B: Local Development**
 ```bash
 # 1. Start infrastructure
 cd infra
-docker-compose up -d
+docker compose up -d
 
 # 2. Start backend (uses core-java/.env)
 cd ..
@@ -399,7 +404,7 @@ Connection refused: localhost:5433
 2. Check `DB_PORT=5433` in `core-java/.env`
 3. Ensure `infra/docker-compose.yml` is running:
    ```bash
-   cd infra && docker-compose up -d
+   docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
    ```
 
 ---
@@ -454,7 +459,7 @@ unknown variable
 ```
 
 **Solution:**
-1. For `docker-compose.full-stack.yml`: No .env needed (hardcoded values)
+1. For `docker-compose.full-stack.yml`: create the repo-root `.env` from `.env.example` — 18 variables are hard-required
 2. For `infra/docker-compose.yml`: Create `infra/.env`
 3. Check file encoding is UTF-8 (not UTF-16)
 
@@ -465,7 +470,7 @@ unknown variable
 **Solution:**
 1. **Frontend:** Stop (`Ctrl+C`), restart `npm run dev`
 2. **Backend:** Stop, restart `./scripts/run-app.sh`
-3. **Docker:** `docker-compose down && docker-compose up`
+3. **Docker:** `docker compose down && docker compose up`
 4. Environment variables are loaded at startup only
 
 ---

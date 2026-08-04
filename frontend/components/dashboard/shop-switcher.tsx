@@ -113,7 +113,7 @@ export function ShopSwitcher({
             <ShieldAlert
               className={cn(
                 "h-4 w-4 shrink-0",
-                dark ? "text-amber-300" : "text-amber-600 dark:text-amber-300"
+                dark ? "text-amber-300" : "text-amber-700 dark:text-amber-300"
               )}
               aria-hidden="true"
             />
@@ -236,7 +236,7 @@ export function ShopSwitcher({
           data-testid="shop-switcher-stale"
           className={cn(
             note("mt-1.5 text-xs"),
-            dark ? "text-amber-300" : "text-amber-600 dark:text-amber-300"
+            dark ? "text-amber-300" : "text-amber-700 dark:text-amber-300"
           )}
         >
           Your previously selected shop is no longer available — access required. Showing your available shops.

@@ -134,12 +134,12 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
               </span>
             </div>
             <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-600 mt-0.5">
               {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
             </p>
             <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
           </div>
-          <div className="flex items-center gap-1 text-slate-400 [@media(hover:hover)_and_(pointer:fine)]:group-hover:text-amber-600 transition-colors mt-1">
+          <div className="flex items-center gap-1 text-slate-400 [@media(hover:hover)_and_(pointer:fine)]:group-hover:text-amber-700 transition-colors mt-1">
             <span className="text-xs font-medium">{active ? "Track" : "View"}</span>
             <ArrowRight className="h-4 w-4" />
           </div>
@@ -189,7 +189,7 @@ function OrdersError({
       <p className="text-sm font-semibold text-slate-900">
         We couldn&apos;t load your orders
       </p>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-slate-600">
         Something went wrong reaching our servers. Your orders are safe — this is a
         problem on our side, not a sign that you have none.
       </p>
@@ -374,7 +374,7 @@ export function OrdersClient({
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-        <p className="mt-3 text-sm text-slate-500">Restoring your session…</p>
+        <p className="mt-3 text-sm text-slate-600">Restoring your session…</p>
       </div>
     )
   }
@@ -398,7 +398,7 @@ export function OrdersClient({
   return (
     <div className="mx-auto max-w-lg px-4 sm:px-6 py-6">
       <h1 className="text-xl font-bold text-slate-900">My Orders</h1>
-      <p className="text-sm text-slate-500 mt-1">
+      <p className="text-sm text-slate-600 mt-1">
         {load.totalElements} order{load.totalElements !== 1 ? "s" : ""}
         {email && <span className="text-slate-400"> &middot; {email}</span>}
       </p>
@@ -420,7 +420,7 @@ export function OrdersClient({
       {orders.length > 0 && (
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Status</span>
             <select
               data-testid="orders-status-filter"
               value={statusFilter}
@@ -435,7 +435,7 @@ export function OrdersClient({
             </select>
           </label>
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">From date</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">From date</span>
             <input
               type="date"
               data-testid="orders-date-from"
@@ -495,7 +495,7 @@ export function OrdersClient({
       {orders.length === 0 && (
         <div className="mt-12 text-center" data-testid="orders-empty">
           <Package className="mx-auto h-12 w-12 text-slate-200" />
-          <p className="mt-3 text-sm text-slate-500">No orders found for this email.</p>
+          <p className="mt-3 text-sm text-slate-600">No orders found for this email.</p>
           <Link
             href="/shop"
             className="mt-4 inline-flex items-center gap-2 text-sm text-amber-700 [@media(hover:hover)_and_(pointer:fine)]:hover:text-amber-800"
@@ -518,7 +518,7 @@ export function OrdersClient({
           >
             Previous
           </button>
-          <span className="text-xs text-slate-500" data-testid="orders-page-label">
+          <span className="text-xs text-slate-600" data-testid="orders-page-label">
             Page {page} of {totalPages}
           </span>
           <button
@@ -534,7 +534,7 @@ export function OrdersClient({
       )}
 
       {filtered.length === 0 && orders.length > 0 && (
-        <p className="mt-8 text-center text-sm text-slate-500">No orders match the selected filters.</p>
+        <p className="mt-8 text-center text-sm text-slate-600">No orders match the selected filters.</p>
       )}
 
       {/* Auto-refresh indicator */}

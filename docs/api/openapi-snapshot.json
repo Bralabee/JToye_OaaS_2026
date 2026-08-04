@@ -3889,6 +3889,30 @@
         },
         "type" : "object"
       },
+      "UnsubscribeRequest" : {
+        "properties" : {
+          "category" : {
+            "enum" : [
+              "ORDERS",
+              "ONBOARDING",
+              "FINANCIAL",
+              "MARKETING"
+            ],
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "tenant" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "UnsubscribeResponse" : {
         "properties" : {
           "status" : {
@@ -9083,13 +9107,13 @@
         ]
       },
       "post" : {
-        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently.",
-        "operationId" : "unsubscribe_1",
+        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently. Send the four fields EITHER as a JSON body (preferred — keeps the token and the recipient email out of the request line, and so out of every access log) OR as query parameters, which is what RFC 8058 one-click clients must do because RFC 8058 fixes their request body to 'List-Unsubscribe=One-Click' and leaves no slot for the token. Supply one shape or the other; the JSON body wins if both are present. A request missing any field returns status 'invalid' without writing, exactly as a bad token does.",
+        "operationId" : "unsubscribeOneClick_1",
         "parameters" : [
           {
             "in" : "query",
             "name" : "tenant",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "format" : "uuid",
               "type" : "string"
@@ -9098,7 +9122,7 @@
           {
             "in" : "query",
             "name" : "email",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "type" : "string"
             }
@@ -9106,7 +9130,7 @@
           {
             "in" : "query",
             "name" : "category",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "enum" : [
                 "ORDERS",
@@ -9120,12 +9144,21 @@
           {
             "in" : "query",
             "name" : "token",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "type" : "string"
             }
           }
         ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          }
+        },
         "responses" : {
           "200" : {
             "content" : {
@@ -10916,13 +10949,13 @@
         ]
       },
       "post" : {
-        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently.",
-        "operationId" : "unsubscribe",
+        "description" : "Verifies the HMAC token and, on match, records a tenant-scoped per-category suppression idempotently. Send the four fields EITHER as a JSON body (preferred — keeps the token and the recipient email out of the request line, and so out of every access log) OR as query parameters, which is what RFC 8058 one-click clients must do because RFC 8058 fixes their request body to 'List-Unsubscribe=One-Click' and leaves no slot for the token. Supply one shape or the other; the JSON body wins if both are present. A request missing any field returns status 'invalid' without writing, exactly as a bad token does.",
+        "operationId" : "unsubscribeOneClick",
         "parameters" : [
           {
             "in" : "query",
             "name" : "tenant",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "format" : "uuid",
               "type" : "string"
@@ -10931,7 +10964,7 @@
           {
             "in" : "query",
             "name" : "email",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "type" : "string"
             }
@@ -10939,7 +10972,7 @@
           {
             "in" : "query",
             "name" : "category",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "enum" : [
                 "ORDERS",
@@ -10953,12 +10986,21 @@
           {
             "in" : "query",
             "name" : "token",
-            "required" : true,
+            "required" : false,
             "schema" : {
               "type" : "string"
             }
           }
         ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          }
+        },
         "responses" : {
           "200" : {
             "content" : {

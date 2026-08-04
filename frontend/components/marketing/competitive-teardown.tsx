@@ -153,10 +153,15 @@ const statusMeta: Record<Status, { icon: string; label: string; short: string; c
   none: { icon: "❌", label: "not built", short: "None", cls: "border-orange-300 bg-orange-50 text-orange-800" },
 }
 
+// Solid pills carrying WHITE text, so each fill must clear 4.5:1 against white
+// (issue 451 — written without the hash because `__tests__/palette-discipline`
+// greps this directory for anything shaped like a hex colour, and "45" + "1"
+// is one). emerald-600 was 3.77 and orange-600 3.56; the -700 step of the same
+// ramp is 5.48 and 5.18 and keeps the pill reading as the same colour.
 const tagCls: Record<Tag, string> = {
-  "J'Toye leads": "border-emerald-600 bg-emerald-600 text-white",
+  "J'Toye leads": "border-emerald-700 bg-emerald-700 text-white",
   "Flipdish leads": "border-oxblood bg-oxblood text-white",
-  "Hard gap": "border-orange-600 bg-orange-600 text-white",
+  "Hard gap": "border-orange-700 bg-orange-700 text-white",
   Parity: "border-slate-400 bg-slate-100 text-slate-700",
 }
 
@@ -243,7 +248,7 @@ export function CompetitiveTeardown() {
           className="sticky top-0 z-30 border-b border-slate-200 bg-cream/95 backdrop-blur"
         >
           <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
-            <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
+            <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-600">
               Jump
             </span>
             {NAV.map(([id, label]) => (
@@ -343,7 +348,7 @@ export function CompetitiveTeardown() {
                 <h2 id="matrix-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">
                   Every row, with the evidence.
                 </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
                   Filter by verdict or search by name, category or rationale. Expand a row to read the one-line verdict
                   and the J&apos;Toye code path (or why it&apos;s absent).
                 </p>
@@ -383,12 +388,12 @@ export function CompetitiveTeardown() {
               </div>
             </div>
 
-            <p className="mt-4 text-xs uppercase tracking-[0.12em] text-slate-500" aria-live="polite">
+            <p className="mt-4 text-xs uppercase tracking-[0.12em] text-slate-600" aria-live="polite">
               Showing {visible.length} of {FEATURES.length} features
             </p>
 
             {/* Column header (aligned columns at md+) */}
-            <div className="mt-4 hidden grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] gap-3 border-b-2 border-oxblood px-4 pb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 md:grid">
+            <div className="mt-4 hidden grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] gap-3 border-b-2 border-oxblood px-4 pb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-600 md:grid">
               <span>Feature</span>
               <span>Flipdish</span>
               <span>J&apos;Toye</span>
@@ -397,7 +402,7 @@ export function CompetitiveTeardown() {
 
             <div className="mt-4 space-y-3 overflow-x-auto md:mt-0 md:space-y-0">
               {visible.length === 0 ? (
-                <p className="border-2 border-dashed border-slate-300 bg-white p-8 text-center text-sm font-semibold text-slate-500">
+                <p className="border-2 border-dashed border-slate-300 bg-white p-8 text-center text-sm font-semibold text-slate-600">
                   No features match that filter and search. Try &ldquo;All&rdquo; or clear the search box.
                 </p>
               ) : (
@@ -442,7 +447,7 @@ export function CompetitiveTeardown() {
                   {...hover}
                   className="flex items-center gap-3 border-l-4 border-amber-500 bg-white p-4 text-base font-bold text-slate-800"
                 >
-                  <X aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
+                  <X aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-700" />
                   {gap}
                 </m.div>
               ))}
@@ -519,7 +524,7 @@ export function CompetitiveTeardown() {
               stub). Flipdish&apos;s features are live across 5,000+ brands. <strong>Last updated: 2026-07-24.</strong>
             </aside>
             <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-dashed border-slate-300 pt-6 text-sm">
-              <span className="text-xs uppercase tracking-[0.12em] text-slate-500">
+              <span className="text-xs uppercase tracking-[0.12em] text-slate-600">
                 Full write-up: docs/analysis/flipdish-vs-jtoye-teardown.md
               </span>
               <a
@@ -551,7 +556,7 @@ export function CompetitiveTeardown() {
 
 function SectionLabel({ number, label }: { number: string; label: string }) {
   return (
-    <p className="mb-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-600">
+    <p className="mb-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-700">
       <span>{number}</span>
       <span className="h-px w-10 bg-amber-500" />
       {label}
@@ -579,7 +584,7 @@ function StatTile({
   }
   return (
     <m.div {...motionProps} className={`border-[3px] bg-white p-4 shadow-[5px_5px_0_theme(colors.slate.200)] ${accents[accent]}`}>
-      <dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">{label}</dt>
       <dd className="mt-2 text-3xl font-bold tracking-[-0.04em]">{value}</dd>
     </m.div>
   )
@@ -601,22 +606,22 @@ function FeatureRow({ feature }: { feature: Feature }) {
     <details className="group border-2 border-slate-200 bg-white open:border-oxblood md:border-x-0 md:border-t-0 md:border-b md:border-slate-200">
       <summary className="grid cursor-pointer list-none gap-3 p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 md:grid-cols-[1.6fr_0.7fr_0.7fr_0.9fr] md:items-center">
         <span className="flex items-center gap-2 font-bold">
-          <span aria-hidden="true" className="text-xs text-slate-400 transition group-open:rotate-90">
+          <span aria-hidden="true" className="text-xs text-slate-600 transition group-open:rotate-90">
             ▸
           </span>
           <span>
             {feature.name}
-            <span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.1em] text-slate-400">
+            <span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.1em] text-slate-600">
               {feature.group}
             </span>
           </span>
         </span>
         <span className="flex items-center gap-2 md:block">
-          <span className="text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">Flipdish</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-slate-600 md:hidden">Flipdish</span>
           <StatusCell status={feature.flipdish} />
         </span>
         <span className="flex items-center gap-2 md:block">
-          <span className="text-xs uppercase tracking-[0.1em] text-slate-400 md:hidden">J&apos;Toye</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-slate-600 md:hidden">J&apos;Toye</span>
           <StatusCell status={feature.jtoye} />
         </span>
         <span>
@@ -627,11 +632,11 @@ function FeatureRow({ feature }: { feature: Feature }) {
       </summary>
       <div className="border-t border-slate-200 bg-cream px-4 py-4 text-sm leading-6 md:pl-9">
         <p className="text-slate-700">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Verdict · </span>
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">Verdict · </span>
           {feature.note}
         </p>
-        <p className="mt-3 text-slate-500">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">J&apos;Toye evidence · </span>
+        <p className="mt-3 text-slate-600">
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">J&apos;Toye evidence · </span>
           <code className="break-words rounded bg-white px-1.5 py-0.5 text-xs text-slate-700">{feature.evidence}</code>
         </p>
       </div>
@@ -655,7 +660,7 @@ function ScaleColumn({
       <dl className="divide-y divide-slate-200">
         {rows.map(([label, value]) => (
           <div key={label} className="grid grid-cols-[0.6fr_1.4fr] gap-3 px-5 py-3">
-            <dt className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+            <dt className="text-xs font-bold uppercase tracking-[0.1em] text-slate-600">{label}</dt>
             <dd className="text-sm font-semibold text-slate-800">{value}</dd>
           </div>
         ))}
