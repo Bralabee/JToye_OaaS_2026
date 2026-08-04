@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The kitchen board can print a ticket, and it stops lying about what it shows (#105, #106) — 2026-08-04
+### The kitchen board can print a ticket, and it stops lying about what it shows (#535 — closes #105, #106; part of #450, #485) — 2026-08-04
 
 Closes **#105** and **#106**. Also lands **#450 sub-item 5d** and the two **#485** call sites in `frontend/app/dashboard/kitchen/page.tsx` (`:175`, `:229`); neither issue is closed — the rest of both remains open.
 
