@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { IconButton } from "@/components/ui/icon-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -363,22 +364,17 @@ export default function ShopsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                            <IconButton
                               onClick={() => openEditDialog(shop)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                              label={`Edit shop ${shop.name}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                            <IconButton
                               onClick={() => openDeleteDialog(shop)}
-                              className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete shop ${shop.name}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
                           </div>
                         </TableCell>
                       </m.tr>

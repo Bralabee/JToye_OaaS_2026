@@ -130,7 +130,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-        <p className="mt-3 text-sm text-slate-500">Loading order status...</p>
+        <p className="mt-3 text-sm text-slate-600">Loading order status...</p>
       </div>
     )
   }
@@ -164,7 +164,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           <h1 className="mt-4 text-xl font-bold text-slate-900">
             {isCancelled ? "Order Cancelled" : currentStep >= 4 ? "Order Complete!" : "Order in Progress"}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">{order.shopName}</p>
+          <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
         </div>
       )}
 
@@ -182,7 +182,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           {copied && <span className="text-xs text-emerald-600">Copied!</span>}
         </div>
         {order && (
-          <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-500">
+          <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-600">
             <span>{order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</span>
             <span>{formatPrice(order.totalAmountPennies)}</span>
           </div>
@@ -337,7 +337,7 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
       <div className="text-center mb-6">
         <Package className="mx-auto h-12 w-12 text-slate-300" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h2>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-slate-600">
           Enter the email you used when placing this order.
         </p>
       </div>

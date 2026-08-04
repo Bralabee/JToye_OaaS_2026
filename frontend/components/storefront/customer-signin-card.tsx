@@ -87,7 +87,7 @@ export function CustomerSignInCard() {
             {pending === "register" ? "Taking you to sign up…" : "Create an account"}
           </button>
 
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-slate-600">
             Secure sign-in via Keycloak. We never see your password.
           </p>
         </div>
@@ -104,7 +104,7 @@ export function CustomerSignInCard() {
           </Link>
           <Link
             href="/track"
-            className="inline-flex items-center gap-1 font-medium text-amber-600 transition-colors hover:text-amber-700"
+            className="inline-flex items-center gap-1 font-medium text-amber-700 transition-colors hover:text-amber-800"
           >
             <ShoppingBag className="h-4 w-4" aria-hidden="true" />
             Track an order

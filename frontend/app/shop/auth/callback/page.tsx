@@ -47,7 +47,7 @@ function CallbackContent() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-        <p className="mt-3 text-sm text-slate-500">Signing you in...</p>
+        <p className="mt-3 text-sm text-slate-600">Signing you in...</p>
       </div>
     </div>
   )

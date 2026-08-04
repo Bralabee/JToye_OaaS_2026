@@ -84,7 +84,7 @@ export default function SignInPage() {
             </Link>
             <Link
               href="/shop"
-              className="font-medium text-amber-600 transition-colors hover:text-amber-700"
+              className="font-medium text-amber-700 transition-colors hover:text-amber-800"
             >
               Browse kitchens
             </Link>

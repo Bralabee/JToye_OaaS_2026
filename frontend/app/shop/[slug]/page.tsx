@@ -125,7 +125,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                 )}
               </h4>
               {product.description && (
-                <p className="mt-0.5 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                <p className="mt-0.5 text-xs text-slate-600 line-clamp-2 leading-relaxed">
                   {product.description}
                 </p>
               )}
@@ -153,7 +153,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                   </span>
                 )}
                 {allergenList.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-xs text-amber-600">
+                  <span className="inline-flex items-center gap-0.5 text-xs text-amber-700">
                     <AlertTriangle className="h-2.5 w-2.5" />
                     {allergenList.length}
                   </span>
@@ -161,7 +161,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               </div>
               {/* Add to cart / quantity controls */}
               {outOfStock ? (
-                <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 cursor-not-allowed">
+                <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 cursor-not-allowed">
                   Unavailable
                 </span>
               ) : quantity === 0 ? (
@@ -355,7 +355,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
         </h2>
         {retriesExhausted ? (
           <>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               This shop is still busy. Please try again in a moment.
             </p>
             <button
@@ -366,7 +366,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             </button>
           </>
         ) : (
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             This shop is busy — retrying automatically…
           </p>
         )}
@@ -406,7 +406,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
         <Store className="mx-auto h-12 w-12 text-slate-300" />
         <h2 className="mt-4 text-lg font-semibold text-oxblood">Shop not found</h2>
-        <p className="mt-1 text-sm text-slate-500">This shop may no longer be available.</p>
+        <p className="mt-1 text-sm text-slate-600">This shop may no longer be available.</p>
         <Link
           href="/shop"
           className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-amber-700 hover:text-amber-800"
@@ -484,7 +484,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
       {/* Shop details bar */}
       <div className="bg-white border-b border-cream-100">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4">
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
             {shop.address && (
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 text-slate-400" />
@@ -531,7 +531,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
           {/* Opening hours (collapsible on mobile) */}
           {shop.openingHours && Object.keys(shop.openingHours).length > 0 && (
             <details className="mt-3 group">
-              <summary className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+              <summary className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer hover:text-slate-700">
                 <Clock className="h-3.5 w-3.5" />
                 <span>Opening hours</span>
                 <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
@@ -539,7 +539,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
               <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                 {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
                   <div key={day} className="flex justify-between gap-2">
-                    <span className="text-slate-500">{DAY_LABELS[day]}</span>
+                    <span className="text-slate-600">{DAY_LABELS[day]}</span>
                     <span className="font-medium text-slate-700">
                       {shop.openingHours?.[day] || "Closed"}
                     </span>
@@ -698,7 +698,7 @@ export default function ShopDetailPage({ params }: { params: Promise<{ slug: str
             <h3 className="mt-4 text-lg font-semibold text-oxblood">
               No items yet
             </h3>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               This kitchen hasn&apos;t added anything to its menu.
             </p>
           </div>

@@ -44,9 +44,22 @@ the full threat model, flow matrix, and design decisions that drove this.
 4. **Infrastructure namespace.** Datastores + Alertmanager live in
    `jtoye-infrastructure`. If your environment uses a different name (e.g.
    `data`, `platform`, `jtoye-infra`), update the `jtoye-infrastructure`
-   references in `20-core-java.yaml` and `40-datastores.yaml`. All six
-   references are in those two files — grep for `jtoye-infrastructure` to find
-   them.
+   references in `20-core-java.yaml` and `40-datastores.yaml` — those two files
+   hold all of them; `grep -c jtoye-infrastructure` on the pair is the count.
+   (A literal count used to be written here and it had already rotted — it said
+   "six" against a tree carrying nine. A number in prose that nothing regenerates
+   is a claim with an expiry date, so it is deliberately not restated.)
+
+5. **The Postgres port is DERIVED, not authored (issue #271).** The Postgres
+   egress rule in `20-core-java.yaml` and `40-datastores.yaml` is its own
+   single-port rule whose port is overwritten at render time from app-config
+   `db.port`, by the `replacements:` block each kustomization carries. Do not
+   change the port by editing these files: set `db.port` for that environment,
+   and make sure the `postgres-credentials` Secret `port` key (which is what the
+   pods actually dial) says the same thing. `INV-7` in
+   `k8s/scripts/check-render-invariants.sh` asserts the rendered egress port set
+   per policy per target, and `scripts/k8s-local-secrets.sh` refuses to create
+   the local Secret when the two halves disagree.
 
 ## Stripe + Keycloak egress tradeoff
 
@@ -89,10 +102,33 @@ kubectl get networkpolicy -n jtoye-staging
 
 ### 4. Functional verification
 
+**Read the port out of the environment; do not type it.** These are proofs of a
+NEGATIVE ("this pod cannot reach Postgres"), and a negative proved against the
+WRONG port proves nothing: if the database is on 5433, probing 5432 gets
+"connection refused" because nothing is listening, and that is indistinguishable
+from the policy doing its job. The port is environment config (issue #271), so
+take it from the environment:
+
 ```bash
+DBPORT=$(kubectl get cm app-config -n jtoye-staging -o jsonpath='{.data.db\.port}')
+[ -n "$DBPORT" ] || { echo "VOID: no app-config db.port — do not proceed"; }
+# Cross-check against what the pods actually dial (the Secret is the dialled value):
+kubectl get secret postgres-credentials -n jtoye-staging -o jsonpath='{.data.port}' | base64 -d; echo
+# The two MUST match. If they differ, stop: the policy permits one port and the
+# application dials another, which is the #271 defect in a live namespace.
+```
+
+```bash
+# Positive control FIRST: core-java SHOULD reach Postgres. Without this, a
+# "refused" below is unattributable — it could be the policy, a wrong port, or a
+# database that is simply down.
+kubectl exec -n jtoye-staging deploy/core-java -- \
+  nc -z -w3 postgresql-primary.jtoye-infrastructure.svc.cluster.local "$DBPORT"
+# Expect: success. If this fails, every negative case below is meaningless.
+
 # Negative case: frontend pod should NOT reach postgres.
 kubectl exec -n jtoye-staging deploy/frontend -- \
-  nc -z -w3 postgresql-primary.jtoye-infrastructure.svc.cluster.local 5432
+  nc -z -w3 postgresql-primary.jtoye-infrastructure.svc.cluster.local "$DBPORT"
 # Expect: connection timed out / refused.
 
 # Positive case: frontend pod SHOULD reach core-java.
@@ -102,7 +138,7 @@ kubectl exec -n jtoye-staging deploy/frontend -- \
 
 # Negative case: edge-go pod should NOT reach postgres.
 kubectl exec -n jtoye-staging deploy/edge-go -- \
-  nc -z -w3 postgresql-primary.jtoye-infrastructure.svc.cluster.local 5432
+  nc -z -w3 postgresql-primary.jtoye-infrastructure.svc.cluster.local "$DBPORT"
 # Expect: connection timed out / refused.
 ```
 

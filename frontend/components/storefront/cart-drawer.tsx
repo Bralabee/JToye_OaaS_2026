@@ -68,7 +68,7 @@ export function CartDrawer() {
             <SheetTitle className="text-base font-bold text-slate-900">
               Your basket
             </SheetTitle>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               {itemCount} item{itemCount !== 1 ? "s" : ""}
             </p>
           </div>
@@ -97,7 +97,7 @@ export function CartDrawer() {
             <h2 className="mt-4 text-lg font-semibold text-slate-900">
               Your basket is empty
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               Add items from the menu to get started.
             </p>
             <SheetClose className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors">

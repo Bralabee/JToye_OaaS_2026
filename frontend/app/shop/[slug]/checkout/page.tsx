@@ -133,7 +133,7 @@ function PaymentForm({
     <form onSubmit={handlePayment} className="space-y-4">
       <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
-          <CreditCard className="h-4 w-4 text-slate-500" />
+          <CreditCard className="h-4 w-4 text-slate-600" />
           <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
         </div>
         <PaymentElement
@@ -263,7 +263,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
         <ShoppingBag className="h-16 w-16 text-slate-200" />
         <h2 className="mt-4 text-lg font-semibold text-slate-900">Nothing to checkout</h2>
-        <p className="mt-1 text-sm text-slate-500">Add items from the menu first.</p>
+        <p className="mt-1 text-sm text-slate-600">Add items from the menu first.</p>
         <Link
           href={`/shop/${slug}`}
           className="mt-6 inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-amber-ink hover:bg-amber-400 transition-colors"
@@ -383,7 +383,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <CheckCircle className="h-8 w-8 text-emerald-600" />
           </div>
           <h1 className="mt-4 text-xl font-bold text-slate-900">Order confirmed!</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-slate-600 mt-1">
             Order {codConfirmation.orderNumber} &middot; Pay on{" "}
             {codConfirmation.fulfilmentType === "COLLECTION" ? "collection" : "delivery"}
           </p>
@@ -462,13 +462,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             idempotencyKeyRef.current = crypto.randomUUID()
             setPaymentState(null)
           }}
-          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to details
         </button>
         <h1 className="text-xl font-bold text-slate-900">Payment</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-slate-600 mt-1">
           Order {paymentState.orderNumber} &middot; {formatPrice(paymentState.totalAmountPennies)}
         </p>
 
@@ -528,7 +528,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <li key={i} className="text-sm text-amber-700">{warning}</li>
               ))}
             </ul>
-            <p className="text-xs text-amber-600 mt-2">
+            <p className="text-xs text-amber-700 mt-2">
               Your order has been created. You may proceed if you accept the allergen risk, or go back to modify your order.
             </p>
           </div>
@@ -587,13 +587,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       {/* Header */}
       <Link
         href={`/shop/${slug}/cart`}
-        className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-4"
+        className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to basket
       </Link>
       <h1 className="text-xl font-bold text-slate-900">Checkout</h1>
-      <p className="text-sm text-slate-500 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
+      <p className="text-sm text-slate-600 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
         {/* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */}
@@ -833,7 +833,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
         {/* Below-minimum hint (WR-01) */}
         {belowMinimum && (
-          <p className="text-center text-xs font-medium text-slate-500">
+          <p className="text-center text-xs font-medium text-slate-600">
             Minimum order {formatPrice(minimumOrderPennies)} — add{" "}
             {formatPrice(minimumOrderPennies - subtotalPennies)} more to place this order.
           </p>
