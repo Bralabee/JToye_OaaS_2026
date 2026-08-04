@@ -19,6 +19,88 @@ data:
   # API URLs
   api.url: "https://api.olajay.co.uk"
   frontend.url: "https://app.olajay.co.uk"
+
+  # ---------------------------------------------------------------------------
+  # Postgres port — the RENDER-TIME declaration (issue #271)
+  #
+  # WHAT CONSUMES THIS: nothing injects it as an env var. It exists so the
+  # NetworkPolicy egress rules that PERMIT the Postgres connection can be derived
+  # from one declared value instead of carrying their own literal. The derivation
+  # is the `replacements:` block in k8s/base/kustomization.yaml, which writes this
+  # value into the Postgres egress rule of BOTH networkpolicies/20-core-java.yaml
+  # and networkpolicies/40-datastores.yaml.
+  #
+  # WHY THIS IS NOT ALSO DB_PORT's SOURCE, and the residual contract.
+  #   DB_PORT stays on the `postgres-credentials` Secret (`port` key) in both
+  #   core-java-deployment.yaml and pg-backup-cronjob.yaml. That is DEF-1's fix
+  #   and it is deliberately NOT undone here: the Secret is created OUT-OF-BAND
+  #   (SealedSecrets in staging/production; scripts/k8s-local-secrets.sh from the
+  #   gitignored .env locally), so an environment can change its Postgres port
+  #   WITHOUT editing a committed manifest. Moving DB_PORT here would make the
+  #   port a manifest edit again — the exact complaint DEF-1 was filed about.
+  #
+  #   A Secret VALUE can never appear in a kustomize render (by design, and
+  #   k8s/scripts/check-no-plaintext-secrets.sh enforces it), so a NetworkPolicy
+  #   literal can never be derived from the Secret. One render-time declaration is
+  #   therefore the closest single source that exists. The contract is:
+  #
+  #       postgres-credentials/port  ==  app-config db.port
+  #
+  #   ENFORCED, not merely documented, in the one place both are observable:
+  #   scripts/k8s-local-secrets.sh (STEP 1c) refuses to create the Secret when the
+  #   two disagree. For staging/production the Secret is sealed and unreadable
+  #   from this repository, so it is an operator step, in the same shape as the
+  #   RABBITMQ_USER pre-rollout check in k8s/base/core-java-deployment.yaml.
+  #   Written up in k8s/LOCAL.md § 6.
+  #
+  # SOURCE of this value: the Postgres default, matching what the base render has
+  # always permitted. Overlays patch it (k8s/local uses 5433, the compose-published
+  # host port). An overlay that patches it MUST also carry the `replacements:`
+  # block — kustomize does not re-run a base replacement against an overlay's
+  # patched source. INV-7 in k8s/scripts/check-render-invariants.sh fails the build
+  # when an overlay forgets, which is what stops the two halves diverging again.
+  # ---------------------------------------------------------------------------
+  db.port: "5432"
+
+  # --- Issue #506: the SERVER-SIDE core API base for the frontend -------------
+  #
+  # api.url above is the BROWSER's view of core. It is baked into the frontend
+  # image at Docker BUILD time as NEXT_PUBLIC_API_URL and is correct for every
+  # client-side caller. It is NOT usable by Next.js code running INSIDE a
+  # frontend pod, and that is the whole reason this key exists.
+  #
+  # frontend/lib/customer-orders-server.ts resolves the core base as
+  #   CORE_API_INTERNAL_URL || NEXT_PUBLIC_API_URL || "http://localhost:9090"
+  # and the middle term is FROZEN at build time — Next inlines every literal
+  # `process.env.NEXT_PUBLIC_*` reference into the SERVER bundle as well as the
+  # client one. Measured in the built artifact (jtoye-frontend, .next/server):
+  #   process.env.CORE_API_INTERNAL_URL||"http://localhost:9090"
+  # i.e. NEXT_PUBLIC_API_URL had already been substituted by its baked literal,
+  # and only CORE_API_INTERNAL_URL survives as a runtime lookup. That is why
+  # this must be a non-NEXT_PUBLIC_ name: nothing else can be set per
+  # environment after the image is built. Re-adding NEXT_PUBLIC_API_URL as a
+  # runtime env would reach NOTHING (D-18) — do not.
+  #
+  # WHY THE SHORT SERVICE NAME AND NOT AN FQDN
+  # core-java is a ClusterIP Service in the SAME namespace as the frontend in
+  # every overlay, but the namespace itself differs (jtoye-staging /
+  # jtoye-production / jtoye-local). `core-java` resolves through the pod's own
+  # `search <ns>.svc.cluster.local …` list, so ONE base value is correct in all
+  # three — an FQDN would be an environment-varying literal needing three
+  # patches (GLOBAL_RULE_6). Port 9090 is the Service's declared port
+  # (k8s/base/core-java-deployment.yaml).
+  #
+  # ALREADY ALLOWED BY POLICY: k8s/base/networkpolicies/10-frontend.yaml has
+  # always carried an egress rule "core-java on port 9090 (server-side API calls
+  # from Next.js)" selecting `app: core-java` on TCP 9090. Until now nothing
+  # used it — the policy anticipated a call the Deployment could not make.
+  #
+  # PATH-EQUIVALENT to the public route: k8s/base/ingress.yaml routes
+  # host api.url `/` (Prefix) straight to Service core-java:9090 with NO
+  # rewrite, so `<internal>/public/orders/mine` and `<public>/public/orders/mine`
+  # reach the identical upstream path. Going direct also skips the ingress
+  # per-IP rate limit, which server-to-server traffic should never consume.
+  api.internal.url: "http://core-java:9090"
   
   # Redis configuration
   redis.host: "redis-cluster.jtoye-infrastructure.svc.cluster.local"
