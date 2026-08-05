@@ -29,7 +29,10 @@ This document is the first-response reference for every Prometheus alert rule de
 
 Prometheus cannot scrape one of its configured targets. The scraped target could be any of:
 - `jtoye-core-java:9090` (Spring Boot actuator)
-- `jtoye-edge-go:8080` (Go edge gateway)
+- `jtoye-edge-go:9101` (Go edge gateway — its **management** port, injected as
+  `EDGE_GO_METRICS_PORT`. Since issue #550 the edge serves `/metrics` there and NOT on
+  its application port 8080/8089; if this target is down, curl it from inside the
+  network, not from the host — the management port is deliberately unpublished)
 - `jtoye-postgres-exporter:9187`
 - `jtoye-keycloak:8080`
 - `jtoye-rabbitmq:15692`

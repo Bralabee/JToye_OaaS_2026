@@ -234,7 +234,7 @@ states:
   - id: TS-12
     name: scrape target down
     kind: infra_target
-    locator: "infra/monitoring/prometheus/prometheus.yml.tmpl:72"
+    locator: "infra/monitoring/prometheus/prometheus.yml.tmpl:74"
     subject: "job_name"
     what_stops: "All observability for one service. Every alert whose selector depends on that target's metrics silently evaluates against zero series and stays inactive — the monitoring reports healthy precisely because it can see nothing."
     owner: maintainer
@@ -248,7 +248,7 @@ states:
   - id: TS-13
     name: exporter up but blind
     kind: infra_exporter
-    locator: "infra/monitoring/docker-compose.monitoring.yml:175"
+    locator: "infra/monitoring/docker-compose.monitoring.yml:182"
     subject: "postgres-exporter"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
