@@ -81,7 +81,7 @@ const docTemplate = `{
         },
         "/api/v1/webhooks/whatsapp": {
             "post": {
-                "description": "Accepts WhatsApp message-events, verifies the HMAC-SHA256\nsignature in ` + "`" + `X-Hub-Signature-256` + "`" + ` against\n` + "`" + `WHATSAPP_APP_SECRET` + "`" + `, parses the message body into an\norder, resolves each product-name query to a product UUID\nvia the Core search endpoint, and creates an order scoped\nto the vendor identified by ` + "`" + `WHATSAPP_DEFAULT_SHOP_ID` + "`" + `. The\nendpoint is fail-closed: if the secret is not configured\nor the signature is invalid/absent the webhook is rejected.\n\nProcessing outcomes (bad payload, ambiguous product, missing\ndefault shop, Core error) always return HTTP 200 to prevent\nWhatsApp from entering its 3-day exponential retry loop.\nReal error signals are in the structured logs.\n\nThis is a PUBLIC route: Meta authenticates via the HMAC\nsignature alone (it cannot present a Keycloak JWT). The edge\nmints its own client-credentials service token for the\nedge-\u003eCore call and scopes the order to WHATSAPP_DEFAULT_TENANT_ID.",
+                "description": "Accepts WhatsApp message-events, verifies the HMAC-SHA256\nsignature in ` + "`" + `X-Hub-Signature-256` + "`" + ` against\n` + "`" + `WHATSAPP_APP_SECRET` + "`" + `, parses the message body into an\norder, resolves each product-name query to a product UUID\nvia the Core search endpoint, and creates an order scoped\nto the vendor identified by ` + "`" + `WHATSAPP_DEFAULT_SHOP_ID` + "`" + `. The\nendpoint is fail-closed, and the two refusals are distinct:\nan absent or invalid signature is 401, while an unset\n` + "`" + `WHATSAPP_APP_SECRET` + "`" + ` is 503 with ` + "`" + `Retry-After` + "`" + ` — a known,\noperator-fixable unconfigured state rather than an internal\nerror. Neither reads the body nor calls anything downstream.\n\nProcessing outcomes (bad payload, ambiguous product, missing\ndefault shop, Core error) always return HTTP 200 to prevent\nWhatsApp from entering its 3-day exponential retry loop.\nReal error signals are in the structured logs.\n\nThis is a PUBLIC route: Meta authenticates via the HMAC\nsignature alone (it cannot present a Keycloak JWT). The edge\nmints its own client-credentials service token for the\nedge-\u003eCore call and scopes the order to WHATSAPP_DEFAULT_TENANT_ID.",
                 "consumes": [
                     "application/json"
                 ],
@@ -123,10 +123,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/main.ErrorResponse"
                         }
                     },
-                    "500": {
-                        "description": "WHATSAPP_APP_SECRET not configured",
+                    "503": {
+                        "description": "WHATSAPP_APP_SECRET not configured — the route is unavailable until an operator sets it (fails closed)",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait before retrying. This is an operator-fixable configuration state, not transient load."
+                            }
                         }
                     }
                 }

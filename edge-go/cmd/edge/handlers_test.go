@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -123,16 +124,71 @@ func TestSyncBatch_MissingTokenReturns401(t *testing.T) {
 
 const whatsAppPayload = `{"entry":[{"changes":[{"value":{"messages":[{"from":"447700900000","type":"text","text":{"body":"2x Cake\n1x Bread"}}]}}]}]}`
 
-func TestWhatsAppWebhook_UnsetSecretReturns500(t *testing.T) {
+// TestWhatsAppWebhook_UnsetSecretReturns503WithRetryAfter covers issue #450
+// item 3 (QA F-L3). An unset WHATSAPP_APP_SECRET is a KNOWN, operator-fixable
+// state, not an internal error, so it must be 503 + Retry-After rather than the
+// 500 this previously returned — and explicitly not 501, which would advertise
+// the endpoint as unimplemented.
+//
+// The status is the only thing that changes. Failing CLOSED is the security
+// property and is asserted here directly, not assumed: the test wires a Core
+// stub that counts requests and asserts ZERO, so a future edit that moved the
+// secret check below any processing would fail this test rather than quietly
+// turn a status-code fix into an open door.
+func TestWhatsAppWebhook_UnsetSecretReturns503WithRetryAfter(t *testing.T) {
 	t.Setenv("WHATSAPP_APP_SECRET", "")
+
+	coreCalls := 0
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		coreCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer coreServer.Close()
+
 	logger, _ := zap.NewProduction()
-	h := &edgeHandlers{logger: logger}
+	h := &edgeHandlers{
+		logger:           logger,
+		coreClient:       core.NewClient(coreServer.URL, logger),
+		tokenProvider:    stubTokenProvider{token: "svc-token"},
+		whatsAppTenantID: "11111111-1111-1111-1111-111111111111",
+		defaultShopID:    "22222222-2222-2222-2222-222222222222",
+	}
 	c, w := newContext("POST", "/api/v1/webhooks/whatsapp", []byte(whatsAppPayload))
 
 	h.WhatsAppWebhook(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 when secret unset (fail closed), got %d", w.Code)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("unset secret: expected 503 (known unconfigured state), got %d", w.Code)
+	}
+	if w.Code == http.StatusNotImplemented {
+		t.Errorf("unset secret: 501 advertises the endpoint as unimplemented, which is false")
+	}
+
+	// Retry-After must be present AND a usable positive delta-seconds value.
+	// Asserting only presence would pass on an empty header, which tells a
+	// client nothing.
+	retryAfter := w.Header().Get("Retry-After")
+	if retryAfter == "" {
+		t.Fatalf("unset secret: Retry-After header absent; headers = %v", w.Header())
+	}
+	secs, err := strconv.Atoi(retryAfter)
+	if err != nil {
+		t.Fatalf("unset secret: Retry-After %q is not delta-seconds: %v", retryAfter, err)
+	}
+	if secs <= 0 {
+		t.Errorf("unset secret: Retry-After must be a positive number of seconds, got %d", secs)
+	}
+
+	// STILL FAILS CLOSED — the property that must survive the status change.
+	if coreCalls != 0 {
+		t.Errorf("unset secret: webhook reached Core %d time(s); it must be refused before any downstream call", coreCalls)
+	}
+	var body ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unset secret: response body is not the documented ErrorResponse shape: %v (body=%s)", err, w.Body.String())
+	}
+	if body.Error == "" {
+		t.Errorf("unset secret: response carries no error message for the operator; body = %s", w.Body.String())
 	}
 }
 
