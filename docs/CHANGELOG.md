@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The changelog gate went red on the PR that was fixing the changelog gate (#578) — 2026-08-05
+
+#### Fixed
+- **#575's entry now cites its own PR number**, which is what `check-changelog-contract` C-1 asks for. Its heading cited the issue it closes (`#450 item 3`) and not the PR, so `main` was red at `7b9b0666` until this landed.
+
+#### Notes
+- **This entry exists because of a second, self-inflicted instance of the same gate.** #578 was titled `fix(docs): …`, and C-1's subject matcher is `^(feat|fix)(\([^)]*\))?!?: ` — so the PR that fixed the citation became itself a `fix` PR owing an entry, and `main` stayed red for one more commit. The equivalent earlier correction, #570, was titled `docs(changelog): …` and was correctly out of scope. **Use a `docs(...)` subject for changelog-citation corrections**; a `fix(...)` subject buys another round trip.
+- **The underlying mechanism is filed as #579**, not patched a fourth time: C-1 asks its question only about *merged* PRs, so it is structurally incapable of firing on the PR that breaks it. It goes red afterwards, on `main`, where it surfaces as an inherited red on somebody else's unrelated PR.
+
 ### The edge served `/metrics` unauthenticated on the port published to every interface (#550) (#572) — 2026-08-05
 
 `GET /metrics` on the edge's published application port returned **200** with no credentials, disclosing the gateway's route templates. Measured on `main` @ 964ccc2f against the live stack, with a control in the same sweep: `POST :8089/api/v1/sync/batch` returned **401**, so the 200 was a genuinely ungated surface rather than a probe that could not tell the difference. 8089 is a named app-tier exemption bound on all interfaces, which is why #510's loopback-binding work did not reach it.
