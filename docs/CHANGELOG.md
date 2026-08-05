@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The kitchen board asked one question and paid one request per ticket for it (#567) — 2026-08-05
+
+`GET /api/v1/orders/kitchen?shopId=…` returns a shop's active orders **with their line items**. The board previously read a list and then one `/orders/{id}/detail` per ticket, concurrently — 19 requests on an 18-ticket board, and the browser `online` handler fires the burst again on recovery, so an offline blip cost 38 requests in under half a second against a tenant bucket refilled in one lump per minute. #563 made the board *tolerant* of the resulting 429s; this removes them.
+
+Measured on the same board, same test, before and after: **38 requests → 2**, `/detail` **36 → 0**, **10 × 429 → 0**, lowest `X-RateLimit-Remaining` **0 → 115**.
+
+#### Added
+- **`GET /api/v1/orders/kitchen`** — `Page<OrderDetailDto>` for CONFIRMED/PREPARING/READY, newest first. Read-only, so no Idempotency-Key contract. Access is the **same** STAFF-on-shop grant every other shop-scoped read uses; a new endpoint taking a caller-supplied `shopId` is a BOLA surface and the safe move is to reuse the existing check rather than reason out a new one.
+
+#### Fixed
+- **The board no longer reads history to find the present.** `fetchActiveKitchenOrders` paged the shop's *entire* order list (bounded at 20 pages) and filtered for kitchen statuses in the browser, so the work scaled with how long the shop had been trading — 43 lifetime rows for 18 live tickets on the dev tenant, and a shop past ~2,000 could exhaust the bound *before reaching its live tickets*. A second defect on the same path, fixed here and stated rather than smuggled.
+- **Two N+1s removed rather than relocated** — items by a `left join fetch` **after** the page is decided, and refunds by one `findByOrderIdIn`.
+
+#### Notes
+- **Why not `@EntityGraph` on the paged query.** A fetched `@OneToMany` cannot be paginated in SQL, so Hibernate drops the limit, reads every matching row and paginates **in memory** (HHH000104) — an unbounded read wearing a paged response. That is this very defect reintroduced one layer down, and invisible from the outside.
+- **#563's partial-failure tolerance is RETIRED, deliberately and not silently.** `Promise.allSettled`, `failedIds` and the page's `unrenderable` branch existed because a `1 + N` burst could be *partly* refused. With one request a refusal is **total**, so that state is unreachable and a test for it would assert against reality. Recorded in the test file, the page, the commits and here — a just-shipped fix vanishing without a trace is how the same defect gets re-learned. The surviving invariant keeps a test in both suites: a read the board cannot complete still raises the banner, and a successful one clears it, asserted in **both** directions because "the banner appears" is satisfied by a board that always warns.
+- **The cross-tenant test was written to the wrong expectation, and the real behaviour is stronger.** A foreign tenant's `shopId` **404s** rather than yielding an empty page, because `require()` runs FC-1's `requireShopInCallerTenant` first — the caller cannot tell the shop exists. Asserted as measured; a test written to the guess would have failed a *correct* system.
+- **The first acceptance test asserted "exactly one request" and failed at 2** — the page runs its load effect twice on mount, independent of ticket count. A constant would have made it a tripwire for unrelated render behaviour; it now asserts the count is the **same** for one ticket and for eight.
+- **A break arm walked past the `*/detail` glob using a query string**, so the fan-out escaped the route, hit the real API, and the test failed on a blank board instead of on the count. The guard is a regex now: one a query parameter can step around is not a guard.
+- Break arms all proven, all restores hash-verified, and each break proven to have **shipped** via a string marker read out of the served bundle: removing the shop gate fails both kitchen tests; widening the status set fails the active-only test; reintroducing the fan-out fails six tests including both acceptance tests.
+- integrationTest 14/14 on the touched class; unit **133 classes / 952 tests / 0 failures**; jest **91 suites / 789 tests**; E2E **174 passed / 8 skipped / 0 failed of 182**; 26/26 repo + 6/6 k8s gates.
+
 ### The kitchen board kept warning after the network came back, because one 429 threw away a refresh it had already completed (#563) — 2026-08-05
 
 The board refreshes with **one list request plus one `/detail` per active ticket**, concurrently, and the browser `online` handler deliberately takes that full path on recovery. On an 18-ticket board that is 19 requests, and an offline blip fires the burst twice inside ~400 ms — against a tenant bucket of `capacity(120).refillIntervally(100, 1min)`, which refills in **one lump per minute**, so anything else the tenant spent in the same window is carried state.
