@@ -130,11 +130,18 @@ const defaultMock = (url: string) => {
   return Promise.resolve({ data: { content: [], totalPages: 0, totalElements: 0 } })
 }
 
-/** Kitchen board queries: /api/v1/orders?shopId=<board shop>&size=100... */
+/**
+ * Kitchen board queries: `/api/v1/orders/kitchen?shopId=<board shop>&size=100...`
+ *
+ * #564 moved the board from `/orders?shopId=` (a list, then one `/detail` per ticket)
+ * to a single `/orders/kitchen?shopId=` read. What this test asserts is unchanged —
+ * WHICH shop the board queries — but the prefix it matches on had to move with it, and
+ * the shopId deliberately stays the first parameter so this filter keeps working.
+ */
 const kitchenBoardCalls = () =>
   mockedApiClient.get.mock.calls
     .map(([url]) => url as string)
-    .filter((url) => url.startsWith("/api/v1/orders?shopId="))
+    .filter((url) => url.startsWith("/api/v1/orders/kitchen?shopId="))
 
 /** All URLs requested against a given marketing collection endpoint. */
 const callsTo = (prefix: string) =>

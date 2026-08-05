@@ -9,8 +9,7 @@ import { useShopContext } from "@/hooks/use-shop-context"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import {
   KITCHEN_STATUSES,
-  fetchActiveKitchenOrders,
-  fetchKitchenOrderDetails,
+  fetchKitchenBoard,
 } from "@/lib/kitchen-orders-api"
 import {
   deriveFeedState,
@@ -186,11 +185,10 @@ export default function KitchenPage() {
     mutedRef.current = muted
   }, [muted])
 
-  // Ref for ordersMap to avoid stale closure
-  const ordersMapRef = useRef(ordersMap)
-  useEffect(() => {
-    ordersMapRef.current = ordersMap
-  }, [ordersMap])
+  // #564: the ordersMap ref is gone. It existed so `fetchOrders` could re-use detail it
+  // already held for tickets whose status had not changed — the optimisation that made a
+  // one-request-per-ticket refresh survivable. The refresh is now one request, so there
+  // is nothing to re-use and nothing to keep in sync.
 
   // One-shot ember glow bookkeeping: ids in the FIRST loaded batch are seeded
   // without glowing (null until the first non-empty batch); ids appearing
@@ -266,70 +264,34 @@ export default function KitchenPage() {
 
   const fetchOrders = useCallback(
     /**
-     * @param incremental re-use the detail already held for any ticket whose id AND
-     *        status are unchanged. The liveness poll added for #106 runs on this path,
-     *        which keeps a quiet board at ONE request per minute instead of one per
-     *        minute per ticket — on a board of eighteen that is the difference between
-     *        19 requests/min and 1, against a tenant rate limit of 100/min.
-     *        Every other caller (shop switch, reconnect resync, manual refresh) takes
-     *        the full path, so a detail edit that did not change status is still picked
-     *        up the next time anything of consequence happens.
+     * Read the whole board. There is no longer a cheap path and an expensive one.
+     *
+     * This used to take an `incremental` flag that re-used held detail for tickets
+     * whose status had not changed, because the full path cost one request per ticket
+     * and the liveness poll could not afford that every minute. #564 made the full read
+     * ONE request, so the distinction — and the drift it allowed, where a detail edit
+     * that did not change status went unseen until "something of consequence" happened
+     * — is gone rather than optimised.
      */
-    async (incremental = false) => {
+    async () => {
       if (!selectedShopId) return
       try {
-        // #485 (call site :229): was a single `?size=100`, so a shop past 100 lifetime
-        // orders lost every ticket after the first page — silently, with no error and
-        // no indicator. Raising the number cannot fix it: the API clamps page size at
-        // 100 (measured; see fetchActiveKitchenOrders). This follows the list instead,
-        // and reports back when even its own page bound was hit so the board can SAY so.
+        // #564: ONE read, whatever the board holds. This used to be a list request plus
+        // one `/detail` per ticket — 19 requests on an 18-ticket board, fired twice in
+        // ~400 ms whenever the browser came back online, against a tenant budget of
+        // 100/minute shared with everything else the tenant is doing.
+        //
+        // #485's paging contract is preserved inside `fetchKitchenBoard`: `truncated`
+        // still comes back, so a board that could not be read in full still SAYS so
+        // rather than silently dropping the tail.
         const { orders: activeOrders, truncated } =
-          await fetchActiveKitchenOrders(selectedShopId)
-
-        const held = ordersMapRef.current
-        const needDetail = incremental
-          ? activeOrders.filter((o) => held.get(o.id)?.status !== o.status)
-          : activeOrders
-        const { details, failedIds } = await fetchKitchenOrderDetails(needDetail)
-        const byId = new Map(details.map((d) => [d.id, d]))
+          await fetchKitchenBoard(selectedShopId)
 
         const newMap = new Map<string, OrderDetail>()
-        // #561: a ticket the board can show NOTHING for. Distinct from a refused
-        // re-read of a ticket already held — see below.
-        let unrenderable = 0
-        for (const o of activeOrders) {
-          const detail = byId.get(o.id) ?? held.get(o.id)
-          if (detail) newMap.set(o.id, detail)
-          else unrenderable += 1
-        }
+        for (const order of activeOrders) newMap.set(order.id, order)
         setOrdersMap(newMap)
         setOrdersTruncated(truncated)
 
-        // #561: THE READ IS JUDGED ON WHAT THE BOARD CAN SHOW, not on whether every
-        // request succeeded. A refused re-read of a ticket whose detail is already
-        // held costs the operator nothing — the board in front of them is complete
-        // and current — so it must not raise "Orders are not refreshing" and then sit
-        // on that warning for the rest of the poll interval. That is the whole of
-        // #561: the alarm outlived its cause while the data behind it was fine.
-        //
-        // A ticket with no detail at ALL is the opposite case and keeps its alarm: the
-        // board is genuinely missing a ticket, and an incomplete kitchen board that
-        // stays quiet about it is the more dangerous failure of the two.
-        if (unrenderable > 0) {
-          setSyncFailed(true)
-          toast({
-            variant: "destructive",
-            title: "Error loading orders",
-            description: `Could not load ${unrenderable} ticket${unrenderable === 1 ? "" : "s"}.`,
-          })
-          return
-        }
-        if (failedIds.length > 0) {
-          console.warn(
-            `[kitchen] ${failedIds.length} of ${needDetail.length} order-detail reads ` +
-              `failed; the board is showing held detail for those tickets.`
-          )
-        }
         // #106: a successful read is the ONLY thing that advances the stamp.
         setLastSyncedAt(Date.now())
         setSyncFailed(false)
@@ -385,7 +347,7 @@ export default function KitchenPage() {
   useEffect(() => {
     if (!selectedShopId) return
     const interval = setInterval(() => {
-      fetchOrders(true)
+      fetchOrders()
     }, KITCHEN_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [selectedShopId, fetchOrders])

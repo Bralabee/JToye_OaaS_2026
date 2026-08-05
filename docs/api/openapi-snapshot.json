@@ -2347,6 +2347,52 @@
         },
         "type" : "object"
       },
+      "PageOrderDetailDto" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrderDetailDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "PageOrderDto" : {
         "properties" : {
           "content" : {
@@ -6481,6 +6527,52 @@
           }
         ],
         "summary" : "Get orders by customer",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/kitchen" : {
+      "get" : {
+        "description" : "Returns active (CONFIRMED/PREPARING/READY) orders WITH line items for one shop of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket round trip the kitchen display used to make (#564). Requires STAFF on the shop.",
+        "operationId" : "getKitchenBoard",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "shopId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "pageable",
+            "required" : true,
+            "schema" : {
+              "$ref" : "#/components/schemas/Pageable"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageOrderDetailDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Kitchen board for one shop",
         "tags" : [
           "Orders"
         ]

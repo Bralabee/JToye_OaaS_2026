@@ -11,8 +11,7 @@
  * PageImpl total-recompute trap cannot make correct paging look broken.
  */
 import {
-  fetchActiveKitchenOrders,
-  fetchKitchenOrderDetails,
+  fetchKitchenBoard,
   MAX_KITCHEN_ORDER_PAGES,
 } from "../kitchen-orders-api"
 import { DEFAULT_KITCHEN_ORDERS_PAGE_SIZE } from "../env-validation"
@@ -68,32 +67,38 @@ function serve(rows: ReturnType<typeof order>[]) {
   return seen
 }
 
-describe("fetchActiveKitchenOrders", () => {
-  it("issues exactly ONE request for a shop whose history fits on a page", async () => {
+describe("fetchKitchenBoard", () => {
+  // NOTE ON THE FIXTURES BELOW (#564). `serve()` now stands in for `/orders/kitchen`,
+  // which returns ONLY active orders — the status filter moved to the server. So these
+  // fixtures are boards, not histories. Where a test still needs a second page it uses
+  // 125 ACTIVE tickets, which is a real if unhappy kitchen, rather than 125 rows of
+  // history hiding one live ticket — the shape that no longer reaches the client at all.
+
+  it("issues exactly ONE request for a board that fits on a page", async () => {
     // The control for the deep case below. A "fix" that always pages would satisfy
     // every tail assertion here and be a different, quieter bug.
-    const rows = [order(0, "CONFIRMED"), order(1, "COMPLETED")]
+    const rows = [order(0, "CONFIRMED"), order(1, "READY")]
     const seen = serve(rows)
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+    const result = await fetchKitchenBoard(SHOP)
 
     expect(seen).toHaveLength(1)
     expect(result.pagesRead).toBe(1)
     expect(result.truncated).toBe(false)
-    expect(result.orders.map((o) => o.id)).toEqual(["o-0"])
+    expect(result.orders.map((o) => o.id)).toEqual(["o-0", "o-1"])
   })
 
-  it("recovers a kitchen ticket that exists ONLY past the first page", async () => {
-    // 125 orders; the single CONFIRMED one is at index 110, i.e. page 1 at size 100.
-    // Pre-#485 the board issued one `?size=100` request and this ticket never rendered.
-    const rows = Array.from({ length: 125 }, (_, i) =>
-      order(i, i === 110 ? "CONFIRMED" : "COMPLETED")
-    )
+  it("recovers a ticket that exists ONLY past the first page", async () => {
+    // 125 live tickets, so the 111th sits on page 1 at size 100. #485's contract is
+    // kept, not inherited by accident: a board bigger than one page must still be read
+    // to its end rather than silently truncated at 100.
+    const rows = Array.from({ length: 125 }, (_, i) => order(i, "CONFIRMED"))
     const seen = serve(rows)
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+    const result = await fetchKitchenBoard(SHOP)
 
-    expect(result.orders.map((o) => o.id)).toEqual(["o-110"])
+    expect(result.orders.map((o) => o.id)).toContain("o-110")
+    expect(result.orders).toHaveLength(125)
     expect(seen.some((u) => u.includes("page=1"))).toBe(true)
     expect(result.pagesRead).toBe(2)
     expect(result.truncated).toBe(false)
@@ -103,7 +108,7 @@ describe("fetchActiveKitchenOrders", () => {
     const rows = Array.from({ length: 125 }, (_, i) => order(i, "COMPLETED"))
     const seen = serve(rows)
 
-    await fetchActiveKitchenOrders(SHOP)
+    await fetchKitchenBoard(SHOP)
 
     expect(seen.some((u) => u.includes("page=2"))).toBe(false)
     expect(seen).toHaveLength(2)
@@ -111,15 +116,15 @@ describe("fetchActiveKitchenOrders", () => {
 
   it("keeps shopId as the FIRST query parameter", async () => {
     // The board's own tests and the VSA-03 scoping test both match on the literal
-    // prefix `/api/v1/orders?shopId=`; reordering the params breaks them silently.
+    // prefix `/api/v1/orders/kitchen?shopId=`; reordering the params breaks them silently.
     const seen = serve([order(0, "CONFIRMED")])
-    await fetchActiveKitchenOrders(SHOP)
-    expect(seen[0].startsWith(`/api/v1/orders?shopId=${SHOP}&`)).toBe(true)
+    await fetchKitchenBoard(SHOP)
+    expect(seen[0].startsWith(`/api/v1/orders/kitchen?shopId=${SHOP}&`)).toBe(true)
   })
 
   it("asks for the configured page size, which defaults to the API's own ceiling", async () => {
     const seen = serve([order(0, "CONFIRMED")])
-    await fetchActiveKitchenOrders(SHOP)
+    await fetchKitchenBoard(SHOP)
     expect(seen[0]).toContain(`size=${DEFAULT_KITCHEN_ORDERS_PAGE_SIZE}`)
     // Asking for more than the server serves would be a silent no-op, not a fix.
     expect(DEFAULT_KITCHEN_ORDERS_PAGE_SIZE).toBeLessThanOrEqual(SERVER_MAX_PAGE_SIZE)
@@ -129,7 +134,7 @@ describe("fetchActiveKitchenOrders", () => {
     mockGet.mockReset()
     mockGet.mockResolvedValue({ data: { content: [order(0, "READY")] } })
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+    const result = await fetchKitchenBoard(SHOP)
 
     expect(mockGet).toHaveBeenCalledTimes(1)
     expect(result.orders).toHaveLength(1)
@@ -142,7 +147,7 @@ describe("fetchActiveKitchenOrders", () => {
       data: { content: [], totalElements: 999, totalPages: 99, size: 100, number: 0, first: true, last: false },
     })
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+    const result = await fetchKitchenBoard(SHOP)
 
     expect(mockGet).toHaveBeenCalledTimes(1)
     expect(result.truncated).toBe(false)
@@ -172,7 +177,7 @@ describe("fetchActiveKitchenOrders", () => {
       })
     })
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+    const result = await fetchKitchenBoard(SHOP)
 
     expect(mockGet).toHaveBeenCalledTimes(MAX_KITCHEN_ORDER_PAGES)
     expect(result.truncated).toBe(true)
@@ -181,19 +186,22 @@ describe("fetchActiveKitchenOrders", () => {
     warn.mockRestore()
   })
 
-  it("keeps only kitchen statuses, from every page it read", async () => {
-    const rows = [
-      order(0, "PENDING"),
-      order(1, "CONFIRMED"),
-      order(2, "DRAFT"),
-      order(3, "PREPARING"),
-      order(4, "READY"),
-      order(5, "COMPLETED"),
-      order(6, "CANCELLED"),
-    ]
-    serve(rows)
+  // --- #564: the two properties that changed shape ---
 
-    const result = await fetchActiveKitchenOrders(SHOP)
+  it("does not filter by status — the SERVER decides what is on the board", async () => {
+    // This replaces "keeps only kitchen statuses, from every page it read".
+    //
+    // The client used to page the shop's WHOLE history and filter here, so the work
+    // scaled with how long the shop had been trading rather than with how many tickets
+    // were live. Filtering client-side is only possible if you have fetched the rows you
+    // then throw away — which was the cost. `/orders/kitchen` returns the board.
+    //
+    // Asserting the client is a pass-through matters: if it filtered as well, a status
+    // the two definitions disagreed about would vanish from the board with no error, and
+    // the server's version — the one that bounds the query — would be the one overruled.
+    serve([order(0, "CONFIRMED"), order(1, "PREPARING"), order(2, "READY")])
+
+    const result = await fetchKitchenBoard(SHOP)
 
     expect(result.orders.map((o) => o.status)).toEqual([
       "CONFIRMED",
@@ -201,67 +209,54 @@ describe("fetchActiveKitchenOrders", () => {
       "READY",
     ])
   })
-})
 
-describe("fetchKitchenOrderDetails", () => {
-  it("requests one detail per order and preserves order", async () => {
-    mockGet.mockReset()
-    mockGet.mockImplementation((url: string) =>
-      Promise.resolve({ data: { id: url.match(/orders\/([^/]+)\/detail/)![1] } })
-    )
+  it("issues ONE request for a busy board — the cost does not scale with ticket count", async () => {
+    // #564's acceptance, at unit level. Before this change a board of N tickets cost
+    // 1 + N requests: this fixture would have been 51. The number below must stay 1 no
+    // matter how large the fixture grows, which is the property the issue asked for.
+    const rows = Array.from({ length: 50 }, (_, i) => order(i, "CONFIRMED"))
+    const seen = serve(rows)
 
-    const { details, failedIds } = await fetchKitchenOrderDetails([
-      order(1, "CONFIRMED"),
-      order(2, "READY"),
-    ])
+    const result = await fetchKitchenBoard(SHOP)
 
-    expect(details.map((d) => d.id)).toEqual(["o-1", "o-2"])
-    expect(failedIds).toEqual([])
-    expect(mockGet).toHaveBeenCalledTimes(2)
+    expect(result.orders).toHaveLength(50)
+    expect(seen).toHaveLength(1)
+    // Named explicitly so a future reader sees the intent rather than a bare `1`.
+    expect(seen.filter((u) => u.includes("/detail"))).toHaveLength(0)
   })
 
-  it("issues nothing for an empty list", async () => {
+  it("carries the line items with the order, so no follow-up read is needed", async () => {
+    // The reason one request is enough: detail arrives WITH the ticket. If the payload
+    // stopped carrying items the board would silently render empty tickets, and the
+    // request-count test above would still pass.
     mockGet.mockReset()
-    await expect(fetchKitchenOrderDetails([])).resolves.toEqual({
-      details: [],
-      failedIds: [],
-    })
-    expect(mockGet).not.toHaveBeenCalled()
-  })
-
-  // #561: this used to be `Promise.all`, so ONE 429 threw away every detail that DID
-  // come back — and with it the page's evidence that it had just read successfully.
-  // A board of eighteen tickets refreshes with eighteen concurrent detail requests, so
-  // a partial refusal is the ordinary case under a tenant rate limit, not an exotic one.
-  it("keeps the details that succeeded when some requests fail, and names the failures", async () => {
-    mockGet.mockReset()
-    mockGet.mockImplementation((url: string) => {
-      const id = url.match(/orders\/([^/]+)\/detail/)![1]
-      if (id === "o-2") return Promise.reject(new Error("Request failed with status code 429"))
-      return Promise.resolve({ data: { id } })
+    mockGet.mockResolvedValue({
+      data: {
+        content: [{ ...order(0, "CONFIRMED"), items: [{ id: "i-1", productName: "Jollof Rice", quantity: 2 }] }],
+      },
     })
 
-    const { details, failedIds } = await fetchKitchenOrderDetails([
-      order(1, "CONFIRMED"),
-      order(2, "READY"),
-      order(3, "PREPARING"),
-    ])
+    const result = await fetchKitchenBoard(SHOP)
 
-    expect(details.map((d) => d.id)).toEqual(["o-1", "o-3"])
-    expect(failedIds).toEqual(["o-2"])
-    expect(mockGet).toHaveBeenCalledTimes(3)
-  })
-
-  it("does not reject when every request fails — it reports them all", async () => {
-    mockGet.mockReset()
-    mockGet.mockImplementation(() => Promise.reject(new Error("boom")))
-
-    const { details, failedIds } = await fetchKitchenOrderDetails([
-      order(1, "CONFIRMED"),
-      order(2, "READY"),
-    ])
-
-    expect(details).toEqual([])
-    expect(failedIds).toEqual(["o-1", "o-2"])
+    expect(result.orders[0].items).toHaveLength(1)
+    expect(result.orders[0].items[0].productName).toBe("Jollof Rice")
   })
 })
+
+
+/**
+ * `fetchKitchenOrderDetails` and its four tests were RETIRED here by #564, not lost.
+ *
+ * They existed because the board fetched detail one request per ticket, and #561 proved
+ * that a partly-refused burst (ten 429s out of nineteen) discarded an otherwise-complete
+ * read and left the board warning over data it was still holding. #563 fixed that with
+ * `Promise.allSettled` and a `failedIds` contract, and these tests pinned it.
+ *
+ * With one request there is no burst, so a refusal is TOTAL — "some succeeded, some did
+ * not" is now unreachable, and a test for it would assert a state the code cannot enter.
+ * Removing the burst is strictly better than tolerating it, which is why the tolerance
+ * goes with it rather than being kept as decoration.
+ *
+ * What survives, and is tested above and in the page's own suite: a read the board cannot
+ * complete still raises the banner, and a successful one clears it.
+ */

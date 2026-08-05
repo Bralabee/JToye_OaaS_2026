@@ -198,13 +198,18 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
         body: JSON.stringify(shopsResponse),
       })
     )
-    // #485: the board pages now, so the fake HONOURS ?page= and ?size=. A stub that
-    // ignored them would return everything on page 0 and pass against the bug.
-    await context.route(`${API}/api/v1/orders?**`, (route) =>
+    // #564: the board reads `/orders/kitchen`, which returns active orders WITH their
+    // line items. The old pair — a summary list plus one `/detail` per ticket — is gone
+    // because the requests are gone. This fake serves what the endpoint serves, so a
+    // test here cannot pass against a client that still fans out per ticket.
+    //
+    // #485: the fake still HONOURS ?page= and ?size=. A stub that ignored them would
+    // return everything on page 0 and pass against the bug that contract exists to catch.
+    await context.route(`${API}/api/v1/orders/kitchen**`, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(pageOf(orderSummaryResponse.content, route.request().url())),
+        body: JSON.stringify(pageOf([orderDetailResponse], route.request().url())),
       })
     )
     await context.route(`${API}/api/v1/orders/*/start-preparation`, (route) =>
@@ -214,6 +219,12 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
         body: JSON.stringify({ ...orderDetailResponse, status: "PREPARING" }),
       })
     )
+    // `/{id}/detail` STAYS, and removing it was a mistake worth recording: #564 removed
+    // the BOARD's per-ticket fan-out, not the endpoint. `/dashboard/orders/[id]` is a
+    // different surface that reads one order on purpose, and dropping this stub failed
+    // that test on both projects. "The board no longer calls it" is not "nothing calls
+    // it" — the board's acceptance test asserts ZERO detail calls with its own
+    // page-level route, which takes priority over this one.
     await context.route(`${API}/api/v1/orders/*/detail`, (route) =>
       route.fulfill({
         status: 200,
@@ -402,155 +413,79 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
   // The 429s are INJECTED here, which is what makes the test deterministic on a
   // quiet stack and independent of how much budget the specs before it spent.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // #564 — the board is read in ONE request, so the burst #561 was about is gone.
+  //
+  // RETIRED HERE: "a partial 429 on the recovery refresh still clears the offline
+  // banner". That test injected 429s into a subset of the per-ticket detail requests
+  // and asserted the board recovered anyway. There are no per-ticket detail requests
+  // now, so a refusal is total and the state it exercised cannot occur — the test would
+  // be asserting against a shape the client no longer has.
+  //
+  // Its cost is worth remembering rather than just its conclusion: that test was wrong
+  // three times before it was right (it read the live board and hit the rate limit it
+  // was about; it armed its 429s during the initial load; its own fixture reads could be
+  // refused). All three failure modes trace to the same shared, minute-granular tenant
+  // budget — which is what this change removes the board's dependence on.
+  //
+  // Replaced by the acceptance itself, which is cheaper AND stronger: the cost of a
+  // board read must not scale with how many tickets are on it.
+  // ---------------------------------------------------------------------------
 
-  test("a partial 429 on the recovery refresh still clears the offline banner", async ({
+  test("reads the board at a cost that does not scale with ticket count", async ({
     page,
-    context,
   }) => {
-    // Only two stubs are lifted, and each for a stated reason:
-    //   ws     — the pill cannot read "Live" without a real socket, and `connected` is
-    //            half of what clears the banner.
-    //   shops  — the STOMP topic is derived from the DATA. With the fixture shop the
-    //            page subscribes to a tenant that does not exist and the relay drops
-    //            the connection, so the pill sits on "Reconnecting" forever (measured,
-    //            see the test above).
-    //
-    // The ORDER stubs stay, replaced below with a bigger fixture. That is deliberate:
-    // the first version of this test read the live board, and a live 18-ticket board
-    // costs 19 requests to load and 19 more to refresh, against a tenant bucket of
-    // capacity(120) refilled in ONE LUMP per minute. Run after the specs that precede
-    // it, this test's own page load was refused and the pill read "Offline —" with a
-    // null stamp — it had become another instance of the very budget dependency it
-    // exists to remove. Stubbed, it costs the tenant nothing and cannot inherit
-    // anyone else's spending.
-    await context.unroute("**/ws**")
-    await context.unroute(`${API}/api/v1/shops**`)
+    // Two boards, same page, different sizes. Asserting a CONSTANT would be a tripwire
+    // for unrelated render behaviour (the page runs its load effect more than once on
+    // mount); asserting the counts MATCH is the property #564 asked for.
+    const board = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        ...orderDetailResponse,
+        id: `t-${i}`,
+        orderNumber: `ORD-COUNT-${i}`,
+      }))
 
-    // THE TWO LIVE READS THAT REMAIN, MADE RESILIENT — fixture setup, not the behaviour
-    // under test. `/shops` gives the real tenant/shop the STOMP topic is built from, and
-    // `fetchAllMyShops` reads `/staff/me` on the same path, so a refusal of EITHER leaves
-    // `selectedShopId` null: no read, no topic, no socket, and the pill reads "Offline —"
-    // for a reason that has nothing to do with what this test asserts.
-    //
-    // That is not hypothetical. Measured 2026-08-05 on the post-merge suite run:
-    //     0.00  429  RA=9  /api/v1/shops?page=0&size=200
-    //     0.00  429  RA=9  /api/v1/staff/me
-    // — because this test runs immediately after the spec above, which spends 38 real
-    // requests, against a bucket refilled in ONE LUMP per minute.
-    //
-    // So the refusal is waited out rather than allowed to masquerade as a product
-    // failure. Bounded (3 attempts, cap 12s each) and LOUD if it runs out, because a
-    // fixture read that quietly gives up is how a budget problem gets re-diagnosed as a
-    // banner problem — twice, in this issue's own history.
-    const resilientRead = async (route: import("@playwright/test").Route) => {
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const res = await route.fetch()
-        if (res.status() !== 429) return route.fulfill({ response: res })
-        const retryAfter = Math.min(Number(res.headers()["retry-after"] ?? 5) || 5, 12)
-        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000))
-      }
-      throw new Error(
-        `[#561] ${route.request().url()} stayed 429 across 3 attempts — the tenant rate ` +
-          `budget was exhausted by earlier specs. This is this test's FIXTURE setup, not ` +
-          `the offline-banner behaviour it asserts.`
-      )
-    }
-    await page.route(/\/api\/v1\/shops/, resilientRead)
-    await page.route(/\/api\/v1\/staff\/me/, resilientRead)
-
-    // Four tickets, so "some refused, some not" is genuinely partial. Page-level routes
-    // are matched before context-level ones, so these win over the beforeEach stubs.
-    const TICKETS = ["kds-561-1", "kds-561-2", "kds-561-3", "kds-561-4"]
-    await page.route(/\/api\/v1\/orders\?/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
-          pageOf(
-            TICKETS.map((id) => ({ ...orderSummaryResponse.content[0], id })),
-            route.request().url()
-          )
-        ),
-      })
-    )
-
-    // Throttling is armed only AFTER the first read has landed, which is the state the
-    // defect actually occurs in: the board is holding current detail for every ticket
-    // and is merely re-reading it. Refusing the FIRST load is a different case — a
-    // genuinely incomplete board — and the page is still required to say so.
-    let throttling = false
-    let seen = 0
-    const throttled: string[] = []
-    await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
-      const id = route.request().url().match(/orders\/([^/]+)\/detail/)![1]
-      // Every other one: a PARTIAL failure. All of them would be a total outage, which
-      // is a different state with a different correct answer.
-      if (throttling && ++seen % 2 === 0) {
-        throttled.push(id)
-        return route.fulfill({
-          status: 429,
-          contentType: "application/problem+json",
-          headers: { "Retry-After": "12", "X-RateLimit-Remaining": "0" },
-          body: JSON.stringify({
-            type: "about:blank",
-            title: "Too Many Requests",
-            status: 429,
-            detail: "Rate limit exceeded",
-          }),
-        })
-      }
+    const requested: string[] = []
+    let size = 1
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) => {
+      requested.push(route.request().url())
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ ...orderDetailResponse, id }),
+        body: JSON.stringify(pageOf(board(size), route.request().url())),
+      })
+    })
+    // A detail request is not merely unnecessary now — it is a regression. Recorded
+    // separately so a client that calls the new endpoint AND still fans out is caught.
+    //
+    // Matched by REGEX with an optional query string, not by the `*/detail` glob. The
+    // glob misses `/detail?anything`, which a break arm demonstrated: the fan-out escaped
+    // the route, hit the real API, and the test failed on a blank board instead of on the
+    // count — a true failure for an uninformative reason. A guard that a query parameter
+    // can walk past is not a guard.
+    const details: string[] = []
+    await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
+      details.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(orderDetailResponse),
       })
     })
 
     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    await expect(page.getByText("ORD-COUNT-0")).toBeVisible({ timeout: 20_000 })
+    const readsForOneTicket = requested.length
 
-    const pill = page.getByTestId("kds-feed-pill")
-    await expect(pill).toContainText("Live", { timeout: 20_000 })
-    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+    // Same journey, twenty tickets — past the eighteen that produced ten 429s in #561.
+    size = 20
+    requested.length = 0
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    await expect(page.getByText("ORD-COUNT-19")).toBeVisible({ timeout: 20_000 })
 
-    // ARM ONLY ONCE THE BOARD IS GENUINELY SETTLED, and wait for evidence of that
-    // rather than assuming it. "Live" is NOT that evidence: the pill reads the socket,
-    // which connects before the first read returns, so arming on it raced the initial
-    // detail fetch. Measured — the full suite caught what four spec files did not: the
-    // first load's own details came back 429, two tickets had no detail at ALL, and the
-    // board correctly refused to go quiet. The test was asserting the wrong case.
-    //
-    // A wall clock in the pill means `lastSyncedAt !== null`, i.e. a read completed, and
-    // four rendered tickets mean their detail is held. Both are required before a
-    // REFUSED RE-READ is the thing under test.
-    await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/, { timeout: 20_000 })
-    await expect(page.getByText("Alice")).toHaveCount(TICKETS.length)
-
-    throttling = true
-
-    await context.setOffline(true)
-    const banner = page.getByTestId("kds-feed-banner")
-    await expect(banner).toBeVisible({ timeout: 15_000 })
-
-    await context.setOffline(false)
-
-    // NON-VACUITY, asserted before the thing it qualifies: if no request was ever
-    // throttled then a cleared banner proves nothing at all — it would only be saying
-    // that an unobstructed refresh works, which the test above already covers.
-    await expect
-      .poll(() => throttled.length, { timeout: 20_000 })
-      .toBeGreaterThan(0)
-
-    // The board holds a detail for every ticket, so the refresh is COMPLETE even though
-    // part of it was refused. It has to stop warning.
-    await expect(banner).toHaveCount(0, { timeout: 20_000 })
-    await expect(pill).toContainText("Live")
+    expect(requested.length).toBe(readsForOneTicket)
+    expect(details).toHaveLength(0)
   })
-
-  // ---------------------------------------------------------------------------
-  // #105 — a kitchen ticket can be printed, and it is the PRINT stylesheet that
-  // makes it a ticket. Asserted under `emulateMedia({ media: "print" })`, because a
-  // screen screenshot says nothing about `@media print`.
-  // ---------------------------------------------------------------------------
 
   test("a ticket can be printed, and the print stylesheet hides the dashboard chrome", async ({
     page,
@@ -650,15 +585,21 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
   test("a kitchen ticket that exists only on page 1 still reaches the board", async ({
     page,
   }) => {
-    // 125 orders; the only CONFIRMED one is at index 110, i.e. page 1 at size 100.
-    // Before #485 the board issued one `?size=100` and this ticket never rendered.
+    // 125 LIVE tickets, the one under test at index 110 — page 1 at size 100.
+    //
+    // #564 changed what a deep board means. This fixture used to be 125 rows of HISTORY
+    // with a single CONFIRMED ticket buried at 110, because the client paged the whole
+    // order list and filtered here. The server filters now, so that shape never reaches
+    // the browser; what still can is a board with more live tickets than fit on a page,
+    // and #485's contract — read it to the end, stop when the server says stop — is
+    // exactly as load-bearing there.
     const deep = Array.from({ length: 125 }, (_, i) => ({
-      ...orderSummaryResponse.content[0],
+      ...orderDetailResponse,
       id: i === 110 ? "order-1" : `bulk-${i}`,
-      status: i === 110 ? "CONFIRMED" : "COMPLETED",
+      orderNumber: i === 110 ? "ORD-TEST-0001" : `ORD-BULK-${i}`,
     }))
     const requested: string[] = []
-    await page.route(`${API}/api/v1/orders?**`, (route) => {
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) => {
       requested.push(route.request().url())
       return route.fulfill({
         status: 200,

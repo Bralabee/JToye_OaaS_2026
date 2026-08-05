@@ -259,9 +259,9 @@ inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard
 that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 1433 `@Test` methods across 244 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Backend (Java): 1435 `@Test` methods across 244 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 78 `Test*` functions across 10 files ✅
-- Frontend (Jest): 747 `it/test` blocks across 91 files ✅
+- Frontend (Jest): 745 `it/test` blocks across 91 files ✅
 - Frontend E2E (Playwright): 85 `test()` blocks across 18 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
 - **Total: 2391 logical test invocations** ✅

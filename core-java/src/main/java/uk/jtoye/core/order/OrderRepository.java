@@ -51,6 +51,37 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Page<Order> findByStatusAndShopIdIn(OrderStatus status, Collection<UUID> shopIds, Pageable pageable);
 
+    /**
+     * Kitchen board query (#564): one shop's orders in the given statuses, paginated.
+     *
+     * <p>The board previously read this by fetching the shop's WHOLE order history a page
+     * at a time and filtering for kitchen statuses in the browser — 43 lifetime rows for
+     * 18 live tickets on the dev tenant, and a shop past the 20-page client bound could
+     * exhaust it before reaching its live tickets. Filtering here means the result size is
+     * bounded by what is ON the board, not by how long the shop has been trading.
+     *
+     * <p>RLS still scopes every row to the tenant; the shop-level grant check is the
+     * caller's ({@code OrderService.getKitchenBoard}).
+     */
+    Page<Order> findByShopIdAndStatusIn(UUID shopId, Collection<OrderStatus> statuses, Pageable pageable);
+
+    /**
+     * Re-read a known page of orders with their line items attached, in ONE query (#564).
+     *
+     * <p><b>Why this is a second query and not an {@code @EntityGraph} on the paged one.</b>
+     * A fetched {@code @OneToMany} cannot be paginated in SQL — one order yields one row
+     * per item, so {@code LIMIT} would cut mid-order. Hibernate's answer is to drop the
+     * limit, <b>read every matching row, and paginate in memory</b> (HHH000104). On this
+     * endpoint that would be an unbounded read dressed as a paged one: the precise defect
+     * #564 exists to remove, reintroduced one layer down and invisible from the response.
+     *
+     * <p>So the page is decided first (ids only, real SQL {@code LIMIT}), and this fetches
+     * items for that page. Two queries, both bounded — instead of one query and N lazy
+     * loads, or one query that quietly reads the table.
+     */
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.id IN :ids")
+    List<Order> findAllWithItemsByIdIn(@Param("ids") Collection<UUID> ids);
+
     Page<Order> findByCustomerIdAndShopIdIn(UUID customerId, Collection<UUID> shopIds, Pageable pageable);
 
     /**
