@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The kitchen board kept warning after the network came back, because one 429 threw away a refresh it had already completed (#563) — 2026-08-05
+
+The board refreshes with **one list request plus one `/detail` per active ticket**, concurrently, and the browser `online` handler deliberately takes that full path on recovery. On an 18-ticket board that is 19 requests, and an offline blip fires the burst twice inside ~400 ms — against a tenant bucket of `capacity(120).refillIntervally(100, 1min)`, which refills in **one lump per minute**, so anything else the tenant spent in the same window is carried state.
+
+#### Fixed
+- **`lib/kitchen-orders-api.ts`** — `fetchKitchenOrderDetails` moves from `Promise.all` to `Promise.allSettled` and returns `{ details, failedIds }`. Under `Promise.all` a single refusal rejected the **whole** read: the list request that succeeded and the eight details that succeeded, all discarded.
+- **`app/dashboard/kitchen/page.tsx`** — the read is judged on **what the board can show**, not on whether every request succeeded. A refused re-read of a ticket whose detail is already held no longer raises the alarm; a ticket with **no** detail at all still does.
+
+#### Notes
+- **The product half is the point.** A kitchen that dropped its connection for a moment kept being told *"Orders are not refreshing"* for up to a minute after the network was back, over data the page was still holding, with nothing retrying. The test's own comment had already named the cost: *"A warning that outlives its cause is how a kitchen learns to ignore warnings."*
+- **Measured, not inferred** — two arms with identical request patterns and opposite outcomes: the spec alone gets `38 × 200` with 79 tokens to spare; run after the three mobile specs that precede it, `28 × 200 + 10 × 429` (`Retry-After: 12`, remaining 0). The ten refusals land in the **second** burst, and the trace shows **zero** further requests for the remaining ~20 s.
+- **The invariant kept is as important as the behaviour changed.** An incomplete kitchen board that stays quiet about it is the more dangerous of the two failures, so "some ticket has no detail at all" keeps its banner and has its own test — the fix cannot decay into a mute button.
+- **The new test was wrong twice, and both were caught by measurement rather than review.** v1 read the live board, so it cost 19 requests to load and 19 to refresh and became an instance of the very budget dependency it existed to remove — its own page load was refused and the pill read `Offline —`. v2 armed its injected 429s during the **initial** load, because it waited on the pill reading "Live" and the pill reads the **socket**, which connects before the first read returns; it passed in isolation and failed on **both** projects in the full suite. It now waits for a wall clock in the pill and all four tickets rendered before arming.
+- **Falsified against the RUNNING build**, not the source: with the old semantics restored, both projects fail at `kitchen-flow.spec.ts:513`, the banner assertion, after the non-vacuity poll confirmed throttling really fired. The break was proven to have **shipped** — a marker string carried into the toast text, read back out of the served `.next` bundle at 2 and at 0 after the restore, with the fix's own string still at 2. Restored file hash-verified against HEAD.
+- **`:339` passing is not evidence the fix tolerates refusals** — in the green re-run it saw `38 × 200`, so the condition simply did not recur. It is budget-dependent and cannot be the regression test; the injected-429 test is.
+- Full E2E **174 passed / 8 skipped / 0 failed of 182**; jest 91 suites / 791 tests; `npm run build` exit 0; 26/26 repo + 6/6 k8s gates rc=0.
+- **Not fixed here, and worth its own decision:** this makes the board *tolerant* of refusals without reducing them. A 40-ticket board would cost 41 requests against 100/min for the whole tenant — bounded concurrency or a batch detail endpoint is the actual remedy.
+
 ### "Your other shop are not on this screen" — the singular branch kept the plural verb (#559) — 2026-08-05
 
 `KdsAllShopsNotice`'s `shopCount === 2` branch rendered a singular noun with a plural verb, so a vendor with exactly two shops read it on every visit to the KDS in the All-shops context.
