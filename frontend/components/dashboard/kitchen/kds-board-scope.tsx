@@ -25,15 +25,45 @@ import { Store, Info } from "lucide-react"
  *   `KdsAllShopsNotice` why isn't this all of it?  — only in the All-shops context.
  */
 
-export function KdsBoardShopName({ shopName }: { shopName: string | null }) {
+/**
+ * #556 — the loading state is a THIRD state, and it used to borrow the empty one's voice.
+ *
+ * `kitchen/page.tsx` renders this twice: once in the loading early-return and once in the
+ * loaded body. Both passed through the branch below, so while data was in flight the
+ * header said **"No shop selected"** — which is not merely unhelpful, it is false. A
+ * vendor whose shop is loading reads that the board has no shop, and a screen reader
+ * announces it as settled fact.
+ *
+ * It also broke tests in a way that looked like a product bug. Both renders carried the
+ * same `data-testid`, and Next server-renders this client component's loading state and
+ * swaps it after hydration, so both trees are briefly in the DOM. Playwright strict mode
+ * then found two elements and resolved the stale one — reproducibly on desktop, and
+ * intermittently on mobile, which is the worst combination to diagnose.
+ *
+ * So `loading` is now explicit and carries its OWN testid. The three states are
+ * distinguishable by any consumer — a test, a screen reader, a future component — rather
+ * than only by which of two identical hooks you happened to grab.
+ */
+export function KdsBoardShopName({
+  shopName,
+  loading = false,
+}: {
+  shopName: string | null
+  loading?: boolean
+}) {
   return (
     <p
-      data-testid="kds-board-shop"
+      // Distinct testid per state, deliberately. A single id spanning "still loading" and
+      // "loaded, nothing selected" cannot express the difference, and that is exactly the
+      // ambiguity #556 was filed for.
+      data-testid={loading ? "kds-board-shop-loading" : "kds-board-shop"}
       className="mt-1 flex items-center gap-2 text-slate-600"
     >
       <Store aria-hidden className="h-4 w-4 flex-shrink-0" />
       <span>
-        {shopName ? (
+        {loading ? (
+          "Loading shop…"
+        ) : shopName ? (
           <>
             Showing tickets for{" "}
             <span className="font-semibold text-slate-900">{shopName}</span>

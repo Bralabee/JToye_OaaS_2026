@@ -460,11 +460,23 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
       "Showing tickets for Test Shop"
     )
 
+    // #556: a SETTLED board carries exactly one of these. It previously carried two —
+    // the loading header and the loaded header shared a testid, and Next server-renders
+    // this client component's loading state and swaps it after hydration, so both trees
+    // were briefly in the DOM. Strict mode then resolved the stale one ("No shop
+    // selected"). Asserting the count, not just visibility, is what stops the duplicate
+    // coming back: `toBeVisible()` on a strict locator fails with a confusing
+    // strict-mode error, whereas this names the actual problem.
+    await expect(page.getByTestId("kds-board-shop")).toHaveCount(1)
+    // ...and the loading placeholder is gone once settled, so the two cannot overlap.
+    await expect(page.getByTestId("kds-board-shop-loading")).toHaveCount(0)
+
     // The fixture tenant has exactly one shop, so there is no mismatch to explain and
     // the notice must NOT appear. Asserting the quiet case as well as the loud one is
     // what stops the notice becoming permanent furniture.
     await page.evaluate(() => window.localStorage.setItem("shopContext", "all"))
     await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByTestId("kds-board-shop")).toHaveCount(1)
     await expect(page.getByTestId("kds-board-shop")).toBeVisible()
     const notice = page.getByTestId("kds-all-shops-notice")
     await expect(notice).toContainText("one shop at a time")
