@@ -88,7 +88,16 @@ export function KdsFeedPill({
   const Icon = tone.Icon
   return (
     <div
-      data-testid="kds-feed-pill"
+      // Distinct testid while pending, for the reason #556 gave for
+      // `KdsBoardShopName`: Next streams the page into a `<div hidden id="S:0">` and
+      // swaps it in, so for a few milliseconds the fallback and the streamed copy are
+      // BOTH in the DOM. Measured on the live stack once the header started rendering
+      // from the first paint: `getByTestId('kds-feed-pill')` resolved to 2 elements and
+      // e2e/kitchen-flow.spec.ts failed strict mode — intermittently, on mobile only,
+      // which is the worst way to find out. Both transient copies are the PENDING state
+      // (the server always renders it), so splitting the testid makes the settled one
+      // unique by construction rather than by luck.
+      data-testid={pending ? "kds-feed-pill-pending" : "kds-feed-pill"}
       className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5"
     >
       <span
@@ -107,10 +116,7 @@ export function KdsFeedPill({
           gains a third line. The board and everything under it then move 46px, which
           is a layout shift attributable to a status label. `min-w` (not a fixed `w`)
           so a longer localisation grows the pill rather than clipping it. */}
-      <span
-        className={`min-w-[5.5rem] text-sm font-semibold ${tone.text}`}
-        data-testid="kds-feed-pill-label"
-      >
+      <span className={`min-w-[5.5rem] text-sm font-semibold ${tone.text}`}>
         {tone.label}
       </span>
       <span className="min-w-[4rem] text-sm tabular-nums text-slate-600">

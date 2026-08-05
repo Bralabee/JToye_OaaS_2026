@@ -66,7 +66,7 @@ describe("KdsFeedPill", () => {
     // feed-state.ts asserted in a comment that the pill "occupies the same box in
     // every state"; it did not, and this is the assertion that makes it true.
     render(<KdsFeedPill state={state()} lastSyncedAt={NOW} />)
-    expect(screen.getByTestId("kds-feed-pill-label").className).toMatch(/min-w-\[/)
+    expect(screen.getByText("Live").className).toMatch(/min-w-\[/)
     const clock = screen.getByText(/\d{2}:\d{2}:\d{2}/)
     expect(clock.className).toMatch(/min-w-\[/)
   })
@@ -80,9 +80,12 @@ describe("KdsFeedPill", () => {
     const cold = state({ connected: false, lastSyncedAt: null })
     expect(cold.status).toBe("offline")
     render(<KdsFeedPill state={cold} lastSyncedAt={null} pending />)
-    const pill = screen.getByTestId("kds-feed-pill")
+    const pill = screen.getByTestId("kds-feed-pill-pending")
     expect(pill).toHaveTextContent("Connecting")
     expect(pill).not.toHaveTextContent("Offline")
+    // The settled testid must NOT be present — #556's rule, and the reason
+    // e2e/kitchen-flow.spec.ts can use a strict locator for it.
+    expect(screen.queryByTestId("kds-feed-pill")).not.toBeInTheDocument()
   })
 
   it("reverts to the honest derived status the moment pending ends", () => {

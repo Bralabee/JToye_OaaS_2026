@@ -684,13 +684,17 @@ describe("KitchenPage", () => {
     // print + mute appeared together mid-load and pushed the whole board down 108px.
     stubApi([])
     render(<KitchenPage />)
-    // Synchronously, before any promise resolves:
-    expect(screen.getByTestId("kds-feed-pill")).toBeInTheDocument()
+    // Synchronously, before any promise resolves. The pill carries its PENDING testid
+    // here (#556's rule — the streamed and swapped-in copies must not collide).
+    expect(screen.getByTestId("kds-feed-pill-pending")).toBeInTheDocument()
     expect(screen.getByTitle(/Mute alerts|Unmute alerts/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /print all/i })).toBeInTheDocument()
-    // And the pill says it is starting rather than claiming the feed is Offline.
-    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Connecting")
+    // And it says it is starting rather than claiming the feed is Offline.
+    expect(screen.getByTestId("kds-feed-pill-pending")).toHaveTextContent("Connecting")
     await screen.findByText(/No active orders/i)
+    // Once settled it is the canonical testid, and the pending one is gone.
+    expect(screen.getByTestId("kds-feed-pill")).toBeInTheDocument()
+    expect(screen.queryByTestId("kds-feed-pill-pending")).not.toBeInTheDocument()
   })
 
   // --- #450 5d, the half PR #535 left open ---
