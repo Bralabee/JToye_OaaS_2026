@@ -69,7 +69,7 @@ nightly could reach**. Conflating those would have produced the wrong fix three 
 
 | failures | test | verdict |
 |---|---|---|
-| 4 | `storefront-flows` checkout + Mailhog | **pre-existing**, not the train — see #538 below |
+| 4 | `storefront-flows` checkout + Mailhog | **pre-existing**, not the train (#538) — but see "The SECOND nightly" below: #539 fixed the NPE and the tests still failed, on `.env.example` (#543) |
 | 2 | `public-layout` modal shape | **#537 fallout** — see the stub hazard below |
 | (+1 local only) | `storefront-flows:155` menu loads | **a real flake**, measured 10/25 and 7/12 |
 
@@ -81,6 +81,57 @@ the browser, so against a live backend the fixture slug `test-kitchen` gets an a
 `notFound()` → **no dish cards exist** → `locator.click` waits out 60s. The failure screenshot is a
 "Shop not found" page. Fixed in #540 (tests only — `notFound()` on a missing slug is correct).
 
+
+#### The SECOND nightly, and why "fixed" was the wrong word for the checkout half
+
+Run `30964857894` on `1112ff15`, dispatched after #539 and #540 merged:
+
+```
+total=180  passed=169  failed=4  skipped=7      (was 167 / 6)
+```
+
+**#540 worked** — both modal failures gone. **#539 worked too, at what it targeted**: the
+`Order.getId() is null` NPE occurs **0 times** in this run's stack logs, against 2 in the previous
+one. But the four checkout failures survived, with an identical symptom
+(`getByRole('heading', { name: 'Order confirmed!' })` never appears) and a *different* cause:
+
+```
+java.lang.RuntimeException: Payment processing unavailable. Please try again later.
+	at uk.jtoye.core.storefront.PublicStorefrontService.createGuestOrder(PublicStorefrontService.java:576)
+```
+
+That is the catch block rethrowing a `StripeException` — the code now persists the order, reaches
+Stripe correctly, and fails because **CI had a Stripe key that was not a real one**.
+
+**Where CI got a key from, given the workflow never sets one.** `e2e-nightly.yml` does
+`cp .env.example .env`, and `.env.example` carried:
+
+```
+STRIPE_API_KEY=               # sk_test_... from Stripe dashboard
+```
+
+**Docker Compose treats an inline comment as part of the value.** Measured with a two-service probe:
+that line resolves to `STRIPE_API_KEY: '# sk_test_... from Stripe dashboard'`, while a bare `VAR=`
+resolves to `""` and `CONTROL_SET=realvalue` resolves normally — so the probe discriminates.
+`isConfigured()` is `apiKey != null && !apiKey.isBlank()`, so a **comment was a credential**.
+
+Four variables had that shape, all of them "leave blank unless you have a key" flags:
+`ANTHROPIC_API_KEY`, `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`. Fixed in **#543**.
+
+**The correction worth carrying: the product was right on both runs and the environment was lying
+about being configured.** #538 was a genuine defect and #539 genuinely fixed it — but the thing that
+*surfaced* it, and then kept the test red afterwards, was `.env.example`. A run that fails twice for
+two different reasons is not the same as a fix that did not work, and reading it that way would have
+sent someone back into `PublicStorefrontService` for a third time.
+
+**Still not established, and #543 does not change it:** with the key genuinely empty, checkout returns
+to the COD fallback, so the **card path remains unexercised**. Proving it needs a real Stripe test key
+— the same owner decision that gates Phase 30.
+
+**Expect on the next dispatch:** `failed=0`. If checkout is still red after #543, the cause is a third
+one and the `.env` resolution should be checked first — read the value the container actually got, not
+the file.
 #### The hazard #540 worked around but did NOT fix — this scales, and it fails silently
 
 **A browser-level API stub cannot describe a server-rendered route.** The consequence is worse than a
@@ -156,7 +207,7 @@ fallout). Closed: **#517 #446 #272 #454 #105 #106 #447 #538**. Filed and open: *
 |---|---|
 | runtime | 4/4 FRESH after rebuild; #539 proven in the running jar (`Idempotency` ×2 in `PaymentService.class`, was 0, negative control 0); #537 proven by served HTML (`/shop/brixton-village-grill` 91,745 B, 1 `<h1>`, 1 canonical, 1 JSON-LD, 16 `og:`; `/robots.txt` 200, was 404) |
 | local specs | `public-layout` + `storefront-flows` **52 passed** against the rebuilt stack — all three previously-failing tests green |
-| nightly | run `30964857894` dispatched on `1112ff15`; **its result is the thing to read first next session** |
+| nightly | run `30964857894` = **180/169/4/7**. #540 fixed; #539 fixed its NPE (0 occurrences, was 2); checkout still red on `.env.example` — #543, OPEN. **Re-dispatch after #543 merges; expect failed=0** |
 | Keycloak | dev drift removed — `:3102`/`:3103` gone from `jtoye-dev`/`core-api`, proven by rejecting those redirect_uris while `:3000`/`:3100` still return a login page. **Realms are `jtoye-dev` and `jtoye-customers`; a probe against `jtoye` returns `Realm not found`, which reads exactly like "no drift"** |
 
 
