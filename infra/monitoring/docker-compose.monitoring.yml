@@ -52,6 +52,13 @@ services:
       # management port) vs the app port in dev/compose. This Prometheus serves the
       # compose runtime, hence the 9090 default. See prometheus/entrypoint.sh.
       - CORE_JAVA_METRICS_PORT=${CORE_JAVA_METRICS_PORT:-9090}
+      # The edge gateway's scrape port (issue #550). Same key, same default, as
+      # the EDGE_MANAGEMENT_PORT line in docker-compose.full-stack.yml's edge-go
+      # service — one .env value feeds both sides, so the listener and the scrape
+      # target cannot drift. The edge serves /metrics on the management port OR
+      # the app port, never both, so a mismatch here is a DOWN target, not a
+      # duplicate. See prometheus/entrypoint.sh.
+      - EDGE_GO_METRICS_PORT=${EDGE_GO_METRICS_PORT:-9101}
     volumes:
       # Only the template and the wrapper are mounted. The rendered prometheus.yml is
       # written into the container's own /etc/prometheus, which is writable by the

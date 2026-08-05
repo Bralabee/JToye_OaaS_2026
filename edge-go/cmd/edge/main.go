@@ -27,6 +27,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -63,6 +64,72 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	return token, true
+}
+
+// resolveManagementPort normalises and validates EDGE_MANAGEMENT_PORT.
+//
+// An empty value is legal and means "serve /metrics on the application port" —
+// the pre-#442 behaviour, kept as the default so an operator who supplies
+// nothing loses no scrape (k8s is exactly that case: it ships no Prometheus,
+// and k8s/base/edge-go-deployment.yaml still annotates prometheus.io/port 8080).
+//
+// Anything else must be a real port. Returning an error rather than logging
+// here keeps the function pure and testable; main turns it into a Fatal. That
+// is deliberate: a set-but-malformed value already removes /metrics from the
+// application router, so limping on would leave the gateway with no scrape
+// endpoint at all and no explanation. Fail loudly at boot instead — the same
+// fail-fast the Prometheus entrypoint applies to the other half of this pair.
+func resolveManagementPort(raw string) (string, error) {
+	port := strings.TrimSpace(raw)
+	if port == "" {
+		return "", nil
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return "", fmt.Errorf("EDGE_MANAGEMENT_PORT must be an integer 1-65535, got %q: %w", port, err)
+	}
+	if n < 1 || n > 65535 {
+		return "", fmt.Errorf("EDGE_MANAGEMENT_PORT must be an integer 1-65535, got %d", n)
+	}
+	return port, nil
+}
+
+// registerAppMetricsRoute wires the Prometheus scrape endpoint onto the
+// APPLICATION router, and only when no management port is configured. It
+// reports whether it registered the route, so the caller can log which of the
+// two topologies is live.
+//
+// issue #550 (SEC-02 / C4): the published application port is a named app-tier
+// exemption bound on all interfaces, so an unauthenticated /metrics there
+// discloses the gateway's route templates to anyone who can reach the host.
+// docker-compose.full-stack.yml now supplies EDGE_MANAGEMENT_PORT, which moves
+// the route to the management listener below; the Prometheus scrape target is
+// moved in the same change (infra/monitoring/prometheus/prometheus.yml.tmpl).
+//
+// The engine is taken concretely rather than as gin.IRoutes because the caller
+// that matters most — the test — asks the router what it registered via
+// Routes(), which only *gin.Engine exposes. An interface here would hide the
+// one question worth asking.
+func registerAppMetricsRoute(r *gin.Engine, managementPort string) bool {
+	if managementPort != "" {
+		return false
+	}
+	r.GET("/metrics", metricsHandler())
+	return true
+}
+
+// newManagementRouter builds the listener that serves ONLY /metrics.
+//
+// It gets its own gin engine rather than reusing the application one: that
+// engine carries the process-wide rate limiter and the request-metrics
+// middleware, and a scrape must never be rate-limited (dropped samples make the
+// alerting layer flap) nor recorded as application traffic (the scrape would
+// appear in the very series it is collecting).
+func newManagementRouter() *gin.Engine {
+	mgmtRouter := gin.New()
+	mgmtRouter.Use(gin.Recovery())
+	mgmtRouter.GET("/metrics", metricsHandler())
+	return mgmtRouter
 }
 
 // rateLimiter is a single, process-wide token-bucket used purely as a coarse
@@ -198,21 +265,26 @@ func main() {
 	// Prometheus scrape endpoint. Public (no JWT) so Prometheus can scrape it;
 	// exposes only aggregate, low-cardinality series (see metrics.go).
 	//
-	// issue #442 [SEC-02 / F-M7]: when EDGE_MANAGEMENT_PORT is set, this route is
-	// served ONLY on that separate listener (below) and is deliberately absent
-	// here, so it is not reachable on the published application port. Mirrors
-	// core-java's management.server.port so one mental model covers both runtimes.
+	// issue #442 [SEC-02 / F-M7] built the switch; issue #550 [SEC-02 / C4] turns it
+	// on for compose. When EDGE_MANAGEMENT_PORT is set, this route is served ONLY on
+	// the separate management listener (below) and is deliberately absent here, so it
+	// is not reachable on the published application port. Mirrors core-java's
+	// management.server.port so one mental model covers both runtimes.
 	//
-	// UNSET => this route stays exactly where it was. That default is load-bearing:
-	// the local scrape config targets the app port with NO credentials, so any
-	// change that moved or gated this route unconditionally would silently blind
-	// the Phase 27 alerting layer — the failure the issue's own criteria warn about.
+	// UNSET => this route stays exactly where it was. That default is still
+	// load-bearing for any runtime whose scrape config targets the app port with no
+	// credentials; the compose scrape target moved to the management port in the same
+	// change that set the variable, so the two can never disagree.
 	//
 	// /health and /ready deliberately stay on the main port either way: the kubelet
 	// probes target them there, and moving them would fail every rollout.
-	managementPort := getEnv("EDGE_MANAGEMENT_PORT", "")
-	if managementPort == "" {
-		r.GET("/metrics", metricsHandler())
+	managementPort, err := resolveManagementPort(os.Getenv("EDGE_MANAGEMENT_PORT"))
+	if err != nil {
+		logger.Fatal("Invalid EDGE_MANAGEMENT_PORT", zap.Error(err))
+	}
+	if registerAppMetricsRoute(r, managementPort) {
+		logger.Info("/metrics is served on the APPLICATION port — set EDGE_MANAGEMENT_PORT to move it to a separate listener",
+			zap.String("port", port))
 	}
 
 	// Documentation routes (/openapi.json + /docs) are registered here. The
@@ -245,22 +317,18 @@ func main() {
 	}()
 
 	// issue #442: the management listener. Serves ONLY /metrics, and only when
-	// EDGE_MANAGEMENT_PORT is set — so this whole block is inert by default and
-	// the dev stack is byte-for-byte unchanged.
+	// EDGE_MANAGEMENT_PORT is set — inert when it is not, so a runtime that
+	// supplies nothing keeps the pre-#442 topology. See newManagementRouter for
+	// why it does not reuse `r`.
 	//
-	// It gets its own gin engine rather than reusing `r`: the main engine carries
-	// the process-wide rate limiter and the request-metrics middleware, and a
-	// scrape must never be rate-limited (that would drop samples and make the
-	// alerting layer flap) nor recorded as application traffic (the scrape would
-	// appear in the very series it is collecting).
+	// The port is deliberately NOT published to the host in
+	// docker-compose.full-stack.yml: Prometheus reaches it over the compose
+	// network, and publishing it would recreate the exposure #550 is closing.
 	var mgmtSrv *http.Server
 	if managementPort != "" {
-		mgmtRouter := gin.New()
-		mgmtRouter.Use(gin.Recovery())
-		mgmtRouter.GET("/metrics", metricsHandler())
 		mgmtSrv = &http.Server{
 			Addr:    ":" + managementPort,
-			Handler: mgmtRouter,
+			Handler: newManagementRouter(),
 		}
 		logger.Info("Management listener starting — /metrics is served here ONLY, not on the application port",
 			zap.String("management_port", managementPort))
