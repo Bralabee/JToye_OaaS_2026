@@ -358,15 +358,19 @@ class PaymentServiceTest {
         when(mockIntent.getClientSecret()).thenReturn("pi_dest_1_secret_x");
 
         try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
-            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
                     .thenReturn(mockIntent);
 
-            String clientSecret = paymentService.createPaymentIntent(testOrder);
-            assertEquals("pi_dest_1_secret_x", clientSecret);
+            PaymentIntentResult result = paymentService.createPaymentIntent(testOrder);
+            assertEquals("pi_dest_1_secret_x", result.clientSecret());
+            assertEquals("pi_dest_1", result.paymentIntentId(),
+                    "#538: the caller needs the PaymentIntent id to persist on the order");
 
             ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
                     ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
-            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+            piMock.verify(() -> PaymentIntent.create(captor.capture(),
+                    any(com.stripe.net.RequestOptions.class)));
             com.stripe.param.PaymentIntentCreateParams params = captor.getValue();
 
             assertEquals(1500L, params.getAmount());
@@ -390,14 +394,16 @@ class PaymentServiceTest {
         when(mockIntent.getClientSecret()).thenReturn("pi_secret");
 
         try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
-            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
                     .thenReturn(mockIntent);
 
             paymentService.createPaymentIntent(testOrder);
 
             ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
                     ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
-            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+            piMock.verify(() -> PaymentIntent.create(captor.capture(),
+                    any(com.stripe.net.RequestOptions.class)));
 
             assertNotNull(captor.getValue().getTransferData());
             assertNull(captor.getValue().getApplicationFeeAmount());
@@ -417,20 +423,84 @@ class PaymentServiceTest {
         when(mockIntent.getClientSecret()).thenReturn("pi_secret");
 
         try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
-            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class)))
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
                     .thenReturn(mockIntent);
 
             paymentService.createPaymentIntent(testOrder);
 
             ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> captor =
                     ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
-            piMock.verify(() -> PaymentIntent.create(captor.capture()));
+            piMock.verify(() -> PaymentIntent.create(captor.capture(),
+                    any(com.stripe.net.RequestOptions.class)));
 
             assertNull(captor.getValue().getTransferData());
             assertNull(captor.getValue().getApplicationFeeAmount());
             assertEquals(1500L, captor.getValue().getAmount());
             assertEquals("gbp", captor.getValue().getCurrency());
             verify(stripeConnectService, never()).applicationFeePennies(anyLong());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // issue #538 — persist-before-pay + Stripe idempotency
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("#538: createPaymentIntent REFUSES a transient (unsaved) order instead of NPE-ing on its null id")
+    void createPaymentIntent_transientOrder_isRejected() {
+        // The exact shape of the production defect: an Order built in memory and
+        // handed to Stripe before orderRepository.save assigned it an id. Before
+        // the fix this threw NullPointerException from inside a metadata builder
+        // (PaymentService.java:126) and surfaced as an opaque 500; now it is a
+        // named failure that says what the caller did wrong.
+        Order transientOrder = new Order();
+        transientOrder.setTenantId(tenantId);
+        transientOrder.setOrderNumber("ORD-TRANSIENT-0001");
+        transientOrder.setTotalAmountPennies(1500L);
+        assertNull(transientOrder.getId(), "precondition: the order under test must be unsaved");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> paymentService.createPaymentIntent(transientOrder));
+            assertTrue(ex.getMessage().contains("persisted order"), ex.getMessage());
+
+            // The strongest half: Stripe is never reached at all, so no intent
+            // can be orphaned by a caller that got the ordering wrong.
+            piMock.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    @DisplayName("#538: createPaymentIntent sends an Idempotency-Key derived from the order id (SDK retries default to 2)")
+    void createPaymentIntent_sendsIdempotencyKeyDerivedFromOrderId() throws Exception {
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.empty());
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getClientSecret()).thenReturn("pi_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            paymentService.createPaymentIntent(testOrder);
+
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.create(
+                    any(com.stripe.param.PaymentIntentCreateParams.class), optionsCaptor.capture()));
+
+            // Stripe.maxNetworkRetries defaults to 2 and the SDK only emits an
+            // Idempotency-Key header when the caller supplies one — it never
+            // generates one — so without this a single checkout could leave three
+            // PaymentIntents at Stripe. Asserted against the production
+            // expression, not a copy of it, so the two cannot drift apart.
+            assertEquals(PaymentService.intentIdempotencyKey(testOrder),
+                    optionsCaptor.getValue().getIdempotencyKey());
+            assertTrue(optionsCaptor.getValue().getIdempotencyKey().contains(orderId.toString()),
+                    "the key must be derived from the order id, which is stable for this order's life");
         }
     }
 
