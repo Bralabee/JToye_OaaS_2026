@@ -426,6 +426,38 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await context.unroute("**/ws**")
     await context.unroute(`${API}/api/v1/shops**`)
 
+    // THE TWO LIVE READS THAT REMAIN, MADE RESILIENT — fixture setup, not the behaviour
+    // under test. `/shops` gives the real tenant/shop the STOMP topic is built from, and
+    // `fetchAllMyShops` reads `/staff/me` on the same path, so a refusal of EITHER leaves
+    // `selectedShopId` null: no read, no topic, no socket, and the pill reads "Offline —"
+    // for a reason that has nothing to do with what this test asserts.
+    //
+    // That is not hypothetical. Measured 2026-08-05 on the post-merge suite run:
+    //     0.00  429  RA=9  /api/v1/shops?page=0&size=200
+    //     0.00  429  RA=9  /api/v1/staff/me
+    // — because this test runs immediately after the spec above, which spends 38 real
+    // requests, against a bucket refilled in ONE LUMP per minute.
+    //
+    // So the refusal is waited out rather than allowed to masquerade as a product
+    // failure. Bounded (3 attempts, cap 12s each) and LOUD if it runs out, because a
+    // fixture read that quietly gives up is how a budget problem gets re-diagnosed as a
+    // banner problem — twice, in this issue's own history.
+    const resilientRead = async (route: import("@playwright/test").Route) => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const res = await route.fetch()
+        if (res.status() !== 429) return route.fulfill({ response: res })
+        const retryAfter = Math.min(Number(res.headers()["retry-after"] ?? 5) || 5, 12)
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000))
+      }
+      throw new Error(
+        `[#561] ${route.request().url()} stayed 429 across 3 attempts — the tenant rate ` +
+          `budget was exhausted by earlier specs. This is this test's FIXTURE setup, not ` +
+          `the offline-banner behaviour it asserts.`
+      )
+    }
+    await page.route(/\/api\/v1\/shops/, resilientRead)
+    await page.route(/\/api\/v1\/staff\/me/, resilientRead)
+
     // Four tickets, so "some refused, some not" is genuinely partial. Page-level routes
     // are matched before context-level ones, so these win over the beforeEach stubs.
     const TICKETS = ["kds-561-1", "kds-561-2", "kds-561-3", "kds-561-4"]
