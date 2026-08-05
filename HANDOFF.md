@@ -808,11 +808,18 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 25 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+# EXPECT 26 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
-#   BACKUP image to postgres:18 against a 15 server with every CI check green.)
-# MEASURED 2026-08-04 after the Wave-1 train + a runtime sync: 24/24 rc=0.
+#   BACKUP image to postgres:18 against a 15 server with every CI check green.
+#   25 -> 26: check-gate-enforcement.sh (#553), after SIX of the 24 check-*.sh
+#   were measured to have ZERO references in .github/workflows/ — three of them
+#   gates written to stop a specific defect recurring, and incapable of firing
+#   on a PR. That gate now fails the build if a new one is added unwired.)
+# MEASURED 2026-08-05 on the #553 branch: 23/26 rc=0 — the three non-zero being
+#   check-alert-metrics (1, standing seed remedy), check-e2e-skip-budget (2 VOID,
+#   stale stored report) and check-handoff-contract (1, this document's own
+#   #420 claim, corrected in #541).
 # If check-runtime-freshness is 1 -> you changed source: bash scripts/sync-runtime.sh
 # If check-alert-metrics    is 1 -> core-java was recreated: bash scripts/seed-order-metric.sh
 #    (this fires EVERY time core-java is recreated; observed rc=1 -> seed -> rc=0 on 2026-08-04)
