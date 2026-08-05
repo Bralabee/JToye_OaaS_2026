@@ -93,20 +93,54 @@ export async function fetchActiveKitchenOrders(
   return { orders, pagesRead: MAX_KITCHEN_ORDER_PAGES, truncated: true }
 }
 
+export interface KitchenOrderDetails {
+  /** The details that came back. */
+  details: OrderDetail[]
+  /** Order ids whose detail request failed. Empty on a clean read. */
+  failedIds: string[]
+}
+
 /**
  * Fetch the full detail (line items, customer, address) for each active order.
  *
  * Split out from {@link fetchActiveKitchenOrders} so the paging contract can be
  * tested without also stubbing N detail endpoints.
+ *
+ * WHY `allSettled` AND NOT `all` (#561). This issues ONE REQUEST PER ACTIVE TICKET,
+ * concurrently, and the board's full refresh path is taken on every reconnect, shop
+ * switch, manual refresh and — the one that matters — the `online` handler. On a board
+ * of eighteen that is nineteen requests in a burst, and an offline blip fires the burst
+ * twice inside half a second, against a tenant bucket of
+ * `capacity(120).refillIntervally(100, 1min)`. Measured on the live stack: ten of those
+ * came back **429** with `Retry-After: 12`.
+ *
+ * Under `Promise.all` a single refusal rejected the WHOLE read — the list request that
+ * succeeded, and the eight details that succeeded, all discarded. The page recorded a
+ * failed sync and raised "Orders are not refreshing" over data it was still holding,
+ * with nothing to retry for up to a minute. A warning that outlives its cause is how a
+ * kitchen learns to ignore warnings.
+ *
+ * So a partial failure is reported as a partial failure and the caller decides. The
+ * caller can re-use the detail it already holds; only a ticket with NO detail at all is
+ * a genuinely incomplete board, and that must still be said out loud.
  */
 export async function fetchKitchenOrderDetails(
   orders: Order[]
-): Promise<OrderDetail[]> {
-  return Promise.all(
+): Promise<KitchenOrderDetails> {
+  const settled = await Promise.allSettled(
     orders.map((o) =>
       apiClient
         .get<OrderDetail>(`/api/v1/orders/${o.id}/detail`)
         .then((r) => r.data)
     )
   )
+
+  const details: OrderDetail[] = []
+  const failedIds: string[] = []
+  settled.forEach((result, i) => {
+    if (result.status === "fulfilled") details.push(result.value)
+    else failedIds.push(orders[i].id)
+  })
+
+  return { details, failedIds }
 }

@@ -387,6 +387,84 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
   })
 
   // ---------------------------------------------------------------------------
+  // #561 — the same banner, but the failure FORCED rather than inherited.
+  //
+  // The test above was red in the full suite and green on its own, and the
+  // difference was never about the test: a board of eighteen tickets refreshes with
+  // ONE list request plus one `/detail` per ticket, so the `online` handler's full
+  // resync fires 19 requests at once, twice inside half a second. Against a tenant
+  // bucket of `capacity(120).refillIntervally(100, 1min)` — one lump per minute —
+  // whatever the rest of the suite spent in the same window decides whether those
+  // land. Measured: 38x200 with 79 tokens to spare in isolation; 28x200 + 10x429
+  // with `Retry-After: 12` and 0 remaining after three specs had run first.
+  //
+  // Suite ordering is not a test contract, so this asserts the property directly.
+  // The 429s are INJECTED here, which is what makes the test deterministic on a
+  // quiet stack and independent of how much budget the specs before it spent.
+  // ---------------------------------------------------------------------------
+
+  test("a partial 429 on the recovery refresh still clears the offline banner", async ({
+    page,
+    context,
+  }) => {
+    await context.unroute("**/ws**")
+    await context.unroute(`${API}/api/v1/shops**`)
+    await context.unroute(`${API}/api/v1/orders?**`)
+    await context.unroute(`${API}/api/v1/orders/*/detail`)
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+
+    const pill = page.getByTestId("kds-feed-pill")
+    await expect(pill).toContainText("Live", { timeout: 20_000 })
+    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+
+    // Throttling starts only AFTER the first read has landed, which is the state the
+    // defect actually occurs in: the board is holding current detail for every ticket
+    // and is merely re-reading it. Throttling from the first load would be a different
+    // (and genuinely incomplete) board, and the page is required to keep saying so.
+    const throttled: string[] = []
+    let seen = 0
+    await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
+      seen += 1
+      // Every other one: a PARTIAL failure. All of them would be a total outage, which
+      // is a different state with a different correct answer.
+      if (seen % 2 === 0) {
+        throttled.push(route.request().url())
+        return route.fulfill({
+          status: 429,
+          contentType: "application/problem+json",
+          headers: { "Retry-After": "12", "X-RateLimit-Remaining": "0" },
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "Too Many Requests",
+            status: 429,
+            detail: "Rate limit exceeded",
+          }),
+        })
+      }
+      return route.continue()
+    })
+
+    await context.setOffline(true)
+    const banner = page.getByTestId("kds-feed-banner")
+    await expect(banner).toBeVisible({ timeout: 15_000 })
+
+    await context.setOffline(false)
+
+    // NON-VACUITY, asserted before the thing it qualifies: if no request was ever
+    // throttled then a cleared banner proves nothing at all — it would only be saying
+    // that an unobstructed refresh works, which the test above already covers.
+    await expect
+      .poll(() => throttled.length, { timeout: 20_000 })
+      .toBeGreaterThan(0)
+
+    // The board holds a detail for every ticket, so the refresh is COMPLETE even though
+    // part of it was refused. It has to stop warning.
+    await expect(banner).toHaveCount(0, { timeout: 20_000 })
+    await expect(pill).toContainText("Live")
+  })
+
+  // ---------------------------------------------------------------------------
   // #105 — a kitchen ticket can be printed, and it is the PRINT stylesheet that
   // makes it a ticket. Asserted under `emulateMedia({ media: "print" })`, because a
   // screen screenshot says nothing about `@media print`.
