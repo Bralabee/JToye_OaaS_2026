@@ -160,12 +160,19 @@ public class TenantChannelInterceptor implements ExecutorChannelInterceptor {
             throw new MessageDeliveryException("Invalid tenant ID in destination: " + tenantWord);
         }
 
-        // CR-02: the tenant wall above is not enough for the KDS kitchen topic, whose
-        // {shopId} word carries live order state changes for ONE shop. A subscriber granted
-        // only shop A could otherwise SUBSCRIBE to shop B's feed within its own tenant.
-        // Grant-check the shop word AFTER the tenant check has passed, so a cross-tenant
-        // subscribe still fails with the cross-tenant message, not a shop one.
-        if (KITCHEN_FEATURE.equals(parts[StompDestinations.FEATURE_WORD])) {
+        // CR-02: the tenant wall above is not enough for a topic whose {shopId} word carries
+        // live state for ONE shop. A subscriber granted only shop A could otherwise SUBSCRIBE
+        // to shop B's feed within its own tenant. Grant-check the shop word AFTER the tenant
+        // check has passed, so a cross-tenant subscribe still fails with the cross-tenant
+        // message, not a shop one.
+        //
+        // #289: this was `KITCHEN_FEATURE.equals(...)`. Correct today — kitchen is the only
+        // shop-scoped topic — and DEFAULT-OPEN: a second shop-scoped feature would inherit the
+        // tenant wall and no shop check, silently. The membership test reads the registry in
+        // StompDestinations, and StompShopGateCoverageTest fails the build if a shop-scoped
+        // destination factory exists whose feature is not registered there. The omission is now
+        // detected rather than reviewed for.
+        if (StompDestinations.SHOP_SCOPED_FEATURES.contains(parts[StompDestinations.FEATURE_WORD])) {
             validateShopSubscription(accessor, sessionTenant, parts, destination);
         }
     }
