@@ -407,29 +407,54 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     page,
     context,
   }) => {
+    // Only two stubs are lifted, and each for a stated reason:
+    //   ws     — the pill cannot read "Live" without a real socket, and `connected` is
+    //            half of what clears the banner.
+    //   shops  — the STOMP topic is derived from the DATA. With the fixture shop the
+    //            page subscribes to a tenant that does not exist and the relay drops
+    //            the connection, so the pill sits on "Reconnecting" forever (measured,
+    //            see the test above).
+    //
+    // The ORDER stubs stay, replaced below with a bigger fixture. That is deliberate:
+    // the first version of this test read the live board, and a live 18-ticket board
+    // costs 19 requests to load and 19 more to refresh, against a tenant bucket of
+    // capacity(120) refilled in ONE LUMP per minute. Run after the specs that precede
+    // it, this test's own page load was refused and the pill read "Offline —" with a
+    // null stamp — it had become another instance of the very budget dependency it
+    // exists to remove. Stubbed, it costs the tenant nothing and cannot inherit
+    // anyone else's spending.
     await context.unroute("**/ws**")
     await context.unroute(`${API}/api/v1/shops**`)
-    await context.unroute(`${API}/api/v1/orders?**`)
-    await context.unroute(`${API}/api/v1/orders/*/detail`)
 
-    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    // Four tickets, so "some refused, some not" is genuinely partial. Page-level routes
+    // are matched before context-level ones, so these win over the beforeEach stubs.
+    const TICKETS = ["kds-561-1", "kds-561-2", "kds-561-3", "kds-561-4"]
+    await page.route(/\/api\/v1\/orders\?/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          pageOf(
+            TICKETS.map((id) => ({ ...orderSummaryResponse.content[0], id })),
+            route.request().url()
+          )
+        ),
+      })
+    )
 
-    const pill = page.getByTestId("kds-feed-pill")
-    await expect(pill).toContainText("Live", { timeout: 20_000 })
-    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
-
-    // Throttling starts only AFTER the first read has landed, which is the state the
+    // Throttling is armed only AFTER the first read has landed, which is the state the
     // defect actually occurs in: the board is holding current detail for every ticket
-    // and is merely re-reading it. Throttling from the first load would be a different
-    // (and genuinely incomplete) board, and the page is required to keep saying so.
-    const throttled: string[] = []
+    // and is merely re-reading it. Refusing the FIRST load is a different case — a
+    // genuinely incomplete board — and the page is still required to say so.
+    let throttling = false
     let seen = 0
+    const throttled: string[] = []
     await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
-      seen += 1
+      const id = route.request().url().match(/orders\/([^/]+)\/detail/)![1]
       // Every other one: a PARTIAL failure. All of them would be a total outage, which
       // is a different state with a different correct answer.
-      if (seen % 2 === 0) {
-        throttled.push(route.request().url())
+      if (throttling && ++seen % 2 === 0) {
+        throttled.push(id)
         return route.fulfill({
           status: 429,
           contentType: "application/problem+json",
@@ -442,8 +467,20 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
           }),
         })
       }
-      return route.continue()
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...orderDetailResponse, id }),
+      })
     })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+
+    const pill = page.getByTestId("kds-feed-pill")
+    await expect(pill).toContainText("Live", { timeout: 20_000 })
+    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+
+    throttling = true
 
     await context.setOffline(true)
     const banner = page.getByTestId("kds-feed-banner")

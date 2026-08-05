@@ -478,16 +478,24 @@ describe("KitchenPage", () => {
     const onReconnect = (useStomp as jest.Mock).mock.calls.at(-1)![2] as () => Promise<void>
     void onReconnect()
 
-    // Wait for the page's OWN signal that it took the partial-failure path, so this is
-    // not asserting the absence of a banner that had simply not appeared yet.
+    // Wait for the page's OWN signal that it took the partial-failure path. Without it
+    // this would assert the absence of a banner that had simply not appeared YET, which
+    // passes in both directions and proves nothing.
+    //
+    // It is also what this test fails on if the old semantics come back: treating any
+    // failed detail as a failed sync returns early, so the warning is never reached.
+    // Read a timeout here as "the board declared the whole read failed", not as a
+    // logging change.
     await waitFor(() =>
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("order-detail reads"))
     )
 
     // Both tickets still on the board, held detail standing in for the refused read...
     await waitFor(() => expect(screen.getAllByText("Alice")).toHaveLength(2))
-    // ...so there is nothing to warn about.
+    // ...so there is nothing to warn about. The pill is the direct expression of
+    // `syncFailed` and would read "Not updating" if the refusal had been fatal.
     expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Live")
     warn.mockRestore()
   })
 
