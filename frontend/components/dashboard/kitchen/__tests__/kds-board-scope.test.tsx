@@ -6,7 +6,11 @@
  * of three shops. Nothing on the page said so.
  */
 import { render, screen } from "@testing-library/react"
-import { KdsAllShopsNotice, KdsBoardShopName } from "../kds-board-scope"
+import {
+  KdsAllShopsNotice,
+  KdsBoardShopName,
+  KdsOtherShopNotice,
+} from "../kds-board-scope"
 
 describe("KdsBoardShopName", () => {
   it("names the shop whose tickets are on the board", () => {
@@ -113,5 +117,34 @@ describe("KdsAllShopsNotice", () => {
   it("is a status, not an alert — nothing here is broken or urgent", () => {
     render(<KdsAllShopsNotice shopName="Brixton Village Grill" shopCount={3} />)
     expect(screen.getByTestId("kds-all-shops-notice")).toHaveAttribute("role", "status")
+  })
+})
+
+/**
+ * #450 sub-item 5d, the half PR #535 left open: the dashboard names a SPECIFIC shop
+ * the kitchen board cannot show (it is unpublished, so it is not in the board's
+ * selector), the board silently falls back to another shop, and the two disagree with
+ * nothing on screen connecting them.
+ */
+describe("KdsOtherShopNotice", () => {
+  it("names the shop the board IS showing, and why it is not the one asked for", () => {
+    render(<KdsOtherShopNotice shopName="Brixton Village Grill" />)
+    const notice = screen.getByTestId("kds-other-shop-notice")
+    // Both halves matter. Without the name the operator cannot tell WHOSE tickets
+    // these are; without the reason they cannot tell what to do about it.
+    expect(notice).toHaveTextContent("Brixton Village Grill")
+    expect(notice).toHaveTextContent("published")
+  })
+
+  it("renders nothing before a shop has been resolved", () => {
+    // The reconciliation effect settles a render after the shop list lands. Rendering
+    // a mismatch notice in that gap would flash a warning that is not yet true.
+    render(<KdsOtherShopNotice shopName={null} />)
+    expect(screen.queryByTestId("kds-other-shop-notice")).not.toBeInTheDocument()
+  })
+
+  it("is a status, not an alert — the board is correct for the shop it names", () => {
+    render(<KdsOtherShopNotice shopName="Brixton Village Grill" />)
+    expect(screen.getByTestId("kds-other-shop-notice")).toHaveAttribute("role", "status")
   })
 })

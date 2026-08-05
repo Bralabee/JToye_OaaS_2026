@@ -106,8 +106,15 @@ export function deriveFeedState(input: FeedInputs): FeedState {
   //     whole ticket grid down and then lets it snap back.
   //
   // A read that FAILED is different: that is a fact about this load, not an absence of
-  // one, and it alerts immediately. The pill is unaffected either way — it always shows
-  // the honest status, and it occupies the same box in every state, so it cannot shift.
+  // one, and it alerts immediately. The pill still shows the honest status either way.
+  //
+  // The sentence that used to end this paragraph — "it occupies the same box in every
+  // state, so it cannot shift" — was WRONG, and #536 measured it wrong. The pill's box
+  // was sized to its current text, and a cold load goes "Offline —" -> "Live 14:32:07",
+  // which widened it enough to re-wrap the header's `flex-wrap` control row and move the
+  // board 46px. It is TRUE now because kds-feed-status.tsx reserves the widest label and
+  // a full clock (`min-w-[5.5rem]` / `min-w-[4rem]`), not because the states happen to
+  // be similar lengths.
   const settled = lastSyncedAt !== null || lastSyncFailed
 
   return { status, stale, ageMs, alerting: settled && (status !== "live" || stale) }

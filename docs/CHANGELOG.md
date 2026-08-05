@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The kitchen board reserved 16rem for something 4784px tall (#536, #450 5d) — 2026-08-05
+
+`/dashboard/kitchen` measured **CLS 0.8287** at the repo's declared throttle profile (390px `isMobile` + `hasTouch`, Fast-3G 1.5 Mbps / 40 ms, 4× CPU, the real API, an 18-ticket board), against a budget of 0.1. It is **0.0171** now — three runs each, same rig, same board, and the before number re-measured on this branch rather than quoted from #535.
+
+The mechanism was not the one the issue proposed. #536 attributed the residual to a placeholder sized wrong for the ticket count; measured, the single largest frame was **0.6593 of the 0.8287**, and it was the **shell footer**. `dashboard-shell.tsx` renders a footer directly under the board; the old 16rem band left it at y=797 in an 844px viewport, and the grid arriving shoved it 4574px down while it was still on screen. How many tickets the placeholder imitates changes nothing about that. Whether the reserve clears the fold changes everything.
+
+#### Fixed
+- **One reserved band — `min-h-[calc(100svh-11rem)]` — used by the loading, empty and populated board alike**, so the footer is below the fold from the first paint and stays there. A floor, never a ceiling: a bigger board grows past it with nothing in view moving, and a one-ticket board keeps it instead of letting the footer jump *up* into view. `svh` rather than `dvh` because a KDS is a wall screen and a reserve that breathes with a URL bar would reintroduce the shift.
+- **Ticket-shaped skeletons instead of a lone spinner**, clipped to the reserve so what they render can never decide the page's height.
+- **The header stopped growing 108px mid-load.** The `loading` early-return duplicated the header *without* its control row, so pill, selector, print and mute all appeared at once and pushed the board down. There is one header now — which also removes the duplication that produced #556 — and the selector renders disabled while the shop list is in flight.
+- **The status pill stopped re-wrapping the header.** Its box was sized to its current text, so "Offline —" → "Live 14:32:07" widened it enough to gain a third `flex-wrap` line and move the board 46px. `feed-state.ts` asserted in a comment that the pill "occupies the same box in every state"; that was false, and is now true by construction (`min-w` on the label and the clock).
+- **#450 sub-item 5d, the half PR #535 left open.** #535 closed the All-shops case. It did not close the case where the dashboard names a **specific** shop the board cannot show: the board lists published shops only (QA-council FIX-4), the switcher lists every granted shop, and picking an unpublished one — this tenant has two — silently degraded to `shops[0]`. The sidebar named one shop while the board showed another's tickets. The page's own comment called that "D-13" and told nobody; it now says so. **#450 stays open** — its backend items belong elsewhere.
+
+#### Notes
+- **A red "Offline" is no longer stretched across every cold load.** Rendering the header from the first paint would have shown `deriveFeedState`'s honest-but-premature `offline` for ~2.9 s instead of ~270 ms — the cry-wolf failure #535 removed from the banner. The pill shows "Connecting…" while the shop list is in flight; `deriveFeedState` is untouched, and the presentation is bounded by that fetch so it cannot sit over a genuinely dead socket.
+- **The `key` on each board branch is load-bearing.** React reconciles a conditional by position, so without distinct keys the four states are one node — and a node that *persists* while moving is an unstable element, whereas a freshly-mounted one is not. Removing the keys and changing nothing else is measured in the fail-direction arm below.
+- **The repo's 2500 ms measurement window truncates this route.** The band→grid swap lands at ~3.5 s under 4× CPU; #535's 0.2005 and this branch's 0.1694 before-number are the same load measured with the window closing first. Both windows are reported: 0.1694 → 0.0171 and 0.8287 → 0.0171.
+
 ### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of (#568) — 2026-08-05
 
 The script tore down only the **hybrid** runtime that `scripts/start-dev.sh` starts: `infra/` compose plus the backend and frontend as host processes. It knew nothing about `docker-compose.full-stack.yml` (project `jtoye_oaas_2026`) — the runtime CLAUDE.md calls canonical for local dev and E2E, and the one Playwright runs against. Run against that, it killed processes that were not running, ran `docker compose down` in a project with no containers, and printed its success banner while **11 containers kept running**. Measured 2026-08-05: 11 before, 11 after.

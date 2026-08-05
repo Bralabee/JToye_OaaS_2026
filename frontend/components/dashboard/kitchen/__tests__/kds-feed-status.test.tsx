@@ -56,6 +56,44 @@ describe("KdsFeedPill", () => {
     render(<KdsFeedPill state={state({ lastSyncedAt: null })} lastSyncedAt={null} />)
     expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("—")
   })
+
+  // --- #536: the pill's box must not depend on what the pill currently says ---
+
+  it("reserves the widest label and a full clock, so the pill cannot re-wrap the header", () => {
+    // Measured on the live stack at 390px BEFORE this: a cold load rendered
+    // "Offline —", settled to "Live 14:32:07", the pill widened, the header's
+    // flex-wrap control row gained a third line and the whole board moved 46px.
+    // feed-state.ts asserted in a comment that the pill "occupies the same box in
+    // every state"; it did not, and this is the assertion that makes it true.
+    render(<KdsFeedPill state={state()} lastSyncedAt={NOW} />)
+    expect(screen.getByTestId("kds-feed-pill-label").className).toMatch(/min-w-\[/)
+    const clock = screen.getByText(/\d{2}:\d{2}:\d{2}/)
+    expect(clock.className).toMatch(/min-w-\[/)
+  })
+
+  it("says Connecting… while the page has not started, instead of a red Offline", () => {
+    // `deriveFeedState` maps "socket never came up" to offline, which is right once
+    // the page is running and wrong while it is starting. Rendering the header from
+    // the first paint (what stops it growing 108px mid-load) would otherwise show a
+    // red Offline on every cold load — the cry-wolf failure #535 removed from the
+    // banner. The derived state is NOT changed: only this presentation is.
+    const cold = state({ connected: false, lastSyncedAt: null })
+    expect(cold.status).toBe("offline")
+    render(<KdsFeedPill state={cold} lastSyncedAt={null} pending />)
+    const pill = screen.getByTestId("kds-feed-pill")
+    expect(pill).toHaveTextContent("Connecting")
+    expect(pill).not.toHaveTextContent("Offline")
+  })
+
+  it("reverts to the honest derived status the moment pending ends", () => {
+    // The control arm. `pending` is bounded by the shop-list fetch; if it ever
+    // masked a genuinely dead socket this test would fail.
+    const cold = state({ connected: false, lastSyncedAt: null })
+    render(<KdsFeedPill state={cold} lastSyncedAt={null} pending={false} />)
+    const pill = screen.getByTestId("kds-feed-pill")
+    expect(pill).toHaveTextContent("Offline")
+    expect(pill).not.toHaveTextContent("Connecting")
+  })
 })
 
 describe("KdsFeedBanner", () => {

@@ -629,4 +629,106 @@ describe("KitchenPage", () => {
     const sheet = await screen.findByTestId("kds-print-root")
     expect(within(sheet).getAllByTestId("kitchen-ticket")).toHaveLength(2)
   })
+
+  // --- #536: the board reserves its space instead of growing into the page ---
+  //
+  // The measured mechanism, at the repo's declared throttle profile (390px `isMobile`
+  // + `hasTouch`, Fast-3G 1.5Mbps/40ms, 4x CPU, real API, an 18-ticket board):
+  // /dashboard/kitchen scored CLS 0.8287, of which 0.6593 was ONE frame — the 16rem
+  // loading band being replaced by the grid, which shoved the shell footer from y=797
+  // (on screen, in an 844px viewport) 4574px down. These tests assert the two
+  // structural properties that removed it. They cannot measure CLS; the number lives
+  // in the PR. What they CAN do is fail the moment the structure regresses.
+
+  /** The reserved band, as written in page.tsx. */
+  const RESERVE = "min-h-[calc(100svh_-_11rem)]"
+
+  it("reserves the same board height while loading, when empty, and when populated", async () => {
+    // One height across all three states is the whole point: the footer underneath
+    // must not be able to tell which state the board is in.
+    stubApi([])
+    const { unmount } = render(<KitchenPage />)
+
+    // State 1 — shops/orders still loading.
+    const loadingBand = await screen.findByRole("status", { name: "Loading kitchen orders" })
+    expect(loadingBand.className).toContain(RESERVE)
+
+    // State 2 — read, and empty.
+    await screen.findByText(/No active orders/i)
+    const empty = screen.getByText(/No active orders/i).closest("div")
+    expect(empty?.className).toContain(RESERVE)
+    unmount()
+
+    // State 3 — read, and populated.
+    stubApi(["CONFIRMED", "PREPARING"])
+    render(<KitchenPage />)
+    await screen.findAllByText(/Alice/)
+    const grid = screen.getAllByText(/Alice/)[0].closest(".grid")
+    expect(grid?.className).toContain(RESERVE)
+  })
+
+  it("shows ticket-shaped skeletons while the board is read, not a lone spinner", async () => {
+    // A 128px spinner centred in a 16rem band told the operator nothing about what
+    // was coming and reserved a height unrelated to it.
+    stubApi(["CONFIRMED"])
+    render(<KitchenPage />)
+    expect(screen.getAllByTestId("kds-ticket-skeleton").length).toBeGreaterThan(0)
+    // ...and they are gone once real tickets exist. A skeleton that outlives its
+    // data is a board showing furniture instead of orders.
+    await screen.findAllByText(/Alice/)
+    expect(screen.queryAllByTestId("kds-ticket-skeleton")).toHaveLength(0)
+  })
+
+  it("renders the header's controls from the first paint, not once shops arrive", async () => {
+    // The loading header used to carry no control row at all, so pill + selector +
+    // print + mute appeared together mid-load and pushed the whole board down 108px.
+    stubApi([])
+    render(<KitchenPage />)
+    // Synchronously, before any promise resolves:
+    expect(screen.getByTestId("kds-feed-pill")).toBeInTheDocument()
+    expect(screen.getByTitle(/Mute alerts|Unmute alerts/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /print all/i })).toBeInTheDocument()
+    // And the pill says it is starting rather than claiming the feed is Offline.
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Connecting")
+    await screen.findByText(/No active orders/i)
+  })
+
+  // --- #450 5d, the half PR #535 left open ---
+
+  it("says so when the dashboard's shop is one the board cannot show", async () => {
+    // The board lists PUBLISHED shops only (QA-council FIX-4). The dashboard switcher
+    // lists every granted shop. Point the dashboard at an unpublished one and the
+    // reconciliation effect degrades to shops[0] — until now, in silence.
+    localStorage.setItem("shopContext", "shop-draft")
+    stubApiWithShops([
+      shopEntry("shop-draft", "Camden Prep Kitchen", false),
+      shopEntry("shop-live", "Brixton Village Grill", true),
+    ])
+    render(<KitchenPage />)
+
+    const notice = await screen.findByTestId("kds-other-shop-notice")
+    expect(notice).toHaveTextContent("Brixton Village Grill")
+    // Not the All-shops notice: the dashboard is on a specific shop, so that copy
+    // would be a different, wrong explanation.
+    expect(screen.queryByTestId("kds-all-shops-notice")).not.toBeInTheDocument()
+  })
+
+  it("claims no mismatch when the dashboard's shop IS the boarded shop", async () => {
+    // The control arm. Without it, "always render the notice" would pass the test
+    // above while making the board cry wolf on every load.
+    localStorage.setItem("shopContext", "shop-live")
+    stubApiWithShops([
+      shopEntry("shop-live", "Brixton Village Grill", true),
+      shopEntry("shop-b", "Peckham Jollof Co.", true),
+    ])
+    render(<KitchenPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId("kds-board-shop")).toHaveTextContent(
+        "Brixton Village Grill"
+      )
+    )
+    expect(screen.queryByTestId("kds-other-shop-notice")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("kds-all-shops-notice")).not.toBeInTheDocument()
+  })
 })
