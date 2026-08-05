@@ -8,9 +8,23 @@
  * had three static gates. Four user-reported defects in a row landed in that
  * blind spot.
  *
- * This spec closes it cheaply: it stubs the public API entirely (`**\/public/**`)
- * so it needs nothing but a built frontend, and asserts invariants that only a
- * real browser can check.
+ * This spec closes it cheaply: it stubs the public API (`**\/public/**`) so it
+ * needs nothing but a built frontend, and asserts invariants that only a real
+ * browser can check.
+ *
+ * THE STUB IS NOT TOTAL, AND SAYING SO IS THE POINT. It intercepts requests made
+ * by the BROWSER. Since #537, `/shop` and `/shop/[slug]` are server components
+ * that fetch from the Next server, so their first render is not stubbed at all —
+ * it is answered by whatever core API that server can reach, or deferred to the
+ * client island (which the stub does answer) when it can reach none.
+ *
+ * That is why the storefront tests below resolve their shop at RUNTIME instead
+ * of hardcoding the fixture slug. The nightly run of 2026-08-04 is what this
+ * cost: `/shop/test-kitchen` 404s the moment a real backend is reachable, so the
+ * modal test spent 60s waiting for a dish card on a "Shop not found" page, while
+ * its sibling layout test passed vacuously over that same empty page. The gate
+ * was green in CI for exactly one reason — CI has no backend for the server to
+ * reach — which is the definition of green by construction.
  *
  * Wired into CI by the "Frontend E2E (public surfaces)" job in ci-cd.yaml.
  * KEEP IT STACK-FREE — the moment this needs a backend it stops running, and
@@ -172,17 +186,131 @@ async function horizontalOverflow(page: Page): Promise<number> {
   )
 }
 
+/**
+ * Routes whose data the browser stub above still fully describes.
+ *
+ * `/shop/test-kitchen` USED TO BE IN THIS LIST and no longer can be. #537 made
+ * `/shop/[slug]` a SERVER component: it calls `loadShopDetail()` from the Next
+ * server, so the request never passes through the browser and
+ * `context.route("**\/public/**")` cannot see it. With a core API reachable, the
+ * fixture slug gets an authoritative 404, the route renders `not-found.tsx`, and
+ * no dish card exists. `/shop` is server-loaded for the same reason — it stays
+ * here only because its assertions are shape invariants that hold over real
+ * shops just as well as over the fixture.
+ *
+ * See `resolveStorefrontPath()` for how the two storefront-detail tests below
+ * stopped depending on a slug that only exists when there is no backend.
+ */
 const PUBLIC_ROUTES = [
   "/",
   "/shop",
   "/shop?q=grill",
-  "/shop/test-kitchen",
   "/for-operators",
   "/track",
   "/legal",
   "/business-model-guide",
   "/competitive",
 ]
+
+/**
+ * A storefront that EXISTS in whatever environment this spec is pointed at.
+ *
+ * Stack-free (the CI gate): the Next server's fetch to core is refused, so
+ * `loadShopDetail` defers, the client island fetches, the browser stub answers,
+ * and this resolves to the fixture `/shop/test-kitchen`.
+ *
+ * Against a live stack (nightly, local :3000): the server answers
+ * authoritatively and this resolves to a real seeded slug. Either way the page
+ * under test is one that actually renders dish cards — which is the property
+ * these tests need, and the property a hardcoded fixture slug silently lost.
+ */
+async function resolveStorefrontPath(page: Page): Promise<string> {
+  await page.goto(`${BASE}/shop`)
+  await page.waitForLoadState("domcontentloaded")
+
+  // A shop CARD, not merely a link under /shop/. `/shop/` also hosts `signin`,
+  // `auth` and `orders`, and the storefront nav's "Sign in" button is an
+  // `a[href^="/shop/"]` sitting above the grid — picking it navigated to
+  // `/shop/signin` and produced exactly the empty page this helper guards
+  // against. `has: article` is the structural definition of a card
+  // (`shop-discovery-client.tsx` wraps each `<article>` in its `<Link>`), so it
+  // cannot drift into matching a nav control.
+  const link = page
+    .locator('a[href^="/shop/"]:visible')
+    .filter({ has: page.locator("article") })
+    .first()
+  await expect(
+    link,
+    "the shop directory listed no storefront to open — neither the fixture stub " +
+      "nor a live backend produced one"
+  ).toBeVisible({ timeout: 15_000 })
+
+  const href = await link.getAttribute("href")
+  expect(href, "storefront link href").toBeTruthy()
+  return href as string
+}
+
+/**
+ * Open a storefront and REFUSE to continue silently if it has no dish cards.
+ *
+ * The regression this exists to make loud: when the fixture slug started
+ * 404ing, `locator("article").click()` simply waited out the full 60s test
+ * timeout with a call log that said nothing about why. An empty page also
+ * satisfies every invariant below it (no fixed-ratio boxes, no images, no
+ * overflow, an `<h1>` present), so the sibling layout test passed VACUOUSLY over
+ * the same not-found page for as long as the modal test hung.
+ */
+async function openStorefront(page: Page, path: string): Promise<void> {
+  await page.goto(`${BASE}${path}`)
+  await page.waitForLoadState("domcontentloaded")
+  // Also outlasts the React streaming buffer (`<div id="S:n" hidden>`), whose
+  // duplicate copy of the server-rendered tree is briefly in the DOM.
+  await page.waitForTimeout(1200)
+
+  await expect(
+    page.locator("article:visible").first(),
+    `${path} rendered no dish cards — the storefront did not load, so anything ` +
+      `asserted past this point would be asserted over an empty page`
+  ).toBeVisible({ timeout: 15_000 })
+}
+
+/**
+ * Force three DIFFERENT intrinsic image ratios onto the first three dish cards.
+ *
+ * The invariant under test (#265) is "a 4:3 frame keeps its shape whatever the
+ * photo's intrinsic ratio", so feeding the photos IS the experiment. The stub
+ * serves the three ratios as `data:` URIs, which no route can intercept and none
+ * needs to — they are already the ladder. A live stack serves real object-store
+ * URLs, so those are read off the rendered page and re-served as the ladder.
+ * Reading the srcs rather than pattern-matching a bucket name keeps this working
+ * wherever the images happen to be hosted.
+ */
+async function forceRatioLadder(
+  page: Page,
+  context: BrowserContext,
+  path: string
+): Promise<void> {
+  const srcs = await page
+    .locator("article:visible img")
+    .evaluateAll((imgs) => imgs.slice(0, 3).map((i) => (i as HTMLImageElement).src))
+
+  const ladder = [PORTRAIT, LANDSCAPE, ULTRAWIDE]
+  let routed = 0
+
+  for (let i = 0; i < srcs.length; i++) {
+    const src = srcs[i]
+    if (src.startsWith("data:")) continue // already a fixture of known ratio
+    const body = Buffer.from(ladder[i].split(",")[1], "base64")
+    // A predicate, not a glob: an arbitrary URL can contain `*` and `?`.
+    await context.route(
+      (url) => url.toString() === src,
+      (route) => route.fulfill({ status: 200, contentType: "image/svg+xml", body })
+    )
+    routed++
+  }
+
+  if (routed > 0) await openStorefront(page, path)
+}
 
 test.describe("public surfaces — layout conformance", () => {
   test.beforeEach(async ({ context }) => {
@@ -215,36 +343,67 @@ test.describe("public surfaces — layout conformance", () => {
     })
   }
 
-  test("product modal opens the SAME shape for portrait, landscape and ultrawide sources", async ({
+  test("a storefront honours its fixed-ratio boxes, renders its images, and does not overflow", async ({
     page,
   }) => {
-    await page.goto(`${BASE}/shop/test-kitchen`)
-    await page.waitForLoadState("domcontentloaded")
-    await page.waitForTimeout(1200)
+    const path = await resolveStorefrontPath(page)
+    await openStorefront(page, path)
 
-    const shapes: { title: string; ratio: number }[] = []
+    expect(await aspectViolations(page), "fixed-ratio boxes").toEqual([])
+    expect(await brokenImages(page), "images that failed to decode").toEqual([])
+    expect(
+      await horizontalOverflow(page),
+      "horizontal overflow (px)"
+    ).toBeLessThanOrEqual(1)
 
-    for (const title of ["Portrait Dish", "Landscape Dish", "Ultrawide Dish"]) {
-      await page.locator("article", { hasText: title }).first().click()
-      const frame = page.locator("[data-aspect-frame]").first()
+    const h1 = page.locator("h1").first()
+    await expect(h1).toBeVisible()
+    expect(
+      Number(await h1.evaluate((el) => getComputedStyle(el).opacity))
+    ).toBeGreaterThan(0.9)
+  })
+
+  test("product modal opens the SAME shape for portrait, landscape and ultrawide sources", async ({
+    page,
+    context,
+  }) => {
+    const path = await resolveStorefrontPath(page)
+    await openStorefront(page, path)
+    await forceRatioLadder(page, context, path)
+
+    const cards = page.locator("article:visible")
+    const count = Math.min(await cards.count(), 3)
+    expect(count, "dish cards available to open").toBeGreaterThanOrEqual(1)
+
+    const shapes: { card: number; ratio: number }[] = []
+
+    for (let i = 0; i < count; i++) {
+      await cards.nth(i).click()
+
+      // Scoped to the DIALOG, not `[data-aspect-frame]` page-wide. #533 gave
+      // this modal a real `role="dialog"`, so the frame being measured is
+      // provably the modal's and cannot be a card's.
+      const frame = page.getByRole("dialog").locator("[data-aspect-frame]").first()
       await expect(frame).toBeVisible()
 
       const box = await frame.boundingBox()
-      shapes.push({ title, ratio: (box?.width ?? 0) / (box?.height ?? 1) })
+      shapes.push({ card: i, ratio: (box?.width ?? 0) / (box?.height ?? 1) })
 
-      expect(await aspectViolations(page), `modal for ${title}`).toEqual([])
-      await page.keyboard.press("Escape").catch(() => {})
-      await page
-        .locator(".max-w-lg button")
-        .first()
-        .click({ timeout: 2000 })
-        .catch(() => {})
-      await page.waitForTimeout(400)
+      expect(await aspectViolations(page), `modal for card ${i}`).toEqual([])
+
+      // Escape MUST close it, and that is now ASSERTED rather than attempted.
+      // This block used to read `press("Escape").catch(() => {})` followed by a
+      // `.max-w-lg button` click, also `.catch()`-swallowed — a shape that only
+      // made sense while Escape did NOT close the modal, which is precisely the
+      // defect #446/#533 fixed. Swallowing both meant the test could not tell a
+      // working dismiss from a broken one.
+      await page.keyboard.press("Escape")
+      await expect(frame).toBeHidden()
     }
 
     // The whole point: the frame governs, the photo does not.
     for (const s of shapes) {
-      expect(s.ratio, `${s.title} modal ratio`).toBeCloseTo(4 / 3, 1)
+      expect(s.ratio, `card ${s.card} modal ratio`).toBeCloseTo(4 / 3, 1)
     }
   })
 })
