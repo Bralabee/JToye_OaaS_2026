@@ -168,27 +168,39 @@ function orderDetailPayload(id: string, status: string, createdAt?: string) {
 
 // `createdAt` (optional) lets a test pin the order age so the elapsed-time and
 // age-border formatting can be asserted deterministically.
+// #564: the board reads `/api/v1/orders/kitchen`, which returns active orders WITH
+// their line items. The old pair of stubs — a summary list plus one `/detail` per
+// ticket — is gone because the requests are gone; this fake serves what the endpoint
+// serves, so a test cannot pass here against a client that still fans out.
 function stubApi(activeStatuses: string[], createdAt?: string) {
   mockGet.mockReset()
   mockGet.mockImplementation((url: string) => {
     if (url.startsWith("/api/v1/shops")) {
       return Promise.resolve({ data: shopsPayload })
     }
-    if (url.startsWith("/api/v1/orders?")) {
-      return Promise.resolve({ data: ordersPayload(activeStatuses) })
-    }
-    const match = url.match(/\/api\/v1\/orders\/(.*)\/detail/)
-    if (match) {
-      const id = match[1]
-      const idx = Number(id.replace("order-", ""))
-      return Promise.resolve({
-        data: orderDetailPayload(id, activeStatuses[idx], createdAt),
-      })
+    if (url.startsWith("/api/v1/orders/kitchen")) {
+      return Promise.resolve({ data: kitchenBoardPayload(activeStatuses, createdAt) })
     }
     return Promise.resolve({ data: {} })
   })
   mockPost.mockReset()
   mockPost.mockResolvedValue({ data: {} })
+}
+
+/** One page of the kitchen board: full detail per ticket, terminating on `last`. */
+function kitchenBoardPayload(activeStatuses: string[], createdAt?: string) {
+  const content = activeStatuses.map((status, i) =>
+    orderDetailPayload(`order-${i}`, status, createdAt)
+  )
+  return {
+    content,
+    totalElements: content.length,
+    totalPages: 1,
+    size: 100,
+    number: 0,
+    first: true,
+    last: true,
+  }
 }
 
 describe("KitchenPage", () => {
@@ -349,7 +361,7 @@ describe("KitchenPage", () => {
       if (url.startsWith("/api/v1/shops")) {
         return Promise.resolve({ data: { content: shopContent } })
       }
-      if (url.startsWith("/api/v1/orders?")) {
+      if (url.startsWith("/api/v1/orders/kitchen")) {
         return Promise.resolve({ data: { content: [] } })
       }
       return Promise.resolve({ data: {} })
@@ -450,73 +462,73 @@ describe("KitchenPage", () => {
   // for up to a minute, with nothing retrying. These two tests fix the line between the
   // two cases; they are a pair on purpose, because a fix that only satisfies the first
   // is how the board would go quiet about a genuinely missing ticket.
+  // --- #564: the board is read in ONE request, so a refusal is total ---
+  //
+  // RETIRED HERE: "stays quiet when a re-read is partly refused but every ticket is
+  // still renderable". That test pinned #563's partial-failure tolerance, which existed
+  // because the board fetched one detail per ticket and a burst of nineteen could come
+  // back partly 429. There is no burst now, so "some succeeded, some did not" is a state
+  // the code cannot enter, and a test for it would assert against reality.
+  //
+  // Recorded rather than deleted quietly: removing the burst is strictly better than
+  // tolerating it, but a just-shipped fix disappearing with no trace is how the same
+  // defect gets re-learned. What survives is the half that still has meaning, below.
 
-  it("stays quiet when a re-read is partly refused but every ticket is still renderable", async () => {
-    stubApi(["CONFIRMED", "PREPARING"])
-    render(<KitchenPage />)
-
-    // The board is loaded and healthy — the state the defect actually occurs in.
-    expect(await screen.findAllByText("Alice")).toHaveLength(2)
-    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
-
-    // Now refuse one detail re-read, exactly as the rate limiter does.
-    const healthy = mockGet.getMockImplementation()!
-    mockGet.mockImplementation((url: string) => {
-      if (url === "/api/v1/orders/order-1/detail") {
-        return Promise.reject(new Error("Request failed with status code 429"))
-      }
-      return healthy(url)
-    })
-
-    // The reconnect resync — `useStomp`'s third argument IS the page's fetchOrders, and
-    // it is the path #561 was measured on (the `online` handler takes the same one).
-    //
-    // Called WITHOUT an async `act` wrapper: under React 19 that never settles here and
-    // the test dies on the 5s timeout instead of failing for a reason. `waitFor` already
-    // wraps its polling in act — the same finding the refresh test below records.
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {})
-    const onReconnect = (useStomp as jest.Mock).mock.calls.at(-1)![2] as () => Promise<void>
-    void onReconnect()
-
-    // Wait for the page's OWN signal that it took the partial-failure path. Without it
-    // this would assert the absence of a banner that had simply not appeared YET, which
-    // passes in both directions and proves nothing.
-    //
-    // It is also what this test fails on if the old semantics come back: treating any
-    // failed detail as a failed sync returns early, so the warning is never reached.
-    // Read a timeout here as "the board declared the whole read failed", not as a
-    // logging change.
-    await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("order-detail reads"))
-    )
-
-    // Both tickets still on the board, held detail standing in for the refused read...
-    await waitFor(() => expect(screen.getAllByText("Alice")).toHaveLength(2))
-    // ...so there is nothing to warn about. The pill is the direct expression of
-    // `syncFailed` and would read "Not updating" if the refusal had been fatal.
-    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
-    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Live")
-    warn.mockRestore()
-  })
-
-  it("still raises the banner when a ticket has no detail at all", async () => {
-    // No held detail to fall back on: the detail fails on the FIRST load, so the board
-    // is genuinely missing a ticket. An incomplete kitchen board that stays quiet about
-    // it is the more dangerous of the two failures, and this is the invariant that
-    // stops the fix above from being a mute button.
+  it("raises the banner when the board read fails, and clears it when it succeeds", async () => {
+    // The invariant #563 protected, restated for the shape #564 gives it: the board says
+    // so when it could not be read. Both directions in one test on purpose — an
+    // assertion that the banner APPEARS is satisfied by a board that always warns.
     mockGet.mockReset()
     mockGet.mockImplementation((url: string) => {
       if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
-      if (url.startsWith("/api/v1/orders?")) {
-        return Promise.resolve({ data: ordersPayload(["CONFIRMED"]) })
-      }
       return Promise.reject(new Error("Request failed with status code 429"))
     })
 
-    render(<KitchenPage />)
-
+    const { unmount } = render(<KitchenPage />)
     const banner = await screen.findByTestId("kds-feed-banner")
     expect(banner).toHaveTextContent(/not refreshing/i)
+    unmount()
+
+    // Same page, same socket, only the read now lands.
+    stubApi(["CONFIRMED"])
+    render(<KitchenPage />)
+    expect(await screen.findAllByText("Alice")).not.toHaveLength(0)
+    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+  })
+
+  it("reads the board at a cost that does not scale with ticket count", async () => {
+    // #564's acceptance at the page level, stated as the COMPARISON it actually is.
+    //
+    // My first version of this asserted "exactly one request" and failed at 2 — the page
+    // runs its load effect twice on mount, which is independent of ticket count and is
+    // not what this issue is about. Asserting a constant would have made the test a
+    // tripwire for unrelated render behaviour; asserting that the count is the SAME for
+    // one ticket and for eight is the property #564 asked for, and it stays true however
+    // the mount effects are arranged.
+    const countBoardReads = () =>
+      mockGet.mock.calls
+        .map(([u]: [string]) => u as string)
+        .filter((u) => u.startsWith("/api/v1/orders/kitchen")).length
+
+    stubApi(["CONFIRMED"])
+    const one = render(<KitchenPage />)
+    await waitFor(() => expect(screen.getAllByText("Alice")).toHaveLength(1))
+    const readsForOneTicket = countBoardReads()
+    one.unmount()
+
+    stubApi(["CONFIRMED", "PREPARING", "READY", "CONFIRMED", "PREPARING", "READY", "CONFIRMED", "READY"])
+    render(<KitchenPage />)
+    await waitFor(() => expect(screen.getAllByText("Alice")).toHaveLength(8))
+
+    expect(countBoardReads())
+      .toBe(readsForOneTicket)
+
+    // The load-bearing half: a client that called the new endpoint AND still fanned out
+    // per ticket would satisfy the comparison above only by accident. Before #564 this
+    // was 8.
+    expect(
+      mockGet.mock.calls.map(([u]: [string]) => u as string).filter((u) => u.includes("/detail"))
+    ).toHaveLength(0)
   })
 
   it("re-reads the orders list when the refresh action is pressed", async () => {
@@ -526,7 +538,7 @@ describe("KitchenPage", () => {
 
     await screen.findByTestId("kds-feed-banner")
     const before = mockGet.mock.calls.filter(([u]: [string]) =>
-      (u as string).startsWith("/api/v1/orders?")
+      (u as string).startsWith("/api/v1/orders/kitchen")
     ).length
 
     // Plain fireEvent, NOT `await act(async () => …)`. Under React 19 the async act
@@ -538,7 +550,7 @@ describe("KitchenPage", () => {
     await waitFor(() =>
       expect(
         mockGet.mock.calls.filter(([u]: [string]) =>
-          (u as string).startsWith("/api/v1/orders?")
+          (u as string).startsWith("/api/v1/orders/kitchen")
         ).length
       ).toBeGreaterThan(before)
     )
@@ -553,7 +565,7 @@ describe("KitchenPage", () => {
 
     await waitFor(() =>
       expect(mockGet).toHaveBeenCalledWith(
-        expect.stringMatching(/^\/api\/v1\/orders\?shopId=shop-1&page=0&size=\d+&sort=createdAt,desc$/)
+        expect.stringMatching(/^\/api\/v1\/orders\/kitchen\?shopId=shop-1&page=0&size=\d+&sort=createdAt,desc$/)
       )
     )
   })
