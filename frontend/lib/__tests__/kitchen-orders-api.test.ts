@@ -210,15 +210,58 @@ describe("fetchKitchenOrderDetails", () => {
       Promise.resolve({ data: { id: url.match(/orders\/([^/]+)\/detail/)![1] } })
     )
 
-    const details = await fetchKitchenOrderDetails([order(1, "CONFIRMED"), order(2, "READY")])
+    const { details, failedIds } = await fetchKitchenOrderDetails([
+      order(1, "CONFIRMED"),
+      order(2, "READY"),
+    ])
 
     expect(details.map((d) => d.id)).toEqual(["o-1", "o-2"])
+    expect(failedIds).toEqual([])
     expect(mockGet).toHaveBeenCalledTimes(2)
   })
 
   it("issues nothing for an empty list", async () => {
     mockGet.mockReset()
-    await expect(fetchKitchenOrderDetails([])).resolves.toEqual([])
+    await expect(fetchKitchenOrderDetails([])).resolves.toEqual({
+      details: [],
+      failedIds: [],
+    })
     expect(mockGet).not.toHaveBeenCalled()
+  })
+
+  // #561: this used to be `Promise.all`, so ONE 429 threw away every detail that DID
+  // come back — and with it the page's evidence that it had just read successfully.
+  // A board of eighteen tickets refreshes with eighteen concurrent detail requests, so
+  // a partial refusal is the ordinary case under a tenant rate limit, not an exotic one.
+  it("keeps the details that succeeded when some requests fail, and names the failures", async () => {
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      const id = url.match(/orders\/([^/]+)\/detail/)![1]
+      if (id === "o-2") return Promise.reject(new Error("Request failed with status code 429"))
+      return Promise.resolve({ data: { id } })
+    })
+
+    const { details, failedIds } = await fetchKitchenOrderDetails([
+      order(1, "CONFIRMED"),
+      order(2, "READY"),
+      order(3, "PREPARING"),
+    ])
+
+    expect(details.map((d) => d.id)).toEqual(["o-1", "o-3"])
+    expect(failedIds).toEqual(["o-2"])
+    expect(mockGet).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not reject when every request fails — it reports them all", async () => {
+    mockGet.mockReset()
+    mockGet.mockImplementation(() => Promise.reject(new Error("boom")))
+
+    const { details, failedIds } = await fetchKitchenOrderDetails([
+      order(1, "CONFIRMED"),
+      order(2, "READY"),
+    ])
+
+    expect(details).toEqual([])
+    expect(failedIds).toEqual(["o-1", "o-2"])
   })
 })

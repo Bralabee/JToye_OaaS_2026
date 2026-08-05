@@ -441,6 +441,84 @@ describe("KitchenPage", () => {
     ;(useStomp as jest.Mock).mockReturnValue({ connected: true, reconnecting: false })
   })
 
+  // --- #561: a refused RE-READ is not a broken board ---
+  //
+  // The board refreshes with one request per active ticket, concurrently, and takes that
+  // full path on every reconnect. Against a tenant bucket refilled in one lump per
+  // minute, part of that burst coming back 429 is ordinary. It used to fail the whole
+  // read and raise "Orders are not refreshing" over data the page was still holding —
+  // for up to a minute, with nothing retrying. These two tests fix the line between the
+  // two cases; they are a pair on purpose, because a fix that only satisfies the first
+  // is how the board would go quiet about a genuinely missing ticket.
+
+  it("stays quiet when a re-read is partly refused but every ticket is still renderable", async () => {
+    stubApi(["CONFIRMED", "PREPARING"])
+    render(<KitchenPage />)
+
+    // The board is loaded and healthy — the state the defect actually occurs in.
+    expect(await screen.findAllByText("Alice")).toHaveLength(2)
+    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+
+    // Now refuse one detail re-read, exactly as the rate limiter does.
+    const healthy = mockGet.getMockImplementation()!
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/orders/order-1/detail") {
+        return Promise.reject(new Error("Request failed with status code 429"))
+      }
+      return healthy(url)
+    })
+
+    // The reconnect resync — `useStomp`'s third argument IS the page's fetchOrders, and
+    // it is the path #561 was measured on (the `online` handler takes the same one).
+    //
+    // Called WITHOUT an async `act` wrapper: under React 19 that never settles here and
+    // the test dies on the 5s timeout instead of failing for a reason. `waitFor` already
+    // wraps its polling in act — the same finding the refresh test below records.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {})
+    const onReconnect = (useStomp as jest.Mock).mock.calls.at(-1)![2] as () => Promise<void>
+    void onReconnect()
+
+    // Wait for the page's OWN signal that it took the partial-failure path. Without it
+    // this would assert the absence of a banner that had simply not appeared YET, which
+    // passes in both directions and proves nothing.
+    //
+    // It is also what this test fails on if the old semantics come back: treating any
+    // failed detail as a failed sync returns early, so the warning is never reached.
+    // Read a timeout here as "the board declared the whole read failed", not as a
+    // logging change.
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("order-detail reads"))
+    )
+
+    // Both tickets still on the board, held detail standing in for the refused read...
+    await waitFor(() => expect(screen.getAllByText("Alice")).toHaveLength(2))
+    // ...so there is nothing to warn about. The pill is the direct expression of
+    // `syncFailed` and would read "Not updating" if the refusal had been fatal.
+    expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Live")
+    warn.mockRestore()
+  })
+
+  it("still raises the banner when a ticket has no detail at all", async () => {
+    // No held detail to fall back on: the detail fails on the FIRST load, so the board
+    // is genuinely missing a ticket. An incomplete kitchen board that stays quiet about
+    // it is the more dangerous of the two failures, and this is the invariant that
+    // stops the fix above from being a mute button.
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
+      if (url.startsWith("/api/v1/orders?")) {
+        return Promise.resolve({ data: ordersPayload(["CONFIRMED"]) })
+      }
+      return Promise.reject(new Error("Request failed with status code 429"))
+    })
+
+    render(<KitchenPage />)
+
+    const banner = await screen.findByTestId("kds-feed-banner")
+    expect(banner).toHaveTextContent(/not refreshing/i)
+  })
+
   it("re-reads the orders list when the refresh action is pressed", async () => {
     stubApi(["CONFIRMED"])
     ;(useStomp as jest.Mock).mockReturnValue({ connected: false, reconnecting: true })

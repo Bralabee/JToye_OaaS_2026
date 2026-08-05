@@ -387,6 +387,134 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
   })
 
   // ---------------------------------------------------------------------------
+  // #561 — the same banner, but the failure FORCED rather than inherited.
+  //
+  // The test above was red in the full suite and green on its own, and the
+  // difference was never about the test: a board of eighteen tickets refreshes with
+  // ONE list request plus one `/detail` per ticket, so the `online` handler's full
+  // resync fires 19 requests at once, twice inside half a second. Against a tenant
+  // bucket of `capacity(120).refillIntervally(100, 1min)` — one lump per minute —
+  // whatever the rest of the suite spent in the same window decides whether those
+  // land. Measured: 38x200 with 79 tokens to spare in isolation; 28x200 + 10x429
+  // with `Retry-After: 12` and 0 remaining after three specs had run first.
+  //
+  // Suite ordering is not a test contract, so this asserts the property directly.
+  // The 429s are INJECTED here, which is what makes the test deterministic on a
+  // quiet stack and independent of how much budget the specs before it spent.
+  // ---------------------------------------------------------------------------
+
+  test("a partial 429 on the recovery refresh still clears the offline banner", async ({
+    page,
+    context,
+  }) => {
+    // Only two stubs are lifted, and each for a stated reason:
+    //   ws     — the pill cannot read "Live" without a real socket, and `connected` is
+    //            half of what clears the banner.
+    //   shops  — the STOMP topic is derived from the DATA. With the fixture shop the
+    //            page subscribes to a tenant that does not exist and the relay drops
+    //            the connection, so the pill sits on "Reconnecting" forever (measured,
+    //            see the test above).
+    //
+    // The ORDER stubs stay, replaced below with a bigger fixture. That is deliberate:
+    // the first version of this test read the live board, and a live 18-ticket board
+    // costs 19 requests to load and 19 more to refresh, against a tenant bucket of
+    // capacity(120) refilled in ONE LUMP per minute. Run after the specs that precede
+    // it, this test's own page load was refused and the pill read "Offline —" with a
+    // null stamp — it had become another instance of the very budget dependency it
+    // exists to remove. Stubbed, it costs the tenant nothing and cannot inherit
+    // anyone else's spending.
+    await context.unroute("**/ws**")
+    await context.unroute(`${API}/api/v1/shops**`)
+
+    // Four tickets, so "some refused, some not" is genuinely partial. Page-level routes
+    // are matched before context-level ones, so these win over the beforeEach stubs.
+    const TICKETS = ["kds-561-1", "kds-561-2", "kds-561-3", "kds-561-4"]
+    await page.route(/\/api\/v1\/orders\?/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          pageOf(
+            TICKETS.map((id) => ({ ...orderSummaryResponse.content[0], id })),
+            route.request().url()
+          )
+        ),
+      })
+    )
+
+    // Throttling is armed only AFTER the first read has landed, which is the state the
+    // defect actually occurs in: the board is holding current detail for every ticket
+    // and is merely re-reading it. Refusing the FIRST load is a different case — a
+    // genuinely incomplete board — and the page is still required to say so.
+    let throttling = false
+    let seen = 0
+    const throttled: string[] = []
+    await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
+      const id = route.request().url().match(/orders\/([^/]+)\/detail/)![1]
+      // Every other one: a PARTIAL failure. All of them would be a total outage, which
+      // is a different state with a different correct answer.
+      if (throttling && ++seen % 2 === 0) {
+        throttled.push(id)
+        return route.fulfill({
+          status: 429,
+          contentType: "application/problem+json",
+          headers: { "Retry-After": "12", "X-RateLimit-Remaining": "0" },
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "Too Many Requests",
+            status: 429,
+            detail: "Rate limit exceeded",
+          }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...orderDetailResponse, id }),
+      })
+    })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+
+    const pill = page.getByTestId("kds-feed-pill")
+    await expect(pill).toContainText("Live", { timeout: 20_000 })
+    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+
+    // ARM ONLY ONCE THE BOARD IS GENUINELY SETTLED, and wait for evidence of that
+    // rather than assuming it. "Live" is NOT that evidence: the pill reads the socket,
+    // which connects before the first read returns, so arming on it raced the initial
+    // detail fetch. Measured — the full suite caught what four spec files did not: the
+    // first load's own details came back 429, two tickets had no detail at ALL, and the
+    // board correctly refused to go quiet. The test was asserting the wrong case.
+    //
+    // A wall clock in the pill means `lastSyncedAt !== null`, i.e. a read completed, and
+    // four rendered tickets mean their detail is held. Both are required before a
+    // REFUSED RE-READ is the thing under test.
+    await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/, { timeout: 20_000 })
+    await expect(page.getByText("Alice")).toHaveCount(TICKETS.length)
+
+    throttling = true
+
+    await context.setOffline(true)
+    const banner = page.getByTestId("kds-feed-banner")
+    await expect(banner).toBeVisible({ timeout: 15_000 })
+
+    await context.setOffline(false)
+
+    // NON-VACUITY, asserted before the thing it qualifies: if no request was ever
+    // throttled then a cleared banner proves nothing at all — it would only be saying
+    // that an unobstructed refresh works, which the test above already covers.
+    await expect
+      .poll(() => throttled.length, { timeout: 20_000 })
+      .toBeGreaterThan(0)
+
+    // The board holds a detail for every ticket, so the refresh is COMPLETE even though
+    // part of it was refused. It has to stop warning.
+    await expect(banner).toHaveCount(0, { timeout: 20_000 })
+    await expect(pill).toContainText("Live")
+  })
+
+  // ---------------------------------------------------------------------------
   // #105 — a kitchen ticket can be printed, and it is the PRINT stylesheet that
   // makes it a ticket. Asserted under `emulateMedia({ media: "print" })`, because a
   // screen screenshot says nothing about `@media print`.

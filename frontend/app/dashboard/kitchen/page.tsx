@@ -290,16 +290,46 @@ export default function KitchenPage() {
         const needDetail = incremental
           ? activeOrders.filter((o) => held.get(o.id)?.status !== o.status)
           : activeOrders
-        const fetched = await fetchKitchenOrderDetails(needDetail)
-        const byId = new Map(fetched.map((d) => [d.id, d]))
+        const { details, failedIds } = await fetchKitchenOrderDetails(needDetail)
+        const byId = new Map(details.map((d) => [d.id, d]))
 
         const newMap = new Map<string, OrderDetail>()
+        // #561: a ticket the board can show NOTHING for. Distinct from a refused
+        // re-read of a ticket already held — see below.
+        let unrenderable = 0
         for (const o of activeOrders) {
           const detail = byId.get(o.id) ?? held.get(o.id)
           if (detail) newMap.set(o.id, detail)
+          else unrenderable += 1
         }
         setOrdersMap(newMap)
         setOrdersTruncated(truncated)
+
+        // #561: THE READ IS JUDGED ON WHAT THE BOARD CAN SHOW, not on whether every
+        // request succeeded. A refused re-read of a ticket whose detail is already
+        // held costs the operator nothing — the board in front of them is complete
+        // and current — so it must not raise "Orders are not refreshing" and then sit
+        // on that warning for the rest of the poll interval. That is the whole of
+        // #561: the alarm outlived its cause while the data behind it was fine.
+        //
+        // A ticket with no detail at ALL is the opposite case and keeps its alarm: the
+        // board is genuinely missing a ticket, and an incomplete kitchen board that
+        // stays quiet about it is the more dangerous failure of the two.
+        if (unrenderable > 0) {
+          setSyncFailed(true)
+          toast({
+            variant: "destructive",
+            title: "Error loading orders",
+            description: `Could not load ${unrenderable} ticket${unrenderable === 1 ? "" : "s"}.`,
+          })
+          return
+        }
+        if (failedIds.length > 0) {
+          console.warn(
+            `[kitchen] ${failedIds.length} of ${needDetail.length} order-detail reads ` +
+              `failed; the board is showing held detail for those tickets.`
+          )
+        }
         // #106: a successful read is the ONLY thing that advances the stamp.
         setLastSyncedAt(Date.now())
         setSyncFailed(false)

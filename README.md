@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-2386%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-2391%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -261,10 +261,10 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
 - Backend (Java): 1433 `@Test` methods across 244 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 78 `Test*` functions across 10 files ✅
-- Frontend (Jest): 743 `it/test` blocks across 91 files ✅
-- Frontend E2E (Playwright): 84 `test()` blocks across 18 specs ✅
+- Frontend (Jest): 747 `it/test` blocks across 91 files ✅
+- Frontend E2E (Playwright): 85 `test()` blocks across 18 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 2386 logical test invocations** ✅
+- **Total: 2391 logical test invocations** ✅
 
 Database schema version: **V60** (Flyway).
 
