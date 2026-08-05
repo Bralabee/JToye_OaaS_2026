@@ -21,11 +21,14 @@ import uk.jtoye.core.payment.dto.RefundDto;
 import uk.jtoye.core.security.TenantContext;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Phase 17 VOPS-02 — refund creation with stored-first idempotency.
@@ -231,6 +234,33 @@ public class RefundService {
     @Transactional(readOnly = true)
     public List<RefundDto> findByOrderId(UUID orderId) {
         return refundMapper.toDtoList(refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId));
+    }
+
+    /**
+     * The same history for a whole page of orders, in ONE query (#564).
+     *
+     * <p>Called by the kitchen board, which builds an {@code OrderDetailDto} per ticket.
+     * Doing this per order would put an N+1 back behind an endpoint whose entire purpose
+     * is to remove one — cheap from the outside, unchanged on the inside.
+     *
+     * <p>Returns a map keyed by order id. Orders with no refunds are ABSENT rather than
+     * mapped to an empty list: the caller has the authoritative order set and defaults
+     * them, so inventing keys here would only duplicate that knowledge in two places.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, List<RefundDto>> findByOrderIds(Collection<UUID> orderIds) {
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return refundRepository.findByOrderIdInOrderByOrderIdAscRequestedAtDesc(orderIds).stream()
+                .collect(Collectors.groupingBy(
+                        Refund::getOrderId,
+                        // LinkedHashMap on the downstream is deliberate: the query orders
+                        // newest-first WITHIN each order, and groupingBy preserves
+                        // encounter order, so the per-order lists match what the
+                        // single-order path returns. A plain toList() would too — this
+                        // says so rather than leaving it to be rediscovered.
+                        Collectors.collectingAndThen(Collectors.toList(), refundMapper::toDtoList)));
     }
 
     /**

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +30,20 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
      * by the already-REFUNDED short-circuit to return the latest refund.
      */
     List<Refund> findByOrderIdOrderByRequestedAtDesc(UUID orderId);
+
+    /**
+     * The same history for MANY orders in one query (#564).
+     *
+     * <p>The kitchen board builds an {@code OrderDetailDto} per ticket, and each of those
+     * carries its refund history. Fetching that per order turns an 18-ticket board into 18
+     * extra queries — an N+1 hiding behind the one this change removed, which would have
+     * made the endpoint look cheap from the outside while costing the same inside.
+     *
+     * <p>Ordering is by order and then newest-first within each order, so the caller can
+     * group without re-sorting. RLS scopes rows to the tenant exactly as the single-order
+     * variant does.
+     */
+    List<Refund> findByOrderIdInOrderByOrderIdAscRequestedAtDesc(Collection<UUID> orderIds);
 
     /**
      * Inverse lookup used by the Stripe webhook handler when {@code refund_id}

@@ -19,6 +19,7 @@ import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.UpdateOrderRequest;
 import uk.jtoye.core.order.dto.OrderItemRequest;
 import uk.jtoye.core.payment.RefundService;
+import uk.jtoye.core.payment.dto.RefundDto;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -32,9 +33,11 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for order management operations.
@@ -44,6 +47,18 @@ import java.util.UUID;
 @Transactional
 public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+
+    /**
+     * The statuses that belong on a kitchen board (#564).
+     *
+     * <p>This used to live only in the browser (`lib/kitchen-orders-api.ts`), which is why
+     * the board fetched the shop's whole history and filtered client-side. Server-side is
+     * the only place it can bound the query. The frontend constant stays — it still labels
+     * and orders the columns — but the two must agree, and this is now the one that
+     * decides what a read RETURNS.
+     */
+    static final List<OrderStatus> KITCHEN_STATUSES =
+            List.of(OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY);
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -302,6 +317,57 @@ public class OrderService {
         shopAccessService.require(shopId, ShopRole.STAFF);
         return orderRepository.findByShopId(shopId, pageable)
                 .map(orderMapper::toDto);
+    }
+
+    /**
+     * The kitchen board, in ONE read (#564).
+     *
+     * <p><b>What this replaces.</b> The board asked one question — "all active orders for
+     * this shop, with their line items" — and paid {@code 1 + N} HTTP requests for it: a
+     * list read, then one {@code /detail} per ticket, concurrently. Measured on the dev
+     * tenant: 18 active tickets, 19 requests, and the browser {@code online} handler fires
+     * the whole burst again on recovery — 38 requests inside ~400 ms against a tenant
+     * bucket of {@code capacity(120).refillIntervally(100, 1 min)}. Ten of them came back
+     * 429. #563 taught the board to survive that; this removes it.
+     *
+     * <p><b>It also stops the board reading history to find the present.</b> The old client
+     * paged the shop's WHOLE order list and filtered for kitchen statuses in the browser,
+     * so the work scaled with how long the shop had been trading rather than with what is
+     * on the board. Filtering here bounds the result by live tickets.
+     *
+     * <p><b>Access is deliberately the SAME rule as {@link #getOrdersByShop}</b> — STAFF on
+     * the named shop (VSA-02 / D-02). A new endpoint taking a caller-supplied shopId is a
+     * BOLA surface, and the safe move is to reuse the existing check rather than to reason
+     * out a new one. RLS scopes rows to the tenant underneath it.
+     */
+    @Transactional(readOnly = true)
+    public Page<OrderDetailDto> getKitchenBoard(UUID shopId, Pageable pageable) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+
+        Page<Order> page = orderRepository.findByShopIdAndStatusIn(
+                shopId, KITCHEN_STATUSES, pageable);
+        if (page.isEmpty()) {
+            return page.map(orderMapper::toDetailDto);
+        }
+
+        // The page is already decided by real SQL LIMIT above; this attaches items to
+        // exactly those rows. Doing it as a fetch-join on the paged query instead would
+        // make Hibernate paginate IN MEMORY (HHH000104) — an unbounded read wearing a
+        // paged response, which is the defect this method exists to remove.
+        List<UUID> ids = page.getContent().stream().map(Order::getId).toList();
+        Map<UUID, Order> withItems = orderRepository.findAllWithItemsByIdIn(ids).stream()
+                .collect(Collectors.toMap(Order::getId, o -> o));
+
+        // One query for every ticket's refunds, not one per ticket. The board does not
+        // render refunds, but OrderDetailDto carries them and a field left empty because
+        // nobody filled it is a lie the next consumer inherits.
+        Map<UUID, List<RefundDto>> refundsByOrder = refundService.findByOrderIds(ids);
+
+        return page.map(order -> {
+            OrderDetailDto dto = orderMapper.toDetailDto(withItems.getOrDefault(order.getId(), order));
+            dto.setRefunds(refundsByOrder.getOrDefault(order.getId(), List.of()));
+            return dto;
+        });
     }
 
     /**

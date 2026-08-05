@@ -28,6 +28,7 @@ import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.order.OrderService;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
+import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemRequest;
 import uk.jtoye.core.product.ProductLabelService;
@@ -390,6 +391,120 @@ class ShopAccessEnforcementIntegrationTest {
         assertThat(shopAccessService.canAccessShop(tenant, scoped, false, null))
                 .as("a scoped (non-GROUP_ADMIN) user is denied a null-shop feed (mirrors require() WRITE)")
                 .isFalse();
+    }
+
+    // --- #564: the kitchen board read, which is a NEW caller-supplied-shopId surface ------
+
+    @Test
+    void kitchenBoard_deniedOnUngrantedShop_andPermittedOnTheGrantedOne() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shopA = seedShop(tenant, "Shop A");
+        UUID shopB = seedShop(tenant, "Shop B");
+        UUID staff = UUID.randomUUID();
+        grantShopStaff(tenant, staff, shopA, "STAFF");
+
+        setStrictScoping(true);
+        authenticate(staff, false);
+        TenantContext.set(tenant);
+
+        // GET /orders/kitchen takes shopId from the CALLER. That is a BOLA surface, so the
+        // denial is asserted directly rather than inferred from the fact that the service
+        // calls require() — the same shape as the FC-1 cross-tenant write this repo shipped.
+        assertThatThrownBy(() -> orderService.getKitchenBoard(shopB, PageRequest.of(0, 50)))
+                .as("a STAFF user must not read the kitchen board of an ungranted shop")
+                .isInstanceOf(ShopAccessDeniedException.class);
+
+        // The permitted side is load-bearing, not a courtesy: if the grant lookup were
+        // failing open to "no rows", the deny above would still pass while shop A was
+        // ALSO denied — a gate that rejects everything looks identical to a correct one
+        // from the deny direction alone.
+        assertThatCode(() -> orderService.getKitchenBoard(shopA, PageRequest.of(0, 50)))
+                .as("the same STAFF user CAN read the board of the shop they are granted")
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void kitchenBoard_returnsOnlyActiveOrdersWithItems_andNeverAnotherTenantsShop() {
+        UUID tenant = UUID.randomUUID();
+        ensureTenant(tenant);
+        UUID shop = seedShop(tenant, "Board Shop");
+        UUID product = seedProduct(tenant, shop, "BOARD-SKU-1");
+
+        // Two orders that belong on a board, one that does not. The DRAFT is the control:
+        // without it, "returns the active ones" is satisfied by returning EVERYTHING.
+        UUID confirmed = seedDraftOrder(tenant, shop, product);
+        UUID preparing = seedDraftOrder(tenant, shop, product);
+        UUID draft = seedDraftOrder(tenant, shop, product);
+        asRealmAdmin(tenant, () -> {
+            orderService.submitOrder(confirmed);
+            orderService.confirmOrder(confirmed);
+            orderService.submitOrder(preparing);
+            orderService.confirmOrder(preparing);
+            orderService.startPreparation(preparing);
+            return null;
+        });
+
+        UUID ga = UUID.randomUUID();
+        grantGroupAdmin(tenant, ga);
+        setStrictScoping(true);
+        authenticate(ga, false);
+        TenantContext.set(tenant);
+
+        var board = orderService.getKitchenBoard(shop, PageRequest.of(0, 50));
+
+        assertThat(board.getContent()).extracting(OrderDetailDto::getId)
+                .as("the board carries the active tickets and NOT the DRAFT")
+                .containsExactlyInAnyOrder(confirmed, preparing)
+                .doesNotContain(draft);
+
+        // The whole point of the endpoint: detail arrives WITH the order, so the client
+        // never issues a follow-up request per ticket. Reading items here also proves the
+        // fetch-join populated them — a lazy collection would have thrown by now, since
+        // the service's transaction is closed.
+        assertThat(board.getContent()).allSatisfy(dto ->
+                assertThat(dto.getItems())
+                        .as("every ticket arrives with its line items attached")
+                        .isNotEmpty());
+
+        // Refunds are batched, not left null. The KDS does not render them, but the DTO
+        // carries the field and an unfilled field is a lie the next consumer inherits.
+        assertThat(board.getContent()).allSatisfy(dto ->
+                assertThat(dto.getRefunds()).as("refunds populated (empty, not null)").isNotNull());
+
+        // CROSS-TENANT. This was written expecting an EMPTY page (RLS returning no rows)
+        // and the real answer is stronger: `require()` runs FC-1's
+        // `requireShopInCallerTenant` first, so a foreign shopId 404s before any order
+        // query happens — the caller cannot even tell the shop exists. The endpoint
+        // inherits that guard by reusing `require()` rather than reasoning out its own
+        // check, which is the whole argument for reusing it. Asserted as measured, not as
+        // predicted; a test written to the guess would have failed a CORRECT system.
+        UUID otherTenant = UUID.randomUUID();
+        ensureTenant(otherTenant);
+        UUID foreignShop = seedShop(otherTenant, "Foreign Shop");
+        UUID foreignProduct = seedProduct(otherTenant, foreignShop, "FOREIGN-SKU-1");
+        UUID foreignOrder = seedDraftOrder(otherTenant, foreignShop, foreignProduct);
+        asRealmAdmin(otherTenant, () -> {
+            orderService.submitOrder(foreignOrder);
+            orderService.confirmOrder(foreignOrder);
+            return null;
+        });
+
+        authenticate(ga, false);
+        TenantContext.set(tenant);
+        assertThatThrownBy(() -> orderService.getKitchenBoard(foreignShop, PageRequest.of(0, 50)))
+                .as("another tenant's shopId is not readable — FC-1 404s it before any order query")
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        // Non-vacuity for the line above: the foreign board is genuinely non-empty when
+        // read from inside its own tenant. Without this, `isZero()` passes just as well
+        // against a seed that never worked, and the trap is already recorded in this repo
+        // (an unpinned query under RLS returns 0 rows on a full table).
+        authenticate(ga, true);
+        TenantContext.set(otherTenant);
+        assertThat(orderService.getKitchenBoard(foreignShop, PageRequest.of(0, 50)).getTotalElements())
+                .as("the foreign board really does hold a ticket — so the zero above is isolation, not an empty seed")
+                .isEqualTo(1);
     }
 
     // --- seeding helpers (run as a realm-admin: implicit GROUP_ADMIN, bypasses the gate) ---

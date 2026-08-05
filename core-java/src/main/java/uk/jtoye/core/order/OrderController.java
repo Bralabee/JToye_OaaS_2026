@@ -106,6 +106,35 @@ public class OrderController {
     }
 
     /**
+     * The kitchen board, in one request.
+     * GET /orders/kitchen?shopId=...
+     *
+     * <p>Issue #564. The board asks one question — "all active orders for this shop, with
+     * their line items" — and used to pay {@code 1 + N} requests for it: a list read plus
+     * one {@code /{id}/detail} per ticket. On an 18-ticket board that is 19 requests, and
+     * the browser's {@code online} handler fires the burst again on recovery, so an
+     * offline blip cost 38 requests in under half a second against a tenant limit of
+     * 100/minute. Ten came back 429. The cost scaled with how BUSY the kitchen was, which
+     * is precisely backwards.
+     *
+     * <p>It also stops the client reading history to find the present: the old path paged
+     * the shop's entire order list and filtered for kitchen statuses in the browser.
+     *
+     * <p>Read-only, so no Idempotency-Key contract (there is nothing to replay). Access is
+     * the same STAFF-on-shop grant every other shop-scoped read uses.
+     */
+    @GetMapping("/kitchen")
+    @Operation(summary = "Kitchen board for one shop",
+            description = "Returns active (CONFIRMED/PREPARING/READY) orders WITH line items for one shop "
+                    + "of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket "
+                    + "round trip the kitchen display used to make (#564). Requires STAFF on the shop.")
+    public ResponseEntity<Page<OrderDetailDto>> getKitchenBoard(
+            @RequestParam UUID shopId,
+            Pageable pageable) {
+        return ResponseEntity.ok(orderService.getKitchenBoard(shopId, pageable));
+    }
+
+    /**
      * Get order by ID.
      * GET /orders/{id}
      */
