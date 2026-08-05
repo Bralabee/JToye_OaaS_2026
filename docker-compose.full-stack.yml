@@ -359,6 +359,24 @@ services:
       # pins the expected aud (override per-env via EDGE_JWT_AUDIENCE).
       EDGE_JWT_AUDIENCE: ${EDGE_JWT_AUDIENCE:-core-api}
       PORT: 8080
+      # issue #550 [SEC-02 / C4]: move the Prometheus scrape endpoint OFF the
+      # published application port. Set here (not defaulted in Go) because this
+      # is the runtime where the exposure is real: 8089 below is a named app-tier
+      # exemption bound on all interfaces, and an unauthenticated /metrics there
+      # discloses the gateway's route templates. Measured on main @964ccc2f:
+      # GET :8089/metrics -> 200, while POST :8089/api/v1/sync/batch -> 401, so
+      # the 200 was a genuine ungated surface and not a probe artefact.
+      #
+      # edge-go serves /metrics on EITHER the app port or this one, never both
+      # (edge-go/cmd/edge/main.go registerAppMetricsRoute). The scrape target
+      # therefore has to move with it — it is rendered from the SAME .env key,
+      # EDGE_GO_METRICS_PORT, in infra/monitoring/docker-compose.monitoring.yml,
+      # so the two cannot drift apart. Change one, you have changed both.
+      #
+      # DELIBERATELY NOT PUBLISHED under `ports:` — Prometheus reaches it over
+      # jtoye-network by container name. Publishing it would recreate exactly the
+      # exposure this closes, one port to the left.
+      EDGE_MANAGEMENT_PORT: ${EDGE_GO_METRICS_PORT:-9101}
     ports:
       - "8089:8080"
     depends_on:

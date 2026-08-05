@@ -1,7 +1,9 @@
 # Prometheus configuration TEMPLATE for JToye OaaS monitoring (phase 27, plan 27-00).
 #
-# Placeholders (__CORE_JAVA_METRICS_PORT__) are rendered at container start by
-# entrypoint.sh using sed. The rendered output (prometheus.yml) is .gitignored.
+# Placeholders (__CORE_JAVA_METRICS_PORT__, __EDGE_GO_METRICS_PORT__) are rendered at
+# container start by entrypoint.sh using sed. The rendered output (prometheus.yml) is
+# .gitignored. A template edit therefore needs the container RECREATED, not restarted
+# into an existing render — `up -d --force-recreate prometheus`.
 #
 # Prometheus has no native env-var substitution in scrape configs, which is why the
 # sed wrapper exists — the same reason and the same mechanism as
@@ -81,14 +83,31 @@ scrape_configs:
         target_label: instance
         replacement: 'core-java'
 
-  # Edge Go API (Gin gateway) — the edge now exposes a Prometheus /metrics
-  # endpoint (prometheusMiddleware + promhttp in edge-go/cmd/edge/metrics.go),
-  # emitting http_requests_total + http_request_duration_seconds labelled by
+  # Edge Go API (Gin gateway) — the edge exposes a Prometheus /metrics endpoint
+  # (prometheusMiddleware + promhttp in edge-go/cmd/edge/metrics.go), emitting
+  # http_requests_total + http_request_duration_seconds labelled by
   # method/route-template/status. Job re-enabled (issue #98 item 3).
+  #
+  # THE PORT IS INJECTED, for the same reason as core-java above and one more.
+  #
+  #   dev/compose — the MANAGEMENT port (EDGE_GO_METRICS_PORT, default 9101).
+  #                 docker-compose.full-stack.yml sets EDGE_MANAGEMENT_PORT on the
+  #                 edge-go service from that same .env key, which is what moves
+  #                 the route off the published app port (issue #550, SEC-02/C4).
+  #   k8s         — unset, so /metrics stays on the app port 8080, which is what
+  #                 k8s/base/edge-go-deployment.yaml's prometheus.io/port
+  #                 annotation already says. No Prometheus is deployed there yet
+  #                 (DPLY-03), so nothing in-cluster reads this file.
+  #
+  # The edge serves /metrics on EXACTLY ONE of the two ports — registerAppMetricsRoute
+  # in edge-go/cmd/edge/main.go registers the app-port route only while
+  # EDGE_MANAGEMENT_PORT is empty. So a value here that disagrees with the edge's
+  # own EDGE_MANAGEMENT_PORT is a permanently-DOWN target, never a duplicate scrape;
+  # both come from the one .env key precisely so that cannot happen.
   - job_name: 'edge-go'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['jtoye-edge-go:8080']
+      - targets: ['jtoye-edge-go:__EDGE_GO_METRICS_PORT__']
         labels:
           service: 'edge-api'
           component: 'gateway'
