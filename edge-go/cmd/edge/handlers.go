@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,24 @@ type edgeHandlers struct {
 	tokenProvider    auth.ServiceTokenProvider
 	whatsAppTenantID string
 }
+
+// whatsAppUnconfiguredRetryAfterSeconds is the Retry-After sent alongside the
+// 503 when WHATSAPP_APP_SECRET is unset (issue #450 item 3, QA finding F-L3).
+//
+// It is a protocol constant rather than an env var on purpose. The value does
+// not vary by environment — it encodes what kind of wait this is: an operator
+// setting a secret, not a load spike that drains in seconds. 300s is long
+// enough that a client honouring it stops hammering an endpoint that cannot
+// succeed, and short enough that recovery is picked up promptly once the
+// secret lands. Making it configurable would add an env name that every
+// runtime must then justify to the k8s env-contract gate, to tune a number
+// nobody has a reason to tune.
+//
+// Meta runs its own retry schedule and is not expected to honour this header;
+// it is here for correctness and for well-behaved clients (including the
+// agent-readiness contract, which wants a machine-parseable "when to retry"
+// rather than a bare error).
+const whatsAppUnconfiguredRetryAfterSeconds = 300
 
 // Health godoc
 // @Summary     Liveness probe
@@ -176,8 +195,11 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 // @Description order, resolves each product-name query to a product UUID
 // @Description via the Core search endpoint, and creates an order scoped
 // @Description to the vendor identified by `WHATSAPP_DEFAULT_SHOP_ID`. The
-// @Description endpoint is fail-closed: if the secret is not configured
-// @Description or the signature is invalid/absent the webhook is rejected.
+// @Description endpoint is fail-closed, and the two refusals are distinct:
+// @Description an absent or invalid signature is 401, while an unset
+// @Description `WHATSAPP_APP_SECRET` is 503 with `Retry-After` — a known,
+// @Description operator-fixable unconfigured state rather than an internal
+// @Description error. Neither reads the body nor calls anything downstream.
 // @Description
 // @Description Processing outcomes (bad payload, ambiguous product, missing
 // @Description default shop, Core error) always return HTTP 200 to prevent
@@ -195,7 +217,8 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 // @Param       payload             body     object      true  "WhatsApp message-event payload (shape defined by Meta)"
 // @Success     200 {object} WebhookAck    "Webhook received (processing outcome in logs)"
 // @Failure     401 {object} ErrorResponse "Missing or invalid HMAC signature"
-// @Failure     500 {object} ErrorResponse "WHATSAPP_APP_SECRET not configured"
+// @Failure     503 {object} ErrorResponse "WHATSAPP_APP_SECRET not configured — the route is unavailable until an operator sets it (fails closed)"
+// @Header      503 {integer} Retry-After "Seconds to wait before retrying. This is an operator-fixable configuration state, not transient load."
 // @Router      /api/v1/webhooks/whatsapp [post]
 func (h *edgeHandlers) WhatsAppWebhook(c *gin.Context) {
 	// WhatsApp uses SHA256 HMAC for signature verification
@@ -205,10 +228,29 @@ func (h *edgeHandlers) WhatsAppWebhook(c *gin.Context) {
 
 	// Fail-closed: refuse to accept webhooks if the signing secret is
 	// not configured. Previously an unset secret would silently skip
-	// signature verification, allowing anyone to inject orders.
+	// signature verification, allowing anyone to inject orders. That
+	// refusal is the security property and is unchanged — the request is
+	// rejected before the body is read and before anything downstream is
+	// touched.
+	//
+	// issue #450 item 3 (QA F-L3): the STATUS was wrong, not the behaviour.
+	// 500 claims the edge broke; it did not. This is a known, named,
+	// operator-fixable state — the service is unavailable for this route
+	// until someone sets a secret — which is precisely 503 + Retry-After.
+	//
+	// Deliberately NOT 501: that advertises the endpoint as unimplemented,
+	// which is false (it is implemented and deployed) and worse, because a
+	// caller may reasonably stop calling a 501 for good.
+	//
+	// This discloses "configured" vs "not configured" to an unauthenticated
+	// caller — but so did the 500 it replaces, so no new signal exists. The
+	// alternative, returning 401 to hide it, would lie to the operator whose
+	// only diagnostic is this response.
 	if appSecret == "" {
-		h.logger.Error("WHATSAPP_APP_SECRET not configured; refusing webhook")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook signing not configured"})
+		h.logger.Error("WHATSAPP_APP_SECRET not configured; refusing webhook",
+			zap.Int("retry_after_seconds", whatsAppUnconfiguredRetryAfterSeconds))
+		c.Header("Retry-After", strconv.Itoa(whatsAppUnconfiguredRetryAfterSeconds))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook signing not configured"})
 		return
 	}
 

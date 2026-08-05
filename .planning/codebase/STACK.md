@@ -181,10 +181,10 @@
 - keycloak:24.0.5 — `docker-compose.full-stack.yml:123`
 - redis:7-alpine — `docker-compose.full-stack.yml:171`
 - rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:195`
-- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:610`
+- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:628`
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:35`
-- grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:77`
-- prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:108`
+- grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:84`
+- prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:115`
 - Next.js 16.2.12 — `frontend/package.json:36`
 - Go 1.26 (`go 1.26.0`) — `edge-go/go.mod:3`
 
