@@ -457,8 +457,14 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     })
     // A detail request is not merely unnecessary now — it is a regression. Recorded
     // separately so a client that calls the new endpoint AND still fans out is caught.
+    //
+    // Matched by REGEX with an optional query string, not by the `*/detail` glob. The
+    // glob misses `/detail?anything`, which a break arm demonstrated: the fan-out escaped
+    // the route, hit the real API, and the test failed on a blank board instead of on the
+    // count — a true failure for an uninformative reason. A guard that a query parameter
+    // can walk past is not a guard.
     const details: string[] = []
-    await page.route(`${API}/api/v1/orders/*/detail`, (route) => {
+    await page.route(/\/api\/v1\/orders\/[^/]+\/detail(\?|$)/, (route) => {
       details.push(route.request().url())
       return route.fulfill({
         status: 200,
