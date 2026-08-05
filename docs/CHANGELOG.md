@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of — 2026-08-05
+
+The script tore down only the **hybrid** runtime that `scripts/start-dev.sh` starts: `infra/` compose plus the backend and frontend as host processes. It knew nothing about `docker-compose.full-stack.yml` (project `jtoye_oaas_2026`) — the runtime CLAUDE.md calls canonical for local dev and E2E, and the one Playwright runs against. Run against that, it killed processes that were not running, ran `docker compose down` in a project with no containers, and printed its success banner while **11 containers kept running**. Measured 2026-08-05: 11 before, 11 after.
+
+Re-pointing it at the full-stack file — the obvious reading of "target the right project" — would have dropped the teardown that pairs with `start-dev.sh`. Both are handled now; a runtime that is not present is announced and skipped, never errored.
+
+#### Fixed
+- **Both runtimes are torn down**, and the banner is a consequence of a check rather than a `printf`. Surviving containers are counted **by container label, not by compose file** — a file-based check cannot see containers whose config path has since gone (the `monitoring` project on this machine has its compose file inside a deleted worktree), and label-based counting keeps working when the path is wrong, which is what makes a fail-direction test possible at all. Exits **1** when anything survives.
+- **`pkill -f` no longer kills the shell that invoked it.** `pkill -f PATTERN` matches every process's *full command line*, so `pkill -9 -f "next-server"` SIGKILLed the shell testing this script purely because the test command mentioned that string — output vanished, no diagnostic, indistinguishable from a hang. Candidates are now filtered before signalling: never self, never an ancestor, never a process inside a container. The bracket trick does not help here; `[n]ext-server` still matches the text wherever it appears.
+- **Container processes are no longer mistaken for host processes.** The host PID namespace can see inside containers, so the verifier flagged the containerised `next-server` as a stray host process — and an unrelated project's container would have failed the script after a correct teardown. Each pid is checked against its cgroup.
+
+#### Notes
+- **No `-v`, anywhere.** Named volumes (Postgres data, MinIO objects, Keycloak realm state) survive; verified after the teardown. Stopping the stack must never destroy data.
+- **Paths and project names are injected** (`FULL_STACK_COMPOSE`, `INFRA_DIR`, `FULL_STACK_PROJECT`, `INFRA_PROJECT`) rather than hardcoded — required for worktrees, where compose derives a different project name from the directory, and it is what allowed the fail arm to run.
+- **Still broad, deliberately**: the process patterns match these processes for any checkout on this machine. Narrowing to this repo risks failing to stop what `start-dev.sh` started.
+
 ### The kitchen board asked one question and paid one request per ticket for it (#567) — 2026-08-05
 
 `GET /api/v1/orders/kitchen?shopId=…` returns a shop's active orders **with their line items**. The board previously read a list and then one `/orders/{id}/detail` per ticket, concurrently — 19 requests on an 18-ticket board, and the browser `online` handler fires the burst again on recovery, so an offline blip cost 38 requests in under half a second against a tenant bucket refilled in one lump per minute. #563 made the board *tolerant* of the resulting 429s; this removes them.
