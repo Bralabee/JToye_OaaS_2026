@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The test-count gate agreed with itself over a number no runner ever produced (#291) — 2026-08-05
+
+`scripts/docs-freshness.sh` counted Jest/Playwright/vitest blocks with the textual regex `\b(it|test)\(`. That regex is wrong in **both** directions at once, and the errors partly cancel — which is exactly why it survived. `\b` treats `.` as a word boundary, so `RegExp.prototype.test(` matched (7 phantom Jest blocks, 5 phantom Playwright blocks); and a table-driven `it.each([…])("…")` contains no `it(` at all, so 9 sites expanding to 51 executed tests contributed **zero**.
+
+The gate could never go red on this, because the only thing checking `docs/metrics.json` was the same regex that produced it, and `check-doc-metrics.sh` only compared the prose back to that manifest. A loop closed on itself cannot detect that its own measurement is the thing that is wrong. Measured 2026-08-05 with the runners as the oracle: manifest **745**, `npx jest` **789**; manifest **85**, `playwright test --list` **80**. (The issue recorded the same divergence twice before: 357 vs 352 at Phase 23, 365 vs 360 at the 23-15 reconcile.)
+
+#### Fixed
+- **The JS/TS families are counted by a reader, not a regex.** `scripts/count-test-blocks.mjs` masks comments, strings, template and regex literals, rejects member access, and expands `.each` tables — inline array literals and the `it.each(hostile)` shape where the table is an array-literal `const` in the same file. Its output now equals every runner exactly: Jest **789** blocks / **91** files (`numTotalTests` / `numTotalTestSuites`), Playwright **80** / **18** (unique declaration sites in `--list`, de-duplicated across the desktop+mobile project matrix that turns them into 182 runs), vitest **48** / **8**.
+- **The baseline moved in one commit.** `docs/metrics.json` (regenerated, never hand-arithmetic), the badge and the test-results block in `README.md`, and the count prose in `CLAUDE.md` and `AGENTS.md`. Total logical invocations **2391 → 2430**.
+
+#### Added
+- **`scripts/check-test-count-oracle.sh`** — the third gate, and the only one that asks a **runner**. Jest and Playwright run in the `test` job of `ci-cd.yaml` (Jest reuses the existing suite run via `--json --outputFile`; Playwright's `--list` needs no browser), vitest in `mcp-server-tests`. It also closes the one hole no static reader can: a test declared inside a loop is one declaration and N executions. A runner reporting **zero** tests exits 2 (VOID) — a suite that fails to boot must never read as agreement.
+- **`scripts/check-test-block-counter.sh`** — 11 arms over fixtures whose answers are known by construction, wired into `docs-freshness.yml` *ahead of* the gate that depends on the counter. Six of the arms assert **refusals**: a computed `.each` table, an imported one, a tagged-template table, `describe.each`, an `xit` alias, an unmodelled modifier chain and an empty input set must each exit 2 rather than produce a plausible number. Replacing an unfalsifiable measurement with a second unfalsifiable measurement would have been no improvement.
+
+#### Notes
+- **Fail-closed by construction.** The counter never guesses. Anything it cannot resolve exits 2 with a file and line, and `docs-freshness.sh` propagates that instead of degrading it into a count — including when `node` is absent. `count_js` deliberately sets globals rather than being called in `$( )`, because an `exit 2` inside a command substitution kills only the subshell and the caller would have read an empty value and carried on.
+- **Playwright's `test.skip` is counted by argument shape.** `test.skip(cond, "reason")` is a runtime directive (0) and `test.skip("name", fn)` is a declaration (1). A flat ignore list would have been simpler and would have silently dropped real tests — the failure direction that looks fine.
+- **No test was added or removed to move a number.** The counter changed; the suites did not. Every count above was reconciled against the runner, not against the new grep.
+
 ### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of (#568) — 2026-08-05
 
 The script tore down only the **hybrid** runtime that `scripts/start-dev.sh` starts: `infra/` compose plus the backend and frontend as host processes. It knew nothing about `docker-compose.full-stack.yml` (project `jtoye_oaas_2026`) — the runtime CLAUDE.md calls canonical for local dev and E2E, and the one Playwright runs against. Run against that, it killed processes that were not running, ran `docker compose down` in a project with no containers, and printed its success banner while **11 containers kept running**. Measured 2026-08-05: 11 before, 11 after.

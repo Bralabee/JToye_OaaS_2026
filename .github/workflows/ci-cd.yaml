@@ -100,9 +100,30 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+      # --json --outputFile is here so the count oracle below can reuse THIS run
+      # rather than executing the suite a second time. The human-readable reporter
+      # output is unaffected.
       - name: Run frontend Jest tests
-        run: npm test -- --ci --watchAll=false
+        run: npm test -- --ci --watchAll=false --json --outputFile="$RUNNER_TEMP/jest-report.json"
         working-directory: frontend
+
+      # Issue #291. docs-freshness.sh asserts docs/metrics.json against the source
+      # tree and check-doc-metrics.sh asserts the prose against docs/metrics.json —
+      # a loop closed on itself, which stayed green for months over a Jest count
+      # that was simply wrong (manifest 745, runner 789). These two steps are the
+      # only ones that ask a RUNNER. They also cover the one case no static reader
+      # can: a test declared inside a loop is one declaration and N executions.
+      - name: Verify docs/metrics.json against the Jest runner (#291)
+        if: always()
+        run: bash scripts/check-test-count-oracle.sh jest --report "$RUNNER_TEMP/jest-report.json"
+
+      # `playwright test --list` enumerates declarations without launching a browser,
+      # so this needs no `playwright install`. It lives in THIS job, not in the
+      # path-filtered E2E job, because a paths-filtered gate can report success in
+      # six seconds without having run.
+      - name: Verify docs/metrics.json against the Playwright declaration list (#291)
+        if: always()
+        run: bash scripts/check-test-count-oracle.sh playwright
 
       - name: Upload test results
         if: always()
@@ -474,7 +495,9 @@ jobs:
 
   # Job 1e: MCP server tests (Phase 20 / #203, review WR-01).
   # The docs-freshness gate only COUNTS the mcp-server vitest blocks; this job
-  # actually runs them. `npm run build` (tsc) is the type-check gate — vitest
+  # actually runs them — and, since #291, reconciles the two: the count oracle step
+  # at the end asserts docs/metrics.json against what vitest itself reports.
+  # `npm run build` (tsc) is the type-check gate — vitest
   # alone does not type-check (same gap class as #87/PR #130 for Jest).
   # No permissions block on purpose: the restricted default GITHUB_TOKEN
   # (contents + packages read) is all a plain build/test job needs.
@@ -503,6 +526,14 @@ jobs:
       - name: Run mcp-server vitest suite
         run: npx vitest run
         working-directory: mcp-server
+
+      # Issue #291 — the third runner-side reconciliation. Runs from the repo root
+      # (the script cds into mcp-server itself) and fails closed at exit 2 if vitest
+      # reports zero tests, because a suite that fails to boot must never read as
+      # agreement.
+      - name: Verify docs/metrics.json against the vitest runner (#291)
+        if: always()
+        run: bash scripts/check-test-count-oracle.sh vitest
 
   # Job 1f: Operational contracts (Phase 27 / OPS-01, OPS-02).
   # SIX STATIC gates. None needs a running stack; all run in seconds.
