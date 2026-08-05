@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-2373%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-2374%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -264,7 +264,7 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 - Frontend (Jest): 739 `it/test` blocks across 91 files ✅
 - Frontend E2E (Playwright): 83 `test()` blocks across 18 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 2373 logical test invocations** ✅
+- **Total: 2374 logical test invocations** ✅
 
 Database schema version: **V60** (Flyway).
 
