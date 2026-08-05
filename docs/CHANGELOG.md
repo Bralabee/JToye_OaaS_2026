@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Falsified:** an unregistered `orders(UUID, UUID)` factory turns the run to exactly 1 failure, `everyShopScopedFactoryIsGated`, with a message naming the fix. Restored, hash-verified to baseline, closing arm green.
 - **The restore was an edit, deliberately not `git checkout`.** The registry change was uncommitted, and `checkout` restores from the index — it would have discarded the fix along with the break.
 - **The first break arm silently did nothing.** A `perl -0pi -e` substitution failed on a syntax error, the factory was never added, and the test passed — indistinguishable from "the guard does not fire". Only asserting the break had actually landed caught it. **A break arm needs its own proof that the break happened.**
+### Three gates existed on disk and ran nowhere, and nothing would have noticed (#553) — 2026-08-05
+
+Of the 24 `scripts/check-*.sh`, **six had zero references in `.github/workflows/`**. Three of those are deliberate — `check-infra-exposure` (part B), `check-container-config-drift` and `check-alert-mute` inspect a running stack, so on a hosted runner they could only ever exit 2 (VOID), the same reason `check-runtime-freshness` is deliberately absent. Three were not deliberate, and each had been written *because* a specific defect shipped.
+
+#### Added
+- **`scripts/check-gate-enforcement.sh` + `scripts/gates/gate-enforcement.conf`** — every `check-*.sh` must either run in a workflow or carry a reasoned entry saying why a hosted runner cannot run it. Default-deny: a new gate that is neither wired nor declared fails, because forgetting to think about a new gate is the case it exists to catch.
+
+#### Fixed
+- **`.github/workflows/ci-cd.yaml`** — `check-e2e-baseurl-contract.sh` (#505), `check-playwright-mobile-contract.sh` (#503) and `check-no-measured-placeholders.sh` (27-04 D-05) now run in the `ops-contracts` job. Each protects against a defect that already shipped once, and none could fire on a pull request.
+
+#### Notes
+- **This is the same shape as the defect #510 fixed.** The loopback binding is correct and nothing stopped anyone re-adding `0.0.0.0` — its gate is one of the three that legitimately cannot run in CI, which is now recorded in the conf rather than being an unwritten fact.
+- **Every gate was shown to FAIL before being wired**, against the exact defect it was filed for, then restored and verified by `git hash-object` — never by `git diff --stat`, which is empty both when a file is restored and when it was never written. `hasTouch` removed → rc=1; a spec-local base-URL fallback to an unpublished port → rc=1; an unfilled placeholder default in `application.yml` → rc=1; clean tree → rc=0 for all three.
+- **"These three are static" is asserted, not assumed.** Grepping each for `docker|curl|psql|kubectl|nc|rabbitmqctl|redis-cli|wget` returns nothing, while the same grep over `check-infra-exposure` returns `curl docker` — so the probe discriminates rather than returning empty for every input.
+- **The meta-gate is self-covering and failed itself first.** It is a `check-*.sh`, so it must appear in a workflow or fail. It did, on its first run — the cheapest possible proof it can fire. Falsified four ways: clean rc=0; a new unwired gate rc=1 and named; an exemption naming a non-existent gate rc=2 (VOID, never a warning); closing clean rc=0.
+- **The self-match trap fired once and is recorded in the script.** That first run also reported the meta-gate as invoking all nine runtime binaries, because a script that searches for those names necessarily contains them — the same class as a doc-lint rule firing on its own definition. Trailing comments are deliberately left unstripped, since that direction can only force an exemption to be written, never suppress a needed one.
 
 ### An inline comment in .env.example is part of the value, and it switched Stripe on in CI (#543) — 2026-08-05
 
