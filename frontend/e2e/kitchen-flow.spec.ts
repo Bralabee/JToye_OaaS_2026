@@ -480,6 +480,19 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await expect(pill).toContainText("Live", { timeout: 20_000 })
     await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
 
+    // ARM ONLY ONCE THE BOARD IS GENUINELY SETTLED, and wait for evidence of that
+    // rather than assuming it. "Live" is NOT that evidence: the pill reads the socket,
+    // which connects before the first read returns, so arming on it raced the initial
+    // detail fetch. Measured — the full suite caught what four spec files did not: the
+    // first load's own details came back 429, two tickets had no detail at ALL, and the
+    // board correctly refused to go quiet. The test was asserting the wrong case.
+    //
+    // A wall clock in the pill means `lastSyncedAt !== null`, i.e. a read completed, and
+    // four rendered tickets mean their detail is held. Both are required before a
+    // REFUSED RE-READ is the thing under test.
+    await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/, { timeout: 20_000 })
+    await expect(page.getByText("Alice")).toHaveCount(TICKETS.length)
+
     throttling = true
 
     await context.setOffline(true)
