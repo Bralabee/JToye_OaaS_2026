@@ -29,7 +29,7 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | Merge-train lesson | **`docs/metrics.json` conflicted three ways on every lane, and NEITHER SIDE WAS EVER RIGHT.** Lane E: ours 2093 / theirs 2106 / truth **2107**. Lane A: ours 2142 / theirs 2107 / truth **2157**. Lane B: 2202. Each lane adds to a different counter (Java / Go / Jest), so "take ours" and "take theirs" are both wrong and the only correct move is `scripts/docs-freshness.sh --write` on the merged tree. The same conflict also carried README's build badge, whose two sides were the **404 repo** and the fix for it — and which side was correct **flipped** between lanes, because the fix landed mid-train |
 | Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
 | Runtime | **4/4 built services FRESH, 0 unverified**, re-synced 2026-08-04 after the Wave-1 train. All four were stale (`rc=1`, each named with its build-input commit); `scripts/sync-runtime.sh` rebuilt and **recreated** them, gate `rc=0` after. Both directions recorded. **Proven by content, not only by the gate:** `TenantCacheEvictor`, `PublicUnsubscribeController` and `OrderStateChangeListener` (all #519) read back from **inside** the running `app.jar` via `unzip -l`, with a `NotARealClassControl` returning **0** so the probe can demonstrably say no; and the frontend's `--primary` was read out of the **served** stylesheet (`/_next/static/chunks/*.css`) as `17.5 88.3% 40.4%` — Lane C's orange-700, matching source, where orange-600 would be `20.5 90.2% 48.2%` |
-| E2E | **127 passed / 8 skipped / 0 failed of 135**, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
+| E2E | **127 passed / 8 skipped / 0 failed of 135** — a LOCAL run of the spec files, NOT the nightly (which runs both projects: 180 instances, see §0.-5) —, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
 > checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
@@ -42,6 +42,216 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 ---
 
 ## 0. ⚠ READ FIRST
+
+### 0.-6 The nightly is GREEN — the first clean run this repo has produced (2026-08-05)
+
+**Read this before §0.-5**, which predicts this outcome rather than reporting it.
+
+```
+run 30971049317   sha d4930719   total=180  passed=173  failed=0  skipped=7
+run 30967157741   sha d4930719   total=180  passed=173  failed=0  skipped=7
+```
+
+Two consecutive runs on `d4930719` (#543). §0.-5's prediction — *"expect `failed=0`"* — **held**, and
+the four surviving checkout failures were indeed the `.env.example` inline comment and nothing else.
+
+**What this does and does not establish.** It establishes that the suite has a real CI baseline for
+the first time: seven earlier runs produced *zero* test results, and the eighth and ninth produced
+failures. It does **not** establish the card path — with `STRIPE_API_KEY` genuinely empty, checkout
+takes the COD fallback, so `failed=0` here is consistent with the online path still never having
+executed. That remains the Phase 30 owner decision. **A green suite over an unreachable branch is
+exactly the shape this document keeps warning about; do not read it as payment coverage.**
+
+**The 7 skips are declared and inside the budget of 8, but unverified** — filed as **#547**, the
+successor to #420 (now CLOSED). The budget sits one below its ceiling, so the next skip added trips it.
+
+**Gate sweep at this commit:** 21/25 `scripts/check-*` rc=0 and 6/6 k8s gates rc=0. The non-zero ones
+were all branch-local and are cleared by this merge — `check-branch-behind-base` (1 behind),
+`check-changelog-contract` (#543's entry lives on main), `check-handoff-contract` (the two rows this
+commit corrects) — plus the two standing remedies that are not regressions: `check-alert-metrics`
+rc=1 (`scripts/seed-order-metric.sh`, fires on every core-java recreate) and `check-e2e-skip-budget`
+rc=2 VOID (stored report older than `frontend/e2e`; re-run the suite).
+
+**Unfiled, found while measuring the above: 6 of 24 gates have ZERO CI references.** Three are
+deliberate — they need a live stack and could only ever VOID on a runner (`check-infra-exposure`
+part B, `check-container-config-drift`, `check-alert-mute`). **Three are purely static and nothing
+runs them:** `check-e2e-baseurl-contract` (#505), `check-playwright-mobile-contract` (#503) and
+`check-no-measured-placeholders` (27-04 D-05). Each was written to stop a *specific* defect
+recurring, and none can fire on a PR — the same shape as SEC-04, whose fix (#510) is green while
+nothing prevents someone re-adding `0.0.0.0` tomorrow. Measure it with
+`rg -uu -l "<gate>.sh" .github/workflows/` and **capture the rc on its own statement** — the
+`ci_refs=0` reading is an absence claim, so it needs `-uu` (`.github/` is hidden) and a
+known-wired control (`check-changelog-contract` → `docs-freshness.yml`) to prove the probe can see.
+
+### 0.-5 The nightly finally produced a number, and it found four things no gate could (2026-08-05)
+
+**Read this before §0.-4.** That section describes the five-lane triage train; this one describes what
+happened when the train's own work was finally tested by something that had never run.
+
+#### The headline: there is a nightly baseline now, for the first time
+
+`e2e-nightly.yml` had run **seven** times and produced **zero** test results — every run died building
+the stack, on #517. #532 fixed that, and the eighth run completed:
+
+```
+run 30955236660   sha a769b597   total=180  passed=167  failed=6  skipped=7
+```
+
+**180, not 135.** The 135 figure elsewhere in this document is a *local* run of the spec files; the
+nightly runs both Playwright projects, so it executes ~180 test instances. Do not compare them. The
+row in §Live-stack that reads `127 passed / 8 skipped / 0 failed of 135` is a **local** measurement
+and is labelled as such — it is not the suite's CI state and never was.
+
+#### The 6 failures decomposed into three different kinds — this is the reusable part
+
+Two of them were ours, one was a measured flake, and **four were a pre-existing defect that only the
+nightly could reach**. Conflating those would have produced the wrong fix three times over.
+
+| failures | test | verdict |
+|---|---|---|
+| 4 | `storefront-flows` checkout + Mailhog | **pre-existing**, not the train (#538) — but see "The SECOND nightly" below: #539 fixed the NPE and the tests still failed, on `.env.example` (#543) |
+| 2 | `public-layout` modal shape | **#537 fallout** — see the stub hazard below |
+| (+1 local only) | `storefront-flows:155` menu loads | **a real flake**, measured 10/25 and 7/12 |
+
+**The first diagnosis was wrong and it is worth knowing why.** The modal test exercises the component
+#533 rewrote to a Radix Dialog, so #533 was the obvious suspect. It is innocent. The cause is #537:
+the spec stubs the API with `context.route("**/public/**")`, which intercepts **browser** requests
+only. Once `/shop/[slug]` became a server component, the Next server's fetch stopped passing through
+the browser, so against a live backend the fixture slug `test-kitchen` gets an authoritative 404 →
+`notFound()` → **no dish cards exist** → `locator.click` waits out 60s. The failure screenshot is a
+"Shop not found" page. Fixed in #540 (tests only — `notFound()` on a missing slug is correct).
+
+
+#### The SECOND nightly, and why "fixed" was the wrong word for the checkout half
+
+Run `30964857894` on `1112ff15`, dispatched after #539 and #540 merged:
+
+```
+total=180  passed=169  failed=4  skipped=7      (was 167 / 6)
+```
+
+**#540 worked** — both modal failures gone. **#539 worked too, at what it targeted**: the
+`Order.getId() is null` NPE occurs **0 times** in this run's stack logs, against 2 in the previous
+one. But the four checkout failures survived, with an identical symptom
+(`getByRole('heading', { name: 'Order confirmed!' })` never appears) and a *different* cause:
+
+```
+java.lang.RuntimeException: Payment processing unavailable. Please try again later.
+	at uk.jtoye.core.storefront.PublicStorefrontService.createGuestOrder(PublicStorefrontService.java:576)
+```
+
+That is the catch block rethrowing a `StripeException` — the code now persists the order, reaches
+Stripe correctly, and fails because **CI had a Stripe key that was not a real one**.
+
+**Where CI got a key from, given the workflow never sets one.** `e2e-nightly.yml` does
+`cp .env.example .env`, and `.env.example` carried:
+
+```
+STRIPE_API_KEY=               # sk_test_... from Stripe dashboard
+```
+
+**Docker Compose treats an inline comment as part of the value.** Measured with a two-service probe:
+that line resolves to `STRIPE_API_KEY: '# sk_test_... from Stripe dashboard'`, while a bare `VAR=`
+resolves to `""` and `CONTROL_SET=realvalue` resolves normally — so the probe discriminates.
+`isConfigured()` is `apiKey != null && !apiKey.isBlank()`, so a **comment was a credential**.
+
+Four variables had that shape, all of them "leave blank unless you have a key" flags:
+`ANTHROPIC_API_KEY`, `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`. Fixed in **#543**.
+
+**The correction worth carrying: the product was right on both runs and the environment was lying
+about being configured.** #538 was a genuine defect and #539 genuinely fixed it — but the thing that
+*surfaced* it, and then kept the test red afterwards, was `.env.example`. A run that fails twice for
+two different reasons is not the same as a fix that did not work, and reading it that way would have
+sent someone back into `PublicStorefrontService` for a third time.
+
+**Still not established, and #543 does not change it:** with the key genuinely empty, checkout returns
+to the COD fallback, so the **card path remains unexercised**. Proving it needs a real Stripe test key
+— the same owner decision that gates Phase 30.
+
+**Expect on the next dispatch:** `failed=0`. **This resolved — see §0.-6.** #543 merged as `d4930719`
+and the next two runs both returned `failed=0`. The contingency below was not needed, and is retained
+because it is the right first move if the suite ever goes red here again: if checkout is red after a
+`.env.example` fix, the cause is a third one and the `.env` resolution should be checked first — read
+the value the container actually got, not the file.
+#### The hazard #540 worked around but did NOT fix — this scales, and it fails silently
+
+**A browser-level API stub cannot describe a server-rendered route.** The consequence is worse than a
+red test:
+
+> **The public-surface gate was green exactly when CI had no backend.** Stack-free, core is
+> unreachable → the server fetch fails → `getJson` catches → `defer` → the client island fetches →
+> the browser stub answers → pass. Give it a real backend and the same spec fails.
+
+A **second, quieter regression** rode along: the sibling `/shop/test-kitchen` layout test was
+**passing vacuously** over that same not-found page — an empty page has no fixed-ratio boxes, no
+images, no overflow, and does have an `<h1>`.
+
+**#507 has 20 more routes queued for exactly this conversion.** Each one silently removes whatever
+`context.route` coverage its spec had, and the failure mode is a vacuous pass, not a failure. This is
+an unfiled structural decision about how the CI browser gate should work. **File it before the
+conversions start.**
+
+#### #538 — card checkout has never worked, only been unreachable
+
+`PublicStorefrontService.createGuestOrder` called `paymentService.createPaymentIntent(order)` at
+`:512` and `orderRepository.save(order)` at `:524`, and `PaymentService:126` is
+`.putMetadata("order_id", order.getId().toString())`. So the id is dereferenced **twelve lines before
+it is assigned** → guaranteed NPE → HTTP 500.
+
+It is gated behind `isConfigured()` (`apiKey != null && !isBlank()`), and **every stack has an empty
+Stripe key**, so checkout has always taken the COD fallback and the online path has never executed.
+That is why it survived: the same test **passes locally** (COD) and **fails in CI**.
+
+**This sits directly under a Phase-30 blocker.** The day a Stripe test key is added to any stack, the
+first card order 500s. Fixed in #539 (persist → pay, `saveAndFlush` so the V24 unique index resolves
+before money is asked for; rollback on a failed intent is the *correct* behaviour, not just the free
+one — keeping the DRAFT row would strand the customer's idempotency key on an unpayable order).
+
+Two adjacent money-path defects were fixed in the same PR because they are only *possible* once the
+order has an id at that moment: the PaymentIntent id is now persisted to `order.payment_reference`
+(without it WR-02's idempotent-retry re-fetch at `:346-357` is guarded on `paymentReference != null`
+and can **never** fire — a retried card checkout returned a null client secret), and the Stripe call
+now carries an `Idempotency-Key`, which the standing agent-readiness contract requires of any mutating
+endpoint.
+
+**What #539 does NOT establish, and nobody should read into it:** the card path is correct by
+construction and by test, and has still **never executed against Stripe**. The artifact that closes it
+is a test-mode `pi_...` id paired with the local order row. That needs a Stripe test key — an owner
+decision, and the immediate follow-up.
+
+#### Merge-train traps, second sitting
+
+§0.-4 lists four. Three more, all of which cost a real CI cycle today:
+
+5. **`check-changelog-contract` C-1 wants the PR's OWN number and agents write issue numbers.** #533's
+   entry cited `(#446, #272)`, so the gate went **RED on main** the instant it squash-merged and had
+   to be repaired from inside #534. Every subsequent PR was fixed pre-merge. Check this before merging.
+6. **`docs-freshness --write` run during an UNRESOLVED merge inflates its own counts.** An unmerged
+   path appears in the index **once per stage**, so a still-conflicted spec file was counted more than
+   once — it reported `playwright 92/19` where the truth was `83/18`, exactly the 9 `test(` blocks of
+   the conflicted file. Resolve and `git add` every source conflict **before** regenerating. Docs-only
+   conflicts are immune, which is why #534/#535 were unaffected and green.
+7. **A branch name contains `/`.** `> "$SCRATCH/merge-$BR.log"` fails *before* the command runs and
+   bash reports the **redirect's** status as the merge's, so the merge silently never happens and
+   everything downstream operates on the unmerged tree. Guard by asserting
+   `git merge-base --is-ancestor origin/main HEAD` after any "successful" merge — never by the rc.
+
+#### State as of this commit
+
+Ten PRs merged in sequence: **#532 #533 #534 #535 #537** (triage train), **#539 #540** (nightly
+fallout). Closed: **#517 #446 #272 #454 #105 #106 #447 #538**. Filed and open: **#536**
+(`/dashboard/kitchen` CLS 0.2005 against a 0.1 budget, measured, in no lane's scope).
+
+**Do not quote these figures without re-running them** — every one moved at least twice today:
+
+| | |
+|---|---|
+| runtime | 4/4 FRESH after rebuild; #539 proven in the running jar (`Idempotency` ×2 in `PaymentService.class`, was 0, negative control 0); #537 proven by served HTML (`/shop/brixton-village-grill` 91,745 B, 1 `<h1>`, 1 canonical, 1 JSON-LD, 16 `og:`; `/robots.txt` 200, was 404) |
+| local specs | `public-layout` + `storefront-flows` **52 passed** against the rebuilt stack — all three previously-failing tests green |
+| nightly | run `30964857894` = **180/169/4/7**. #540 fixed; #539 fixed its NPE (0 occurrences, was 2); checkout still red on `.env.example`. **#543 is now MERGED and the prediction held** — see §0.-6 |
+| Keycloak | dev drift removed — `:3102`/`:3103` gone from `jtoye-dev`/`core-api`, proven by rejecting those redirect_uris while `:3000`/`:3100` still return a login page. **Realms are `jtoye-dev` and `jtoye-customers`; a probe against `jtoye` returns `Realm not found`, which reads exactly like "no drift"** |
+
 
 ### 0.-4 The five-lane triage train (2026-08-04, latest) — and four traps inside the MERGE itself
 
@@ -708,10 +918,12 @@ clean.
   because the stored report is older than the specs it describes. That is the gate working — a stale
   report certifying a skip set that no longer exists is a documented trap here. It is also the most
   concrete argument yet for dispatching the nightly job below: it would have run this spec.
-- **#420 is still OPEN — its CI half.** `e2e-nightly.yml` (all 126 specs, real stack) **has still never run**
-  (`schedule` fires only on the default branch). Dispatch it once manually. Per-PR CI still runs 2 of 126.
-  Corollary seen again this session: `Integration Tests` passed in **6s** on #435 — path-filtered, a
-  skip wearing a tick. The same job took **43m51s** on #434, which is what running it looks like.
+- **#420 is CLOSED** (2026-08-05). Its CI half is satisfied: `e2e-nightly.yml` now runs and is green —
+  see §0.-6. Its successor is **#547** (the 7 declared-but-unverified skips). The line this replaced
+  read *"has still never run"*, which was true when written and stopped being true two days later.
+  Per-PR CI still runs 2 of 126, and that half is unchanged. Corollary still live: `Integration Tests`
+  passed in **6s** on #435 — path-filtered, a skip wearing a tick. The same job took **43m51s** on
+  #434, which is what running it looks like.
 - **The refund E2E stays skipped deliberately** — `Stripe.Refund.create` with an empty key. Needs keys,
   not a fixture.
 - **`NoOrdersCreated` goes blind after any rebuild that recreates core-java.** Remedy:
