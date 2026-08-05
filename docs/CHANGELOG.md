@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The kitchen board said "No shop selected" while it was still loading (#558) — 2026-08-05
+
+`kitchen/page.tsx` renders `KdsBoardShopName` twice — `:546` in the loading early-return and `:575` in the loaded body — and the loading one passed `shopName={null}`, so both took the same branch.
+
+#### Fixed
+- **`kds-board-scope.tsx`** — `loading` is now an explicit state with its own copy ("Loading shop…") and its own `data-testid`. While data was in flight the header read **"No shop selected"**, which is not vague but false: a vendor whose shop is loading is told there is no shop, and a screen reader announces it as settled fact.
+- **`kitchen/page.tsx:546`** — passes `loading` rather than `shopName={null}`.
+- **`e2e/kitchen-flow.spec.ts:455`** — asserts a settled board carries exactly **one** `kds-board-shop` and **zero** `kds-board-shop-loading`.
+
+#### Notes
+- **The test symptom and the product symptom had one cause.** Both renders carried the same testid, and Next server-renders this `"use client"` component's loading state then swaps it after hydration, so both trees are briefly in the DOM — Playwright strict mode found two and resolved the stale one. Same mechanism as #540; the class #542 tracks.
+- **Reproducible on `[desktop]`, intermittent on `[mobile]`.** The full suite reported 3 failures; re-running the spec alone gave 1. Two were flakes. Recorded because "fix all three" would have chased two non-causes.
+- **Falsified:** restoring the shared testid fails exactly the 3 new tests and none of the 8 pre-existing ones. Restored by **editing**, not `git checkout` (which restores from the index and would have discarded uncommitted work), then hash-verified; closing arm 11/11.
+- **Proven in the served artifact**, not just the source: `kds-board-shop-loading` appears 2× in the running container's `.next`, negative control 0 — and in **both** the SSR and client chunks, which corroborates the diagnosed hydration mechanism rather than assuming it.
+- `kitchen-flow.spec.ts` **14/14** against the rebuilt frontend; `npm run build` exit 0.
+- **Adjacent defect found and deliberately not folded in:** `KdsAllShopsNotice`'s two-shop branch reads "your other shop **are** not on this screen" — filed as #557.
+
 ### The STOMP shop gate was default-open for every topic except kitchen (#554) — 2026-08-05
 
 `TenantChannelInterceptor` enforces the tenant wall on every `/topic/` SUBSCRIBE plus a per-shop grant check (CR-02). The second check fired on a hard-coded feature name — correct today, since `kitchen` is the only shop-scoped topic, and **default-open**: a second shop-scoped destination would inherit the tenant wall and skip the shop check, silently.
