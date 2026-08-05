@@ -262,7 +262,7 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 - Backend (Java): 1425 `@Test` methods across 242 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 78 `Test*` functions across 10 files ✅
 - Frontend (Jest): 739 `it/test` blocks across 91 files ✅
-- Frontend E2E (Playwright): 83 `test()` blocks across 18 specs ✅
+- Frontend E2E (Playwright): 84 `test()` blocks across 18 specs ✅
 - MCP server (vitest): 48 `it/test` blocks across 8 files ✅
 - **Total: 2374 logical test invocations** ✅
 

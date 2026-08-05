@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The public-surface browser gate was green only because CI has no backend (#540 — nightly run 30955236660) — 2026-08-05
+
+The first successful nightly E2E run failed `e2e/public-layout.spec.ts:218` in both projects on a 60s timeout, and it reproduced against the live local stack. The prime suspect was the Radix Dialog port (#533); it is innocent. The cause is **#537**.
+
+#### Fixed
+- **`frontend/e2e/public-layout.spec.ts`** — the spec stubs the public API with `context.route("**/public/**")`, which only intercepts requests made by the **browser**. #537 made `/shop/[slug]` a server component, so its `loadShopDetail()` fetch never passes through the browser and is not stubbed. With a core API reachable the fixture slug `test-kitchen` gets an authoritative 404, the route renders `not-found.tsx`, and no dish card exists — `locator.click` waits out the whole timeout. The storefront tests now resolve a real shop **card** from `/shop` at runtime and drive the three intrinsic image ratios through the image layer, which is browser-side in every environment.
+- **`frontend/e2e/storefront-flows.spec.ts`** — `locator("text=Popular")` was an unscoped, case-insensitive **substring** match asserted at `domcontentloaded` with no settle. Server rendering means React parks a second copy of the tree in `<div id="S:n" hidden>` until the swap script runs, so it intermittently resolved to 2 elements and tripped strict mode. Now `getByRole("heading", { name: "Popular" })`.
+
+#### Notes
+- **The gate was green exactly when there was no backend.** In the stack-free CI job the Next server cannot reach core at all, so `getJson` catches, returns `defer`, the client island fetches, and the browser stub answers. That is the only configuration in which the fixture reached the page. Green by construction.
+- **A second, quieter regression: the sibling `/shop/test-kitchen` layout test passed VACUOUSLY** over the same not-found page for as long as the modal test hung — an empty page has no fixed-ratio boxes, no images, no horizontal overflow, and does have an `<h1>`. Both storefront tests now assert up front that dish cards actually rendered, so this fails in ~15s with a diagnosis instead of 60s with a mystery.
+- **Established by observation, not by reading the diff.** `curl /shop/test-kitchen` → `<title>Kitchen not found — J'Toye</title>`; the failure screenshot is a "Shop not found" page; the runner's own call log reads `waiting for locator('article').filter({ hasText: 'Portrait Dish' })` — waiting for an element that is absent, not fighting an inert or covered one.
+- **No product code changed, and the accessibility work was not weakened.** `notFound()` on a missing slug is correct and deliberate (#447). `storefront-dish-modal-a11y.spec.ts` is **16/16** in both projects. The modal frame is now located via `getByRole("dialog")` — possible only *because* of #533 — so the fix leans on that work instead of relaxing it.
+- **One assertion had encoded the OLD broken behaviour and is now stronger.** The close sequence was `press("Escape").catch(() => {})` followed by a `.max-w-lg button` click, also `.catch()`-swallowed — a shape that only made sense while Escape did **not** close the modal, which is the exact defect #446/#533 fixed. Escape closing is now asserted.
+- **Both directions, real output.** On `main`, live stack, three spec files: **2 failed / 66 passed (4.6m)**. After: **68 passed (3.0m)**. `public-layout.spec.ts` verified in both environments — stacked `:3000` **20/20 (47.7s)**, stack-free `:3105` with `CORE_API_INTERNAL_URL` unreachable (reproducing CI) **20/20 (40.4s)**.
+- **Falsifiability.** The ratio assertion was shown to fail: breaking the modal to `ratio="1/1"` and rebuilding gave `card 0 modal ratio — Expected: 1.3333…, Received: 1`; restored and verified by `git hash-object`, then re-run clean. The new precondition assertion fired for real during development (`/shop/signin?next=%2Fshop rendered no dish cards`), which is what sent the selector to `filter({ has: article })`. The flake fix was measured side by side in the same race window: old locator failed **10/25** and **7/12**, new locator **0/25** and **0/12** — and Playwright names the fix in its own error text (`aka getByRole('heading', { name: 'Popular' })`).
+- **The streaming duplicate is not a double-render.** The buffered copy measures `0x0` inside `DIV#S:1[hidden]` and disappears after settle; the visible page has always had exactly one "Popular", which is why the failure screenshot looked healthy.
+
 ### The two public storefront pages were a spinner to every crawler and every first paint (#537 — closes #447, part of #507) — 2026-08-04
 
 Closes **#447**. Addresses **2 of the 22 routes** in **#507** — `shop/page` and `shop/[slug]`, the two it names as highest customer impact. The remaining 20 are a separate phase and #507 stays open.
