@@ -19,17 +19,17 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **2026-08-05 (later): Phase 28 opened — #541, #553, #554 merged; #548–#552 filed; #289 closed. See §0.-7, which supersedes this row's framing.** PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
-| Open PRs | **1 as of 2026-08-05 after the Phase 28 slice** — only #523 remains; #541/#553/#554 all merged. PRIOR reading (**2**) — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
-| Open issues | **64 as of 2026-08-05 after the Phase 28 slice** — it went UP, and that is the point: #548–#552 added five (the pentest disposition) while #289 closed one. Filing findings raises the count and lowers the risk; do not read the number as progress in either direction. PRIOR — **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
+| `JToye_OaaS_2026` | **2026-08-05 shipped SIX PRs — #541, #553, #554, #555, #558, #559 — closed FOUR issues (#289, #420, #556, #557) and filed SIX (#548–#552, #556/#557). Read §0.-8 first, then §0.-7; between them they supersede this row's framing.** Phase 28 opened: #548–#552 filed, #289 closed. PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
+| Open PRs | **1 as of 2026-08-05 after six merges** — only #523 remains; #541/#553/#554/#555/#558/#559 all merged. PRIOR reading (**2**) — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
+| Open issues | **64 as of 2026-08-05, after six PRs** — and it is the SAME 64 it was mid-session, having moved 60 → 65 → 64 in between. That stability hides real churn: five filed (#548–#552, the pentest disposition), two more filed from the E2E re-run (#556/#557), and four closed (#289, #420, #556, #557). **A flat count is not a quiet day.** Filing findings raises it and lowers the risk; do not read the number as progress in either direction. PRIOR framing — #548–#552 added five while #289 closed one. Filing findings raises the count and lowers the risk; do not read the number as progress in either direction. PRIOR — **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
 | Issue-count history | It moved in **both** directions across 2026-08-03 (63 → 86 → 92 → 89 → 85 → 80 → **62**) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. Re-run `gh issue list --state open --limit 300 --json number --jq length` |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy**. The two without health status define no healthcheck — that is **not** unhealthy. **Infra ports are now loopback-only** (#510): Postgres, Redis, RabbitMQ, MinIO, MailHog, Keycloak, Grafana, Prometheus, Alertmanager and both exporters bind `127.0.0.1`. App-tier ports (core-java 9090, frontend 3000, edge-go 8089, mcp-server 9100) stay on all interfaces as **named, reasoned exemptions** |
 | Gates | **25 `check-*.sh` as of 2026-08-05** (26 counting `docs-freshness.sh`, which is the figure H-1 asserts against the resume block in §6). #553 added `check-gate-enforcement.sh` and wired three gates that ran NOWHERE — see §0.-7; **six of the previous 24 had zero CI references, three of them not deliberately**. Sweep on `main` at `7c1ef2a7` with the runtime re-synced: **25/26 rc=0**, the one non-zero being `check-e2e-skip-budget` rc=2 VOID (stale stored report). `check-alert-metrics` went rc=1 after the core-java rebuild and `scripts/seed-order-metric.sh` returned it to 0 — expected, not a regression. PRIOR — **24 scripts** (was 22 — #519/#276 adds `check-image-supply-chain.sh` and #337 adds `check-edge-core-contract.sh`; #513 had earlier added `check-e2e-baseurl-contract.sh` and `check-playwright-mobile-contract.sh`). **22 green, 0 fail, 0 VOID**, measured on `main` after #512/#513 with the runtime rebuilt. `check-e2e-skip-budget` is no longer the standing VOID it was — but understand WHAT it is: a **staleness detector**, not a one-time fix. It VOIDs whenever the stored report is older than `frontend/e2e`, which **any checkout or merge touching a spec re-triggers**, so expect it after pulling and re-run the suite (~6 min: `PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-artifacts/report.json npx playwright test --reporter=json,list`). Seed first — `scripts/seed-e2e-fixtures.sh` — or the DRAFT block skips and the budget fails. ⚠ It now sits at **exactly its ceiling of 8**, so the next skip added trips it. ⚠ `check-infra-exposure` **is not wired into CI** — part of it needs a live broker, so it could only ever VOID on a runner, the same reason `check-runtime-freshness` stays out. **Nothing stops someone re-adding `0.0.0.0` in a PR**. `scripts/ci-lane-cost.sh` is deliberately NOT named `check-*` and is NOT in this count: it answers a planning question, not a correctness one |
 | Merge-train lesson | **`docs/metrics.json` conflicted three ways on every lane, and NEITHER SIDE WAS EVER RIGHT.** Lane E: ours 2093 / theirs 2106 / truth **2107**. Lane A: ours 2142 / theirs 2107 / truth **2157**. Lane B: 2202. Each lane adds to a different counter (Java / Go / Jest), so "take ours" and "take theirs" are both wrong and the only correct move is `scripts/docs-freshness.sh --write` on the merged tree. The same conflict also carried README's build badge, whose two sides were the **404 repo** and the fix for it — and which side was correct **flipped** between lanes, because the fix landed mid-train |
 | Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
-| Runtime | **4/4 FRESH at `7c1ef2a7`, re-synced 2026-08-05 after #554.** `core-java` went `[image-not-rebuilt]` the moment #554 merged (image tagged 00:51:41 vs build inputs at 11:52:31); `sync-runtime.sh` rebuilt **and recreated** it, gate rc=0 after. **Proven by content, not by the gate**: `SHOP_SCOPED_FEATURES` read from inside the running `app.jar` = **1**, negative control `NotARealFieldControl` = **0**, positive control `KITCHEN_FEATURE` = **1**, so the probe discriminates both ways. Functional path re-exercised too, not just the check that motivated the rebuild — health 200, `/shop/brixton-village-grill` 200, `/api/v1/orders` 401. PRIOR — re-synced 2026-08-04 after the Wave-1 train. All four were stale (`rc=1`, each named with its build-input commit); `scripts/sync-runtime.sh` rebuilt and **recreated** them, gate `rc=0` after. Both directions recorded. **Proven by content, not only by the gate:** `TenantCacheEvictor`, `PublicUnsubscribeController` and `OrderStateChangeListener` (all #519) read back from **inside** the running `app.jar` via `unzip -l`, with a `NotARealClassControl` returning **0** so the probe can demonstrably say no; and the frontend's `--primary` was read out of the **served** stylesheet (`/_next/static/chunks/*.css`) as `17.5 88.3% 40.4%` — Lane C's orange-700, matching source, where orange-600 would be `20.5 90.2% 48.2%` |
-| E2E | **Nightly (the authority) is GREEN: `180 / 173 passed / 0 failed / 7 skipped`** on `d4930719`, twice (§0.-6). **Local re-run at `7c1ef2a7` (2026-08-05, seeded, `.env` sourced): `169 passed / 3 failed / 8 skipped` in 6.7m.** The 3 failures are all `kitchen-flow.spec.ts` and are **NOT #554** — that PR changed **0 frontend files** (`git show --name-only 7c1ef2a7`) and `/dashboard/kitchen` is `"use client"`, so a Java STOMP change cannot cause a DOM strict-mode violation. **Re-running the spec alone gave `13 passed / 1 failed`**, so 2 of the 3 were flakes and only `[desktop] :455` is deterministic — filed as **#556**: `KdsBoardShopName` renders at page.tsx **:546** (loading branch) *and* **:575** (loaded), both emitting the same `data-testid`, so React's hydration swap transiently puts two in the DOM and strict mode resolves the stale one reading *"No shop selected"*. Same mechanism as #540, the class #542 tracks. ⚠ **The full suite and the single spec disagree — measure both before believing either.** STALE 2026-08-04 LOCAL ROW FOLLOWS — **127 passed / 8 skipped / 0 failed of 135** — a LOCAL run of the spec files, NOT the nightly (which runs both projects: 180 instances, see §0.-5) —, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
+| Runtime | **4/4 FRESH at `93ad0ab0`, re-synced 2026-08-05 after #559** — `frontend` and `core-java` both rebuilt and **recreated**. Proven by content from the served build with controls **both ways**: `other shop is` **2**, `other shop are` **0**, `kds-board-shop-loading` **2**, a constructed-absent string **0**. **The zero on the OLD string is the load-bearing row** — a present-new check alone is satisfied by a build containing both. Functional re-check `kitchen-flow` 14/14. PRIOR — **4/4 FRESH at `7c1ef2a7`, re-synced after #554.** `core-java` went `[image-not-rebuilt]` the moment #554 merged (image tagged 00:51:41 vs build inputs at 11:52:31); `sync-runtime.sh` rebuilt **and recreated** it, gate rc=0 after. **Proven by content, not by the gate**: `SHOP_SCOPED_FEATURES` read from inside the running `app.jar` = **1**, negative control `NotARealFieldControl` = **0**, positive control `KITCHEN_FEATURE` = **1**, so the probe discriminates both ways. Functional path re-exercised too, not just the check that motivated the rebuild — health 200, `/shop/brixton-village-grill` 200, `/api/v1/orders` 401. PRIOR — re-synced 2026-08-04 after the Wave-1 train. All four were stale (`rc=1`, each named with its build-input commit); `scripts/sync-runtime.sh` rebuilt and **recreated** them, gate `rc=0` after. Both directions recorded. **Proven by content, not only by the gate:** `TenantCacheEvictor`, `PublicUnsubscribeController` and `OrderStateChangeListener` (all #519) read back from **inside** the running `app.jar` via `unzip -l`, with a `NotARealClassControl` returning **0** so the probe can demonstrably say no; and the frontend's `--primary` was read out of the **served** stylesheet (`/_next/static/chunks/*.css`) as `17.5 88.3% 40.4%` — Lane C's orange-700, matching source, where orange-600 would be `20.5 90.2% 48.2%` |
+| E2E | **Nightly (the authority) is GREEN: `180 / 173 passed / 0 failed / 7 skipped`** on `d4930719`, twice (§0.-6). ⚠ **The nightly has NOT run since; it last executed at `d4930719` and main is now `93ad0ab0`.** `kitchen-flow.spec.ts` is **14/14 locally** against the rebuilt stack after #558/#559 (§0.-8), but that is one spec, not the suite — **re-dispatch the nightly to get a current whole-suite number.** `check-e2e-skip-budget` is rc=0 at **exactly its ceiling of 8**, so the next skip added trips it. HISTORY, kept because it is how #556/#557 were found — **local re-run at `7c1ef2a7`: `169 passed / 3 failed / 8 skipped` in 6.7m.** The 3 failures were all `kitchen-flow.spec.ts`, **NOT #554** — that PR changed **0 frontend files** (`git show --name-only 7c1ef2a7`) and `/dashboard/kitchen` is `"use client"`, so a Java STOMP change cannot cause a DOM strict-mode violation. **Re-running the spec alone gave `13 passed / 1 failed`**, so 2 of the 3 were flakes and only `[desktop] :455` is deterministic — filed as **#556**: `KdsBoardShopName` renders at page.tsx **:546** (loading branch) *and* **:575** (loaded), both emitting the same `data-testid`, so React's hydration swap transiently puts two in the DOM and strict mode resolves the stale one reading *"No shop selected"*. Same mechanism as #540, the class #542 tracks. ⚠ **The full suite and the single spec disagree — measure both before believing either.** STALE 2026-08-04 LOCAL ROW FOLLOWS — **127 passed / 8 skipped / 0 failed of 135** — a LOCAL run of the spec files, NOT the nightly (which runs both projects: 180 instances, see §0.-5) —, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
 > checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
@@ -43,7 +43,88 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ## 0. ⚠ READ FIRST
 
-### 0.-7 Phase 28 opened: two criteria closed, and a class of gate that ran nowhere (2026-08-05, latest)
+### 0.-8 Two UI defects no gate could see, both found by re-running a suite (2026-08-05, latest)
+
+**Read this before §0.-7.** Two more PRs merged after it: **#558** (`d16935ab`, closes #556) and
+**#559** (`93ad0ab0`, closes #557). `main` HEAD is `93ad0ab0` at the time of writing — re-measure.
+
+**The point of this section is where these came from.** Neither was found by a gate. All 26 gates
+were green, CI was green, and the nightly was green, while the kitchen board told a vendor something
+false. They surfaced only because the local E2E suite was re-run to clear a stale
+`check-e2e-skip-budget` report — housekeeping, not a hunt.
+
+#### #556 — the board said "No shop selected" while it was still loading
+
+`kitchen/page.tsx` renders `KdsBoardShopName` twice: **:546** in the loading early-return and
+**:575** in the loaded body. The loading one passed `shopName={null}`, so both took the same branch.
+
+**The product half, which the issue as filed undersold.** While data was in flight the header read
+**"No shop selected"**. Not vague — *false*. A vendor whose shop is loading is told there is no
+shop, and a screen reader announces it as settled fact. Loading was a third state borrowing the
+empty state's voice.
+
+**The test half.** Both renders carried `data-testid="kds-board-shop"`. Next server-renders this
+`"use client"` component's loading state and swaps it after hydration, so **both trees are briefly
+in the DOM**; Playwright strict mode found two elements and resolved the stale one. Same mechanism
+as #540, the class #542 tracks.
+
+Fixed in #558: `loading` is explicit and carries its own testid, so the three states are
+distinguishable by any consumer — a test, a screen reader, a future component.
+
+#### #557 — the grammar defect sitting under the comment written to prevent it
+
+`KdsAllShopsNotice`'s `shopCount === 2` branch rendered a singular noun with a plural verb:
+*"orders for your other shop **are** not on this screen"*. Same class as `"1 items in basket"`
+(#533) — and it sat directly beneath:
+
+```
+// "your other 1 shop" is the `"1 items"` defect in #450 item 5 wearing a
+// different hat. The count is only worth printing when it is >1.
+```
+
+That earlier fix dropped the count correctly and left the verb plural. **It removed half of a
+grammar defect, and its own stated reasoning should have caught the other half.** Fixed in #559 by
+putting noun and verb in the SAME ternary branch — the old shape had the noun conditional and the
+verb hardcoded outside it, so they could only agree by coincidence.
+
+#### Four verification lessons, all of which cost time here
+
+1. **The full suite and a single spec disagree, and neither is "the" answer.** The suite reported
+   **3 failed**; re-running `kitchen-flow.spec.ts` alone gave **1 failed**. Two were flakes. Fixing
+   all three as one thing would have chased two non-causes. **Measure both before believing either.**
+2. **Blame the most recent merge last, not first.** #554 had just touched the STOMP *kitchen* path
+   and the failures were all in `kitchen-flow`. It is innocent: `git show --name-only 7c1ef2a7`
+   changes **0 frontend files**, and `/dashboard/kitchen` is `"use client"`. Rule out by
+   measurement, not by plausibility.
+3. **A fix that updates one assertion and misses its twin looks complete locally.** #557's wrong
+   string was encoded in **two** test files; the second
+   (`marketing-kitchen-shop-scope.test.tsx:288`) was found only by searching for the string rather
+   than trusting the first suite to be the only one.
+4. **Guard the opposite direction or the fix is satisfiable by its mirror image.** "Fix the
+   grammar" is satisfied by making *everything* singular. A 4-shop vendor must still read "your
+   other 3 shops **are**", and that is now asserted.
+
+#### Proof, and the half that is load-bearing
+
+Runtime rebuilt **and recreated**, 4/4 FRESH at `93ad0ab0`. Read out of the served build inside the
+running container, with controls **both ways**:
+
+| string | count | meaning |
+|---|---|---|
+| `other shop is` | **2** | #557's fix is in the artifact |
+| `other shop are` | **0** | **the defect is GONE, not merely accompanied** |
+| `kds-board-shop-loading` | **2** | #558's fix is in the artifact |
+| a constructed-absent string | **0** | the probe can report absence |
+
+**The zero on the old string is the load-bearing row.** A present-new check alone is satisfied by a
+build containing both. `kds-board-shop-loading` appears in **both** the SSR and client chunks, which
+independently corroborates the diagnosed hydration mechanism rather than leaving it a plausible
+story.
+
+Functional re-check: `kitchen-flow.spec.ts` **14/14** against the rebuilt stack, including the
+`:455` test that was reproducibly red.
+
+### 0.-7 Phase 28 opened: two criteria closed, and a class of gate that ran nowhere (2026-08-05)
 
 **Read this before §0.-6.** Three PRs merged after it: **#541** (`feb8ef63`), **#553** (`515652b9`),
 **#554** (`7c1ef2a7`). `main` HEAD at the time of writing is `7c1ef2a7`; re-measure, do not quote.
