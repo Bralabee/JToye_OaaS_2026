@@ -699,6 +699,61 @@ jobs:
           chmod +x ./scripts/check-postgres-major-parity.sh
           ./scripts/check-postgres-major-parity.sh
 
+      #   8-10. Three gates that existed on disk and ran NOWHERE.
+      #
+      #      Measured 2026-08-05: of the 24 scripts/check-*.sh, six had zero references
+      #      in .github/workflows/. Three of those are deliberate — check-infra-exposure
+      #      (part B), check-container-config-drift and check-alert-mute all inspect a
+      #      RUNNING stack, so on a hosted runner they could only ever exit 2, the same
+      #      reason check-runtime-freshness is deliberately absent from this file.
+      #
+      #      The three below are not deliberate. Each is purely static — no docker, no
+      #      curl, no psql, no network (asserted by grepping each script for runtime
+      #      binaries: all three return nothing, while check-infra-exposure returns
+      #      `curl docker`, so the check distinguishes) — and each was written to stop a
+      #      SPECIFIC defect from recurring. A gate that cannot fire on a PR does not do
+      #      that. It is the same shape as the defect its sibling #510 fixed: the
+      #      exposure gate is green, and nothing stopped anyone re-adding 0.0.0.0.
+      #
+      #      All three were shown to FAIL before being wired, against the exact defect
+      #      each was filed for, then restored and verified by `git hash-object`:
+      #        - mobile contract  : hasTouch removed from the mobile project  -> rc=1
+      #        - base-URL contract: a spec-local fallback to an unpublished port -> rc=1
+      #        - placeholders     : a <<MEASURED>> default left in application.yml -> rc=1
+      #      Clean tree: all three rc=0. A gate observed only passing is not evidence.
+      - name: Assert playwright.config.ts is the only base-URL authority (#505)
+        run: |
+          chmod +x ./scripts/check-e2e-baseurl-contract.sh
+          ./scripts/check-e2e-baseurl-contract.sh
+
+      - name: Assert the mobile Playwright project can actually feel touch (#503)
+        run: |
+          chmod +x ./scripts/check-playwright-mobile-contract.sh
+          ./scripts/check-playwright-mobile-contract.sh
+
+      - name: Assert no unfilled measurement placeholder reached shipped config (27-04 D-05)
+        run: |
+          chmod +x ./scripts/check-no-measured-placeholders.sh
+          ./scripts/check-no-measured-placeholders.sh
+
+      #   11. The meta-gate, so the three steps above are the LAST time this is found by
+      #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or
+      #      carries a reasoned entry in scripts/gates/gate-enforcement.conf saying why a
+      #      hosted runner cannot run it. Default-deny: a new gate that is neither wired
+      #      nor declared fails, because forgetting to think about a new gate is exactly
+      #      the case it exists to catch.
+      #
+      #      It is self-covering — it is itself a check-*.sh, so it must appear here or
+      #      fail itself. It did, on its first run, which is the cheapest possible proof
+      #      that it can fire. (That first run ALSO reported itself as invoking all nine
+      #      runtime binaries, because the script necessarily names every one it looks
+      #      for. Fixed by stripping the definition line; the trap is documented in the
+      #      script, since this repo has hit it before with doc-lint rules.)
+      - name: Assert every gate either runs in CI or says why it cannot
+        run: |
+          chmod +x ./scripts/check-gate-enforcement.sh
+          ./scripts/check-gate-enforcement.sh
+
   # Job 2: Security scanning
   security-scan:
     name: Security Scan
