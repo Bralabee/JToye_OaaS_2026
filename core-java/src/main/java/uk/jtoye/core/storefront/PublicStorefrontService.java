@@ -20,6 +20,7 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.finance.VatCalculator;
+import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -312,8 +313,21 @@ public class PublicStorefrontService {
 
     /**
      * Create a guest order for a published shop.
-     * Creates order as DRAFT, creates a Stripe PaymentIntent, and returns the client secret.
-     * Order transitions to PENDING only after successful payment via webhook.
+     *
+     * <p>Card path: persists the order as DRAFT, <em>then</em> creates a Stripe
+     * PaymentIntent against the now-identified row, persists the intent id as
+     * the order's {@code paymentReference}, and returns the client secret. The
+     * order transitions to PENDING only after successful payment via webhook.
+     * The persist-then-pay ordering is load-bearing — see the block comment at
+     * the Stripe call and issue #538.
+     *
+     * <p>COD path (no Stripe key): the order goes straight to PENDING with
+     * {@code PaymentStatus.NONE} and no client secret.
+     *
+     * <p>Transactional contract: this method is the OUTERMOST transaction
+     * boundary (the controller is not transactional), so any unchecked
+     * exception it throws rolls back everything written here — including a
+     * DRAFT order whose PaymentIntent creation subsequently failed.
      */
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
@@ -508,14 +522,63 @@ public class PublicStorefrontService {
             // If not configured, fall back to COD — order goes straight to PENDING.
             String clientSecret = null;
             if (paymentService.isConfigured()) {
+                // ORDERING (issue #538) — PERSIST BEFORE PAYING.
+                //
+                // createPaymentIntent stamps this order's UUID into the intent's
+                // `order_id` metadata; that metadata is the ONLY link the
+                // payment_intent.succeeded webhook has back to this row. So the
+                // row must have an identity before Stripe is asked to reference
+                // it. Creating the intent first dereferenced a null id and 500'd
+                // every checkout on every Stripe-configured environment — a defect
+                // that stayed invisible because no deployed stack sets a key, so
+                // every one of them silently took the COD branch below.
+                //
+                // saveAndFlush, not save: the INSERT (and with it the partial
+                // unique index on (tenant_id, idempotency_key) from V24) is
+                // resolved against the database BEFORE we ask Stripe for money,
+                // so a racing duplicate checkout is rejected by Postgres rather
+                // than turning into a second PaymentIntent.
+                order = orderRepository.saveAndFlush(order);
                 try {
-                    clientSecret = paymentService.createPaymentIntent(order);
+                    PaymentIntentResult intent = paymentService.createPaymentIntent(order);
+                    clientSecret = intent.clientSecret();
+                    // Persist the Stripe object id (dirty-checked into this same
+                    // transaction). Two things depend on it: the WR-02 idempotent
+                    // retry above, which can only re-fetch a client secret when
+                    // paymentReference is set — it was NEVER set on this path
+                    // before, so a retried card checkout could never resume
+                    // payment — and reconciliation, which until now had no local
+                    // column tying an unpaid order to its Stripe intent.
+                    // The webhook later writes the same id (PaymentService
+                    // handlePaymentIntentSucceeded/Failed), so this is not a new
+                    // value, only an earlier one.
+                    order.setPaymentReference(intent.paymentIntentId());
                 } catch (com.stripe.exception.StripeException e) {
                     log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                    // DELIBERATE: this unchecked throw rolls the order back.
+                    //
+                    // createGuestOrder is @Transactional and PublicStorefrontController
+                    // is not, so this is the OUTERMOST transaction boundary and Spring's
+                    // default rollback-on-RuntimeException applies to the saveAndFlush
+                    // above. Keeping the DRAFT row would be strictly worse than losing
+                    // it: the customer has not been charged (intent creation failed), but
+                    // the row carries their idempotency key, so their retry would hit the
+                    // short-circuit at the top of this method and get that order back with
+                    // no client secret — an order they can never pay for and we can never
+                    // fulfil. Rolling back lets the retry mint a fresh order and a fresh
+                    // intent. Proven by GuestCheckoutOnlinePaymentIntegrationTest
+                    // .cardCheckout_failedPaymentIntent_rollsBackTheOrder.
+                    //
+                    // Asymmetric-failure caveat: if Stripe actually created the intent and
+                    // the failure was on the response leg, that intent is orphaned. It is
+                    // harmless — its client secret never reaches a browser, so it is never
+                    // confirmed, and it expires uncaptured. No money moves.
                     throw new RuntimeException("Payment processing unavailable. Please try again later.");
                 }
             } else {
-                // COD fallback — no online payment
+                // COD fallback — no online payment. UNCHANGED by #538: this
+                // branch still mutates in place and is persisted by the single
+                // save below, exactly as before.
                 order.setStatus(OrderStatus.PENDING);
                 order.setPaymentStatus(PaymentStatus.NONE);
                 order.setPaymentMethod("Cash on Delivery");

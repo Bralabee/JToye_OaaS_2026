@@ -22,6 +22,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
@@ -103,6 +104,31 @@ class PublicStorefrontServiceTest {
         // tests pre-populate TenantContext, and the helper is forbidden from
         // clearing it (Plan D-09). Cleanup is the harness's responsibility.
         TenantContext.clear();
+    }
+
+    /**
+     * Stubs the persist-then-pay card path (issue #538).
+     *
+     * <p>{@code saveAndFlush} assigns an id the way Hibernate's
+     * {@code GenerationType.UUID} does, and the {@code createPaymentIntent} stub
+     * <em>asserts</em> the order it receives actually has one. That assertion is
+     * the point: it means a regression back to "create the intent first, save
+     * afterwards" fails here, at unit speed, and not only in the Testcontainers
+     * suite. Callers still stub {@code isConfigured()} themselves so each test
+     * states which branch it is exercising.
+     */
+    private void stubCardCheckoutPersistThenPay() throws Exception {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
+            Order order = inv.getArgument(0);
+            setField(order, "id", UUID.randomUUID());
+            return order;
+        });
+        when(paymentService.createPaymentIntent(any(Order.class))).thenAnswer(inv -> {
+            Order order = inv.getArgument(0);
+            assertNotNull(order.getId(),
+                    "#538: the order must be persisted (id assigned) BEFORE its PaymentIntent is created");
+            return new PaymentIntentResult("pi_test_1", "cs_test_secret");
+        });
     }
 
     @Test
@@ -335,7 +361,7 @@ class PublicStorefrontServiceTest {
         Product product = availableProduct("Midnight Suya", 1200L);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(paymentService.isConfigured()).thenReturn(true);
-        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        stubCardCheckoutPersistThenPay();
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         assertDoesNotThrow(() -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(product)),
@@ -416,7 +442,7 @@ class PublicStorefrontServiceTest {
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         // Stripe "configured" so the COD TransactionSynchronization branch is skipped.
         when(paymentService.isConfigured()).thenReturn(true);
-        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        stubCardCheckoutPersistThenPay();
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
@@ -444,7 +470,7 @@ class PublicStorefrontServiceTest {
         Product product = availableProduct("Chapman", 450L);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(paymentService.isConfigured()).thenReturn(true);
-        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        stubCardCheckoutPersistThenPay();
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GuestOrderRequest request = new GuestOrderRequest();
@@ -475,7 +501,7 @@ class PublicStorefrontServiceTest {
         Product product = availableProduct("Jollof Rice", 899L);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(paymentService.isConfigured()).thenReturn(true);
-        when(paymentService.createPaymentIntent(any(Order.class))).thenReturn("cs_test_secret");
+        stubCardCheckoutPersistThenPay();
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
