@@ -20,6 +20,43 @@ describe("KdsBoardShopName", () => {
     render(<KdsBoardShopName shopName={null} />)
     expect(screen.getByTestId("kds-board-shop")).toHaveTextContent("No shop selected")
   })
+
+  /**
+   * #556 — loading is a third state, and it used to borrow the empty one's voice.
+   *
+   * `kitchen/page.tsx` rendered the loading header as `shopName={null}`, so while data
+   * was in flight the board said "No shop selected". That is not vague, it is false: a
+   * vendor whose shop is loading reads that there is no shop, and a screen reader
+   * announces it as settled. The shared testid then made both renders indistinguishable
+   * to Playwright during the hydration swap.
+   */
+  it("says it is loading rather than claiming no shop is selected", () => {
+    render(<KdsBoardShopName shopName={null} loading />)
+    expect(screen.getByTestId("kds-board-shop-loading")).toHaveTextContent("Loading shop")
+    // The load-bearing half: it must NOT make the empty-state claim.
+    expect(screen.getByTestId("kds-board-shop-loading")).not.toHaveTextContent(
+      "No shop selected"
+    )
+  })
+
+  it("keeps the loading and settled states on DIFFERENT testids", () => {
+    // This is the assertion that stops the strict-mode collision returning. If both
+    // states ever share an id again, one of these two queries finds the wrong element.
+    const { unmount } = render(<KdsBoardShopName shopName={null} loading />)
+    expect(screen.queryByTestId("kds-board-shop")).not.toBeInTheDocument()
+    unmount()
+
+    render(<KdsBoardShopName shopName="Brixton Village Grill" />)
+    expect(screen.queryByTestId("kds-board-shop-loading")).not.toBeInTheDocument()
+  })
+
+  it("ignores a stray shopName while loading — the state wins, not the prop", () => {
+    // Guards against a caller that passes both. Announcing a shop name the board is not
+    // yet showing tickets for is the same class of false claim as the one above.
+    render(<KdsBoardShopName shopName="Brixton Village Grill" loading />)
+    expect(screen.getByTestId("kds-board-shop-loading")).toHaveTextContent("Loading shop")
+    expect(screen.queryByTestId("kds-board-shop")).not.toBeInTheDocument()
+  })
 })
 
 describe("KdsAllShopsNotice", () => {

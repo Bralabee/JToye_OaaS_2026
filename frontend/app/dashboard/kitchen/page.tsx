@@ -543,7 +543,10 @@ export default function KitchenPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-4xl font-bold text-slate-900">Kitchen Display</h1>
-            <KdsBoardShopName shopName={null} />
+            {/* #556: `loading`, not shopName={null}. Without it this said "No shop
+                selected" while the shop was still loading — false, and it collided
+                with the loaded header's testid during hydration. */}
+            <KdsBoardShopName shopName={null} loading />
             <p className="mt-0.5 text-sm text-slate-500">
               Live order feed &mdash; bump orders through preparation stages
             </p>
