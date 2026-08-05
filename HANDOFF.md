@@ -29,7 +29,7 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 | Merge-train lesson | **`docs/metrics.json` conflicted three ways on every lane, and NEITHER SIDE WAS EVER RIGHT.** Lane E: ours 2093 / theirs 2106 / truth **2107**. Lane A: ours 2142 / theirs 2107 / truth **2157**. Lane B: 2202. Each lane adds to a different counter (Java / Go / Jest), so "take ours" and "take theirs" are both wrong and the only correct move is `scripts/docs-freshness.sh --write` on the merged tree. The same conflict also carried README's build badge, whose two sides were the **404 repo** and the fix for it — and which side was correct **flipped** between lanes, because the fix landed mid-train |
 | Test baseline | **Read `docs/metrics.json`; this cell deliberately quotes no figure.** It moved three times in one day, and nothing gates a number written *here* — `check-doc-metrics` reads only README/CLAUDE/AGENTS, so a count copied into this document rots silently. Regenerate with `scripts/docs-freshness.sh --write`; never hand-arithmetic a delta, because the gate counts literal `@Test` and a renamed or table-driven test makes arithmetic wrong |
 | Runtime | **4/4 FRESH at `93ad0ab0`, re-synced 2026-08-05 after #559** — `frontend` and `core-java` both rebuilt and **recreated**. Proven by content from the served build with controls **both ways**: `other shop is` **2**, `other shop are` **0**, `kds-board-shop-loading` **2**, a constructed-absent string **0**. **The zero on the OLD string is the load-bearing row** — a present-new check alone is satisfied by a build containing both. Functional re-check `kitchen-flow` 14/14. PRIOR — **4/4 FRESH at `7c1ef2a7`, re-synced after #554.** `core-java` went `[image-not-rebuilt]` the moment #554 merged (image tagged 00:51:41 vs build inputs at 11:52:31); `sync-runtime.sh` rebuilt **and recreated** it, gate rc=0 after. **Proven by content, not by the gate**: `SHOP_SCOPED_FEATURES` read from inside the running `app.jar` = **1**, negative control `NotARealFieldControl` = **0**, positive control `KITCHEN_FEATURE` = **1**, so the probe discriminates both ways. Functional path re-exercised too, not just the check that motivated the rebuild — health 200, `/shop/brixton-village-grill` 200, `/api/v1/orders` 401. PRIOR — re-synced 2026-08-04 after the Wave-1 train. All four were stale (`rc=1`, each named with its build-input commit); `scripts/sync-runtime.sh` rebuilt and **recreated** them, gate `rc=0` after. Both directions recorded. **Proven by content, not only by the gate:** `TenantCacheEvictor`, `PublicUnsubscribeController` and `OrderStateChangeListener` (all #519) read back from **inside** the running `app.jar` via `unzip -l`, with a `NotARealClassControl` returning **0** so the probe can demonstrably say no; and the frontend's `--primary` was read out of the **served** stylesheet (`/_next/static/chunks/*.css`) as `17.5 88.3% 40.4%` — Lane C's orange-700, matching source, where orange-600 would be `20.5 90.2% 48.2%` |
-| E2E | **Nightly (the authority) is GREEN: `180 / 173 passed / 0 failed / 7 skipped`** on `d4930719`, twice (§0.-6). ⚠ **The nightly has NOT run since; it last executed at `d4930719` and main is now `93ad0ab0`.** `kitchen-flow.spec.ts` is **14/14 locally** against the rebuilt stack after #558/#559 (§0.-8), but that is one spec, not the suite — **re-dispatch the nightly to get a current whole-suite number.** `check-e2e-skip-budget` is rc=0 at **exactly its ceiling of 8**, so the next skip added trips it. HISTORY, kept because it is how #556/#557 were found — **local re-run at `7c1ef2a7`: `169 passed / 3 failed / 8 skipped` in 6.7m.** The 3 failures were all `kitchen-flow.spec.ts`, **NOT #554** — that PR changed **0 frontend files** (`git show --name-only 7c1ef2a7`) and `/dashboard/kitchen` is `"use client"`, so a Java STOMP change cannot cause a DOM strict-mode violation. **Re-running the spec alone gave `13 passed / 1 failed`**, so 2 of the 3 were flakes and only `[desktop] :455` is deterministic — filed as **#556**: `KdsBoardShopName` renders at page.tsx **:546** (loading branch) *and* **:575** (loaded), both emitting the same `data-testid`, so React's hydration swap transiently puts two in the DOM and strict mode resolves the stale one reading *"No shop selected"*. Same mechanism as #540, the class #542 tracks. ⚠ **The full suite and the single spec disagree — measure both before believing either.** STALE 2026-08-04 LOCAL ROW FOLLOWS — **127 passed / 8 skipped / 0 failed of 135** — a LOCAL run of the spec files, NOT the nightly (which runs both projects: 180 instances, see §0.-5) —, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
+| E2E | **Nightly (the authority) is GREEN: `180 / 173 passed / 0 failed / 7 skipped`** on `d4930719`, twice (§0.-6). ⚠ **The nightly has NOT run since; it last executed at `d4930719` and main is now `93ad0ab0`.** `kitchen-flow.spec.ts` is **14/14 locally** against the rebuilt stack after #558/#559 (§0.-8), but that is one spec, not the suite — **re-dispatch the nightly to get a current whole-suite number.** `check-e2e-skip-budget` is rc=0 at **exactly its ceiling of 8**, so the next skip added trips it. HISTORY, kept because it is how #556/#557 were found — **local re-run at `7c1ef2a7`: `169 passed / 3 failed / 8 skipped` in 6.7m.** The 3 failures were all `kitchen-flow.spec.ts`, **NOT #554** — that PR changed **0 frontend files** (`git show --name-only 7c1ef2a7`) and `/dashboard/kitchen` is `"use client"`, so a Java STOMP change cannot cause a DOM strict-mode violation. **Re-running the spec alone gave `13 passed / 1 failed`.** ⚠ **I read that as "2 of the 3 were flakes" and it was WRONG — `:339 [mobile]` now fails 2/2 in the full suite and passes 2/2 in isolation; see §0.-9 and #561.** What was true is that only `[desktop] :455` is deterministic in BOTH contexts — filed as **#556**: `KdsBoardShopName` renders at page.tsx **:546** (loading branch) *and* **:575** (loaded), both emitting the same `data-testid`, so React's hydration swap transiently puts two in the DOM and strict mode resolves the stale one reading *"No shop selected"*. Same mechanism as #540, the class #542 tracks. ⚠ **The full suite and the single spec disagree — measure both before believing either.** STALE 2026-08-04 LOCAL ROW FOLLOWS — **127 passed / 8 skipped / 0 failed of 135** — a LOCAL run of the spec files, NOT the nightly (which runs both projects: 180 instances, see §0.-5) —, run against the re-synced stack, `check-e2e-skip-budget` **rc=0** at exactly its ceiling of 8. ⚠ **The first run of this suite reported 48 skipped / 21 undeclared and that figure was an INSTRUMENT ARTEFACT, not a finding** — the suite was launched without sourcing `.env`, so 26 vendor-authenticated specs self-skipped on "No vendor password". `set -a; . ./.env; set +a` first, and export `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`. A skip count is meaningless unless the credentials were present |
 
 > ⚠ **A second session drives this same checkout.** Not a worktree — the same working tree. A `git
 > checkout` here moves *their* HEAD, and `main` moved four times while this document was being written.
@@ -43,7 +43,47 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ## 0. ⚠ READ FIRST
 
-### 0.-8 Two UI defects no gate could see, both found by re-running a suite (2026-08-05, latest)
+### 0.-9 A correction: "flake" was the wrong call, and so was my second guess (2026-08-05, latest)
+
+**§0.-8 says two of the three E2E failures were flakes. That is wrong for one of them**, and the
+correction is worth more than the finding.
+
+`kitchen-flow.spec.ts:339` `[mobile]` (offline → banner → recovery) now has four data points:
+
+| run | `:339 [mobile]` |
+|---|---|
+| full suite, run 1 | **failed** |
+| spec alone | passed |
+| spec alone, after a frontend rebuild | passed |
+| full suite, run 2 (after #558/#559) | **failed** |
+
+**2/2 failing in the full suite, 2/2 passing in isolation.** A flake does not sort itself that
+cleanly by context. I labelled it from a single isolated pass, which is exactly the sample size
+that cannot tell "fixed" from "not reproduced here".
+
+**Then my second guess was also wrong, and the config falsified it before I wrote it down.** The
+obvious explanation is worker contention — but `playwright.config.ts` sets `fullyParallel: false`
+and `workers: 1`. The suite runs **sequentially on one worker**. So the difference between
+"full suite" and "this spec alone" is not concurrency; it is **state left by the specs that ran
+first**. Filed as **#561** with three candidate mechanisms and the measurement that discriminates
+them — none of them yet run, and the issue says so.
+
+**Why this one matters beyond a red test.** `:339` is deliberately the spec that lifts every stub
+and uses the real stack — real SSO, real WebSocket, real STOMP topic, real feed. If the cause turns
+out to be product-side, then a kitchen board that went offline **never tells the vendor it is live
+again**, under exactly the conditions a real kitchen runs in: a long session with accumulated
+orders. The test's own comment already says it — *"A warning that outlives its cause is how a
+kitchen learns to ignore warnings."*
+
+**The transferable lesson.** §0.-8's own lesson 1 was *"the full suite and a single spec disagree —
+measure both before believing either"*. I wrote that, then in the same breath resolved the
+disagreement by trusting the isolated run. Where the two disagree, **the disagreement is the
+finding**; neither result is the answer, and one pass on the cheaper side is not a tiebreak.
+
+**Suite state at `14750546`:** `171 passed / 1 failed / 8 skipped` of 180 (6.6m).
+`check-e2e-skip-budget` **rc=0**, 8 skipped at exactly its ceiling of 8.
+
+### 0.-8 Two UI defects no gate could see, both found by re-running a suite (2026-08-05)
 
 **Read this before §0.-7.** Two more PRs merged after it: **#558** (`d16935ab`, closes #556) and
 **#559** (`93ad0ab0`, closes #557). `main` HEAD is `93ad0ab0` at the time of writing — re-measure.
@@ -90,7 +130,8 @@ verb hardcoded outside it, so they could only agree by coincidence.
 #### Four verification lessons, all of which cost time here
 
 1. **The full suite and a single spec disagree, and neither is "the" answer.** The suite reported
-   **3 failed**; re-running `kitchen-flow.spec.ts` alone gave **1 failed**. Two were flakes. Fixing
+   **3 failed**; re-running `kitchen-flow.spec.ts` alone gave **1 failed**. ⚠ **I called the other
+   two "flakes" and that was WRONG for one of them — see §0.-9.** Fixing
    all three as one thing would have chased two non-causes. **Measure both before believing either.**
 2. **Blame the most recent merge last, not first.** #554 had just touched the STOMP *kitchen* path
    and the failures were all in `kitchen-flow`. It is innocent: `git show --name-only 7c1ef2a7`
