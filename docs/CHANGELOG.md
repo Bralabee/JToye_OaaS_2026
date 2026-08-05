@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### An inline comment in .env.example is part of the value, and it switched Stripe on in CI (#543) — 2026-08-05
+
+Four variables in `.env.example` were written as `VAR=` followed by whitespace and an inline `#` comment. Docker Compose treats the whole remainder as the value, so every environment created by `cp .env.example .env` — which is exactly what `e2e-nightly.yml` does — received a **non-blank** value:
+
+```
+STRIPE_API_KEY=               # sk_test_... from Stripe dashboard
+  -> compose resolves: STRIPE_API_KEY: '# sk_test_... from Stripe dashboard'
+```
+
+#### Fixed
+- **`.env.example`** — `ANTHROPIC_API_KEY`, `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` now carry their comment on the preceding line and a genuinely empty value. All 108 assignments preserved; 0 lines of the broken shape remain.
+
+#### Notes
+- **This is what failed the nightly, twice.** `PaymentService.isConfigured()` is `apiKey != null && !apiKey.isBlank()`, so a comment-as-value made guest checkout take the online-payment branch and call Stripe with a garbage key. Before #539 that surfaced as the NPE in #538; after #539 it surfaces correctly as `RuntimeException: Payment processing unavailable` at `PublicStorefrontService:576`. **The product was right both times — the environment was lying about being configured.**
+- **Measured in both directions**, with a two-service compose probe: the old line shape resolves to `'# sk_test_... from Stripe dashboard'`, the new one to `""`. Controls: `CONTROL_SET=realvalue` and `POSTGRES_USER=jtoye` both resolve normally, so the probe reads real values rather than reporting empty for everything.
+- **The class matters more than the four instances.** Any `VAR=` with a trailing inline comment is silently non-empty for every consumer that copies this file, and the failure mode is a feature switching **on** with invalid credentials rather than staying off. The four here are all "leave blank unless you have a key" flags, which is precisely where that is most damaging.
+- The card path remains **unexercised**: with the key genuinely empty, checkout returns to the COD fallback. Proving it needs a real Stripe test key — see #539.
+
 ### The public-surface browser gate was green only because CI has no backend (#540 — nightly run 30955236660) — 2026-08-05
 
 The first successful nightly E2E run failed `e2e/public-layout.spec.ts:218` in both projects on a 60s timeout, and it reproduced against the live local stack. The prime suspect was the Radix Dialog port (#533); it is innocent. The cause is **#537**.
