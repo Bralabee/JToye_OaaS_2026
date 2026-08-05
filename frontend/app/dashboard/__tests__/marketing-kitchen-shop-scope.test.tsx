@@ -285,7 +285,8 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
       expect(notice).toHaveTextContent("All shops")
       expect(notice).toHaveTextContent("one shop at a time")
       expect(notice).toHaveTextContent("Peckham Kitchen")
-      expect(notice).toHaveTextContent("your other shop are not on this screen")
+      // #557: "is", not "are" — this is the two-shop branch, so the noun is singular.
+      expect(notice).toHaveTextContent("your other shop is not on this screen")
     })
 
     it("does NOT claim a mismatch when the switcher already names one shop", async () => {
