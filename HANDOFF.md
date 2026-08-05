@@ -46,8 +46,8 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 ### 0.-10 #561 answered: a product defect, and a test that was wrong three times (2026-08-05, latest)
 
 **Read this before §0.-9, which it closes.** **#561 is CLOSED**; **#563 is MERGED** (`d36a1865`)
-and **#565 is MERGED** (`b0043014`); **#564 is OPEN** as the follow-up. `main` moved twice more —
-re-measure, do not quote.
+and **#565 is MERGED** (`b0043014`); **#564 is CLOSED**, shipped by #567 (`9762bce6`). `main` moved
+again — re-measure, do not quote.
 
 #### The mechanism, measured — and it is none of the three things it looked like
 
@@ -1442,13 +1442,14 @@ Phase-22 feature that has never worked, and the finding names the cause in one l
 `@Transactional`, so `TenantSetLocalAspect` never pins the GUC and RLS returns nothing). Needs no
 decision from §4.
 
-**Also unblocked and needing no decision: #564 is OPEN** (§0.-10). The KDS board issues one request
-per active ticket on every full refresh, so an 18-ticket board costs 19 and a 40-ticket board would
-cost 41 — against 100/min for the *whole* tenant. #563 made the board **tolerant** of the resulting
-refusals; it did not reduce them, and the failure mode scales with how busy the kitchen is, which
-is the wrong way round. A batch detail endpoint is the real fix; bounded concurrency only moves the
-cliff. It also makes three separate test defects go away at their shared root — worth reading
-§0.-10's table before deciding it is small.
+**#564 is CLOSED** (§0.-10), shipped by #567 (`9762bce6`) on 2026-08-05 — no longer work to pick up.
+The KDS board issued one request per active ticket on every full refresh, so an 18-ticket board cost
+19 and a 40-ticket board would have cost 41 — against 100/min for the *whole* tenant. #563 made the
+board **tolerant** of the resulting refusals; it did not reduce them, and the failure mode scaled
+with how busy the kitchen was, which is the wrong way round. A batch endpoint was the real fix;
+bounded concurrency only moves the cliff. Measured on the same 18-ticket board, before → after:
+**38 requests → 2**, `/detail` **36 → 0**, **10 × 429 → 0**, lowest `X-RateLimit-Remaining`
+**0 → 115**. It also took three separate test defects out at their shared root.
 
 ⚠ **#444 is core-java, so its PR WILL run the full Testcontainers suite (~47 min, measured on #472).**
 That is not a cost to avoid — RLS behaviour under a real Postgres is exactly what that suite buys, and
