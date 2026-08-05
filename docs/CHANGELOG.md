@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### "Your other shop are not on this screen" — the singular branch kept the plural verb (#559) — 2026-08-05
+
+`KdsAllShopsNotice`'s `shopCount === 2` branch rendered a singular noun with a plural verb, so a vendor with exactly two shops read it on every visit to the KDS in the All-shops context.
+
+#### Fixed
+- **`kds-board-scope.tsx`** — noun and verb now come from the **same ternary branch**. The previous shape had the noun conditional and the verb hardcoded outside it, so they could only agree by coincidence.
+
+#### Notes
+- **Same class as `"1 items in basket"` (#533), and it sat directly under the comment written to prevent it.** That comment correctly dropped the count for the two-shop case and left the verb plural — the fix removed half of a grammar defect, and its own reasoning should have caught the other half.
+- **Two tests encoded the wrong string.** Correcting them is the check that the fix landed. The second (`marketing-kitchen-shop-scope.test.tsx`) was found only by searching for the string rather than trusting the first — a fix that updates one and misses the other looks complete and leaves a red suite.
+- **Guard for the opposite direction added:** a 4-shop vendor must still read "your other 3 shops **are**". Without it, "fix the grammar" is satisfiable by making everything singular — one defect traded for its mirror image, green either way.
+- **Falsified:** restoring the plural verb fails exactly 2 tests, one per suite, leaving the other 21 passing. Restored by editing (uncommitted work; `git checkout` restores from the index), hash-verified, closing arm 23/23.
+- jest 46/46 across the 3 affected suites; `npm run build` exit 0.
+
 ### The kitchen board said "No shop selected" while it was still loading (#558) — 2026-08-05
 
 `kitchen/page.tsx` renders `KdsBoardShopName` twice — `:546` in the loading early-return and `:575` in the loaded body — and the loading one passed `shopName={null}`, so both took the same branch.
