@@ -41,9 +41,12 @@
  * KNOWN LIMIT, and its backstop. A test declared inside a `for` loop or a `forEach`
  * is one declaration and N executions, and no static reader can resolve that in
  * general. This script therefore cannot be the last word. The last word is
- * scripts/check-jest-count-oracle.sh, which asserts docs/metrics.json against
- * `npx jest --json`'s own numTotalTests in the CI job where Jest already runs.
+ * scripts/check-test-count-oracle.sh, which asserts docs/metrics.json against each
+ * runner's own report in the CI jobs where those runners already execute.
  * Static counter first because it is cheap; runner oracle second because it is true.
+ *
+ * Its own refusals are falsified by scripts/check-test-block-counter.sh — because a
+ * measurement that cannot be shown to fail is what produced #291 in the first place.
  *
  * Usage:
  *   node scripts/count-test-blocks.mjs --family <jest|vitest|playwright> <file>...

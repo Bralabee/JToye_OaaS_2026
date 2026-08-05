@@ -26,5 +26,13 @@ describe("phantoms", () => {
     // Identifiers that merely END in it/test are not heads either:
     const parts = "a,b".split(",")
     expect(parts.length).toBe(2)
+    // Member access with WHITESPACE between the dot and the property. A lookbehind
+    // that only inspects the immediately preceding character sees a newline here,
+    // not a dot, and counts this as a declaration; the counter walks back over
+    // whitespace as well. Without that second guard this fixture counts 3, which is
+    // how this line earns its place.
+    const matched = /looks/.
+      test(prose)
+    expect(matched).toBe(true)
   })
 })

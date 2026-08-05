@@ -80,8 +80,12 @@ count_js() { # <family> <file-path-regex>
 		echo "ERROR: no files matched '$2' — an empty set is not a count of 0." >&2
 		exit 2
 	fi
-	out=$(printf '%s\n' "$files" | node "$JS_COUNTER" --family "$1" --stdin 2>&1)
-	rc=$?
+	# `out=$(failing-cmd)` under `set -e` aborts the script THERE, before the
+	# diagnostic below can print — measured: rc=2 with an empty log, a VOID with no
+	# reason, which is barely better than a wrong number. The `&& rc=0 || rc=$?`
+	# form keeps the status without arming errexit, and $? is read on its own
+	# statement so it is node's and not an echo's.
+	out=$(printf '%s\n' "$files" | node "$JS_COUNTER" --family "$1" --stdin 2>&1) && rc=0 || rc=$?
 	if [ "$rc" -ne 0 ]; then
 		echo "ERROR: count-test-blocks.mjs could not count family '$1' (rc=$rc):" >&2
 		printf '%s\n' "$out" >&2
