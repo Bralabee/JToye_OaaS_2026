@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The kitchen board reserved 16rem for something 4784px tall (#536, #450 5d) — 2026-08-05
+### The kitchen board reserved 16rem for something 4784px tall (#536, #450 5d) (#577) — 2026-08-05
 
 `/dashboard/kitchen` measured **CLS 0.8287** at the repo's declared throttle profile (390px `isMobile` + `hasTouch`, Fast-3G 1.5 Mbps / 40 ms, 4× CPU, the real API, an 18-ticket board), against a budget of 0.1. It is **0.0171** now — three runs each, same rig, same board, and the before number re-measured on this branch rather than quoted from #535.
 
