@@ -112,11 +112,20 @@ public class ShopController {
      * PUT /shops/{id}
      */
     @PutMapping("/{id}")
-    @Operation(summary = "Update shop", description = "Updates an existing shop for the authenticated tenant")
+    @Operation(summary = "Update shop",
+            description = "Updates an existing shop for the authenticated tenant. "
+                    + "`published` is NOT writable here — the onboarding state machine is its sole writer. "
+                    + "A body whose `published` matches the shop's current state (or omits the field) is "
+                    + "accepted as a no-op; one that asks to change it is refused with 409 "
+                    + "`shop-publish-not-accepted` and NO part of the update is applied. "
+                    + "Use POST /onboarding/go-live to publish.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Shop updated successfully"),
             @ApiResponse(responseCode = "404", description = "Shop not found"),
-            @ApiResponse(responseCode = "400", description = "Validation error")
+            @ApiResponse(responseCode = "400", description = "Validation error"),
+            @ApiResponse(responseCode = "409",
+                    description = "Request asked to change `published`; the onboarding state machine "
+                            + "is the sole writer of that field and the update was not applied")
     })
     public ResponseEntity<ShopDto> update(
             @Parameter(description = "Shop ID") @PathVariable UUID id,
