@@ -104,9 +104,16 @@ export function KdsAllShopsNotice({
             {" "}
             &mdash; orders for your{" "}
             {/* "your other 1 shop" is the `"1 items"` defect in #450 item 5 wearing a
-                different hat. The count is only worth printing when it is >1. */}
-            {shopCount === 2 ? "other shop" : `other ${shopCount - 1} shops`} are not
-            on this screen. Use the shop selector to switch.
+                different hat. The count is only worth printing when it is >1.
+                #557: the VERB has to agree with that choice too. Dropping the count
+                left "your other shop ARE not on this screen" — the same sentence
+                defect one vendor-size down, and the half this comment's own reasoning
+                should have caught. Noun and verb now come from the same branch, so
+                they cannot disagree again. */}
+            {shopCount === 2
+              ? "other shop is"
+              : `other ${shopCount - 1} shops are`}{" "}
+            not on this screen. Use the shop selector to switch.
           </>
         ) : (
           "."

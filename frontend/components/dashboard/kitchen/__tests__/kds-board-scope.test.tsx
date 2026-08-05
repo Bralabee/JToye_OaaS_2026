@@ -80,8 +80,20 @@ describe("KdsAllShopsNotice", () => {
     // costume; the number is only worth printing when it is greater than one.
     render(<KdsAllShopsNotice shopName="Brixton Village Grill" shopCount={2} />)
     const notice = screen.getByTestId("kds-all-shops-notice")
-    expect(notice).toHaveTextContent("your other shop are not on this screen")
+    // #557: "is", not "are". This assertion previously encoded the defect — dropping
+    // the count left a plural verb on a singular noun, and the test froze it in place.
+    expect(notice).toHaveTextContent("your other shop is not on this screen")
     expect(notice).not.toHaveTextContent("other 1 shop")
+    expect(notice).not.toHaveTextContent("other shop are")
+  })
+
+  it("keeps the plural verb when there ARE other shops, plural", () => {
+    // The other half of #557: this branch was already correct and must stay correct.
+    // Without this, "fix the grammar" could be satisfied by making everything singular.
+    render(<KdsAllShopsNotice shopName="Brixton Village Grill" shopCount={4} />)
+    const notice = screen.getByTestId("kds-all-shops-notice")
+    expect(notice).toHaveTextContent("your other 3 shops are not on this screen")
+    expect(notice).not.toHaveTextContent("shops is")
   })
 
   it("claims nothing about other shops when there is only one", () => {
