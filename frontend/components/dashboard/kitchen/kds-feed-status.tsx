@@ -50,31 +50,77 @@ const PILL: Record<
   },
 }
 
+/**
+ * The pill's box before the page has anything to report (#536).
+ *
+ * `deriveFeedState` maps "online, no error, socket has never come up" to **offline**,
+ * which is right once the page is running and wrong while it is still starting: the
+ * machine is online and the socket is mid-handshake. On main that mattered for ~270ms
+ * because the header — and therefore the pill — did not exist until the shop list had
+ * loaded. Rendering the header from the first paint (which is what stops it growing
+ * 108px mid-load) would have stretched a red **Offline** across ~2.9s of every cold
+ * load, and a warning shown on every load is one the kitchen stops reading — the exact
+ * failure #535 removed from the banner.
+ *
+ * So this is deliberately NOT a new `FeedStatus`: `deriveFeedState` is untouched and
+ * still owns what the feed's state IS. This is a presentation-only "we have not
+ * finished starting yet", and the caller may only pass it while the shop list is in
+ * flight. It therefore cannot outlive that fetch and sit over a genuinely dead socket.
+ */
+const PENDING = {
+  dot: "bg-slate-400",
+  text: "text-slate-700",
+  label: "Connecting…",
+  Icon: RefreshCw,
+}
+
 export function KdsFeedPill({
   state,
   lastSyncedAt,
+  pending = false,
 }: {
   state: FeedState
   lastSyncedAt: number | null
+  /** The page has not started reading yet. See {@link PENDING}. */
+  pending?: boolean
 }) {
-  const tone = PILL[state.status]
+  const tone = pending ? PENDING : PILL[state.status]
   const Icon = tone.Icon
   return (
     <div
-      data-testid="kds-feed-pill"
+      // Distinct testid while pending, for the reason #556 gave for
+      // `KdsBoardShopName`: Next streams the page into a `<div hidden id="S:0">` and
+      // swaps it in, so for a few milliseconds the fallback and the streamed copy are
+      // BOTH in the DOM. Measured on the live stack once the header started rendering
+      // from the first paint: `getByTestId('kds-feed-pill')` resolved to 2 elements and
+      // e2e/kitchen-flow.spec.ts failed strict mode — intermittently, on mobile only,
+      // which is the worst way to find out. Both transient copies are the PENDING state
+      // (the server always renders it), so splitting the testid makes the settled one
+      // unique by construction rather than by luck.
+      data-testid={pending ? "kds-feed-pill-pending" : "kds-feed-pill"}
       className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5"
     >
       <span
         aria-hidden
         className={`h-3 w-3 flex-shrink-0 rounded-full ${tone.dot} ${
-          state.status === "reconnecting" ? "motion-safe:animate-pulse" : ""
+          pending || state.status === "reconnecting" ? "motion-safe:animate-pulse" : ""
         }`}
       />
       <Icon aria-hidden className={`h-4 w-4 flex-shrink-0 ${tone.text}`} />
-      {/* No `hidden sm:inline` — the mobile expo view is the one that needs this most. */}
-      <span className={`text-sm font-semibold ${tone.text}`}>{tone.label}</span>
-      <span className="text-sm tabular-nums text-slate-600">
-        {lastSyncedAt === null ? (
+      {/* No `hidden sm:inline` — the mobile expo view is the one that needs this most.
+          #536: the two spans below reserve their WIDEST content instead of sizing to
+          whatever they currently say. feed-state.ts already claimed the pill "occupies
+          the same box in every state, so it cannot shift" — measured on the live stack
+          at 390px it did not: a cold load renders "Offline —" and settles to
+          "Live 14:32:07", the pill widens, and the header's `flex-wrap` control row
+          gains a third line. The board and everything under it then move 46px, which
+          is a layout shift attributable to a status label. `min-w` (not a fixed `w`)
+          so a longer localisation grows the pill rather than clipping it. */}
+      <span className={`min-w-[5.5rem] text-sm font-semibold ${tone.text}`}>
+        {tone.label}
+      </span>
+      <span className="min-w-[4rem] text-sm tabular-nums text-slate-600">
+        {pending || lastSyncedAt === null ? (
           "—"
         ) : (
           <>
