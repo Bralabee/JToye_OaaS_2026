@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The edge served `/metrics` unauthenticated on the port published to every interface (#550) — 2026-08-05
+### The edge served `/metrics` unauthenticated on the port published to every interface (#550) (#572) — 2026-08-05
 
 `GET /metrics` on the edge's published application port returned **200** with no credentials, disclosing the gateway's route templates. Measured on `main` @ 964ccc2f against the live stack, with a control in the same sweep: `POST :8089/api/v1/sync/batch` returned **401**, so the 200 was a genuinely ungated surface rather than a probe that could not tell the difference. 8089 is a named app-tier exemption bound on all interfaces, which is why #510's loopback-binding work did not reach it.
 
