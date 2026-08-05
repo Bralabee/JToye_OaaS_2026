@@ -63,6 +63,27 @@ public final class StompDestinations {
     /** The one feature whose destination carries a shop id in the third word. */
     public static final String KITCHEN_FEATURE = "kitchen";
 
+    /**
+     * Features whose destinations carry a shop id and therefore need a per-shop grant check
+     * on SUBSCRIBE, on top of the tenant wall (#289).
+     *
+     * <p><b>Why a set and not an {@code equals} in the interceptor.</b> The gate previously read
+     * {@code if (KITCHEN_FEATURE.equals(parts[FEATURE_WORD]))}. That is correct today, because
+     * {@code kitchen} is the only shop-scoped topic — and it is <em>default-open</em>: a second
+     * shop-scoped feature added tomorrow gets the tenant wall and no shop check, silently, which
+     * is the CR-02 class of gap re-opened. Nothing about adding a destination factory prompts
+     * anyone to edit the interceptor.
+     *
+     * <p>Membership here is now the single declaration, and {@code StompShopGateCoverageTest}
+     * fails the build when a shop-scoped factory exists whose feature is not in this set. So the
+     * registry cannot silently fall behind the factories — the omission is what the test detects,
+     * not something a reviewer has to notice.
+     *
+     * <p><b>Adding a shop-scoped topic:</b> add the factory, add its feature word here. Forgetting
+     * the second step is a red build, not a security hole.
+     */
+    public static final java.util.Set<String> SHOP_SCOPED_FEATURES = java.util.Set.of(KITCHEN_FEATURE);
+
     /** Word positions within the routing key (after {@link #TOPIC_PREFIX} is stripped). */
     public static final int FEATURE_WORD = 0;
     public static final int TENANT_WORD = 1;

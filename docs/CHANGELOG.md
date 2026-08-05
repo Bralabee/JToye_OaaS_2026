@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The STOMP shop gate was default-open for every topic except kitchen (#554) — 2026-08-05
+
+`TenantChannelInterceptor` enforces the tenant wall on every `/topic/` SUBSCRIBE plus a per-shop grant check (CR-02). The second check fired on a hard-coded feature name — correct today, since `kitchen` is the only shop-scoped topic, and **default-open**: a second shop-scoped destination would inherit the tenant wall and skip the shop check, silently.
+
+#### Fixed
+- **`TenantChannelInterceptor`** — the gate now consults `StompDestinations.SHOP_SCOPED_FEATURES` instead of comparing against one name.
+- **`StompDestinations`** — `SHOP_SCOPED_FEATURES` is the single declaration of which features carry a shop id.
+
+#### Added
+- **`StompShopGateCoverageTest`** — derives the shop-scoped feature set from the destination **factories** by reflection (any `public static String` taking `(UUID tenant, UUID shop)`) and fails when the registry has fallen behind them. Two independent declarations — a `Set` and a method signature — so a forgotten registration is detected, not reviewed for.
+
+#### Notes
+- **Behaviour on the current tree is unchanged**, since `Set.of("kitchen").contains(x)` and `"kitchen".equals(x)` agree for every input. The diff therefore proves nothing on its own, which is why the control is the whole unit suite: 133 classes / 952 tests / 0 failures / 0 errors / 1 skipped.
+- **Falsified:** an unregistered `orders(UUID, UUID)` factory turns the run to exactly 1 failure, `everyShopScopedFactoryIsGated`, with a message naming the fix. Restored, hash-verified to baseline, closing arm green.
+- **The restore was an edit, deliberately not `git checkout`.** The registry change was uncommitted, and `checkout` restores from the index — it would have discarded the fix along with the break.
+- **The first break arm silently did nothing.** A `perl -0pi -e` substitution failed on a syntax error, the factory was never added, and the test passed — indistinguishable from "the guard does not fire". Only asserting the break had actually landed caught it. **A break arm needs its own proof that the break happened.**
 ### Three gates existed on disk and ran nowhere, and nothing would have noticed (#553) — 2026-08-05
 
 Of the 24 `scripts/check-*.sh`, **six had zero references in `.github/workflows/`**. Three of those are deliberate — `check-infra-exposure` (part B), `check-container-config-drift` and `check-alert-mute` inspect a running stack, so on a hosted runner they could only ever exit 2 (VOID), the same reason `check-runtime-freshness` is deliberately absent. Three were not deliberate, and each had been written *because* a specific defect shipped.
