@@ -132,8 +132,11 @@ paths:
         order, resolves each product-name query to a product UUID
         via the Core search endpoint, and creates an order scoped
         to the vendor identified by `WHATSAPP_DEFAULT_SHOP_ID`. The
-        endpoint is fail-closed: if the secret is not configured
-        or the signature is invalid/absent the webhook is rejected.
+        endpoint is fail-closed, and the two refusals are distinct:
+        an absent or invalid signature is 401, while an unset
+        `WHATSAPP_APP_SECRET` is 503 with `Retry-After` — a known,
+        operator-fixable unconfigured state rather than an internal
+        error. Neither reads the body nor calls anything downstream.
 
         Processing outcomes (bad payload, ambiguous product, missing
         default shop, Core error) always return HTTP 200 to prevent
@@ -167,8 +170,14 @@ paths:
           description: Missing or invalid HMAC signature
           schema:
             $ref: '#/definitions/main.ErrorResponse'
-        "500":
-          description: WHATSAPP_APP_SECRET not configured
+        "503":
+          description: WHATSAPP_APP_SECRET not configured — the route is unavailable
+            until an operator sets it (fails closed)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying. This is an operator-fixable
+                configuration state, not transient load.
+              type: integer
           schema:
             $ref: '#/definitions/main.ErrorResponse'
       summary: WhatsApp order-intake webhook
