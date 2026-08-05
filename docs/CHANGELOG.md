@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of — 2026-08-05
+### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of (#568) — 2026-08-05
 
 The script tore down only the **hybrid** runtime that `scripts/start-dev.sh` starts: `infra/` compose plus the backend and frontend as host processes. It knew nothing about `docker-compose.full-stack.yml` (project `jtoye_oaas_2026`) — the runtime CLAUDE.md calls canonical for local dev and E2E, and the one Playwright runs against. Run against that, it killed processes that were not running, ran `docker compose down` in a project with no containers, and printed its success banner while **11 containers kept running**. Measured 2026-08-05: 11 before, 11 after.
 
