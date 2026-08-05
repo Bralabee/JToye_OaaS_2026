@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `PUT /shops` told the client "saved" and threw the instruction away (#450 item 4) — 2026-08-05
+
+The onboarding state machine is the sole writer of `Shop.published`, and that is correct — it is threat T-18-05-T's mitigation and it is unchanged here. What was wrong was the **signal**. `ShopService.updateShop` snapshotted `published`, let the MapStruct mapper copy the request value over it, restored the snapshot, and returned `200 OK`. `{"published":true}` and `{"published":false}` produced one identical response, so a client had no way to learn that its instruction had been refused. The QA council recorded it exactly (`disc-20260802-121732`, F-L6-PUBLISHDROP / INT-06): *"correct outcome, unfalsifiable response"*.
+
+#### Fixed
+- **A request that asks to CHANGE `published` is now refused, in writing.** RFC 7807 `409` at `https://jtoye.uk/errors/shop-publish-not-accepted`, stable code `SHOP_PUBLISH_NOT_ACCEPTED`, carrying `requestedPublished` and `currentPublished` as machine-readable properties so an agent client need not parse prose to learn what was refused and what the shop's state actually is. The refusal is all-or-nothing and the `detail` says so, plus which endpoint *does* publish (`POST /onboarding/go-live`) and how to re-send to save the rest.
+
+#### Notes
+- **Only a state-CHANGING value is refused — rejecting the field's presence would have been a regression, not a fix.** The vendor shop-edit form initialises its publish checkbox from the shop and sends `published` on **every** save, so a presence check would turn every ordinary shop edit into a hard `409`. A body echoing the state the shop is already in, or omitting the field, stays a no-op `200`. Both sides are normalised through `Boolean.TRUE.equals` before comparison: the column is a nullable `Boolean`, and `null` and `false` are the same state.
+- **The mapper-copy-then-restore stays**, now unreachable on every path. It is the invariant's last line: if the guard or the mapper strategy is ever loosened, `published` still cannot be written from a request body here.
+- **Two break arms, complementary, both proven to fail — because either alone would have been vacuous.** Removing the guard fails the three refusal tests with `expected:<409> but was:<200>`, which is literally the council's reported symptom, while **both control arms still pass**. Replacing it with the naive "reject on mere presence" fix makes all three refusal tests **pass** — it would have read as a complete success — and is caught only by the control, `expected:<200> but was:<409>`. Restores verified by `git hash-object` against `HEAD`, and the clean arm re-run last: 8/8.
+- **The OpenAPI snapshot gate was also run in both directions**: it FAILED on the undeclared `409`, and passes after `updateOpenApiSnapshot`. The regenerated diff is 11 insertions confined to `put /shops/{id}` — no collateral drift.
+- **`POST /shops` has the identical silent drop and is NOT fixed here.** `createShop` forces `published=false` unconditionally and returns `201`, so a create carrying `{"published":true}` is dropped just as silently. Out of scope for this item (the council finding and the acceptance criterion both name `PUT`), and recorded rather than quietly left: fixing it would need the same 409 on a path whose form currently offers the checkbox, which is a UI decision, not a backend one.
+- **Item 3 of #450 (the WhatsApp `500` → `503 + Retry-After`) is NOT in this change.** That endpoint is `edge-go/cmd/edge/handlers.go`, not core-java — a different service and a different owner. See the PR for the handover.
+
 ### `stop-dev.sh` printed "All services stopped" over a stack it had never heard of (#568) — 2026-08-05
 
 The script tore down only the **hybrid** runtime that `scripts/start-dev.sh` starts: `infra/` compose plus the backend and frontend as host processes. It knew nothing about `docker-compose.full-stack.yml` (project `jtoye_oaas_2026`) — the runtime CLAUDE.md calls canonical for local dev and E2E, and the one Playwright runs against. Run against that, it killed processes that were not running, ran `docker compose down` in a project with no containers, and printed its success banner while **11 containers kept running**. Measured 2026-08-05: 11 before, 11 after.
