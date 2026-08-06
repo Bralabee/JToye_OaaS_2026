@@ -35,17 +35,22 @@ jtoye:
     customer-jwt:
       require-verified-email: ${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:false}
 
-# Issue #516: the RFC 8058 one-click POST target — the API origin, which on the
-# dev stack is core-java's published port on the developer's own machine (the
-# same reasoning as notification.unsubscribe.base-url / tracking-base-url
-# defaulting to the frontend's localhost:3000: a link in a Mailhog message is
-# opened from the host, not from inside the network).
+# Issue #516 — NO one-click-base-url default lives here, deliberately.
 #
-# ONLY the dev profile may carry a localhost value. The base application.yml
-# leaves one-click-base-url EMPTY so a k8s environment that has not wired it
-# advertises no one-click at all rather than a loopback URL — k8s/local runs the
-# `prod` profile (k8s/local/kustomization.yaml note 3), so this document cannot
-# leak into any cluster.
-notification:
-  unsubscribe:
-    one-click-base-url: ${NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL:http://localhost:9090}
+# The first attempt put ${NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL:http://localhost:9090}
+# in this document, reasoning that the dev profile is only ever the developer's
+# own machine. k8s/scripts/check-env-contract.sh rejected it, and it is right to:
+# direction (b) forbids a placeholder whose default is local-only and that no
+# manifest supplies, because outside a laptop the default is wrong and the
+# failure is SILENT. Measured output:
+#
+#   DIRECTION (b) VIOLATION [core-java] — placeholder whose default is LOCAL-ONLY
+#   and that no manifest supplies:
+#     - NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL (default: 'http://localhost:9090')
+#
+# So the only default is the EMPTY one in application.yml, which makes the
+# feature inert rather than wrong: the List-Unsubscribe header falls back to the
+# working page URL and One-Click is simply not claimed. To exercise one-click on
+# the dev stack, set NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL=http://localhost:9090
+# in .env alongside NOTIFICATION_UNSUBSCRIBE_SECRET (without a secret there is no
+# unsubscribe URL at all). A cluster sets it from that environment's api.url.

@@ -106,6 +106,11 @@ public class NotificationProperties {
          * one-click POST is never promised at a target that cannot honour it.
          * An environment wires it to its own API origin ({@code api.url}) to turn
          * true RFC 8058 one-click back on.
+         *
+         * <p>Empty, and not a localhost convenience default: a local-only default
+         * that no manifest supplies is silently wrong everywhere else, which is
+         * both the D-19 defect class and a direction-(b) failure of
+         * {@code k8s/scripts/check-env-contract.sh}.
          */
         private String oneClickBaseUrl = "";
 
