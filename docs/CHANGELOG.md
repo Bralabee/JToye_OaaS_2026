@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A vendor could not tell a broken webhook verifier from a broken one of ours (#571) — 2026-08-06
+### A vendor could not tell a broken webhook verifier from a broken one of ours (#571) (#586) — 2026-08-06
 
 Building a receiver for our outbound webhooks meant guessing. The HMAC scheme works and has
 always worked, but the only description of it was `WebhookSigner`'s Javadoc and one paragraph of
