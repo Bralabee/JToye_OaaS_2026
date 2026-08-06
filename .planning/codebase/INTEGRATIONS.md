@@ -19,7 +19,7 @@
   - Endpoint: `OLLAMA_URL` (default `http://ollama:11434`)
   - Model: `OLLAMA_MODEL` (default `gemma3:12b`, pulled by `ollama-init` sidecar)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/ai/` via Spring `WebClient` (WebFlux)
-  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:586-588`
+  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:604-606`
   - Failure mode: Resilience4j circuit breaker (50% threshold, 60s wait, max 2 retries)
   - Fallback: Switch to Anthropic Claude via `AI_PROVIDER=anthropic`
 - Anthropic Claude — Cloud vision alternative
@@ -43,7 +43,7 @@
 - MinIO (S3-compatible, local dev) / AWS S3 (prod)
   - Endpoint: `S3_ENDPOINT` (`http://minio:9000` dev)
   - Credentials: `S3_ACCESS_KEY`, `S3_SECRET_KEY` (default `minioadmin`/`minioadmin`)
-  - Bucket: `S3_BUCKET` (`jtoye-images`), public-read policy applied by `minio-init` sidecar (`docker-compose.full-stack.yml:500-514`)
+  - Bucket: `S3_BUCKET` (`jtoye-images`), public-read policy applied by `minio-init` sidecar (`docker-compose.full-stack.yml:518-532`)
   - Public URL: `S3_PUBLIC_URL`
   - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:60-61`). Version is claimed once, in STACK.md, which the version gate checks.
   - Implementation: `core-java/src/main/java/uk/jtoye/core/storage/`
@@ -127,7 +127,7 @@
 - Toggles: `NOTIFICATION_EMAIL_ENABLED`, tracking pixel via `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, sender `NOTIFICATION_EMAIL_FROM`
 
 **Mailhog (dev SMTP sink):**
-- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:610`)
+- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:628`)
 - SMTP at 1025, Web UI at 8025, no auth, no TLS — captures all outbound mail
 
 **Alertmanager email routing (new in v2.1 / phase 9):**
@@ -211,7 +211,7 @@
   - Persistence: `payment_event_outbox` table (V31, RLS fixed in V33) for idempotent replay
 
 - WhatsApp Cloud API webhook (gated, currently edge-only stub)
-  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:227`)
+  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:299`)
   - Signature: `X-Hub-Signature-256` HMAC-SHA256 verified against `WHATSAPP_APP_SECRET` (fail-closed — refuses webhook if secret unset; previously would silently skip, fixed in P1 audit)
   - Parser: `edge-go/internal/whatsapp/parser.go`
   - Default shop: `WHATSAPP_DEFAULT_SHOP_ID` (if unset, handler errors rather than fabricating tenant)

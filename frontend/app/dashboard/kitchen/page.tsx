@@ -23,6 +23,7 @@ import {
 import {
   KdsAllShopsNotice,
   KdsBoardShopName,
+  KdsOtherShopNotice,
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
 import {
@@ -133,6 +134,65 @@ function playBeep() {
 // Moved to lib/kitchen-orders-api.ts (#485) so the paging loop that filters on them
 // and the page that renders them cannot drift apart. Re-exported nowhere: the import
 // above is the single definition.
+
+// --- #536: the board's reserved height ---
+//
+// ONE band, used by the loading skeleton, the empty state and the loaded grid alike,
+// so the region the board occupies is decided before any data arrives and does not
+// change when it does.
+//
+// WHY A VIEWPORT-SIZED RESERVE AND NOT A TICKET-COUNT-SIZED ONE. #536 proposed sizing
+// the placeholder to the expected ticket count. Measuring the route first (390px
+// `isMobile` + `hasTouch`, Fast-3G 1.5Mbps/40ms, 4x CPU, real API, an 18-ticket board)
+// showed the count is not what the score is made of. The single largest shift, 0.6593
+// of a total 0.8287, is the SHELL FOOTER — `dashboard-shell.tsx` renders it directly
+// under the board, the old 16rem band left it sitting at y=797 in an 844px viewport,
+// and the grid arriving shoved it 4574px down while it was still on screen. Whether
+// the reserve is 4 tickets tall or 18 changes nothing about that; whether it clears
+// the fold changes everything. `100svh` (not `dvh`) because a KDS is a wall screen and
+// a reserve that breathes with a mobile URL bar would reintroduce the shift it exists
+// to remove.
+//
+// It is a floor, never a ceiling: a taller board grows past it (the footer is already
+// off-screen, so nothing in view moves), and a one-ticket board keeps it (the footer
+// stays exactly where the skeleton left it instead of jumping UP into view).
+const BOARD_RESERVE = "min-h-[calc(100svh_-_11rem)]"
+
+/** Skeleton cards rendered while the board is being read. */
+function KdsBoardSkeleton() {
+  return (
+    // `overflow-hidden` + the exact reserve height, so the skeleton cannot decide the
+    // page's height. It is free to render more cards than fit — the count only has to
+    // be enough to fill the widest breakpoint's first rows, and the clip guarantees the
+    // outer box is the reserve whatever it renders. `aria-hidden`: the bones say
+    // nothing the `role="status"` wrapper has not already said.
+    <div
+      aria-hidden
+      className="grid h-[calc(100svh_-_11rem)] grid-cols-1 gap-4 overflow-hidden sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+    >
+      {Array.from({ length: 12 }, (_, i) => (
+        <div
+          key={i}
+          data-testid="kds-ticket-skeleton"
+          className="rounded-lg border-2 border-slate-200 bg-white p-4"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="h-6 w-24 rounded bg-slate-200 motion-safe:animate-pulse" />
+            <div className="h-6 w-20 rounded-full bg-slate-200 motion-safe:animate-pulse" />
+          </div>
+          <div className="mt-4 h-4 w-28 rounded bg-slate-100 motion-safe:animate-pulse" />
+          <div className="mt-3 h-4 w-20 rounded bg-slate-100 motion-safe:animate-pulse" />
+          <div className="mt-1 h-3 w-40 rounded bg-slate-100 motion-safe:animate-pulse" />
+          <div className="mt-3 h-3 w-16 rounded bg-slate-100 motion-safe:animate-pulse" />
+          <div className="mt-3 flex items-stretch gap-2">
+            <div className="h-11 w-full rounded-md bg-slate-200 motion-safe:animate-pulse" />
+            <div className="h-11 w-11 flex-shrink-0 rounded-md bg-slate-200 motion-safe:animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function KitchenPage() {
   const { toast } = useToast()
@@ -493,6 +553,16 @@ export default function KitchenPage() {
   const selectedShop = shops.find((s) => s.id === selectedShopId) ?? null
   const selectedShopName = selectedShop?.name ?? null
 
+  // The dashboard names a SPECIFIC shop and the board is showing a different one —
+  // the D-13 degrade in the reconciliation effect above, which until now happened in
+  // silence. `selectedShopId` is only compared once it has settled, so the first
+  // render (before reconciliation) never flashes the notice.
+  const boardIsNotTheContextShop =
+    !isAllShops &&
+    contextShopId !== null &&
+    selectedShopId !== null &&
+    contextShopId !== selectedShopId
+
   // --- #105: printing ---
 
   const { print, clear: clearPrintSheet, sheet: printSheet } =
@@ -522,39 +592,14 @@ export default function KitchenPage() {
     [online, connected, reconnecting, lastSyncedAt, syncFailed, tick]
   )
 
-  if (loading) {
-    // Keep the HEADER, and reserve the grid's space rather than centring a spinner in
-    // an otherwise empty page. The old version rendered a 128px spinner and then
-    // swapped the entire board in underneath it, which is a whole-page layout shift on
-    // every load — at the repo's declared throttle profile it was the single largest
-    // contributor to /dashboard/kitchen's CLS. The `min-h` band below is deliberately
-    // the same order of height as the first row of tickets, so the grid lands roughly
-    // where the placeholder was instead of pushing everything down.
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-4xl font-bold text-slate-900">Kitchen Display</h1>
-            {/* #556: `loading`, not shopName={null}. Without it this said "No shop
-                selected" while the shop was still loading — false, and it collided
-                with the loaded header's testid during hydration. */}
-            <KdsBoardShopName shopName={null} loading />
-            <p className="mt-0.5 text-sm text-slate-500">
-              Live order feed &mdash; bump orders through preparation stages
-            </p>
-          </div>
-        </div>
-        <div
-          className="flex min-h-[16rem] items-center justify-center"
-          role="status"
-          aria-label="Loading kitchen orders"
-        >
-          <div className="h-16 w-16 motion-safe:animate-spin rounded-full border-b-2 border-t-2 border-primary" />
-        </div>
-      </div>
-    )
-  }
-
+  // #536: ONE tree, not a `loading` early-return that duplicated the header.
+  //
+  // The duplicate was itself a defect factory — #556 was two header subtrees carrying
+  // the same testid — and it is also why the header CHANGED HEIGHT mid-load: the
+  // loading copy had no control row, so the pill/selector/print/mute appeared at
+  // 90px..218px and pushed the whole board down. The controls now render in both
+  // states (disabled while there is nothing to act on), so the header is the height it
+  // will end up being from the first paint.
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -566,8 +611,16 @@ export default function KitchenPage() {
               corner, while the dashboard switcher next to it said "All shops".
               The original tagline is kept below rather than displaced — it explains
               what the board is FOR to someone seeing it the first time, which the
-              shop name does not. */}
-          <KdsBoardShopName shopName={selectedShopName} />
+              shop name does not.
+
+              #556: `loading` is a THIRD state and gets its own testid — without it
+              this said "No shop selected" while the shop was still loading, which is
+              false. Now that there is one header rather than two, the two testids can
+              no longer be in the DOM at the same time by construction. */}
+          <KdsBoardShopName
+            shopName={loading ? null : selectedShopName}
+            loading={loading}
+          />
           <p className="mt-0.5 text-sm text-slate-500">
             Live order feed &mdash; bump orders through preparation stages
           </p>
@@ -575,11 +628,21 @@ export default function KitchenPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           {/* #106: the connection state, legible from a wall mount. Replaces a
-              h-2.5 w-2.5 dot whose label was `hidden sm:inline`. */}
-          <KdsFeedPill state={feedState} lastSyncedAt={lastSyncedAt} />
+              h-2.5 w-2.5 dot whose label was `hidden sm:inline`.
+              #536: `pending` only while the shop list is in flight — see the PENDING
+              note in kds-feed-status.tsx. It is bounded by that fetch, so it can never
+              paper over a socket that is genuinely down. */}
+          <KdsFeedPill
+            state={feedState}
+            lastSyncedAt={lastSyncedAt}
+            pending={loading}
+          />
 
-          {/* Shop selector */}
-          {shops.length > 0 && (
+          {/* Shop selector. #536: while the shop list is loading this renders as a
+              DISABLED trigger of the same size rather than not at all — an absent
+              control is a 108px hole that fills in a second later, and every ticket
+              on the board moves down when it does. */}
+          {shops.length > 0 ? (
             <Select
               value={selectedShopId || ""}
               onValueChange={(v) => setSelectedShopId(v)}
@@ -594,6 +657,16 @@ export default function KitchenPage() {
                   </SelectItem>
                 ))}
               </SelectContent>
+            </Select>
+          ) : (
+            <Select disabled value="">
+              <SelectTrigger
+                className="w-[200px]"
+                aria-label="Kitchen display shop"
+                data-testid="kds-shop-select-placeholder"
+              >
+                <SelectValue placeholder={loading ? "Loading shops…" : "No shops"} />
+              </SelectTrigger>
             </Select>
           )}
 
@@ -664,9 +737,15 @@ export default function KitchenPage() {
         )}
       </AnimatePresence>
 
-      {/* #450 5d: name the mismatch rather than letting the operator find it. */}
-      {isAllShops && (
+      {/* #450 5d: name the mismatch rather than letting the operator find it.
+          Two mismatches, and they are mutually exclusive by construction — the
+          dashboard is either on All shops or on one specific shop. */}
+      {isAllShops ? (
         <KdsAllShopsNotice shopName={selectedShopName} shopCount={shops.length} />
+      ) : (
+        boardIsNotTheContextShop && (
+          <KdsOtherShopNotice shopName={selectedShopName} />
+        )
       )}
 
       {/* #485: the board bound out before the API said the list had ended. Say so —
@@ -683,23 +762,39 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* Order cards grid.
-          `loading` above only covers the SHOP list; the orders arrive after it, so the
-          board used to render "No active orders" in the gap and then replace it with a
-          full grid. That is a claim the board had not yet checked — the same class of
-          untruth as #450 5d — and it was the largest remaining layout shift on the
-          route, measured at the declared throttle profile. `lastSyncedAt === null` is
-          exactly "orders have never been read", so it drives both fixes at once. */}
-      {lastSyncedAt === null && sortedOrders.length === 0 ? (
+      {/* The board itself, in exactly one of four states — shops loading, orders never
+          read, read and empty, read and populated. All four occupy {@link BOARD_RESERVE},
+          so the footer `dashboard-shell.tsx` renders underneath sits below the fold from
+          the first paint and stays there.
+
+          `loading` covers the SHOP list only; the orders arrive after it, so the board
+          used to render "No active orders" in the gap and then replace it with a full
+          grid. That is a claim the board had not yet checked — the same class of untruth
+          as #450 5d. `lastSyncedAt === null` is exactly "orders have never been read".
+
+          THE `key` ON EACH BRANCH IS LOAD-BEARING, not decoration. React reconciles a
+          conditional by position, so without distinct keys these four `div`s are ONE
+          node that persists across the whole load — and a persisting node that MOVES is
+          an unstable element, while a freshly-mounted one is not. The all-shops notice
+          above inserts 163px in the same commit that ends the shops load; with one
+          shared node that pushes a viewport-tall board down and scores ~0.19 on its own,
+          and with a key it costs nothing because the node the notice pushes did not
+          exist a frame ago. Keep the keys distinct if these branches are ever
+          restructured. */}
+      {loading || (lastSyncedAt === null && sortedOrders.length === 0) ? (
         <div
-          className="flex min-h-[16rem] items-center justify-center"
+          key={loading ? "kds-board-loading-shops" : "kds-board-loading-orders"}
+          className={BOARD_RESERVE}
           role="status"
           aria-label="Loading kitchen orders"
         >
-          <div className="h-16 w-16 motion-safe:animate-spin rounded-full border-b-2 border-t-2 border-primary" />
+          <KdsBoardSkeleton />
         </div>
       ) : sortedOrders.length === 0 ? (
-        <div className="flex min-h-[16rem] flex-col items-center justify-center py-24 text-center">
+        <div
+          key="kds-board-empty"
+          className={`flex ${BOARD_RESERVE} flex-col items-center justify-center py-24 text-center`}
+        >
           <ChefHat className="mb-4 h-16 w-16 text-slate-300" />
           <h3 className="mb-2 text-xl font-semibold text-slate-900">
             No active orders
@@ -709,7 +804,10 @@ export default function KitchenPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          key="kds-board-grid"
+          className={`grid ${BOARD_RESERVE} grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}
+        >
           <AnimatePresence mode="popLayout">
             {sortedOrders.map((order) => {
               const config = statusConfig[order.status]

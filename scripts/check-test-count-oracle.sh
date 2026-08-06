@@ -72,14 +72,33 @@ command -v npx  >/dev/null 2>&1 || void "npx is not installed"
 [ -f "$MANIFEST" ] || void "$MANIFEST is missing"
 jq -e . "$MANIFEST" >/dev/null 2>&1 || void "$MANIFEST is not parseable JSON"
 
-manifest_int() { # <key>
+# Sets MANIFEST_INT rather than printing, and is called as a STATEMENT, never as
+# `x=$(manifest_int k)`.
+#
+# WHY. void() ends in `exit 2`, and inside a command substitution that exits only the
+# SUBSHELL. The caller then read an empty string and carried on, so every VOID here
+# surfaced as a rc=1 FAIL reading "the runner says 789, docs/metrics.json says ." — the
+# wrong severity (on this repo 2 means "could not check", 1 means "checked, and it is
+# wrong") attached to the wrong remedy: it advised `docs-freshness.sh --write` for a
+# manifest that was unreadable rather than stale.
+#
+# docs-freshness.sh's count_js already documents and avoids exactly this shape. This is
+# the sibling script that reintroduced it.
+MANIFEST_INT=""
+manifest_int() { # <key> -> sets MANIFEST_INT
 	local v
-	v=$(jq -r --arg k "$1" 'if has($k) then (.[$k]|tostring) else "__ABSENT__" end' "$MANIFEST")
+	# The type test happens in jq, BEFORE tostring: `"789"` is a JSON string and must be
+	# refused, but tostring would normalise it to 789 and slip it past a shell glob test.
+	v=$(jq -r --arg k "$1" '
+		if (has($k) | not) then "__ABSENT__"
+		elif (.[$k] | type) != "number" then "__NOTNUM__"
+		else (.[$k] | tostring) end' "$MANIFEST")
 	case "$v" in
 		__ABSENT__) void "docs/metrics.json has no key '$1'" ;;
+		__NOTNUM__) void "docs/metrics.json .$1 is not a JSON number" ;;
 		''|*[!0-9]*) void "docs/metrics.json .$1 = '$v' is not a plain integer" ;;
 	esac
-	printf '%s' "$v"
+	MANIFEST_INT="$v"
 }
 
 # A count of 0 from a runner means the suite did not boot, not that there are no
@@ -93,7 +112,8 @@ require_positive() { # <label> <value>
 
 compare() { # <label> <manifest-key> <observed>
 	local expected
-	expected=$(manifest_int "$2")
+	manifest_int "$2"          # statement, not $( ) — see manifest_int
+	expected="$MANIFEST_INT"
 	printf '  %-34s runner=%-6s manifest=%s\n' "$1" "$3" "$expected"
 	[ "$3" = "$expected" ] || fail "$1: the runner says $3, docs/metrics.json says $expected. Run scripts/docs-freshness.sh --write and update the prose counts."
 }
