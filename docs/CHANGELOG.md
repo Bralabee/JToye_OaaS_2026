@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The gate that catches a missing changelog entry could not run on the PR that omits it (#579) — 2026-08-06
+### The gate that catches a missing changelog entry could not run on the PR that omits it (#579) (#583) — 2026-08-06
 
 `check-changelog-contract` C-1 asserts that every **merged** `feat`/`fix` PR is cited in
 `docs/CHANGELOG.md`. It is correct and it works. It is also structurally incapable of firing on the
