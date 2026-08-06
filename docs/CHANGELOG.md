@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A signed-in customer's own profile offered them "Become a vendor" (#458 items 1a, 2, 4) (#591) — 2026-08-06
+
+#508 gated `StorefrontNav` and `PublicHeader` and deliberately left `PublicFooter` alone, so the
+operator door stayed reachable. But `app/shop/layout.tsx:73` mounts that footer under
+`/shop/orders` — so a signed-in customer scrolled past the gated header straight into a column
+headed **"For operators"**, with "Become a vendor" and "Vendor sign in" under it, on their own
+profile. That is the page the owner's report actually named.
+
+The second surface: `/track` with zero orders. #508's auto-population returns early when there is
+nothing to open on, which dropped a signed-in customer onto the **guest** form and asked them to
+type `ORD-XXXXXXXX-XXXXXXXX-XXXXXXXX` — a reference that by definition does not exist for them.
+
+#### Fixed
+- **The footer reads the same session the two headers do.** A third independent reader is how #457
+  comes back, so it is `useCustomerSession()` or nothing. One deliberate exemption: the operator
+  surfaces themselves. Someone who walked onto `/for-operators` did so on purpose, and stripping
+  "Vendor sign in" from the footer of the page whose whole job is recruiting vendors would be a
+  worse bug than the one being fixed.
+- **The guest "Track order" lookup becomes "My orders" for a signed-in customer** rather than
+  disappearing. The profile is where their tracking lives, one tap behind an order card — which is
+  also the only thing that can honour *"only present when there's been an order"*, because the card
+  cannot exist without one.
+- **The footer no longer reflows under the reader.** Gating the operator column collapsed the grid
+  to `sm:grid-cols-2` — tidier in a static screenshot, wrong in a browser: the session resolves
+  after first paint, so the column vanished live and "For customers" slid ~200px right as it went.
+  Three tracks are kept always. Empty space on the right costs nothing; a moving footer does.
+- **The `/track` empty state stopped saying the same thing twice** — a heading reading "Nothing to
+  track yet" directly above a card reading "You haven't placed an order yet", which is what filler
+  copy looks like.
+
+#### Added
+- **A test for an error path, because a break arm went GREEN.** Setting the empty-state flag on the
+  `!res.ok` path as well as the empty-list one — the #467 defect exactly, *"we could not ask"*
+  rendered as *"you have none"* — failed nothing in the suite. The source comment asserted the
+  error paths were safe and no test could have contradicted it. Two arms now cover it, HTTP-error
+  and network-throw, both landing on the lookup form.
+
+#### Notes
+- **Proven in a browser, not from the test output.** `e2e/track-operator-persona.verify.mjs`
+  registers a **real Keycloak customer**, which is how it obtains an account with genuinely zero
+  orders — a seeded fixture would have hidden the case the report is about. `7/7` on this build
+  against `3/7` pre-fix on the live container. The three passing on BOTH sides are the controls: a
+  signed-in customer still sees the operator column ON `/for-operators`, it returns everywhere
+  after sign-out, and the guest lookup still demands order number AND email with nothing
+  pre-filled. Two aborts guard the shape — it exits early if the operator link is already absent
+  for an anonymous visitor, or if registration yields no session; either would let the first three
+  checks pass for the wrong reason.
+- **`.mjs`, not `.spec.ts`**, matching the `cart-identity-boundary` precedent, so the
+  `docs-freshness` `test()` count does not move for a verification script.
+- **SSR is unaffected.** `PublicFooter` becomes a client component to read the session. The nonce /
+  `force-dynamic` contract its old comment cited still holds — `PublicHeader` is already
+  `"use client"` inside the same `PublicShell` — and the session resolves asynchronously, so the
+  first render, which is the SSR HTML a crawler gets, still carries every operator link. Pinned by
+  a test rather than assumed.
+- **#458 stays OPEN.** Item 3 — the animation / engagement / dispatch-notification work — is design
+  work needing its own treatment and is deliberately not attempted here.
+
 ### A vendor could not tell a broken webhook verifier from a broken one of ours (#571) (#586) — 2026-08-06
 
 Building a receiver for our outbound webhooks meant guessing. The HMAC scheme works and has

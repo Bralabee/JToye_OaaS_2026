@@ -118,6 +118,13 @@ function TrackOrderContent() {
   // True once the page has opened itself on one of the signed-in customer's own
   // orders. Drives the "no typing required" surface; a guest never reaches it.
   const [autoResolved, setAutoResolved] = useState(false)
+  // #458 item 2 — "should only be present when there's been an order". Set only
+  // when we have positively established that this signed-in customer has NO
+  // orders: session present, proxy answered 200, list empty. A failed or absent
+  // request must never land here (the #467 lesson: "we could not ask" and "there
+  // are none" are different answers, and printing the second for the first is a
+  // confident lie), so it stays false on every error path.
+  const [noOrdersOfTheirOwn, setNoOrdersOfTheirOwn] = useState(false)
   const [showManualForm, setShowManualForm] = useState(false)
 
   // Session pre-fill + #458 auto-population, in one pass.
@@ -142,8 +149,17 @@ function TrackOrderContent() {
         if (!res.ok || cancelled) return
         const data = (await res.json()) as { content?: OrderStatus[] }
         if (cancelled) return
-        const picked = pickTrackedOrder(data.content ?? [], searchParams.get("order"))
-        if (!picked) return
+        const own = data.content ?? []
+        const picked = pickTrackedOrder(own, searchParams.get("order"))
+        if (!picked) {
+          // Nothing to open on. Distinguish the two reasons, because they need
+          // different pages: an empty history means "you have no orders yet",
+          // whereas a ?order= that is not theirs is a genuine lookup they may
+          // still want to complete against another email — so that one keeps
+          // falling through to the form, exactly as before.
+          if (own.length === 0) setNoOrdersOfTheirOwn(true)
+          return
+        }
         setOrder(picked)
         setOrderNumber(picked.orderNumber)
         setAutoResolved(true)
@@ -222,26 +238,73 @@ function TrackOrderContent() {
 
   // A signed-in customer is shown their order, not a form. The form is still
   // one tap away (they may be chasing a guest order placed on another address).
-  const formHidden = autoResolved && !showManualForm
+  //
+  // #458 item 2: the same applies with the opposite content when they have no
+  // orders at all. Handing someone an "Order number" field and the placeholder
+  // ORD-XXXXXXXX-XXXXXXXX-XXXXXXXX when the system already knows they have
+  // nothing to look up is the "re-key a reference" complaint in its purest form.
+  const formHidden = (autoResolved || noOrdersOfTheirOwn) && !showManualForm
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
+      {/* The heading belongs to whichever block is carrying the message. When
+          an order was found this row states it; when there is none, the card
+          below is the <h1> and this row shrinks to just the escape hatch —
+          saying "nothing to track yet" here AND "you haven't placed an order
+          yet" immediately underneath is the same sentence twice, which is what
+          filler copy looks like. */}
       {formHidden && (
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold text-oxblood">Your order</h1>
-            <p className="mt-1 text-xs text-slate-600">
-              Signed in — we found this one for you. No order number needed.
-            </p>
-          </div>
+        <div
+          className={`mb-4 flex flex-wrap items-baseline gap-2 ${
+            autoResolved ? "justify-between" : "justify-end"
+          }`}
+        >
+          {autoResolved && (
+            <div>
+              <h1 className="text-xl font-bold text-oxblood">Your order</h1>
+              <p className="mt-1 text-xs text-slate-600">
+                Signed in — we found this one for you. No order number needed.
+              </p>
+            </div>
+          )}
           <button
             type="button"
             data-testid="track-show-manual-form"
             onClick={() => setShowManualForm(true)}
             className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           >
-            Track a different order
+            {autoResolved ? "Track a different order" : "Track a guest order"}
           </button>
+        </div>
+      )}
+
+      {/* #458 item 2 — the empty state, which is a DESTINATION and not a dead
+          end. Reached only from a 200 with an empty list, never from a failed
+          request. It says the true thing ("you have no orders") and offers the
+          two moves that make sense from here; the guest form is still one tap
+          away above, for an order placed on a different email. */}
+      {noOrdersOfTheirOwn && !showManualForm && (
+        <div
+          className="rounded-xl border border-cream-100 bg-white p-6 text-center shadow-sm"
+          data-testid="track-no-orders"
+        >
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cream">
+            <Package className="h-6 w-6 text-slate-300" />
+          </div>
+          <h1 className="text-lg font-bold text-oxblood">
+            You haven&apos;t placed an order yet
+          </h1>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-slate-600">
+            When you do, it will show up here automatically — you will never need
+            to type an order number.
+          </p>
+          <Link
+            href="/shop"
+            className="mt-5 inline-flex items-center gap-2 rounded-full bg-oxblood px-5 py-2.5 text-sm font-semibold text-white transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-oxblood-700 motion-reduce:transition-none motion-reduce:active:scale-100"
+          >
+            <Store className="h-4 w-4" />
+            Browse shops
+          </Link>
         </div>
       )}
 
@@ -411,9 +474,11 @@ function TrackOrderContent() {
 
       {/* Back links. A signed-in customer gets their order history too — the
           nav no longer carries a standalone "Track order" for them (#458), so
-          the return path to the profile has to be on the page itself. */}
+          the return path to the profile has to be on the page itself. Shown for
+          the empty state as well: "no orders" is a fact about right now, and the
+          profile is still where the next one will appear. */}
       <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-center">
-        {autoResolved && (
+        {(autoResolved || noOrdersOfTheirOwn) && (
           <Link
             href="/shop/orders"
             className="inline-flex items-center gap-1 text-sm text-slate-600 transition-colors hover:text-slate-700"
@@ -422,13 +487,18 @@ function TrackOrderContent() {
             All my orders
           </Link>
         )}
-        <Link
-          href="/shop"
-          className="inline-flex items-center gap-1 text-sm text-slate-600 transition-colors hover:text-slate-700"
-        >
-          <Store className="h-4 w-4" />
-          Browse shops
-        </Link>
+        {/* Suppressed when the empty-state card is up: it already carries
+            "Browse shops" as its primary action, and two identical CTAs one
+            above the other is the shape that makes a page look generated. */}
+        {!(noOrdersOfTheirOwn && !showManualForm) && (
+          <Link
+            href="/shop"
+            className="inline-flex items-center gap-1 text-sm text-slate-600 transition-colors hover:text-slate-700"
+          >
+            <Store className="h-4 w-4" />
+            Browse shops
+          </Link>
+        )}
       </div>
     </div>
   )
