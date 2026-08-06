@@ -55,10 +55,16 @@ Neither ever asked whether that string routes anywhere, and neither ever fed one
   literals in code): `notification.unsubscribe.page-path` (`/unsubscribe`),
   `notification.unsubscribe.one-click-path` (`/api/v1/public/unsubscribe`), and
   `notification.unsubscribe.one-click-base-url` — **empty** by default.
-- The empty default is deliberate and is the fail-safe direction: a localhost fallback here would
-  reintroduce the D-19 defect class (a loopback origin inside production mail). `application-dev.yml`
-  supplies the dev value `http://localhost:9090`, which is safe because `k8s/local` runs the `prod`
-  profile, so no cluster can pick it up.
+- The empty default is deliberate and is the fail-safe direction: a localhost fallback would
+  reintroduce the D-19 defect class (a loopback origin inside production mail). That is enforced,
+  not just argued — the first attempt did put `http://localhost:9090` in `application-dev.yml` and
+  `k8s/scripts/check-env-contract.sh` failed the PR for it: *"DIRECTION (b) VIOLATION [core-java] —
+  placeholder whose default is LOCAL-ONLY and that no manifest supplies"*. The dev convenience was
+  removed rather than allowlisted; the gate is back to `(b) VIOLATIONS (local-only default) 0`, with
+  the three new placeholders passing by rule as safe non-local defaults. To exercise one-click on
+  the dev stack, set `NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL=http://localhost:9090` in `.env`
+  alongside `NOTIFICATION_UNSUBSCRIBE_SECRET` — with no secret there is no unsubscribe URL locally
+  at all.
 - **Follow-up, not in this PR (k8s is outside this change's write boundary):** wire
   `NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL` in `k8s/base/core-java-deployment.yaml` to a new
   `app-config` key set to each overlay's existing `api.url`, next to the
