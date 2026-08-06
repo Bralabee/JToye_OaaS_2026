@@ -141,6 +141,45 @@ staged   raw=2  scoped=1  rawH1=2  roleHeading=1  rawTitle=2  roleButton=1
 The raw query demonstrably doubles, so the guard's input is genuinely broken; the scope and the role
 locators both hold at 1.
 
+#### The class is NARROWER than it looks — measured, so nobody repeats the sweep
+
+The obvious next move after #595 is to sweep every spec using a raw test-id locator. **Don't** —
+it was measured and the answer is no. The staging buffer is emitted by the server's **streaming
+HTML response**, so it exists only for a **full document load**, and only until the reveal throttle
+fires. An App Router **client-side navigation fetches an RSC payload, not a new document**, and
+produces none:
+
+```
+FULL LOAD  /dashboard/webhooks : {"stagingDivs":0,…}   <- warm run, window already missed; NOT evidence
+after settle on /dashboard     : {"stagingDivs":0,"h1":1}
+CLIENT NAV -> /dashboard/kitchen: {"stagingDivs":0,"h1":1}
+  +50ms / +150ms / +300ms / +600ms : all {"stagingDivs":0,"h1":1}
+```
+
+The load-bearing rows are the client-nav ones — five samples across ~1.1 s, zero buffers. (The
+first row is *not* evidence of anything: a warm full load usually misses the window, which is the
+same reason #593 read as a flake.)
+
+So the two remaining raw-attribute sites on dashboard routes were checked and are **not exposed**:
+
+- `webhooks-flow.spec.ts:205` `getByTestId("deliveries-table")` — reached by a **client-side** nav
+  (`a[href]` click → `waitForURL`). No buffer exists there.
+- `stomp-relay.spec.ts:122` `waitForSelector('[data-testid="order-card"]', {state:"attached"})` —
+  the scariest-looking one, because `state:"attached"` explicitly accepts hidden elements and it
+  feeds a **latency** assertion, so a match on a staged copy would not fail loudly, it would
+  fabricate a fast pass. But it runs after a `load`-gated `page.goto` **plus** several API
+  round-trips; the buffer is long gone.
+
+Exposure is therefore: **a full document load, asserted at `domcontentloaded`, before the throttle
+fires.** Every spec that does that is now handled — `kitchen-flow` by #595, `dashboard-mobile` and
+`dashboard-interface-corrections` since 2026-07-31.
+
+**No gate was added, deliberately.** The standing doctrine is that a recurring failure earns an
+executable check, and this one declined it on evidence: the exposure is narrow and already covered,
+a lint on `getByTestId` would fire mostly on safe uses, and this repo already carries 29 gate
+scripts — **six of which were once found wired to nothing**. A noisy gate is how the next reader
+learns to ignore gates.
+
 #### The E2E row is green again, and the skip budget was re-earned honestly
 
 `174 passed / 8 skipped / 0 failed / 0 flaky` of 182 (383 s) — the baseline recorded after #565.
