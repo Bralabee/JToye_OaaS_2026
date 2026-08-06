@@ -247,18 +247,26 @@ function TrackOrderContent() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
+      {/* The heading belongs to whichever block is carrying the message. When
+          an order was found this row states it; when there is none, the card
+          below is the <h1> and this row shrinks to just the escape hatch —
+          saying "nothing to track yet" here AND "you haven't placed an order
+          yet" immediately underneath is the same sentence twice, which is what
+          filler copy looks like. */}
       {formHidden && (
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold text-oxblood">
-              {autoResolved ? "Your order" : "Nothing to track yet"}
-            </h1>
-            <p className="mt-1 text-xs text-slate-600">
-              {autoResolved
-                ? "Signed in — we found this one for you. No order number needed."
-                : "Signed in — there are no orders on your account to track."}
-            </p>
-          </div>
+        <div
+          className={`mb-4 flex flex-wrap items-baseline gap-2 ${
+            autoResolved ? "justify-between" : "justify-end"
+          }`}
+        >
+          {autoResolved && (
+            <div>
+              <h1 className="text-xl font-bold text-oxblood">Your order</h1>
+              <p className="mt-1 text-xs text-slate-600">
+                Signed in — we found this one for you. No order number needed.
+              </p>
+            </div>
+          )}
           <button
             type="button"
             data-testid="track-show-manual-form"
@@ -283,9 +291,9 @@ function TrackOrderContent() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cream">
             <Package className="h-6 w-6 text-slate-300" />
           </div>
-          <p className="text-sm font-semibold text-slate-900">
+          <h1 className="text-lg font-bold text-oxblood">
             You haven&apos;t placed an order yet
-          </p>
+          </h1>
           <p className="mx-auto mt-1 max-w-xs text-sm text-slate-600">
             When you do, it will show up here automatically — you will never need
             to type an order number.

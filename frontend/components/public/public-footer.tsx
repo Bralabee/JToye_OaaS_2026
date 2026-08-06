@@ -66,14 +66,15 @@ export function PublicFooter() {
   return (
     <footer className="bg-oxblood text-cream">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-        {/* Two columns instead of three when the operator one is gated away, so
-            the customer footer reads as a deliberate layout rather than a grid
-            with a hole where a column used to be. */}
-        <div
-          className={`grid grid-cols-1 gap-8 ${
-            showOperatorColumn ? "sm:grid-cols-3" : "sm:grid-cols-2"
-          }`}
-        >
+        {/* Three tracks ALWAYS, even when the third is empty. Collapsing to
+            sm:grid-cols-2 was tried first and looked tidier in a static
+            screenshot, but the session resolves after first paint, so the
+            operator column disappears live — and with two tracks the "For
+            customers" column slides ~200px right as it goes. Keeping the track
+            count fixed means the two surviving columns do not move at all. A
+            little empty space on the right costs nothing; a footer that
+            reflows under the reader's eyes on every load does. */}
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
           {/* Brand */}
           <div className="space-y-3">
             <Link
