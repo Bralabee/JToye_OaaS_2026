@@ -18,9 +18,15 @@
 #   compares that to the manifest. It is the only gate here whose answer does not
 #   come from reading the source with a regex.
 #
-#   It also closes the one hole the static counter cannot: a test declared inside a
-#   `for` loop is one declaration and N executions, and no static reader resolves
-#   that. The runner does.
+#   It also closes the hole the static counter cannot: a test declared inside a loop
+#   is one declaration and N executions, and no static reader resolves that. The
+#   runner does.
+#
+#   Since #582 the static counter no longer UNDER-COUNTS that shape for jest/vitest —
+#   it VOIDs on it, because a silent under-count made this gate and docs-freshness
+#   mutually unsatisfiable and both are required checks. That refusal is lexical
+#   (`for`/`while`/`do` bodies and array-iteration callbacks), so a hand-rolled helper
+#   that loops still slips past it and this remains the last word.
 #
 # WHAT IT ASSERTS, per family:
 #   jest        docs/metrics.json .jest_blocks       == jest's numTotalTests
