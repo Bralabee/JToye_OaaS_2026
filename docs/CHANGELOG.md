@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A loop-declared Jest test made two required checks mutually unsatisfiable (#582) — 2026-08-06
+### A loop-declared Jest test made two required checks mutually unsatisfiable (#582) (#588) — 2026-08-06
 
 `node scripts/count-test-blocks.mjs --family jest` on the eight-line reproduction in #582 printed
 `{"blocks":3}` and exited **0**, for a file in which **five** tests run. That is the one construct
