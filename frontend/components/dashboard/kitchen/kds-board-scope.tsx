@@ -20,9 +20,11 @@ import { Store, Info } from "lucide-react"
  * onto one board would put Peckham's orders in front of Brixton's cooks. So the board
  * stays single-shop — which it already was — and stops pretending otherwise.
  *
- * Two parts, because they answer different questions:
- *   `KdsBoardShopName`  what am I looking at?      — always on, in the header.
- *   `KdsAllShopsNotice` why isn't this all of it?  — only in the All-shops context.
+ * Three parts, because they answer different questions:
+ *   `KdsBoardShopName`      what am I looking at?     — always on, in the header.
+ *   `KdsAllShopsNotice`     why isn't this all of it? — only in the All-shops context.
+ *   `KdsOtherShopNotice`    why isn't this the shop   — only when the board could not
+ *                           I asked for?               honour the switcher.
  */
 
 /**
@@ -73,6 +75,46 @@ export function KdsBoardShopName({
         )}
       </span>
     </p>
+  )
+}
+
+/**
+ * The board could not honour the shop the dashboard is set to (#450 sub-item 5d, the
+ * half PR #535 left open).
+ *
+ * #535 closed the All-shops case: the switcher says "All shops", the board shows one,
+ * and it now says which. It did NOT close the case where the switcher names a SPECIFIC
+ * shop the board cannot show. `kitchen/page.tsx` builds its selector from published
+ * shops only (QA-council FIX-4: a blind `shops[0]` could pin a draft and make a live
+ * kitchen look idle), while the dashboard switcher lists every GRANTED shop, published
+ * or not. Pick an unpublished one — this tenant has two, `Tenant B Probe Kitchen` and
+ * `Unsorted legacy items` — and the reconciliation effect silently degrades to
+ * `shops[0]`. The sidebar then names one shop while the board shows another's tickets,
+ * with nothing on screen connecting the two. The page's own comment called that
+ * degrade "D-13" and told nobody.
+ *
+ * That is the same trust defect as the All-shops case, one path over: an operator
+ * reading a quiet board concludes their kitchen has no orders. The header already names
+ * the shop that IS showing; this names the shop that ISN'T, and why.
+ */
+export function KdsOtherShopNotice({ shopName }: { shopName: string | null }) {
+  if (!shopName) return null
+  return (
+    <div
+      // `status`, matching KdsAllShopsNotice: the board is correct and complete for the
+      // shop it names. What is wrong is the operator's expectation, not the kitchen.
+      role="status"
+      data-testid="kds-other-shop-notice"
+      className="flex items-start gap-3 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-amber-900"
+    >
+      <Info aria-hidden className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+      <p className="text-sm leading-relaxed">
+        The shop your dashboard is set to has no kitchen board &mdash; a board is only
+        shown for a <span className="font-semibold">published</span> shop. These are{" "}
+        <span className="font-semibold text-amber-950">{shopName}</span>&rsquo;s tickets.
+        Use the shop selector to switch.
+      </p>
+    </div>
   )
 }
 
