@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Six dashboard screens read page one and called it the list — and the pager they now share was itself stopping at 100 (#485) — 2026-08-06
+
+Each of the eight call sites in #485 issued a single request with a hardcoded `size=100` and treated
+the first page as the whole collection. Past 100 rows the tail was gone with no error and nothing on
+screen to say the list was partial.
+
+**Six were still defective; two were already gone.** `kitchen/page.tsx:175` (shops) and
+`kitchen/page.tsx:229` (orders) were fixed by #535 and are untouched here. The measurement is a
+`rg -uu -n 'size=100' frontend/` sweep plus reading each site: the six survivors are
+`dashboard/page.tsx:170`, `products/page.tsx:158`, `orders/page.tsx:297` and `:298`,
+`marketing/page.tsx:357` and `onboarding/page.tsx:232` — the last three had drifted from the line
+numbers filed on 2026-08-03.
+
+What each one cost a tenant past 100 rows: a shop that could not be **named** in the overview
+header (the switcher fell through to the generic "the selected shop"), could not be **assigned** a
+new product, could not be **targeted** by a promotion or announcement, and could not be **picked**
+when starting an onboarding application — and onboarding is the sole writer of `Shop.published`, so
+that shop could not be taken live at all. Past 100 products, products 101+ could not be added as
+order line items.
+
+#### Fixed
+
+- **One paging primitive, `frontend/lib/paged-fetch.ts`, instead of a fourth copy of the loop.**
+  #476 wrote the loop for #282; #535 wrote it again for the kitchen board. `shops-api`,
+  the new `products-api` and `kitchen-orders-api` are now thin wrappers over
+  `fetchAllPages`, which stops on the first of: an empty page, `last: true`, the last of
+  `totalPages`, a short page, or a per-caller circuit breaker.
+- **The mechanism this reuses was itself still truncating at 100.** core-java sets
+  `spring.data.web.pageable.max-page-size: 100` in `application.yml`, which clamps **every** paged
+  endpoint. `fetchAllMyShops` defaulted to `size=200` and exited when `content.length < the size we
+  asked for` — so against the real API its first **full** page of 100 read as a short page and it
+  returned 100 of 250 shops. #476's fixture honoured `?size=200` literally, so the clamp never
+  appeared and its tests passed over the bug. A short page is now measured against the `size` the
+  **server** reports. The kitchen board inherits the repair.
+- **Sort survives the change.** Marketing and onboarding were sorting `name,asc`; `fetchAllMyShops`
+  takes an optional sort so their dropdowns stay alphabetical rather than trading a truncation
+  defect for a scrambled one.
+- **A truncated product picker now says so.** If a catalogue outruns `MAX_PRODUCT_PAGES`, the
+  create-order dialog renders a notice. An incomplete list that admits it is a different thing from
+  #485's silent one.
+- **The orders page's two pickers moved off the refetch path.** They rode inside `fetchData`, which
+  reruns on every pager click, every switcher change and — via `useOrderEvents` — every order event
+  on the SSE stream. Following the list from there would have re-paged the whole catalogue on every
+  ticket that moved, so the fix would have shipped as a perf defect. Loaded once on mount they cost
+  strictly fewer requests than before *and* are complete; a picker failure also no longer takes the
+  orders table down with it, which it did while sharing that `Promise.all` and its error toast.
+
+#### Notes
+
+- **Every fixture is 150 rows and every assertion is on row 150.** A three-row fixture cannot tell
+  paged code from unpaged code. The fake endpoints honour `?page=` and `?size=` **and apply the
+  server's 100-row clamp**; one that ignored the parameters returns everything on page 0 and passes
+  against the bug, and one that honoured `?size=200` literally hides the clamp described above.
+  `frontend/test-utils/spring-page.ts` also reproduces `PageImpl`'s total-recompute rule rather than
+  inventing metadata, and takes a `maxPageSize` override so the clamp itself is falsifiable — two
+  cases assert on the instrument.
+- **Three break arms, bracketed clean → arms → clean, restores verified by `git hash-object`.**
+  (1) The `#476` shape restored: `Expected length: 250 / Received length: 100` — the live bug,
+  reproduced. (2) The primitive reduced to one request: **24 tests across 7 suites fail**, including
+  the pre-existing #282 and kitchen suites, which is what proves the shared primitive is really the
+  mechanism behind all of them rather than a cosmetic refactor. (3) The pickers pushed back inside
+  `fetchData`: the hoist guard fails with the picker pages doubled, `["0","0","1","1"]` instead of
+  `["0","1"]`.
+- **jsdom does not implement pointer capture or `scrollIntoView`,** so a Radix `Select` never opens
+  and its items never render — which silently reduces any assertion about what a user can *pick* to
+  an assertion about nothing. `jest.setup.js` stubs them; the create-order cases assert on the open
+  listbox.
+- Jest moves **800 → 822** blocks. `docs/metrics.json` and the prose counts are the supervisor's to
+  update and are deliberately untouched here.
+- Not driven in a real browser: reaching 100+ shops needs seeded data, and the running compose stack
+  belongs to a concurrent session. Evidence is jsdom over the real fetch layer with a clamping HTTP
+  fake, plus a clean production build.
+
 ### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout (#584) — 2026-08-06
 
 `HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That
