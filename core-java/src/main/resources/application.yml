@@ -537,11 +537,40 @@ notification:
   # Phase 22 COMMS-03: stateless one-click unsubscribe (RFC 8058). The signing
   # secret keys the HMAC unsubscribe token; empty default keeps the feature
   # inert until an operator wires it (NotificationProperties.configured()).
-  # base-url is the public origin unsubscribe links are built against. No
-  # literals in code (GLOBAL_RULE_6).
+  # No literals in code (GLOBAL_RULE_6).
+  #
+  # TWO ORIGINS, DELIBERATELY (issue #516). The app and the API are different
+  # Services behind the ingress, so an origin only routes the paths its own
+  # Service serves. base-url is the APP (frontend) origin and carries page-path,
+  # the branded confirmation page a recipient CLICKS. one-click-base-url is the
+  # API origin and carries one-click-path, the no-auth endpoint a mail provider
+  # POSTs to under RFC 8058. Composing base-url with the API's path — what this
+  # did until #516 — produced a link that answered the frontend's 404 in
+  # staging, production and local: a broken opt-out, i.e. a PECR/GDPR defect.
+  #
+  # one-click-base-url is EMPTY BY DEFAULT and fail-safe: with no value the
+  # List-Unsubscribe header advertises the (working) page URL as a plain RFC 2369
+  # link and List-Unsubscribe-Post is NOT stamped, so a one-click POST is never
+  # promised at a target that cannot honour it.
+  #
+  # An empty default is the ONLY safe one, and this is enforced, not merely
+  # argued: a localhost fallback would reintroduce the D-19 defect class (a
+  # loopback origin inside production mail), and k8s/scripts/check-env-contract.sh
+  # direction (b) fails the build for exactly that shape — "placeholder whose
+  # default is LOCAL-ONLY and that no manifest supplies". It did fail for this key
+  # when the dev profile carried http://localhost:9090.
+  #
+  # To turn true one-click on, set NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL to
+  # that environment's API origin: `http://localhost:9090` in .env for the dev
+  # stack, and each overlay's app-config `api.url` in k8s (which also needs the
+  # env wired in k8s/base/core-java-deployment.yaml, next to the existing
+  # NOTIFICATION_UNSUBSCRIBE_BASE_URL block).
   unsubscribe:
     signing-secret: ${NOTIFICATION_UNSUBSCRIBE_SECRET:}
     base-url: ${NOTIFICATION_UNSUBSCRIBE_BASE_URL:http://localhost:3000}
+    page-path: ${NOTIFICATION_UNSUBSCRIBE_PAGE_PATH:/unsubscribe}
+    one-click-base-url: ${NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL:}
+    one-click-path: ${NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_PATH:/api/v1/public/unsubscribe}
 
 # Phase 22 COMMS-05: outbound webhook delivery engine (WebhookDeliveryWorker +
 # WebhookRetentionCleanup). Every tunable is ${ENV:default} (GLOBAL_RULE_6) —

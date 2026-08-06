@@ -81,11 +81,23 @@ public class EmailChannel implements NotificationChannel {
             // Two-arg overload => multipart/alternative: plain text first, HTML second.
             helper.setText(email.text(), email.html());
 
-            String unsubscribeUrl = message.unsubscribeUrl();
-            if (unsubscribeUrl != null && !unsubscribeUrl.isBlank()) {
-                // RFC 8058 one-click unsubscribe (Gmail/Yahoo bulk-sender requirement).
-                mime.setHeader("List-Unsubscribe", "<" + unsubscribeUrl + ">");
-                mime.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+            // Issue #516 — the header target must ACCEPT A POST. RFC 8058 §3.1 has
+            // the provider POST "List-Unsubscribe=One-Click" to this URL, and the
+            // clickable page URL is a Next.js page that answers 405 to a POST. So
+            // one-click is advertised ONLY at the API origin, and only when one is
+            // configured; otherwise the header still carries the page URL as a plain
+            // RFC 2369 link (mail clients open it with a GET, which works) and the
+            // One-Click capability is deliberately NOT claimed. Advertising a
+            // one-click target that cannot honour the POST is worse than not
+            // advertising it — that is precisely the state #516 found in production.
+            String oneClickUrl = message.oneClickUnsubscribeUrl();
+            boolean oneClickAvailable = oneClickUrl != null && !oneClickUrl.isBlank();
+            String headerUrl = oneClickAvailable ? oneClickUrl : message.unsubscribeUrl();
+            if (headerUrl != null && !headerUrl.isBlank()) {
+                mime.setHeader("List-Unsubscribe", "<" + headerUrl + ">");
+                if (oneClickAvailable) {
+                    mime.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+                }
             }
 
             mailSender.send(mime);

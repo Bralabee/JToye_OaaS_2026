@@ -226,6 +226,69 @@ class NotificationDispatchServiceTest {
         assertThat(unsub).contains("token=");
     }
 
+    // ------------------------------------------------------------------
+    // Issue #516 — the composed URL must use its OWN Service's origin.
+    // The routing half (does this host+path resolve to a Service that serves
+    // it?) is UnsubscribeLinkRoutingTest; these pin the composition itself,
+    // including the case that hid the defect: app origin == API origin.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("#516 dev/local — the clickable link is the FRONTEND page path, never the API path")
+    void devConfig_clickableLinkIsTheFrontendPage() {
+        // Exactly the application.yml dev defaults: the frontend on :3000, the API on :9090.
+        String page = UnsubscribeLinkFixture.pageUrl("http://localhost:3000", "http://localhost:9090");
+
+        assertThat(page).startsWith("http://localhost:3000/unsubscribe?");
+        assertThat(page)
+                .as("http://localhost:3000/api/v1/public/unsubscribe was measured returning 404 (Next.js)")
+                .doesNotContain("/api/v1/public");
+    }
+
+    @Test
+    @DisplayName("#516 staging-shaped — app origin and API origin DIFFER, and each half uses its own")
+    void stagingShapedConfig_eachHalfUsesItsOwnOrigin() {
+        // The case a same-origin test can never see, and the one that 404s in
+        // staging/production: app-staging.* is the frontend, api-staging.* is core.
+        String app = "https://app-staging.olajay.co.uk";
+        String api = "https://api-staging.olajay.co.uk";
+
+        String page = UnsubscribeLinkFixture.pageUrl(app, api);
+        String oneClick = UnsubscribeLinkFixture.oneClickUrl(app, api);
+
+        assertThat(page).startsWith(app + "/unsubscribe?");
+        assertThat(page).doesNotContain(api);
+        assertThat(oneClick).startsWith(api + "/api/v1/public/unsubscribe?");
+        assertThat(oneClick).doesNotContain(app);
+
+        // Same signed identity in both — one token, two transports.
+        String pageQuery = page.substring(page.indexOf('?'));
+        String oneClickQuery = oneClick.substring(oneClick.indexOf('?'));
+        assertThat(pageQuery).isEqualTo(oneClickQuery);
+        assertThat(pageQuery).contains("tenant=" + UnsubscribeLinkFixture.TENANT).contains("token=");
+    }
+
+    @Test
+    @DisplayName("#516 — an unset one-click origin yields NO one-click URL, but the page link still works")
+    void unsetOneClickOrigin_stillProducesAWorkingPageLink() {
+        // The default posture of any environment that has not wired the API origin:
+        // fail-safe, never a loopback or a wrong-Service URL in production mail.
+        NotificationMessage message = UnsubscribeLinkFixture.dispatchAndCapture("https://app.olajay.co.uk", "");
+
+        assertThat(message.oneClickUnsubscribeUrl()).isNull();
+        assertThat(message.unsubscribeUrl()).startsWith("https://app.olajay.co.uk/unsubscribe?");
+    }
+
+    @Test
+    @DisplayName("#516 — a trailing slash on either origin does not produce a double slash")
+    void trailingSlashOnOriginIsNormalised() {
+        String page = UnsubscribeLinkFixture.pageUrl("https://app.olajay.co.uk/", "https://api.olajay.co.uk/");
+        String oneClick = UnsubscribeLinkFixture.oneClickUrl("https://app.olajay.co.uk/", "https://api.olajay.co.uk/");
+
+        assertThat(page).startsWith("https://app.olajay.co.uk/unsubscribe?");
+        assertThat(oneClick).startsWith("https://api.olajay.co.uk/api/v1/public/unsubscribe?");
+    }
+
     @Test
     @DisplayName("RecipientResolver classifies order.state.* vs order.refunded vs payment.* vs onboarding.state.* correctly")
     void recipientResolver_classifiesFamilies() {

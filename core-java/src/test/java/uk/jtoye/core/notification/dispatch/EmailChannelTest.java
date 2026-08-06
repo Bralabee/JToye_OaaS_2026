@@ -49,13 +49,19 @@ class EmailChannelTest {
     }
 
     private NotificationMessage message(String unsubscribeUrl) {
+        // Default shape: a fully configured environment, so BOTH URLs are present
+        // and they sit on different origins exactly as production composes them.
+        return message(unsubscribeUrl, "https://api.jtoye.uk/api/v1/public/unsubscribe?token=abc");
+    }
+
+    private NotificationMessage message(String unsubscribeUrl, String oneClickUrl) {
         RenderedEmail email = new RenderedEmail(
                 "Refund processed",
                 "<html><body>Refund for ORD-900</body></html>",
                 "Refund for ORD-900");
         return new NotificationMessage(
                 UUID.randomUUID(), "customer@example.com", "refund.processed",
-                email, "Refund for ORD-900", unsubscribeUrl);
+                email, "Refund for ORD-900", unsubscribeUrl, oneClickUrl);
     }
 
     @Test
@@ -71,7 +77,7 @@ class EmailChannelTest {
         when(mailSender.createMimeMessage())
                 .thenReturn(new MimeMessage(Session.getInstance(new Properties())));
 
-        channel.deliver(message("https://jtoye.uk/api/v1/public/unsubscribe?token=abc"));
+        channel.deliver(message("https://app.jtoye.uk/unsubscribe?token=abc"));
 
         verify(mailSender).send(mimeCaptor.capture());
         MimeMessage sent = mimeCaptor.getValue();
@@ -83,6 +89,44 @@ class EmailChannelTest {
         String[] listUnsub = sent.getHeader("List-Unsubscribe");
         assertNotNull(listUnsub, "List-Unsubscribe header must be set");
         assertTrue(listUnsub[0].contains("token=abc"));
+    }
+
+    @Test
+    @DisplayName("#516 — List-Unsubscribe carries the POST-capable API target, not the clickable page URL")
+    void listUnsubscribeHeaderTargetsTheApiNotThePage() throws Exception {
+        when(mailSender.createMimeMessage())
+                .thenReturn(new MimeMessage(Session.getInstance(new Properties())));
+
+        String pageUrl = "https://app.jtoye.uk/unsubscribe?token=abc";
+        String oneClickUrl = "https://api.jtoye.uk/api/v1/public/unsubscribe?token=abc";
+        channel.deliver(message(pageUrl, oneClickUrl));
+
+        verify(mailSender).send(mimeCaptor.capture());
+        String header = mimeCaptor.getValue().getHeader("List-Unsubscribe")[0];
+
+        // RFC 8058 §3.1 POSTs to this URL. The page URL is a Next.js page and
+        // answers 405 to a POST, so it must NOT be the advertised one-click target.
+        assertEquals("<" + oneClickUrl + ">", header);
+        assertFalse(header.contains(pageUrl), "the one-click target must not be the browser page URL");
+    }
+
+    @Test
+    @DisplayName("#516 — with NO one-click origin configured, the header links the page and does NOT claim One-Click")
+    void withoutOneClickOrigin_headerFallsBackToThePage_andDoesNotClaimOneClick() throws Exception {
+        when(mailSender.createMimeMessage())
+                .thenReturn(new MimeMessage(Session.getInstance(new Properties())));
+
+        String pageUrl = "https://app.jtoye.uk/unsubscribe?token=abc";
+        channel.deliver(message(pageUrl, null));
+
+        verify(mailSender).send(mimeCaptor.capture());
+        MimeMessage sent = mimeCaptor.getValue();
+
+        // Still a working opt-out: a plain RFC 2369 link the mail client opens with a GET.
+        assertEquals("<" + pageUrl + ">", sent.getHeader("List-Unsubscribe")[0]);
+        // But never a one-click PROMISE the target cannot honour — the #516 failure mode.
+        assertNull(sent.getHeader("List-Unsubscribe-Post"),
+                "One-Click must not be advertised without a POST-capable target");
     }
 
     @Test

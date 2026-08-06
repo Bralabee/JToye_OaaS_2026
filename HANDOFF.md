@@ -19,9 +19,9 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **2026-08-06: FOUR merged — #573, #574, #583, #584. `main` at `2e9792fb`. #523 is the only open PR again. Two gates were GREEN over instructions that could not be followed; the changelog-citation defect fired a 5th and 6th time and now has a PR-time gate (#583). "Does not close #450" CLOSED #450. Read §0.-12 FIRST.** PRIOR — **2026-08-05 EVENING (updated): the four-lane batch is DONE and merged; `main` is at #577 (`bfdfbdfa`). #572, #575, #577 shipped; #573 and #574 remain open. The changelog-citation defect fired FOUR times — filed as #579. Read §0.-11 and its Addendum.** PRIOR — **a supervised four-lane agent batch. `main` is at #572 (`861591cf`, closes #550). Three issues closed by measurement alone — #487, #205, #104 — and #571 filed from #205's one unmet criterion. #573 and #574 are open. Read §0.-11 FIRST.** PRIOR — **2026-08-05 later: TWO more PRs — #563 (`d36a1865`, closes #561) and #565 (`b0043014`) — plus #564 filed. Read §0.-10 FIRST; it closes §0.-9's open question and supersedes every "flake" reading of #561.** PRIOR SAME DAY — **shipped SIX PRs — #541, #553, #554, #555, #558, #559 — closed FOUR issues (#289, #420, #556, #557) and filed SIX (#548–#552, #556/#557). Read §0.-8 then §0.-7.** Phase 28 opened: #548–#552 filed, #289 closed. PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
-| Open PRs | **1 as of 2026-08-06** — back to just **#523**, still ON HOLD for the same reason it has been all week (every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change). #573 and #574 merged, and #583/#584 were opened and merged the same day. PRIOR — **3 as of 2026-08-05 late evening** — #523 (still ON HOLD), #573 and #574; #572/#575/#577 all merged. PRIOR — **3 as of 2026-08-05 evening** — #523 (unchanged, still ON HOLD), plus **#573** (`PUT /shops` publish drop) and **#574** (test-block counter) from the lane batch. PRIOR — **1 as of 2026-08-05 after EIGHT merges** — still only **#523**, which is the same PR it was this morning and is still ON HOLD for the same reason. #563 and #565 merged after the six below. PRIOR reading — **1 after six merges**; #541/#553/#554/#555/#558/#559 all merged. PRIOR reading (**2**) — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
-| Open issues | **59 as of 2026-08-06**, re-measured with `--limit 300`. Down two from 61: #450 closed (see §0.-12 — by a PR body that said it would **not** close it) and #536/#550 already counted, against #582 filed for the test-count-gate deadlock. **Do not read −2 as two problems solved**: one of those closures was accidental and one new defect was filed. PRIOR — **61 as of 2026-08-05 late evening**, re-measured with `--limit 300` — #550 closed by #572, #536 by #577, and #579 filed against the changelog gate, so the count moved by one in each direction and landed where it started. A flat count is not a quiet period. PRIOR — **61 as of 2026-08-05 evening**, measured with `--limit 300`. Down four: #550 closed by #572, and #487/#205/#104 closed by measurement with no code written. #571 was filed against that, so the net is −3 issues for +1 new one. PRIOR — **65 as of 2026-08-05 after eight PRs — and it is EXACTLY the 65 it was before this session's last two merges**, having gone 65 → 64 (#561 closed by #563) → 65 (#564 filed). A second, cleaner instance of the point below: the count did not move and two real things happened. PRIOR reading — **64 after six PRs**, itself the SAME 64 it was mid-session, having moved 60 → 65 → 64 in between. That stability hides real churn: five filed (#548–#552, the pentest disposition), two more filed from the E2E re-run (#556/#557), and four closed (#289, #420, #556, #557). **A flat count is not a quiet day.** Filing findings raises it and lowers the risk; do not read the number as progress in either direction. PRIOR framing — #548–#552 added five while #289 closed one. Filing findings raises the count and lowers the risk; do not read the number as progress in either direction. PRIOR — **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
+| `JToye_OaaS_2026` | **2026-08-06 LATER: a five-lane supervised batch — #588, #586, #591, #589 merged, #590 carries this update. THREE previously-shipped fixes were found broken while green, including #476's own fix for #282 whose fixture could not see the defect. #587 and #592 filed. Read §0.-13 FIRST.** PRIOR — **2026-08-06: FOUR merged — #573, #574, #583, #584. `main` at `2e9792fb`. #523 is the only open PR again. Two gates were GREEN over instructions that could not be followed; the changelog-citation defect fired a 5th and 6th time and now has a PR-time gate (#583). "Does not close #450" CLOSED #450. Read §0.-12 FIRST.** PRIOR — **2026-08-05 EVENING (updated): the four-lane batch is DONE and merged; `main` is at #577 (`bfdfbdfa`). #572, #575, #577 shipped; #573 and #574 remain open. The changelog-citation defect fired FOUR times — filed as #579. Read §0.-11 and its Addendum.** PRIOR — **a supervised four-lane agent batch. `main` is at #572 (`861591cf`, closes #550). Three issues closed by measurement alone — #487, #205, #104 — and #571 filed from #205's one unmet criterion. #573 and #574 are open. Read §0.-11 FIRST.** PRIOR — **2026-08-05 later: TWO more PRs — #563 (`d36a1865`, closes #561) and #565 (`b0043014`) — plus #564 filed. Read §0.-10 FIRST; it closes §0.-9's open question and supersedes every "flake" reading of #561.** PRIOR SAME DAY — **shipped SIX PRs — #541, #553, #554, #555, #558, #559 — closed FOUR issues (#289, #420, #556, #557) and filed SIX (#548–#552, #556/#557). Read §0.-8 then §0.-7.** Phase 28 opened: #548–#552 filed, #289 closed. PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
+| Open PRs | **2 as of 2026-08-06 later** — #590 (this one) and #523, still ON HOLD for the same reason all week. The five-lane batch opened five and merged four. PRIOR — **1 as of 2026-08-06** — back to just **#523**, still ON HOLD for the same reason it has been all week (every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change). #573 and #574 merged, and #583/#584 were opened and merged the same day. PRIOR — **3 as of 2026-08-05 late evening** — #523 (still ON HOLD), #573 and #574; #572/#575/#577 all merged. PRIOR — **3 as of 2026-08-05 evening** — #523 (unchanged, still ON HOLD), plus **#573** (`PUT /shops` publish drop) and **#574** (test-block counter) from the lane batch. PRIOR — **1 as of 2026-08-05 after EIGHT merges** — still only **#523**, which is the same PR it was this morning and is still ON HOLD for the same reason. #563 and #565 merged after the six below. PRIOR reading — **1 after six merges**; #541/#553/#554/#555/#558/#559 all merged. PRIOR reading (**2**) — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
+| Open issues | **58 as of 2026-08-06 later**, `--limit 300`. Down one net from 59, which hides real churn: #582, #571 and #485 closed by the batch, #516 closes with #590, against #587 (webhook 127s retry window) and #592 (one-click unsubscribe unwired in k8s) filed FROM the batch. Finding defects raises this number and lowers the risk. PRIOR — **59 as of 2026-08-06**, re-measured with `--limit 300`. Down two from 61: #450 closed (see §0.-12 — by a PR body that said it would **not** close it) and #536/#550 already counted, against #582 filed for the test-count-gate deadlock. **Do not read −2 as two problems solved**: one of those closures was accidental and one new defect was filed. PRIOR — **61 as of 2026-08-05 late evening**, re-measured with `--limit 300` — #550 closed by #572, #536 by #577, and #579 filed against the changelog gate, so the count moved by one in each direction and landed where it started. A flat count is not a quiet period. PRIOR — **61 as of 2026-08-05 evening**, measured with `--limit 300`. Down four: #550 closed by #572, and #487/#205/#104 closed by measurement with no code written. #571 was filed against that, so the net is −3 issues for +1 new one. PRIOR — **65 as of 2026-08-05 after eight PRs — and it is EXACTLY the 65 it was before this session's last two merges**, having gone 65 → 64 (#561 closed by #563) → 65 (#564 filed). A second, cleaner instance of the point below: the count did not move and two real things happened. PRIOR reading — **64 after six PRs**, itself the SAME 64 it was mid-session, having moved 60 → 65 → 64 in between. That stability hides real churn: five filed (#548–#552, the pentest disposition), two more filed from the E2E re-run (#556/#557), and four closed (#289, #420, #556, #557). **A flat count is not a quiet day.** Filing findings raises it and lowers the risk; do not read the number as progress in either direction. PRIOR framing — #548–#552 added five while #289 closed one. Filing findings raises the count and lowers the risk; do not read the number as progress in either direction. PRIOR — **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
 | Issue-count history | It moved in **both** directions across 2026-08-03 (63 → 86 → 92 → 89 → 85 → 80 → **62**) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. Re-run `gh issue list --state open --limit 300 --json number --jq length` |
 | Milestone | **v2.3 is OPEN and spans Phases 21–32.** Owner ruling stands — see §4. Do **not** run `/gsd-complete-milestone` |
 | Live stack | Compose UP, **16** jtoye containers = 11 full-stack + 5 monitoring; **14 report healthy**. The two without health status define no healthcheck — that is **not** unhealthy. **Infra ports are now loopback-only** (#510): Postgres, Redis, RabbitMQ, MinIO, MailHog, Keycloak, Grafana, Prometheus, Alertmanager and both exporters bind `127.0.0.1`. App-tier ports (core-java 9090, frontend 3000, edge-go 8089, mcp-server 9100) stay on all interfaces as **named, reasoned exemptions** |
@@ -43,7 +43,85 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ## 0. ⚠ READ FIRST
 
-### 0.-12 Two gates were green over instructions that could not be followed (2026-08-06, latest)
+### 0.-13 A five-lane batch, and three fixes that were themselves broken and green (2026-08-06, latest)
+
+Five supervised lanes on #582, #516, #485, #458, #571. Four merged — #588, #586, #591, #589 — and
+#590 carries this update. Two issues filed: **#587**, **#592**.
+
+**The batch's real output is not the five fixes. It is that three previously-shipped fixes were
+found broken while green**, each by a lane that went looking at the thing rather than the ticket.
+
+#### #476's fix for #282 was itself truncating, and its own test could not see it
+
+`fetchAllMyShops` — written to FIX this exact bug class — defaulted to `size=200` and treated
+"fewer rows than I asked for" as the last page. core-java sets
+`spring.data.web.pageable.max-page-size: 100`, which clamps every paged endpoint. So its first
+**full** page of 100 read as a short page and it returned **100 of 250 shops**.
+
+It survived because **#476's fixture honoured `?size=200` literally**. The double was more permissive
+than the real server, so the clamp could not appear and the suite passed over the defect. A short
+page is now measured against the `size` the SERVER reports; the kitchen board inherits the repair.
+
+Also from that lane: only **six** of #485's eight sites were still defective (two were fixed by #535)
+and three had drifted from the filed line numbers. It re-measured with `rg -uu` instead of trusting
+the table. One consequence was serious — a shop past row 100 could not be picked when starting an
+onboarding application, and onboarding is the sole writer of `Shop.published`, so **that shop could
+never be taken live at all**.
+
+#### #516's own issue prescribed the wrong fix
+
+The issue assumed the unsubscribe fix needed `/api/v1/public/unsubscribe` served on the app host.
+It does not: `frontend/app/unsubscribe/page.tsx` already exists and already POSTs the token to the
+API. `base-url` was never the wrong value — **the path appended to it was**. Implementing the issue
+as written would have changed ingress config for nothing.
+
+That lane also found a half nobody had noticed: RFC 8058 `List-Unsubscribe` is **POSTed**, and a
+Next.js page answers **405**, so one URL cannot serve both. The header now targets an API origin when
+configured and degrades honestly when not — plain RFC 2369, with `List-Unsubscribe-Post` NOT stamped,
+so it never advertises a capability it cannot honour. The k8s half is unwired and filed as **#592**.
+
+`k8s/scripts/check-env-contract.sh` caught that lane giving the dev profile a `localhost:9090`
+default no manifest supplies — **the same D-19 class as the bug it was fixing**. It removed the
+override rather than allowlisting it.
+
+#### A break arm went GREEN on /track
+
+Setting the empty-state flag on the `!res.ok` path as well as the empty-list one — the #467 defect,
+*"we could not ask"* rendered as *"you have none"* — **failed nothing in the suite**. The source
+comment asserted the error paths were safe and no test could have contradicted it. Two arms cover it
+now.
+
+That lane also found the footer defect by looking at the RENDERED PAGE: gating the operator column
+collapsed the grid, which is tidier in a screenshot and wrong in a browser — the session resolves
+after first paint, so the column vanished live and "For customers" slid ~200px right as it went.
+
+#### #587 — outbound webhooks give a receiver 127 seconds
+
+`computeBackoffMillis` is `baseMs << (attempts-1)`. With the shipped defaults the entire schedule is
+1, 2, 4, 8, 16, 32, 64 s, then terminal `FAILED` with no dead-letter and no replay. **A routine
+deploy loses every event that fires during it**, and `auto-pause-threshold` is 10 so a single deploy
+can burn 8 attempts per event without tripping the pause. `backoff-cap-ms: 3600000` is **dead
+config** — the largest delay ever produced is 64 s, so the knob reads as an hour and delivers two
+minutes.
+
+#### Process, measured
+
+- **Three of five lanes hit infrastructure stalls**, four with NOTHING committed. Every resume now
+  leads with "commit what you have first". One lane needed its changelog entry and PR body written
+  by the supervisor after it stalled at that step.
+- **The metrics boundary earned itself.** Every lane PR went red on `docs-freshness` because agents
+  cannot touch `docs/metrics.json` — so no wrong count shipped. #590 alone produced THREE different
+  correct totals: 2463 on the lane's base, 2487 at the first reconcile, 2509 on the merged tree.
+- **`check-doc-metrics`'s failure list is PARTIAL.** Fixing the six CLAUDE.md/AGENTS.md claims it
+  printed revealed four more in README.md it had not. Re-run after every fix; one listing is not the
+  complete set.
+- **The #583 citation gate fired for real** on a lane that stalled before writing its entry — a
+  `fix(...)` PR owing an entry and having none, which would previously have gone green at PR time
+  and redded `main` after merge.
+- **"#458 is NOT closed" survived the merge**, verified with `gh issue view` after #591 landed and
+  not merely by reading the phrasing.
+
+### 0.-12 Two gates were green over instructions that could not be followed (2026-08-06, superseded by §0.-13)
 
 Four PRs merged — #573, #574, #583, #584. `main` at `2e9792fb`. The two carried over from §0.-11 are
 gone, so **#523 is the only open PR again**. But the merges are not the story.
