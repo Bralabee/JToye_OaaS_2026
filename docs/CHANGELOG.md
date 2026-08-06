@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Every unsubscribe link in every email 404'd: the app origin carried the API's path (#516) — 2026-08-06
+### Every unsubscribe link in every email 404'd: the app origin carried the API's path (#516) (#590) — 2026-08-06
 
 `NotificationDispatchService.buildUnsubscribeUrl` composed the link as
 `notification.unsubscribe.base-url` + `/api/v1/public/unsubscribe`. That base URL is the **app**
