@@ -152,6 +152,43 @@ describe("/track for a signed-in customer with NO orders (#458 item 2)", () => {
   })
 })
 
+/**
+ * Added after a break arm went GREEN. Setting `noOrdersOfTheirOwn` on the
+ * !res.ok path as well as the empty-list one — the #467 defect, "we could not
+ * ask" rendered as "you have none" — did not fail a single test in the suite
+ * above. The code comment claimed the error paths were safe and nothing checked
+ * it, which is precisely the unfalsifiable-criterion shape.
+ */
+describe("/track when the orders request FAILS (#467 shape)", () => {
+  it("does not tell a signed-in customer they have no orders", async () => {
+    mockGetSession.mockResolvedValue(SESSION)
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    }) as unknown as typeof fetch
+
+    render(<TrackOrderPage />)
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    // A truthful fallback: the lookup form, which can still get them an answer.
+    // Never the confident "you haven't placed an order yet".
+    expect(screen.queryByTestId("track-no-orders")).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/order number/i).closest("form")).not.toHaveAttribute("hidden")
+  })
+
+  it("does not tell them that when the network throws either", async () => {
+    mockGetSession.mockResolvedValue(SESSION)
+    global.fetch = jest.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch
+
+    render(<TrackOrderPage />)
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    expect(screen.queryByTestId("track-no-orders")).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/order number/i).closest("form")).not.toHaveAttribute("hidden")
+  })
+})
+
 describe("/track CONTROL — the guest path is untouched", () => {
   it("shows the form and still demands BOTH order number and email", async () => {
     mockGetSession.mockResolvedValue(null)
