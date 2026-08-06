@@ -1519,7 +1519,7 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 28 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+# EXPECT 29 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
 #   BACKUP image to postgres:18 against a 15 server with every CI check green.
@@ -1529,8 +1529,12 @@ done
 #   on a PR. That gate now fails the build if a new one is added unwired.
 #   26 -> 28: check-test-block-counter.sh and check-test-count-oracle.sh (#574),
 #   after the old regex counter was measured 44 tests short of what Jest actually
-#   ran, with `docs-freshness` green on every one of those commits.)
-# MEASURED 2026-08-06 on #574's branch after merging `main` @ d87f26fe.
+#   ran, with `docs-freshness` green on every one of those commits.
+#   28 -> 29: check-changelog-cites-pr.sh (#579), after SIX PRs in two days cited
+#   the issue instead of the PR in their changelog heading and redded `main` after
+#   merging, because C-1 asks only about MERGED PRs and so cannot fire on the PR
+#   that breaks it.)
+# MEASURED 2026-08-06 on #579's branch, off `main` @ d80b5363.
 #   Getting there needed BOTH standing remedies, in this order:
 #     check-alert-metrics    rc=1 -> scripts/seed-order-metric.sh      (every core-java recreate)
 #     check-e2e-skip-budget  rc=2 -> re-run the suite, ~6.5 min        (every merge touching a spec)

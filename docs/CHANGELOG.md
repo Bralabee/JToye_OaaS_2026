@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The gate that catches a missing changelog entry could not run on the PR that omits it (#579) — 2026-08-06
+
+`check-changelog-contract` C-1 asserts that every **merged** `feat`/`fix` PR is cited in
+`docs/CHANGELOG.md`. It is correct and it works. It is also structurally incapable of firing on the
+PR that breaks it: C-1's question is about *merged* PRs, and on a PR branch the current PR is not
+merged — so it finds nothing wrong, passes, and goes red **afterwards, on `main`**, in front of
+whoever opens the next unrelated PR.
+
+Measured over two days: **six** instances — #568, #572, #575, #577, #573, #574. Every one the same
+shape, an entry heading citing the **issue** the PR closes (`(#550)`, `(#450 item 3)`, `(#291)`)
+rather than the PR. That is not carelessness. The entry is written while the PR is open, when the
+author is thinking in issue numbers because the issue is what the work is *about*; the PR number
+exists but is not the subject. Two of the six needed their own correction PRs (#570, #578), and one
+of those was itself titled `fix(docs):` and so owed an entry of its own, costing a further round
+trip (#580).
+
+#### Added
+- **`scripts/check-changelog-cites-pr.sh` — the PR-time half, complementary to C-1 rather than a
+  replacement.** Given the PR's number and title, it asserts that an entry heading cites *this* PR,
+  and only when the title is a `feat`/`fix` subject. It fires exactly where the mistake is made and
+  names the fix in its failure text. C-1 stays: this step is skipped when there is no PR context,
+  and C-1 is the backstop that still catches a PR merged with no entry at all.
+- **Only entry headings count, matching C-1 exactly.** A PR mentioned in passing in another entry's
+  prose satisfies neither gate — that break arm is why C-1 reads headings rather than the file.
+- **Exemptions are shared, not duplicated.** It reads the `EXEMPT` rows of
+  `scripts/gates/changelog-contract.conf`, so a PR exempted from C-1 is exempted here and there is
+  exactly one list to maintain.
+
+#### Notes
+- **Validated by replay against the six real instances, not against synthetic input.** Each PR's
+  changelog as it actually stood at merge was extracted and fed to the gate with that PR's real
+  title: all six return `1`. Three PRs that *were* correctly cited at merge (#567, #563, #554)
+  return `0` on the same instrument. Without that negative arm a gate that simply always failed
+  would have looked identical across the first six.
+- **The subject matcher is deliberately byte-identical to C-1's `SUBJECT_RE`.** If the two drifted,
+  a PR would be checked twice or by neither — and "by neither" is silent. Both gates self-test the
+  matcher against positive and negative samples.
+- **Fails closed at `2` (VOID).** No PR number, a non-numeric number, no title, an unreadable or
+  empty changelog, a changelog with no entry headings, or `grep` without `-P` all exit 2, never 0.
+  A real FAIL (1) outranks a VOID, matching the sibling gates.
+- **The PR title reaches the script through `env:`, never `${{ }}` inside `run:`.** A PR title is
+  attacker-controlled text and interpolating it into a shell command is a script injection.
+- **This gate is subject to the trap it fixes**, so it was deliberately pushed with its own entry
+  *uncited* to watch it go red on its own PR before the citation was added. That is the only
+  falsification that matters for a gate of this shape.
+
 ### The test-count gate agreed with itself over a number no runner ever produced (#291) (#574) — 2026-08-05
 
 `scripts/docs-freshness.sh` counted Jest/Playwright/vitest blocks with the textual regex `\b(it|test)\(`. That regex is wrong in **both** directions at once, and the errors partly cancel — which is exactly why it survived. `\b` treats `.` as a word boundary, so `RegExp.prototype.test(` matched (7 phantom Jest blocks, 5 phantom Playwright blocks); and a table-driven `it.each([…])("…")` contains no `it(` at all, so 9 sites expanding to 51 executed tests contributed **zero**.
