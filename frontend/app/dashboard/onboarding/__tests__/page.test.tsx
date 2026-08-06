@@ -9,6 +9,7 @@ process.env.NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS = "2"
 
 import OnboardingPage from "../page"
 import apiClient from "@/lib/api-client"
+import { manyShops, pagedResponse, param } from "@/test-utils/spring-page"
 import type { GateDto, OnboardingDto, OnboardingState, GateStatus, GateType } from "@/types/api"
 
 // Mock the API client (mirrors the products-page test idiom)
@@ -508,5 +509,51 @@ describe("Onboarding Page", () => {
       expect(screen.getByText(/repeated late fulfilment complaints/i)).toBeInTheDocument()
     })
     expect(screen.getByRole("link", { name: /contact support/i })).toBeInTheDocument()
+  })
+})
+
+/**
+ * #485 call site :232 — the onboarding shop picker is followed to the end.
+ *
+ * This is the costliest of the six to lose: the onboarding state machine is the sole
+ * writer of `Shop.published`, so a shop that cannot be picked here cannot be taken
+ * live at all. 150 shops against a fake endpoint that honours `?page=`/`?size=` and
+ * applies core-java's 100-row clamp; the assertion is on shop 150, because a
+ * two-shop fixture cannot tell paged code from unpaged code.
+ */
+describe("#485 — the shop picker pages the whole list", () => {
+  const SHOPS = manyShops(150)
+  const TAIL = SHOPS[SHOPS.length - 1]
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/onboarding/me")) return Promise.reject(notFound) as Promise<never>
+      if (url.startsWith("/api/v1/shops")) {
+        return Promise.resolve(pagedResponse(url, SHOPS)) as Promise<never>
+      }
+      return Promise.resolve({ data: {} }) as Promise<never>
+    })
+  })
+
+  it("offers a shop past the first page, so it can still be taken live", async () => {
+    render(<OnboardingPage />)
+
+    await waitFor(() => expect(screen.getByText("Take your shop live")).toBeInTheDocument())
+    expect(screen.getByRole("option", { name: TAIL.name })).toBeInTheDocument()
+  })
+
+  it("walks page 0 then page 1, keeping the alphabetical sort on both", async () => {
+    // The single request this replaced carried `&sort=name,asc`. Dropping it while
+    // fixing the truncation would have traded one defect for a scrambled select.
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      const shopUrls = mockedApiClient.get.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.startsWith("/api/v1/shops"))
+      expect(shopUrls.map((u) => param(u, "page"))).toEqual(["0", "1"])
+      expect(shopUrls.every((u) => param(u, "sort") === "name,asc")).toBe(true)
+    })
   })
 })

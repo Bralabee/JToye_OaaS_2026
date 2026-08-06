@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
+import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
 import {
@@ -155,8 +156,11 @@ export default function ProductsPage() {
 
   const fetchShops = async () => {
     try {
-      const response = await apiClient.get("/api/v1/shops?size=100")
-      setShops(response.data.content || [])
+      // #485 (call site :158): was a single `/api/v1/shops?size=100`, whose first
+      // page was treated as the whole list. Past 100 shops the tail could not be
+      // chosen in the create-product "Shop assignment" select, so those shops were
+      // unaddressable — and the switcher's shop could not be named in the header.
+      setShops(await fetchAllMyShops())
     } catch {
       // Shops are optional — fail silently
     }

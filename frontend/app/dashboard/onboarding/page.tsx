@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react"
 import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
+import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
 import {
   Card,
@@ -229,8 +230,13 @@ export default function OnboardingPage() {
 
   const fetchShops = useCallback(async () => {
     try {
-      const res = await apiClient.get("/api/v1/shops?page=0&size=100&sort=name,asc")
-      setShops(res.data.content || [])
+      // #485 (call site :232): was a single `/api/v1/shops?page=0&size=100&...`,
+      // whose first page was treated as the whole list. Past 100 shops the tail
+      // could not be picked when starting an onboarding application — so those
+      // shops could never be taken through onboarding, and onboarding is the sole
+      // writer of `Shop.published`. The `name,asc` sort is passed through so the
+      // select stays alphabetical.
+      setShops(await fetchAllMyShops("name,asc"))
     } catch {
       // Non-critical — the select simply stays empty.
     }

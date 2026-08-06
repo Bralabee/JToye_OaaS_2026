@@ -90,6 +90,29 @@ jest.mock('framer-motion', () => {
   }
 })
 
+// Radix primitives (Select, Dropdown, Popover) drive their open/close from Pointer
+// Events and scroll the active item into view. jsdom implements neither, so a
+// `<Select>` never opens and its items never render — which silently reduces any
+// assertion about what a user can PICK to an assertion about nothing. #485 needs the
+// open listbox (that is where a truncated list is actually visible to a vendor), so
+// the three missing APIs are stubbed here rather than per file.
+if (typeof window !== 'undefined') {
+  if (!window.Element.prototype.hasPointerCapture) {
+    window.Element.prototype.hasPointerCapture = function () {
+      return false
+    }
+  }
+  if (!window.Element.prototype.setPointerCapture) {
+    window.Element.prototype.setPointerCapture = function () {}
+  }
+  if (!window.Element.prototype.releasePointerCapture) {
+    window.Element.prototype.releasePointerCapture = function () {}
+  }
+  if (!window.Element.prototype.scrollIntoView) {
+    window.Element.prototype.scrollIntoView = function () {}
+  }
+}
+
 // Mock environment variables
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8080/api'
 process.env.NEXTAUTH_URL = 'http://localhost:3000'
