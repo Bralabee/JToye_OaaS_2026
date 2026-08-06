@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Six dashboard screens read page one and called it the list — and the pager they now share was itself stopping at 100 (#485) — 2026-08-06
+### Six dashboard screens read page one and called it the list — and the pager they now share was itself stopping at 100 (#485) (#589) — 2026-08-06
 
 Each of the eight call sites in #485 issued a single request with a hardcoded `size=100` and treated
 the first page as the whole collection. Past 100 rows the tail was gone with no error and nothing on
