@@ -31,6 +31,33 @@ import {
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 
+/**
+ * Query root for the LIVE document, excluding React's streaming staging buffers (#593).
+ *
+ * While Next is still streaming this route's Suspense boundary, the resolved HTML is
+ * parked in a `<div hidden id="S:n">` appended to `<body>` and spliced into place by the
+ * `$RC`/`$RV` bootstrap on a ~300ms reveal throttle. That buffer holds a SECOND copy of
+ * the entire dashboard shell — every test id, every title attribute, both `<h1>`s. A raw
+ * attribute query matches both copies and Playwright strict mode then fails with
+ * "resolved to 2 elements", against a page that is completely healthy.
+ *
+ * `e2e/dashboard-mobile.spec.ts` and `e2e/dashboard-interface-corrections.spec.ts` have
+ * scoped to this selector since 2026-07-31 for exactly this reason. THIS SPEC DID NOT,
+ * and #593 is the bill: `getByTitle(/Mute alerts/)` resolved to 2 in **7 runs out of 10**
+ * and was filed as a duplicated kitchen control that does not exist.
+ *
+ * Prefer `getByRole` where the element has one — role locators read the accessibility
+ * tree, which excludes `[hidden]`, so they are immune to this *by construction* rather
+ * than by remembering to scope. This exists for the test-id assertions that have no
+ * honest role to anchor to.
+ *
+ * Deliberately NOT `.first()`: that binds happily to the staged copy and silences the
+ * strict-mode error while leaving a genuine duplicate invisible — the exact failure mode
+ * #593 was opened to prevent.
+ */
+const LIVE = "body > div:not([hidden])"
+const live = (page: Page) => page.locator(LIVE)
+
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account; the
 // credential comes from e2e/vendor-credentials.ts (never committed). A fake session
 // cookie no longer passes the server-side dashboard auth gate (NextAuth middleware,
@@ -258,15 +285,53 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // DESIGN and can therefore never satisfy toBeVisible(). The failure read
     // `Received: hidden` and looked like a rendering defect; the page was fine.
     //
-    // Strictly stronger than the original: this asserts the trigger is visible AND
-    // carries the expected label, which is what the text matcher was reaching for
-    // but could not express. There is exactly one Select on this page (page.tsx:419).
-    const shopSelector = page.getByRole("combobox").first()
+    // #593: it is anchored to the ACCESSIBLE NAME too, and the `.first()` is gone.
+    // The comment here used to assert "there is exactly one Select on this page".
+    // That was false, and the `.first()` was not a duplicate-suppressor — it was
+    // picking the WRONG CONTROL. Measured on the live stack:
+    //   getByRole("combobox") -> 2  ["shop-context-select-sidebar", "Kitchen display shop"]
+    //   .first().textContent()  -> "All shopsUnsorted legacy itemsBrixton Village Grill…"
+    // i.e. the dashboard-wide shop switcher in the SIDEBAR, whose option list happens
+    // to contain "Test Shop" and so satisfied /Test Shop/i by accident. This block
+    // has therefore never asserted anything about the kitchen board's own selector.
+    // `toHaveCount(1)` keeps it that way: a second control answering to this name
+    // fails here rather than being silently absorbed by an index.
+    const shopSelector = page.getByRole("combobox", { name: "Kitchen display shop" })
+    await expect(shopSelector).toHaveCount(1)
     await expect(shopSelector).toBeVisible()
     await expect(shopSelector).toHaveText(/Select shop|Test Shop/i)
 
-    // Mute toggle button is present
-    await expect(page.getByTitle(/Mute alerts|Unmute alerts/)).toBeVisible()
+    // Mute toggle button is present, and there is exactly ONE of it (#593).
+    //
+    // Anchored to the ROLE + accessible name, not to `getByTitle`. `getByTitle` is a
+    // raw attribute selector: it matches elements the page never presents to anyone,
+    // and React's streaming SSR guarantees there is such an element here. Next streams
+    // this route's Suspense boundary, so the resolved markup lands in a staging
+    // container — `<div hidden id="S:0">` — and is spliced into the boundary by the
+    // `$RC`/`$RV` bootstrap on a ~300ms reveal throttle. Between hydration finishing
+    // and that throttle firing, the whole dashboard subtree is in the document TWICE:
+    // once live, once inside `[hidden]`.
+    //
+    // Measured on the live stack at one instant inside that window:
+    //   getByTitle(/Mute alerts|Unmute alerts/)              -> 2
+    //   getByRole("button", {name: /Mute alerts|Unmute…/})   -> 1
+    //   document.querySelectorAll("h1")                      -> 2
+    //   second button's offsetParent                         -> null
+    // The heading assertion above passed throughout, on a page carrying two <h1>s,
+    // for exactly this reason — role locators read the accessibility tree, which
+    // excludes `[hidden]`, and the staging copy is not in it. So the old `getByTitle`
+    // line failed 7 runs in 10 against a page that was never wrong.
+    //
+    // `toHaveCount(1)` is what the assertion always meant and could not say. It is
+    // strictly stronger than the `toBeVisible()` it replaces — and stronger than the
+    // `.first()` the issue warned against, which would have gone green over a genuine
+    // pair. Its fail direction is proven: rendering the control twice in page.tsx
+    // takes this to `Expected: 1  Received: 2`.
+    const muteToggle = page.getByRole("button", {
+      name: /Mute alerts|Unmute alerts/,
+    })
+    await expect(muteToggle).toHaveCount(1)
+    await expect(muteToggle).toBeVisible()
 
     // The mocked order card shows customer name and order number
     await expect(page.getByText("Alice")).toBeVisible()
@@ -290,8 +355,10 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // Status filter buttons — the bump action reflects the current status
     await expect(page.getByRole("button", { name: /Start Preparing/i })).toBeVisible()
 
-    // Mute toggle click works
-    await page.getByTitle(/Mute alerts|Unmute alerts/).click()
+    // Mute toggle click works. Same locator as the assertion above (#593) — a
+    // `getByTitle` click here would be the same race, and clicking a control the
+    // page does not present is not a thing a vendor can do.
+    await muteToggle.click()
   })
 
   test("order-detail page shows real product names and the delivery address, no 'Unknown Product'", async ({
@@ -309,7 +376,7 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await expect(page.getByText("Unknown Product")).toHaveCount(0)
 
     // Delivery-address block renders for a DELIVERY order (19-01 fulfilment DTO).
-    await expect(page.getByTestId("delivery-address")).toBeVisible()
+    await expect(live(page).getByTestId("delivery-address")).toBeVisible()
     await expect(page.getByText("SE15 5BS")).toBeVisible()
   })
 
@@ -370,24 +437,24 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
 
     // ONLINE: a pill reading Live, with a real wall clock, and no banner.
-    const pill = page.getByTestId("kds-feed-pill")
+    const pill = live(page).getByTestId("kds-feed-pill")
     await expect(pill).toBeVisible()
     await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/)
     await expect(pill).toContainText("Live", { timeout: 20_000 })
-    await expect(page.getByTestId("kds-feed-banner")).toHaveCount(0)
+    await expect(live(page).getByTestId("kds-feed-banner")).toHaveCount(0)
 
     // OFFLINE — induced for real. `context.route()` cannot do this: it does not
     // intercept WebSocket handshakes, so aborting a ws glob leaves the STOMP client
     // connected and the page still reading "Connected" (measured).
     await context.setOffline(true)
 
-    const banner = page.getByTestId("kds-feed-banner")
+    const banner = live(page).getByTestId("kds-feed-banner")
     await expect(banner).toBeVisible({ timeout: 15_000 })
     await expect(banner).toHaveAttribute("role", "alert")
     await expect(banner).toContainText(/Offline|Not updating|out of date/i)
     // The stamp the board had none of before #106.
     await expect(banner).toContainText(/Last updated \d{2}:\d{2}:\d{2}/)
-    await expect(page.getByTestId("kds-stale-age")).toBeVisible()
+    await expect(live(page).getByTestId("kds-stale-age")).toBeVisible()
     await expect(page.getByRole("button", { name: /refresh now/i })).toBeVisible()
 
     // RECOVERY: the banner must go away on its own. A warning that outlives its cause
@@ -538,7 +605,7 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // 22pt = 29.33px. The order reference is the thing read from a rail.
     expect(parseFloat(printed.refFontSize)).toBeGreaterThan(28)
 
-    await expect(page.getByTestId("kitchen-ticket")).toHaveCount(1)
+    await expect(live(page).getByTestId("kitchen-ticket")).toHaveCount(1)
     await expect(page.locator(".kds-ticket__qty").first()).toHaveText("2×")
     await page.emulateMedia({ media: "screen" })
   })
@@ -551,7 +618,7 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     page,
   }) => {
     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
-    await expect(page.getByTestId("kds-board-shop")).toContainText(
+    await expect(live(page).getByTestId("kds-board-shop")).toContainText(
       "Showing tickets for Test Shop"
     )
 
@@ -562,18 +629,18 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // selected"). Asserting the count, not just visibility, is what stops the duplicate
     // coming back: `toBeVisible()` on a strict locator fails with a confusing
     // strict-mode error, whereas this names the actual problem.
-    await expect(page.getByTestId("kds-board-shop")).toHaveCount(1)
+    await expect(live(page).getByTestId("kds-board-shop")).toHaveCount(1)
     // ...and the loading placeholder is gone once settled, so the two cannot overlap.
-    await expect(page.getByTestId("kds-board-shop-loading")).toHaveCount(0)
+    await expect(live(page).getByTestId("kds-board-shop-loading")).toHaveCount(0)
 
     // The fixture tenant has exactly one shop, so there is no mismatch to explain and
     // the notice must NOT appear. Asserting the quiet case as well as the loud one is
     // what stops the notice becoming permanent furniture.
     await page.evaluate(() => window.localStorage.setItem("shopContext", "all"))
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(page.getByTestId("kds-board-shop")).toHaveCount(1)
-    await expect(page.getByTestId("kds-board-shop")).toBeVisible()
-    const notice = page.getByTestId("kds-all-shops-notice")
+    await expect(live(page).getByTestId("kds-board-shop")).toHaveCount(1)
+    await expect(live(page).getByTestId("kds-board-shop")).toBeVisible()
+    const notice = live(page).getByTestId("kds-all-shops-notice")
     await expect(notice).toContainText("one shop at a time")
     await expect(notice).not.toContainText("not on this screen")
   })
