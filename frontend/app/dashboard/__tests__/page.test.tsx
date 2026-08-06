@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import DashboardPage from '../page'
 import apiClient from '@/lib/api-client'
+import { getShopContext } from '@/lib/shop-context'
+import { manyShops, pagedResponse, param } from '@/test-utils/spring-page'
 
 import React from 'react'
 
@@ -22,6 +24,14 @@ jest.mock('recharts', () => ({
 // Mock the API client
 jest.mock('@/lib/api-client')
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
+
+jest.mock('@/lib/shop-context', () => ({
+  ALL_SHOPS_CONTEXT: 'all',
+  getShopContext: jest.fn(() => 'all'),
+  setShopContext: jest.fn(),
+  subscribeShopContext: jest.fn(() => () => {}),
+}))
+const mockedGetShopContext = getShopContext as jest.MockedFunction<typeof getShopContext>
 
 // Mock the toast hook
 jest.mock('@/hooks/use-toast', () => ({
@@ -52,6 +62,7 @@ describe('Dashboard Page', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockedApiClient.get.mockImplementation(defaultMock as jest.Mock)
+    mockedGetShopContext.mockReturnValue('all')
   })
 
   it('should render loading spinner initially', () => {
@@ -189,6 +200,59 @@ describe('Dashboard Page', () => {
     })
     const link = screen.getByRole('link', { name: /view status/i })
     expect(link).toHaveAttribute('href', '/dashboard/onboarding')
+  })
+
+  describe('#485 call site :170 — the shop list is followed to its end', () => {
+    // 150 shops: genuinely more than the server's clamped 100-row page, so the
+    // tail lives on page 1 and only paged code can reach it.
+    const SHOPS = manyShops(150)
+    const TAIL = SHOPS[SHOPS.length - 1]
+
+    const pagedShopsMock = (url: string) => {
+      if (url.startsWith('/api/v1/shops')) return Promise.resolve(pagedResponse(url, SHOPS))
+      return defaultMock(url)
+    }
+
+    it('names a shop that lives past the first page in the context header', async () => {
+      // THE USER-VISIBLE LOSS. `contextShopName` looks the switcher's shop up in the
+      // fetched list and falls back to the generic "the selected shop" when it is not
+      // there. With one truncating request, every shop past the 100th was permanently
+      // unnameable on their own dashboard.
+      mockedGetShopContext.mockReturnValue(TAIL.id)
+      mockedApiClient.get.mockImplementation(pagedShopsMock as jest.Mock)
+
+      render(<DashboardPage />)
+
+      await waitFor(() =>
+        expect(screen.getByText(new RegExp(`Viewing ${TAIL.name} `))).toBeInTheDocument()
+      )
+      expect(screen.queryByText(/Viewing the selected shop/)).not.toBeInTheDocument()
+    })
+
+    it('requests page 0 AND page 1 rather than one page of 100', async () => {
+      mockedApiClient.get.mockImplementation(pagedShopsMock as jest.Mock)
+
+      render(<DashboardPage />)
+
+      await waitFor(() => {
+        const pages = mockedApiClient.get.mock.calls
+          .map(([u]) => String(u))
+          .filter((u) => u.startsWith('/api/v1/shops'))
+          .map((u) => param(u, 'page'))
+        expect(pages).toEqual(['0', '1'])
+      })
+    })
+
+    it('counts every shop on the Shops stat card, not the first page of them', async () => {
+      mockedApiClient.get.mockImplementation(pagedShopsMock as jest.Mock)
+
+      render(<DashboardPage />)
+
+      await waitFor(() => expect(screen.getByText('Shops')).toBeInTheDocument())
+      // The count animates up via useCountUp, so wait for it to settle on 150 —
+      // never on 100, which is what a single clamped page would have reported.
+      await waitFor(() => expect(screen.getByText('150')).toBeInTheDocument())
+    })
   })
 
   it('hides the banner when onboarding is LIVE', async () => {

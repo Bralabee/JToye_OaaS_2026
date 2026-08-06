@@ -290,7 +290,6 @@ function OrdersPageInner() {
   // AND makes them complete.
   useEffect(() => {
     fetchPickerData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Real-time updates via SSE (#92): the shared hook owns the auth header,
