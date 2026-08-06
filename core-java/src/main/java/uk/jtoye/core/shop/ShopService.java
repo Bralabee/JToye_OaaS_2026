@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
@@ -203,7 +204,33 @@ public class ShopService {
         // from the onboarding GO_LIVE/SUSPEND/REINSTATE side effect).
         Boolean publishedBeforeUpdate = shop.getPublished();
 
+        // Issue #450 item 4 (F-L6-PUBLISHDROP / INT-06): the restore below keeps the
+        // OUTCOME right, but on its own it made the RESPONSE a lie — {"published":true}
+        // and {"published":false} both returned 200 with the shop unchanged, so a client
+        // could not tell its instruction had been refused. Say so instead, with a typed
+        // RFC 7807 409 (agent-readiness: machine-parseable errors, stable code).
+        //
+        // Only a request that asks to CHANGE the state is refused. `published` is a
+        // nullable Boolean on both sides (N4), so both are normalised through
+        // Boolean.TRUE.equals before comparison: null and false are the same state.
+        // A request that omits the field, or echoes the state the shop is already in,
+        // is a no-op and still succeeds — which is what the vendor shop-edit form sends
+        // on every ordinary save, and what must keep working.
+        if (request.getPublished() != null) {
+            boolean requested = Boolean.TRUE.equals(request.getPublished());
+            boolean current = Boolean.TRUE.equals(publishedBeforeUpdate);
+            if (requested != current) {
+                log.warn("Rejected publish-state change on shop {} via updateShop: requested={}, current={} "
+                        + "(onboarding state machine is the sole writer)", shopId, requested, current);
+                throw new PublishStateNotAcceptedException(requested, current);
+            }
+        }
+
         shopMapper.updateEntity(request, shop);
+        // Defence in depth: the guard above already refuses any state-changing value, so
+        // this restore is now a no-op on every path that reaches it. It stays because it
+        // is the invariant's last line — if the mapper strategy or the guard is ever
+        // loosened, `published` still cannot be written from a request body here.
         shop.setPublished(publishedBeforeUpdate);
 
         // Regenerate slug if name changed and no explicit slug provided. The explicit

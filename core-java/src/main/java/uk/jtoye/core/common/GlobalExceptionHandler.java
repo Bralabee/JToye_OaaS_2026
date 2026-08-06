@@ -27,6 +27,7 @@ import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MissingTenantContextException;
+import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
@@ -392,6 +393,29 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Reserved Shop Slug");
         problem.setType(URI.create("https://jtoye.uk/errors/reserved-shop-slug"));
+        return problem;
+    }
+
+    /**
+     * Issue #450 item 4 (F-L6-PUBLISHDROP / INT-06) — {@code PUT /shops/{id}} was asked
+     * to change {@code published}, which only the onboarding state machine may write.
+     *
+     * <p>409 Conflict, not 200-with-a-silent-drop: the previous behaviour returned an
+     * identical 200 for {@code published:true} and {@code published:false}, so the
+     * refusal was invisible to the client. The stable
+     * {@code .../errors/shop-publish-not-accepted} type plus the {@code requestedPublished}
+     * / {@code currentPublished} properties let a machine client tell exactly what was
+     * refused and what the shop's state actually is, without parsing prose.
+     */
+    @ExceptionHandler(PublishStateNotAcceptedException.class)
+    public ProblemDetail handlePublishStateNotAccepted(PublishStateNotAcceptedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Publish State Not Accepted");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-publish-not-accepted"));
+        problem.setProperty("code", "SHOP_PUBLISH_NOT_ACCEPTED");
+        problem.setProperty("field", "published");
+        problem.setProperty("requestedPublished", ex.getRequestedPublished());
+        problem.setProperty("currentPublished", ex.getCurrentPublished());
         return problem;
     }
 
