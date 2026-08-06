@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A vendor could not tell a broken webhook verifier from a broken one of ours (#571) (#586) — 2026-08-06
+
+Building a receiver for our outbound webhooks meant guessing. The HMAC scheme works and has
+always worked, but the only description of it was `WebhookSigner`'s Javadoc and one paragraph of
+`SYSTEM_DESIGN_V2.md` — an architecture document, written to explain the system to ourselves.
+An integrator had nothing to check their own code against.
+
+The parts you must get exactly right were precisely the parts that could only be inferred by
+reading our Java: whether the `t=` timestamp is inside the signed bytes or merely alongside them,
+whether we sign the raw body or a re-serialised form, and who enforces the replay window. Get any
+of them wrong and there are two outcomes, both of which land on us and neither of which is visible
+from our side — a verifier that silently accepts everything, or one that rejects valid deliveries
+and gets reported as our outage.
+
+#### Added
+- **`docs/webhooks.md`**, written for an integrator rather than for us: registration, the
+  envelope, the four headers, event types, the retry schedule, what terminal `FAILED` means to a
+  receiver, auto-pause, at-least-once semantics, and a troubleshooting table keyed by symptom.
+- **A worked signature test vector** — fixed secret, fixed timestamp, fixed literal payload, exact
+  expected `X-JToye-Signature` — so a receiver can self-check before going live. Reproducible with
+  a language-independent `openssl` recipe, plus a complete verifier.
+- **`WebhookSignatureVectorTest`** (7 tests) pins the vector from *both* ends: the signature must
+  be what `WebhookSigner` actually produces, **and** `docs/webhooks.md` must still publish those
+  exact literals. Change the signing without changing the page and the build goes red. Without the
+  second half the doc and the test could drift apart while each stayed internally consistent —
+  which is the failure this issue was filed about, one level up.
+
+#### Notes
+- **Three things the doc now states that the code only implied.** The timestamp is the time of the
+  *attempt*, not of the event, so every retry of one event carries a different signature — a
+  receiver that caches signatures across attempts breaks. The 300s tolerance is published for
+  agreement but **enforced by nobody on our side** (we are the sender; `signatureToleranceSeconds`
+  has no reader in core), so it only happens if the receiver writes it. And the 1-hour backoff cap
+  is unreachable at the default 8 attempts and 1s base — the whole retry sequence finishes in about
+  two minutes, so an endpoint down for a ten-minute deploy exhausts every attempt.
+- **The vector was derived by running the implementation, not by hand**, then cross-checked against
+  three independent instruments that agree exactly: `openssl dgst -sha256 -hmac`, Node's `crypto`,
+  and a fresh `javax.crypto.Mac` inside the test that never touches `WebhookSigner`. The doc's
+  literal was byte-compared (`cmp`, rc=0, sha256 `993e3710…`) against the bytes openssl actually
+  signed, so a vendor following only the written page lands on the published string.
+- **Shown to fail in four directions**, real output recorded on the PR: one flipped body byte
+  (`"READY"`→`"READX"`, `cmp -l` confirms exactly 1 differing byte) → `e89bd9d5…`; one changed
+  secret character → `7211445c…`; the body signed without the `t + "."` prefix → `439b0400…`; and
+  the doc-parity test against a tree with the vector removed. The published digest `fb788506…`
+  matches none of them. The three "must differ" assertions were also confirmed to be *capable* of
+  failing rather than trivially true, by neutering their tamper and watching them go red.
+- The doc is **not** covered by `scripts/check-doc-citations.sh` — `DEFAULT_DOCS` is a fixed
+  seven-entry list and a new page is outside it. Recorded rather than worked around; widening that
+  set is `scripts/`-owned and not this change.
+### A loop-declared Jest test made two required checks mutually unsatisfiable (#582) (#588) — 2026-08-06
+
+`node scripts/count-test-blocks.mjs --family jest` on the eight-line reproduction in #582 printed
+`{"blocks":3}` and exited **0**, for a file in which **five** tests run. That is the one construct
+this counter guessed at: it VOIDs on an unknown alias, an unresolvable `.each`, a tagged-template
+table and an unmodelled chain, but a `for` loop around an `it(` it counted once and reported as
+fact.
+
+The wrong number is not the damage. `docs/metrics.json .jest_blocks` is asserted from **both**
+ends — by this counter (declaration sites) in `docs-freshness`, and by jest's own `numTotalTests`
+(executions) in `check-test-count-oracle`, both required checks on `main`. A loop-declared test
+makes them differ by N-1, so **no value of the key lets the PR merge**, and the remedy each failure
+suggests reproduces the other. The counter's under-count was the thing constructing the deadlock,
+and it was the half that looked confident.
+
+#### Fixed
+- **A head lexically inside a loop now VOIDs at 2, naming the head's line, the line the loop was
+  opened on, and `it.each([...])` as the remedy** — the rewrite both halves count identically.
+  Detected shapes: `for`/`for await`/`while` bodies, `do`, braceless bodies with no `{` at all, and
+  array-iteration callbacks (`.forEach`, `.map`, `.filter`, …). The check runs *before* the modifier
+  chain is classified, because a 2-iteration loop around a resolvable 2-row `.each` table is 4
+  executed tests and "2" is the confident wrong answer.
+
+#### Changed
+- **Per-family (`POLICY.<family>.loopMultiplies`), not the blanket rule the issue proposed.**
+  Playwright's oracle counts declaration sites — `--list` de-duplicated by `(file,line,column)`,
+  because its project matrix already runs each spec more than once — so a loop-declared `test()` is
+  1 on *both* sides there and there is nothing to refuse. Measured by flipping the flag on: a
+  blanket rule VOIDs four e2e specs that are correct today (`dashboard-mobile:320`,
+  `marketing-motion:122`, `public-layout:321`, `webhooks-webperf:186`) and takes `docs-freshness`
+  down with them. Refusing a tree that is already right is a worse outcome than the bug.
+
+#### Notes
+- **Both directions recorded, on the real tree and on fixtures.** Fail direction: restoring the
+  pre-fix counter turns all five new VOID arms red — including `{"blocks":3}` rc=0 on the issue's
+  own reproduction — while the 11 pre-existing arms stay green, so the new arms are load-bearing
+  and detect nothing the old ones already did. Clean direction: per-file counts over all 117 real
+  Jest/Playwright/vitest files are byte-identical to the pre-change counter, and `docs-freshness`
+  still reports the same total. **No metric moved; `docs/metrics.json` is untouched.**
+- **The refusal is proven able to over-fire, and proven not to.** Deleting the containment guard —
+  so any loop in the file matches rather than only one enclosing the head — VOIDs both the healthy
+  fixture and the real tree at `contrast-tokens.test.ts:92`. Measured 2026-08-06: 25 counted Jest
+  files carry a `for`, a `while` or a `.forEach`, and all 25 still count. Deleting the braceless
+  check alone turns exactly one arm red, which is what that fixture exists for.
+- **Six new fixtures, seven new arms (11 -> 18), and the floors raised with them** so a shrinking
+  fixture set still VOIDs the self-test. Two of the seven assert that the refusal does *not* fire:
+  one file of loops arranged inside the blocks instead of around them, and one file that must VOID
+  as jest and count as playwright. Without those, a check that refused every file containing the
+  word `for` would pass every arm.
+- **Residual limit, stated rather than papered over.** Detection is lexical, so a hand-rolled helper
+  that loops is still invisible and `check-test-count-oracle.sh` remains the last word. Its header
+  said the static counter's loop hole was the one thing it existed to close; that is now half true
+  and it says so.
+
 ### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout (#584) — 2026-08-06
 
 `HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That

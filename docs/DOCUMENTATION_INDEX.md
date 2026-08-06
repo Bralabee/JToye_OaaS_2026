@@ -112,6 +112,7 @@ enforced by the `docs-freshness` CI gate)
 | [SITEMAP.md](SITEMAP.md) | Frontend page map (public, storefront, dashboard, onboarding) |
 | [api/README.md](api/README.md) | API docs + `openapi-snapshot.json` |
 | [idempotency.md](idempotency.md) | The uniform `Idempotency-Key` contract |
+| [webhooks.md](webhooks.md) | Outbound webhook integrator guide — envelope, retries, and the executable HMAC signature test vector |
 | [security-scopes.md](security-scopes.md) | OAuth scope model / least-privilege credentials |
 | [ppds-label-markup.md](ppds-label-markup.md) | PPDS / Natasha's Law allergen label markup |
 | [vendor-onboarding-research.md](vendor-onboarding-research.md) | Onboarding research background |

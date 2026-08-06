@@ -21,7 +21,15 @@
 #                 exactly that number, and rc 0.
 #   VOID arms   — a construct the counter cannot resolve (a computed .each table, a
 #                 tagged-template table, describe.each, an xit alias, an unmodelled
-#                 modifier chain) must produce rc 2 and print nothing on stdout.
+#                 modifier chain, a loop-declared head) must produce rc 2 and print
+#                 nothing on stdout.
+#
+#   The loop arms (issue #582) come in matched pairs on purpose. A refusal is only
+#   worth having if it can also NOT fire: loops-inside-blocks.fixture.ts is the same
+#   loop keywords arranged inside the block instead of around it and must still
+#   count, and loop-scope-by-family.fixture.ts is ONE file that must VOID as jest and
+#   count as playwright. Without those two, a loop check that simply refused every
+#   file containing the word `for` would pass every arm here.
 #
 # Exit codes: 0 = every arm behaved, 1 = an arm misbehaved, 2 = VOID (cannot run).
 set -uo pipefail
@@ -39,8 +47,8 @@ command -v node >/dev/null 2>&1 || { echo "VOID: node is not installed" >&2; exi
 [ -d "$FIXTURES" ] || { echo "VOID: $FIXTURES is missing" >&2; exit 2; }
 
 FIXTURE_COUNT=$(find "$FIXTURES" -maxdepth 1 -name '*.fixture.ts' | wc -l | tr -d ' ')
-[ "$FIXTURE_COUNT" -ge 8 ] || {
-	echo "VOID: only $FIXTURE_COUNT fixture(s) found — the arms below name 8. A shrinking" >&2
+[ "$FIXTURE_COUNT" -ge 15 ] || {
+	echo "VOID: only $FIXTURE_COUNT fixture(s) found — the arms below name 15. A shrinking" >&2
 	echo "      fixture set is how a self-test quietly stops testing anything." >&2
 	exit 2
 }
@@ -102,6 +110,16 @@ expect_count vitest     each-tables.fixture.ts           14
 # Playwright's dual-mode modifiers: 2 bare + 1 declared-skip; 2 skip directives,
 # a fail() directive, describe/use/beforeEach/setTimeout and a /re/.test( all zero.
 expect_count playwright playwright-directives.fixture.ts 3
+# Loop keywords INSIDE the blocks, not around them: 2 it() + 1 test(), each
+# iterating assertions in its own body. The commonest arrangement on this tree, and
+# the arm that fails if the #582 refusal stops asking whether the loop ENCLOSES the
+# head. Measured 2026-08-06: 25 counted Jest files carry a for/while/.forEach and
+# every one of them still counts, so a refusal that could not tell the two
+# arrangements apart would VOID a quarter of the suite.
+expect_count jest       loops-inside-blocks.fixture.ts   3
+# Same file, opposite verdicts by family — see the jest arm further down. Playwright
+# counts a loop-declared test() because its oracle counts declaration sites.
+expect_count playwright loop-scope-by-family.fixture.ts  3
 
 # ── VOID arms: refusing is the required behaviour ───────────────────────────
 expect_void jest void-unresolvable-each.fixture.ts "not a resolvable array literal"
@@ -110,6 +128,23 @@ expect_void jest void-alias.fixture.ts             "unsupported test alias 'xit'
 expect_void jest void-describe-each.fixture.ts     "describe.each multiplies"
 expect_void jest void-tagged-each.fixture.ts       "tagged-template"
 expect_void jest void-unknown-chain.fixture.ts     "unknown jest modifier chain"
+# Loop-declared heads (issue #582). Before the fix these four counted the DECLARATION
+# SITE at rc=0 — the only number this counter ever guessed — and that under-count is
+# what deadlocks docs-freshness against check-test-count-oracle.
+#   Single quotes below, never double: the messages contain no backticks today, but a
+#   double-quoted assertion string is one edit away from EXECUTING one.
+expect_void jest void-loop-for.fixture.ts          'is declared inside a for-loop body'
+expect_void jest void-loop-foreach.fixture.ts      'is declared inside a .forEach(...) callback'
+# Braceless body — no `{` between the loop header and the head, so the bracket walk
+# alone finds nothing and the direct check is the only thing that fires.
+expect_void jest void-loop-while.fixture.ts        'is declared inside a while-loop body'
+# The head must be refused BEFORE its chain is classified: a resolvable 2-row table
+# inside a 2-iteration loop is 4 executed tests, and "2" is the confident wrong answer.
+expect_void jest void-loop-each-table.fixture.ts   "'it.each(' is declared inside a for-loop body"
+# The other half of the playwright COUNT arm above, on the SAME file: jest's oracle
+# counts executions so this must refuse, playwright's counts declaration sites so it
+# must not. One of the two arms goes red whichever way loopMultiplies is mis-set.
+expect_void jest loop-scope-by-family.fixture.ts   "'test(' is declared inside a for-loop body"
 # An empty input set is not a count of zero.
 ARMS=$((ARMS + 1))
 EMPTY_OUT=$(printf '' | node "$COUNTER" --family jest --stdin 2>&1)
@@ -122,7 +157,7 @@ else
 fi
 
 printf '  arms     : %s\n' "$ARMS"
-if [ "$ARMS" -lt 11 ]; then
+if [ "$ARMS" -lt 18 ]; then
 	echo "VOID: only $ARMS arm(s) ran — a self-test that shrank is not a self-test." >&2
 	exit 2
 fi
