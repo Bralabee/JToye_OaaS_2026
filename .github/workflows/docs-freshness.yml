@@ -86,6 +86,21 @@ jobs:
       - name: Verify every merged feat/fix PR is in the changelog
         if: always()
         run: bash scripts/check-changelog-contract.sh
+      # ...and because it reads MERGED history, it is structurally incapable of firing on
+      # the PR that omits its own entry. It goes red AFTERWARDS, on main, in front of
+      # whoever opens the next unrelated PR. Six instances in two days — #568, #572, #575,
+      # #577, #573, #574 — every one an entry heading citing the ISSUE rather than the PR.
+      # This is the PR-TIME half (#579). Both are wanted: C-1 still backstops a PR that
+      # merged with no entry at all, which this step cannot see if it is skipped.
+      #
+      # The title goes through env, NEVER interpolated into the run: line. A PR title is
+      # attacker-controlled text and `${{ }}` inside a shell command is a script injection.
+      - name: Verify THIS PR is cited in the changelog
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: bash scripts/check-changelog-cites-pr.sh
       # HANDOFF.md went stale TWICE on 2026-07-31, both times under the work it was
       # describing (#391, then #394), because nothing read it. This checks the claims
       # that ARE mechanically checkable: the gate count, capitalised issue/PR state
