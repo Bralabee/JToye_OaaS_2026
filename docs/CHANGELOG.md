@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A loop-declared Jest test made two required checks mutually unsatisfiable (#582) (#588) — 2026-08-06
+
+`node scripts/count-test-blocks.mjs --family jest` on the eight-line reproduction in #582 printed
+`{"blocks":3}` and exited **0**, for a file in which **five** tests run. That is the one construct
+this counter guessed at: it VOIDs on an unknown alias, an unresolvable `.each`, a tagged-template
+table and an unmodelled chain, but a `for` loop around an `it(` it counted once and reported as
+fact.
+
+The wrong number is not the damage. `docs/metrics.json .jest_blocks` is asserted from **both**
+ends — by this counter (declaration sites) in `docs-freshness`, and by jest's own `numTotalTests`
+(executions) in `check-test-count-oracle`, both required checks on `main`. A loop-declared test
+makes them differ by N-1, so **no value of the key lets the PR merge**, and the remedy each failure
+suggests reproduces the other. The counter's under-count was the thing constructing the deadlock,
+and it was the half that looked confident.
+
+#### Fixed
+- **A head lexically inside a loop now VOIDs at 2, naming the head's line, the line the loop was
+  opened on, and `it.each([...])` as the remedy** — the rewrite both halves count identically.
+  Detected shapes: `for`/`for await`/`while` bodies, `do`, braceless bodies with no `{` at all, and
+  array-iteration callbacks (`.forEach`, `.map`, `.filter`, …). The check runs *before* the modifier
+  chain is classified, because a 2-iteration loop around a resolvable 2-row `.each` table is 4
+  executed tests and "2" is the confident wrong answer.
+
+#### Changed
+- **Per-family (`POLICY.<family>.loopMultiplies`), not the blanket rule the issue proposed.**
+  Playwright's oracle counts declaration sites — `--list` de-duplicated by `(file,line,column)`,
+  because its project matrix already runs each spec more than once — so a loop-declared `test()` is
+  1 on *both* sides there and there is nothing to refuse. Measured by flipping the flag on: a
+  blanket rule VOIDs four e2e specs that are correct today (`dashboard-mobile:320`,
+  `marketing-motion:122`, `public-layout:321`, `webhooks-webperf:186`) and takes `docs-freshness`
+  down with them. Refusing a tree that is already right is a worse outcome than the bug.
+
+#### Notes
+- **Both directions recorded, on the real tree and on fixtures.** Fail direction: restoring the
+  pre-fix counter turns all five new VOID arms red — including `{"blocks":3}` rc=0 on the issue's
+  own reproduction — while the 11 pre-existing arms stay green, so the new arms are load-bearing
+  and detect nothing the old ones already did. Clean direction: per-file counts over all 117 real
+  Jest/Playwright/vitest files are byte-identical to the pre-change counter, and `docs-freshness`
+  still reports the same total. **No metric moved; `docs/metrics.json` is untouched.**
+- **The refusal is proven able to over-fire, and proven not to.** Deleting the containment guard —
+  so any loop in the file matches rather than only one enclosing the head — VOIDs both the healthy
+  fixture and the real tree at `contrast-tokens.test.ts:92`. Measured 2026-08-06: 25 counted Jest
+  files carry a `for`, a `while` or a `.forEach`, and all 25 still count. Deleting the braceless
+  check alone turns exactly one arm red, which is what that fixture exists for.
+- **Six new fixtures, seven new arms (11 -> 18), and the floors raised with them** so a shrinking
+  fixture set still VOIDs the self-test. Two of the seven assert that the refusal does *not* fire:
+  one file of loops arranged inside the blocks instead of around them, and one file that must VOID
+  as jest and count as playwright. Without those, a check that refused every file containing the
+  word `for` would pass every arm.
+- **Residual limit, stated rather than papered over.** Detection is lexical, so a hand-rolled helper
+  that loops is still invisible and `check-test-count-oracle.sh` remains the last word. Its header
+  said the static counter's loop hole was the one thing it existed to close; that is now half true
+  and it says so.
+
 ### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout (#584) — 2026-08-06
 
 `HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That
