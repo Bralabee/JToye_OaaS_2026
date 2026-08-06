@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout — 2026-08-06
+
+`HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That
+instruction had been **impossible to satisfy since #574**, and #583 made it worse.
+
+Two gates cannot return 0 from a bare invocation. `check-test-count-oracle.sh` (#574) needs a
+family argument and VOIDs without one. `check-changelog-cites-pr.sh` (#583) needed a pull-request
+number and VOIDed off a PR — which is every local run and every push-to-main run.
+
+**H-1 was green for both**, because it compares the *number* in the claim against the count of gate
+scripts on disk. It never asks the question that matters: *can the loop this instruction prescribes
+actually return 0 for each one?* A structural check passing over an instruction that cannot be
+followed — the same shape as a healthcheck that runs inside a container attached to no network.
+
+#### Fixed
+- **`check-changelog-cites-pr.sh` distinguishes "inapplicable" from "unverified".** Off a pull
+  request there is no PR to have an opinion about, so it SKIPs at 0 and says so. Under
+  `GITHUB_EVENT_NAME=pull_request` a missing number still VOIDs at 2 — that means the workflow
+  wiring is broken, which is exactly the case the VOID exists for. The only path returning 0 without
+  checking is the one where CI states there is no pull request, so this is not a fail-open.
+- **The resume block's loop supplies the argument `check-test-count-oracle` needs**, instead of
+  prescribing a command that cannot succeed and leaving the reader to discover why.
+
+#### Notes
+- **Proven by running the instruction, not by reasoning about it**: the prescribed loop now reports
+  `ran 29 gates, 0 non-zero`. Fail arms, one per half — the old loop shape on the same tree still
+  yields 1 non-zero (so the argument mapping is load-bearing), and the pre-fix script still returns
+  2 with no PR context while the fixed one returns 0. Two guard arms confirm nothing opened up:
+  `GITHUB_EVENT_NAME=pull_request` with no number is still 2, and a genuinely uncited PR is still 1.
+- **H-1 is unchanged and still worth having.** It caught the count going stale twice in two days.
+  This is a gap beside it, not a fault in it — but "the gate is green" was never the same claim as
+  "the instruction works", and only executing the instruction could tell them apart.
+- **`check-alert-metrics` was also red** and is the documented standing remedy after any core-java
+  recreate (`scripts/seed-order-metric.sh`), not a defect. Recorded because a reader running the
+  loop today will hit it, and a red with a known remedy should not read as a new failure.
+
 ### The gate that catches a missing changelog entry could not run on the PR that omits it (#579) (#583) — 2026-08-06
 
 `check-changelog-contract` C-1 asserts that every **merged** `feat`/`fix` PR is cited in

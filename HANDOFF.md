@@ -1516,8 +1516,18 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 
 # 1. Every gate. Capture rc on its OWN statement — an rc read after a pipe is the pipe's.
 #    RUN FROM THE MAIN CHECKOUT, NOT A WORKTREE (compose project name comes from the directory).
+#    Two gates need an argument or a context to be runnable at all, so the loop supplies it.
+#    Without this the instruction below was UNACHIEVABLE and nothing noticed: H-1 compares
+#    the NUMBER to the gate count, never whether the loop can actually return 0 for each.
+#    check-test-count-oracle (#574) VOIDed on a missing family; check-changelog-cites-pr
+#    (#583) VOIDed off a pull request. Both were "EXPECT N x rc=0" with a green H-1.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
-  bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
+  case "$(basename "$g")" in
+    # needs a family; jest is the one the manifest is most often wrong about
+    check-test-count-oracle.sh) set -- jest ;;
+    *)                          set -- ;;
+  esac
+  bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
 # EXPECT 29 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.

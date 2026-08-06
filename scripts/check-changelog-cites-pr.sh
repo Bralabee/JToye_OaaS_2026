@@ -65,7 +65,29 @@ printf 'check-changelog-cites-pr  (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'x' | grep -qP 'x' 2>/dev/null || die_void "grep does not support -P (PCRE)"
 [ -r "$CHANGELOG" ] || die_void "$CHANGELOG is missing or unreadable"
 [ -s "$CHANGELOG" ] || die_void "$CHANGELOG is empty — nothing could be cited in it"
-[ -n "$PR_NUMBER" ] || die_void "no PR number given (--pr or PR_NUMBER) — cannot check anything"
+# No PR number is two DIFFERENT situations and they must not share an exit code.
+#
+#   Under a pull_request event, the number always exists — its absence means the wiring
+#   is broken, and that is a VOID: we were supposed to be able to check and could not.
+#
+#   Off a PR (a local run, a push-to-main run, `for g in scripts/check-*.sh`) there is no
+#   pull request to have an opinion about. That is not an unverified check, it is an
+#   inapplicable one, and returning 2 there made HANDOFF.md's "EXPECT N x rc=0" resume
+#   instruction UNACHIEVABLE — a claim H-1 cannot see, because H-1 compares the NUMBER to
+#   the gate count and never asks whether running them all can actually return 0.
+#   check-test-count-oracle.sh (#574) had already broken it the same way, needing a family
+#   argument; H-1 was green for both.
+#
+# This is deliberately not a fail-open: the only path that returns 0 without checking is
+# the one where CI states it is not a pull request.
+if [ -z "$PR_NUMBER" ]; then
+	if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
+		die_void "GITHUB_EVENT_NAME=pull_request but no PR number reached the script — the workflow wiring is broken"
+	fi
+	printf '  SKIP: no pull-request context (GITHUB_EVENT_NAME=%s) — nothing to check.\n' \
+		"${GITHUB_EVENT_NAME:-<unset>}"
+	exit 0
+fi
 grep -qE '^[0-9]+$' <<< "$PR_NUMBER" || die_void "PR number '$PR_NUMBER' is not numeric"
 [ -n "$PR_TITLE" ] || die_void "no PR title given (--title or PR_TITLE) — cannot tell if this PR owes an entry"
 
