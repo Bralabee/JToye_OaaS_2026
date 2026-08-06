@@ -20,7 +20,7 @@
  * change that quietly dropped the email challenge would "pass" any test that
  * only looked at the signed-in path.
  */
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import { useSearchParams } from "next/navigation"
 import TrackOrderPage from "@/app/track/page"
@@ -124,9 +124,15 @@ describe("/track for a signed-in customer with NO orders (#458 item 2)", () => {
 
   it("sends them somewhere useful — shops, and their (empty) order history", async () => {
     render(<TrackOrderPage />)
-    await screen.findByTestId("track-no-orders")
+    const card = await screen.findByTestId("track-no-orders")
 
-    expect(screen.getByRole("link", { name: /browse shops/i })).toHaveAttribute("href", "/shop")
+    // Scoped to the card: the page renders inside PublicShell, whose footer also
+    // links to /shop, and an unscoped query would match that instead — passing
+    // even if this card had no call to action at all.
+    expect(within(card).getByRole("link", { name: /browse shops/i })).toHaveAttribute(
+      "href",
+      "/shop"
+    )
     expect(screen.getByRole("link", { name: /all my orders/i })).toHaveAttribute(
       "href",
       "/shop/orders"
@@ -134,14 +140,15 @@ describe("/track for a signed-in customer with NO orders (#458 item 2)", () => {
   })
 
   it("still lets them chase a guest order placed on another email — one tap, not a dead end", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event")
     render(<TrackOrderPage />)
     await screen.findByTestId("track-no-orders")
 
-    await userEvent.click(screen.getByTestId("track-show-manual-form"))
+    fireEvent.click(screen.getByTestId("track-show-manual-form"))
 
     const orderNumberInput = screen.getByLabelText(/order number/i)
     expect(orderNumberInput.closest("form")).not.toHaveAttribute("hidden")
+    // ...and the empty-state card gives way rather than stacking above it.
+    expect(screen.queryByTestId("track-no-orders")).not.toBeInTheDocument()
   })
 })
 
