@@ -40,6 +40,12 @@ interface EnvVars {
   // browser-side, safely defaulted, so it is in neither required nor optional.
   // See `resolveKitchenOrdersPageSize`.
   NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE: string;
+
+  // NOTE (#485): the product picker deliberately has NO env knob beside these two.
+  // Its page size is pinned to the server's own `max-page-size: 100` clamp, so the
+  // value cannot vary by environment: a larger one is a no-op on the wire and a
+  // smaller one only costs extra requests. See PRODUCTS_PAGE_SIZE in
+  // `lib/products-api.ts` for the full reasoning.
 }
 
 const requiredEnvVars: (keyof EnvVars)[] = [

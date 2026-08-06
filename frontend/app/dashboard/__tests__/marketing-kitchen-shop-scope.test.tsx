@@ -11,6 +11,7 @@ import MarketingPage from "../marketing/page"
 import KitchenPage from "../kitchen/page"
 import apiClient from "@/lib/api-client"
 import { getShopContext } from "@/lib/shop-context"
+import { manyShops, pagedResponse, param } from "@/test-utils/spring-page"
 
 // Under full-suite CPU contention these async renders can exceed waitFor's 1s
 // default, flaking assertions that pass in isolation (the content DOES render,
@@ -308,6 +309,57 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
       expect(screen.getByTestId("kds-board-shop")).toHaveTextContent(
         "Showing tickets for Brixton Bakery"
       )
+    })
+  })
+})
+
+/**
+ * #485 call site :357 — marketing's shop picker is followed to the end.
+ *
+ * 150 shops, a fake endpoint that honours `?page=`/`?size=` and applies the server's
+ * 100-row clamp, and the assertion is on shop 150. A three-shop fixture, or one that
+ * ignored the paging parameters, would pass identically against the single-request
+ * bug this case exists to catch.
+ */
+describe("#485 — marketing pages the whole shop list", () => {
+  const SHOPS = manyShops(150)
+  const TAIL = SHOPS[SHOPS.length - 1]
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedGetShopContext.mockReturnValue("all")
+    mockedApiClient.get.mockImplementation(((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve(pagedResponse(url, SHOPS))
+      return defaultMock(url)
+    }) as jest.Mock)
+  })
+
+  it("offers a shop past the first page as a promotion target", async () => {
+    // Shop 150 could not be given a promotion at all while the list stopped at 100.
+    render(<MarketingPage />)
+    // The whole page is a spinner until the promotions load resolves; the create
+    // CTA does not exist before that.
+    await waitFor(() => expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("button", { name: /create promotion/i }))
+
+    expect(
+      await screen.findByRole("option", { name: TAIL.name })
+    ).toBeInTheDocument()
+  })
+
+  it("keeps the picker alphabetical while paging it (sort=name,asc survives)", async () => {
+    // The single request this replaced carried `&sort=name,asc`. Dropping it while
+    // fixing the truncation would have traded one defect for a scrambled dropdown.
+    render(<MarketingPage />)
+
+    await waitFor(() => {
+      const shopUrls = mockedApiClient.get.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.startsWith("/api/v1/shops"))
+      expect(shopUrls).toHaveLength(2)
+      expect(shopUrls.every((u) => param(u, "sort") === "name,asc")).toBe(true)
+      expect(shopUrls.map((u) => param(u, "page"))).toEqual(["0", "1"])
     })
   })
 })

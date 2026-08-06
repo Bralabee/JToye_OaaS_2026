@@ -7,6 +7,7 @@ import { useCountUp } from "@/hooks/use-count-up"
 import { CHART_COLORS } from "@/lib/chart-colors"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
+import { fetchAllMyShops } from "@/lib/shops-api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
@@ -163,11 +164,13 @@ export default function DashboardPage() {
       // (OrderController accepts ?shopId= and scopes to one shop of the tenant).
       const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
 
-      const [shopsRes, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
+      const [allShops, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
         await Promise.all([
-          // size=100 gives both the group shop count (totalElements) and the
-          // shop names used to label the active shop-context.
-          apiClient.get("/api/v1/shops?size=100"),
+          // #485 (call site :170): was a single `/api/v1/shops?size=100`, whose
+          // first page was treated as the whole list. Past 100 shops the tail was
+          // missing from `shopsList`, so the switcher's selected shop could not be
+          // named and the header fell back to the generic "the selected shop".
+          fetchAllMyShops(),
           apiClient.get("/api/v1/products?size=1"),
           apiClient.get(`/api/v1/orders?size=1${shopScope}`),
           apiClient.get("/api/v1/customers?size=1"),
@@ -178,14 +181,12 @@ export default function DashboardPage() {
           apiClient.get("/api/v1/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 
-      setShopsList(
-        (shopsRes.data.content || []).map((s: { id: string; name: string }) => ({
-          id: s.id,
-          name: s.name,
-        }))
-      )
+      setShopsList(allShops.map((s) => ({ id: s.id, name: s.name })))
       setStats({
-        shops: shopsRes.data.totalElements || 0,
+        // The list is now followed to its end, so its length IS the shop count —
+        // the same number `totalElements` used to carry, from the same grant-scoped
+        // set, without a second source of truth that can disagree with the names.
+        shops: allShops.length,
         products: productsRes.data.totalElements || 0,
         orders: ordersRes.data.totalElements || 0,
         customers: customersRes.data.totalElements || 0,

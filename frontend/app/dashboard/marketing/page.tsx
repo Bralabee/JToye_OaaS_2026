@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
+import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
 import {
@@ -354,8 +355,11 @@ export default function MarketingPage() {
 
   const fetchShops = useCallback(async () => {
     try {
-      const response = await apiClient.get("/api/v1/shops?page=0&size=100&sort=name,asc")
-      setShops(response.data.content || [])
+      // #485 (call site :357): was a single `/api/v1/shops?page=0&size=100&...`,
+      // whose first page was treated as the whole list. Past 100 shops the tail
+      // could not be targeted by a promotion or an announcement at all. The
+      // `name,asc` sort is passed through so the dropdown stays alphabetical.
+      setShops(await fetchAllMyShops("name,asc"))
     } catch {
       // Non-critical — dropdown will be empty
     }
