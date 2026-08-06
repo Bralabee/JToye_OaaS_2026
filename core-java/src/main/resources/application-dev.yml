@@ -34,3 +34,18 @@ jtoye:
   security:
     customer-jwt:
       require-verified-email: ${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:false}
+
+# Issue #516: the RFC 8058 one-click POST target — the API origin, which on the
+# dev stack is core-java's published port on the developer's own machine (the
+# same reasoning as notification.unsubscribe.base-url / tracking-base-url
+# defaulting to the frontend's localhost:3000: a link in a Mailhog message is
+# opened from the host, not from inside the network).
+#
+# ONLY the dev profile may carry a localhost value. The base application.yml
+# leaves one-click-base-url EMPTY so a k8s environment that has not wired it
+# advertises no one-click at all rather than a loopback URL — k8s/local runs the
+# `prod` profile (k8s/local/kustomization.yaml note 3), so this document cannot
+# leak into any cluster.
+notification:
+  unsubscribe:
+    one-click-base-url: ${NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL:http://localhost:9090}

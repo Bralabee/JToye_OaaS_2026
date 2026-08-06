@@ -30,7 +30,9 @@ import java.util.UUID;
  * recipient set (D-04 via {@link RecipientResolver}), maps the family to a
  * {@link NotificationCategory}, checks {@link ConsentGate#allows} before every
  * send, renders the branded HTML + plain-text email, builds the per-recipient
- * one-click unsubscribe URL, and fans the {@link NotificationMessage} out to the
+ * unsubscribe URLs (see {@link #buildUnsubscribeLinks} — the clickable page link
+ * and the RFC 8058 one-click target are DIFFERENT origins, issue #516), and fans
+ * the {@link NotificationMessage} out to the
  * {@link EmailChannel} + {@link WhatsAppSmsChannel} (the latter a no-op while
  * off).
  *
@@ -111,10 +113,11 @@ public class NotificationDispatchService {
                     continue;
                 }
 
-                String unsubscribeUrl = buildUnsubscribeUrl(tenantId, recipient.email(), category);
-                RenderedEmail rendered = templateRenderer.render(templateKey, recipient.role(), model, unsubscribeUrl);
+                UnsubscribeLinks links = buildUnsubscribeLinks(tenantId, recipient.email(), category);
+                RenderedEmail rendered = templateRenderer.render(templateKey, recipient.role(), model, links.pageUrl());
                 NotificationMessage message = new NotificationMessage(
-                        tenantId, recipient.email(), eventType, rendered, rendered.text(), unsubscribeUrl);
+                        tenantId, recipient.email(), eventType, rendered, rendered.text(),
+                        links.pageUrl(), links.oneClickUrl());
 
                 emailChannel.deliver(message);
                 whatsAppSmsChannel.deliver(message);
@@ -172,25 +175,70 @@ public class NotificationDispatchService {
     }
 
     /**
-     * Build the per-recipient one-click unsubscribe URL. Returns {@code null}
-     * when the signing secret is unset (feature inert, GLOBAL_RULE_6) — the
-     * email still sends, just without the RFC 8058 header; never throws.
+     * The two unsubscribe URLs one email carries.
+     *
+     * @param pageUrl     what the recipient CLICKS — a browser GET, so it must land on the
+     *                    frontend's confirmation page (which then calls the API itself)
+     * @param oneClickUrl the RFC 8058 {@code List-Unsubscribe} target a mail provider POSTs to;
+     *                    {@code null} when no POST-capable origin is configured, in which case
+     *                    nothing one-click is advertised (see {@code EmailChannel})
      */
-    private String buildUnsubscribeUrl(UUID tenantId, String email, NotificationCategory category) {
+    private record UnsubscribeLinks(String pageUrl, String oneClickUrl) {
+        static final UnsubscribeLinks NONE = new UnsubscribeLinks(null, null);
+    }
+
+    /**
+     * Build the per-recipient unsubscribe URLs. Returns {@link UnsubscribeLinks#NONE}
+     * when the signing secret is unset (feature inert, GLOBAL_RULE_6) — the email
+     * still sends, just without the link and the RFC 8058 header; never throws.
+     *
+     * <p><b>Issue #516 — the origin and the path must belong to the SAME Service.</b>
+     * This method used to append the API's path {@code /api/v1/public/unsubscribe}
+     * to {@code notification.unsubscribe.base-url}, which is the APP origin in every
+     * committed overlay (sourced from {@code frontend.url}). The ingress routes that
+     * host wholly to the {@code frontend} Service and the frontend declares no
+     * {@code /api/v1} rewrite, so every unsubscribe link in every email answered the
+     * frontend's 404 — measured against the running local stack:
+     * {@code GET http://localhost:3000/api/v1/public/unsubscribe -> 404}, while
+     * {@code GET http://localhost:3000/unsubscribe -> 200}. A recipient could not opt
+     * out, which is a PECR/GDPR problem, not a cosmetic one.
+     *
+     * <p>Both halves now come from config and are asserted against the real ingress +
+     * the real controller mappings by {@code UnsubscribeLinkRoutingTest}.
+     */
+    private UnsubscribeLinks buildUnsubscribeLinks(UUID tenantId, String email, NotificationCategory category) {
         if (!notificationProperties.configured()) {
-            return null;
+            return UnsubscribeLinks.NONE;
         }
         try {
             String token = unsubscribeTokenService.tokenFor(tenantId, email, category);
-            String base = notificationProperties.getUnsubscribe().getBaseUrl();
-            return base + "/api/v1/public/unsubscribe"
-                    + "?tenant=" + tenantId
+            String query = "?tenant=" + tenantId
                     + "&email=" + URLEncoder.encode(email, StandardCharsets.UTF_8)
                     + "&category=" + category.name()
                     + "&token=" + token;
+
+            NotificationProperties.Unsubscribe cfg = notificationProperties.getUnsubscribe();
+            String pageUrl = join(cfg.getBaseUrl(), cfg.getPagePath()) + query;
+            String oneClickUrl = cfg.oneClickConfigured()
+                    ? join(cfg.getOneClickBaseUrl(), cfg.getOneClickPath()) + query
+                    : null;
+            return new UnsubscribeLinks(pageUrl, oneClickUrl);
         } catch (RuntimeException e) {
             log.warn("event=unsubscribe_url_build_failed category={}: {}", category, e.getMessage());
-            return null;
+            return UnsubscribeLinks.NONE;
         }
+    }
+
+    /** Join an origin and a path without doubling or dropping the separating slash. */
+    private static String join(String origin, String path) {
+        String o = origin == null ? "" : origin.trim();
+        String p = path == null ? "" : path.trim();
+        while (o.endsWith("/")) {
+            o = o.substring(0, o.length() - 1);
+        }
+        if (!p.isEmpty() && !p.startsWith("/")) {
+            p = "/" + p;
+        }
+        return o + p;
     }
 }

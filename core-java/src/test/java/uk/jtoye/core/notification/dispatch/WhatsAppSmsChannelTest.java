@@ -43,7 +43,9 @@ class WhatsAppSmsChannelTest {
     private NotificationMessage message() {
         return new NotificationMessage(
                 UUID.randomUUID(), "+447700900000", "order.ready",
-                null, "Your order is ready", "https://jtoye.uk/unsub");
+                null, "Your order is ready",
+                "https://app.jtoye.uk/unsubscribe?token=abc",
+                "https://api.jtoye.uk/api/v1/public/unsubscribe?token=abc");
     }
 
     private long warnCount() {

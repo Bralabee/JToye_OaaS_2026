@@ -16,12 +16,24 @@ import java.util.UUID;
  * {@link #unsubscribeUrl}, so this contract does not depend on 22-02 (both Wave
  * 1, parallel-safe).
  *
- * @param tenantId       owning tenant (for logging / channel routing)
- * @param recipient      resolved destination: email address or phone number
- * @param eventType      source event type, e.g. {@code "order.ready"}
- * @param email          rendered email content; nullable for non-email channels
- * @param plainSummary   short plain body for whatsapp / sms
- * @param unsubscribeUrl one-click unsubscribe URL (RFC 8058 header + footer link)
+ * <p><b>Two unsubscribe URLs, not one (issue #516).</b> The footer link is
+ * clicked by a human (a browser GET) and must reach the frontend's branded
+ * confirmation page; the RFC 8058 {@code List-Unsubscribe} target is POSTed by a
+ * mail provider and must reach the API controller. The app and the API are
+ * different Services behind the ingress, so one URL cannot be both — carrying a
+ * single field is what let the app origin be composed with the API's path and
+ * 404 in every environment.
+ *
+ * @param tenantId            owning tenant (for logging / channel routing)
+ * @param recipient           resolved destination: email address or phone number
+ * @param eventType           source event type, e.g. {@code "order.ready"}
+ * @param email               rendered email content; nullable for non-email channels
+ * @param plainSummary        short plain body for whatsapp / sms
+ * @param unsubscribeUrl      the CLICKABLE unsubscribe URL (browser GET → frontend page);
+ *                            null when the feature is unconfigured
+ * @param oneClickUnsubscribeUrl the RFC 8058 {@code List-Unsubscribe} POST target (→ API);
+ *                            null when no POST-capable origin is configured, in which case
+ *                            no one-click capability is advertised
  */
 public record NotificationMessage(
         UUID tenantId,
@@ -29,5 +41,6 @@ public record NotificationMessage(
         String eventType,
         RenderedEmail email,
         String plainSummary,
-        String unsubscribeUrl) {
+        String unsubscribeUrl,
+        String oneClickUnsubscribeUrl) {
 }

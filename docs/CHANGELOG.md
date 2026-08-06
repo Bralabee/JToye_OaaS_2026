@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Every unsubscribe link in every email 404'd: the app origin carried the API's path (#516) — 2026-08-06
+
+`NotificationDispatchService.buildUnsubscribeUrl` composed the link as
+`notification.unsubscribe.base-url` + `/api/v1/public/unsubscribe`. That base URL is the **app**
+origin in all four committed overlays (`k8s/base` + staging/production/local, each sourced from
+`frontend.url`), and `k8s/base/ingress.yaml` routes that host wholly to the `frontend` Service,
+which declares no `/api/v1` rewrite and has no `app/api/v1` route. Two different Services behind one
+ingress, one URL spanning both. Measured against the running local stack **before** the fix, same
+query string in all three:
+
+```
+GET http://localhost:3000/api/v1/public/unsubscribe?...  -> 404  (Next.js HTML, 13694 bytes)
+GET http://localhost:3000/unsubscribe?...                -> 200  (<title>Unsubscribe — J'Toye</title>)
+GET http://localhost:9090/api/v1/public/unsubscribe?...  -> reaches PublicUnsubscribeController
+```
+
+So a recipient clicking **Unsubscribe** could not opt out — in staging, production and local. PECR
+and the Gmail/Yahoo bulk-sender rules both require a working opt-out, so this was a compliance
+defect, not a cosmetic one. The consent machinery behind it (`PublicUnsubscribeController`,
+`notification_consent`, V54) was correct all along; only the address it was advertised at was wrong.
+
+Nothing caught it because the two components either side of the gap were each green:
+`NotificationDispatchServiceTest` asserted the *string* the builder returned, and
+`PublicUnsubscribeControllerIntegrationTest` called the controller at a path it typed out by hand.
+Neither ever asked whether that string routes anywhere, and neither ever fed one to the other.
+
+#### Fixed
+- **The clickable link is the app origin + the frontend's own page path** (`/unsubscribe`, now
+  `notification.unsubscribe.page-path`). That page already exists, is already routed to the
+  `frontend` Service on that host, and already POSTs the token to the API itself — so the fix needs
+  no ingress rule and no frontend change. `base-url` was never the wrong value; the path appended to
+  it was.
+- **The RFC 8058 `List-Unsubscribe` header targets a POST-capable origin, or claims nothing.** A
+  mail provider POSTs `List-Unsubscribe=One-Click` to that header's URL and a Next.js page answers
+  405, so the header cannot ride the app origin. It now uses
+  `notification.unsubscribe.one-click-base-url` + `one-click-path` when an API origin is configured,
+  and when it is not, the header still carries the (working) page URL as a plain RFC 2369 link while
+  `List-Unsubscribe-Post` is **not** stamped. Advertising one-click at a target that cannot honour
+  the POST is exactly the state this issue found in production; not advertising it is strictly
+  better than promising it falsely.
+- `NotificationMessage` carries both URLs, because one field is what allowed one origin to be used
+  for two Services' paths.
+
+#### Configuration
+- New, all `${ENV:default}` in `core-java/src/main/resources/application.yml` (GLOBAL_RULE_6, no
+  literals in code): `notification.unsubscribe.page-path` (`/unsubscribe`),
+  `notification.unsubscribe.one-click-path` (`/api/v1/public/unsubscribe`), and
+  `notification.unsubscribe.one-click-base-url` — **empty** by default.
+- The empty default is deliberate and is the fail-safe direction: a localhost fallback here would
+  reintroduce the D-19 defect class (a loopback origin inside production mail). `application-dev.yml`
+  supplies the dev value `http://localhost:9090`, which is safe because `k8s/local` runs the `prod`
+  profile, so no cluster can pick it up.
+- **Follow-up, not in this PR (k8s is outside this change's write boundary):** wire
+  `NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL` in `k8s/base/core-java-deployment.yaml` to a new
+  `app-config` key set to each overlay's existing `api.url`, next to the
+  `NOTIFICATION_UNSUBSCRIBE_BASE_URL` block that already exists. Until that lands, deployed
+  environments get the working clickable link and an RFC 2369 header, but no one-click POST.
+
+#### Notes
+- **A new routing oracle, because a string assertion cannot see this class of defect.**
+  `UnsubscribeLinkRoutingTest` composes the URLs with the real dispatch path, then resolves each
+  one's host through the overlay's *own* ingress rules to a Service and asks whether that Service
+  actually serves that path — core-java's paths read by reflection off `PublicUnsubscribeController`'s
+  annotations, the frontend's from the `frontend/app/**/page.tsx` tree. It reads the committed
+  manifests, never a literal, and fails loudly rather than skipping if it cannot find them.
+- **Fail direction recorded before the fix.** On the unfixed tree the oracle failed for all four
+  overlays, e.g. `base: the unsubscribe link https://app.olajay.co.uk/api/v1/public/unsubscribe?…
+  routes to Service 'frontend', which does not serve path '/api/v1/public/unsubscribe'` — followed
+  by the 34 paths it does serve, `/unsubscribe` among them. That observation is now frozen as a
+  permanent control (`oldCompositionIsProvablyUnroutable`) so the oracle cannot quietly lose the
+  ability to see the defect it exists for.
+- **The other half is proven against a real request, not a rendered manifest.**
+  `UnsubscribeLinkReachesControllerIntegrationTest` (Testcontainers, real Postgres, RLS live) takes
+  the path and query *from the composed one-click URL* and replays them as a mail provider's
+  `application/x-www-form-urlencoded` POST through the full security chain, then counts the
+  suppression row. Its mirror assertion — that core-java does **not** answer the frontend's page
+  path — is why the two URLs cannot be one.
+- `notification.email.tracking-base-url` + `/track` was checked by the same oracle and is correct:
+  the frontend does serve `/track`.
+- Test counts move: +3 `@Test` in `UnsubscribeLinkRoutingTest`, +3 in
+  `UnsubscribeLinkReachesControllerIntegrationTest`, +4 in `NotificationDispatchServiceTest`, +2 in
+  `EmailChannelTest`. `docs/metrics.json` and the prose counts are reconciled by the supervisor.
+
 ### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout (#584) — 2026-08-06
 
 `HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That
