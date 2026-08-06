@@ -25,7 +25,24 @@ jobs:
         with:
           # Full history so git ls-files sees the whole tree deterministically.
           fetch-depth: 0
+      # docs-freshness.sh counts Jest/Playwright/vitest blocks with
+      # scripts/count-test-blocks.mjs (issue #291) instead of a regex that matched
+      # `RegExp.prototype.test(` and could not see `it.each` tables. The counter is
+      # dependency-free — no npm ci — but it does need a node binary, and the script
+      # exits 2 (VOID) rather than emitting a number when node is absent.
+      - name: Set up Node.js (for the test-block counter)
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      # Falsification of the counter itself, run BEFORE the gate that depends on it.
+      # #291 was a measurement that could not fail; replacing it with a second
+      # measurement that could not fail would be no improvement. These arms include
+      # the refusals — a construct the counter cannot resolve must exit 2, never
+      # produce a plausible number.
+      - name: Verify the test-block counter still refuses what it cannot count
+        run: bash scripts/check-test-block-counter.sh
       - name: Verify documentation metrics match source
+        if: always()
         run: bash scripts/docs-freshness.sh
       # Runs even when the metrics check above fails, so one PR reports BOTH
       # kinds of doc drift instead of hiding the second behind the first.

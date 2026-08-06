@@ -43,6 +43,61 @@ count_files_with() { # <file-path-regex> <content-regex>
 	grep -lE "$2" $files 2>/dev/null | wc -l | tr -d ' '
 }
 
+# ---------------------------------------------------------------------------
+# JS/TS test blocks (Jest, Playwright, vitest) — issue #291.
+#
+# These three families are NOT counted with grep, because grep was wrong in both
+# directions at once and the errors partly cancelled, which is exactly why nothing
+# ever went red over it. `\b(it|test)\(` matched `RegExp.prototype.test(` (7 phantom
+# Jest blocks, 5 phantom Playwright blocks on 2026-08-05) and could not see a
+# table-driven `it.each([...])` at all (9 sites, 51 executed tests, contributing
+# zero). Manifest said 745; `npx jest` executed 789.
+#
+# scripts/count-test-blocks.mjs masks comments/strings/regexes, rejects member
+# access, and expands `.each` tables. It exits 2 on anything it cannot resolve, and
+# that VOID is propagated here rather than degraded into a number.
+# ---------------------------------------------------------------------------
+JS_COUNTER="$ROOT/scripts/count-test-blocks.mjs"
+command -v node >/dev/null 2>&1 || {
+	echo "ERROR: node is not on PATH — scripts/count-test-blocks.mjs cannot run, so the" >&2
+	echo "       Jest/Playwright/vitest block counts are UNKNOWN. Refusing to emit a number." >&2
+	exit 2
+}
+[ -f "$JS_COUNTER" ] || { echo "ERROR: $JS_COUNTER is missing." >&2; exit 2; }
+
+# Sets the globals CJ_BLOCKS and CJ_FILES. Deliberately NOT a command substitution:
+# an `exit 2` inside `$( )` kills only the subshell, so the caller would read empty
+# values and carry on — a VOID silently degraded into a number. Assignment and $? are
+# separate statements so the status read is node's, not an echo's or a pipeline's.
+CJ_BLOCKS=""
+CJ_FILES=""
+count_js() { # <family> <file-path-regex>
+	local files out rc
+	CJ_BLOCKS=""
+	CJ_FILES=""
+	files="$(tracked "$2")"
+	if [ -z "$files" ]; then
+		echo "ERROR: no files matched '$2' — an empty set is not a count of 0." >&2
+		exit 2
+	fi
+	# `out=$(failing-cmd)` under `set -e` aborts the script THERE, before the
+	# diagnostic below can print — measured: rc=2 with an empty log, a VOID with no
+	# reason, which is barely better than a wrong number. The `&& rc=0 || rc=$?`
+	# form keeps the status without arming errexit, and $? is read on its own
+	# statement so it is node's and not an echo's.
+	out=$(printf '%s\n' "$files" | node "$JS_COUNTER" --family "$1" --stdin 2>&1) && rc=0 || rc=$?
+	if [ "$rc" -ne 0 ]; then
+		echo "ERROR: count-test-blocks.mjs could not count family '$1' (rc=$rc):" >&2
+		printf '%s\n' "$out" >&2
+		echo "       Treat this as UNVERIFIED, not as a pass. Extend the counter's POLICY." >&2
+		exit 2
+	fi
+	CJ_BLOCKS=$(printf '%s' "$out" | sed -nE 's/.*"blocks":([0-9]+).*/\1/p')
+	CJ_FILES=$(printf '%s' "$out" | sed -nE 's/.*"files":([0-9]+).*/\1/p')
+	case "$CJ_BLOCKS" in ''|*[!0-9]*) echo "ERROR: unparseable counter output for '$1': $out" >&2; exit 2 ;; esac
+	case "$CJ_FILES" in ''|*[!0-9]*) echo "ERROR: unparseable counter output for '$1': $out" >&2; exit 2 ;; esac
+}
+
 JAVA_TEST_METHODS=$(count_occurrences '^core-java/src/test/.*\.java$' '@Test\b')
 JAVA_TEST_FILES=$(count_files_with '^core-java/src/test/.*\.java$' '@Test\b')
 JAVA_CONTROLLERS=$(count_files_with '^core-java/src/main/.*\.java$' 'class [A-Za-z0-9_]*Controller\b')
@@ -53,16 +108,15 @@ SCHEMA_VERSION=$(git ls-files 'core-java/src/main/resources/db/migration/*.sql' 
 GO_TEST_FUNCS=$(count_occurrences '.*_test\.go$' '^func Test[A-Za-z0-9_]+')
 GO_TEST_FILES=$(count_files_with '.*_test\.go$' '^func Test')
 
-JEST_BLOCKS=$(count_occurrences '^frontend/(app|components|lib|hooks|types|__tests__)/.*\.test\.tsx?$' '\b(it|test)\(')
-JEST_FILES=$(count_files_with '^frontend/(app|components|lib|hooks|types|__tests__)/.*\.test\.tsx?$' '\b(it|test)\(')
+count_js jest '^frontend/(app|components|lib|hooks|types|__tests__)/.*\.test\.tsx?$'
+JEST_BLOCKS="$CJ_BLOCKS"; JEST_FILES="$CJ_FILES"
 
-PLAYWRIGHT_BLOCKS=$(count_occurrences '^frontend/e2e/.*\.spec\.ts$' '\btest\(')
-PLAYWRIGHT_SPECS=$(count_files_with '^frontend/e2e/.*\.spec\.ts$' '\btest\(')
+count_js playwright '^frontend/e2e/.*\.spec\.ts$'
+PLAYWRIGHT_BLOCKS="$CJ_BLOCKS"; PLAYWRIGHT_SPECS="$CJ_FILES"
 
-# MCP server vitest suite (mcp-server/) — the same \b(it|test)\( content-regex
-# that matches Jest blocks matches vitest blocks; only the path family is new.
-MCP_TEST_BLOCKS=$(count_occurrences '^mcp-server/(src|test)/.*\.(test|spec)\.ts$' '\b(it|test)\(')
-MCP_TEST_FILES=$(count_files_with '^mcp-server/(src|test)/.*\.(test|spec)\.ts$' '\b(it|test)\(')
+# MCP server vitest suite (mcp-server/) — same counter, vitest's modifier policy.
+count_js vitest '^mcp-server/(src|test)/.*\.(test|spec)\.ts$'
+MCP_TEST_BLOCKS="$CJ_BLOCKS"; MCP_TEST_FILES="$CJ_FILES"
 
 TOTAL=$((JAVA_TEST_METHODS + JEST_BLOCKS + GO_TEST_FUNCS + PLAYWRIGHT_BLOCKS + MCP_TEST_BLOCKS))
 

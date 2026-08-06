@@ -133,14 +133,16 @@ total can hide two offsetting errors — which is this bug's own history.
 
 #### Two costs of the supervision model, both real
 
-1. **`HANDOFF.md` is agent-barred, so H-1 fires on #574.** Lane D added two gate scripts (26 → 28)
-   and could not update the resume block's `EXPECT 26 x rc=0`. That is the supervisor's to fix **on
+1. **`HANDOFF.md` is agent-barred, so H-1 fired on #574.** Lane D added two gate scripts (26 → 28)
+   and could not update the resume block's own expected count. That was the supervisor's to fix **on
    #574's branch**, not on `main` — putting it on `main` first would red `main` the moment #574
-   merged, which is precisely the #569 failure.
-2. **`docs/metrics.json` conflicts three ways again.** #572 moved the total to 2394, #573 needs
-   2395, #574 redefines the counting method and lands 2430. Neither "ours" nor "theirs" is ever
-   right — regenerate with `scripts/docs-freshness.sh --write` on the merged tree, and merge #574
-   **last** because it changes the method rather than the number.
+   merged, which is precisely the #569 failure. **Done in this change**, on the branch, together
+   with the merge from `main`.
+2. **`docs/metrics.json` conflicts three ways again.** #572 moved the total to 2394, #573 landed
+   2409, #574 redefines the counting method. Neither "ours" nor "theirs" is ever right —
+   regenerate with `scripts/docs-freshness.sh --write` on the merged tree, and merge #574
+   **last** because it changes the method rather than the number. Every branch-local prediction
+   in this train was wrong; measure on the merged tree instead.
 
 #### A vacuous probe of my own, recorded rather than dropped
 
@@ -1517,15 +1519,18 @@ echo "on $(git branch --show-current) vs $b: dirty=$(git status --porcelain|wc -
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 26 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+# EXPECT 28 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
 #   BACKUP image to postgres:18 against a 15 server with every CI check green.
 #   25 -> 26: check-gate-enforcement.sh (#553), after SIX of the 24 check-*.sh
 #   were measured to have ZERO references in .github/workflows/ — three of them
 #   gates written to stop a specific defect recurring, and incapable of firing
-#   on a PR. That gate now fails the build if a new one is added unwired.)
-# MEASURED 2026-08-05 on `main` after #565, runtime re-synced: 26/26 rc=0.
+#   on a PR. That gate now fails the build if a new one is added unwired.
+#   26 -> 28: check-test-block-counter.sh and check-test-count-oracle.sh (#574),
+#   after the old regex counter was measured 44 tests short of what Jest actually
+#   ran, with `docs-freshness` green on every one of those commits.)
+# MEASURED 2026-08-06 on #574's branch after merging `main` @ d87f26fe.
 #   Getting there needed BOTH standing remedies, in this order:
 #     check-alert-metrics    rc=1 -> scripts/seed-order-metric.sh      (every core-java recreate)
 #     check-e2e-skip-budget  rc=2 -> re-run the suite, ~6.5 min        (every merge touching a spec)
