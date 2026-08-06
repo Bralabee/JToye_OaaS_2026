@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A vendor could not tell a broken webhook verifier from a broken one of ours (#571) (#586) — 2026-08-06
+
+Building a receiver for our outbound webhooks meant guessing. The HMAC scheme works and has
+always worked, but the only description of it was `WebhookSigner`'s Javadoc and one paragraph of
+`SYSTEM_DESIGN_V2.md` — an architecture document, written to explain the system to ourselves.
+An integrator had nothing to check their own code against.
+
+The parts you must get exactly right were precisely the parts that could only be inferred by
+reading our Java: whether the `t=` timestamp is inside the signed bytes or merely alongside them,
+whether we sign the raw body or a re-serialised form, and who enforces the replay window. Get any
+of them wrong and there are two outcomes, both of which land on us and neither of which is visible
+from our side — a verifier that silently accepts everything, or one that rejects valid deliveries
+and gets reported as our outage.
+
+#### Added
+- **`docs/webhooks.md`**, written for an integrator rather than for us: registration, the
+  envelope, the four headers, event types, the retry schedule, what terminal `FAILED` means to a
+  receiver, auto-pause, at-least-once semantics, and a troubleshooting table keyed by symptom.
+- **A worked signature test vector** — fixed secret, fixed timestamp, fixed literal payload, exact
+  expected `X-JToye-Signature` — so a receiver can self-check before going live. Reproducible with
+  a language-independent `openssl` recipe, plus a complete verifier.
+- **`WebhookSignatureVectorTest`** (7 tests) pins the vector from *both* ends: the signature must
+  be what `WebhookSigner` actually produces, **and** `docs/webhooks.md` must still publish those
+  exact literals. Change the signing without changing the page and the build goes red. Without the
+  second half the doc and the test could drift apart while each stayed internally consistent —
+  which is the failure this issue was filed about, one level up.
+
+#### Notes
+- **Three things the doc now states that the code only implied.** The timestamp is the time of the
+  *attempt*, not of the event, so every retry of one event carries a different signature — a
+  receiver that caches signatures across attempts breaks. The 300s tolerance is published for
+  agreement but **enforced by nobody on our side** (we are the sender; `signatureToleranceSeconds`
+  has no reader in core), so it only happens if the receiver writes it. And the 1-hour backoff cap
+  is unreachable at the default 8 attempts and 1s base — the whole retry sequence finishes in about
+  two minutes, so an endpoint down for a ten-minute deploy exhausts every attempt.
+- **The vector was derived by running the implementation, not by hand**, then cross-checked against
+  three independent instruments that agree exactly: `openssl dgst -sha256 -hmac`, Node's `crypto`,
+  and a fresh `javax.crypto.Mac` inside the test that never touches `WebhookSigner`. The doc's
+  literal was byte-compared (`cmp`, rc=0, sha256 `993e3710…`) against the bytes openssl actually
+  signed, so a vendor following only the written page lands on the published string.
+- **Shown to fail in four directions**, real output recorded on the PR: one flipped body byte
+  (`"READY"`→`"READX"`, `cmp -l` confirms exactly 1 differing byte) → `e89bd9d5…`; one changed
+  secret character → `7211445c…`; the body signed without the `t + "."` prefix → `439b0400…`; and
+  the doc-parity test against a tree with the vector removed. The published digest `fb788506…`
+  matches none of them. The three "must differ" assertions were also confirmed to be *capable* of
+  failing rather than trivially true, by neutering their tamper and watching them go red.
+- The doc is **not** covered by `scripts/check-doc-citations.sh` — `DEFAULT_DOCS` is a fixed
+  seven-entry list and a new page is outside it. Recorded rather than worked around; widening that
+  set is `scripts/`-owned and not this change.
 ### A loop-declared Jest test made two required checks mutually unsatisfiable (#582) (#588) — 2026-08-06
 
 `node scripts/count-test-blocks.mjs --family jest` on the eight-line reproduction in #582 printed
