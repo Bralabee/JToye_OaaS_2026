@@ -1,6 +1,27 @@
-import { resolveProductsPageSize } from "@/lib/env-validation"
 import { fetchAllPages } from "@/lib/paged-fetch"
 import type { Product } from "@/types/api"
+
+/**
+ * Products per request. A code-level constant, NOT a `NEXT_PUBLIC_*` knob — and the
+ * deliberate exception to the rule that a page size belongs in the config layer
+ * (GLOBAL_RULE_6), because here there is provably nothing for an operator to tune.
+ *
+ * core-java sets `spring.data.web.pageable.max-page-size: 100` (application.yml),
+ * which clamps every paged endpoint. So 100 is the MAXIMUM this API will serve: a
+ * larger value is a no-op on the wire, and a smaller one only buys more round trips
+ * for the same rows. Absence cannot lose a product either, because the caller pages
+ * until the API reports no next page and a bound that fires returns `truncated`,
+ * which the dialog renders as a visible notice.
+ *
+ * Its two siblings — `NEXT_PUBLIC_SHOPS_PAGE_SIZE` and
+ * `NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE` — are env vars carrying allowlist entries in
+ * `k8s/scripts/check-env-contract.sh` that exist to explain why they do nothing. A
+ * third knob would need a third such paragraph. Not adding the knob says the same
+ * thing in less space, and keeps the env contract honest by construction rather than
+ * by exemption. (The kitchen entry already makes this argument to reject a build ARG
+ * for such a value as dead config, D-18; this applies it one step earlier.)
+ */
+const PRODUCTS_PAGE_SIZE = 100
 
 /**
  * A defensive bound on the paging loop in {@link fetchAllProducts} — a code-level
@@ -40,13 +61,12 @@ export interface AllProducts {
  *   shown (the picker's own shop constraint is applied by the form, not this fetch).
  */
 export async function fetchAllProducts(shopId?: string): Promise<AllProducts> {
-  const size = resolveProductsPageSize(process.env.NEXT_PUBLIC_PRODUCTS_PAGE_SIZE)
   const shopScope = shopId ? `&shopId=${shopId}` : ""
 
   const { items, truncated } = await fetchAllPages<Product>({
     buildUrl: (page, pageSize) =>
       `/api/v1/products?page=${page}&size=${pageSize}${shopScope}`,
-    size,
+    size: PRODUCTS_PAGE_SIZE,
     maxPages: MAX_PRODUCT_PAGES,
     label: "[products-api] /api/v1/products",
   })

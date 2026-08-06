@@ -47,6 +47,15 @@ order line items.
 - **A truncated product picker now says so.** If a catalogue outruns `MAX_PRODUCT_PAGES`, the
   create-order dialog renders a notice. An incomplete list that admits it is a different thing from
   #485's silent one.
+- **The product page size is a code constant, not a third `NEXT_PUBLIC_*` knob.** The first attempt
+  added one and `k8s/scripts/check-env-contract.sh` correctly failed it: a `NEXT_PUBLIC_*` name
+  supplied by neither the build-arg nor the runtime channel. Its two siblings resolve that with
+  allowlist entries whose reason is, in substance, *this knob cannot change anything* — because the
+  server's `max-page-size: 100` clamp makes a larger value a no-op on the wire and a smaller one
+  merely slower. Rather than add a third exemption explaining why a third knob does nothing, the
+  value is pinned in `lib/products-api.ts` with that reasoning. This keeps the env contract honest
+  by construction rather than by exemption, and applies one step earlier the same D-18 "dead config"
+  argument the kitchen allowlist already uses to reject a build ARG.
 - **The orders page's two pickers moved off the refetch path.** They rode inside `fetchData`, which
   reruns on every pager click, every switcher change and — via `useOrderEvents` — every order event
   on the SSE stream. Following the list from there would have re-paged the whole catalogue on every
