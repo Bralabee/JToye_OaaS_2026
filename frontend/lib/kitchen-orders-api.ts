@@ -1,6 +1,6 @@
-import apiClient from "@/lib/api-client"
 import { resolveKitchenOrdersPageSize } from "@/lib/env-validation"
-import type { OrderDetail, OrderStatus, PageResponse } from "@/types/api"
+import { fetchAllPages } from "@/lib/paged-fetch"
+import type { OrderDetail, OrderStatus } from "@/types/api"
 
 /**
  * The statuses that belong on a kitchen board.
@@ -72,32 +72,20 @@ export async function fetchKitchenBoard(shopId: string): Promise<KitchenBoardPag
   const size = resolveKitchenOrdersPageSize(
     process.env.NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE
   )
-  const orders: OrderDetail[] = []
 
-  for (let page = 0; page < MAX_KITCHEN_ORDER_PAGES; page++) {
+  // #485: the loop this used to inline is now `fetchAllPages`, shared with the shop
+  // and product readers. Exit conditions are unchanged — with one repair the board
+  // inherits for free: a short page is measured against the SERVER's page size, so a
+  // clamped response can no longer read as "the list ended here".
+  const { items, pagesRead, truncated } = await fetchAllPages<OrderDetail>({
     // shopId stays the FIRST query parameter: it is the shape the kitchen board's
     // own tests and the VSA-03 scoping test match on.
-    const res = await apiClient.get<PageResponse<OrderDetail>>(
-      `/api/v1/orders/kitchen?shopId=${shopId}&page=${page}&size=${size}&sort=createdAt,desc`
-    )
-    const body = res.data
-    const content = body?.content ?? []
-    orders.push(...content)
+    buildUrl: (page, pageSize) =>
+      `/api/v1/orders/kitchen?shopId=${shopId}&page=${page}&size=${pageSize}&sort=createdAt,desc`,
+    size,
+    maxPages: MAX_KITCHEN_ORDER_PAGES,
+    label: `[kitchen-orders-api] /api/v1/orders/kitchen for shop ${shopId}`,
+  })
 
-    const pagesRead = page + 1
-    if (content.length === 0) return { orders, pagesRead, truncated: false }
-    if (body?.last === true) return { orders, pagesRead, truncated: false }
-    if (typeof body?.totalPages === "number" && pagesRead >= body.totalPages) {
-      return { orders, pagesRead, truncated: false }
-    }
-    // A response carrying no paging metadata at all still terminates here.
-    if (content.length < size) return { orders, pagesRead, truncated: false }
-  }
-
-  console.warn(
-    `[kitchen-orders-api] stopped paging /api/v1/orders/kitchen at the ` +
-      `${MAX_KITCHEN_ORDER_PAGES}-page bound for shop ${shopId}; the API never ` +
-      `reported a final page. The board will show that it may be incomplete.`
-  )
-  return { orders, pagesRead: MAX_KITCHEN_ORDER_PAGES, truncated: true }
+  return { orders: items, pagesRead, truncated }
 }

@@ -40,6 +40,11 @@ interface EnvVars {
   // browser-side, safely defaulted, so it is in neither required nor optional.
   // See `resolveKitchenOrdersPageSize`.
   NEXT_PUBLIC_KITCHEN_ORDERS_PAGE_SIZE: string;
+
+  // Product-picker paging (#485, call site orders/page.tsx:298). Same
+  // classification and the same reasons as the two above.
+  // See `resolveProductsPageSize`.
+  NEXT_PUBLIC_PRODUCTS_PAGE_SIZE: string;
 }
 
 const requiredEnvVars: (keyof EnvVars)[] = [
@@ -140,6 +145,29 @@ export function resolveKitchenOrdersPageSize(raw?: string): number {
   return Number.isInteger(parsed) && parsed > 0
     ? parsed
     : DEFAULT_KITCHEN_ORDERS_PAGE_SIZE;
+}
+
+/**
+ * Products-per-request default for the order-line product picker when
+ * `NEXT_PUBLIC_PRODUCTS_PAGE_SIZE` is unset (#485).
+ *
+ * 100 for the same reason the kitchen default is 100, and it is not a coincidence:
+ * `spring.data.web.pageable.max-page-size: 100` in core-java's `application.yml`
+ * clamps EVERY paged endpoint, so 100 is the most any single request can return.
+ * Asking for more cannot recover the tail — only following the pages can.
+ */
+export const DEFAULT_PRODUCTS_PAGE_SIZE = 100;
+
+/**
+ * Resolve the product-picker page size from config (#485, GLOBAL_RULE_6). Same
+ * validation contract as {@link resolveShopsPageSize}: anything that is not a
+ * positive integer falls back to the default rather than producing a request the
+ * API would reject, because a misconfigured knob must not be able to empty the
+ * product picker.
+ */
+export function resolveProductsPageSize(raw?: string): number {
+  const parsed = Number(raw?.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PRODUCTS_PAGE_SIZE;
 }
 
 export function validateEnvironment(): void {

@@ -7,6 +7,8 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
+import { fetchAllMyShops } from "@/lib/shops-api"
+import { fetchAllProducts } from "@/lib/products-api"
 import { useToast } from "@/hooks/use-toast"
 import { useOrderEvents } from "@/hooks/use-order-events"
 import { useShopContext } from "@/hooks/use-shop-context"
@@ -228,6 +230,9 @@ function OrdersPageInner() {
   const [orders, setOrders] = useState<Order[]>([])
   const [shops, setShops] = useState<Shop[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  // #485: true when the catalogue was longer than the picker's page bound, so the
+  // dialog can SAY the product list is partial rather than silently dropping the tail.
+  const [productsTruncated, setProductsTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [currentPage, setCurrentPage] = useState(0)
@@ -273,6 +278,21 @@ function OrdersPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, contextShopId])
 
+  // #485: the create-order dialog's two pickers, loaded ONCE on mount.
+  //
+  // They used to ride inside `fetchData`, which runs on every pager click, every
+  // switcher change AND — via `useOrderEvents` below — every order event on the SSE
+  // stream. That was affordable while each was a single truncating request; it is not
+  // once they follow the list, because a large catalogue would then re-page itself on
+  // every ticket that moves. Neither list depends on the order page, the selected
+  // shop or any order event (the dialog constrains itself to the switcher's shop
+  // client-side), so hoisting them here costs strictly fewer requests than before
+  // AND makes them complete.
+  useEffect(() => {
+    fetchPickerData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Real-time updates via SSE (#92): the shared hook owns the auth header,
   // keep-alive-friendly connection, capped exponential-backoff reconnect, and
   // reconnect-after-server-recycle — this page no longer gives up on error.
@@ -289,19 +309,12 @@ function OrdersPageInner() {
       // customer-scoped endpoint takes no shop param, so that branch narrows on
       // the rendered rows instead (see visibleOrders).
       const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
-      const ordersPromise = customerIdParam
-        ? apiClient.get(`/api/v1/orders/customer/${customerIdParam}?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
-        : apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`)
-      const [ordersRes, shopsRes, productsRes] = await Promise.all([
-        ordersPromise,
-        apiClient.get("/api/v1/shops?size=100"),
-        apiClient.get("/api/v1/products?size=100"),
-      ])
+      const ordersRes = customerIdParam
+        ? await apiClient.get(`/api/v1/orders/customer/${customerIdParam}?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
+        : await apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`)
       setOrders(ordersRes.data.content || [])
       setTotalPages(ordersRes.data.totalPages || 0)
       setTotalElements(ordersRes.data.totalElements || 0)
-      setShops(shopsRes.data.content || [])
-      setProducts(productsRes.data.content || [])
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load orders"
       toast({
@@ -311,6 +324,32 @@ function OrdersPageInner() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * #485 (call sites :297 shops, :298 products). Both were a single `?size=100`
+   * request whose first page was treated as the whole list. Past 100 shops a vendor
+   * could not choose the tail as the order's shop; past 100 products they could not
+   * add products 101+ as line items — with no error and nothing on screen to say the
+   * lists were partial.
+   *
+   * Failures are swallowed rather than toasted, matching the products, marketing and
+   * onboarding screens: these feed a dialog, and a picker that cannot load must not
+   * take the orders table down with it — which it did while it shared `fetchData`'s
+   * `Promise.all` and its "Error loading data" toast.
+   */
+  const fetchPickerData = async () => {
+    try {
+      const [allShops, { products: allProducts, truncated }] = await Promise.all([
+        fetchAllMyShops(),
+        fetchAllProducts(),
+      ])
+      setShops(allShops)
+      setProducts(allProducts)
+      setProductsTruncated(truncated)
+    } catch {
+      // Non-critical — the dialog's selects simply stay empty.
     }
   }
 
@@ -775,6 +814,20 @@ function OrdersPageInner() {
               {orderItems.length === 0 && (
                 <p className="text-sm text-slate-500 py-4 text-center border-2 border-dashed rounded-lg">
                   No items added. Click &quot;Add Item&quot; to start building the order.
+                </p>
+              )}
+
+              {/* #485: the catalogue outran the picker's page bound. Say so — a
+                  partial list that admits it is a different thing from one that
+                  silently drops the tail, which was the whole defect. */}
+              {productsTruncated && (
+                <p
+                  data-testid="order-products-truncated"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                >
+                  This product list is incomplete — your catalogue is larger than the
+                  picker can load. Search for the product on the Products page if you
+                  cannot find it here.
                 </p>
               )}
 

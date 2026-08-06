@@ -153,9 +153,13 @@ describe('Dashboard Page', () => {
     render(<DashboardPage />)
 
     await waitFor(() => {
-      // shops?size=100 (not size=1): the overview needs the shop NAMES to label the
-      // active shop-context, and totalElements still gives the group shop count.
-      expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/shops?size=100')
+      // The overview needs the shop NAMES to label the active shop-context, so it
+      // reads the whole list. #485: this used to be a single '/api/v1/shops?size=100'
+      // whose first page was taken for the whole list; it is now a ?page=&size= walk
+      // via fetchAllMyShops, so the assertion moved from an exact URL to the shape.
+      expect(mockedApiClient.get).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/api\/v1\/shops\?page=0&size=\d+$/)
+      )
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/products?size=1')
       // No shop selected in jsdom (empty localStorage) → order calls carry no ?shopId=.
       expect(mockedApiClient.get).toHaveBeenCalledWith('/api/v1/orders?size=1')

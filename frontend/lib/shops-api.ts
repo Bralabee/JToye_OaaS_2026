@@ -1,6 +1,7 @@
 import apiClient from "@/lib/api-client"
 import { resolveShopsPageSize } from "@/lib/env-validation"
-import type { PageResponse, Shop } from "@/types/api"
+import { fetchAllPages } from "@/lib/paged-fetch"
+import type { Shop } from "@/types/api"
 
 /**
  * The caller's server-authoritative effective access (GET /api/v1/staff/me,
@@ -57,56 +58,43 @@ export async function fetchMyAccess(): Promise<MyAccess> {
  * Not environment config — a code-level circuit breaker. Every normal exit is a
  * signal FROM the server (`last`, `totalPages`, a short page, an empty page); this
  * only fires if the API keeps claiming there is another full page forever, which
- * would otherwise hang the browser tab rather than fail. At the default page size
- * that is 10,000 shops; hitting it logs a warning and returns what was collected.
+ * would otherwise hang the browser tab rather than fail. At the server's clamped
+ * page size that is 5,000 shops; hitting it logs a warning and returns what was
+ * collected.
  */
-const MAX_SHOP_PAGES = 50
+export const MAX_SHOP_PAGES = 50
 
 /**
- * Page GET /api/v1/shops until the API says there is nothing after this page (#282).
+ * Page GET /api/v1/shops until the API says there is nothing after this page
+ * (#282, extended to five more call sites by #485).
  *
  * The previous single `?page=0&size=200` request silently truncated: a tenant with
  * more shops than one page lost the tail entirely — those shops could not be picked
  * in the switcher and did not appear in the staff screen's shop list. Raising the
  * literal only moves the cliff, so this follows the list instead.
  *
- * Stops on the FIRST of: an empty page, `last: true`, the last of `totalPages`, a
- * short page (fewer items than requested), or {@link MAX_SHOP_PAGES}. The short-page
- * and empty-page exits mean a response with no paging metadata at all still
- * terminates after one request.
+ * The loop itself now lives in {@link fetchAllPages}, shared with the products and
+ * kitchen readers — see that function for the exit conditions and for why a short
+ * page is measured against the SERVER's page size rather than the one we asked for
+ * (the bug that made this function still stop at 100 shops after #282 was "fixed").
  *
- * Exported for #485: the kitchen board's own `?size=100` shop fetch is the same
- * truncation on the same endpoint, and the fix direction there is explicitly "reuse
- * the mechanism PR #476 introduced rather than inventing a second one". The KDS calls
- * this directly rather than `fetchMyShops()` because it has no use for
- * `GET /api/v1/staff/me` and a kitchen screen should not carry a request — or a
- * failure mode — it does not need.
+ * @param sort optional Spring `sort` expression, e.g. `"name,asc"`. Call sites that
+ *   were showing an alphabetical shop picker before #485 pass it so the ordering they
+ *   already had survives the change; the rest omit it and keep the server's default
+ *   order, exactly as their single `?size=100` request did.
  */
-export async function fetchAllMyShops(): Promise<Shop[]> {
+export async function fetchAllMyShops(sort?: string): Promise<Shop[]> {
   const size = resolveShopsPageSize(process.env.NEXT_PUBLIC_SHOPS_PAGE_SIZE)
-  const shops: Shop[] = []
+  const sortParam = sort ? `&sort=${sort}` : ""
 
-  for (let page = 0; page < MAX_SHOP_PAGES; page++) {
-    const res = await apiClient.get<PageResponse<Shop>>(
-      `/api/v1/shops?page=${page}&size=${size}`
-    )
-    const body = res.data
-    const content = body?.content ?? []
-    shops.push(...content)
-
-    if (content.length === 0) return shops
-    if (body?.last === true) return shops
-    if (typeof body?.totalPages === "number" && page + 1 >= body.totalPages) {
-      return shops
-    }
-    if (content.length < size) return shops
-  }
-
-  console.warn(
-    `[shops-api] stopped paging /api/v1/shops at the ${MAX_SHOP_PAGES}-page bound ` +
-      `(${shops.length} shops); the API never reported a final page.`
-  )
-  return shops
+  const { items } = await fetchAllPages<Shop>({
+    buildUrl: (page, pageSize) =>
+      `/api/v1/shops?page=${page}&size=${pageSize}${sortParam}`,
+    size,
+    maxPages: MAX_SHOP_PAGES,
+    label: "[shops-api] /api/v1/shops",
+  })
+  return items
 }
 
 /**
