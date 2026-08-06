@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout — 2026-08-06
+### "EXPECT 29 x rc=0" could not be achieved by any run, and H-1 was green throughout (#584) — 2026-08-06
 
 `HANDOFF.md`'s resume block tells the next session to run every gate and expect `29 x rc=0`. That
 instruction had been **impossible to satisfy since #574**, and #583 made it worse.
