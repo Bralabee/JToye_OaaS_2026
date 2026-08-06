@@ -35,15 +35,37 @@
  *
  * FAIL-CLOSED. Anything it cannot resolve — an unknown modifier chain, a tagged-
  * template `it.each` table, a `describe.each`, an `xit`/`fit` alias, an `.each`
- * argument that is a call or an import — exits 2 (VOID) with the file and line. It
- * never guesses a number. "Could not count it" is never rendered as a count.
+ * argument that is a call or an import, a head inside a loop body — exits 2 (VOID)
+ * with the file and line. It never guesses a number. "Could not count it" is never
+ * rendered as a count.
  *
- * KNOWN LIMIT, and its backstop. A test declared inside a `for` loop or a `forEach`
- * is one declaration and N executions, and no static reader can resolve that in
- * general. This script therefore cannot be the last word. The last word is
- * scripts/check-test-count-oracle.sh, which asserts docs/metrics.json against each
- * runner's own report in the CI jobs where those runners already execute.
- * Static counter first because it is cheap; runner oracle second because it is true.
+ * LOOP-DECLARED HEADS (issue #582). A `for`/`while`/`forEach` around an `it(` is one
+ * declaration site and N executed tests. This script used to report the site — a
+ * confidently wrong number at rc=0, the single case where it guessed. It is worse
+ * than a wrong number: `docs/metrics.json .jest_blocks` is asserted from BOTH ends,
+ * by this counter (sites) in scripts/docs-freshness.sh and by jest's own
+ * `numTotalTests` (executions) in scripts/check-test-count-oracle.sh. They differ by
+ * N-1, both host jobs are required checks, so NO value of the manifest key lets the
+ * PR merge and each failure's suggested remedy reproduces the other. Refusing, with
+ * a file and a line and `it.each` as the remedy, is the only outcome an author can
+ * act on.
+ *
+ * NOT for Playwright, whose oracle counts DECLARATION SITES — `--list`, de-duplicated
+ * by (file,line,column) — because its project matrix already runs each spec several
+ * times. A loop-declared `test()` is one site there in both halves, so the two agree
+ * and there is nothing to refuse. Hence POLICY.<family>.loopMultiplies, not the
+ * blanket rule #582 proposed: measured 2026-08-06 by flipping the playwright flag to
+ * true, a blanket rule VOIDs four e2e specs that are correct today —
+ * dashboard-mobile:320, marketing-motion:122, public-layout:321, webhooks-webperf:186
+ * — and takes docs-freshness down with them.
+ *
+ * The residual limit, and its backstop. Detection is lexical: an enclosing `for`/
+ * `while`/`do` body, or an enclosing array-iteration callback (`forEach`, `map`, …).
+ * A hand-rolled helper that loops is still invisible, so this script is still not the
+ * last word. The last word remains scripts/check-test-count-oracle.sh, which asserts
+ * docs/metrics.json against each runner's own report in the CI jobs where those
+ * runners already execute. Static counter first because it is cheap; runner oracle
+ * second because it is true.
  *
  * Its own refusals are falsified by scripts/check-test-block-counter.sh — because a
  * measurement that cannot be shown to fail is what produced #291 in the first place.
@@ -76,6 +98,15 @@ const FILL = String.fromCharCode(1);
 //                 runtime SKIP DIRECTIVE otherwise (`test.skip(cond, "reason")`).
 //                 Getting this wrong in the safe-looking direction would silently
 //                 drop real tests, so it is decided by inspecting the argument.
+//
+//   loopMultiplies — whether a head inside a loop body must VOID (issue #582).
+//                 TRUE where the family's runner oracle counts EXECUTED tests
+//                 (jest/vitest `numTotalTests`): one site vs N executions is a
+//                 deadlock between two required checks, so refuse and name the
+//                 line. FALSE for Playwright, whose oracle counts declaration
+//                 sites de-duplicated by (file,line,column) — a loop-declared
+//                 `test()` is 1 on both sides there, so refusing would break a
+//                 tree that is already correct.
 // ---------------------------------------------------------------------------
 const JEST_LIKE = {
   declaration: new Set([
@@ -88,6 +119,7 @@ const JEST_LIKE = {
   ]),
   ignore: new Set([]),
   dual: new Set([]),
+  loopMultiplies: true,
 };
 
 const POLICY = {
@@ -104,6 +136,7 @@ const POLICY = {
       "step", "setTimeout", "info", "extend", "expect", "slow",
     ]),
     dual: new Set(["skip", "fixme", "fail"]),
+    loopMultiplies: false,
   },
 };
 
@@ -311,6 +344,115 @@ function resolveArrayBinding(masked, name) {
 }
 
 // ---------------------------------------------------------------------------
+// Loop detection (issue #582).
+//
+// Everything below works on the MASKED text, so a `for` inside a comment or a
+// string cannot open a phantom loop. It is deliberately LEXICAL and structural:
+// only a construct that ENCLOSES the head counts, which is what keeps the very
+// common `it("…", () => { for (…) expect(…) })` at one block instead of a VOID.
+// ---------------------------------------------------------------------------
+const LOOP_KEYWORDS = new Set(["for", "while"]);
+
+// Array-iteration callbacks. Membership can only ever produce a false positive
+// if a head is lexically inside one of these callbacks — and if it is, it IS a
+// multiplier, so the refusal is right for the same reason.
+const ITERATION_CALLS = new Set([
+  "forEach", "map", "flatMap", "filter", "reduce", "reduceRight",
+  "some", "every", "find", "findIndex", "findLast", "findLastIndex",
+]);
+
+// Index of the last non-whitespace character before `end`, or -1.
+function prevNonSpace(masked, end) {
+  let j = end - 1;
+  while (j >= 0 && /\s/.test(masked[j])) j--;
+  return j;
+}
+
+// The identifier whose LAST character is masked[j], or "" when masked[j] is not
+// an identifier character. FILL is \x01, which \w never matches, so masked-out
+// text can never be read back as a keyword.
+function wordEndingAt(masked, j) {
+  if (j < 0 || !/[\w$]/.test(masked[j])) return "";
+  let k = j;
+  while (k >= 0 && /[\w$]/.test(masked[k])) k--;
+  return masked.slice(k + 1, j + 1);
+}
+
+// Index of the `(` matching the `)` at `close`, or -1.
+function openParenOf(masked, close) {
+  let depth = 0;
+  for (let i = close; i >= 0; i--) {
+    if (masked[i] === ")") depth++;
+    else if (masked[i] === "(") { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+// Is the statement/body starting at `at` governed by a loop header? Handles
+// `for (…)`, `for await (…)`, `while (…)` and `do`.
+function loopHeaderBefore(masked, at) {
+  const p = prevNonSpace(masked, at);
+  if (p < 0) return null;
+  if (masked[p] === ")") {
+    const open = openParenOf(masked, p);
+    if (open === -1) return null;
+    let q = prevNonSpace(masked, open);
+    let kw = wordEndingAt(masked, q);
+    if (kw === "await") { q = prevNonSpace(masked, q - kw.length + 1); kw = wordEndingAt(masked, q); }
+    if (LOOP_KEYWORDS.has(kw)) return { what: `a ${kw}-loop body`, at: q - kw.length + 1 };
+    return null;
+  }
+  const kw = wordEndingAt(masked, p);
+  if (kw === "do") return { what: "a do-while-loop body", at: p - kw.length + 1 };
+  return null;
+}
+
+// Every bracket pair in the file, so the constructs ENCLOSING an index can be
+// read off. An unclosed bracket is treated as enclosing everything after it —
+// a truncated file must not read as "no loops here".
+function bracketPairs(masked) {
+  const stack = [];
+  const pairs = [];
+  for (let i = 0; i < masked.length; i++) {
+    const c = masked[i];
+    if (c === "(" || c === "[" || c === "{") stack.push({ ch: c, open: i });
+    else if (c === ")" || c === "]" || c === "}") {
+      const top = stack.pop();
+      if (top) pairs.push({ ch: top.ch, open: top.open, close: i });
+    }
+  }
+  while (stack.length) {
+    const t = stack.pop();
+    pairs.push({ ch: t.ch, open: t.open, close: masked.length });
+  }
+  return pairs;
+}
+
+// The innermost loop construct enclosing `idx`, or null.
+function enclosingLoop(masked, pairs, idx) {
+  // A braceless loop body: `for (const n of ns) it("case " + n, …)`.
+  const direct = loopHeaderBefore(masked, idx);
+  if (direct) return direct;
+
+  let best = null;
+  for (const p of pairs) {
+    if (p.open >= idx || idx >= p.close) continue;
+    let hit = null;
+    if (p.ch === "{") {
+      hit = loopHeaderBefore(masked, p.open);
+    } else if (p.ch === "(") {
+      const q = prevNonSpace(masked, p.open);
+      const callee = wordEndingAt(masked, q);
+      if (ITERATION_CALLS.has(callee)) {
+        hit = { what: `a .${callee}(...) callback`, at: q - callee.length + 1 };
+      }
+    }
+    if (hit && (best === null || hit.at > best.at)) best = hit;
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
 // The scanner.
 // ---------------------------------------------------------------------------
 function countFile(file, family) {
@@ -330,6 +472,9 @@ function countFile(file, family) {
   }
 
   let blocks = 0;
+  // Computed once per file, not once per head: the pairs do not change and a head
+  // is only ever tested for containment.
+  const pairs = policy.loopMultiplies ? bracketPairs(masked) : null;
   const head = /(?<![.\w$])(it|test)(?![\w$])/g;
   let m;
   while ((m = head.exec(masked)) !== null) {
@@ -363,6 +508,21 @@ function countFile(file, family) {
     const line = lineOf(masked, start);
 
     if (policy.ignore.has(key)) continue;
+
+    // Checked before the chain is classified, because a loop multiplies an
+    // `it.each` table just as surely as it multiplies a plain `it`.
+    if (policy.loopMultiplies) {
+      const loop = enclosingLoop(masked, pairs, start);
+      if (loop) {
+        fail(file, line,
+          `'${m[1]}${key ? "." + key : ""}(' is declared inside ${loop.what} opened at line ` +
+          `${lineOf(masked, loop.at)} — that is ONE declaration site and N executed tests. ` +
+          `scripts/docs-freshness.sh counts the site, scripts/check-test-count-oracle.sh counts ` +
+          `what ${family} executed, and both are required checks, so no value of ` +
+          `docs/metrics.json can satisfy them at once. Rewrite it as ` +
+          `'${m[1]}.each([...])', which both halves count identically.`);
+      }
+    }
 
     if (policy.each.has(key)) {
       if (delim === "`") {
