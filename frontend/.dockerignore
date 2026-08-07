@@ -54,8 +54,28 @@ coverage/
 # playwright.config.ts is excluded for the same reason and to make the rule whole:
 # with only e2e/ ignored, editing the suite's projects/grepInvert still dated the
 # frontend image, so a test-only change could still demand a production rebuild.
+#
+# tsconfig.e2e.json completes it, and the gap fired the very next day. The rule
+# above was written 2026-08-07 claiming to be "whole"; #601 landed hours later
+# adding tsconfig.e2e.json — a third file of the same class — and the frontend
+# image went DRIFT for it, prescribing a full production rebuild.
+#
+# It is E2E-only, verified rather than assumed: nothing in the image build reads
+# it. It is referenced ONLY by scripts/check-e2e-typecheck.sh, .github/workflows/
+# ci-cd.yaml and docs/CHANGELOG.md — NOT by tsconfig.json, next.config.mjs,
+# package.json or the Dockerfile. The runner stage copies only .next/standalone,
+# .next/static and public, so it could never reach the shipped image; it was only
+# pulled into the BUILDER by `COPY . .`.
+#
+# EXACT LITERAL, DELIBERATELY NOT A GLOB. `tsconfig*.json` or `tsconfig.*.json`
+# would be the tempting form and is the dangerous one: it would also match
+# tsconfig.json, a REAL build input that `next build` reads, and excluding that
+# would make this gate report FRESH over a genuinely stale runtime — the exact
+# false-negative direction check-runtime-freshness.sh's header warns about. One
+# exact filename per E2E artefact; add the next one by name too.
 e2e/
 playwright.config.ts
+tsconfig.e2e.json
 
 # Logs
 *.log
