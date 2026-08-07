@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The .dockerignore rule that called itself "whole" had a hole, and #601 fell in it (#609) — 2026-08-07
+
+`frontend/.dockerignore` excludes `e2e/` and `playwright.config.ts` so `check-runtime-freshness.sh`
+stops prescribing a production rebuild for a test-only change that cannot alter a byte of the served
+bundle. Its own comment says `playwright.config.ts` was added *"to make the rule whole"*.
+
+It was not whole. **#601 landed hours later** adding `frontend/tsconfig.e2e.json` — a third file of
+exactly that class — and the frontend image went **DRIFT** for it, prescribing a full rebuild. The
+rule's stated purpose was defeated by the next commit after it was written.
+
+#### Fixed
+- **`tsconfig.e2e.json` added to `frontend/.dockerignore`.** Verified rather than assumed that it
+  cannot reach the image: it is referenced only by `scripts/check-e2e-typecheck.sh`,
+  `.github/workflows/ci-cd.yaml` and this changelog — **not** by `tsconfig.json`, `next.config.mjs`,
+  `package.json` or the `Dockerfile` — and the runner stage copies only `.next/standalone`,
+  `.next/static` and `public`. It was only ever pulled into the *builder* by `COPY . .`.
+
+#### Why an exact literal and not a glob
+`tsconfig*.json` is the tempting form and is the dangerous one: it would also match `tsconfig.json`,
+a **real** build input that `next build` reads. Excluding that would make the gate report FRESH over
+a genuinely stale runtime — the false-negative direction `check-runtime-freshness.sh`'s own header
+warns about, and the reason it translates only patterns it can translate exactly. Evidence the
+addition was absorbed exactly: the gate's *"kept as build inputs (not translatable exactly)"* list is
+byte-identical before and after, still the same seven globs.
+
+#### Measured — four arms on a committed tree
+
+```
+arm 0  clean                                   frontend FRESH
+arm A  commit touching ONLY tsconfig.e2e.json  frontend FRESH   <- the fix
+arm C  commit touching the REAL tsconfig.json  frontend DRIFT   <- no false negative
+arm B  commit touching next.config.mjs         frontend DRIFT   <- gate not blinded
+close  restored to baseline                    frontend FRESH
+```
+
+**Arm A is stronger than "nothing broke":** the gate's *newest build-input commit* stayed at
+`7dbd07ad` rather than advancing to the arm-A commit, so the exclusion demonstrably took effect.
+**Arm C is the safety arm** — an over-broad glob would have silently turned this gate into a liar
+about the real `tsconfig.json`. Restore verified by content (`git hash-object` back to `0a0ddc5c`),
+and the closing clean arm is what proves the restore happened.
+
+`.dockerignore` is itself a build input, so this change cost one rebuild — the last one this class of
+change will ever cost. Rebuilt **and recreated**; note `sync-runtime.sh` left both `frontend` and
+`core-java` on their previous image IDs and the gate correctly reported `[container-not-recreated]`
+until an explicit `--force-recreate`. A rebuild is not a recreate.
+
 ### The Playwright specs had no type-check gate anywhere (#601) — 2026-08-07
 
 `frontend/tsconfig.json` includes `**/*.ts` and excludes only `node_modules`, so it looks like
