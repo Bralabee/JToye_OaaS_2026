@@ -329,8 +329,114 @@ Secondary (used only where the primary source was unreachable, and flagged as su
 
 ---
 
+## Addendum — independent verification on landing (2026-08-07, second reviewer)
+
+The session that wrote everything above was terminated before it could open a PR, and the work was
+handed to another session to land. Rather than merge it on trust, its claims were re-checked against
+the tree. **Everything above verified.** Three things are stronger or broader than recorded, and one
+is a finding the original review could not have seen.
+
+### A. Finding 1's caveat can be closed — the absence is repo-wide, not just `edge-go`
+
+§6 recorded the missing `GET` handler as *"a true statement about `edge-go`… not a claim about
+ingress or proxy layers, which were not audited."* Those layers have now been audited:
+`webhooks/whatsapp` has **no** reference in `k8s/`, `infra/`, any `docker-compose*.yml`, or
+`frontend/next.config.mjs`, and `hub.challenge` / `hub.verify_token` / `hub.mode` appear **nowhere in
+the repository** outside `node_modules` and prose about this very finding. The control holds — the
+path itself is findable by the same search shape (8 files) — and `router.GET` is used four times in
+`edge-go/cmd/edge/main.go`, so this is a specific gap rather than a framework limitation.
+**Nothing in front of the service answers the handshake either.** The finding stands unqualified.
+
+### B. Finding 1 is a **re-discovery**, and the record it sits in contains a false reassurance
+
+It was first found on **2026-04-27**, in a line that ends by warning the reader to otherwise
+`accept re-registration breaks` (`docs/audit/remediation/07-edge-absorb-remediation.md:146`).
+Three months later it is unfixed, and **no open issue mentions it** (every open issue body searched
+for `hub.challenge|verify_token` — zero hits).
+
+Worse, the same document's reconciled position four lines later says of the webhook path that there
+is `no need to change` it (`docs/audit/remediation/07-edge-absorb-remediation.md:150`), on the stated
+grounds that Meta already has it registered. That cannot be true. Registration *requires* the
+handshake this repo has never been able to answer. A false reassurance has stood in the audit record
+for three months, and it is the most likely reason a finding recorded that early was never actioned —
+**a reader who reached the reconciled position was told the problem raised four lines above was
+already handled.**
+
+This is the same failure the 2026-08-07 issue-disposition sweep found one layer up: a finding that
+lives only in a document, with no ticket, is invisible to every tracker-driven review.
+
+### C. Finding 5 is understated, and its citation points at its weakest instance
+
+The prose is right — infrastructure and business outcomes share one always-200 path — but the cited
+line is a **parse failure**, which is a *business* outcome the document itself argues is correctly
+200. There are **four** always-200 paths, and two are unambiguously infrastructure. Each row cites
+two lines, because the condition and the response sit on separate ones — the logger call names the
+failure, the next line answers 200:
+
+| condition (logger line) | response line | class |
+|---|---|---|
+| `Failed to parse WhatsApp webhook` (`edge-go/cmd/edge/handlers.go:280`) | `Still 200 to prevent retries` (`edge-go/cmd/edge/handlers.go:281`) | business — 200 is defensible |
+| `WhatsApp intake not configured` (`edge-go/cmd/edge/handlers.go:298`) | `200 to avoid Meta` (`edge-go/cmd/edge/handlers.go:299`) | operator misconfiguration |
+| **`Failed to acquire service token for WhatsApp order`** (`edge-go/cmd/edge/handlers.go:305`) | `200 to avoid Meta` (`edge-go/cmd/edge/handlers.go:306`) | **infrastructure — a Keycloak outage** |
+| **`Failed to create order from WhatsApp`** (`edge-go/cmd/edge/handlers.go:376`) | `Still 200 to prevent retries` (`edge-go/cmd/edge/handlers.go:377`) | **infrastructure — Core, DB or broker** |
+
+The last two are the load-bearing evidence. On either, a customer's order is destroyed and Meta is
+told "received, thanks."
+
+**But it is a documented decision, not an oversight** — and that changes the remedy. The published
+OpenAPI description carries the very same rationale, a
+`3-day exponential retry loop` (`edge-go/docs/swagger.json:77`), and states there that processing
+outcomes including a Core error always return HTTP 200. So this is a decision to revisit
+deliberately, with the published contract updated alongside the code, rather than a bug to quietly
+patch.
+
+### D. Finding 8 is 6 occurrences, not 1 — and half of them are in the published contract
+
+Six occurrences, each cited on its own line so the token and the citation can be checked together:
+
+- `3-day exponential retry loop` — the godoc (`edge-go/cmd/edge/handlers.go:206`)
+- `3-day retry storm` — inline comment (`edge-go/cmd/edge/handlers.go:299`)
+- `3-day retry storm` — inline comment (`edge-go/cmd/edge/handlers.go:306`)
+- `3-day exponential retry loop` — generated YAML (`edge-go/docs/swagger.yaml:143`)
+- `3-day exponential retry loop` — generated JSON (`edge-go/docs/swagger.json:77`)
+- `3-day exponential retry loop` — generated Go (`edge-go/docs/docs.go:84`)
+
+That is three source occurrences and three in the **generated API artifacts**, which are the contract
+this service publishes. They are regenerated rather than hand-edited, so fixing the source comments
+without regenerating leaves the published contract stale.
+
+### Unchanged by this verification
+
+The four evidence gaps in §6 stand exactly as recorded and were **not** re-litigated: Meta's
+changelog HTTP 500 (so BSUID dates remain approximate), the contradicted 1 October 2026 pricing
+claim, unconfirmed UK availability of catalogs / the `order` webhook, and the absent cost model. No
+external source was re-fetched. The verdict, the connect-don't-build recommendation, and the
+Meta-direct-vs-BSP framing are the original author's and are endorsed, not rewritten.
+
+### How this addendum was itself verified
+
+The citation gate was run over this file in four arms, **after committing** — clean → a deliberately
+repointed addendum citation → restore → clean again. Figures are in the landing commit message.
+
+> **A trap fired during this verification and is recorded because it cost the whole addendum once.**
+> The first attempt ran the break arm against an **uncommitted** tree and restored with
+> `git checkout -- <file>`. That restores from the **index**, so it did not undo the break — it
+> deleted every uncommitted edit, the entire addendum included. The closing clean arm is what caught
+> it: it reported **34** citations where the addendum had brought the file to **51**. This is exactly
+> the repo's recorded standard — *commit before running arms*, and *assert the clean state last as
+> well as first*. The break arm looked perfect in both attempts; only the closing arm could tell them
+> apart.
+
+---
+
 ## Related
 
+- `docs/audit/remediation/07-edge-absorb-remediation.md` §146–150 — where the missing `GET`
+  handshake was first recorded on 2026-04-27, and where the false "no need to change" reassurance
+  sits four lines below it
+- `.planning/ISSUE-DISPOSITION.md` — the 2026-08-07 all-57 triage, which reached #208 independently
+  and from the opposite direction: it is the delivery channel for #461's payment request, and
+  therefore a critical-path deferral rather than an optional AI feature
 - `docs/analysis/MESSAGING-BROKER-EVALUATION-2026-07-26.md` — same evaluation shape
   (external recommendation re-investigated against the actual topology)
 - `docs/planning/FUTURE_ENHANCEMENTS.md` §6.2 — the original WhatsApp scope and estimate

@@ -88,3 +88,37 @@ coverage.
   primary documentation — no stated restriction is not the same as confirmed availability.
 - The absence-of-`GET`-handler finding covers `edge-go` only; ingress and proxy layers
   were not audited.
+
+---
+
+## Landing note (added by the session that shipped this, 2026-08-07)
+
+The authoring session was terminated before opening a PR. Its work was cherry-picked onto a branch
+off `main` and landed unchanged, with an **addendum** appended to the analysis document rather than
+edits to its findings — the original analysis stands on its own and the second-reviewer trail is
+worth keeping separate.
+
+Everything in the original verified. The addendum records four things it did not have:
+
+- **Finding 1's `edge-go`-only caveat is closed.** Ingress, compose and Next.js config were audited;
+  nothing in front of the service answers the handshake either, so the absence is repo-wide.
+- **Finding 1 is a re-discovery.** First recorded **2026-04-27** in
+  `docs/audit/remediation/07-edge-absorb-remediation.md:146`, unfixed since, and tracked by **no**
+  open issue. The same document asserts four lines later that there is `no need to change` the
+  webhook path because Meta already has it registered — which cannot be true, and is the likeliest
+  reason a three-month-old finding was never actioned.
+- **Finding 5 is understated.** There are **four** always-200 paths, not one, and the two that are
+  unambiguously infrastructure (`handlers.go:306` service-token failure, `handlers.go:377` Core-call
+  failure) are not the one cited. It is also a *documented* decision — the published OpenAPI
+  contract states it — so the remedy includes regenerating that contract.
+- **Finding 8 is 6 occurrences, not 1**, three of them in the generated API artifacts.
+
+Citation gate on the landed file: **51/51 verified, 0 uncheckable, 0 violations** (the original
+draft's figure was 34/34; the addendum added 17 citations and no debt). Falsified in both directions
+after committing — see the landing commit message for the arms.
+
+**One trap fired and is recorded rather than hidden.** The first verification attempt ran the break
+arm on an *uncommitted* tree and restored with `git checkout -- <file>`, which restores from the
+index and therefore deleted the entire addendum instead of undoing the break. The closing clean arm
+caught it — 34 citations where there should have been 51. The break arm looked identical in both
+attempts. Commit before running arms; assert the clean state last as well as first.
