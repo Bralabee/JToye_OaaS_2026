@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Two gates were measuring a proxy, and both taxed every merge (#597) — 2026-08-07
+
+Neither gate was wrong about its purpose. Each answered a cheaper question than the one it
+advertised, and because the gap surfaced as recurring *cost* rather than a wrong verdict, both
+survived a long time.
+
+| gate | advertised question | question it actually asked | cost |
+|---|---|---|---|
+| `check-e2e-skip-budget` | does this report describe the specs on disk? | were the specs *written* after the report? (**mtime**) | VOID after every merge touching a spec; ~6.5 min re-run to clear |
+| `check-runtime-freshness` | can the running image differ from the tree? | did any file in the build context change? | DRIFT + a prescribed rebuild for a commit that cannot change the artifact |
+
+#### Fixed
+- **The skip-budget gate compares spec CONTENT, not mtime.** `find … -newer "$REPORT"` reports a
+  difference whenever git *rewrites* a file, and `checkout`/`pull`/`merge`/`stash pop` all do that
+  with identical bytes. New `scripts/e2e-spec-digest.sh` hashes `<relpath>\t<git hash-object>` over
+  `frontend/e2e/**` + `playwright.config.ts`; `playwright.config.ts` stamps it into
+  `config.metadata.specDigest` at run time so every producer records it with no extra step; the gate
+  recomputes and compares. Working-tree bytes, not the index — a report produced from a dirty tree
+  must not be certified against content that was never run. Absent, sentinel or mismatched ⇒ VOID,
+  so the gate cannot be satisfied by omitting the field it checks. The decisive arm, on one tree
+  with every spec `touch`ed and bytes provably unchanged: old ⇒ `VOID: report is OLDER than …`,
+  new ⇒ `PASS … rc=0`.
+- **`check-runtime-freshness` applies `.dockerignore`, conservatively.** A commit touching only
+  `frontend/e2e/kitchen-flow.spec.ts` reported the frontend as DRIFT, though the runner stage copies
+  only `.next/standalone`, `.next/static` and `public`. The header previously refused this outright
+  because translating ignore patterns "risks excluding MORE than intended, and an over-broad
+  exclusion is a FALSE NEGATIVE"; that reasoning is now the design *constraint* rather than the
+  conclusion — any `!` re-include voids the whole file, and any glob, `..` or the `Dockerfile` itself
+  is skipped **and printed**. Every refusal falls back to the previous over-reporting, so the failure
+  direction is unchanged. `frontend/.dockerignore` now excludes `e2e/` and `playwright.config.ts`.
+
+#### Added
+- **A non-failing ADVISORY, replacing a good the false VOID was doing by accident.** HANDOFF §0.-13
+  records that the once-per-merge VOID "is the only thing asking for the run that finds this class" —
+  it is how #593 surfaced. The two questions it conflated are now separate: the digest answers *is
+  the skip set valid* (VOID if not), and the advisory answers *is the suite result current*, by
+  comparing the report's own `stats.startTime` against commits touching `frontend/` outside the spec
+  set. Deliberately non-failing: a stale result is a reason to run the suite, not a reason to call an
+  undeclared-skip check wrong.
+- **`--from-nightly`** fetches the last successful nightly's report rather than re-running 20 minutes
+  locally. Not a bypass — the download faces the same digest check, so a nightly that ran on a
+  different tree VOIDs.
+
+#### Measured, and two beliefs falsified
+- *"Ignoring `e2e/` moves its type-checking to CI's `npm run build`."* **False.** Planting
+  `const broken: number = "…"` in a spec: `npm run build` ⇒ rc=0 and the file is not mentioned;
+  `npx tsc --noEmit` ⇒ rc=2, TS2322. `next build` checks the pages/app graph, not the whole tsconfig
+  program, so the Docker build never checked these specs either. Nothing is lost — but because the
+  coverage never existed by that path. Pre-existing gap, recorded so nobody "restores" it.
+- *The first break arms were **vacuous**.* They asserted FRESH/DRIFT, but this branch's own commits
+  touch `.dockerignore`, a genuine build input, so the frontend drifts regardless — every arm would
+  have "passed". Re-run asserting on *which commit the gate names*: e2e-only ⇒ unchanged;
+  `frontend/app` ⇒ advances; `!` present ⇒ advances.
+- **A defect in the change, found by its own output.** `dockerignore_excludes()` set a global read
+  after `mapfile -t x < <(fn …)`. Process substitution runs the function in a **subshell**, so no
+  refusal ever reached the parent — the gate printed a clean run precisely because the part that
+  reports doubt could not speak. Notes now travel in the return stream, making it unrepresentable.
+
+No new gate: `check-gate-enforcement` still reports 28, because `e2e-spec-digest.sh` is a helper
+rather than an assertion and is deliberately not named `check-*`.
+
 ### Every unsubscribe link in every email 404'd: the app origin carried the API's path (#516) (#590) — 2026-08-06
 
 `NotificationDispatchService.buildUnsubscribeUrl` composed the link as

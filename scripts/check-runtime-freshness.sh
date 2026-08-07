@@ -66,16 +66,28 @@
 #   from parsing that Dockerfile. Add a fifth built service to the compose file
 #   and this gate covers it with no edit here.
 #
-# KNOWN, DELIBERATE LIMITATION — .dockerignore IS NOT APPLIED
-#   Build inputs are not filtered through the context's .dockerignore. Translating
-#   ignore patterns into git pathspec exclusions risks excluding MORE than
-#   intended, and an over-broad exclusion is a FALSE NEGATIVE — the gate reporting
-#   fresh while the runtime is stale, i.e. the exact bug this file exists to stop.
-#   Not applying them can only over-report. Measured cost of that choice in this
-#   repo: of every git-TRACKED file inside the four build contexts, exactly two
-#   are .dockerignore'd (frontend/.gitignore, mcp-server/.gitignore); every other
-#   ignore pattern names a build artifact that is git-ignored anyway and therefore
-#   can never appear in `git log`. Two files is the entire residual.
+# .dockerignore IS APPLIED, BUT ONLY WHERE IT IS UNAMBIGUOUS (changed 2026-08-07)
+#   A file excluded from the build context cannot be copied into the image, so a
+#   change to it cannot make the runtime stale. Counting it as a build input makes
+#   this gate demand a rebuild that provably cannot change the artifact.
+#
+#   This was previously refused outright, on the grounds that translating ignore
+#   patterns into git pathspec exclusions "risks excluding MORE than intended, and
+#   an over-broad exclusion is a FALSE NEGATIVE — the gate reporting fresh while
+#   the runtime is stale". That reasoning still holds and is now the design
+#   constraint rather than the conclusion: dockerignore_excludes() translates only
+#   what it can translate exactly, and everything else stays in the input set.
+#   A '!' re-include voids the whole file; a glob, a '..' or the Dockerfile itself
+#   is skipped and PRINTED. Every refusal falls back to the old over-reporting
+#   behaviour, so the failure direction is unchanged.
+#
+#   What this bought, measured on this repo: a commit touching only
+#   frontend/e2e/kitchen-flow.spec.ts flagged the frontend runtime as DRIFT and
+#   prescribed a rebuild, though `e2e/` is now .dockerignore'd and the runner stage
+#   copies only .next/standalone, .next/static and public. The residual the old
+#   note described (frontend/.gitignore, mcp-server/.gitignore — the only two
+#   git-TRACKED files inside the four contexts that were .dockerignore'd) is also
+#   gone, since both are exact literal patterns.
 #
 # FAIL CLOSED — "found nothing" IS NEVER "clean"
 #   Missing docker, missing git, missing compose file, zero built services
@@ -220,6 +232,93 @@ COPY_AWK='
 }
 END { if (bad) exit 3 }
 '
+
+# ---------------------------------------------------------------------------
+# .dockerignore -> git pathspec exclusions, CONSERVATIVELY.
+#
+# A file excluded from the build context cannot be copied by any COPY, so it
+# cannot change the image. Counting it as a build input makes the gate report
+# DRIFT over a change that provably cannot reach the runtime — measured on this
+# repo 2026-08-07, when a commit touching ONLY frontend/e2e/kitchen-flow.spec.ts
+# (a Playwright spec; the runner stage copies only .next/standalone, .next/static
+# and public) flagged the frontend as stale and prescribed a rebuild that could
+# not change a byte of the served bundle.
+#
+# The header above used to say applying .dockerignore was refused outright,
+# because "translating ignore patterns into git pathspec exclusions risks
+# excluding MORE than intended, and an over-broad exclusion is a FALSE NEGATIVE".
+# That reasoning is correct and is preserved here as the design constraint — it
+# is answered by refusing to translate anything ambiguous, rather than by
+# refusing to translate at all:
+#
+#   * ANY '!' re-include line voids the WHOLE file. A negation re-admits paths an
+#     earlier pattern excluded, so no pattern can be honoured in isolation.
+#   * Any pattern containing * ? [ ] or .. is SKIPPED, not guessed at.
+#   * The Dockerfile is never excluded even if named. It is read by the builder
+#     as the recipe rather than copied from the context, so ignoring it would not
+#     stop it being a build input — and hiding a changed recipe is precisely the
+#     false negative this gate exists to prevent.
+#
+# Every one of those falls back to today's behaviour: the path stays IN the input
+# set and the gate over-reports. Over-reporting costs an unnecessary rebuild;
+# under-reporting ships a stale runtime behind a green gate. The asymmetry is why
+# the skip list is silent-by-default but the refusals are printed.
+#
+# Patterns are anchored at the context root, matching Docker's own semantics:
+# `temp` excludes <context>/temp, never <context>/sub/temp.
+# ---------------------------------------------------------------------------
+# Emits one TAB-separated record per line, so the caller gets BOTH results out of
+# one call without a global:
+#   X <TAB> :(exclude)<path>     a pathspec exclusion to apply
+#   N <TAB> <text>               a refusal the caller must PRINT
+#
+# The two-channel shape is deliberate. The first version of this set a global from
+# inside the function and the caller read it after `mapfile -t x < <(fn ...)` —
+# but process substitution runs the function in a SUBSHELL, so the global never
+# reached the parent and every refusal was silently dropped. The gate looked
+# clean precisely because the part that reports doubt could not speak. Keeping the
+# notes in the return stream makes that unrepresentable.
+dockerignore_excludes() { # <context_abs> <context_rel ('.' if repo root)>
+    local ctx_abs="$1" ctx_rel="$2"
+    local file="$ctx_abs/.dockerignore"
+    local raw line p
+    local -a pats=() skipped=()
+
+    [ -f "$file" ] || return 0
+
+    while IFS= read -r raw || [ -n "$raw" ]; do
+        line="${raw%$'\r'}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -n "$line" ] || continue
+        case "$line" in
+            '#'*) continue ;;
+            '!'*)
+                printf 'N\t%s\n' "contains a '!' re-include ($line) — NO exclusion applied from this file; every path stays a build input"
+                return 0 ;;
+        esac
+        pats+=("$line")
+    done < "$file"
+
+    for p in "${pats[@]+"${pats[@]}"}"; do
+        p="${p#/}"; p="${p%/}"
+        [ -n "$p" ] || continue
+        case "$p" in
+            *'*'*|*'?'*|*'['*|*']'*|*'..'*) skipped+=("$p"); continue ;;
+            Dockerfile|Dockerfile.*)        skipped+=("$p (build recipe)"); continue ;;
+        esac
+        if [ "$ctx_rel" = "." ]; then
+            printf 'X\t:(exclude)%s\n' "$p"
+        else
+            printf 'X\t:(exclude)%s/%s\n' "$ctx_rel" "$p"
+        fi
+    done
+
+    if [ "${#skipped[@]}" -gt 0 ]; then
+        printf 'N\t%s\n' "kept as build inputs (not translatable exactly): ${skipped[*]}"
+    fi
+    return 0
+}
 
 # ---------------------------------------------------------------------------
 # Service discovery — the compose file is the config layer, so it is the only
@@ -370,6 +469,26 @@ while IFS=$'\t' read -r service context dockerfile; do
         if [ "$seen" -eq 0 ]; then uniq_paths+=("$p"); fi
     done
 
+    # --- subtract what the build context excludes ----------------------------
+    # A .dockerignore'd file is not in the context, so no COPY can carry it into
+    # the image and a change to it cannot make the runtime stale. See the
+    # dockerignore_excludes() header for why this is conservative by construction.
+    if [ "$context_abs" = "$REPO_ROOT" ]; then
+        context_rel="."
+    else
+        context_rel="${context_abs#"$REPO_ROOT"/}"
+    fi
+    # The while-read runs in THIS shell (only the function is in the subshell), so
+    # both arrays are populated in the parent. See dockerignore_excludes' header
+    # for why the notes travel in the return stream rather than in a global.
+    declare -a di_excludes=()
+    while IFS=$'\t' read -r di_kind di_val; do
+        case "$di_kind" in
+            X) di_excludes+=("$di_val") ;;
+            N) printf '  %-12s note   .dockerignore %s\n' "$service" "$di_val" ;;
+        esac
+    done < <(dockerignore_excludes "$context_abs" "$context_rel")
+
     # --- newest commit touching those paths ---------------------------------
     # awk (not `sort -rn | head -1`) computes the maximum: under `set -o pipefail`
     # a downstream `head` that exits early makes the writer take SIGPIPE and
@@ -379,9 +498,9 @@ while IFS=$'\t' read -r service context dockerfile; do
     commit_row=""
     commit_row="$(
         git -C "$REPO_ROOT" log --full-history --format='%ct%x09%h%x09%cI%x09%s' \
-            -- "${uniq_paths[@]}" \
+            -- "${uniq_paths[@]}" "${di_excludes[@]+"${di_excludes[@]}"}" \
         | awk -F'\t' 'NR==1 || $1+0 > max+0 { max=$1; line=$0 } END { if (NR) print line }'
-    )" || parse_fail "git log failed for service '$service' (pathspec: ${uniq_paths[*]})"
+    )" || parse_fail "git log failed for service '$service' (pathspec: ${uniq_paths[*]} ${di_excludes[*]+${di_excludes[*]}})"
 
     [ -n "$commit_row" ] || parse_fail \
         "no commit in HEAD's history touches ANY build path of service '$service' (pathspec: ${uniq_paths[*]}). An empty git result cannot be read as fresh — the pathspec is wrong or the paths are untracked."
@@ -421,7 +540,7 @@ while IFS=$'\t' read -r service context dockerfile; do
             "$service" "$(human "$image_epoch")" "$commit_short" "$(human "$commit_epoch")"
     fi
 
-    unset paths uniq_paths
+    unset paths uniq_paths di_excludes
 done <<< "$BUILT_SERVICES"
 
 echo
