@@ -27,13 +27,25 @@ coverage/
 
 # Playwright end-to-end specs. They are NOT application code: the runner stage
 # copies only .next/standalone, .next/static and public, so nothing under e2e/ has
-# ever reached the shipped image — it was only ever pulled in by `COPY . .` into
-# the builder, where tsconfig's `**/*.ts` then type-checked it.
+# ever reached the shipped image. It was only ever pulled into the BUILDER by
+# `COPY . .`, where it cost context transfer and busted the COPY cache layer on
+# every spec edit.
 #
-# That type-checking is not lost: .github/workflows/ci-cd.yaml runs
-# `npm run build` on the frontend from a full checkout ("Run frontend build
-# (validates TypeScript)"), which is the type-check gate for these files and for
-# every other .ts in the project.
+# NO TYPE-CHECK COVERAGE IS LOST HERE — measured 2026-08-07, because the obvious
+# assumption is wrong. tsconfig.json includes `**/*.ts`, so it is tempting to
+# conclude that `next build` was type-checking these specs and that ignoring them
+# gives that up. It was not:
+#
+#   planted `const broken: number = "..."` in frontend/e2e/zz-typeerror.spec.ts
+#     npm run build (next build)  -> rc=0, spec not mentioned   <- does NOT check e2e
+#     npx tsc --noEmit            -> rc=2, TS2322 on that line   <- does check it
+#
+# `next build` type-checks the pages/app graph, not every file the tsconfig
+# program contains. So the Docker build never checked these specs either, and CI's
+# "Run frontend build (validates TypeScript)" step does not check them today.
+# That gap is PRE-EXISTING and is not created, widened or fixed by this file —
+# recorded here only so the next reader does not "restore" coverage that was never
+# there. Playwright itself transpiles specs without full type-checking.
 #
 # Excluding them keeps test code out of a production build context and lets
 # scripts/check-runtime-freshness.sh stop reporting DRIFT for a spec-only commit
