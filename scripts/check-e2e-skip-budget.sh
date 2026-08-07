@@ -44,17 +44,53 @@
 #   .github/workflows/e2e-nightly.yml does, and calls this gate after it. A gate that
 #   silently runs nothing is worse than no gate. Absent report == VOID, never pass.
 #
+#   `--from-nightly` fetches the last SUCCESSFUL nightly's report artifact instead of
+#   reading a local one. That is not a shortcut around the freshness question: the
+#   downloaded report is subjected to exactly the same digest check as a local one, so
+#   a nightly that ran on a different tree VOIDs rather than certifying yours.
+#
+# HOW STALENESS IS DECIDED — CONTENT, NOT mtime
+#
+#   This gate used to refuse a report older by MTIME than any spec:
+#
+#       find frontend/e2e frontend/playwright.config.ts -newer "$REPORT"
+#
+#   mtime answers "was this file WRITTEN after the report", which is not the question.
+#   git rewrites mtime on checkout, pull, merge and stash pop even when the bytes are
+#   identical, so the gate went VOID after EVERY merge touching a spec — including the
+#   merge of the very change the report was produced from. The documented cost was a
+#   standing ~6.5 minute suite re-run to re-earn a gate over byte-identical specs, and
+#   a permanent warning in HANDOFF.md telling readers to expect it.
+#
+#   The honest question is content, and it is answered by comparing
+#   `config.metadata.specDigest` — stamped into the report by frontend/playwright.config.ts
+#   at run time — against a digest recomputed now by scripts/e2e-spec-digest.sh.
+#   Identical content passes no matter how the files got there; any real edit, any
+#   rename, and any added or deleted spec VOIDs.
+#
+#   A report with no digest (produced before this contract existed), a sentinel
+#   digest, or a digest that does not match is VOID — never a pass. The gate must not
+#   be satisfiable by omitting the field it checks.
+#
 # EXIT CODES
 #   0 = every skip is declared and within budget
 #   1 = over budget, an undeclared skip, or a stale ALLOW
-#   2 = VOID — no report, unparseable, zero tests, missing jq, or a bad config directive.
+#   2 = VOID — no report, unparseable, zero tests, missing jq, a bad config directive,
+#       or a report whose spec digest is absent, sentinel, or mismatched.
 #       "Found nothing" is never "clean".
+#
+# USAGE
+#   scripts/check-e2e-skip-budget.sh                 # read frontend/e2e-artifacts/report.json
+#   scripts/check-e2e-skip-budget.sh --from-nightly  # read the last successful nightly's artifact
+#   E2E_REPORT=<file> scripts/check-e2e-skip-budget.sh
 # ---------------------------------------------------------------------------------
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF="${E2E_SKIP_CONF:-$REPO_ROOT/scripts/gates/e2e-skip-budget.conf}"
 REPORT="${E2E_REPORT:-$REPO_ROOT/frontend/e2e-artifacts/report.json}"
+DIGEST_SCRIPT="$REPO_ROOT/scripts/e2e-spec-digest.sh"
+FROM_NIGHTLY=0
 
 echo "check-e2e-skip-budget  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 
@@ -62,17 +98,61 @@ void() { echo "VOID: $*" >&2; exit 2; }
 fail_count=0
 fail() { echo "FAIL: $*" >&2; fail_count=$((fail_count + 1)); }
 
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --from-nightly) FROM_NIGHTLY=1; shift ;;
+        -h|--help) sed -n '2,/^set -uo/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; $d'; exit 0 ;;
+        *) void "unknown argument: $1 (try --help)" ;;
+    esac
+done
+
 command -v jq >/dev/null 2>&1 || void "jq is not installed — cannot parse the Playwright report"
 [ -f "$CONF" ] || void "config not found: $CONF"
+[ -x "$DIGEST_SCRIPT" ] || [ -f "$DIGEST_SCRIPT" ] \
+    || void "spec-digest helper not found at $DIGEST_SCRIPT — freshness cannot be established"
+
+# --- optionally pull the authority's own report --------------------------------------
+# The nightly is the only job that runs the whole suite against a real stack, so its
+# report is the authoritative skip set. Fetching it locally beats re-running 20 minutes
+# of suite to answer a question the nightly already answered — but ONLY because the
+# digest check below then decides whether that answer applies to THIS tree.
+if [ "$FROM_NIGHTLY" -eq 1 ]; then
+    command -v gh >/dev/null 2>&1 || void "--from-nightly needs the gh CLI"
+    dest="${TMPDIR:-/tmp}/e2e-nightly-report.$$"
+    run_id=$(gh run list --workflow e2e-nightly.yml --status success \
+                 --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+    case "${run_id:-}" in ''|*[!0-9]*) void "could not resolve a successful e2e-nightly run id (got '${run_id:-}')" ;; esac
+    mkdir -p "$dest" || void "could not create $dest"
+    gh run download "$run_id" --name e2e-nightly-report --dir "$dest" >/dev/null 2>&1 \
+        || void "could not download artifact 'e2e-nightly-report' from run $run_id"
+    REPORT="$dest/e2e-artifacts/report.json"
+    echo "  source    : nightly run $run_id (downloaded to $dest)"
+fi
+
 [ -s "$REPORT" ] || void "no Playwright JSON report at $REPORT — run the suite with --reporter=json first"
 
-# A report older than the specs it claims to describe certifies a skip set that may no
-# longer exist. Reading a stale artifact as if it were live is a documented trap in this
-# repo (core-java/build vs build-local); refuse rather than repeat it.
-NEWEST_SPEC=$(find "$REPO_ROOT/frontend/e2e" "$REPO_ROOT/frontend/playwright.config.ts" \
-                   -newer "$REPORT" -print -quit 2>/dev/null)
-[ -z "$NEWEST_SPEC" ] \
-    || void "report is OLDER than $NEWEST_SPEC — re-run the suite; a stale report certifies a skip set that may no longer exist"
+# --- FRESHNESS: does this report describe the specs on disk RIGHT NOW? ---------------
+REPORT_DIGEST=$(jq -r '.config.metadata.specDigest // empty' "$REPORT" 2>/dev/null)
+[ -n "$REPORT_DIGEST" ] || void \
+    "report carries no config.metadata.specDigest — it predates the freshness contract (or was not produced by frontend/playwright.config.ts). Re-run the suite; a report that cannot be dated cannot certify a skip set."
+# Written as an explicit `if` rather than `A && B || void`: in that form a false A
+# ALSO runs the void, which happens to be right here and is wrong the moment anyone
+# adds a third clause. This repo has already been bitten by a short-circuit chain
+# that fired on the success path.
+if [ "$REPORT_DIGEST" = "UNAVAILABLE" ] || ! [[ "$REPORT_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+    void "report's specDigest is '$REPORT_DIGEST', not a digest — the run could not compute one, so its skip set cannot be tied to any tree."
+fi
+
+TREE_DIGEST=$(bash "$DIGEST_SCRIPT"); digest_rc=$?
+[ "$digest_rc" -eq 0 ] || void "scripts/e2e-spec-digest.sh exited $digest_rc — cannot establish what the tree currently contains"
+[[ "$TREE_DIGEST" =~ ^[0-9a-f]{64}$ ]] || void "spec digest helper produced '$TREE_DIGEST', not a digest"
+
+[ "$REPORT_DIGEST" = "$TREE_DIGEST" ] || void \
+    "report describes a DIFFERENT spec set than the tree — re-run the suite.
+        report : $REPORT_DIGEST
+        tree   : $TREE_DIGEST
+      This compares CONTENT, so a checkout/pull/merge that rewrote mtimes without
+      changing bytes will NOT trip it; a real edit, rename, add or delete will."
 
 # --- parse config -------------------------------------------------------------------
 MAX_SKIPS=""
@@ -115,6 +195,7 @@ case "${SKIP_COUNT:-}" in ''|*[!0-9]*) void "could not count skipped results in 
 
 echo "  report    : $REPORT"
 echo "  config    : $CONF"
+echo "  freshness : specDigest ${TREE_DIGEST:0:16}… matches the tree (content, not mtime)"
 echo "  tests     : $TOTAL total, $SKIP_COUNT skipped (budget $MAX_SKIPS)"
 
 matches_any_allow() {

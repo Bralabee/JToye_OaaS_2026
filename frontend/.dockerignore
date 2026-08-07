@@ -25,6 +25,21 @@ Thumbs.db
 # Test coverage
 coverage/
 
+# Playwright end-to-end specs. They are NOT application code: the runner stage
+# copies only .next/standalone, .next/static and public, so nothing under e2e/ has
+# ever reached the shipped image — it was only ever pulled in by `COPY . .` into
+# the builder, where tsconfig's `**/*.ts` then type-checked it.
+#
+# That type-checking is not lost: .github/workflows/ci-cd.yaml runs
+# `npm run build` on the frontend from a full checkout ("Run frontend build
+# (validates TypeScript)"), which is the type-check gate for these files and for
+# every other .ts in the project.
+#
+# Excluding them keeps test code out of a production build context and lets
+# scripts/check-runtime-freshness.sh stop reporting DRIFT for a spec-only commit
+# that cannot change a byte of the served bundle.
+e2e/
+
 # Logs
 *.log
 

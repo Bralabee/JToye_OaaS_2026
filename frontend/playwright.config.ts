@@ -1,7 +1,46 @@
 import { defineConfig, devices } from "@playwright/test"
+import { execFileSync } from "node:child_process"
+import path from "node:path"
+
+/**
+ * A content digest of frontend/e2e/** plus this file, stamped into the JSON
+ * report's `config.metadata` so `scripts/check-e2e-skip-budget.sh` can tell
+ * "this report describes the specs on disk" from "this report is stale".
+ *
+ * That gate used to answer the question with mtime (`find -newer <report>`),
+ * which reports a difference whenever git REWRITES a file — pull, checkout,
+ * merge, stash pop — even when the bytes are identical. The result was a VOID
+ * after every merge touching a spec and a ~6.5 minute suite re-run to clear it
+ * over content that had not changed.
+ *
+ * Computed by scripts/e2e-spec-digest.sh rather than reimplemented here: two
+ * implementations of one hash in two languages is a divergence waiting to
+ * happen, and the divergence would surface as a permanent VOID.
+ *
+ * Failure degrades to the sentinel, never to a plausible-looking hash. The gate
+ * treats a non-digest as VOID (it cannot verify), which is the fail-closed
+ * direction — a fabricated or omitted digest must never read as "matches".
+ */
+function specDigest(): string {
+  try {
+    const out = execFileSync(
+      "bash",
+      [path.join(__dirname, "..", "scripts", "e2e-spec-digest.sh")],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim()
+    return /^[0-9a-f]{64}$/.test(out) ? out : "UNAVAILABLE"
+  } catch {
+    return "UNAVAILABLE"
+  }
+}
 
 export default defineConfig({
   testDir: "./e2e",
+  // Playwright merges its own runtime keys (actualWorkers) into this object and
+  // serialises the result as `config.metadata` in the JSON report.
+  metadata: {
+    specDigest: specDigest(),
+  },
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false, // Sequential — tests share state (orders, auth)
