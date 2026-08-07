@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Playwright specs had no type-check gate anywhere (#601) — 2026-08-07
+
+`frontend/tsconfig.json` includes `**/*.ts` and excludes only `node_modules`, so it looks like
+`next build` type-checks the e2e specs. It does not. Measured by planting a deliberate error:
+
+```
+const broken: number = "this is not a number"     (in frontend/e2e/zz-typeerror.spec.ts)
+
+  npm run build (next build)  -> rc=0, the file is not even mentioned
+  npx tsc --noEmit            -> rc=2, TS2322 on that line
+```
+
+`next build` type-checks the pages/app graph, not every file in the tsconfig program, and Playwright
+transpiles specs without full checking. A type error in a spec could therefore reach `main` with
+every gate green, surfacing only when that spec ran — or **never**, if it was one of the declared
+skips. Found while removing `e2e/` from the frontend Docker build context (#597); that removal was
+correct and lost nothing, because the coverage it appeared to give up never existed.
+
+#### Added
+- **`scripts/check-e2e-typecheck.sh`** + `frontend/tsconfig.e2e.json`, wired into the `test:` job
+  after `npm ci`/`npm run build`. Scoped rather than a bare `tsc --noEmit`, which is red at ~366
+  pre-existing jest-dom matcher errors in unit tests `next build` never checks — a permanently red
+  gate is an ignored one. The scoped program is **green today at 0 errors across 19 files**, which is
+  the precondition for it being able to fail loudly tomorrow. `check-gate-enforcement` 28 → 29.
+
+#### Measured — the anti-vacuity guard, and the wrong reason it nearly shipped with
+The tempting rationale is "tsc exits 0 on an empty program". It does **not**:
+
+```
+include matches NOTHING at all           -> tsc rc=2 (TS18003, no inputs found)
+include matches real files, none in e2e  -> tsc rc=0   <-- SILENT PASS
+```
+
+tsc already fails the loud case and is blind to the quiet one — and the quiet one is the realistic
+one: a directory rename or a mis-edited `include` leaves the gate reporting a confident PASS over
+files nobody meant to check. So the count is read from tsc's **own resolved program**
+(`--listFiles`), filtered to `/frontend/e2e/`; zero is VOID, never a pass. Arms: clean **rc=0**
+(19 files) · planted error **rc=1** · `include` → `lib/utils.ts` raw tsc **rc=0** but gate **rc=2**
+· missing config **rc=2** · closing clean arm **rc=0**. The third arm is load-bearing — it is the
+case tsc gets wrong, and the only one proving this gate adds something tsc does not.
+
 ### Two gates were measuring a proxy, and both taxed every merge (#597) — 2026-08-07
 
 Neither gate was wrong about its purpose. Each answered a cheaper question than the one it
