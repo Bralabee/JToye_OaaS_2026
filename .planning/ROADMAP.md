@@ -346,12 +346,22 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
+| 33. The Consumer Product | v2.3 | 0/? | Not started | — |
+| 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
 The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48 — they run on the
 **v2.3 build denominator (Phases 21–26)** and are not the milestone's completion measure. Phases
-27–32 are tracked in this table.
+27–34 are tracked in this table.
+
+> **Every open issue has a home — see `.planning/ISSUE-DISPOSITION.md`.** Added 2026-08-07 after a
+> sweep found that **15 of 57** open issues were named anywhere in this file, and that six —
+> **#453, #460, #461, #544, #462, #507** — appeared in **zero** files under `.planning/`. Four of
+> those six are P1 and all four came from the owner using the running application. Phases **33** and
+> **34** exist because 16 orphans clustered along two seams; the disposition document also records
+> five dated deferrals, a six-item post-GTM hardening backlog, and one shipped defect (#587) that
+> needs no phase. **Re-run the count before quoting it** — `gh issue list --limit` defaults to 30.
 
 **Blocking decisions for Phases 29–32** — these are commercial, not technical, and nothing in 29–32
 starts until they land: (1) the production domain (`jtoye.co.uk` was never registered;
@@ -434,8 +444,24 @@ Phase 29, and because it is cheap.
 
 **Also in scope, same defect class, cheapest fixed together**: #283 (replace the retained
 `auth == null` internal bypass with an explicit `asSystem()` marker), #284 (`@Async` / `@Scheduled` /
-`@RabbitListener` propagate no SecurityContext and would take that bypass), #289 (STOMP shop-gate
-hard-coded to the kitchen topic).
+`@RabbitListener` propagate no SecurityContext and would take that bypass), ~~#289~~ (STOMP shop-gate
+hard-coded to the kitchen topic — **CLOSED** 2026-08-05).
+
+**Issues (9)** — added 2026-08-07 by the disposition sweep. Criteria 1 and 2 above describe the
+pentest work without naming it, because #548/#549/#551/#552 were filed on 2026-08-05, four days
+after this phase was written; they are the criterion, not new scope.
+
+| # | Maps to | Note |
+|---|---|---|
+| #548 | SC-1 + SC-2 | disposition of all 11 findings, and the A1 re-verification |
+| #549 | SC-3 | the API contract is unauthenticated on staging |
+| #551 | SC-2 | which Keycloak clients can mint the `core-api` audience |
+| #552 | SC-4 | rotate the credentials read during the pentest; stop running as a table owner |
+| #283 | — | already in scope above |
+| #284 | — | already in scope above |
+| **#270** | SC-4 | **added** — MinIO bootstrap runs an unpinned `minio/mc` with root credentials on the backing network. Same local-stack surface SC-4 already governs |
+| **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
+| **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
 **UI hint**: no
 
@@ -473,6 +499,18 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
      Phase 26 recorded enforcement explicitly NOT PROVEN and that record must not be quietly
      inherited as a pass. (DPLY-05)
 
+**Issues (12)** — added 2026-08-07 by the disposition sweep. Already named above: #99, #100, #101,
+#297, #299, #301. Added:
+
+| # | Maps to | Note |
+|---|---|---|
+| **#98** | DPLY-03 | [P2-7] observability demo-grade — prod metrics unreachable, phantom alerts, no logs/tracing. DPLY-03 *is* this issue; it was stated without citing it |
+| **#112** | DPLY-03 | [P3-10] runbook stubs, no paging path, no SLOs. "Alerts a human" is unmeetable without a human to alert |
+| **#294** | DPLY-01 | the SES sending domain and the `jtoye-images` bucket in eu-west-2 are UNVERIFIED — an operator check that must precede a first deploy, not follow it |
+| **#300** | DPLY-02 | sealed-secrets / external-secrets for the local secrets path; sibling of #100 |
+| **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
+| **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
+
 **UI hint**: no
 
 ### Phase 30: The Money Path, Executed
@@ -481,7 +519,7 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 mock. This is the phase that turns a working product into a business.
 **Depends on**: **Stripe test-mode keys** — an account decision, not a task; `STRIPE_API_KEY` and
 `STRIPE_WEBHOOK_SECRET` are empty on every stack today. Phase 29 for the staging run.
-**Requirements**: PAY-01, PAY-02, PAY-03
+**Requirements**: PAY-01, PAY-02, PAY-03, PAY-04
 **Success Criteria** (what must be TRUE):
 
   1. The refund E2E (#61) **runs and passes rather than skipping**, and its `ALLOW` entries leave
@@ -498,6 +536,38 @@ mock. This is the phase that turns a working product into a business.
      account** → refund — with each step's evidence read out of Stripe's API. MARKETPLACE orders
      route as destination charges per ADR-0001 Decision 2; that path has never been exercised.
      (PAY-03)
+
+**Issues (5)** — added 2026-08-07 by the disposition sweep. Already named above: #61, #102. Added:
+
+| # | Maps to | Note |
+|---|---|---|
+| **#461** | **PAY-04 — see below** | **P1.** UX-5: orders complete with **no payment**, and pay-on-collection must be replaced by channel-issued payment links |
+| **#462** | **PAY-04** | **P2.** UX-6: password signups have no second factor and **no verified contact channel**. Moved here from Phase 33 the same day: the verified-contact half is the address #461 sends to |
+| **#108** | PAY-03 | [P3-6] missing outbound-call timeouts (Stripe/SMTP/axios/S3) and dead email breaker config. A hung Stripe call is a money-path failure, not general hygiene |
+
+> ⚠ **#461 is upstream of everything else in this phase.** PAY-01..03 cover Stripe *mechanics* —
+> refunds, subscriptions, payouts — and every one of them assumes an order that already took money.
+> #461 says orders today complete without taking any. **Do not plan PAY-01..03 around it.**
+
+**The product decision is made. Do not re-open it.** Recorded verbatim in #461 from the owner on
+2026-08-02 and reaffirmed 2026-08-07: pay-on-collection is **not permitted** — a customer can order
+and simply not collect, leaving the vendor with produced stock and no payment — and instead a payment
+link is issued automatically to the buyer's **verified telephone number**, or the social channel they
+engaged on, so the order is paid before production.
+
+  7. **A payment request reaches a verified telephone number, and an unpaid order cannot be
+     produced.** Falsifiable on the current tree in four independent places, which is the point —
+     what blocks #461 is a dependency chain, not a decision: (a) `Customer.phone` is
+     `@Column(length = 50)`, **optional**, free text, and a phone or social order may create no
+     Customer row at all; (b) **nothing verifies a phone number** — no `phone_verified` column in any
+     of the 60 migrations, no OTP, no flow, where `emailVerified` resolves to 4 files including
+     `CustomerJwtVerifier`, so the platform verifies email and not phone **while the design routes on
+     phone** (this is #462, and it is why #462 moved into this phase); (c) `WhatsAppSmsChannel` exists
+     but `WhatsAppProperties.enabled` defaults **false** and Phase 22's inbound parser is incomplete
+     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:508-521` deliberately
+     falls back to cash-on-delivery when no provider is configured, which is what makes the policy
+     violable and must be removed or gated deliberately, not left as a silent default. The link must
+     be single-use and expiring — it is a bearer credential. (PAY-04)
 
 **UI hint**: yes (billing/subscription surface)
 
@@ -532,7 +602,10 @@ questionnaire.
 ### Phase 32: Production Cutover + First Tenant
 
 **Goal**: One real Cohort A (takeaway) operator is live, in production, and paying.
-**Depends on**: Phases 29, 30 and 31. All four blocking decisions resolved.
+**Depends on**: Phases 29, 30, 31 **and 33**. All four blocking decisions resolved. (Phase 33 was
+added 2026-08-07 and gates this phase: GTM-02 requires a real consumer to complete a first paid
+order, and today a signed-out consumer is shown five fictional vendors — #544 — with no concept of
+locality — #460.)
 **Requirements**: GTM-01, GTM-02
 **Success Criteria** (what must be TRUE):
 
@@ -544,5 +617,104 @@ questionnaire.
      **#428 Wave 1 (catering discovery) has produced its recorded finding** — either a validated
      wedge or a documented decision that catering is not it. Both are successful outcomes; the
      failure mode is reaching production with the Cohort B question still unasked. (GTM-02)
+
+**UI hint**: no
+
+---
+
+## The two phases the disposition sweep created — Phases 33–34
+
+Added 2026-08-07. Source: the all-57 issue triage recorded in `.planning/ISSUE-DISPOSITION.md`.
+Neither is new scope. Both are made of issues that were already filed, already prioritised, and
+already open — and that this roadmap did not name, which is how a document describing 15 of 57 open
+issues came to read as complete.
+
+> **Same standing rule as Phases 28–32**: every success criterion below must be capable of FAILING
+> on the tree as it stands. Where one is already satisfied it is not a criterion.
+
+### Phase 33: The Consumer Product
+
+**Goal**: A real person who is not a vendor can find a shop near them, understand what they are
+buying, sign up safely, and be shown something true. Today the customer-facing surface fails all
+four in ways that were found by using the application rather than by any audit in this repo.
+**Depends on**: Nothing structural. Runs parallel to 29–31. **Gates Phase 32** — GTM-02 is a real
+consumer completing a first paid order.
+**Requirements**: CUST-01, CUST-02, CUST-03, CUST-04
+**Issues (9)**: #460, #544, #453 (P1) · #458, #452, #545, #546 (P2) · #432 · #285 (P3)
+*(#462 was listed here on 2026-08-07 and moved to Phase 30 the same day — its verified-contact-channel
+half is the address #461's payment request is sent to, so it is a money-path dependency rather than a
+consumer-UX item.)*
+
+**Why this phase exists at all.** Six issues appeared in **zero** files under `.planning/` before the
+2026-08-07 sweep — #453, #460, #461, #544, #462, #507 — and four are P1. Every one was filed from the
+owner using the running app. The highest-signal source on the board had the least planning coverage,
+and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **Locality exists as a concept** (#460). Device location is used, shop coordinates stop being
+     inert, and a delivery radius is enforced somewhere a customer can observe. Falsifiable today by
+     construction: shop coordinates are stored and never read, so a shop 200 miles away is offered
+     identically to one on the next street. (CUST-01)
+  2. **Nothing on the storefront is fictional** (#544). "Cooking near you" resolves to real published
+     shops, and the check is shown to fail against a reintroduced hardcoded list. Today it is five
+     invented vendors — a **regression-by-omission** in this project's own terms: a green suite over
+     a surface that lies. (CUST-01)
+  3. **Onboarding has no two-actor dead-end** (#453). `MANUAL_REVIEW` appears on some surface a human
+     can act from, **or** a recorded decision states who adjudicates it. This intersects the recorded
+     *no-platform-operator* constraint — there is no cross-tenant operator identity, so a stalled
+     onboarding notifies nobody. That is a design decision to make, not a bug to fix, and it is why
+     the issue is unadjudicated. The criterion fails if the phase ships code without settling it.
+     (CUST-02)
+  4. **A signed-in customer can tell they are signed in, and sees only what applies to them** (#458):
+     *For operators* and *Track order* are gated, and tracking moves into the profile and
+     auto-populates. Paired with #452's lifecycle dead-ends — no second-shop onboarding path, no
+     staff invite — both of which need a product decision, not an implementation. (CUST-02)
+  5. **Consumer sign-up has more than one route in** (#432): the `jtoye-customers` realm's
+     `identityProviders: 0` is either populated or recorded as a dated deliberate decision. The
+     second-factor and verified-contact half of this criterion moved to **Phase 30 with #462**,
+     because a verified telephone number is what #461's payment request is addressed to — it cannot
+     trail the money path. (CUST-03)
+  6. **The customer-facing surface has been reviewed against what it actually renders** (#546, #545,
+     #285): a look-and-feel pass on web and mobile against a surface that changed twice, Keycloak
+     stops shipping the stock theme on both realms, and the staff screen gets bulk-revoke of
+     JIT-provisioned rows. A screenshot is not sufficient evidence for the motion half — see the
+     frontend craft sequence. (CUST-04)
+
+**UI hint**: yes — this is almost entirely UI, and it is the phase most exposed to this repo's
+recorded UI traps: a screenshot cannot verify motion, and a screenshot taken without scrolling reads
+scroll-reveal content as empty bands.
+
+### Phase 34: Rendering + Test Truthfulness
+
+**Goal**: The test suite stops reporting on surfaces it does not exercise, and pages stop fetching
+on mount where the server could have rendered them. Grouped because they share one root cause.
+**Depends on**: Nothing. Does **not** gate Phase 32.
+**Requirements**: TRUTH-01, TRUTH-02
+**Issues (6)**: #542, #507, #202, #286, #547, #110
+
+**Success Criteria** (what must be TRUE):
+
+  1. **A route-interception stub is never the coverage story for a server-rendered route** (#542,
+     #507). #507's 25 queued conversions each silently drop their spec coverage under the current
+     approach; the phase must produce a pattern that does not, shown to fail against a stubbed SSR
+     route. #463's premise is recorded as wrong — `/shop` is client-rendered too — so scope from
+     measurement, not from #463. (TRUTH-01)
+  2. **The four mount-time `setState`-in-effect hydration sites are gone** (#202), with the
+     resurrected ESLint gate shown to fail against a reintroduced one. (TRUTH-01)
+  3. **#286 is narrowed to what is actually outstanding, not closed whole.** Measured 2026-08-07
+     against nightly run 31138225934 (182 total / 175 passed / 7 skipped): the `/dashboard/staff`
+     click-through **already runs live** — `dashboard-interface-corrections.spec.ts` does a real
+     `vendorLogin` (3 refs, **0** route stubs) and is not among the 7 skips. What remains is that
+     `dashboard-mobile` runs at **390 × 844** (`frontend/playwright.config.ts:84`), not the 375px the
+     issue asks for, and carries **9** route stubs — which is #542's complaint, not a separate one.
+     (TRUTH-02)
+  4. **#110 is narrowed to coverage.** Its second criterion — "Playwright runs in CI" — is satisfied
+     by the nightly job, which is what closed #420. JaCoCo, the generated-but-unconsumed Go coverage
+     profile, and a Jest `coverageThreshold` remain. (TRUTH-02)
+  5. **#547 closes by closing its children, not by duplicating them** — its own body says so. 6 of
+     the 7 skips are owned by #304 (Phase 29) and #61 (Phase 30); the `onboarding-blocked-flow`
+     mobile skip is the one with no owner and is this phase's to home. The skip budget currently
+     sits at 7 against a ceiling of 8. (TRUTH-02)
 
 **UI hint**: no
