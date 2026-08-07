@@ -59,9 +59,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/docs/metrics.json"
 cd "$ROOT"
 
-FAMILY="${1:-}"
+# A LEADING OPTION IS NOT A FAMILY. Taking $1 unconditionally made `--report x` set
+# FAMILY='--report', which then fell to the option loop and died on "unknown argument 'x'" —
+# a VOID for the wrong reason, and it left the bare-invocation --report guard below
+# UNREACHABLE. Found by running that guard's own arm and reading WHY it exited 2 rather than
+# accepting that it did: the exit code was right and the cause was wrong, which is the shape
+# that makes a check look proven when it has never executed.
+FAMILY=""
+case "${1:-}" in
+	'')  ;;                       # bare — the all-families form below
+	-*)  ;;                       # an option; leave it for the loop, FAMILY stays empty
+	*)   FAMILY="$1"; shift ;;
+esac
 REPORT=""
-shift || true
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--report) REPORT="${2:-}"; shift 2 ;;
@@ -123,6 +133,57 @@ compare() { # <label> <manifest-key> <observed>
 	printf '  %-34s runner=%-6s manifest=%s\n' "$1" "$3" "$expected"
 	[ "$3" = "$expected" ] || fail "$1: the runner says $3, docs/metrics.json says $expected. Run scripts/docs-freshness.sh --write and update the prose counts."
 }
+
+# --- a BARE invocation runs every family ----------------------------------------------------
+#
+# WHY. This gate used to exit 2 (VOID) on a bare call, because "no family" fell through to the
+# usage arm. That is the same exit code the script uses for "I could not perform the check", and
+# on this repo VOID is a real, expected state that a reader is trained to investigate — so a
+# usage error was indistinguishable from a genuine inability to verify.
+#
+# It cost real time on 2026-08-07. HANDOFF.md §6 instructs the next session to sweep every gate
+# with a bare invocation; that sweep reported this script as `VOID(2)` alongside a genuine
+# post-recreate failure in check-alert-metrics, and the two had to be told apart by hand. The
+# sweep instruction was not wrong — the script was the only one of 29 that could not answer it.
+#
+# So the bare form now means what a reader sweeping gates obviously intends: CHECK EVERYTHING.
+# It runs jest, playwright and vitest in turn and aggregates.
+#
+# AN UNKNOWN FAMILY STILL VOIDS. `check-test-count-oracle.sh jset` is a typo, not a request to
+# check everything, and silently running all three would hide it. Absent-argument and
+# wrong-argument are different mistakes and keep different answers.
+#
+# SEVERITY PRECEDENCE MATCHES THE SIBLING GATES: a real FAIL (1) outranks a VOID (2), so a
+# genuine count mismatch is never masked by an unrelated missing runner. Same rule as
+# check-handoff-contract.sh and check-changelog-contract.sh.
+#
+# `--report` is rejected here rather than silently ignored: it names a single runner's report and
+# cannot mean anything across three families.
+if [ -z "$FAMILY" ]; then
+	[ -z "$REPORT" ] || void "--report names one runner's report and cannot apply to all families — call '$0 jest --report <file>'"
+	printf 'check-test-count-oracle [all]  (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	all_fail=0
+	all_void=0
+	for fam in jest playwright vitest; do
+		bash "$0" "$fam"; rc=$?          # captured on the same line — never after an echo
+		case "$rc" in
+			0) ;;
+			1) all_fail=1 ;;
+			*) all_void=1 ;;
+		esac
+		printf '  --- %s -> rc=%s\n' "$fam" "$rc"
+	done
+	if [ "$all_fail" -ne 0 ]; then
+		echo "FAILED: at least one runner disagrees with docs/metrics.json (see above)." >&2
+		exit 1
+	fi
+	if [ "$all_void" -ne 0 ]; then
+		echo "VOID: at least one family could not be checked (see above) — treat as unverified, not as a pass." >&2
+		exit 2
+	fi
+	printf 'PASS: all three runners (jest, playwright, vitest) agree with docs/metrics.json.\n'
+	exit 0
+fi
 
 printf 'check-test-count-oracle [%s]  (%s)\n' "${FAMILY:-<none>}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A bare `check-test-count-oracle` exited 2 on a usage error, which reads exactly like a real VOID (#611) — 2026-08-07
+
+The script took a required `<jest|playwright|vitest>` argument and fell through to its usage arm
+with **exit 2** when called bare. On this repo exit 2 means *"I could not perform the check"* — a
+real, expected state a reader is trained to investigate — so a usage error was indistinguishable
+from a genuine inability to verify.
+
+Not hypothetical. `HANDOFF.md` §6 instructs the next session to sweep every gate with a bare
+invocation. That sweep produced:
+
+```
+rc=1:    check-alert-metrics.sh          <- a genuine post-recreate failure
+VOID(2): check-test-count-oracle.sh      <- a usage error wearing the same clothes
+```
+
+and the two had to be separated by hand. The instruction was not wrong — this was the only one of
+29 gates that could not answer it.
+
+#### Fixed
+- **A bare call now runs all three families and aggregates.** An *unknown* family (`jset`) still
+  VOIDs: a typo is not a request to check everything, and silently running all three would hide it.
+  Absent-argument and wrong-argument are different mistakes and keep different answers.
+- **A leading option is no longer consumed as the family.** `--report x` set `FAMILY='--report'`,
+  fell to the option loop and died on `unknown argument 'x'` — the right exit code for the **wrong
+  reason**, which left the new `--report` guard as unreachable dead code. Found by reading *why* an
+  arm exited 2 rather than accepting *that* it did.
+
+Severity precedence matches the sibling gates: a real **FAIL (1) outranks a VOID (2)**, so a genuine
+count mismatch is never masked by an unrelated missing runner. **CI is unaffected** — `ci-cd.yaml`
+invokes this three times with explicit modes (`:131` jest, `:139` playwright, `:549` vitest) in the
+jobs where each runner lives; nothing in CI calls it bare.
+
+#### Measured — six arms on a committed tree
+
+```
+1  bare invocation              rc=0   all three families, aggregate PASS
+2  unknown family 'jset'        rc=2   a typo still voids
+3  bare --report                rc=2   now with ITS OWN message, not "unknown argument"
+4  manifest unparseable         rc=2   VOID propagates
+5  mcp_test_blocks 48 -> 49     rc=1   FAIL propagates and OUTRANKS void
+6  restored, closing arm        rc=0   tree clean, metrics.json hash back to baseline
+```
+
+Arm 5 is load-bearing: it proves the aggregator reports the right **severity**, not merely
+non-zero. Both destructive arms restored `docs/metrics.json` verified **by content**
+(`git hash-object`), never by `git diff --stat`.
+
+Result: **a bare sweep is now 29/29 green with no per-gate special-casing**, so §6's instruction is
+literally executable.
+
 ### Nothing had ever checked a citation in HANDOFF.md (#610) — 2026-08-07
 
 `HANDOFF.md` is outside `check-doc-citations.sh`'s `DEFAULT_DOCS`, and `ci-cd.yaml:675` invokes that
