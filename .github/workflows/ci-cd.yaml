@@ -100,6 +100,19 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+      # The step above does NOT cover frontend/e2e. `next build` type-checks the
+      # pages/app graph, not every file in the tsconfig program — measured by
+      # planting `const broken: number = "..."` in a spec: `npm run build` exits 0
+      # and never mentions the file, while `tsc --noEmit` exits 2 with TS2322.
+      # Playwright transpiles specs without full checking either, so until this
+      # step existed a type error in a spec could reach main with every gate green.
+      #
+      # Scoped to tsconfig.e2e.json deliberately: a bare `tsc --noEmit` over the
+      # frontend is red at ~366 pre-existing jest-dom matcher errors that
+      # `next build` never checks, and a permanently red gate is an ignored one.
+      - name: Type-check the Playwright specs (nothing else does)
+        run: bash scripts/check-e2e-typecheck.sh
+
       # --json --outputFile is here so the count oracle below can reuse THIS run
       # rather than executing the suite a second time. The human-readable reporter
       # output is unaffected.
