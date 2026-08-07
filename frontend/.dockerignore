@@ -38,7 +38,12 @@ coverage/
 # Excluding them keeps test code out of a production build context and lets
 # scripts/check-runtime-freshness.sh stop reporting DRIFT for a spec-only commit
 # that cannot change a byte of the served bundle.
+#
+# playwright.config.ts is excluded for the same reason and to make the rule whole:
+# with only e2e/ ignored, editing the suite's projects/grepInvert still dated the
+# frontend image, so a test-only change could still demand a production rebuild.
 e2e/
+playwright.config.ts
 
 # Logs
 *.log
