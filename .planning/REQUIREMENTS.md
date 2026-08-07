@@ -7,7 +7,7 @@
 
 ## v1 Requirements
 
-v2.3 originally scoped **24 requirements across 7 categories**. **Widened 2026-08-01 to 46 across 13 categories** — see *Go-to-market closure* below: `OPS×5` (Phase 27, previously recorded in `ROADMAP.md` only) plus `SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2` (Phases 28–32). **v2.3 is not closed and nothing is archived** — owner decision 2026-08-01: *"2.3 is not complete. closing nothing. we will proceed with 2.3 until it's go to market ready."* Original scope locked by user 2026-07-14 (do not re-litigate); a **Notifications & Comms** category was inserted as **Phase 22** on 2026-07-14, absorbing the former standalone Outbound Webhooks (#205 → COMMS-04/05/06) + WhatsApp (#208). Phase order is thinnest/highest-pain first: Onboarding UX → **Notifications & Comms** → Vendor-scoped access → Image architecture → AI (mutating MCP) → Infrastructure (Dashboard mobile MOBL-01 folded into Vendor-scoped access).
+v2.3 originally scoped **24 requirements across 7 categories**. **Widened 2026-08-01 to 46 across 13 categories** — see *Go-to-market closure* below: `OPS×5` (Phase 27, previously recorded in `ROADMAP.md` only) plus `SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2` (Phases 28–32). **Widened again 2026-08-07 to 53 across 15 categories** by the all-57 issue triage (`.planning/ISSUE-DISPOSITION.md`): `CUST×4` (Phase 33) + `TRUTH×2` (Phase 34) for issues that had no home, plus `PAY-04` — the payment-request-to-a-verified-telephone-number requirement, whose product decision the owner made on 2026-08-02 and which nothing had captured as a requirement. **v2.3 is not closed and nothing is archived** — owner decision 2026-08-01: *"2.3 is not complete. closing nothing. we will proceed with 2.3 until it's go to market ready."* Original scope locked by user 2026-07-14 (do not re-litigate); a **Notifications & Comms** category was inserted as **Phase 22** on 2026-07-14, absorbing the former standalone Outbound Webhooks (#205 → COMMS-04/05/06) + WhatsApp (#208). Phase order is thinnest/highest-pain first: Onboarding UX → **Notifications & Comms** → Vendor-scoped access → Image architecture → AI (mutating MCP) → Infrastructure (Dashboard mobile MOBL-01 folded into Vendor-scoped access).
 
 Migration numbering: shop_staff = **V52**, media_asset = **V53** (shop_staff first); Comms tables take later versions under `out-of-order=true` so that ordering is undisturbed. The onboarding-blocker path is zero-migration.
 
@@ -126,6 +126,7 @@ Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 
 - [ ] **PAY-01**: The refund E2E (#61) runs and passes; its `ALLOW` entries leave `e2e-skip-budget.conf`. Blocked on **Stripe test-mode keys** — not on a fixture.
 - [ ] **PAY-02**: Recurring subscription billing at the published £39/location/month + 0.5%, proven by retrieving a test-mode invoice from Stripe by id. Closes #102's remainder.
 - [ ] **PAY-03**: The full loop executed on staging — onboard → order → capture → payout to a connected account → refund — evidenced from Stripe's API, never from an application log.
+- [ ] **PAY-04**: An unpaid order cannot be produced, and a payment request reaches the buyer's **verified telephone number** (or the social channel they engaged on) as a single-use, expiring link. Closes #461 and the verified-contact half of #462. The owner's ruling of 2026-08-02 is binding and settled: pay-on-collection is **not permitted**. Depends on a phone-verification mechanism that does not exist today (no `phone_verified` column in any migration), on the channel seam (#208), and on Stripe test-mode keys.
 
 ### Consumer-safety and legal floor (LGL) — Phase 31
 
@@ -137,6 +138,22 @@ Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 
 
 - [ ] **GTM-01**: Production tagged and deployed — a `v2.3` git tag exists (none does; latest is `v2.2` while `build.gradle.kts` reads `2.3.0`), `DEPLOY_ENABLED` true, `check-runtime-freshness.sh` green against production.
 - [ ] **GTM-02**: One real Cohort A vendor completes onboarding → published shop → first paid order in production, and #428 Wave 1 has produced its recorded finding.
+
+### The consumer product (CUST) — Phase 33
+
+Added 2026-08-07 by the all-57 issue triage. Every requirement here is made of issues that were
+already filed and already prioritised; three of the four P1s were found by the owner **using the
+running application**, and none appeared in any planning document before the sweep.
+
+- [ ] **CUST-01**: Locality exists as a concept and nothing on the storefront is fictional — device location used, shop coordinates read, a delivery radius enforced, and "Cooking near you" resolving to real published shops. Closes #460 and #544.
+- [ ] **CUST-02**: No lifecycle dead-ends for a consumer or a vendor — onboarding `MANUAL_REVIEW` reaches a surface a human can act from (or a recorded decision names who adjudicates it, given there is no cross-tenant operator identity), signed-in customer nav is gated, tracking moves into the profile, and second-shop onboarding plus staff invite exist. Closes #453, #458, #452.
+- [ ] **CUST-03**: Consumer sign-up has more than one route in — the `jtoye-customers` realm's `identityProviders: 0` is populated or recorded as a dated deliberate decision. Closes #432. *(The second-factor / verified-contact half moved to PAY-04 with #462 on 2026-08-07: a verified telephone number is the address #461's payment request is sent to, so it cannot trail the money path.)*
+- [ ] **CUST-04**: The customer-facing surface has been reviewed against what it actually renders — a look-and-feel pass on web and mobile, Keycloak stops shipping the stock theme on both realms, and the staff screen gains bulk-revoke of JIT-provisioned rows. Closes #546, #545, #285. A screenshot cannot verify motion.
+
+### Rendering and test truthfulness (TRUTH) — Phase 34
+
+- [ ] **TRUTH-01**: A route-interception stub is never the coverage story for a server-rendered route, and the four mount-time `setState`-in-effect hydration sites are gone with the ESLint gate shown to fail against a reintroduced one. Closes #542, #507, #202.
+- [ ] **TRUTH-02**: Coverage is measured and gated per language, and the remaining E2E skips are owned. #286 is **narrowed** (its `/dashboard/staff` half already runs live; 390×844-vs-375px and 9 route stubs remain), #110 is **narrowed** to coverage only (its "Playwright runs in CI" half is met by the nightly), and #547 closes by closing its children rather than duplicating them.
 
 ## Future Requirements (deferred — tracked, not lost)
 
@@ -209,12 +226,19 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | PAY-01 | Phase 30 | not yet planned | Not started — blocked on Stripe test-mode keys |
 | PAY-02 | Phase 30 | not yet planned | Not started |
 | PAY-03 | Phase 30 | not yet planned | Not started |
+| PAY-04 | Phase 30 | not yet planned | Not started — decision settled 2026-08-02; blocked on phone verification (#462), the channel seam (#208) and Stripe keys |
+| CUST-01 | Phase 33 | not yet planned | Not started |
+| CUST-02 | Phase 33 | not yet planned | Not started — #453 needs a product decision (no cross-tenant operator identity) |
+| CUST-03 | Phase 33 | not yet planned | Not started |
+| CUST-04 | Phase 33 | not yet planned | Not started |
+| TRUTH-01 | Phase 34 | not yet planned | Not started |
+| TRUTH-02 | Phase 34 | not yet planned | Not started |
 | LGL-01 | Phase 31 | not yet planned | Not started |
 | LGL-02 | Phase 31 | not yet planned | Not started |
 | LGL-03 | Phase 31 | not yet planned | Not started — #427 Wave 1 |
 | GTM-01 | Phase 32 | not yet planned | Not started |
 | GTM-02 | Phase 32 | not yet planned | Not started |
 
-**Coverage:** **46 requirements across 13 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete, plus the 2026-08-01 widening: OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started). Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.)
+**Coverage:** **53 requirements across 15 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete; the 2026-08-01 widening OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started); and the 2026-08-07 triage widening PAY-04 (Phase 30) + CUST×4 (Phase 33) + TRUTH×2 (Phase 34), all Not started. Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted — which is why the traceability table has **54** rows against 53 requirements, and that one-row gap is deliberate rather than drift. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.)
 
 **Not tracked as v2.3 requirements, deliberately:** **#427** (ADR-0004 Ingredient node / allergen evidence chain) beyond its Wave 1 slice at LGL-03, and **#428** (Cohort B catering, discovery-gated). Both are epics filed 2026-08-01 after the state review found they had no phase, no requirement ID and no issue and were therefore invisible to every roadmap- and tracker-driven review. They are the growth story and sit **after** go-to-market, not inside it.

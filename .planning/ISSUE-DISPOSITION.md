@@ -58,10 +58,10 @@ done < /tmp/open.txt
 |---|---:|---|
 | Phase 28 — Security Triage + the Dev/Prod Boundary | 9 | yes (gates 29) |
 | Phase 29 — Deployable Staging, With Its Own Monitoring | 12 | yes |
-| Phase 30 — The Money Path, Executed | 4 | yes |
+| Phase 30 — The Money Path, Executed | 5 | yes |
 | Phase 31 — Consumer-Safety and Legal Floor | 3 | yes |
 | Phase 32 — Production Cutover + First Tenant | 1 | — (is the tenant) |
-| **Phase 33 — The Consumer Product** *(new)* | 10 | yes |
+| **Phase 33 — The Consumer Product** *(new)* | 9 | yes |
 | **Phase 34 — Rendering + Test Truthfulness** *(new)* | 6 | no |
 | Deferred, with a dated reason and a revival condition | 5 | no |
 | Post-GTM hardening backlog | 6 | no |
@@ -112,20 +112,50 @@ is why SEC-02 describes them without naming them. They are the criterion, not ne
 | **304** | P2 | Rework `stomp-relay.spec.ts` to be ingress-capable | **added** — untestable until an ingress exists |
 | **592** | — | One-click unsubscribe (RFC 8058) unwired in k8s | **added** — one env var beside `NOTIFICATION_UNSUBSCRIBE_BASE_URL` |
 
-## Phase 30 — The Money Path, Executed (4)
+## Phase 30 — The Money Path, Executed (5)
 
 | # | P | Title | Note |
 |---|---|---|---|
 | 61 | — | Phase 17 follow-up: verify refund E2E + decide WR-09 | already named |
 | 102 | P2 | [P2-11] No production tenant lifecycle; single pooled Stripe account | already named |
 | **461** | **P1** | UX-5: orders complete with no payment; pay-on-collection must become channel-issued payment links | **added** — see below |
+| **462** | P2 | UX-6: password signups have no second factor and **no verified contact channel** | **moved here from Phase 33, 2026-08-07** — its verified-contact half is a hard dependency of #461 |
 | **108** | P3 | [P3-6] Missing outbound-call timeouts (Stripe/SMTP/axios/S3); dead email breaker config | **added** — a hung Stripe call is a money-path failure |
 
-**#461 needs a product decision before it can be planned.** The phase as written covers Stripe
-mechanics — refunds, subscriptions, payouts — and assumes an order that took money. #461 says orders
-today complete without taking any. Those are different problems and the second is upstream of the
-first. It is the single largest gap between "the platform works" and "the platform is a business",
-and it was in no plan.
+**#461 is upstream of the rest of this phase.** PAY-01..03 cover Stripe *mechanics* — refunds,
+subscriptions, payouts — and every one of them assumes an order that already took money. #461 says
+orders today complete without taking any. Those are different problems, the second comes first, and
+it was in no plan until this sweep.
+
+### The product decision is already made — do not re-open it
+
+Recorded in #461 verbatim from the owner, 2026-08-02, and reaffirmed 2026-08-07:
+
+> *"a payment link should automatically be sent to them via the telephone number they've called on,
+> or social media channel they've engaged on"* — and, stated directly: the payment request goes to
+> the buyer's **verified telephone number**.
+
+Pay-on-collection is not permitted, because a customer can order and simply not collect, leaving the
+vendor with produced stock and no payment. That is a vendor-protection rule, not a preference.
+
+**An earlier draft of this document said #461 "needs a product decision before it can be planned."
+That was wrong** — the decision predates the sweep by five days and is in the issue body. What blocks
+#461 is a dependency chain. Measured on the tree 2026-08-07:
+
+| | dependency | state |
+|---|---|---|
+| 1 | a phone number is **captured** | `Customer.phone` exists — `@Column(length = 50)`, **optional**, free text (`Customer.java:49-50`). A phone or social order may have no Customer row at that point at all |
+| 2 | that number is **verified** | **does not exist.** No `phone_verified` column in any migration, no OTP, no verification flow. **This is #462**, which is why it moved into this phase |
+| 3 | a **channel** to deliver on | `WhatsAppSmsChannel` exists but `WhatsAppProperties.enabled` defaults **false** and needs SID + auth token + from-number; Phase 22's inbound parser is incomplete. **This is #208** — deferred, but now on the critical path |
+| 4 | a **payment link** to send | Stripe test-mode keys — the standing commercial decision that gates this phase entirely |
+
+Row 2's absence is falsified, not assumed: a control search for `emailVerified` resolves to **4**
+files including `CustomerJwtVerifier`, so the pattern can find a real verification flow when one
+exists. Phone has none.
+
+**The platform verifies email and does not verify phone — and the design routes on phone.** That is
+the load-bearing sentence for this phase. Row 2 is not a security nicety that can trail the money
+path; it is the address the money path sends to.
 
 ## Phase 31 — Consumer-Safety and Legal Floor (3)
 
@@ -136,7 +166,7 @@ Unchanged. `#103` (WCAG 2.1 AA), `#116` (privacy policy / cookie banner / retent
 
 Unchanged. `#428` Wave 1 (catering discovery) — already named.
 
-## Phase 33 — The Consumer Product *(new, 10)*
+## Phase 33 — The Consumer Product *(new, 9)*
 
 **The cluster with the least planning coverage and the highest-signal source.** Every P1 here was
 found by the owner using the running application; no audit in this repo found any of them. Runs
@@ -149,7 +179,6 @@ signed-out consumer sees five fictional vendors.
 | 544 | **P1** | UX-14: "Cooking near you" is five hardcoded fictional vendors | **no** |
 | 453 | **P1** | QA-A/F-H6: onboarding MANUAL_REVIEW is on no surface — a two-actor dead-end | **no** |
 | 458 | P2 | UX-2: signed-in customer nav shows *For operators* + *Track order* ungated | **no** |
-| 462 | P2 | UX-6: password signups have no second factor and no verified contact channel | **no** |
 | 452 | P2 | QA-A/F-H5+F-H7: no 2nd-shop onboarding path, no staff invite | yes (issue only) |
 | 545 | P2 | UX-15: Keycloak ships the stock theme on both realms; no J'Toye brand asset exists | yes (issue only) |
 | 546 | P2 | UX-16: review customer-facing look and feel on web and mobile | yes (issue only) |
@@ -200,10 +229,15 @@ measurement, do not re-read the reason.**
 | # | Reason | Revives when |
 |---|---|---|
 | #207 | [AI-5] pgvector spike needs the image-strategy + embedding-source decision | the embedding source is chosen (#216 locked 4 of the image decisions; this one is open) |
-| #208 | [AI-6] WhatsApp channel needs a WhatsApp Business API account | the account exists — a commercial precondition, same class as the Stripe keys gating Phase 30 |
+| #208 | ⚠ **CRITICAL-PATH deferral** — [AI-6] WhatsApp channel needs a WhatsApp Business API account | the account exists. **Not an ordinary deferral**: #461 sends the payment request back *through the channel the customer engaged on*, so this is the delivery mechanism for a P1, not an optional AI feature. Same commercial class as the Stripe keys, and it should be obtained on the same trip |
 | #209 | [AI-0] epic — idempotency (#204), scoped creds (#206) and MCP tools (#203) all shipped; its only open children are #207 and #208 | closes when both do; it is a tracker, not work |
 | #296 | Conditional by its own title — *"if an in-cluster Keycloak is ever deployed"*. Phase 29 targets an external IdP | an in-cluster Keycloak is actually deployed |
 | #303 | `OLLAMA_URL` / `ZIPKIN_ENDPOINT` are reasoned allowlist omissions; each needs a real backing service first | either service is actually deployed |
+
+> **Two of these five are not really parked, and saying so is the point of the column.** #208 is the
+> delivery channel for #461's payment request, and #209 cannot close while #208 is open. A deferral
+> whose reason is *"waiting on a commercial account"* reads as low-stakes right up until the account
+> is also what a P1 depends on.
 
 ## Post-GTM hardening backlog (6)
 
@@ -239,11 +273,26 @@ and the delivery observed reaching terminal `FAILED`, before any fix is trusted.
 
 ## What this document does not do
 
-It assigns homes. It does not re-estimate, re-prioritise, or promise a date. Two items need a
-**product decision before they can be planned at all** — `#461` (what replaces pay-on-collection) and
-`#453` (who adjudicates MANUAL_REVIEW when there is no platform operator) — and no amount of
-planning substitutes for those.
+It assigns homes. It does not re-estimate, re-prioritise, or promise a date.
+
+**One item needs a product decision before it can be planned at all**: `#453` — who adjudicates
+onboarding `MANUAL_REVIEW`, given there is no cross-tenant platform operator identity. No amount of
+planning substitutes for that.
+
+> **Corrected 2026-08-07, same day, by the owner.** The line above originally read *"two items"* and
+> named `#461` alongside `#453`. **That was wrong.** #461's decision was made on 2026-08-02 and is
+> quoted verbatim in the issue body: the payment request goes to the buyer's **verified telephone
+> number**, or the social channel they engaged on. What blocks #461 is a four-link dependency chain
+> (capture → verify → channel → Stripe keys), not a decision — see Phase 30 above.
+>
+> **This is the same failure the document was written to fix, one layer in.** The sweep found 42
+> issues the roadmap could not see; it then mis-read one of the six it had just rescued, by
+> classifying it from its *title* rather than its body. A decision recorded five days earlier, in
+> the issue itself, was reported as outstanding. **Read the body before assigning a blocker** — the
+> title says what is wrong, not what has already been settled about it.
 
 The four blocking commercial decisions recorded in `ROADMAP.md` for Phases 29–32 are unchanged by
 this sweep and still gate everything downstream: the production domain, the hosting target, Stripe
-test-mode keys, and ADR-0002 sign-off.
+test-mode keys, and ADR-0002 sign-off. **A fifth now sits beside them in practice** — a WhatsApp
+Business API account (#208), because #461's payment request has to be delivered on the channel the
+customer used.

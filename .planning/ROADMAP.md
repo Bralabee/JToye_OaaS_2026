@@ -519,7 +519,7 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 mock. This is the phase that turns a working product into a business.
 **Depends on**: **Stripe test-mode keys** — an account decision, not a task; `STRIPE_API_KEY` and
 `STRIPE_WEBHOOK_SECRET` are empty on every stack today. Phase 29 for the staging run.
-**Requirements**: PAY-01, PAY-02, PAY-03
+**Requirements**: PAY-01, PAY-02, PAY-03, PAY-04
 **Success Criteria** (what must be TRUE):
 
   1. The refund E2E (#61) **runs and passes rather than skipping**, and its `ALLOW` entries leave
@@ -537,20 +537,37 @@ mock. This is the phase that turns a working product into a business.
      route as destination charges per ADR-0001 Decision 2; that path has never been exercised.
      (PAY-03)
 
-**Issues (4)** — added 2026-08-07 by the disposition sweep. Already named above: #61, #102. Added:
+**Issues (5)** — added 2026-08-07 by the disposition sweep. Already named above: #61, #102. Added:
 
 | # | Maps to | Note |
 |---|---|---|
-| **#461** | **new — see below** | **P1.** UX-5: orders complete with **no payment**, and pay-on-collection must be replaced by channel-issued payment links |
+| **#461** | **PAY-04 — see below** | **P1.** UX-5: orders complete with **no payment**, and pay-on-collection must be replaced by channel-issued payment links |
+| **#462** | **PAY-04** | **P2.** UX-6: password signups have no second factor and **no verified contact channel**. Moved here from Phase 33 the same day: the verified-contact half is the address #461 sends to |
 | **#108** | PAY-03 | [P3-6] missing outbound-call timeouts (Stripe/SMTP/axios/S3) and dead email breaker config. A hung Stripe call is a money-path failure, not general hygiene |
 
-> ⚠ **#461 is upstream of everything else in this phase and needs a product decision before it can
-> be planned.** The three criteria above cover Stripe *mechanics* — refunds, subscriptions, payouts —
-> and every one of them assumes an order that already took money. #461 says orders today complete
-> without taking any. That is a different problem, it comes first, and it was in no plan until this
-> sweep. The decision to make is what replaces pay-on-collection: which channel issues the payment
-> link, at what point in the order lifecycle, and what the order state machine does while it is
-> unpaid. **Do not plan PAY-01..03 around it.**
+> ⚠ **#461 is upstream of everything else in this phase.** PAY-01..03 cover Stripe *mechanics* —
+> refunds, subscriptions, payouts — and every one of them assumes an order that already took money.
+> #461 says orders today complete without taking any. **Do not plan PAY-01..03 around it.**
+
+**The product decision is made. Do not re-open it.** Recorded verbatim in #461 from the owner on
+2026-08-02 and reaffirmed 2026-08-07: pay-on-collection is **not permitted** — a customer can order
+and simply not collect, leaving the vendor with produced stock and no payment — and instead a payment
+link is issued automatically to the buyer's **verified telephone number**, or the social channel they
+engaged on, so the order is paid before production.
+
+  7. **A payment request reaches a verified telephone number, and an unpaid order cannot be
+     produced.** Falsifiable on the current tree in four independent places, which is the point —
+     what blocks #461 is a dependency chain, not a decision: (a) `Customer.phone` is
+     `@Column(length = 50)`, **optional**, free text, and a phone or social order may create no
+     Customer row at all; (b) **nothing verifies a phone number** — no `phone_verified` column in any
+     of the 60 migrations, no OTP, no flow, where `emailVerified` resolves to 4 files including
+     `CustomerJwtVerifier`, so the platform verifies email and not phone **while the design routes on
+     phone** (this is #462, and it is why #462 moved into this phase); (c) `WhatsAppSmsChannel` exists
+     but `WhatsAppProperties.enabled` defaults **false** and Phase 22's inbound parser is incomplete
+     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:508-521` deliberately
+     falls back to cash-on-delivery when no provider is configured, which is what makes the policy
+     violable and must be removed or gated deliberately, not left as a silent default. The link must
+     be single-use and expiring — it is a bearer credential. (PAY-04)
 
 **UI hint**: yes (billing/subscription surface)
 
@@ -623,7 +640,10 @@ four in ways that were found by using the application rather than by any audit i
 **Depends on**: Nothing structural. Runs parallel to 29–31. **Gates Phase 32** — GTM-02 is a real
 consumer completing a first paid order.
 **Requirements**: CUST-01, CUST-02, CUST-03, CUST-04
-**Issues (10)**: #460, #544, #453 (P1) · #458, #462, #452, #545, #546 (P2) · #432 · #285 (P3)
+**Issues (9)**: #460, #544, #453 (P1) · #458, #452, #545, #546 (P2) · #432 · #285 (P3)
+*(#462 was listed here on 2026-08-07 and moved to Phase 30 the same day — its verified-contact-channel
+half is the address #461's payment request is sent to, so it is a money-path dependency rather than a
+consumer-UX item.)*
 
 **Why this phase exists at all.** Six issues appeared in **zero** files under `.planning/` before the
 2026-08-07 sweep — #453, #460, #461, #544, #462, #507 — and four are P1. Every one was filed from the
@@ -650,10 +670,11 @@ and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
      *For operators* and *Track order* are gated, and tracking moves into the profile and
      auto-populates. Paired with #452's lifecycle dead-ends — no second-shop onboarding path, no
      staff invite — both of which need a product decision, not an implementation. (CUST-02)
-  5. **Consumer accounts are defensible** (#462, #432): password signups have a second factor and a
-     verified contact channel, or a dated written acceptance says why not; and the
-     `jtoye-customers` realm's `identityProviders: 0` is either populated or recorded as deliberate.
-     (CUST-03)
+  5. **Consumer sign-up has more than one route in** (#432): the `jtoye-customers` realm's
+     `identityProviders: 0` is either populated or recorded as a dated deliberate decision. The
+     second-factor and verified-contact half of this criterion moved to **Phase 30 with #462**,
+     because a verified telephone number is what #461's payment request is addressed to — it cannot
+     trail the money path. (CUST-03)
   6. **The customer-facing surface has been reviewed against what it actually renders** (#546, #545,
      #285): a look-and-feel pass on web and mobile against a surface that changed twice, Keycloak
      stops shipping the stock theme on both realms, and the staff screen gets bulk-revoke of

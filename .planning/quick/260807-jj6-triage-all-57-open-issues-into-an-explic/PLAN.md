@@ -54,5 +54,10 @@ row, atomic commits on a feature branch — are all satisfied. The subagent hop 
 ## Out of scope
 
 Estimating, re-prioritising, closing issues, and writing any phase plan. This task assigns homes.
-Two items (#461, #453) cannot be planned at all until a product decision is made, and saying so is
-part of the deliverable rather than a gap in it.
+`#453` cannot be planned at all until a product decision is made, and saying so is part of the
+deliverable rather than a gap in it.
+
+> **Corrected 2026-08-07 by the owner.** This paragraph originally named `#461` here too. It was
+> wrong: that decision was made 2026-08-02 and is in the issue body — the payment request goes to
+> the buyer's **verified telephone number**. Assigning a blocker from an issue *title* is how it
+> happened. **Read the body.** See `SUMMARY.md` for what the correction turned up.
