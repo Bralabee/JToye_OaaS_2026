@@ -2009,7 +2009,15 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 29 x rc=0. A VOID (2) is not a pass. (22 -> 24: #276 added
+# EXPECT 30 x rc=0. A VOID (2) is not a pass. (29 -> 30: #601 added
+#   check-e2e-typecheck.sh, after `next build` was measured NOT to type-check
+#   frontend/e2e/** despite tsconfig including **/*.ts — a planted
+#   `const broken: number = "..."` in a spec gives npm run build rc=0 and
+#   tsc --noEmit rc=2, so a type error in a spec could reach main green.
+#   NOTE the two counts differ by one and both are correct: this line counts
+#   30 GATE SCRIPTS (29 check-*.sh + docs-freshness.sh), while
+#   check-gate-enforcement reports 29 because it counts only check-*.sh.
+#   (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
 #   BACKUP image to postgres:18 against a 15 server with every CI check green.
