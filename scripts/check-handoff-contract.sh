@@ -213,12 +213,81 @@ if [ "$BEHIND" -gt "$MAX_BEHIND" ]; then
 	fail "H-3 $DOC is $BEHIND merged commit(s) behind $BASE_REF (budget $MAX_BEHIND) — last touched by $(git log -1 --format=%h "$LAST_TOUCH"). Re-read it before trusting it."
 fi
 
+# --- H-5  every cited path resolves ---------------------------------------------------------
+#
+# WHY THIS IS SCOPED TO PATH EXISTENCE AND NOT TO LINE CONTENT.
+#
+# HANDOFF.md was outside check-doc-citations.sh's DEFAULT_DOCS, and CI invokes that gate bare, so
+# NOTHING had ever checked a citation in this file. Run on demand for the first time on 2026-08-07
+# it reported 17 violations in two distinct classes, and the split is what determined this design:
+#
+#   C-1  15 of 17 — a BARE FILENAME used as if it were a path: `kitchen-flow.spec.ts:243`,
+#        `OpenApiConfig.java:51`, `SyncService.java:90`. Unfollowable the day it was written and
+#        unfollowable forever after. This class NEVER rots.
+#   C-3   2 of 17 — the path resolves but the cited line no longer says what the claim names.
+#        This class rots ON ITS OWN as unrelated code moves.
+#
+# Fixing the 15 raised C-3 from 2 to 8, because a path that does not exist cannot be checked for
+# line content — the broken path was MASKING line drift. That is the whole argument: had this gate
+# asserted line content, it would have gone red on those 8 without anyone touching the document,
+# and HANDOFF.md is HALF HISTORY. A 2026-08-04 record citing code that has since moved is not a
+# defect; it is a correct record of a past tree. Gating it produces a permanently red required
+# check, and a permanently red gate is an ignored one — the same reasoning that scoped
+# check-e2e-typecheck.sh rather than running a bare `tsc --noEmit`.
+#
+# So H-5 asserts only the property that is timeless: A CITATION MUST NAME A PATH THAT EXISTS.
+# It is silent about whether the line still supports the claim. It cannot rot, it needs no budget
+# and no allowlist, and it catches the exact defect that produced 15 of the 17.
+#
+# ROOT-LEVEL FILES ARE LEGITIMATE, so the rule is "the path resolves", NOT "the path contains a
+# slash". `docker-compose.full-stack.yml:130` is a real citation to a real file and must pass;
+# `kitchen-flow.spec.ts:243` must not, because no such file exists at the repo root. One rule
+# separates them with no special-casing.
+#
+# THE EXTENSION ALLOWLIST EXISTS TO AVOID A FALSE POSITIVE, not to be exhaustive. `host.name:8080`
+# has the same shape as `path.ext:12`. Measured on this document: exactly one no-slash token
+# matched (`docker-compose.full-stack.yml:130`, real) and zero host:port tokens, so the risk is
+# latent rather than live — but a latent false positive in a required check is worth one line of
+# defence. An unrecognised extension is SKIPPED AND COUNTED, never silently dropped, and never
+# failed: this gate does not get to guess.
+CITE_EXT='ts|tsx|js|jsx|mjs|cjs|java|go|sh|bash|sql|ya?ml|json|md|tmpl|conf|xml|gradle|kts|properties|env|toml|ini|Dockerfile|tf|proto'
+
+n_cites=0
+n_cites_ok=0
+n_cites_skipped=0
+while IFS= read -r cite; do
+	[ -z "$cite" ] && continue
+	path=${cite%:*}
+	ext=${path##*.}
+	if ! grep -qE "^($CITE_EXT)$" <<< "$ext"; then
+		n_cites_skipped=$((n_cites_skipped + 1))
+		continue
+	fi
+	n_cites=$((n_cites + 1))
+	if [ -e "$path" ]; then
+		n_cites_ok=$((n_cites_ok + 1))
+	else
+		fail "H-5 $DOC cites '$path' but no such path exists — a bare filename is not a followable citation (use the repo-relative path)"
+	fi
+done < <(grep -oP '`\K[A-Za-z0-9_./+-]+\.[A-Za-z0-9]+:[0-9]+(?:[-,][0-9]+)*(?=`)' "$DOC" 2>/dev/null | sort -u)
+
+# H-5 SELF-TEST — the extractor must FIRE on a real citation shape and DECLINE a non-citation,
+# for the same reason H-4 exists: a pattern that silently stops matching turns this check into a
+# green no-op over an unchecked document. Both arms run against literals, not against $DOC, so
+# editing the document can never weaken the self-test.
+h5_pos=$(grep -oP '`\K[A-Za-z0-9_./+-]+\.[A-Za-z0-9]+:[0-9]+(?:[-,][0-9]+)*(?=`)' <<< 'text `frontend/lib/public-origin.ts:87` more' | wc -l)
+h5_neg=$(grep -oP '`\K[A-Za-z0-9_./+-]+\.[A-Za-z0-9]+:[0-9]+(?:[-,][0-9]+)*(?=`)' <<< 'text `just-prose` and `V60` more' | wc -l)
+[ "$h5_pos" -eq 1 ] || void "H-5 self-test: the extractor failed to find a known-good citation (got $h5_pos, want 1)"
+[ "$h5_neg" -eq 0 ] || void "H-5 self-test: the extractor matched a non-citation (got $h5_neg, want 0)"
+
 # --- summary ------------------------------------------------------------------------------
 printf '  doc       : %s\n  config    : %s\n' "$DOC" "$CONF"
 printf '  H-1 gates : %s claim(s), repo has %s gate script(s)\n' "$n_gate_claims" "$ACTUAL_GATES"
 printf '  H-2 state : %s claim(s), %s matched the forge\n' "$n_state" "$n_state_ok"
 printf '  H-3 stale : %s commit(s) behind %s (budget %s)\n' "$BEHIND" "$BASE_REF" "$MAX_BEHIND"
 printf '  H-4 self  : both extractors fire and decline\n'
+printf '  H-5 cites : %s path(s) checked, %s resolve, %s skipped (unrecognised extension)\n' \
+	"$n_cites" "$n_cites_ok" "$n_cites_skipped"
 
 if [ "$FAIL" -ne 0 ]; then
 	echo "FAILED: $DOC states something that is no longer true (see above)." >&2
