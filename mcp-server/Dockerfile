@@ -4,7 +4,7 @@
 # standalone bundle) and EXPOSE 9100 (not 3000).
 
 # Stage 1: Builder — compile TypeScript to dist/
-FROM node:24-alpine AS builder
+FROM node:25-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Runner — production runtime, non-root, prod deps only
-FROM node:24-alpine AS runner
+FROM node:25-alpine AS runner
 
 WORKDIR /app
 
