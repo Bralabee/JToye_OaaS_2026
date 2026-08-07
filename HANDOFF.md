@@ -1920,7 +1920,14 @@ staging deploy today would be wholly unmonitored.
   this document keeps hitting: the figure below was true when written and was quoted forward after
   it stopped being. **Re-run `git worktree list` and `git branch` before
   repeating either number.** ✅ **CLEARED 2026-08-07, same session, one hour after the row below was
-  written — which is why that row is struck rather than quoted: 3 local branches (`main` + the two
+  written — which is why that row is struck rather than quoted. **FINAL for this session, after the
+  reconcile branches were dropped too: 1 local branch (`main`), 2 remote (`main` + dependabot
+  #523), 1 worktree (the main checkout).** ⚠ **This row has now been rewritten THREE times in one
+  session** — 12 local → 3 → 1 — each time because the session itself changed what it was
+  describing. That is not carelessness, it is the structural problem: a document that quotes a live
+  count is stale the moment the next command runs. Treat every number in this row as the output of
+  `git branch` / `git worktree list` at one instant, and **run them rather than reading them**. The
+  intermediate reading was: 3 local branches (`main` + the two
   reconcile branches), **2 remote** (`main` + dependabot #523), **1 worktree** (the main checkout),
   and `.claude/worktrees` down from **8.4 GB to 4.0 KB**.** All 9 agent worktrees and their 9
   branches were removed, plus 10 merged remote branches. Every removal was gated on four checks run
@@ -1938,13 +1945,23 @@ staging deploy today would be wholly unmonitored.
   and each remote tip checked for post-merge pushes: 0) and remote `fix/582-loop-declared-test-void`
   (#588). **Every one of the 9 agent worktrees holds a branch whose PR has MERGED**, so all 9 are
   retirable — they are the 8.4 GB. Deliberately NOT removed here: another session may be inside one.
-  ⚠ **Two `*-reconcile-with-main` branches survive and are PROVEN SUPERSEDED, not merged.** Neither
-  has a PR under its own name (#573 merged from `fix/450-shop-publish-drop-typed-409`), so any
-  `gh pr list --state merged` headRefName filter reports them as unknown. Decided by **blob hash**:
-  every source file on both is byte-identical to `main`, and the sole difference is that `main`'s
-  CHANGELOG heading carries the `(#573)`/`(#577)` citation theirs lacks — i.e. `main`'s copy is the
-  better one. `fix/573-reconcile-with-main` still holds **3 unpushed commits**; they are safe to
-  discard on that evidence, but that is the owner's call, not housekeeping's. PRIOR — **Re-measured
+  ⚠ **DELETED 2026-08-07 on the owner's instruction — the two `*-reconcile-with-main` branches are
+  GONE, and this paragraph is kept so nobody hunts for them.** They were PROVEN SUPERSEDED, never
+  merged. Neither had a PR under its own name (#573 merged from
+  `fix/450-shop-publish-drop-typed-409`, #577 from `fix/kds-board-reserve-536`), so any
+  `gh pr list --state merged` headRefName filter reports them as unknown forever — which is why the
+  decision was made by **blob hash** instead: every source file on both was byte-identical to
+  `main`, and the sole difference was that `main`'s CHANGELOG heading carries the `(#573)`/`(#577)`
+  citation theirs lacked, i.e. `main`'s copy was strictly the better one. **Recovery, for 90 days:**
+  `fix/573-…` tip `0a8a017f99e216cf741f6cb2dcbc4f0c56c5bc53`, `fix/577-…` tip
+  `42b695463e20ed40fbeeaee0beb2902141839905` — both still resolve as commit objects
+  (`git cat-file -t`), reachable via `git reflog` / `git fsck --lost-found`.
+  ⚠ **One measurement moved because of this session's own cleanup, and it would read as new work.**
+  `fix/577-…` reported **0** unpushed commits during the audit and **4** an hour later. Nothing was
+  written to it. `git log <b> --not --remotes` counts commits reachable from no remote ref, and 10
+  merged remote branches were deleted in between — so deleting refs *manufactured* unpushed
+  commits. Both readings were correct at the time. Re-measure after any ref cleanup, and never
+  compare an unpushed count across it. PRIOR — **Re-measured
   2026-08-05 after #563/#565 and all three still hold
   — 15 local branches, 8 worktrees, 16 containers.** Both branches this session created were
   removed by `gh pr merge --delete-branch`, locally and remotely, so they add nothing to retire.
