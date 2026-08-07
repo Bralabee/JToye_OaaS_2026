@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Nothing had ever checked a citation in HANDOFF.md (#610) — 2026-08-07
+
+`HANDOFF.md` is outside `check-doc-citations.sh`'s `DEFAULT_DOCS`, and `ci-cd.yaml:675` invokes that
+gate **bare** with no `CITATION_DOCS` override. So no citation in the project's most-read handover
+document had ever been checked by anything. Run on demand for the first time it reported **17
+violations**, in two classes whose split determined the whole design:
+
+```
+C-1  15 of 17   a BARE FILENAME used as a path — kitchen-flow.spec.ts:243,
+                OpenApiConfig.java:51, SyncService.java:90.
+                Unfollowable when written, unfollowable forever. NEVER rots.
+C-3   2 of 17   the path resolves but the cited line no longer says what the
+                claim names. Rots ON ITS OWN as unrelated code moves.
+```
+
+#### Added
+- **H-5 in `scripts/check-handoff-contract.sh`** — every backticked `path:line` citation must name
+  a path that **exists**. That gate already owns `HANDOFF.md` and is already wired into
+  `docs-freshness.yml`, so this needed no new script and no new CI wiring.
+
+#### Why path existence and not line content
+Fixing the 15 raised C-3 from **2 to 8** — a path that does not exist cannot be checked for line
+content, so the broken path was *masking* line drift. Had H-5 asserted line content it would have
+gone red on those 8 with nobody touching the document, and **6 of the 8 are in historical sections**
+(§0.-11, §0.-9, §0.-1, §0.0, §2.4, §2.5). `HANDOFF.md` is half live state and half history: a
+2026-08-04 record citing code that has since moved is a correct record of a past tree, not a defect.
+Gating it makes a required check permanently red, and a permanently red gate is an ignored one — the
+same reasoning that scoped `check-e2e-typecheck.sh` rather than running a bare `tsc --noEmit`.
+
+#### Two design points that came from measuring
+- **The rule is "the path resolves", not "the path contains a slash".**
+  `docker-compose.full-stack.yml:130` is a real citation to a real root-level file and passes;
+  `kitchen-flow.spec.ts:243` does not, because no such file exists at the repo root. One rule
+  separates them with no special-casing.
+- **The extension allowlist pre-empts one false positive**: `host.name:8080` has the same shape as
+  `path.ext:12`. Measured on this document — exactly one no-slash token (the real docker-compose
+  one) and **zero** host:port tokens — so the risk is latent, not live. An unrecognised extension is
+  **skipped and counted**, never silently dropped and never failed.
+
+#### Measured — four arms plus a self-test arm, all on a committed tree
+
+```
+clean        23 citations checked, 23 resolve, 0 skipped        rc=0
+break        one path reverted to a bare filename               rc=1  (22/23 resolve)
+restore      git hash-object identical to baseline              —
+clean again  23/23                                              rc=0
+self-test    extractor forced to match nothing                  rc=2 VOID, not a green no-op
+```
+
+The self-test arm is the one that matters: H-5 carries an H-4-style self-test (which exists because
+the changelog gate shipped a silently-non-matching pattern in #393), run against **literals** rather
+than the document, so editing `HANDOFF.md` can never weaken it.
+
+#### Fixed
+- **15 bare-filename citations** resolved to repo-relative paths. Each was resolved with
+  `git ls-files` and returned **exactly one** match, so none is a guess; the replacement is anchored
+  on the opening backtick so an already-correct path cannot be double-prefixed.
+- The Gates row now names both figures — **29 `check-*.sh`, 30 counting `docs-freshness.sh`** —
+  because 30 is what H-1 asserts against and 29-vs-30 should not read as drift.
+
+The remaining 8 C-3 line-drift citations are **recorded in the document, deliberately ungated**.
+
 ### The .dockerignore rule that called itself "whole" had a hole, and #601 fell in it (#609) — 2026-08-07
 
 `frontend/.dockerignore` excludes `e2e/` and `playwright.config.ts` so `check-runtime-freshness.sh`
