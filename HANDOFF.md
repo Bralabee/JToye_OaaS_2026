@@ -1919,8 +1919,20 @@ staging deploy today would be wholly unmonitored.
   calls a squash-merged branch "not fully merged" (§0.-3 records why). This is the recurring shape
   this document keeps hitting: the figure below was true when written and was quoted forward after
   it stopped being. **Re-run `git worktree list` and `git branch` before
-  repeating either number.** ✅ **RE-MEASURED 2026-08-07 housekeeping: 12 local branches, 12 remote,
-  10 worktrees (9 agent + the main checkout), 8.4 GB under `.claude/worktrees`.** Four branches were
+  repeating either number.** ✅ **CLEARED 2026-08-07, same session, one hour after the row below was
+  written — which is why that row is struck rather than quoted: 3 local branches (`main` + the two
+  reconcile branches), **2 remote** (`main` + dependabot #523), **1 worktree** (the main checkout),
+  and `.claude/worktrees` down from **8.4 GB to 4.0 KB**.** All 9 agent worktrees and their 9
+  branches were removed, plus 10 merged remote branches. Every removal was gated on four checks run
+  first, not after: `dirty=0`, `unpushed=0`, a MERGED PR, and **zero commits pushed after
+  `mergedAt`**. The dirty check carried a positive control — a planted file read as `1` and cleared
+  to `0` — because `dirty=0` and a silently-failed `git status` are otherwise indistinguishable. No
+  process was cwd'd inside any worktree and nothing had been written in 6 hours. Post-removal:
+  `git fsck` rc=0 (dangling objects only, expected), runtime/gate-enforcement/skip-budget all rc=0,
+  `/shop` and core-java health both 200. ⚠ `git branch -d` accepted all 9, which is **not** evidence
+  they merged into `main` — `-d` also passes when a local branch merely matches its upstream. The
+  merge evidence is the PR state checked beforehand. STALE ONE HOUR LATER — *12 local branches, 12
+  remote, 10 worktrees, 8.4 GB.* Four branches were
   retired this session — `docs/handoff-593-correction`, `docs/handoff-housekeeping-593`,
   `fix/kds-e2e-streaming-staging-locators-593` (local **and** remote, PRs #596/#594/#595 all MERGED,
   and each remote tip checked for post-merge pushes: 0) and remote `fix/582-loop-declared-test-void`
