@@ -59,9 +59,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/docs/metrics.json"
 cd "$ROOT"
 
-FAMILY="${1:-}"
+# A LEADING OPTION IS NOT A FAMILY. Taking $1 unconditionally made `--report x` set
+# FAMILY='--report', which then fell to the option loop and died on "unknown argument 'x'" —
+# a VOID for the wrong reason, and it left the bare-invocation --report guard below
+# UNREACHABLE. Found by running that guard's own arm and reading WHY it exited 2 rather than
+# accepting that it did: the exit code was right and the cause was wrong, which is the shape
+# that makes a check look proven when it has never executed.
+FAMILY=""
+case "${1:-}" in
+	'')  ;;                       # bare — the all-families form below
+	-*)  ;;                       # an option; leave it for the loop, FAMILY stays empty
+	*)   FAMILY="$1"; shift ;;
+esac
 REPORT=""
-shift || true
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--report) REPORT="${2:-}"; shift 2 ;;
