@@ -198,6 +198,44 @@ echo "  config    : $CONF"
 echo "  freshness : specDigest ${TREE_DIGEST:0:16}… matches the tree (content, not mtime)"
 echo "  tests     : $TOTAL total, $SKIP_COUNT skipped (budget $MAX_SKIPS)"
 
+# --- ADVISORY: the skip SET is current; the suite RESULT may not be ------------------
+#
+# Accounting for a good this change displaced. The old mtime check VOIDed after every
+# merge, which was wrong about staleness — but the re-run it provoked is how the #593
+# regression was caught, and HANDOFF §0.-13 says so explicitly: "a gate that VOIDs
+# 'once per merge' is not noise — it is the only thing asking for the run that finds
+# this class."
+#
+# Removing the false VOID must not silently remove that prompt, so it is replaced by
+# an honest one. The two questions were always different and the mtime check conflated
+# them:
+#
+#   is the SKIP SET valid?     <- this gate's job. Answered by the digest, above.
+#   is the SUITE RESULT current? <- the nightly's job. Answered here, as an ADVISORY.
+#
+# Deliberately non-failing. A stale result is a reason to run the suite, not a reason
+# to call an undeclared-skip check wrong, and a gate that fails for a second reason is
+# a gate people learn to ignore.
+REPORT_START=$(jq -r '.stats.startTime // empty' "$REPORT" 2>/dev/null)
+if [ -n "$REPORT_START" ] && command -v date >/dev/null 2>&1; then
+    start_epoch=$(date -d "$REPORT_START" +%s 2>/dev/null || echo "")
+    if [ -n "$start_epoch" ]; then
+        age_h=$(( ( $(date +%s) - start_epoch ) / 3600 ))
+        echo "  ran       : $REPORT_START (${age_h}h ago)"
+        # App code, NOT specs: a spec change would have moved the digest and VOIDed
+        # above. This asks whether the code under test moved since the suite ran.
+        newer=$(git -C "$REPO_ROOT" log --since="$REPORT_START" --oneline \
+                    -- frontend ':(exclude)frontend/e2e' ':(exclude)frontend/playwright.config.ts' \
+                    2>/dev/null | wc -l)
+        if [ "${newer:-0}" -gt 0 ]; then
+            echo "  ADVISORY  : $newer commit(s) touched frontend/ outside the spec set since this run."
+            echo "              The SKIP SET below is still valid (specs are byte-identical), but the"
+            echo "              suite RESULT is older than the code. Re-run the suite, or read the"
+            echo "              nightly — 'gh workflow run e2e-nightly.yml --ref main'."
+        fi
+    fi
+fi
+
 matches_any_allow() {
     local title="$1" a
     for a in "${ALLOWS[@]}"; do
