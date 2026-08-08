@@ -32,7 +32,22 @@ const nextConfig = {
           // Content-Security-Policy is emitted per-request by middleware.ts.
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()' },
+          // geolocation=(self) — ONE capability, scoped to the document's own
+          // origin. Third-party frames still get nothing.
+          //
+          // It was `geolocation=()`, an EMPTY allowlist, which denies the API to
+          // the page's OWN origin on every route, before any permission prompt,
+          // with no console error worth reading. Measured live 2026-08-08 and
+          // recorded as CA-2 in the phase control arms: it presented identically
+          // to a user declining the prompt, so the located path was dead on
+          // arrival and would have been misdiagnosed as a user denial.
+          //
+          // camera, microphone and browsing-topics stay fully denied. The E2E
+          // assertion in storefront-ssr-seo.spec.ts asserts the PERMISSIVE string
+          // is present rather than the restrictive one absent — an absence check
+          // would also pass if the whole header were deleted, silently dropping
+          // those three denials.
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self), browsing-topics=()' },
         ],
       },
     ]
