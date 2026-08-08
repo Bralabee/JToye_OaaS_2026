@@ -88,7 +88,7 @@ async function edges(page: Page) {
  * them through the live scroller.s wrapper keeps the strict-mode guarantee.
  */
 const arrow = (page: Page, side: "left" | "right") =>
-  scroller(page).locator("xpath=..").getByTestId(`dish-scroll-`)
+  scroller(page).locator("xpath=..").getByTestId(`dish-scroll-${side}`)
 
 /** Does the row have anywhere to scroll at this viewport? Measured, not assumed. */
 async function overflows(page: Page): Promise<boolean> {
@@ -114,6 +114,13 @@ test.describe("marketing dish row — scroll affordance", () => {
       // arrow shown here would be advertising content that does not exist.
       expect(atRest.canRight, "row fits, so it must not claim more to the right").toBe("false")
       expect(atRest.canLeft, "row fits, so it must not claim more to the left").toBe("false")
+      // Non-vacuity guard: toBeHidden PASSES against a zero-match locator, and this
+      // arrow locator was dead from 33-03 until now because its side interpolation
+      // was missing — both hidden-assertions below passed against nothing. The count
+      // is exactly 1, not >=1: scoping through the live region's wrapper is what
+      // excludes the streaming staging-buffer copy, so 2 means that scoping regressed.
+      await expect(arrow(page, "right"), "arrow locator must resolve — a zero-match locator makes toBeHidden vacuous").toHaveCount(1)
+      await expect(arrow(page, "left"), "arrow locator must resolve — a zero-match locator makes toBeHidden vacuous").toHaveCount(1)
       await expect(arrow(page, "right"), "no arrow over a row that fits").toBeHidden()
       await expect(arrow(page, "left"), "no arrow over a row that fits").toBeHidden()
       return
@@ -148,6 +155,10 @@ test.describe("marketing dish row — scroll affordance", () => {
 
     const left = arrow(page, "left")
     const right = arrow(page, "right")
+
+    // Non-vacuity guard — same reasoning as the first test; covers both branches below.
+    await expect(left, "arrow locator must resolve — a zero-match locator makes toBeHidden vacuous").toHaveCount(1)
+    await expect(right, "arrow locator must resolve — a zero-match locator makes toBeHidden vacuous").toHaveCount(1)
 
     if (!(await overflows(page))) {
       // Same honesty contract as above. A real desktop Chromium reports
