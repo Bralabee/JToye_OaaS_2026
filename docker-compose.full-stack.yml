@@ -99,6 +99,14 @@ services:
       CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
       CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
       CUSTOMER_VERIFY_EMAIL: ${CUSTOMER_VERIFY_EMAIL:-false}
+      # Google identity-provider credentials for the customer realm (#432 / CUST-03).
+      # DELIBERATELY OPTIONAL and empty by default — the IdP ships `enabled: false`
+      # per ADR-0005, so the stack must boot with neither of these set. Do NOT give
+      # them a `:?` guard: that would make a recorded decision to stay disabled fail
+      # the whole stack. The client secret is a SECRET and never enters git; it
+      # travels this same env path into the gitignored rendered realm JSON.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - ./infra/keycloak:/keycloak
     entrypoint:
@@ -112,7 +120,15 @@ services:
         echo "Rendered infra/keycloak/realm-export.json from template"
         # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit
         # customer var list so Keycloak i18n role placeholders survive (issue #80 pattern).
-        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL' \
+        # GOOGLE_CLIENT_ID / _SECRET added for #432 (ADR-0005). A placeholder that is NOT
+        # named here survives into the rendered file as a literal dollar-brace token —
+        # envsubst leaves unlisted names untouched — and Keycloak would then treat that
+        # literal as the client id. Extend this list; never remove it, or the i18n role
+        # placeholders get eaten too.
+        # NB: do not write a dollar-brace token in these comment lines. Compose
+        # interpolates this entrypoint string, so it would try to resolve them and fail
+        # the whole file with "invalid interpolation format".
+        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL $$GOOGLE_CLIENT_ID $$GOOGLE_CLIENT_SECRET' \
           < /keycloak/realm-export-customers.template.json > /keycloak/realm-export-customers.json
         echo "Rendered infra/keycloak/realm-export-customers.json from template"
     networks:

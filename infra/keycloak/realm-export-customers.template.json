@@ -64,6 +64,31 @@
   },
   "requiredCredentials" : [ "password" ],
   "users" : [ ],
+  "identityProviders" : [ {
+    "alias" : "google",
+    "displayName" : "Google",
+    "providerId" : "google",
+    "enabled" : false,
+    "trustEmail" : true,
+    "storeToken" : false,
+    "addReadTokenRoleOnCreate" : false,
+    "authenticateByDefault" : false,
+    "linkOnly" : false,
+    "updateProfileFirstLoginMode" : "on",
+    "firstBrokerLoginFlowAlias" : "first broker login",
+    "config" : {
+      "clientId" : "${GOOGLE_CLIENT_ID}",
+      "clientSecret" : "${GOOGLE_CLIENT_SECRET}",
+      "defaultScope" : "openid email profile",
+      "syncMode" : "IMPORT",
+      "useJwksUrl" : "true",
+      "_note_status" : "DISABLED BY DECISION, not by oversight. See docs/architecture/decisions/ADR-0005-customer-realm-identity-providers.md (2026-08-08). JSON has no comment syntax, so these _note_* keys live in the config map, which Keycloak treats as a free-form Map<String,String> and ignores.",
+      "_note_redirectUri" : "Register EXACTLY this URI in the Google Cloud console: {keycloak-public-url}/realms/jtoye-customers/broker/google/endpoint — locally http://localhost:8085/realms/jtoye-customers/broker/google/endpoint. Google forbids wildcards and raw IPs, so the value is not guessable later. Google also requires HTTPS on a resolving host for any NON-localhost redirect URI, which is the single thing blocking production and the reason enabled is false.",
+      "_note_enabling" : "Flipping enabled to true is NOT sufficient on a running stack. --import-realm SKIPS a realm that already exists, and Keycloak is Postgres-backed so dropping the keycloak_data volume is a no-op. Use kc.sh import --override true with the server stopped, or POST to /admin/realms/jtoye-customers/identity-provider/instances. Procedure in infra/keycloak/README.md.",
+      "_note_trustEmail" : "trustEmail is true ONLY because Google verifies email addresses. It is not a default to copy: for a provider that does not verify, a brokered login could claim an existing account's address. Without it, Keycloak re-verifies by email and in local dev Mailhog swallows that mail, so the flow stalls with no obvious cause. Per-provider judgement, both directions.",
+      "_note_credentials" : "clientId/clientSecret are rendered by envsubst from ${GOOGLE_CLIENT_ID} / ${GOOGLE_CLIENT_SECRET}. BOTH names must appear in the CUSTOMER envsubst allow-list in docker-compose.full-stack.yml — the SECOND invocation — or they render as an empty string with no error. Unset renders empty, which is the intended inert state; a literal ${...} surviving into the rendered file means envsubst never saw the name."
+    }
+  } ],
   "clients" : [ {
     "clientId" : "storefront-client",
     "name" : "J'Toye Customer Storefront",

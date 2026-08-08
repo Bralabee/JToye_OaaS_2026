@@ -113,6 +113,93 @@ docker exec -it jtoye-keycloak /opt/keycloak/bin/kc.sh import \
   --file /opt/keycloak/data/import/realm-export.json
 ```
 
+## Replacing a realm that already exists
+
+**`--import-realm` SKIPS a realm that already exists.** This is the single most expensive thing to
+learn the hard way here, because every symptom points somewhere else: you edit the template, the
+render sidecar reports success, the rendered JSON on disk is visibly correct, Keycloak starts clean
+with no warning — and the running realm is unchanged. Nothing in any log says a realm was skipped.
+
+**Dropping the `keycloak_data` volume does not help.** Keycloak is Postgres-backed here
+(`KC_DB: postgres`, `KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak`). Realm state lives in the
+`keycloak` database, not in that volume, so removing it is a **no-op** for this purpose.
+
+Two routes actually work.
+
+### Route 1 — `kc.sh import --override true`, server stopped
+
+Import writes to the database directly, so the server must not be running.
+
+```bash
+# 1. Render the template (normally done by the keycloak-realm-render sidecar)
+docker compose -f docker-compose.full-stack.yml up keycloak-realm-render
+
+# 2. Stop Keycloak — kc.sh import needs exclusive access
+docker compose -f docker-compose.full-stack.yml stop keycloak
+
+# 3. Import with --override, which is the flag --import-realm does not have
+docker compose -f docker-compose.full-stack.yml run --rm --no-deps --entrypoint /opt/keycloak/bin/kc.sh \
+  keycloak import --file /keycloak/realm-export-customers.json --override true
+
+# 4. Start it again
+docker compose -f docker-compose.full-stack.yml start keycloak
+```
+
+Verify **by content**, not by "it started". Read the value back out of the running server rather than
+off the disk — the rendered file being right is exactly the state that fools you:
+
+```bash
+# expects the admin CLI to be authenticated; substitute your own admin credentials
+docker exec jtoye-keycloak /opt/keycloak/bin/kcadm.sh get identity-provider/instances \
+  -r jtoye-customers --fields alias,enabled
+```
+
+### Route 2 — Admin API, server running
+
+For a single identity provider this is less disruptive than a whole-realm replacement, and it is the
+route to prefer when the realm has live users.
+
+```bash
+TOKEN=$(curl -s -d "client_id=admin-cli" -d "username=${KEYCLOAK_ADMIN}" \
+             -d "password=${KEYCLOAK_ADMIN_PASSWORD}" -d "grant_type=password" \
+             http://localhost:8085/realms/master/protocol/openid-connect/token | jq -r .access_token)
+
+curl -s -X POST http://localhost:8085/admin/realms/jtoye-customers/identity-provider/instances \
+     -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+     -d @- <<'JSON'
+{ "alias": "google", "providerId": "google", "enabled": true, "trustEmail": true,
+  "config": { "clientId": "...", "clientSecret": "...",
+              "defaultScope": "openid email profile", "syncMode": "IMPORT" } }
+JSON
+```
+
+The endpoint returns **409** if the alias already exists — `PUT .../instances/google` updates it.
+
+### Customer realm identity providers (`jtoye-customers`)
+
+The customer realm carries a Google identity provider that is **`enabled: false` by decision, not by
+oversight** — see
+[`ADR-0005`](../../docs/architecture/decisions/ADR-0005-customer-realm-identity-providers.md). Google
+requires HTTPS on a resolving host for any non-`localhost` redirect URI, and no such host exists yet.
+
+To enable it, all four of these are required and none is sufficient alone:
+
+1. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env` (documented in `.env.example`, never
+   committed). Put any note on its **own line** — `VAR=  # note` is read as empty by
+   `scripts/verify-env.sh` but resolves to the comment **text** in Docker Compose, so the two
+   disagree about the same line and compose is the one that renders the realm.
+2. Flip `enabled` to `true` in `realm-export-customers.template.json`. Editing the **template** is
+   correct; `realm-export-customers.json` is a gitignored build product.
+3. Register the redirect URI in the Google Cloud console, exactly:
+   `{keycloak-public-url}/realms/jtoye-customers/broker/google/endpoint`. Google forbids wildcards
+   and raw IPs, so it cannot be guessed later.
+4. **Replace the realm** using one of the two routes above. Without this the first three changes
+   reach nothing.
+
+`scripts/verify-env.sh` reads the enabled flag out of the template and starts requiring both
+variables the moment step 2 lands, so a half-done enablement fails preflight rather than booting a
+provider with an empty client id.
+
 ## Exporting Realm Configuration
 
 To export the current realm configuration (e.g., after making changes via UI):
