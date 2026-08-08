@@ -147,7 +147,7 @@ running application**, and none appeared in any planning document before the swe
 
 - [ ] **CUST-01**: Locality exists as a concept and nothing on the storefront is fictional — device location used, shop coordinates read, a delivery radius enforced, and "Cooking near you" resolving to real published shops. Closes #460 and #544.
 - [ ] **CUST-02**: No lifecycle dead-ends for a consumer or a vendor — onboarding `MANUAL_REVIEW` reaches a surface a human can act from (or a recorded decision names who adjudicates it, given there is no cross-tenant operator identity), signed-in customer nav is gated, tracking moves into the profile, and second-shop onboarding plus staff invite exist. Closes #453, #458, #452.
-- [ ] **CUST-03**: Consumer sign-up has more than one route in — the `jtoye-customers` realm's `identityProviders: 0` is populated or recorded as a dated deliberate decision. Closes #432. *(The second-factor / verified-contact half moved to PAY-04 with #462 on 2026-08-07: a verified telephone number is the address #461's payment request is sent to, so it cannot trail the money path.)*
+- [x] **CUST-03**: Consumer sign-up has more than one route in — the `jtoye-customers` realm's `identityProviders: 0` is populated or recorded as a dated deliberate decision. Closes #432. **Satisfied 2026-08-08 by the RECORDED-DECISION limb only**, per owner decision Q-3 (`q3-record`): [`ADR-0005-customer-realm-identity-providers.md`](../docs/architecture/decisions/ADR-0005-customer-realm-identity-providers.md). `identityProviders` remains **unpopulated** — Google's production redirect URI needs HTTPS on a resolving host and `jtoye.co.uk` answers only a parking page over `http`, while Apple needs a paid membership and Meta an app review (the D-1 commercial-decision class). The groundwork ships inert (`enabled: false`, zero credentials in `.env`). *(The second-factor / verified-contact half moved to PAY-04 with #462 on 2026-08-07: a verified telephone number is the address #461's payment request is sent to, so it cannot trail the money path.)*
 - [ ] **CUST-04**: The customer-facing surface has been reviewed against what it actually renders — a look-and-feel pass on web and mobile, Keycloak stops shipping the stock theme on both realms, and the staff screen gains bulk-revoke of JIT-provisioned rows. Closes #546, #545, #285. A screenshot cannot verify motion.
 
 ### Rendering and test truthfulness (TRUTH) — Phase 34
@@ -229,7 +229,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | PAY-04 | Phase 30 | not yet planned | Not started — decision settled 2026-08-02; blocked on phone verification (#462), the channel seam (#208) and Stripe keys |
 | CUST-01 | Phase 33 | not yet planned | Not started |
 | CUST-02 | Phase 33 | not yet planned | Not started — #453 needs a product decision (no cross-tenant operator identity) |
-| CUST-03 | Phase 33 | not yet planned | Not started |
+| CUST-03 | Phase 33 | 33-04 | **Complete** — recorded-decision limb (ADR-0005, 2026-08-08); `identityProviders` deliberately unpopulated, groundwork committed disabled |
 | CUST-04 | Phase 33 | not yet planned | Not started |
 | TRUTH-01 | Phase 34 | not yet planned | Not started |
 | TRUTH-02 | Phase 34 | not yet planned | Not started |
