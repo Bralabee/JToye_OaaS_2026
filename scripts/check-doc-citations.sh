@@ -73,6 +73,7 @@ AGENTS.md
 .planning/codebase/ARCHITECTURE.md
 .planning/codebase/INTEGRATIONS.md
 k8s/DEPLOYMENT.md
+k8s/LOCAL.md
 docs/ops/terminal-states.yaml"
 
 DOCS_RAW="${CITATION_DOCS:-$DEFAULT_DOCS}"
