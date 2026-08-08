@@ -1,4 +1,4 @@
-# Handoff: Phase 33 waves 1–2 COMPLETE — 33-02 (wave 3) is next
+# Handoff: Phase 33 waves 1–3 COMPLETE — 33-05 (wave 4) is next
 
 **Generated 2026-08-08, later the same day. This section supersedes everything below for anything
 concerning Phase 33's execution state.** Everything below is retained as history.
@@ -20,9 +20,41 @@ git rev-list --count HEAD..origin/main                             # expect 0
 | **33-03** | 2 | **COMPLETE 5/5**, SUMMARY written. Task 4's human gate was **approved** by the owner |
 | **33-04** | 2 | **COMPLETE 3/3**, SUMMARY written. Task 3's human gate was **approved** by the owner |
 
-**Waves 1 and 2 are done. Next action: execute `33-02`** — the whole of wave 3, and the only thing
-standing between here and waves 4–6. It owns the V61 DDL, the importer, `PostcodeGeocoder`/`GeoBounds`,
-and the `jtoye.geo.*` config block.
+**Waves 1, 2 and 3 are done. Next action: execute `33-05`** (wave 4) — geocode on the write path,
+range-validate `CreateShopRequest`, seeder coordinates through the SAME geocoder, and the tenant-looped
+backfill. After it, 33-06 (wave 5) then 33-07 (wave 6).
+
+| Plan | Wave | State |
+|---|---|---|
+| **33-02** | 3 | **COMPLETE 3/3**, SUMMARY written |
+
+### What 33-02 leaves you, so 33-05 does not re-derive it
+
+- **The dev database already holds 1,748,230 postcode centroids.** Verified on the delivered runtime,
+  not just in tests: Flyway applied V61, the importer loaded the real gzipped artefact in ~18 s, and a
+  restart logs *"already holds 1748230 rows … skipping import"*. **No plan needs to re-import.**
+- **Read `jtoye.geo.*`, never add to it.** 33-02 owns that block. `coordinate-backfill.enabled` and
+  `default-radius-km`/`max-radius-km` already exist for 33-05 and 33-06; both plans share a wave, and
+  two of them editing `application.yml` is a merge conflict by design.
+- **The API:** `PostcodeGeocoder.locate(String)` → `Optional<PostcodeGeocoder.Coordinate>`, and
+  `GeoBounds.boxAround(lat, lon, radiusKm)` → a record with `contains()`. Use the geocoder for the
+  seeder too — that is the point of there being one implementation.
+- **`SE15 4QA` is not a real postcode** and is the phase's permanent negative control. It is in the
+  seeded demo data, satisfies every plausible regex, and `api.postcodes.io` returns 404 for it. The
+  real postcode nearest Bellenden Road is **`SE15 4BW`** (51.466812, −0.073164), already in the test
+  fixture for whichever plan seeds the replacement.
+- **Northern Ireland does not geocode, permanently.** Code-Point Open is GB-only; a NI vendor keeps
+  their storefront but is absent from distance-ranked results. Licence containment, recorded in
+  `SOURCE.md` — not a bug for 33-05 to fix.
+
+### A trap 33-02 hit three times, which will bite anyone editing a migration
+
+**Flyway substitutes placeholders inside migration SQL — including comments.** A comment naming a
+property in dollar-brace form fails the migration with *"No value provided for placeholder"* and takes
+the whole application down at startup. It happened once naming the datasource property, and again in
+the note explaining the first one, which quoted the syntax it was warning about. Relatedly,
+`check-no-create-extension.sh` scans case-insensitively and does **not** skip comments, so a migration
+must discuss that statement without spelling it — `V61__postcode_centroid.sql` is the worked example.
 
 ### What 33-04 settled, so nobody reopens it
 
@@ -2575,7 +2607,11 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 31 x rc=0. A VOID (2) is not a pass. (30 -> 31: plan 33-01 added
+# EXPECT 32 x rc=0. A VOID (2) is not a pass. (31 -> 32: plan 33-02 added
+#   check-no-create-extension.sh, enforcing that no Flyway migration creates a
+#   PostgreSQL extension — the role Flyway runs as cannot execute the statement at
+#   all, so one would abort startup in every environment at once.
+#   30 -> 31: plan 33-01 added
 #   check-geo-attribution.sh, the OGL year gate for the Code-Point Open
 #   attribution lines. H-1 had been failing on this since 33-01 landed — the
 #   script was added and this number was not, which is the exact drift H-1
@@ -2586,8 +2622,8 @@ done
 #   `const broken: number = "..."` in a spec gives npm run build rc=0 and
 #   tsc --noEmit rc=2, so a type error in a spec could reach main green.
 #   NOTE the two counts differ by one and both are correct: this line counts
-#   31 GATE SCRIPTS (30 check-*.sh + docs-freshness.sh), while
-#   check-gate-enforcement reports 30 because it counts only check-*.sh.
+#   32 GATE SCRIPTS (31 check-*.sh + docs-freshness.sh), while
+#   check-gate-enforcement reports 31 because it counts only check-*.sh.
 #   (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the
