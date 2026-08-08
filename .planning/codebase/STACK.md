@@ -178,10 +178,10 @@
 **Container/Image Versions (source of truth):**
 - Spring Boot 3.5.16 on Java 21 — `core-java/build.gradle.kts:2,9`
 - postgres:15-alpine — `docker-compose.full-stack.yml:43`
-- keycloak:24.0.5 — `docker-compose.full-stack.yml:123`
-- redis:7-alpine — `docker-compose.full-stack.yml:171`
-- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:195`
-- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:628`
+- keycloak:24.0.5 — `docker-compose.full-stack.yml:139`
+- redis:7-alpine — `docker-compose.full-stack.yml:187`
+- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:211`
+- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:644`
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:35`
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:84`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:115`

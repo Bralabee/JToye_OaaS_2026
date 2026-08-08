@@ -535,7 +535,7 @@ there and invalid the moment it is relayed.
 **Why every k8s environment is affected while development is not.**
 `k8s/base/configmap.yaml:36` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
-broken path**. Meanwhile `docker-compose.full-stack.yml:215` passes
+broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
 `STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `application.yml:224` reads
 `mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
 (`WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
