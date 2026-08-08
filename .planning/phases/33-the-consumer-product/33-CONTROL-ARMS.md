@@ -395,4 +395,91 @@ absence check, and `cmd | grep -q X` under `pipefail` inverts on match via SIGPI
 
 ## Owner decisions
 
-*Pending — 33-00 Task 4.*
+**Taken by the owner 2026-08-08**, at the blocking decision gate in `33-00` Task 4, after A1 returned
+OGL v3 / commercial-permitted / no share-alike — so Q-1 was a live question, not a moot one.
+
+Figures below were **re-measured at decision time**, not copied from `RESEARCH.md` or from the plan's
+option text. Where a re-measurement disagreed with the plan, the disagreement is recorded.
+
+| # | Decision | Answer |
+|---|---|---|
+| **Q-1** | How the postcode dataset ships | **`q1-commit`** — commit the derived gzipped artefact |
+| **Q-2** | Shape of the search radius | **`q2-param`** — query parameter with a platform default |
+| **Q-3** | #432 customer-realm identity providers | **`q3-record`** — dated decision, groundwork committed DISABLED |
+
+### Q-1 — commit the derived artefact
+
+Unit-level rows at ~100 m, matching D-1's stated tolerance. Offline deterministic builds with no
+build-time dependency on `api.os.uk`, and provenance provable against the OS-published md5. The two
+alternatives were both recommended against and both declined: sector granularity degrades accuracy to
+~500 m–1 km and contradicts D-1, and a build-time fetch makes `docker build` and CI network-dependent
+so that an offline or firewalled build silently produces a stack with **no locality at all** — a
+failure that presents as a working build.
+
+Cost accepted, re-measured at decision time:
+
+```
+  .git                 53M          (plan's option text said ~52 MB — holds)
+  largest tracked file 920.0 KB     .planning/milestones/v2.1-phases/10-storefront-marketing-
+                                    render-missing-customer-routes/screenshots/shop-detail.png
+                                    (plan said 924 KB — same file, holds)
+```
+
+RESEARCH recommends annual rather than quarterly refresh, which this decision adopts.
+
+**Not verified at decision time, and passed through as RESEARCH's figure:** the `1,748,230 rows /
+15.1 MB gzipped` size. Proving it is **33-01**'s job, via the md5 gate. Recorded here so a later
+reader does not mistake a quoted number for a measured one.
+
+### Q-2 — radius is a query parameter
+
+Observable and falsifiable within this phase, with no schema change and no vendor UI. Re-measured at
+decision time, with a control:
+
+```
+  'radius' in core-java/.../shop/Shop.java                    -> 0
+  migrations mentioning radius                                -> 0 files
+  CONTROL: migrations mentioning latitude (same machinery)    -> 1 file
+```
+
+The control matters: it proves the two zeros are about the tree rather than about the search, and it
+confirms `shops` already carries the `latitude`/`longitude` columns CA-1 measured as NULL. **#460 is
+a population problem, not a schema problem.**
+
+Accepted trade-off: not per-shop, so a vendor cannot set their own radius yet. The rejected
+alternative (`delivery_radius_km` column) costs a migration, a `shops_aud` mirror, vendor UI and a
+backfill default — a material expansion of the phase.
+
+### Q-3 — record the decision, commit the groundwork disabled
+
+Satisfies SC-5's second limb and leaves a one-variable switch, with no Google client secret
+committed. `33-04` writes ADR-0005.
+
+**The plan's stated reason for this option was measured and is STALE — the conclusion survives, the
+premise does not.** The option text reads *"`jtoye.co.uk` does not resolve while `DEPLOY_*_ENABLED`
+is false"*. It resolves:
+
+```
+  getent hosts jtoye.co.uk        -> 162.255.119.30                       rc=0
+  dig +short jtoye.co.uk NS       -> dns1.registrar-servers.com.  (Namecheap)
+                                     dns2.registrar-servers.com.
+  curl https://jtoye.co.uk        -> curl rc=28, timed out after 12005 ms, http_code 000
+  curl http://jtoye.co.uk         -> 302, remote_ip 162.255.119.30        (parking redirect)
+
+  CONTROL, negative: getent hosts olajay.co.uk  -> rc=2, does NOT resolve
+  CONTROL, positive: curl https://www.ordnancesurvey.co.uk -> 200
+```
+
+So the domain resolves to a registrar parking page whose HTTPS does not answer. Google's production
+redirect-URI requirement is **HTTPS on a resolving host**, and that is still unmet — the decision
+stands for a different reason than the one written down. Both controls are present because a DNS or
+`curl` check that can only report one direction is not a check: the negative control proves the
+resolver can say "no", the positive control proves the HTTPS machinery works.
+
+This also refines the recorded note that `jtoye.co.uk` is "registered but does not resolve" — it now
+resolves to parking. Anyone about to flip `DEPLOY_*_ENABLED` on the strength of a successful `getent`
+would be acting on a parking page.
+
+The rejected alternative (`q3-populate`) works only on a developer's laptop given the above, and rests
+on RESEARCH assumption **A2** — whether `openid email profile` alone escapes Google app verification
+for a published external app — which is **UNVERIFIED**.
