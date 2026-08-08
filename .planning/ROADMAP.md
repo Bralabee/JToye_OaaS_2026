@@ -442,6 +442,23 @@ Phase 29, and because it is cheap.
      (`5433`), mailhog (`8025`), minio (`9000`/`9001`) and the rabbitmq management UI (`15672`) all
      publish with no bind address. Local credentials named in the report are rotated. (SEC-04)
 
+> ⚠ **SC-4 is ALREADY SATISFIED and SC-3 measures the wrong artifact. Re-measured 2026-08-08 —
+> see `.planning/CRITERIA-DECAY-2026-08-08.md` before planning this phase.**
+>
+> **SC-4 cannot fail.** All five named infrastructure ports now bind to
+> `${JTOYE_BIND_HOST:-127.0.0.1}` (postgres line 73, rabbitmq 216, minio 513/514, mailhog 639).
+> The only three ports still published with no bind address belong to **applications** — edge-go
+> (`8089`), frontend (`3000`), mcp-server (`9100`) — which SC-4 does not govern, and binding them
+> would change local E2E reachability. Do not re-plan SC-4; if the intent was broader, state the
+> new form and give it a control.
+>
+> **SC-3 greps source, and the string is stripped at build.** `OpenApiConfig.java:51` does still
+> carry the `X-Tenant-Id` line, but this project's memory records that exact coordinate as stripped
+> at build time (it is why pentest A2 is marked do-not-re-file from it). A source-level gate is
+> therefore a false red over a clean built spec. Re-state SC-3 against the **built** OpenAPI
+> document — read it out of the running service or the packaged jar, per Proof Standard #2. Whether
+> the strip actually happens is **unverified**; the memory says so, this sweep did not confirm it.
+
 **Also in scope, same defect class, cheapest fixed together**: #283 (replace the retained
 `auth == null` internal bypass with an explicit `asSystem()` marker), #284 (`@Async` / `@Scheduled` /
 `@RabbitListener` propagate no SecurityContext and would take that bypass), ~~#289~~ (STOMP shop-gate
@@ -680,6 +697,39 @@ and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
      stops shipping the stock theme on both realms, and the staff screen gets bulk-revoke of
      JIT-provisioned rows. A screenshot is not sufficient evidence for the motion half — see the
      frontend craft sequence. (CUST-04)
+
+> ⚠ **Re-measured against the tree 2026-08-08 before planning. Full evidence, with controls, in
+> `.planning/CRITERIA-DECAY-2026-08-08.md`. Three corrections:**
+>
+> **SC-1 understates the problem — add the population link.** The chain is five links, not three:
+> the column exists (`V16:15-16`), the entity is ready (`Shop.java:53-55`, `:113-116`), **nothing
+> populates it** (`DemoDataSeeder.upsertShop` at `:508-510` takes no coordinate parameters and the
+> seeder never calls `setLatitude`/`setLongitude` — every seeded shop has NULL coordinates), the one
+> read site is a DTO pass-through (`PublicStorefrontService.java:720-721`), and there is no distance
+> logic or device geolocation anywhere (both zeros carry non-vacuity controls). **A locality feature
+> is not falsifiable while every coordinate is NULL** — before and after both return nothing.
+> Populating coordinates is a prerequisite task. Shops carry real UK addresses (e.g. *48 Rye Lane,
+> Peckham, London SE15 5BS*), so geocoding is a viable source.
+>
+> **SC-2 is live and sharper than filed.** `page.tsx:51` defines `featuredDishes`, `:192` maps it
+> under the `:180` heading; the five invented vendors are at `:52-56` and none appears in
+> `core-java/src/main/resources/`. Meanwhile the seeder creates three **real** shops the row never
+> shows — one of them *Mama Ade's Kitchen*, of which the page's fictional *Mama's Kitchen* is a
+> near-duplicate. The surface does not lack data to show; it shows invented data instead of real
+> data one query away. **Sequence #460 population → #544.**
+>
+> **SC-4 is ALREADY SATISFIED as written — rewrite it.** The nav-gating half shipped in `b9f80f81`
+> (#508) and `96d8432f` (#591); the gating lives in `public-header.tsx` / `public-footer.tsx` with
+> jest specs asserting both halves. #458 stays OPEN by a deliberate scope split recorded in its own
+> 2026-08-03 comment — *"the frontend half is done, this issue stays OPEN for the dispatch half"*.
+> Only SC-4's second clause is unmet: there is **no `/profile` route directory at all**. Re-state
+> SC-4 as the dispatch half plus profile tracking.
+>
+> **SC-6 was NOT measured** (#546, #545, #285). Recorded as unknown rather than assumed live —
+> asserting an unmeasured criterion is the same defect pointing the other way. Measure it first.
+>
+> SC-3 (#453) and SC-5 (#432) are unchanged and confirmed live —
+> `realm-export-customers.json` reads `realm=jtoye-customers`, `identityProviders=0`.
 
 **UI hint**: yes — this is almost entirely UI, and it is the phase most exposed to this repo's
 recorded UI traps: a screenshot cannot verify motion, and a screenshot taken without scrolling reads
