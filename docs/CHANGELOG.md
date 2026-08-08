@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CVE-2026-67213 in nanoid reds every open PR with no code change (#613) — 2026-08-08
+
+The Trivy vuln DB picked up **CVE-2026-67213** overnight. The **same tree** that passed
+`Security Scan` on `main` at `34b1dcf0` went red hours later on a **docs-only** PR — this repo's
+recorded daily-DB time-bomb, and it blocks *every* open PR rather than one.
+
+```
+Target      frontend/package-lock.json
+nanoid      CVE-2026-67213   HIGH
+installed   3.3.16
+fixed       3.3.17, 5.1.6
+title       nanoid (Nano ID) before 5.1.6 contains an infinite loop
+```
+
+#### Fixed
+- **`nanoid` 3.3.16 → 3.3.18** in `frontend/package-lock.json`. **No override, and that is the
+  point:** nanoid reaches the tree only through `postcss@8.5.22`, which declares `^3.3.16` — a range
+  3.3.18 already satisfies. So this is a lockfile refresh, not a pin: **one file, three lines**
+  (version, resolved, integrity), `package.json` untouched. An override would have been the reflex
+  given the `sharp` / `@auth/core` / `postcss` / `fast-uri` precedent directly above it, and would
+  have added a permanent declaration to say what the existing semver range already says.
+
+**Staying on the 3.x line is deliberate.** 5.1.6 also fixes it, but nanoid 5 is ESM-only and postcss
+consumes it via `require` — "newest fixed version" is the wrong answer here.
+
+#### Measured — both directions, against the CI gate's own image and flags
+Run as `aquasec/trivy fs . --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1` over a
+`git archive HEAD` extract, so the scan sees exactly what CI checks out rather than a dirty working
+directory:
+
+```
+lockfile 3.3.16 (control)   rc=1   nanoid CVE-2026-67213 reported
+lockfile 3.3.18 (fix)       rc=0   frontend 0, mcp-server 0
+```
+
+The control arm is load-bearing: without it, `rc=0` could mean the scanner never looked at that file.
+
+#### Local-only, and NOT a leak — recorded so it is not re-investigated
+Scanning the **working directory** rather than the committed tree also reports
+`CRITICAL: Stripe Secret Key` at `.env:92`. `.env` is **gitignored, untracked and absent from HEAD's
+tree**, so CI never sees it, and the value is an `sk_test_` **test-mode** key.
+
+Verified: `npm ci` rc=0 with nanoid 3.3.18 installed, `npm run build` rc=0 (the tsc gate — jest does
+not type-check), jest **94 suites / 839 tests / 0 failures**.
+
 ### A bare `check-test-count-oracle` exited 2 on a usage error, which reads exactly like a real VOID (#611) — 2026-08-07
 
 The script took a required `<jest|playwright|vitest>` argument and fell through to its usage arm
