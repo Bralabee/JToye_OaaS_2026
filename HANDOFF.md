@@ -23,14 +23,23 @@ git log HEAD..origin/main --oneline                             # expect: empty
 
 Then, in order:
 
-1. **Decide the merge strategy — this blocks execution and is not a technical call.**
+1. **Merge strategy: DECIDED 2026-08-08 — ONE STACKED PR for the whole phase.** Every plan commits
+   to a single long-lived phase branch; nothing merges to `main` until `33-07` lands.
    `.github/workflows/docs-freshness.yml` runs **both** metric gates — `scripts/docs-freshness.sh`
    at `.github/workflows/docs-freshness.yml:46` and `scripts/check-doc-metrics.sh` at
-   `.github/workflows/docs-freshness.yml:59` — on `pull_request` and `push` to main, and Phase 33 moves the figures
-   those gates read. `33-07` Task 4 owns the reconciliation, so waves 2–5 leave that workflow **RED
-   on any pushed branch**. One stacked PR for the phase makes it a non-issue; incremental
-   plan-by-plan merges — this repo's usual pattern — do not. **Do not resolve it by editing prose
-   mid-phase against a half-finished tree.** Recorded in `33-07` as ESCALATED, NOT DECIDED.
+   `.github/workflows/docs-freshness.yml:59` — on `pull_request` and `push` to main, and Phase 33
+   moves the figures those gates read while `33-07` Task 4 owns the prose.
+
+   **So the phase branch is EXPECTED to be red on those two gates from wave 2 until `33-07`
+   completes. That is the designed state, not a regression.** Do not open a PR to `main` mid-phase to
+   watch it go green, and **do not edit the prose figures to match a half-finished tree** — that
+   number is wrong the moment the next plan lands, and it recreates exactly the drift these gates
+   exist to catch (README sat at `921` while the tree was at `1895`, green throughout).
+
+   ⚠ **Rebase the phase branch on `main` before `33-07` runs, then re-run
+   `scripts/docs-freshness.sh --write`.** A stacked branch accumulates staleness against its base,
+   and the counts written into the prose must describe the *merged* tree. If `main` has moved, those
+   figures are wrong before they are written.
 2. **The four owner gates in `33-00` block Wave 2.** Licence first — see below.
 3. Only then start execution at Wave 1 (`33-00`).
 
