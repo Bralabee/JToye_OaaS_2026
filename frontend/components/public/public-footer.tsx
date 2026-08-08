@@ -52,6 +52,21 @@ import { useCustomerSession } from "@/hooks/use-customer-session"
  */
 const OPERATOR_SURFACES = ["/for-operators", "/business-model-guide", "/competitive", "/auth"]
 
+/**
+ * Attribution year for the bundled OS Code-Point Open postcode dataset.
+ *
+ * THIS IS NOT THE COPYRIGHT YEAR AND MUST NOT BE DERIVED FROM `new Date()`.
+ * The copyright line below moves every 1 January; this one is frozen at the
+ * release the repo actually ships and only moves when the dataset is
+ * regenerated. Writing `{year}` here would render an attribution for a dataset
+ * release that does not exist.
+ *
+ * It must equal the year in `core-java/src/main/resources/geo/SOURCE.md`, which
+ * `scripts/check-geo-attribution.sh` enforces in CI — the two cannot drift apart
+ * silently.
+ */
+const GEO_ATTRIBUTION_YEAR = "2026"
+
 export function PublicFooter() {
   const year = new Date().getFullYear()
   const { profile } = useCustomerSession()
@@ -161,6 +176,25 @@ export function PublicFooter() {
           </p>
           <p className="text-sm text-cream/70">
             Allergen info available on all products
+          </p>
+        </div>
+
+        {/* Open Government Licence attribution for the bundled OS Code-Point Open
+            postcode dataset that powers "shops near you".
+
+            This is a LICENCE OBLIGATION, not a credit — OGL v3 permits commercial
+            use inside a proprietary product and imposes no share-alike, and
+            acknowledgement is the single thing it asks in return. All three lines
+            are required; shipping only the Ordnance Survey line is a breach.
+            scripts/check-geo-attribution.sh fails CI if any line goes missing or
+            the year drifts from SOURCE.md. */}
+        <div className="mt-6 border-t border-white/10 pt-4">
+          <p className="text-xs leading-relaxed text-cream/55">
+            Contains Ordnance Survey data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.
+            <br />
+            Contains Royal Mail data &copy; Royal Mail copyright and database right {GEO_ATTRIBUTION_YEAR}.
+            <br />
+            Contains National Statistics data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.
           </p>
         </div>
       </div>

@@ -64,6 +64,21 @@ jobs:
       - name: Verify the project version agrees across every site that claims it
         if: always()
         run: bash scripts/check-project-version.sh
+      # The bundled OS Code-Point Open postcode dataset ships under the Open
+      # Government Licence v3. Commercial use inside a proprietary product is
+      # permitted and there is no share-alike clause — acknowledgement is the ONE
+      # obligation it imposes, so an attribution that silently rots is a licence
+      # breach rather than a cosmetic defect.
+      #
+      # This is the same value-vs-source shape as the steps above: it ties the
+      # attribution the public footer RENDERS to the dataset release actually
+      # committed in geo/SOURCE.md. It asserts all three rights holders, not just
+      # the year — a footer carrying only the Ordnance Survey line would pass a
+      # year-only check while omitting Royal Mail and National Statistics.
+      # Fails closed at exit 2 when either input is missing or unparseable.
+      - name: Verify the OGL geo attribution matches the committed dataset
+        if: always()
+        run: bash scripts/check-geo-attribution.sh
       # The generic claim-gate engine, running the SAME 43 assertions as the two
       # steps above (37 + 6) from a declarative rule table instead of bespoke bash.
       # Deliberately additive for now: it cross-checks those two while the engine
