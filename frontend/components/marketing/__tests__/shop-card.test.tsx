@@ -1,5 +1,7 @@
 /**
- * ShopCard — the landing kitchen row's card (#544).
+ * ShopCard — the landing kitchen row's card (issue 544). Written without a leading
+ * hash: the palette-discipline gate greps this directory for raw hex colours and an
+ * issue reference matches that pattern. See the note in shop-card.tsx.
  *
  * The point of this component is what it does NOT print. The row it replaces
  * rendered an invented rating ("⭐ 4.8"), an invented "FHRS 5" food-hygiene badge

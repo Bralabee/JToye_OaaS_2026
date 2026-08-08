@@ -61,6 +61,24 @@ jest.mock("@/lib/storefront-server", () => ({
   })),
 }))
 
+/**
+ * `next/headers` throws "`headers` was called outside a request scope" under jest —
+ * there is no request store. `Home()` reads it for the CSP nonce it puts on the
+ * JSON-LD script.
+ *
+ * This is not a test convenience: it caught a real gap. Adding the `headers()`
+ * call broke all eight rendering tests here, and `npm run build` (rc=0, zero type
+ * errors) and 41 Playwright tests were ALL GREEN over it, because neither runs
+ * jest. A type-check and an E2E suite cannot see a unit suite that does not run.
+ *
+ * Returning an empty Map is the honest stub: `.get("x-nonce")` yields undefined,
+ * which is exactly what the page gets when middleware has not set one, so the
+ * component takes its real no-nonce path rather than a fabricated one.
+ */
+jest.mock("next/headers", () => ({
+  headers: jest.fn(async () => new Map<string, string>()),
+}))
+
 describe("Public landing page (/)", () => {
   it("renders a split-persona H1 naming both audiences (no redirect)", async () => {
     render(await Home())
