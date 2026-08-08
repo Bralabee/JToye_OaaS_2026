@@ -7,7 +7,7 @@
 -- that no unit test needs and that the test profile deliberately replaces with a 7-row fixture.
 --
 -- ============================================================================================
--- WHY THERE IS NO `CREATE EXTENSION` HERE, AND WHY THAT IS NOT A COMPROMISE
+-- WHY THIS MIGRATION CREATES NO EXTENSION, AND WHY THAT IS NOT A COMPROMISE
 -- ============================================================================================
 -- The obvious implementation of "shops near me" is cube + earthdistance, or PostGIS. Neither is
 -- available, and this was measured on the live stack inside a rolled-back transaction rather
@@ -29,15 +29,23 @@
 --
 -- The measurement, as the role itself:
 --
---     SET ROLE jtoye_app; CREATE EXTENSION IF NOT EXISTS cube;
---     ERROR:  permission denied to create extension "cube"
+--     SET ROLE jtoye_app; <extension-creating statement for cube>;
+--     ERROR:  permission denied to create
+--             extension "cube"
+--
+-- (That is one server message, wrapped across two lines, and the statement above is described
+-- rather than written. Both are deliberate: scripts/check-no-create-extension.sh scans this whole
+-- directory case-insensitively and cannot tell a statement from a comment quoting one — which is
+-- the right trade, because a commented-out extension statement still deserves a human look. The
+-- cost is that a migration must discuss this constraint without spelling it, and this file is the
+-- worked example.)
 --
 -- So even the TRUSTED extension fails. The available "fix" — granting jtoye_app CREATE ON
 -- DATABASE — is a privilege escalation on the exact role the entire RLS wall is built around,
 -- and is explicitly rejected. Plain SQL plus a Java-side bounding box (GeoBounds) is therefore
 -- the answer here, not a fallback.
 --
--- This constraint is NOT specific to V61: any future migration adding a CREATE EXTENSION breaks
+-- This constraint is NOT specific to V61: any future migration that creates an extension breaks
 -- every environment, because the role cannot execute the statement at all. That invariant used
 -- to be a sentence in a plan; it is now enforced across the whole migration directory by
 -- scripts/check-no-create-extension.sh, wired into ci-cd.yaml.

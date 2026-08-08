@@ -674,6 +674,20 @@ jobs:
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
 
+      # Plan 33-02 (W10). This invariant used to be a sentence in a success-criteria
+      # list with no check anywhere. Flyway runs as jtoye_app — rolsuper = f, no
+      # CREATE on the database — so a migration that creates an extension cannot
+      # execute in ANY environment: it aborts application startup everywhere at once,
+      # rather than failing quietly in one place. That makes it a static-contract
+      # question (does the text exist?) rather than a runtime one, so it belongs here.
+      #
+      # Static by construction: reads .sql files, touches no database and makes no
+      # network call, so it says the same thing on a hosted runner as it does locally.
+      - name: Assert no migration creates a PostgreSQL extension (33-02)
+        run: |
+          chmod +x ./scripts/check-no-create-extension.sh
+          ./scripts/check-no-create-extension.sh
+
       # 5. check-image-supply-chain.sh — #276. The container-image gate compares two
       #    things that BOTH move on their own (a floating base tag's content, and
       #    Trivy's daily-refreshed vulnerability DB), so build-and-push went red on

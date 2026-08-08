@@ -114,7 +114,23 @@ class RlsContractTest {
             // (one revision row per transaction, regardless of tenant); per-
             // tenant filtering of audit reads happens in the *_aud child
             // tables (which DO have RLS+FORCE). See V8__add_tenant_context_to_revinfo.sql.
-            "revinfo"
+            "revinfo",
+
+            // V61 (Phase 33 / plan 33-02) public reference data: GB postcode unit
+            // centroids from OS Code-Point Open, under the Open Government Licence.
+            // It has NO tenant_id column and no tenant dimension to scope by — the
+            // postcode of a public address is not tenant information, and there are
+            // no customer rows here at all. Every tenant reads the same 1,748,230
+            // rows, and that is the intended behaviour: a shop in Peckham and a shop
+            // in Cardiff must resolve against one shared table or distance ranking
+            // means nothing across tenants.
+            //
+            // Adding RLS here would not be "safer" — with no tenant_id there is no
+            // predicate to write, so a FORCE'd policy would return zero rows to
+            // every caller and silently disable locality platform-wide while every
+            // test stayed green. Note this is exempted BY ADDITION, per the standing
+            // instruction above; the schema-walk assertion itself is untouched.
+            "postcode_centroid"
     );
 
     /**
