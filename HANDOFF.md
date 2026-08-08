@@ -1,4 +1,4 @@
-# Handoff: Phase 33 waves 1–2 in flight — paused at a human gate
+# Handoff: Phase 33 waves 1–2 COMPLETE — 33-02 (wave 3) is next
 
 **Generated 2026-08-08, later the same day. This section supersedes everything below for anything
 concerning Phase 33's execution state.** Everything below is retained as history.
@@ -18,12 +18,23 @@ git rev-list --count HEAD..origin/main                             # expect 0
 | **33-00** | 1 | **COMPLETE 4/4**, SUMMARY written |
 | **33-01** | 2 | **COMPLETE 2/2**, SUMMARY written |
 | **33-03** | 2 | **COMPLETE 5/5**, SUMMARY written. Task 4's human gate was **approved** by the owner |
-| **33-04** | 2 | **NOT STARTED** — the only wave-2 plan left |
+| **33-04** | 2 | **COMPLETE 3/3**, SUMMARY written. Task 3's human gate was **approved** by the owner |
 
-**Next action: execute `33-04`.** It is `autonomous: false` (Keycloak customer-realm identity
-providers + `ADR-0005`), independent of everything above, and its owner decision is already taken:
-**`q3-record`** — record a dated ADR and commit the groundwork **DISABLED**, no Google client secret
-committed. After it, wave 3 is `33-02` alone.
+**Waves 1 and 2 are done. Next action: execute `33-02`** — the whole of wave 3, and the only thing
+standing between here and waves 4–6. It owns the V61 DDL, the importer, `PostcodeGeocoder`/`GeoBounds`,
+and the `jtoye.geo.*` config block.
+
+### What 33-04 settled, so nobody reopens it
+
+CUST-03 closed on its **recorded-decision limb** (`ADR-0005`), not the populate limb.
+`identityProviders` is still empty **by decision**. Google needs HTTPS on a resolving host for any
+non-`localhost` redirect URI; `jtoye.co.uk` resolves to Namecheap parking whose HTTPS does not answer.
+Groundwork is committed **inert** (`enabled: false`, zero `GOOGLE` vars in `.env`).
+
+Enabling it later needs **all four**, and the first three reach nothing without the fourth: both env
+vars, `enabled: true` in the template, the redirect URI registered with Google, and a **realm
+replacement** — `--import-realm` skips an existing realm and Keycloak is Postgres-backed, so dropping
+`keycloak_data` is a no-op. Procedure is in `infra/keycloak/README.md`.
 
 ### Two things 33-07 must consume, already measured
 
@@ -33,7 +44,28 @@ committed. After it, wave 3 is `33-02` alone.
 - **The CLS no-regression assertion is already in place** and will fire if 33-07's client island
   makes the shift worse.
 
-## The delivered runtime is current, and was proven by content
+## The delivered runtime — CORRECTED 2026-08-08 during 33-04
+
+**The claim below was true when written and false five minutes later, and this is worth reading
+before trusting any parity statement in a handoff.** `scripts/check-runtime-freshness.sh` ran rc=1
+during 33-04's close-out, naming **two** stale services:
+
+- `frontend` — image tagged 17:13:09 UTC, but `380ba3b8` (*33-03's own final commit*, 18:18:39 BST)
+  touched its build paths afterwards. So 33-03 rebuilt, verified, wrote the claim below, and **then
+  committed again** — invalidating its own parity proof at the last step.
+- `core-java` — image predates `bfa0836c` (33-01, 17:31 BST).
+
+Neither was caused by 33-04, and that was **measured, not assumed**: `git diff --name-only
+51a0c633..HEAD` for 33-04's four commits touches **zero** files under `core-java/` or `frontend/`.
+Both services were rebuilt and recreated during 33-04's close-out.
+
+**The lesson is about ordering, not about anyone's diligence.** A runtime-parity proof is only valid
+against the commit that was HEAD when it was taken. Take it **last**, after the final commit — or
+re-take it. The gate is what caught this; the prose did not.
+
+The original 33-03 claim follows, retained as the record of what was proven at that moment.
+
+### (33-03's claim, superseded above)
 
 The frontend image was rebuilt and the container **force-recreated** — a rebuild that is only
 `start`ed still serves the old code. Running container image id `sha256:fcdf723b…` **matches** the
@@ -2522,14 +2554,19 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 30 x rc=0. A VOID (2) is not a pass. (29 -> 30: #601 added
+# EXPECT 31 x rc=0. A VOID (2) is not a pass. (30 -> 31: plan 33-01 added
+#   check-geo-attribution.sh, the OGL year gate for the Code-Point Open
+#   attribution lines. H-1 had been failing on this since 33-01 landed — the
+#   script was added and this number was not, which is the exact drift H-1
+#   exists to catch, so the gate was working and nobody read it.
+#   29 -> 30: #601 added
 #   check-e2e-typecheck.sh, after `next build` was measured NOT to type-check
 #   frontend/e2e/** despite tsconfig including **/*.ts — a planted
 #   `const broken: number = "..."` in a spec gives npm run build rc=0 and
 #   tsc --noEmit rc=2, so a type error in a spec could reach main green.
 #   NOTE the two counts differ by one and both are correct: this line counts
-#   30 GATE SCRIPTS (29 check-*.sh + docs-freshness.sh), while
-#   check-gate-enforcement reports 29 because it counts only check-*.sh.
+#   31 GATE SCRIPTS (30 check-*.sh + docs-freshness.sh), while
+#   check-gate-enforcement reports 30 because it counts only check-*.sh.
 #   (22 -> 24: #276 added
 #   check-image-supply-chain.sh and #337 added check-edge-core-contract.sh.
 #   24 -> 25: check-postgres-major-parity.sh, after dependabot #525 bumped the

@@ -742,7 +742,7 @@ Plans:
 
 - [x] 33-01-PLAN.md (Wave 2) — Dataset + provenance + licence: md5-gated regen script, Null-Island-filtered derived artefact, `SOURCE.md` recording the GB-only and ~100 m limitations, and the three OGL attribution lines with a CI-wired year gate
 - [x] 33-03-PLAN.md (Wave 2, parallel) — #544: the landing row renders REAL published shops in the initial HTML under a heading that claims nothing about location; deletes the five invented vendors; fixes the measured `Permissions-Policy: geolocation=()`; migrates the five `landing.test.tsx` tests that `async Home()` breaks; and holds `/` to a declared throttled-mobile CWV budget. `autonomous: false`
-- [ ] 33-04-PLAN.md (Wave 2, parallel) — #432: dated ADR settling SC-5 on its recorded-decision limb, plus committed-but-inert Google IdP groundwork. `autonomous: false`
+- [x] 33-04-PLAN.md (Wave 2, parallel) — #432: dated ADR settling SC-5 on its recorded-decision limb, plus committed-but-inert Google IdP groundwork. `autonomous: false`
 
 **Wave 3** *(blocked on 33-01)*
 
