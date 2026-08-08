@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 3/8 | In Progress | — |
+| 33. The Consumer Product | v2.3 | 5/8 | In Progress | — |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -364,8 +364,9 @@ The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48
 > needs no phase. **Re-run the count before quoting it** — `gh issue list --limit` defaults to 30.
 
 **Blocking decisions for Phases 29–32** — these are commercial, not technical, and nothing in 29–32
-starts until they land: (1) the production domain (`jtoye.co.uk` was never registered;
-`FRONTEND_PUBLIC_*` point at `olajay.co.uk`; no A records); (2) the hosting target; (3) Stripe
+starts until they land: (1) the production domain (`jtoye.co.uk` is registered but parked at
+Namecheap — HTTPS times out, nothing serves the application; measured 2026-08-08;
+`FRONTEND_PUBLIC_*` point at `olajay.co.uk`; parking A records only — nothing serving the app); (2) the hosting target; (3) Stripe
 test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, still `Proposed`, which
 gates DPLY-04.
 
