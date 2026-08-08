@@ -303,6 +303,72 @@ $(/usr/bin/grep -A2 '"type" *: *"password"' "$REALM_TEMPLATE" \
   fi
 fi
 
+# ---- (f) conditional credentials: the customer-realm Google IdP -------------
+# Issue #432 / ADR-0005. These two variables are NOT in REQUIRED_VARS on purpose:
+# the identity provider ships DISABLED by a recorded decision, so demanding them
+# unconditionally would make a deliberate "stay off" state fail the whole stack.
+# They become required exactly when the realm template turns the provider on.
+#
+# The enabled flag is READ FROM the realm template, never restated here — the same
+# reason section (e) parses the passwordPolicy rather than copying it. A copy is a
+# second source of truth, and its failure mode is this check confidently passing a
+# configuration the realm is about to reject.
+echo "Checking the customer-realm Google IdP credentials against the realm's own enabled flag..."
+CUSTOMER_REALM_TEMPLATE="$(dirname "$0")/../infra/keycloak/realm-export-customers.template.json"
+GOOGLE_VARS=(GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET)
+
+# (f1) The inline-comment shape — checked on the RAW file, and checked whether or
+# not the provider is enabled.
+#
+# This is not belt-and-braces, it is the only way to see the defect at all: bash and
+# Docker Compose DISAGREE about `VAR=  # note`, and both readings were measured.
+#   bash `set -a; . .env`  -> empty string   (this script's view)
+#   docker compose         -> '# note'       (the value that reaches the container)
+# So a line this script reads as "unset" is one compose renders INTO the realm JSON
+# as the client id. Sourcing can never catch it; only the raw text can.
+#
+# The distinguishing feature is the WHITESPACE between `=` and `#`. A value that
+# starts with `#` and no space is legitimate — `ALERTMANAGER_SLACK_CHANNEL=#jtoye-alerts`
+# is a real Slack channel on this tree — so this pattern deliberately does not match it.
+for var in "${GOOGLE_VARS[@]}"; do
+  bad=$(/usr/bin/grep -cE "^[[:space:]]*${var}=[^#]*[[:space:]]+#" "$ENV_FILE" || true)
+  if [ "$bad" -ge 1 ]; then
+    fail "${var} uses the trailing '# comment' shape. There is no inline-comment syntax in a value position: this script reads it as EMPTY but docker compose resolves the comment TEXT as the value. Put the note on its own line above the assignment."
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+# (f2) Required if and only if the realm template enables the provider.
+if [ ! -f "$CUSTOMER_REALM_TEMPLATE" ]; then
+  fail "VOID: customer realm template not found at ${CUSTOMER_REALM_TEMPLATE} — cannot tell whether the Google IdP is enabled, so refusing to pass"
+  ERRORS=$((ERRORS + 1))
+else
+  IDP_BLOCK=$(/usr/bin/sed -n '/"identityProviders"/,/"clients"/p' "$CUSTOMER_REALM_TEMPLATE")
+  if [ -z "$IDP_BLOCK" ]; then
+    info "Customer realm declares no identityProviders — no brokered-login credentials to require."
+  elif ! printf '%s\n' "$IDP_BLOCK" | /usr/bin/grep -q '"providerId"'; then
+    fail "VOID: found an identityProviders key in ${CUSTOMER_REALM_TEMPLATE} but could not extract a provider from it — refusing to pass on an unread block"
+    ERRORS=$((ERRORS + 1))
+  else
+    IDP_ON=$(printf '%s\n' "$IDP_BLOCK"  | /usr/bin/grep -cE '"enabled"[[:space:]]*:[[:space:]]*true'  || true)
+    IDP_OFF=$(printf '%s\n' "$IDP_BLOCK" | /usr/bin/grep -cE '"enabled"[[:space:]]*:[[:space:]]*false' || true)
+    if [ "$IDP_ON" -eq 0 ] && [ "$IDP_OFF" -eq 0 ]; then
+      fail "VOID: the identityProviders block in ${CUSTOMER_REALM_TEMPLATE} declares no 'enabled' flag — cannot decide whether credentials are required"
+      ERRORS=$((ERRORS + 1))
+    elif [ "$IDP_ON" -ge 1 ]; then
+      for var in "${GOOGLE_VARS[@]}"; do
+        val="${!var-}"
+        if [ -z "$val" ]; then
+          fail "Required variable ${var} is unset or empty, but the customer realm has an identity provider with enabled=true. Set it, or set enabled back to false (see ADR-0005)."
+          ERRORS=$((ERRORS + 1))
+        fi
+      done
+    else
+      info "Customer-realm identity provider is disabled by decision (ADR-0005) — ${GOOGLE_VARS[*]} are not required and were not checked for presence."
+    fi
+  fi
+fi
+
 if [ "$ERRORS" -eq 0 ]; then
   pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
   pass "All ${PAIRS_CHECKED} same-role credential pair(s) agree"
