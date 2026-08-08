@@ -10,6 +10,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.onboarding.OnboardingState;
 import uk.jtoye.core.onboarding.VendorOnboardingRepository;
 import uk.jtoye.core.product.Product;
@@ -115,11 +116,72 @@ public class DemoDataSeeder implements ApplicationRunner {
     /** Slug of the hidden archive shop that absorbs every non-curated product. */
     private static final String ARCHIVE_SLUG = "unsorted-legacy-items";
 
+    // ---- Seeded addresses (33-05 / #460 link 3) -----------------------------------
+    //
+    // Named constants rather than inline literals so DemoDataSeederAddressTest can
+    // assert them against the SAME Code-Point Open fixture PostcodeGeocoderTest uses.
+    // That test is the guard: it fails if any curated address stops resolving, and it
+    // fails if either negative control below gains a postcode.
+
+    /** Curated shop 1. Resolves — SE15 5BS is in Code-Point Open and in the fixture. */
+    static final String MAMA_ADES_ADDRESS = "48 Rye Lane, Peckham, London SE15 5BS";
+
+    /**
+     * Curated shop 2. <strong>The postcode here was CORRECTED in 33-05 and must not be
+     * "restored".</strong>
+     *
+     * <p>This address previously carried the postcode with outward code {@code SE15} and
+     * inward code {@code 4QA}. That unit <strong>does not exist</strong>. It was measured
+     * absent from Code-Point Open 2026-08 (the committed 1,748,230-row dataset: lookup
+     * returns no row, with SE15 5BS as the control returning one) and independently
+     * confirmed absent from ONSPD via api.postcodes.io, which answers <em>HTTP 404
+     * "Postcode not found"</em> for it while answering 200 for SE15 5BS and SW9 8PS
+     * (checked 2026-08-08). It is well-formed enough to satisfy every plausible UK
+     * postcode regex, which is precisely why {@code PostcodeGeocoder} treats the table
+     * as the authority instead of a pattern.
+     *
+     * <p>Left alone it produced a silent regression-by-omission: this shop kept its
+     * storefront but held NULL coordinates forever, so it vanished from every distance
+     * result introduced by the change meant to FIX locality.
+     *
+     * <p>SE15 4BW is the replacement, and it is the one 33-02 provisioned for this job —
+     * it is the real unit nearest Bellenden Road (51.466812, -0.073164) and it is the
+     * only Peckham-area candidate present in
+     * {@code core-java/src/test/resources/geo/postcode-centroids-fixture.csv}, so the
+     * seeded address stays testable offline. See the SUMMARY for why the genuinely
+     * on-street alternatives (SE15 4QJ/4QL/4QN/4QR/4QS/4QW/4QY — all real, all verified
+     * present in the live dataset) were NOT used: adding one to the 7-row fixture would
+     * make it 8 and destroy 33-02's row-count-mismatch control arm, which depends on the
+     * fixture holding 7 while a manifest claims 8.
+     */
+    static final String PECKHAM_JOLLOF_ADDRESS = "12 Bellenden Road, Peckham, London SE15 4BW";
+
+    /** Curated shop 3. Resolves — SW9 8PS is in Code-Point Open and in the fixture. */
+    static final String BRIXTON_GRILL_ADDRESS = "Unit 74, Brixton Village Market, London SW9 8PS";
+
+    /**
+     * DELIBERATE NEGATIVE CONTROL — do NOT give this shop a postcode.
+     *
+     * <p>Together with {@link #ARCHIVE_ADDRESS} this is the only row in the seeded data
+     * that exercises the "address with no extractable postcode" branch: the geocoder must
+     * return empty, the shop must keep its storefront, and the coordinate must stay NULL
+     * rather than becoming (0,0). A later tidy-up that helpfully invents a postcode here
+     * would delete the only live proof of that branch without failing anything.
+     */
+    static final String TENANT_B_PROBE_ADDRESS = "1 Probe Lane, London";
+
+    /**
+     * DELIBERATE NEGATIVE CONTROL — see {@link #TENANT_B_PROBE_ADDRESS}. An em dash is
+     * not an address; the archive shop is not a storefront and must never geocode.
+     */
+    static final String ARCHIVE_ADDRESS = "—";
+
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
     private final VendorOnboardingRepository onboardingRepository;
     private final StorageService storageService;
+    private final PostcodeGeocoder postcodeGeocoder;
     private final TransactionTemplate transactionTemplate;
 
     public DemoDataSeeder(ShopRepository shopRepository,
@@ -127,12 +189,14 @@ public class DemoDataSeeder implements ApplicationRunner {
                           CustomerRepository customerRepository,
                           VendorOnboardingRepository onboardingRepository,
                           StorageService storageService,
+                          PostcodeGeocoder postcodeGeocoder,
                           PlatformTransactionManager transactionManager) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.customerRepository = customerRepository;
         this.onboardingRepository = onboardingRepository;
         this.storageService = storageService;
+        this.postcodeGeocoder = postcodeGeocoder;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -218,7 +282,10 @@ public class DemoDataSeeder implements ApplicationRunner {
             return s;
         });
         shop.setName("Tenant B Probe Kitchen");
-        shop.setAddress("1 Probe Lane, London");
+        // Deliberate negative control — see TENANT_B_PROBE_ADDRESS. Not geocoded, on
+        // purpose: this row and the archive shop are the only two that exercise the
+        // no-extractable-postcode branch on the live dev database.
+        shop.setAddress(TENANT_B_PROBE_ADDRESS);
         shop.setDescription("Cross-tenant RLS probe fixture for tenant B (dev only).");
         shop.setMinimumOrderPennies(0L);
         shop.setDeliveryFeePennies(0L);
@@ -247,17 +314,17 @@ public class DemoDataSeeder implements ApplicationRunner {
 
         List<Shop> shops = new ArrayList<>();
         shops.add(upsertShop(result, "Mama Ade's Kitchen", "mama-ades-kitchen",
-                "48 Rye Lane, Peckham, London SE15 5BS",
+                MAMA_ADES_ADDRESS,
                 "Home-style West African cooking — jollof, egusi and pounded yam done properly.",
                 "Nigerian, West African, Halal", "/brand/logo-mama-ades.png",
                 350L, 2500L));
         shops.add(upsertShop(result, "Peckham Jollof Co.", "peckham-jollof-co",
-                "12 Bellenden Road, Peckham, London SE15 4QA",
+                PECKHAM_JOLLOF_ADDRESS,
                 "Smoky party jollof, suya and grilled tilapia to eat in or take away.",
                 "Nigerian, Grill, Halal", "/brand/logo-peckham-jollof.png",
                 299L, 3000L));
         shops.add(upsertShop(result, "Brixton Village Grill", "brixton-village-grill",
-                "Unit 74, Brixton Village Market, London SW9 8PS",
+                BRIXTON_GRILL_ADDRESS,
                 "Flame-grilled peri peri chicken, kebabs and loaded sides.",
                 "Grill, Peri Peri, Halal", "/brand/logo-brixton-grill.png",
                 399L, 2000L));
@@ -531,7 +598,35 @@ public class DemoDataSeeder implements ApplicationRunner {
         // validated them and none is claimed. @Profile("dev") keeps this bean —
         // and therefore this bypass — out of every non-dev environment.
         shop.setPublished(true);
+
+        // #460 link 3b: the seeder and the API write path share ONE geocoder. upsertShop
+        // deliberately takes NO coordinate parameters and hardcodes NO literal lat/lon — a
+        // second coordinate source is a second thing to drift, and the whole point of this
+        // link is that a shop created through the UI and a shop created here cannot disagree
+        // about where they are. A miss leaves the coordinate untouched (never (0,0)); that
+        // path is covered by upsertArchiveShop/seedTenantB, which are addressless on purpose.
+        applySeededCoordinate(shop);
+
         return shopRepository.save(shop);
+    }
+
+    /**
+     * Geocode a seeded shop from the address already set on it, via the SAME
+     * {@link PostcodeGeocoder} the API write path uses (#460 link 3b).
+     *
+     * <p>Never writes {@code (0,0)} and never clears an existing coordinate: a miss is a
+     * no-op, so a boot that happens to run before {@code PostcodeCentroidImporter} has
+     * loaded the reference table leaves the row as it was rather than wiping it. The
+     * {@code ShopCoordinateBackfill} then fills it in at {@code ApplicationReadyEvent},
+     * which is strictly after every {@code ApplicationRunner} — that ordering, not an
+     * {@code @Order} race between two unordered runners, is what guarantees a seeded shop
+     * ends up with a coordinate.
+     */
+    private void applySeededCoordinate(Shop shop) {
+        postcodeGeocoder.locate(shop.getAddress()).ifPresent(coordinate -> {
+            shop.setLatitude(coordinate.latitude());
+            shop.setLongitude(coordinate.longitude());
+        });
     }
 
     /** The hidden holding shop for orphaned/legacy products. Never published. */
@@ -541,7 +636,9 @@ public class DemoDataSeeder implements ApplicationRunner {
             s.setTenantId(DEMO_TENANT);
             s.setSlug(ARCHIVE_SLUG);
             s.setName("Unsorted legacy items");
-            s.setAddress("—");
+            // Deliberate negative control — see ARCHIVE_ADDRESS. No postcode, so no
+            // coordinate, so this row keeps proving the "unresolvable address" branch.
+            s.setAddress(ARCHIVE_ADDRESS);
             s.setDescription("Internal archive of legacy/orphaned demo products. Not a storefront.");
             s.setMinimumOrderPennies(0L);
             s.setDeliveryFeePennies(0L);
