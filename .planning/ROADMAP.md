@@ -746,7 +746,7 @@ Plans:
 
 **Wave 3** *(blocked on 33-01)*
 
-- [ ] 33-02-PLAN.md (Wave 3) — Schema + Java surface: V61 DDL (no `CREATE EXTENSION` — Flyway runs as `jtoye_app`, which cannot — now enforced by a CI-wired gate), importer **enabled by default in dev**, `PostcodeGeocoder`, `GeoBounds`, `RlsContractTest` exemption by addition. Sole owner of the `jtoye.geo.*` config block
+- [x] 33-02-PLAN.md (Wave 3) — Schema + Java surface: V61 DDL (no `CREATE EXTENSION` — Flyway runs as `jtoye_app`, which cannot — now enforced by a CI-wired gate), importer **enabled by default in dev**, `PostcodeGeocoder`, `GeoBounds`, `RlsContractTest` exemption by addition. Sole owner of the `jtoye.geo.*` config block
 
 **Wave 4** *(blocked on 33-02)*
 
