@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 0/? | Not started | — |
+| 33. The Consumer Product | v2.3 | 1/8 | In Progress | — |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -736,7 +736,7 @@ and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
 Plans:
 **Wave 1**
 
-- [ ] 33-00-PLAN.md (Wave 1) — Capture the control arms BEFORE they expire (the NULL-coordinate arm dies on first write), allowlist the evidence file, then the **licence confirmation FIRST** and the three owner decisions second: Q-1 dataset cost, Q-2 radius shape, Q-3 #432 disposition. `autonomous: false`
+- [x] 33-00-PLAN.md (Wave 1) — Capture the control arms BEFORE they expire (the NULL-coordinate arm dies on first write), allowlist the evidence file, then the **licence confirmation FIRST** and the three owner decisions second: Q-1 dataset cost, Q-2 radius shape, Q-3 #432 disposition. `autonomous: false`
 
 **Wave 2** *(blocked on 33-00's decisions)*
 
