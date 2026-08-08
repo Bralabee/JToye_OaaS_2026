@@ -731,6 +731,60 @@ and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
 > SC-3 (#453) and SC-5 (#432) are unchanged and confirmed live —
 > `realm-export-customers.json` reads `realm=jtoye-customers`, `identityProviders=0`.
 
+**Plans**: 8 plans (5 waves) — planned 2026-08-08, revised after plan-check the same day
+
+Plans:
+**Wave 1**
+
+- [ ] 33-00-PLAN.md (Wave 1) — Capture the control arms BEFORE they expire (the NULL-coordinate arm dies on first write), allowlist the evidence file, then the **licence confirmation FIRST** and the three owner decisions second: Q-1 dataset cost, Q-2 radius shape, Q-3 #432 disposition. `autonomous: false`
+
+**Wave 2** *(blocked on 33-00's decisions)*
+
+- [ ] 33-01-PLAN.md (Wave 2) — Dataset + provenance + licence: md5-gated regen script, Null-Island-filtered derived artefact, `SOURCE.md` recording the GB-only and ~100 m limitations, and the three OGL attribution lines with a CI-wired year gate
+- [ ] 33-03-PLAN.md (Wave 2, parallel) — #544: the landing row renders REAL published shops in the initial HTML under a heading that claims nothing about location; deletes the five invented vendors; fixes the measured `Permissions-Policy: geolocation=()`; migrates the five `landing.test.tsx` tests that `async Home()` breaks; and holds `/` to a declared throttled-mobile CWV budget. `autonomous: false`
+- [ ] 33-04-PLAN.md (Wave 2, parallel) — #432: dated ADR settling SC-5 on its recorded-decision limb, plus committed-but-inert Google IdP groundwork. `autonomous: false`
+
+**Wave 3** *(blocked on 33-01)*
+
+- [ ] 33-02-PLAN.md (Wave 3) — Schema + Java surface: V61 DDL (no `CREATE EXTENSION` — Flyway runs as `jtoye_app`, which cannot — now enforced by a CI-wired gate), importer **enabled by default in dev**, `PostcodeGeocoder`, `GeoBounds`, `RlsContractTest` exemption by addition. Sole owner of the `jtoye.geo.*` config block
+
+**Wave 4** *(blocked on 33-02)*
+
+- [ ] 33-05-PLAN.md (Wave 4) — #460 link 3: geocode on the write path + range-validate `CreateShopRequest` (a client can POST `latitude: 999` today), seeder coordinates via the SAME geocoder, correct the seeded `SE15 4QA` which exists in neither Code-Point Open nor ONSPD, a tenant-looped backfill proven to update 0 rows without a GUC, and **CA-1 closed against the live runtime as both DB roles**
+- [ ] 33-06-PLAN.md (Wave 4, parallel) — #460 link 5: `findPublishedNear` — native `asin`-haversine with a leakproof bounding-box prefilter and an explicit `countQuery`; `lat`/`lon`/`radiusKm` validated on the anonymous endpoint; `distanceKm` projected from SQL; OpenAPI snapshot freshness enforced by a gate that fails closed
+
+**Wave 5** *(blocked on 33-03, 33-05, 33-06)*
+
+- [ ] 33-07-PLAN.md (Wave 5) — The located journey: gesture-gated client island, three states with the heading derived from state, **disclosure of published shops excluded for lack of coordinates**, deterministic granted/denied/far-away/exclusion Playwright arms, and the honest requirement close-out. `autonomous: false`
+
+> **Scope note.** These eight plans cover **#460, #544 and #432** only. #453 ships no code by D-2;
+> #452, #545, #546, #285 and #458's dispatch half are out of scope by D-3. **SC-4 is not planned** —
+> the decay audit above records its nav half as already shipped, so planning it as written would
+> produce a criterion that passes before any work is done. **CUST-02 therefore does not close in this
+> phase**, and one gap is escalated rather than silently absorbed: D-2 explains why nothing is built
+> for #453 and rejects two options, but it does **not name who adjudicates `MANUAL_REVIEW`**, which
+> is what SC-3's second limb asks for. **SC-6 / CUST-04 remains unmeasured** and is recorded as
+> unknown, not clean.
+>
+> **SEO is recorded IN scope, not N/A** (CLAUDE.md's standing criterion for a public surface). `/` is
+> about to render real shops for the first time and emits **no** structured data today — 0 matches for
+> `ld+json` in `app/page.tsx`, while `lib/structured-data.ts` already exports a tested
+> `shopListStructuredData` that `/shop` consumes and `/shop/[slug]` has its own variant. So `33-03`
+> reuses the existing helper rather than writing a second serialiser, asserts it against the raw
+> response bytes (a client-only node satisfies a DOM query but is invisible to a crawler), and its fail
+> direction requires that a well-formed but EMPTY `ItemList` still fails — otherwise the criterion
+> proves only that a tag exists, not that it carries the truth.
+>
+> **Criteria replaced during plan-check, each recorded in the owning plan with its measurement:** the
+> blanket *"'near you' is absent from the landing DOM"* was **unsatisfiable** — `/` renders that
+> string at four sites, three of which are the primary CTA (`page.tsx:133`), the Browse step body
+> (`:25`) and the `DishScroller` `aria-label` (`:191`, the selector at
+> `marketing-dish-scroller.spec.ts:19`) — and is now scoped to **heading elements**; three verifies
+> that were **already satisfied on the tree** (`adjudicat` in `REQUIREMENTS.md:149`, `CUST-01` at
+> `:148`, `jtoye:` at `application.yml:139`) were replaced with forms that measure 0 today; and a CSP
+> `form-action` change was **dropped** because the Keycloak→Google hop is governed by Keycloak's own
+> CSP and `security-headers.ts:101` already permits the realm navigation.
+
 **UI hint**: yes — this is almost entirely UI, and it is the phase most exposed to this repo's
 recorded UI traps: a screenshot cannot verify motion, and a screenshot taken without scrolling reads
 scroll-reveal content as empty bands.
