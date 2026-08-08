@@ -29,6 +29,19 @@ spring:
   flyway:
     enabled: false
 
+jtoye:
+  geo:
+    postcode-import:
+      # DELIBERATELY the opposite of the dev default (true), and the divergence IS the point:
+      # dev must be populated or every locality feature silently does nothing, while tests must
+      # be fast and offline. The real artefact is 1,748,230 rows and COPY-ing it into every
+      # Testcontainers Postgres would cost minutes per container for data no test needs.
+      #
+      # PostcodeCentroidImportIntegrationTest re-enables the importer explicitly and points it
+      # at the 7-row fixture, so the import path is still exercised end-to-end — it is just not
+      # exercised at 1.7 M rows on every unrelated test.
+      enabled: false
+
 rate-limiting:
   enabled: false
 

@@ -322,6 +322,41 @@ jtoye:
     media-concurrency: ${JTOYE_RABBIT_MEDIA_CONCURRENCY:1}
     media-max-concurrency: ${JTOYE_RABBIT_MEDIA_MAX_CONCURRENCY:2}
 
+  # ==========================================================================================
+  # Locality (Phase 33 / CUST-01). Plan 33-02 is the SOLE owner of this block.
+  # ==========================================================================================
+  # 33-05 (coordinate backfill) and 33-06 (radius search) READ these keys and must not add to
+  # them — they share a wave, and two plans editing this file is a merge conflict by design.
+  geo:
+    postcode-import:
+      # DEFAULT TRUE, AND THAT IS THE LOAD-BEARING PART OF THIS PLAN.
+      #
+      # A `false` default here would make every downstream locality criterion in this phase
+      # VACUOUS rather than failing: postcode_centroid stays empty, so 33-05's backfill writes
+      # no coordinates, so every shop keeps latitude IS NULL, so 33-06's radius query correctly
+      # returns nothing, so 33-07's located row renders its empty state — and every automated
+      # verify in all four plans stays GREEN while the headline feature does nothing at all.
+      # The only observable symptom is a customer seeing "no kitchens near you" forever.
+      #
+      # So the default is true, and PostcodeCentroidImportIntegrationTest asserts the RESOLVED
+      # value rather than trusting this comment. A comment claiming a default is not a default.
+      enabled: ${POSTCODE_IMPORT_ENABLED:true}
+      # The committed OGL-licensed artefact and its generated provenance record. The importer
+      # reads the expected row count OUT of the manifest rather than carrying a copy, so
+      # regenerating the dataset updates the data and the assertion in one atomic step —
+      # scripts/regen-postcode-centroids.sh rewrites both.
+      resource: ${POSTCODE_IMPORT_RESOURCE:classpath:geo/postcode-centroids.csv.gz}
+      manifest: ${POSTCODE_IMPORT_MANIFEST:classpath:geo/SOURCE.md}
+    coordinate-backfill:
+      # Read by 33-05. True in dev for the same reason as above: a shop row with NULL
+      # coordinates is invisible to every distance query, and nothing reports that.
+      enabled: ${COORDINATE_BACKFILL_ENABLED:true}
+    # Read by 33-06. Q-2 settled radius as a QUERY PARAMETER, so these are the platform
+    # default and the ceiling a caller may request — both operator-tunable without a code
+    # edit, which is the whole point of surfacing them here.
+    default-radius-km: ${GEO_DEFAULT_RADIUS_KM:5}
+    max-radius-km: ${GEO_MAX_RADIUS_KM:50}
+
 # Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
 # these eight keys were bound by @Value/@Scheduled inline defaults and appeared in NO yml, env
 # file, k8s manifest or script — so the only way to change a flush interval in production was to

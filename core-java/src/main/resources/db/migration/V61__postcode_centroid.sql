@@ -17,8 +17,17 @@
 --     earthdistance  1.1   trusted = f   superuser = t
 --     PostGIS        absent entirely (pg_available_extensions returns 0 rows)
 --
--- Flyway runs as ${spring.datasource.username} = jtoye_app, which is rolsuper = f,
--- rolbypassrls = f, and has_database_privilege('jtoye_app','jtoye','CREATE') = false:
+-- Flyway runs as the spring.datasource.username role = jtoye_app, which is rolsuper = f,
+-- rolbypassrls = f, and has_database_privilege('jtoye_app','jtoye','CREATE') = false.
+--
+-- (Written WITHOUT dollar-brace syntax on purpose. Flyway substitutes placeholders inside
+-- migration SQL INCLUDING COMMENTS, so writing a property name in dollar-brace form makes the
+-- whole migration fail with "No value provided for placeholder" — and it takes the entire
+-- application down at startup, not just this file. Measured here twice: once naming the
+-- datasource property, and again in the note explaining the first one, which reproduced the
+-- fault by quoting the very syntax it was warning about.)
+--
+-- The measurement, as the role itself:
 --
 --     SET ROLE jtoye_app; CREATE EXTENSION IF NOT EXISTS cube;
 --     ERROR:  permission denied to create extension "cube"
