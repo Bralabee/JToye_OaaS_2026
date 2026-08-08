@@ -1,3 +1,92 @@
+# Handoff: Phase 33 waves 1–2 in flight — paused at a human gate
+
+**Generated 2026-08-08, later the same day. This section supersedes everything below for anything
+concerning Phase 33's execution state.** Everything below is retained as history.
+
+## Resume here
+
+**Branch `phase/33-the-consumer-product`, pushed, clean tree, 0 behind `origin/main`.**
+No PR — the stacked strategy says nothing merges to `main` until `33-07` lands.
+
+```bash
+git checkout phase/33-the-consumer-product && git status --short   # expect clean
+git rev-list --count HEAD..origin/main                             # expect 0
+```
+
+| Plan | Wave | State |
+|---|---|---|
+| **33-00** | 1 | **COMPLETE 4/4**, SUMMARY written |
+| **33-01** | 2 | **COMPLETE 2/2**, SUMMARY written |
+| **33-03** | 2 | **Tasks 1–3 done and committed. PAUSED at Task 4 — `checkpoint:human-verify`, gate="blocking".** Tasks 4 and 5 remain |
+| **33-04** | 2 | **NOT STARTED** — `autonomous: false`, Keycloak customer-realm IdP groundwork + ADR-0005 |
+
+**Next action: the owner answers 33-03 Task 4** (the row at N=3, 390px and 1440px, scrolled). Then
+Task 5 (the scoped heading criterion + JSON-LD + spec migrations), then 33-04.
+
+## The delivered runtime is current, and was proven by content
+
+The frontend image was rebuilt and the container **force-recreated** — a rebuild that is only
+`start`ed still serves the old code. Running container image id `sha256:fcdf723b…` **matches** the
+tag's id. Live reads against it:
+
+```
+Permissions-Policy: camera=(), microphone=(), geolocation=(self), browsing-topics=()
+initial HTML of /   Mama Ade 1 · Peckham Jollof 1 · Brixton Village 1
+                    Mama's Kitchen 0 · Spice Route 0 · Olive & Vine 0 · Crumb & Co 0 · Hanoi House 0
+```
+
+## Two things the next session must not re-derive
+
+1. **`/` has CLS 0.1793 and it is PRE-EXISTING, not a 33-03 regression.** Established by building the
+   pre-change commit `8f6c03b1` and running it simultaneously on `:3001`: control 0.1793 / treatment
+   0.1793, identical to four decimal places, one shift each, sources all hero client-island
+   hydration. `CLS_BUDGET` was deliberately **not** raised to 0.2 to go green; the spec asserts the
+   no-regression form against the recorded value and annotates the unmet absolute target on every
+   run. **Fixing it means changing how `HeroSearch` hydrates — outside 33-03's file set. Escalated,
+   not absorbed.** Full record in `frontend/e2e/perf-budgets.ts`.
+2. **The `/` client-JS baseline is 953,353 bytes across 21 scripts** (control was 945,338 / 20; the
+   +8,015 is `ShopCard`). `33-07` must justify its ceiling against that number, which lives in
+   `perf-budgets.ts` so a test can consume it rather than only prose.
+
+## Owner decisions already taken (33-00 Task 4, dated 2026-08-08)
+
+`Q-1 = q1-commit` · `Q-2 = q2-param` · `Q-3 = q3-record`. Recorded in `33-CONTROL-ARMS.md`.
+A1 licence confirmed: **OGL v3, commercial-permitted, no share-alike**, against OS's own OpenData
+page and the National Archives text.
+
+## Corrections to earlier records, found by re-measuring
+
+- **`jtoye.co.uk` RESOLVES** — `162.255.119.30`, Namecheap parking. But `https://` times out and
+  `http://` returns a 302 parking redirect, so Google's HTTPS-on-a-resolving-host requirement is
+  still unmet. `q3-record` stands, for a different reason than the one written in its option text.
+  **Anyone flipping `DEPLOY_*_ENABLED` on a successful `getent` would be acting on a parking page.**
+- The Phase 33 plan set is on `main` (PRs #615/#616/#617). The stale `origin/feature/33-the-consumer-product`
+  branch is the pre-squash source of #615 and is **not** the execution branch.
+
+## Traps this session hit, so the next one does not
+
+- **A comment naming a forbidden token trips the guard that forbids it.** Writing the client
+  directive inside `page.tsx`'s docblock — while explaining why not to add one — turned
+  `landing.test.tsx`'s structural guard red. The plan says leave that guard alone, so the prose was
+  reworded. A position-aware form (directive must be the FIRST statement) is strictly better and is
+  follow-up.
+- **`content-length` is absent on Next's script chunks.** A bundle meter reading that header reports
+  **zero** and sails under any ceiling. Measure from `res.body()`, and keep a non-vacuity assertion.
+- **`gzip` stores the input mtime**, so an identical dataset produces different bytes on every run.
+  `gzip -9 -n` — otherwise a ~15 MB artefact lands in git history on every regeneration.
+- **A zero-width space (`U+200B`) can be written into a shell script by an edit** and bash will try
+  to execute it. `bash -n` catches it; sweep with `grep -c $'\xe2\x80\x8b'`.
+- The frontend Dockerfile **refuses to build** without `NEXT_PUBLIC_API_URL` and
+  `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` build-args. Pass them when building a control image.
+
+## Expected-red, by design
+
+From wave 2 until `33-07` Task 4 writes the prose figures, the phase branch is **expected** to be red
+on both `docs-freshness` metric gates. That is the designed state of a stacked phase branch. **Do not
+hand-edit the figures to chase green** — they are wrong the moment the next plan lands.
+
+---
+
 # Handoff: four authors, four checks that could not fail, and none caught by their own author
 
 **Generated:** 2026-08-08. **This section supersedes the 2026-08-02 document below for anything
