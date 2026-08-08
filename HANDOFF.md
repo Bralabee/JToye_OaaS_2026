@@ -1,3 +1,174 @@
+# Handoff: four authors, four checks that could not fail, and none caught by their own author
+
+**Generated:** 2026-08-08. **This section supersedes the 2026-08-02 document below for anything
+concerning Phase 33 and the roadmap's success criteria.** Everything below is retained verbatim as
+history — its §2.4 (owner-found defects) and §4 (the blocking commercial decisions) are still live.
+
+## Resume here
+
+**Branch `fix/33-plan-check-blockers`, commit `357c8044`, clean tree, 0 behind `origin/main`.**
+Pushed, no PR open yet. An independent plan-check was running when this was written — **its verdict
+is not in this document. Get it before doing anything else.**
+
+```bash
+git checkout fix/33-plan-check-blockers && git status --short   # expect: clean
+git log HEAD..origin/main --oneline                             # expect: empty
+```
+
+Then, in order:
+
+1. **Read the independent checker's verdict.** If PASS → open a PR for `357c8044` and merge. If
+   REVISE → fix, and do **not** let the same person author and verify the fix; that failure mode is
+   the subject of this handoff.
+2. **The four owner gates in `33-00` block Wave 2.** Licence first — see below.
+3. Only then start execution at Wave 1 (`33-00`).
+
+## What shipped this session
+
+Four PRs, all **MERGED**: `#613` (nanoid CVE-2026-67213 — it was reddening every PR with no code
+change, and `#612` was blocked solely by it), `#612`, `#614` (the criteria-decay audit), `#615`
+(Phase 33's plans).
+
+## The finding that changed the plan
+
+`ROADMAP.md` was written 2026-08-01 and `ISSUE-DISPOSITION.md` swept the board 2026-08-07. **Neither
+re-measured itself**, and work landed in between. Two success criteria could no longer fail and were
+about to be planned as work: Phase 28's SC-4 (all five named infra ports are now loopback-bound; the
+three still open are *applications*) and Phase 33's SC-4 / `#458` (nav gating shipped in `#508` and
+`#591`; `#458` stays **OPEN** by a deliberate scope split recorded in its own comment).
+
+Full evidence with controls: `.planning/CRITERIA-DECAY-2026-08-08.md`. `ROADMAP.md` carries the
+corrections inline at both phases.
+
+**Also still true, and load-bearing for Phase 33:** `#460`'s missing link is *population*, not
+reading. `DemoDataSeeder.upsertShop` takes no coordinate parameters and the seeder never sets them,
+so every seeded shop has NULL coordinates. A ranking feature over NULL returns nothing before and
+nothing after — it cannot be shown to fail. Population is proven first.
+
+## Three product defects found while planning, that no audit here had found
+
+| where | what |
+|---|---|
+| `frontend/next.config.mjs:35` | `geolocation=()` — an **empty** allowlist, denying the API to the page's own origin on every route, before any prompt. Phase 33's entire located path was dead on arrival and would have presented as a *user denial* |
+| `core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java:255` | the seeded Peckham address used `SE15 4QA`, which is **not a real postcode** — absent from Code-Point Open and 404 from ONSPD. The locality fix would have silently deleted a shop from the storefront. Now corrected, and kept as a permanent negative control |
+| OS Code-Point Open | 879 rows are Null Island — `positional_quality_indicator = 90` with eastings/northings `0,0`, and **the sentinel is in a different column from the coordinates**. Loaded blind they become the nearest shop to everyone |
+
+## The process finding — read this before writing any check
+
+**Four separate authors each wrote at least one check that could not fail, and not one was caught by
+its own author.** The planner, the first plan-checker, the second checker's target set, and me.
+Every instance was found by someone who had not written it.
+
+The structural work was right every single time it was examined — zero same-wave collisions across
+66 declared file entries, every `depends_on` strictly earlier, no verify reading a later-wave file,
+and every factual measurement in the plans reproducing exactly. **The failures were all in the
+enforcement layer**, and self-verification never caught one.
+
+Concrete instances, so the shapes are recognisable:
+
+- `grep -c X | grep -q 0` — `grep -c` exits **1** on the desired *absent* state, and under `pipefail`
+  the pipeline reports failure when the check should pass. Nine sites, in a plan whose own text
+  forbade the shape.
+- A verdict piped into `tail` — `f 2>&1 | tail -3` returns **rc=0** without `pipefail` whatever `f`
+  decided. Fails **open**. My first measurement of this was itself invalid because I had set
+  `pipefail` in the test shell — the entire variable at issue.
+- Replacing that fail-open with a command that **cannot run**: `gitleaks` is not installed here
+  (`command -v gitleaks` → rc=1; the only one in this repo is the GitHub Action), `gitleaks detect`
+  scans git *history* not the working tree, and the limb ran before the file it was meant to scan
+  existed. It was also **already satisfied** — widening an allowlist can only make a scanner quieter.
+- Asserting a **constant exists** rather than that anything consumes it:
+  `export const BUNDLE_CEILING_BYTES = 999999999` with no consumer passes. Written by me, one
+  paragraph after I wrote that "a check that cannot fail is a note, not a criterion".
+- `grep -c` on a **missing file** yields empty, and `test "" -ge 1` exits **2** (`integer expression
+  expected`), not 1 — so it VOIDs rather than fails.
+- A criterion asserting a **census** (`total = 5`) where an invariant was meant. It reds on any sixth
+  shop, including one an E2E run creates, and a gate that fails on legitimate data gets ignored.
+
+**The rule that actually works: run the fail direction before writing the check down, and have
+someone who did not write it confirm.** Nothing else caught any of these.
+
+## Phase 33 — state and shape
+
+Plans at `.planning/phases/33-the-consumer-product/`, `33-00` … `33-07`. **8 plans, 6 waves, 28
+tasks**, all `verify.plan-structure` valid with 0 errors. Scope is `#460`, `#544`, `#432` — all
+three **OPEN**. Out: `#453`, `#452`, `#545`, `#546`, `#285`, and `#458`'s dispatch half.
+
+Waves: `33-00`=1 · `33-01`/`33-03`/`33-04`=2 · `33-02`=3 · `33-05`=4 · `33-06`=5 · `33-07`=6.
+
+**It was 5 waves until the last pass, and the reason matters.** `33-05` and `33-06` each create a
+runtime gate, and `scripts/check-gate-enforcement.sh` is default-deny: every `scripts/check-*.sh`
+needs a workflow reference or a `gate-enforcement.conf` entry. They shared wave 4, and `33-06`'s
+verify runs the enforcement check — so it would fail on its sibling's script depending on ordering.
+**One plan cannot pre-declare the other's exemption**, because the conf VOIDs at **rc=2** on an entry
+naming a script that does not exist yet (*"a table that names nothing cannot be trusted to name the
+right things"*). Verified directly, with the restore confirmed byte-identical by content. Hence the
+extra wave. Do not collapse it back.
+
+### Locked decisions — do not re-litigate
+
+- **D-1** Coordinates derive from postcode via **OS Code-Point Open**. Open data, no API key, no
+  sixth commercial dependency. ONSPD was rejected on licence grounds: its NI data carries an
+  internal-business-use-only EUL. Accepted limits, stated rather than discovered: **~100 m
+  postcode-centroid accuracy** and **Great Britain only** — a Northern Ireland vendor will not
+  geocode. Columns already exist (`core-java/src/main/resources/db/migration/V16__public_storefront.sql:15`)
+  and are read exactly once as a DTO pass-through
+  (`core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java:720`).
+- **D-2** `#453` ships **no code**. SC-3's recorded-decision limb is the deliverable. Rejected:
+  routing to the tenant's own `GROUP_ADMIN` (the reviewed party becomes the reviewer, degrading
+  `BUSINESS_VERIFIED` / `FOOD_HYGIENE_RATING` to self-attestation on a food platform), and a
+  cross-tenant operator identity (contra the recorded no-platform-operator constraint).
+- **D-3** Scope as above.
+- **SEO is IN scope, not N/A.** `frontend/lib/structured-data.ts:256` already exports a tested
+  `shopListStructuredData` that `/shop` consumes; `frontend/app/page.tsx` emits none. `33-03` reuses
+  it, asserts against raw response bytes (a client-only node passes a DOM query but is invisible to a
+  crawler), and its fail direction requires that a well-formed but **empty** `ItemList` still fails.
+
+### Blocked on the owner — four gates in `33-00`, licence first
+
+Ordered deliberately: if the licence is not OGL-compatible the entire coordinate substrate is void
+and the rest is moot. ⚠ **The canonical URL printed inside Code-Point Open's own `licence.txt`
+returns 404**, so "OGL v3" currently rests on secondary sources and a human must read the live page.
+Then: the ~15 MB-per-refresh git cost of committing the derived artefact; the radius shape; and
+whether `#432` populates or lands a dated decision.
+
+**One escalation, overrulable:** `frontend/app/page.tsx:51` holds the five invented vendors, and the
+row heading is at `frontend/app/page.tsx:180`. The primary CTA and a step body also say "near you".
+Both are ruled **out of scope** as aspirational marketing copy rather than claims about the current
+result set, with line numbers named so the unsatisfiable blanket assertion is never reached for
+again.
+
+### Two requirements deliberately do not close
+
+**CUST-02** — D-2 explains why nothing is built for `#453` but does not name *who adjudicates*
+`MANUAL_REVIEW`, which is what the criterion asks. **CUST-04 / SC-6** (`#546`, `#545`, `#285`) was
+never measured and is recorded as **unknown, not clean**. Both are stated in the ROADMAP scope note
+rather than absorbed. Confirm you accept this before execution, not at close-out.
+
+### Known open, deliberately not self-fixed
+
+`.planning/phases/33-the-consumer-product/33-00-PLAN.md:361`'s break arm says writing a singular `[allowlist]` section makes the plural
+`[[allowlists]]` limb exit 1. It would not — adding one does not remove the existing three, so the
+grep still returns 3 and passes. Measured: `CONTROL-ARMS` → 0 (live), `[[allowlists]]` → 3 (already
+satisfied, so a **regression guard**, not a criterion). Handed to the independent checker rather than
+fixed on my own say-so a third time.
+
+### Deliberate red state during the phase
+
+`check-doc-metrics.sh` reads 37 prose claims from README.md, CLAUDE.md and AGENTS.md, while
+`docs-freshness.sh --write` regenerates **only** `docs/metrics.json`. This phase moves those figures
+(≥4 frontend test files, ≥6 Java, V61 shifting `schema_version` 60→61). `33-07` Task 4 owns the three
+docs; the check was dropped from the four earlier verifies because it **cannot** be green mid-phase.
+**Do not "fix" it mid-phase by editing prose to match a half-finished tree.**
+
+## Unrelated threads still open
+
+Five dependabot PRs (`#604`–`#608`), red for assorted reasons; `Operational Contracts` fails on three
+of them and is worth its own look. `#587` is **OPEN** — outbound webhooks give a receiver 127 s
+before an event is permanently lost, one method in shipped code, and it must be shown to fail before
+any fix is trusted.
+
+---
+
 # Handoff: the audit that found the bugs is itself invisible to the repo
 
 **Generated:** 2026-08-02 ~20:35 BST. Supersedes #430, which was accurate for the roadmap-blindness
