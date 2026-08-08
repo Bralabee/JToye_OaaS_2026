@@ -297,7 +297,7 @@ further work there; what #297 still has to add is the part that was never right:
 ## 7. Known findings and caveats
 
 **PIT-5 — the logback boot error, fixed locally, then fixed durably (issue #302).** Under the prod
-profile, `application-prod.yml:91` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
+profile, `core-java/src/main/resources/application-prod.yml:98` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
 runs as `runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
 logback's FileAppender fails to start with a `FileNotFoundException … Permission denied` on every
 boot. It is **non-fatal** (the app continues; the 2026-07-14 run reached 11/11 READY that way), but it
@@ -533,12 +533,12 @@ Spring's **in-memory** simple broker accepts arbitrary destination paths, so the
 there and invalid the moment it is relayed.
 
 **Why every k8s environment is affected while development is not.**
-`k8s/base/configmap.yaml:36` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
+`k8s/base/configmap.yaml:145` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
 broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
-`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `application.yml:224` reads
+`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:351` reads
 `mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
-(`WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
+(`core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
 production undetected, and it is exactly what D-06 predicted when it insisted the relay be proven on the
 cluster rather than in compose.
 
@@ -614,7 +614,7 @@ four-part acceptance test, item 4 (cross-tenant subscribe still refused) is **me
 1–3 all require a relay-mode cluster run and are **still uncaptured**.)*
 
 **DO NOT "fix" this by flipping `stomp.broker.mode` to `in-memory`.** It would make the symptom vanish
-while making the system worse. `WebSocketConfig.java:76`'s simple broker is **per-JVM**, and
+while making the system worse. The `enableSimpleBroker` call at `core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java:76` is **per-JVM**, and
 `k8s/base/core-java-deployment.yaml:10` sets `replicas: 3` — so an event published by one pod would
 never reach a client connected to another. The relay exists for exactly that reason. Silencing the error
 would trade a loud, diagnosable failure for a silent, replica-dependent one.
@@ -1492,7 +1492,7 @@ PREDICATE CAN FIRE: the identical guest        1   (applied to a synthetic fixtu
 ```
 
 `jtoye` is the value of `rabbitmq-credentials/stomp-login`, i.e. the dedicated STOMP login the
-deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:226-235`). **No
+deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:307-311`). **No
 passcode value appears anywhere in this document** — the login NAME is the only credential material
 recorded, and that is asserted below in the Sign-off.
 
@@ -1535,8 +1535,8 @@ jtoye
 jtoye
 ```
 
-`STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to `in-memory`
-(`application.yml:222-224`), so this code path is exercised **only** on this cluster (D-06).
+`STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to
+`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:350-353`), so this code path is exercised **only** on this cluster (D-06).
 Re-asserted on the CURRENT pod after Task 1's frontend re-apply:
 `grep -c "Access refused for user"` = **0**, `grep -c 'In-memory simple broker'` = **0**,
 `grep -c 'STOMP broker relay configured'` = **1**, restart count **4** and stable (§7 A2 explains why
@@ -1547,9 +1547,9 @@ pods once between the two plans; a stable count with a clean current boot log is
 verified against the committed file, recorded so the next reader does not re-derive them — and so a
 green-looking run of that spec is never mistaken for D-06:
 
-1. **It authenticates with a stub cookie.** `authjs.session-token: "e2e-stub"` at
-   `frontend/e2e/stomp-relay.spec.ts:61-63` and again at `:149-151`. `/dashboard/kitchen` gates
-   server-side: `frontend/app/dashboard/layout.tsx:19` calls `await auth()` and redirects on no
+1. **It authenticates with a stub cookie.** The `authjs.session-token: "e2e-stub"` cookie is set at `frontend/e2e/stomp-relay.spec.ts:61-63` and again at `:149-151`.
+   `/dashboard/kitchen` gates
+   server-side: `frontend/app/dashboard/layout.tsx:31` calls `await auth()` and redirects on no
    session, and a fabricated token is not a session. The spec would land on `/auth/signin`.
 2. **It posts orders to edge-go, which the local ingress does not route.** `:29` reads
    `EDGE_URL` with a loopback default on port 8089. The overlay's Ingress has exactly two rules —
@@ -2002,12 +2002,21 @@ Go suite: NOT RUN, and that is the correct outcome, asserted rather than assumed
 `next build` never type-checks. The honest assertion is *count-unchanged at 366*, not *exit 0*; stating
 it as exit 0 would make the gate permanently red and therefore permanently ignored.
 
-**Reconciling jest's 377 with `docs/metrics.json`'s `jest_blocks: 382`.** The two are measured
-differently and both are right. `scripts/docs-freshness.sh:56` counts the lexical token `\b(it|test)\(`,
-which also matches five `RegExp.prototype.test(` calls — four in `frontend/__tests__/link-graph.test.ts`
+**Reconciling jest's 377 with `docs/metrics.json`'s `jest_blocks: 382`.** *(Recorded during Phase 26.
+The counting mechanism described in this paragraph has since been replaced — see "Superseded" below.
+The paragraph is kept because it is the record of how the discrepancy was found, not a live claim.)*
+The two were measured differently and both were right. `docs-freshness.sh` then counted a lexical
+token, which also matched five `RegExp.prototype.test(` calls — four in `frontend/__tests__/link-graph.test.ts`
 (lines 47 ×2, 117, 119) and one in `frontend/app/dashboard/kitchen/__tests__/page.test.tsx:210`.
 382 − 5 = **377**, exactly the runner's figure. Zero tests are skipped or `.todo`. `docs/metrics.json`
 was **not** touched — plan 26-06 is its single writer, and `docs-freshness.sh` exits 0 as committed.
+
+**Superseded (issue #291).** That grep is gone, and `scripts/docs-freshness.sh:51` now records why: `\b(it|test)\(` was wrong in *both* directions at once — it invented blocks by matching
+`RegExp.prototype.test(`, and it could not see a table-driven `it.each([...])` at all, so the two
+errors partly cancelled and nothing ever went red over it. Counting moved to
+`scripts/count-test-blocks.mjs`, which masks comments, strings and regexes, rejects member access,
+expands `.each` tables, and exits 2 on anything it cannot resolve rather than degrading a VOID into a
+number. The five-phantom arithmetic above therefore no longer describes the live gate.
 
 **One correction made to this section by 26-09.** The Sign-off block recorded
 `arm B = 4067` where L4's measured figure is `products 47`. Corrected in place with the correction
