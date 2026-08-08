@@ -6,9 +6,15 @@ history — its §2.4 (owner-found defects) and §4 (the blocking commercial dec
 
 ## Resume here
 
-**Branch `fix/33-plan-check-blockers`, commit `357c8044`, clean tree, 0 behind `origin/main`.**
-Pushed, no PR open yet. An independent plan-check was running when this was written — **its verdict
-is not in this document. Get it before doing anything else.**
+**Branch `fix/33-plan-check-blockers`, commit `28a3dc60`, clean tree, 0 behind `origin/main`.**
+
+**The independent plan-check returned PASS at `28a3dc60`** — five rounds, on the fifth. Its own
+words, kept because a paraphrase would be weaker:
+
+> *After this fix I expect no further findings of this class in the Phase 33 plan set. Every
+> `<automated>` limb across all eight plans has now been executed against the tree and its exit code
+> recorded … The class that survived four passes did so because nobody was running the limbs; they
+> have now been run.*
 
 ```bash
 git checkout fix/33-plan-check-blockers && git status --short   # expect: clean
@@ -17,9 +23,14 @@ git log HEAD..origin/main --oneline                             # expect: empty
 
 Then, in order:
 
-1. **Read the independent checker's verdict.** If PASS → open a PR for `357c8044` and merge. If
-   REVISE → fix, and do **not** let the same person author and verify the fix; that failure mode is
-   the subject of this handoff.
+1. **Decide the merge strategy — this blocks execution and is not a technical call.**
+   `.github/workflows/docs-freshness.yml` runs **both** metric gates — `scripts/docs-freshness.sh`
+   at `.github/workflows/docs-freshness.yml:46` and `scripts/check-doc-metrics.sh` at
+   `.github/workflows/docs-freshness.yml:59` — on `pull_request` and `push` to main, and Phase 33 moves the figures
+   those gates read. `33-07` Task 4 owns the reconciliation, so waves 2–5 leave that workflow **RED
+   on any pushed branch**. One stacked PR for the phase makes it a non-issue; incremental
+   plan-by-plan merges — this repo's usual pattern — do not. **Do not resolve it by editing prose
+   mid-phase against a half-finished tree.** Recorded in `33-07` as ESCALATED, NOT DECIDED.
 2. **The four owner gates in `33-00` block Wave 2.** Licence first — see below.
 3. Only then start execution at Wave 1 (`33-00`).
 
