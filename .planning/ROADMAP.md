@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 1/8 | In Progress | — |
+| 33. The Consumer Product | v2.3 | 2/8 | In Progress|  |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -740,7 +740,7 @@ Plans:
 
 **Wave 2** *(blocked on 33-00's decisions)*
 
-- [ ] 33-01-PLAN.md (Wave 2) — Dataset + provenance + licence: md5-gated regen script, Null-Island-filtered derived artefact, `SOURCE.md` recording the GB-only and ~100 m limitations, and the three OGL attribution lines with a CI-wired year gate
+- [x] 33-01-PLAN.md (Wave 2) — Dataset + provenance + licence: md5-gated regen script, Null-Island-filtered derived artefact, `SOURCE.md` recording the GB-only and ~100 m limitations, and the three OGL attribution lines with a CI-wired year gate
 - [ ] 33-03-PLAN.md (Wave 2, parallel) — #544: the landing row renders REAL published shops in the initial HTML under a heading that claims nothing about location; deletes the five invented vendors; fixes the measured `Permissions-Policy: geolocation=()`; migrates the five `landing.test.tsx` tests that `async Home()` breaks; and holds `/` to a declared throttled-mobile CWV budget. `autonomous: false`
 - [ ] 33-04-PLAN.md (Wave 2, parallel) — #432: dated ADR settling SC-5 on its recorded-decision limb, plus committed-but-inert Google IdP groundwork. `autonomous: false`
 
