@@ -19,7 +19,7 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 | | |
 |---|---|
-| `JToye_OaaS_2026` | **2026-08-07 EVENING: three merged â #602, #603, #609. `main` at `101b12ec`. The ROADMAP named **15 of 57** open issues and read as complete; six had ZERO planning coverage and four of those are P1 filed from USING the app. Every issue now has a home (`.planning/ISSUE-DISPOSITION.md`), Phases **33/34** added. A terminated session's abandoned WhatsApp evaluation was rescued and verified. #461's decision was NOT outstanding â it was made 2026-08-02 and I misread the issue TITLE instead of its BODY. Read Â§0.-16 FIRST.** PRIOR â **2026-08-06 LATER: a five-lane supervised batch — #588, #586, #591, #589 merged, #590 carries this update. THREE previously-shipped fixes were found broken while green, including #476's own fix for #282 whose fixture could not see the defect. #587 and #592 filed. Read §0.-13 FIRST.** PRIOR — **2026-08-06: FOUR merged — #573, #574, #583, #584. `main` at `2e9792fb`. #523 is the only open PR again. Two gates were GREEN over instructions that could not be followed; the changelog-citation defect fired a 5th and 6th time and now has a PR-time gate (#583). "Does not close #450" CLOSED #450. Read §0.-12 FIRST.** PRIOR — **2026-08-05 EVENING (updated): the four-lane batch is DONE and merged; `main` is at #577 (`bfdfbdfa`). #572, #575, #577 shipped; #573 and #574 remain open. The changelog-citation defect fired FOUR times — filed as #579. Read §0.-11 and its Addendum.** PRIOR — **a supervised four-lane agent batch. `main` is at #572 (`861591cf`, closes #550). Three issues closed by measurement alone — #487, #205, #104 — and #571 filed from #205's one unmet criterion. #573 and #574 are open. Read §0.-11 FIRST.** PRIOR — **2026-08-05 later: TWO more PRs — #563 (`d36a1865`, closes #561) and #565 (`b0043014`) — plus #564 filed. Read §0.-10 FIRST; it closes §0.-9's open question and supersedes every "flake" reading of #561.** PRIOR SAME DAY — **shipped SIX PRs — #541, #553, #554, #555, #558, #559 — closed FOUR issues (#289, #420, #556, #557) and filed SIX (#548–#552, #556/#557). Read §0.-8 then §0.-7.** Phase 28 opened: #548–#552 filed, #289 closed. PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
+| `JToye_OaaS_2026` | **2026-08-07 SESSION CLOSE: FIVE merged â #602, #603, #609, #610, #611. `main` at `34b1dcf0`, CI completed/success, gates 29/29 on a plain BARE sweep, runtime 4/4 FRESH, 11/11 healthy.** The ROADMAP named **15 of 57** open issues and read as complete; six had ZERO planning coverage and four of those are P1 filed from USING the app. Every issue now has a home (`.planning/ISSUE-DISPOSITION.md`), Phases **33/34** added. A terminated session's abandoned WhatsApp evaluation was rescued and verified. **Nothing had ever checked a citation in THIS file** â H-5 added, 17 violations found. A bare gate call that exited 2 on a USAGE error was fixed, so Â§6's sweep instruction is now literally executable. #461's decision was NOT outstanding â it was made 2026-08-02 and I misread the issue TITLE instead of its BODY. **Read Â§0.-16 FIRST.** PRIOR â **2026-08-06 LATER: a five-lane supervised batch — #588, #586, #591, #589 merged, #590 carries this update. THREE previously-shipped fixes were found broken while green, including #476's own fix for #282 whose fixture could not see the defect. #587 and #592 filed. Read §0.-13 FIRST.** PRIOR — **2026-08-06: FOUR merged — #573, #574, #583, #584. `main` at `2e9792fb`. #523 is the only open PR again. Two gates were GREEN over instructions that could not be followed; the changelog-citation defect fired a 5th and 6th time and now has a PR-time gate (#583). "Does not close #450" CLOSED #450. Read §0.-12 FIRST.** PRIOR — **2026-08-05 EVENING (updated): the four-lane batch is DONE and merged; `main` is at #577 (`bfdfbdfa`). #572, #575, #577 shipped; #573 and #574 remain open. The changelog-citation defect fired FOUR times — filed as #579. Read §0.-11 and its Addendum.** PRIOR — **a supervised four-lane agent batch. `main` is at #572 (`861591cf`, closes #550). Three issues closed by measurement alone — #487, #205, #104 — and #571 filed from #205's one unmet criterion. #573 and #574 are open. Read §0.-11 FIRST.** PRIOR — **2026-08-05 later: TWO more PRs — #563 (`d36a1865`, closes #561) and #565 (`b0043014`) — plus #564 filed. Read §0.-10 FIRST; it closes §0.-9's open question and supersedes every "flake" reading of #561.** PRIOR SAME DAY — **shipped SIX PRs — #541, #553, #554, #555, #558, #559 — closed FOUR issues (#289, #420, #556, #557) and filed SIX (#548–#552, #556/#557). Read §0.-8 then §0.-7.** Phase 28 opened: #548–#552 filed, #289 closed. PRIOR — **2026-08-04 shipped 12 PRs and closed 1.** The six-lane Wave-1 train (#522 #521 #515 #520 #519 #518), the handoff (#528), the postgres major-parity gate + the first restore drill this repo has run (#529), and three dependabot bumps (#527 #524 #526). **#525 (postgres 15→18 backup image) was CLOSED, not merged** — see §0.-2. HEAD deliberately **not** quoted |
 | Open PRs | **5 as of 2026-08-07 evening, ALL dependabot â #604 #605 #606 #607 #608, every one opened 15:25â15:28Z.** â  **#523 is CLOSED** (15:25:36Z), superseded by **#606** which targets node **25**-alpine where #523 wanted **26** â so the "only open PR, on hold all week" reading is DEAD; re-measure before repeating it. The hold REASON is unchanged and still applies to #606: `node-version: '24'` is pinned in **6** places across `ci-cd.yaml` (4), `docs-freshness.yml` and `e2e-nightly.yml`, and `mcp-server/package.json` still declares no `engines`, so a green MCP check is evidence about a version the PR does not change. PRIOR â **1 as of 2026-08-07 housekeeping** — only **#523**, still ON HOLD for the same reason it has been all week (every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change). #597 merged as `d13932d6`. PRIOR — **2 as of 2026-08-06 housekeeping** — **#595** (the #593 fix) and #523, still ON HOLD for the same reason all week. #594 merged as `5a548ac8`. ⚠ Both #594 and #595 spent **~2.5 h unmergeable during a GitHub Actions major outage** (declared 15:22 UTC), for no content reason at all — every red check died in `Set up job` or was cancelled with zero steps. See §0.-14 before reading any red on this board as a defect. PRIOR — **2 as of 2026-08-06 later** — #590 (this one) and #523, still ON HOLD for the same reason all week. The five-lane batch opened five and merged four. PRIOR — **1 as of 2026-08-06** — back to just **#523**, still ON HOLD for the same reason it has been all week (every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change). #573 and #574 merged, and #583/#584 were opened and merged the same day. PRIOR — **3 as of 2026-08-05 late evening** — #523 (still ON HOLD), #573 and #574; #572/#575/#577 all merged. PRIOR — **3 as of 2026-08-05 evening** — #523 (unchanged, still ON HOLD), plus **#573** (`PUT /shops` publish drop) and **#574** (test-block counter) from the lane batch. PRIOR — **1 as of 2026-08-05 after EIGHT merges** — still only **#523**, which is the same PR it was this morning and is still ON HOLD for the same reason. #563 and #565 merged after the six below. PRIOR reading — **1 after six merges**; #541/#553/#554/#555/#558/#559 all merged. PRIOR reading (**2**) — #523 (dependabot node 24→26, ON HOLD: every CI job pins `node-version: 24`, so its green MCP check is evidence about a version the PR does not change, and `mcp-server/package.json` declares no `engines`) and #530 (a housekeeping doc fix). **Re-measure before trusting this cell** |
 | Open issues | **57 as of 2026-08-07 evening**, `--limit 300`, re-measured after three merges. **Flat, and that flatness is the story**: nothing was filed and nothing closed, yet all 57 went from *15 named in ROADMAP* to *57 with an explicit disposition*. A count that does not move can still describe a completely different board. Findings from this session were added as a **comment on #208** rather than new issues. PRIOR â **57 as of 2026-08-07 housekeeping**, `--limit 300`. Down one, and the one is #593 — which closed as a **test** defect, not a product fix (§0.-14). Nothing was filed this session, which is itself worth reading carefully: a session that closes an issue and files none is either a quiet one or one that did not look. This one did not hunt — it fixed two gates it had tripped over. PRIOR — **58 as of 2026-08-06 housekeeping, RE-MEASURED** with `--limit 300` after the #593 work. Still 58: #593 closes with #595, and nothing else moved. A count that does not move across a filed-and-then-fixed defect is the ordinary case — do not read it as a quiet session. PRIOR — **58 as of 2026-08-06 housekeeping** — #593 filed for the KDS duplicate-mute regression the re-earned E2E run found. ⚠ **That framing is wrong — see §0.-14.** PRIOR — **58 as of 2026-08-06 later**, `--limit 300`. Down one net from 59, which hides real churn: #582, #571 and #485 closed by the batch, #516 closes with #590, against #587 (webhook 127s retry window) and #592 (one-click unsubscribe unwired in k8s) filed FROM the batch. Finding defects raises this number and lowers the risk. PRIOR — **59 as of 2026-08-06**, re-measured with `--limit 300`. Down two from 61: #450 closed (see §0.-12 — by a PR body that said it would **not** close it) and #536/#550 already counted, against #582 filed for the test-count-gate deadlock. **Do not read −2 as two problems solved**: one of those closures was accidental and one new defect was filed. PRIOR — **61 as of 2026-08-05 late evening**, re-measured with `--limit 300` — #550 closed by #572, #536 by #577, and #579 filed against the changelog gate, so the count moved by one in each direction and landed where it started. A flat count is not a quiet period. PRIOR — **61 as of 2026-08-05 evening**, measured with `--limit 300`. Down four: #550 closed by #572, and #487/#205/#104 closed by measurement with no code written. #571 was filed against that, so the net is −3 issues for +1 new one. PRIOR — **65 as of 2026-08-05 after eight PRs — and it is EXACTLY the 65 it was before this session's last two merges**, having gone 65 → 64 (#561 closed by #563) → 65 (#564 filed). A second, cleaner instance of the point below: the count did not move and two real things happened. PRIOR reading — **64 after six PRs**, itself the SAME 64 it was mid-session, having moved 60 → 65 → 64 in between. That stability hides real churn: five filed (#548–#552, the pentest disposition), two more filed from the E2E re-run (#556/#557), and four closed (#289, #420, #556, #557). **A flat count is not a quiet day.** Filing findings raises it and lowers the risk; do not read the number as progress in either direction. PRIOR framing — #548–#552 added five while #289 closed one. Filing findings raises the count and lowers the risk; do not read the number as progress in either direction. PRIOR — **62**, measured after the train with `--limit 300` (the default `--limit` is **30** and silently undercounts). 19 issues closed by the six PRs. ⚠ **Five of those did not auto-close**: a PR body reading `Closes #293, #506, #271, ...` only closes **#293** — GitHub's parser consumes the FIRST number in a comma list and ignores the rest. #506/#271/#298 were closed by hand afterwards; **#299 and #303 were deliberately left OPEN** because Lane D only made them *visible* as `OPEN DEFECT` allowlist entries, it did not fix them. #299 is a real production gap: the customer-storefront realm is unconfigured in EVERY k8s environment |
 | Issue-count history | It moved in **both** directions across 2026-08-03 (63 → 86 → 92 → 89 → 85 → 80 → **62**) as the council backlog was filed and the trains closed issues, which is why no single figure here is safe to carry. Re-run `gh issue list --state open --limit 300 --json number --jq length` |
@@ -45,9 +45,46 @@ decisions) are **still live** and are carried forward here in §4 — this docum
 
 ### 0.-16 the roadmap named 15 of 57 open issues and read as complete (2026-08-07 evening, latest)
 
-Three merged: **#602** (all-57 issue triage), **#603** (a terminated session's rescued WhatsApp
-evaluation), **#609** (a `.dockerignore` hole). `main` at `101b12ec`, CI **12 success / 3 skipped /
-0 failed**, gates **29/29**, runtime **4/4 FRESH**.
+**FIVE merged**: **#602** (all-57 issue triage), **#603** (a terminated session's rescued WhatsApp
+evaluation), **#609** (a `.dockerignore` hole), **#610** (H-5 — nothing had ever checked a citation
+in *this* file), **#611** (a bare gate invocation that exited 2 on a usage error).
+
+**Closing state, all re-measured at session end and not carried forward:**
+
+| | |
+|---|---|
+| `main` | `34b1dcf0` |
+| CI on `main` | **`completed / success`** — 12 jobs success, 3 skipped, 0 failed. The `Build and Push Images (core-java)` job is the ~22-minute tail on every merge; it is not a hang |
+| Gates | **29/29 green on a plain BARE sweep**, 0 fail 0 VOID — no per-gate special-casing, which #611 is what made possible |
+| Runtime | **4/4 FRESH**, 11 compose services, **11/11 healthy** |
+| Open issues | **57**, every one with a disposition |
+| Open PRs | **5**, all dependabot (#604–#608) |
+| Working tree | clean on `main`, no stray local or remote branches |
+
+**Two things this session added that did not exist before it:**
+
+- **H-5 in `scripts/check-handoff-contract.sh`** (#610) — every backticked `path:line` citation in
+  this document must name a path that **exists**. `HANDOFF.md` was outside
+  `check-doc-citations.sh`'s `DEFAULT_DOCS` and `.github/workflows/ci-cd.yaml:675` invokes that gate **bare**, so no
+  citation here had **ever** been checked by anything. First run: **17 violations**. H-5 asserts
+  path existence only — deliberately **not** line content, because 6 of the 8 residual line-drift
+  citations sit in HISTORICAL sections and gating those makes a required check permanently red over
+  a document that is telling the truth about a past tree. Proven able to fail, and its self-test
+  proven able to VOID.
+  **It then caught its own author, one day old, on live traffic:** writing *this* section cited the
+  CI workflow by bare filename instead of its repo-relative path, and H-5 failed the commit — the
+  exact defect class it was built for, reintroduced by the person who had just spent an afternoon
+  removing 15 of them. Strong evidence it earns its place, and a reminder that the habit does not
+  stick just because the finding was recent.
+  **Then it fired a second time on the sentence above**, because the first draft of it *quoted* the
+  offending citation verbatim — so the note describing the defect committed the defect. That is this
+  repo's recorded shape *"a doc rule that must name the string it forbids fires on its own
+  definition"*, and it is why the sentence now describes the citation instead of reproducing it. The
+  same trap took two attempts to clear earlier the same day on `.planning/ISSUE-DISPOSITION.md`'s
+  control token. **A verification example and the material it verifies must not share a namespace.**
+- **A bare `check-test-count-oracle.sh` now checks all three families** (#611) instead of exiting
+  **2 (VOID) on a usage error** — an exit code indistinguishable from a real inability to verify.
+  An *unknown* family (`jset`) still VOIDs: a typo is not a request to check everything.
 
 **The trigger was the owner, not a gate.** He said: *"there are still over 50 issues open. and
 you're pushing for phase 28."* It measured out worse than the objection:
@@ -164,6 +201,50 @@ justifies — prose wrapping alone turns a good citation UNCHECKABLE.**
 **RESIDUE:** `scripts/seed-order-metric.sh` wrote a real order row into the dev DB
 (`ORD-00000000-20260807-51229A3D`) to clear `check-alert-metrics` after the core-java recreate. That
 is the documented remedy and its documented cost.
+
+#### Resume here — commands with their expected answers
+
+Run these before trusting anything above. Each states what a correct tree returns, so a different
+answer is a finding rather than a puzzle.
+
+```bash
+# 1. State. Nothing here was carried forward; all of it was measured at session end.
+git -C . log origin/main --oneline -1        # expect 34b1dcf0  (or later — then re-measure everything)
+gh issue list --state open --limit 300 --json number --jq length   # expect 57   (--limit defaults to 30 and undercounts)
+gh pr list  --state open --limit 100 --json number --jq length     # expect 5, ALL dependabot
+
+# 2. Gates. A BARE sweep now works for all 29 — that was #611's whole point.
+for g in scripts/check-*.sh; do bash "$g" >/dev/null 2>&1 || echo "rc=$? $g"; done
+#   expect NO output. If check-alert-metrics is the only rc=1 after a core-java
+#   recreate, that is its documented standing remedy: bash scripts/seed-order-metric.sh
+
+# 3. Runtime. A rebuild is NOT a recreate — see the Runtime row.
+scripts/check-runtime-freshness.sh           # expect rc=0, 4/4 FRESH
+```
+
+**Where to pick up work.** Not Phase 28 by reflex — read `.planning/ISSUE-DISPOSITION.md` first; it
+gives all 57 issues a home and is the thing this session existed to produce. The three highest-value
+threads it exposes:
+
+1. **#461 needs no decision, it needs four dependencies** — capture → **verify** → channel → Stripe
+   keys. The second does not exist: nothing verifies a phone number anywhere in the 60 migrations.
+   That is #462, which moved into Phase 30 for exactly this reason.
+2. **#208 is now a critical-path deferral**, not an optional AI feature. It is the delivery channel
+   for #461's payment request, so a WhatsApp Business API account is effectively a **fifth**
+   commercial blocker beside domain / hosting / Stripe keys / ADR-0002. The findings are filed as a
+   comment on the issue.
+3. **#453 is the only issue awaiting a product decision** — who adjudicates onboarding
+   `MANUAL_REVIEW` when there is no cross-tenant operator identity.
+
+**Two cheap wins left on the floor**, both already measured and neither actioned: **#286** should be
+*narrowed*, not closed (its `/dashboard/staff` half already runs live; only 390×844-vs-375px and 9
+route stubs remain), and **#110** should be narrowed to coverage (its "Playwright runs in CI" half is
+met by the nightly). Closing either whole would discard a real remainder.
+
+**Known, recorded, deliberately ungated:** 8 line-drift citations in this file (`C-3` class — the
+path resolves, the line moved). H-5 does not check line content and the reasoning is above. Run
+`CITATION_DOCS=HANDOFF.md scripts/check-doc-citations.sh` to see them; do **not** "fix" them by
+weakening H-5.
 
 ### 0.-15 two gates were asking a cheaper question than the one they advertised (2026-08-07)
 
