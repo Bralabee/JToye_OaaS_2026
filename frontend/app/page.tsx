@@ -16,6 +16,9 @@ import { Reveal } from "@/components/marketing/reveal"
 import { DishScroller } from "@/components/marketing/dish-scroller"
 import { ShopCard } from "@/components/marketing/shop-card"
 import { loadShopList } from "@/lib/storefront-server"
+import { headers } from "next/headers"
+import { resolvePublicOrigin } from "@/lib/public-origin"
+import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
 
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
@@ -118,8 +121,33 @@ export default async function Home() {
   const shopList = await loadShopList({ page: 0, size: 8 })
   const shops = shopList.state === "ok" ? (shopList.data.content ?? []) : []
 
+  // SEO. `/` is a public, unauthenticated surface and — as of this change — a
+  // genuine shop-discovery surface for the first time, with no structured data at
+  // all. Measured before this change: 0 occurrences of `structured-data` or
+  // `ld+json` in this file, against 31 files under `app/` carrying metadata, so
+  // the corpus is searchable and the zero was real. CLAUDE.md makes
+  // discoverability a standing design-time criterion for public surfaces, so this
+  // is IN scope, recorded rather than silently omitted as N/A.
+  //
+  // Reuses `shopListStructuredData` and `serialiseJsonLd` exactly as
+  // `app/shop/page.tsx` does. NEVER hand-roll either: `dangerouslySetInnerHTML` is
+  // unavoidable for a ld+json script, so the mitigation is the serialiser, not its
+  // absence: structured-data.ts emits JSON.stringify(data) with every "less than"
+  // character replaced by its unicode escape, which stops a vendor-controlled shop
+  // name from closing the script tag while parsers read it identically. A second
+  // serialiser is a second place for that to be forgotten.
+  const nonce = (await headers()).get("x-nonce") ?? undefined
+  const jsonLd = shops.length > 0 ? shopListStructuredData(shops, resolvePublicOrigin()) : null
+
   return (
     <PublicShell>
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: serialiseJsonLd(jsonLd) }}
+        />
+      )}
       <HeroScene>
         {/* ── Split-persona hero ─────────────────────────────────────────── */}
         <section data-hero-section className="relative overflow-hidden bg-cream">
