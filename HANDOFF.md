@@ -17,11 +17,21 @@ git rev-list --count HEAD..origin/main                             # expect 0
 |---|---|---|
 | **33-00** | 1 | **COMPLETE 4/4**, SUMMARY written |
 | **33-01** | 2 | **COMPLETE 2/2**, SUMMARY written |
-| **33-03** | 2 | **Tasks 1–3 done and committed. PAUSED at Task 4 — `checkpoint:human-verify`, gate="blocking".** Tasks 4 and 5 remain |
-| **33-04** | 2 | **NOT STARTED** — `autonomous: false`, Keycloak customer-realm IdP groundwork + ADR-0005 |
+| **33-03** | 2 | **COMPLETE 5/5**, SUMMARY written. Task 4's human gate was **approved** by the owner |
+| **33-04** | 2 | **NOT STARTED** — the only wave-2 plan left |
 
-**Next action: the owner answers 33-03 Task 4** (the row at N=3, 390px and 1440px, scrolled). Then
-Task 5 (the scoped heading criterion + JSON-LD + spec migrations), then 33-04.
+**Next action: execute `33-04`.** It is `autonomous: false` (Keycloak customer-realm identity
+providers + `ADR-0005`), independent of everything above, and its owner decision is already taken:
+**`q3-record`** — record a dated ADR and commit the groundwork **DISABLED**, no Google client secret
+committed. After it, wave 3 is `33-02` alone.
+
+### Two things 33-07 must consume, already measured
+
+- **The `/` client-JS baseline is 953,353 bytes** (21 scripts). Control, pre-33-03: 945,338 / 20 —
+  the +8,015 is `ShopCard`. It lives in `frontend/e2e/perf-budgets.ts` so a test can consume it;
+  33-07's declared ceiling must be justified against that number, not against prose.
+- **The CLS no-regression assertion is already in place** and will fire if 33-07's client island
+  makes the shift worse.
 
 ## The delivered runtime is current, and was proven by content
 
@@ -79,11 +89,31 @@ page and the National Archives text.
 - The frontend Dockerfile **refuses to build** without `NEXT_PUBLIC_API_URL` and
   `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` build-args. Pass them when building a control image.
 
+- **A GitHub issue reference matches a hex-colour rule.** `__tests__/palette-discipline` greps
+  `components/marketing` for `/#[0-9a-fA-F]{3,8}/`, and `544` is valid hex — so a comment citing the
+  issue scores against an expected 0. The convention already existed and is easy to miss:
+  `dish-scroller.tsx` writes *"PR 221"* for exactly this reason. Write "issue 544", not the hash.
+- **`headers()` throws under jest** ("called outside a request scope"). Any page that reads it for a
+  CSP nonce needs `next/headers` mocked in its unit test. `npm run build` rc=0 and 41 green Playwright
+  tests did **not** see this — a type-check and an E2E suite cannot see a jest suite that never runs.
+- **Validate a test instrument on the CLEAN tree before trusting any break arm it reports.** A local
+  prod server on `:3002`, used to avoid container rebuilds, failed the tests on an *unmodified* tree
+  (29 bytes served). Run against it, every break arm would have "failed" for the wrong reason and read
+  as success.
+- **`grep -c` counts LINES**, and a Next.js page is one line — it reports `1` for a string that occurs
+  eight times. Count occurrences with `awk`, or the number means something other than what you read.
+
 ## Expected-red, by design
 
 From wave 2 until `33-07` Task 4 writes the prose figures, the phase branch is **expected** to be red
-on both `docs-freshness` metric gates. That is the designed state of a stacked phase branch. **Do not
-hand-edit the figures to chase green** — they are wrong the moment the next plan lands.
+on `scripts/check-doc-metrics.sh`. **Do not hand-edit the figures to chase green** — they are wrong
+the moment the next plan lands.
+
+Current state, measured: `scripts/docs-freshness.sh` (tree → `metrics.json`) **rc=0**;
+`scripts/check-doc-metrics.sh` (prose → `metrics.json`) **rc=1**, on
+`AGENTS.md [playwright_specs]: doc says 18, docs/metrics.json says 19`. `docs/metrics.json` was
+regenerated **by script**: jest 839→850, jest files 94→95, playwright blocks 80→88, specs 18→19,
+total logical invocations **2509 → 2528**.
 
 ---
 
