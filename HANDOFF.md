@@ -147,6 +147,27 @@ Current state, measured: `scripts/docs-freshness.sh` (tree → `metrics.json`) *
 regenerated **by script**: jest 839→850, jest files 94→95, playwright blocks 80→88, specs 18→19,
 total logical invocations **2509 → 2528**.
 
+### The full loop, re-measured at 33-04's close-out: 28 of 31 rc=0
+
+The three that are not green are **all pre-existing and all understood**. Do not chase them blind:
+
+| Gate | rc | Why, and whose tail it is |
+|---|---|---|
+| `check-doc-metrics` | 1 | The expected-red above. `33-07` Task 4 writes the prose figures. |
+| `check-claims` | 1 | Same root cause — README/AGENTS prose vs `metrics.json`. Verified failing **identically** on a worktree of `51a0c633`, so it is not 33-04's. |
+| `check-e2e-skip-budget` | 2 (VOID) | The spec-set content hash no longer matches its stored report, because `33-01`/`33-03` added specs. It wants a **suite re-run**, which is those plans' tail — `33-04` touched zero spec files. |
+
+Two were repaired during 33-04 and should stay green: `check-handoff-contract` (the H-1 gate-count
+drift above) and `check-runtime-freshness` (both stale services rebuilt and recreated, parity then
+proven by content — `application.yml` read from **inside** `/app/app.jar`, 671 lines, matching the
+tree, and both containers' image IDs matching their tags).
+
+**One trap for anyone who rebuilds `core-java`:** `check-alert-metrics` will go rc=1 immediately
+afterwards. `http_server_requests_seconds_count` is created on the first matching request and
+**destroyed on restart**, so the `NoOrdersCreated` rule is genuinely blind until traffic exists. It is
+not a regression and needs no investigation — run `bash scripts/seed-order-metric.sh`, which places
+one real guest order and waits for the scrape. Done at 33-04's close-out; series 0 → 1.
+
 ---
 
 # Handoff: four authors, four checks that could not fail, and none caught by their own author
