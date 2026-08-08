@@ -766,6 +766,15 @@ Plans:
 > is what SC-3's second limb asks for. **SC-6 / CUST-04 remains unmeasured** and is recorded as
 > unknown, not clean.
 >
+> **SEO is recorded IN scope, not N/A** (CLAUDE.md's standing criterion for a public surface). `/` is
+> about to render real shops for the first time and emits **no** structured data today — 0 matches for
+> `ld+json` in `app/page.tsx`, while `lib/structured-data.ts` already exports a tested
+> `shopListStructuredData` that `/shop` consumes and `/shop/[slug]` has its own variant. So `33-03`
+> reuses the existing helper rather than writing a second serialiser, asserts it against the raw
+> response bytes (a client-only node satisfies a DOM query but is invisible to a crawler), and its fail
+> direction requires that a well-formed but EMPTY `ItemList` still fails — otherwise the criterion
+> proves only that a tag exists, not that it carries the truth.
+>
 > **Criteria replaced during plan-check, each recorded in the owning plan with its measurement:** the
 > blanket *"'near you' is absent from the landing DOM"* was **unsatisfiable** — `/` renders that
 > string at four sites, three of which are the primary CTA (`page.tsx:133`), the Browse step body
