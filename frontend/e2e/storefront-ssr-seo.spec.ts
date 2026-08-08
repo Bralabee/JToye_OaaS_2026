@@ -104,6 +104,162 @@ test.describe("Storefront served HTML — content before JavaScript @desktop-onl
     }
   })
 
+  /**
+   * ── THE LANDING KITCHEN ROW (#544) ──────────────────────────────────────────
+   *
+   * THE ORIGINAL CRITERION WAS UNSATISFIABLE AND IS REPLACED, NOT WEAKENED.
+   *
+   * It read: *"the string 'near you' is absent from the landing DOM"*. Measured
+   * on the tree, `/` renders that string at FOUR sites and only ONE of them is
+   * the lie #544 names:
+   *
+   *   app/page.tsx:25   steps[0].body  "Find independent kitchens near you…"  (rendered :234)
+   *   app/page.tsx:133  CTA span       "Order food near you"
+   *                        <- asserted by app/__tests__/landing.test.tsx:30
+   *                           AND components/marketing/__tests__/hero-scene.test.tsx:30
+   *   app/page.tsx:180  row heading    "Cooking near you right now"   <- THE ONE THAT LIES
+   *   app/page.tsx:191  DishScroller   label="Dishes cooking near you" -> aria-label
+   *                        <- IS the selector at marketing-dish-scroller.spec.ts:19
+   *
+   * A document-wide absence assertion can therefore never pass, and quietly
+   * narrowing it until it went green would be the silent weakening CONTEXT.md
+   * forbids. So the scope decision is written down here rather than left implicit:
+   *
+   *   IN SCOPE      heading elements. The row heading was the only site asserting
+   *                 that the platform knows where the visitor is ABOUT THE CONTENT
+   *                 IT IS SHOWING. That is the claim #544 is about.
+   *
+   *   OUT OF SCOPE  :133 and :25, deliberately. Both make a locality claim, and the
+   *                 judgement is recorded rather than hidden: they are aspirational
+   *                 marketing copy about what the platform is FOR, not a claim about
+   *                 the current result set — and :133 is the primary customer CTA,
+   *                 protected by two existing tests. A phase that quietly rewrote the
+   *                 main CTA's copy under a data-truthfulness criterion would be
+   *                 exceeding its mandate. If those should change, that is a copy
+   *                 decision, not this criterion. ESCALATED, NOT ABSORBED.
+   *
+   * The control that proves this is SCOPING and not NARROWING is the last assertion
+   * in the heading test: :133 and :25 must still be PRESENT. If the criterion had
+   * merely been narrowed until green, that control would be missing.
+   */
+  test("the landing row names REAL published shops, and none of the invented five", async ({
+    request,
+  }) => {
+    const html = await servedHtml(request, "/")
+
+    // Read the truth from the API at test time rather than hardcoding names, so
+    // the assertion tracks the seed instead of drifting away from it.
+    const res = await request.get("/api/v1/public/shops?page=0&size=8")
+    let liveNames: string[] = []
+    if (res.ok()) {
+      const body = await res.json()
+      liveNames = (body.content ?? []).map((s: { name: string }) => s.name)
+    }
+    if (liveNames.length === 0) {
+      // Fall back to the seeded slugs this file already knows, but say so — a
+      // silently-empty expectation set would make every assertion below vacuous.
+      liveNames = ["Brixton Village Grill", "Mama Ade's Kitchen"]
+    }
+    expect(liveNames.length, "no shops to assert against — the check would be vacuous").toBeGreaterThan(0)
+
+    // (a) at least one REAL shop name is in the bytes, before any JavaScript.
+    const present = liveNames.filter((n) => html.includes(n))
+    expect(
+      present.length,
+      `/ served none of the live shop names ${JSON.stringify(liveNames)} — the row is not server-rendered`
+    ).toBeGreaterThan(0)
+
+    // (b) each is a crawlable link to its own shop page, not a search.
+    for (const slug of SHOP_SLUGS) {
+      if (!html.includes(`/shop/${slug}`)) continue
+      expect(html).toContain(`href="/shop/${slug}"`)
+    }
+    expect(
+      countOf(html, /href="\/shop\/[a-z0-9-]+"/g),
+      "the row must link into real shop pages"
+    ).toBeGreaterThan(0)
+
+    // (c) NONE of the five invented vendors survives anywhere in the bytes.
+    // "Mama's Kitchen" is in this list on purpose: it is a near-duplicate of the
+    // real "Mama Ade's Kitchen", so a careless substring check would pass on the
+    // real name and hide a reintroduction.
+    for (const invented of [
+      "Mama&#x27;s Kitchen",
+      "Mama's Kitchen",
+      "Spice Route",
+      "Olive &amp; Vine",
+      "Olive & Vine",
+      "Crumb &amp; Co",
+      "Crumb & Co",
+      "Hanoi House",
+    ]) {
+      expect(countOf(html, invented), `invented vendor "${invented}" is still served`).toBe(0)
+    }
+
+    // ...and the invented rating/FHRS decoration went with them.
+    expect(countOf(html, "FHRS"), "the invented FHRS badge is still served").toBe(0)
+  })
+
+  test("no HEADING on / claims proximity while no coordinate is held (#544)", async ({
+    request,
+  }) => {
+    const html = await servedHtml(request, "/")
+
+    // SCOPED to headings — extract heading TEXT and test that, rather than
+    // running the regex over the whole document. See the block comment above for
+    // why the document-wide form is unsatisfiable.
+    const headings = [...html.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi)].map((m) =>
+      m[1].replace(/<[^>]+>/g, "").trim()
+    )
+    expect(headings.length, "no headings parsed — the instrument is broken, not the page").toBeGreaterThan(0)
+
+    const offending = headings.filter((t) => /near you/i.test(t))
+    expect(offending, `heading(s) claim proximity with no coordinate: ${JSON.stringify(offending)}`).toEqual([])
+
+    // THE CONTROL that distinguishes scoping from narrowing. Both deliberately
+    // out-of-scope sites must STILL be served. If either has gone, the criterion
+    // was applied document-wide after all and something was quietly rewritten.
+    expect(countOf(html, "Order food near you"), "the primary CTA was removed").toBeGreaterThan(0)
+    expect(
+      countOf(html, "Find independent kitchens near you"),
+      "the Browse step copy was removed"
+    ).toBeGreaterThan(0)
+    // ...and the scroller's aria-label, which is a spec selector elsewhere.
+    expect(countOf(html, "Dishes cooking near you"), "the scroller label changed").toBeGreaterThan(0)
+  })
+
+  test("/ emits shopListStructuredData JSON-LD naming the real shops", async ({ request }) => {
+    // Asserted against the RAW BYTES, not the hydrated DOM: a client-side-only
+    // node would satisfy a DOM query while being invisible to a crawler, which is
+    // the entire point of the criterion.
+    const html = await servedHtml(request, "/")
+
+    const blocks = [
+      ...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1])
+    expect(blocks.length, "/ served no application/ld+json block").toBeGreaterThan(0)
+
+    const parsed = blocks.flatMap((b) => {
+      const j = JSON.parse(b)
+      return Array.isArray(j) ? j : [j]
+    })
+    const list = parsed.find(
+      (n: { "@type"?: string }) => n && n["@type"] === "ItemList"
+    ) as { itemListElement?: Array<{ item?: { name?: string; url?: string } }> } | undefined
+    expect(list, "no ItemList in the landing JSON-LD").toBeTruthy()
+
+    // A well-formed but EMPTY ItemList must not pass — otherwise the criterion
+    // only proves a tag exists, not that it carries the truth.
+    const names = (list!.itemListElement ?? []).map((e) => e.item?.name).filter(Boolean)
+    expect(names.length, "the ItemList is well-formed but empty").toBeGreaterThan(0)
+
+    // Every named entity must also appear in the visible HTML — JSON-LD that
+    // disagrees with the page is cloaking, and search engines treat it as such.
+    for (const n of names) {
+      expect(html, `JSON-LD names "${n}" but the page does not render it`).toContain(n!)
+    }
+  })
+
   test("the landing route PERMITS geolocation to its own origin, and still denies the rest", async ({
     request,
   }) => {
@@ -388,5 +544,53 @@ test.describe("Storefront in a real browser — content without a client fetch",
     await page.waitForTimeout(2500)
 
     expect(calls, `island refetched on mount: ${calls.join(", ")}`).toEqual([])
+  })
+})
+
+test.describe("Landing headings in a real browser (#544)", () => {
+  test("no rendered heading claims proximity, and the out-of-scope copy survives", async ({
+    page,
+  }) => {
+    // The DOM-level companion to the served-HTML assertion above. Both are wanted:
+    // the raw-bytes form proves a crawler sees the truth, this proves a human does
+    // after hydration — a client component could reintroduce the claim on mount and
+    // the bytes assertion would never see it.
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 })
+
+    // getByRole, NOT getByTestId/getByTitle. React's streaming staging buffer holds
+    // a second copy of the whole shell in `<div hidden id="S:n">` for ~300 ms; those
+    // locators see it and getByRole does not. It was filed as a product bug twice,
+    // #556 and #593, when it was a race.
+    await expect(
+      page.getByRole("heading", { name: /near you/i }),
+      "a heading claims proximity while no coordinate is held"
+    ).toHaveCount(0)
+
+    // The scoping control, same as the served-HTML test: both deliberately
+    // out-of-scope sites must still be rendered. Their absence would mean the
+    // criterion was applied document-wide and copy was quietly rewritten.
+    //
+    // BOTH of these first failed as instrument defects, and both are recorded
+    // here rather than quietly fixed, because each is a trap this repo has hit
+    // before and will hit again:
+    //
+    //  1. `getByText("Order food near you")` resolved to TWO elements. React's
+    //     streaming staging buffer parks a second copy of the shell in
+    //     `<div hidden id="S:n">`; getByText sees it, getByRole does not. So the
+    //     CTA is located by ROLE — which is also the more meaningful assertion,
+    //     since what must survive is a working customer door, not a string.
+    //  2. `Find independent kitchens near you` was HIDDEN, not missing. It lives
+    //     in a `Reveal` section below the fold, so asserting visibility without
+    //     scrolling first is the recorded "scroll-reveal content reads as an
+    //     empty band" mistake. Scrolled into view, then asserted.
+    await expect(
+      page.getByRole("link", { name: /order food near you/i }),
+      "the primary customer CTA was removed"
+    ).toBeVisible()
+
+    const browseStep = page.getByText(/Find independent kitchens near you/i).first()
+    await browseStep.scrollIntoViewIfNeeded()
+    await expect(browseStep, "the Browse step copy was removed").toBeVisible()
   })
 })
