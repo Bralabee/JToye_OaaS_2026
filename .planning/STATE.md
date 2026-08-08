@@ -21,11 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 27 — operational-maturity
+**Current focus:** Phase 33 — the-consumer-product
 
 ## Current Position
 
-Phase: **27 (operational-maturity) — COMPLETE 7/7 (2026-07-29)**
+Phase: **33 (the-consumer-product) — EXECUTING, 5/8 plans complete (33-00..33-04), 33-05 in flight (2026-08-09).**
+*(Updated BY HAND — `gsd-sdk query state.begin-phase` was run once on 2026-08-08 and reverted: like `state.record-session`, it rewrites `stopped_at`, destroys `last_activity`, and recomputes the `progress:` counters on the wrong denominator. Hand-edit this block; do not call either verb.)*
+Prior: **27 (operational-maturity) — COMPLETE 7/7 (2026-07-29)**
 Milestone: **v2.3 — OPEN, and deliberately not closed.** Widened 2026-08-01 from Phases 21–26 to
 **21–32**. Owner decision: *"2.3 is not complete. closing nothing. just document. we will proceed
 with 2.3 until it's go to market ready."* Phase 27 is recorded as part of v2.3.
