@@ -23,6 +23,12 @@ paths = [
   # already committed on main in .env/realm) — same planning-prose risk class as
   # PLAN/RESEARCH above, not a live credential source.
   '''\.planning/phases/.*-CONTEXT\.md$''',
+  # CONTROL-ARMS.md records falsifiability evidence: pasted psql command lines,
+  # curl -sSI header dumps and container role NAMES. Same planning-prose risk
+  # class as PLAN/RESEARCH/CONTEXT above. The widening is bounded by the plan
+  # itself, which forbids pasting any command line carrying a literal password
+  # value — the allowlist covers the prose risk, not a genuine secret.
+  '''\.planning/phases/.*-CONTROL-ARMS\.md$''',
   '''scripts/smoke-test.*\.sh$''',
 ]
 
