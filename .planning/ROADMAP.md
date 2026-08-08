@@ -731,7 +731,7 @@ and #461 (no payment) went to Phase 30 while the rest had nowhere to go.
 > SC-3 (#453) and SC-5 (#432) are unchanged and confirmed live —
 > `realm-export-customers.json` reads `realm=jtoye-customers`, `identityProviders=0`.
 
-**Plans**: 8 plans (5 waves) — planned 2026-08-08, revised after plan-check the same day
+**Plans**: 8 plans (6 waves) — planned 2026-08-08; revised after plan-check, then after an independent plan-check
 
 Plans:
 **Wave 1**
@@ -751,11 +751,14 @@ Plans:
 **Wave 4** *(blocked on 33-02)*
 
 - [ ] 33-05-PLAN.md (Wave 4) — #460 link 3: geocode on the write path + range-validate `CreateShopRequest` (a client can POST `latitude: 999` today), seeder coordinates via the SAME geocoder, correct the seeded `SE15 4QA` which exists in neither Code-Point Open nor ONSPD, a tenant-looped backfill proven to update 0 rows without a GUC, and **CA-1 closed against the live runtime as both DB roles**
-- [ ] 33-06-PLAN.md (Wave 4, parallel) — #460 link 5: `findPublishedNear` — native `asin`-haversine with a leakproof bounding-box prefilter and an explicit `countQuery`; `lat`/`lon`/`radiusKm` validated on the anonymous endpoint; `distanceKm` projected from SQL; OpenAPI snapshot freshness enforced by a gate that fails closed
 
-**Wave 5** *(blocked on 33-03, 33-05, 33-06)*
+**Wave 5** *(blocked on 33-05 — both plans create a runtime gate, and `scripts/gates/gate-enforcement.conf` cannot be pre-declared: an entry naming a not-yet-existing script makes `check-gate-enforcement.sh` exit 2 VOID, so each plan must append its own entry when it creates its own gate)*
 
-- [ ] 33-07-PLAN.md (Wave 5) — The located journey: gesture-gated client island, three states with the heading derived from state, **disclosure of published shops excluded for lack of coordinates**, deterministic granted/denied/far-away/exclusion Playwright arms, and the honest requirement close-out. `autonomous: false`
+- [ ] 33-06-PLAN.md (Wave 5, blocked on 33-05 — see note) — #460 link 5: `findPublishedNear` — native `asin`-haversine with a leakproof bounding-box prefilter and an explicit `countQuery`; `lat`/`lon`/`radiusKm` validated on the anonymous endpoint; `distanceKm` projected from SQL; OpenAPI snapshot freshness enforced by a gate that fails closed
+
+**Wave 6** *(blocked on 33-03, 33-05, 33-06)*
+
+- [ ] 33-07-PLAN.md (Wave 6) — The located journey: gesture-gated client island, three states with the heading derived from state, **disclosure of published shops excluded for lack of coordinates**, deterministic granted/denied/far-away/exclusion Playwright arms, and the honest requirement close-out. `autonomous: false`
 
 > **Scope note.** These eight plans cover **#460, #544 and #432** only. #453 ships no code by D-2;
 > #452, #545, #546, #285 and #458's dispatch half are out of scope by D-3. **SC-4 is not planned** —
