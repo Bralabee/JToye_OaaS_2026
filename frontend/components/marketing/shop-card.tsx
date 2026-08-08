@@ -3,7 +3,14 @@ import { SafeImage } from "@/components/ui/safe-image"
 import type { PublicShop } from "@/types/storefront"
 
 /**
- * One real published shop, rendered as a card in the landing kitchen row (#544).
+ * One real published shop, rendered as a card in the landing kitchen row (issue 544).
+ *
+ * NOTE: written "issue 544", not with a leading hash. `__tests__/palette-discipline`
+ * greps components/marketing for /#[0-9a-fA-F]{3,8}/ to keep raw hex colours out,
+ * and an issue reference matches that pattern — the recorded "a rule that must
+ * match a token fires on prose that is not one" shape. It is why dish-scroller.tsx
+ * next door says "PR 221" rather than using a hash. The gate is right about hex and
+ * is left alone.
  *
  * WHAT THIS REPLACES, AND WHY IT PRINTS LESS
  *
