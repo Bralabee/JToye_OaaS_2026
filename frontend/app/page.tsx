@@ -14,6 +14,8 @@ import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 import { DishScroller } from "@/components/marketing/dish-scroller"
+import { ShopCard } from "@/components/marketing/shop-card"
+import { loadShopList } from "@/lib/storefront-server"
 
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
@@ -45,17 +47,6 @@ const categories = [
   { emoji: "🍰", label: "Desserts", q: "dessert" },
 ]
 
-// Illustrative "cooking near you" strip (sketch 004 variant A). Emoji + warm
-// gradient stand in for real dish photography until vendor media lands; the
-// cards link into the storefront.
-const featuredDishes = [
-  { emoji: "🍗", grad: "from-[#fbe9d4] to-[#f6c99a]", name: "Jollof & Grilled Chicken", vendor: "Mama's Kitchen", rating: "4.8", price: "£9.50", q: "jollof" },
-  { emoji: "🍛", grad: "from-[#f6dcd8] to-[#e8a9a2]", name: "Lamb Biryani", vendor: "Spice Route", rating: "4.9", price: "£11.00", q: "biryani" },
-  { emoji: "🥙", grad: "from-[#e7f3ea] to-[#a9d9bb]", name: "Halloumi Wrap", vendor: "Olive & Vine", rating: "4.7", price: "£7.25", q: "wrap" },
-  { emoji: "🍰", grad: "from-[#fdeecb] to-[#f3cf7a]", name: "Basque Cheesecake", vendor: "Crumb & Co", rating: "4.9", price: "£5.00", q: "dessert" },
-  { emoji: "🍜", grad: "from-[#efe4f3] to-[#c9a9d9]", name: "Pho Bo", vendor: "Hanoi House", rating: "4.8", price: "£10.50", q: "pho" },
-]
-
 const heroTiles = [
   { emoji: "🍜", grad: "from-white to-[#fbe9d4]", extra: "-rotate-2" },
   { emoji: "🥘", grad: "from-white to-[#f6dcd8]", extra: "rotate-2 mt-6" },
@@ -75,8 +66,58 @@ const heroTiles = [
  * nonce cascades through (the #89 failure mode). All `data-hero-*` hooks are
  * preserved so the GSAP HeroScene choreography + marketing-motion.spec keep
  * working; the new sections are additive and unhooked.
+ *
+ * `async` does NOT make this a Client Component and MUST NOT be "fixed" by adding
+ * a client directive — that would regress #89 and add a page to #507/#542's
+ * count. `HeroSearch` and `DishScroller` are already client islands inside this
+ * server page; `app/shop/page.tsx` is the fuller form of the same shape.
+ *
+ * The structural guard in `app/__tests__/landing.test.tsx` greps this file for the
+ * directive. It cannot tell a real directive from prose NAMING one, so this
+ * paragraph deliberately does not spell the string out — writing it here turned
+ * that guard red, which is the recorded "a rule that must name the token it
+ * forbids fires on its own definition" shape. The guard is correct and is left
+ * exactly as it was.
+ *
+ * ── THE KITCHEN ROW (#544) ────────────────────────────────────────────────────
+ *
+ * The row used to render five INVENTED vendors under an unconditional "Cooking
+ * near you right now" heading. It now renders the real published shops from
+ * `loadShopList`. Every good the old row carried is accounted for here, because a
+ * green suite over a row that quietly lost its affordance is still a regression:
+ *
+ *   PRESERVED  DishScroller wrapper — edge fade, proximity snap, fine-pointer arrows
+ *   PRESERVED  the label "Dishes cooking near you", BYTE-IDENTICAL. It is an
+ *              aria-label on a scroll region (not a heading, so the location
+ *              criterion does not reach it) and it is the selector at
+ *              marketing-dish-scroller.spec.ts:19. Changing it buys nothing and
+ *              breaks the only guard on the affordance.
+ *   PRESERVED  active:scale-[0.98] tap feedback, and the written-out
+ *              [@media(hover:hover) and (pointer:fine)] hover gate
+ *   PRESERVED  every data-hero-* GSAP hook (none were in this row)
+ *   PRESERVED  split-persona H1, both persona doors, header, footer
+ *   REPLACED   /shop?q=… deep link -> /shop/{slug}: a real shop page instead of a
+ *              search that might match nothing
+ *   REPLACED   emoji + gradient -> the shop's real logoUrl through SafeImage with
+ *              EXPLICIT width and height, so the box is reserved (CLS)
+ *   REMOVED    hardcoded rating, FHRS badge and dish price — none exists on
+ *              PublicShop, and attributing an invented rating to a REAL named
+ *              business is worse than the fiction it replaces
+ *   FIVE -> N  the row is however many shops are published, currently three
+ *
+ * The heading makes no claim about where the visitor is. It deliberately does not
+ * say "Open now" either: `lib/opening-hours.ts:74` returns true when hours are
+ * null or empty, so an openness claim would be a NEW fiction for every shop with
+ * no hours data — exactly what #544 exists to stop. Device location arrives in
+ * 33-07; this page tells the truth without a coordinate.
  */
-export default function Home() {
+export default async function Home() {
+  // Server-side, at request time, so the real names are in the INITIAL HTML —
+  // before any JavaScript. A useEffect fetch would leave the crawler and the
+  // first paint with an empty row, which is #507's measured complaint.
+  const shopList = await loadShopList({ page: 0, size: 8 })
+  const shops = shopList.state === "ok" ? (shopList.data.content ?? []) : []
+
   return (
     <PublicShell>
       <HeroScene>
@@ -173,44 +214,30 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Cooking near you (A: appetite dish row) ─────────────────────── */}
-        <section className="border-t border-cream-100 bg-white">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-2xl font-bold text-oxblood">Cooking near you right now</h2>
-              <Link href="/shop" className="text-sm font-bold text-amber-700 hover:text-amber-800">
-                See all kitchens →
-              </Link>
+        {/* ── The kitchen row — REAL published shops (#544) ───────────────── */}
+        {shops.length > 0 && (
+          <section className="border-t border-cream-100 bg-white">
+            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
+              <div className="flex items-baseline justify-between">
+                {/* No locality claim: nothing on this page knows where the
+                    visitor is. 33-07 adds the located row as a separate,
+                    permission-gated surface. */}
+                <h2 className="text-2xl font-bold text-oxblood">Kitchens on J&apos;Toye</h2>
+                <Link href="/shop" className="text-sm font-bold text-amber-700 hover:text-amber-800">
+                  See all kitchens →
+                </Link>
+              </div>
+              <div className="mt-5">
+                {/* Label byte-identical — see the docblock. */}
+                <DishScroller label="Dishes cooking near you">
+                  {shops.map((shop) => (
+                    <ShopCard key={shop.slug} shop={shop} />
+                  ))}
+                </DishScroller>
+              </div>
             </div>
-            {/*
-              Card hover is gated on a fine pointer. `future.hoverOnlyWhenSupported`
-              is unset in tailwind.config.ts, so a bare `hover:` latches on tap and
-              leaves the card stuck lifted after a touch.
-            */}
-            <div className="mt-5">
-              <DishScroller label="Dishes cooking near you">
-                {featuredDishes.map((d) => (
-                  <Link
-                    key={d.name}
-                    href={`/shop?q=${encodeURIComponent(d.q)}`}
-                    className="group min-w-[190px] shrink-0 overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
-                  >
-                    <div className={`grid h-28 place-items-center bg-gradient-to-br ${d.grad} text-5xl`}>
-                      <span aria-hidden>{d.emoji}</span>
-                    </div>
-                    <div className="p-3.5">
-                      <div className="font-bold text-slate-900">{d.name}</div>
-                      <div className="mt-0.5 text-xs text-slate-600">
-                        {d.vendor} · ⭐ {d.rating} · FHRS 5
-                      </div>
-                      <div className="mt-2 font-extrabold text-oxblood">{d.price}</div>
-                    </div>
-                  </Link>
-                ))}
-              </DishScroller>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* ── How it works (motion-hooked) ────────────────────────────────── */}
         <section className="bg-cream py-16">

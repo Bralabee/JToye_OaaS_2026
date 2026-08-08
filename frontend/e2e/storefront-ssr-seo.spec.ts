@@ -104,6 +104,34 @@ test.describe("Storefront served HTML — content before JavaScript @desktop-onl
     }
   })
 
+  test("the landing route PERMITS geolocation to its own origin, and still denies the rest", async ({
+    request,
+  }) => {
+    // Task 1 of 33-03's runtime half. `next.config.mjs` headers are baked at
+    // BUILD time, so a source grep proves nothing about what is served — this
+    // reads the live response.
+    //
+    // Measured before the change (CA-2, 2026-08-08):
+    //   Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()
+    // `geolocation=()` is an EMPTY allowlist. It denies the API to the page's own
+    // origin on every route, before any prompt, with no useful console error —
+    // indistinguishable from a user declining.
+    const res = await request.get("/")
+    expect(res.status(), "/ should serve 200").toBe(200)
+    const policy = res.headers()["permissions-policy"]
+    expect(policy, "/ must send a Permissions-Policy header").toBeTruthy()
+
+    // Assert the PERMISSIVE string is PRESENT, never that the restrictive one is
+    // absent: an absence assertion would also pass if the whole header were
+    // deleted, which would silently drop the three denials below.
+    expect(policy, "geolocation must be permitted to same-origin").toContain("geolocation=(self)")
+
+    // ...and the widening is exactly one capability wide.
+    expect(policy, "camera must stay denied").toContain("camera=()")
+    expect(policy, "microphone must stay denied").toContain("microphone=()")
+    expect(policy, "browsing-topics must stay denied").toContain("browsing-topics=()")
+  })
+
   test("every public storefront route has a DISTINCT title and description", async ({ request }) => {
     const routes = ["/shop", ...SHOP_SLUGS.map((s) => `/shop/${s}`)]
     const titles: string[] = []
