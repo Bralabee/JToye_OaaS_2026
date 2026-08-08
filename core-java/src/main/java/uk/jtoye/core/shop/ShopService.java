@@ -14,6 +14,7 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
@@ -37,6 +38,7 @@ public class ShopService {
     private final TenantCacheEvictor cacheEvictor;
     private final ShopAccessService shopAccessService;
     private final ShopCacheLoader shopCacheLoader;
+    private final PostcodeGeocoder postcodeGeocoder;
 
     /**
      * Slugs that must never reach the {@code slug} column, because the storefront
@@ -59,13 +61,15 @@ public class ShopService {
                        StorageService storageService,
                        TenantCacheEvictor cacheEvictor,
                        ShopAccessService shopAccessService,
-                       ShopCacheLoader shopCacheLoader) {
+                       ShopCacheLoader shopCacheLoader,
+                       PostcodeGeocoder postcodeGeocoder) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
         this.shopAccessService = shopAccessService;
         this.shopCacheLoader = shopCacheLoader;
+        this.postcodeGeocoder = postcodeGeocoder;
     }
 
     // createShop inserts a brand-new entity; no existing cache key could match it,
@@ -104,6 +108,11 @@ public class ShopService {
         if (shop.getMinimumOrderPennies() == null) {
             shop.setMinimumOrderPennies(0L);
         }
+
+        // #460 link 3a: derive the coordinate from the address BEFORE the row is written,
+        // so a shop is never born invisible to every distance query. On create there is no
+        // prior coordinate to preserve, hence the two nulls.
+        applyCoordinate(shop, null, null);
 
         shop = shopRepository.saveAndFlush(shop);
 
@@ -204,6 +213,13 @@ public class ShopService {
         // from the onboarding GO_LIVE/SUSPEND/REINSTATE side effect).
         Boolean publishedBeforeUpdate = shop.getPublished();
 
+        // #460 link 3a: snapshot the PERSISTED coordinate before the field copy. It is the
+        // value applyCoordinate falls back to when a re-geocode misses — an address edit
+        // that lands on an unknown postcode must not silently delete a coordinate the shop
+        // already had, which would remove a live storefront from every distance result.
+        Double latitudeBeforeUpdate = shop.getLatitude();
+        Double longitudeBeforeUpdate = shop.getLongitude();
+
         // Issue #450 item 4 (F-L6-PUBLISHDROP / INT-06): the restore below keeps the
         // OUTCOME right, but on its own it made the RESPONSE a lie — {"published":true}
         // and {"published":false} both returned 200 with the shop unchanged, so a client
@@ -242,6 +258,15 @@ public class ShopService {
         } else {
             assertSlugNotReserved(request.getSlug());
         }
+
+        // Re-geocode from the FINAL address (the mapper has already applied any address
+        // change). Unconditional rather than gated on "did the address change?": the same
+        // call then also repairs a shop whose postcode was absent from the reference table
+        // when it was created and has since been added, at the cost of one primary-key
+        // lookup per update. `published` is NOT touched here — the sole-writer invariant
+        // (threat T-18-05-T) is unaffected by this change; the only fields written are
+        // latitude and longitude.
+        applyCoordinate(shop, latitudeBeforeUpdate, longitudeBeforeUpdate);
 
         shop = shopRepository.saveAndFlush(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
@@ -360,6 +385,73 @@ public class ShopService {
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
+    }
+
+    /**
+     * Decide the shop's coordinate. #460 link 3a, and the ONE place on the API write path
+     * where that decision is made.
+     *
+     * <h2>THE PRECEDENCE RULE — stated so nobody has to infer it from the code</h2>
+     *
+     * <p><strong>The postcode is authoritative; a client-supplied coordinate is a FALLBACK,
+     * never an override.</strong> In order:
+     *
+     * <ol>
+     *   <li>If the address yields a postcode present in {@code postcode_centroid}, that
+     *       centroid WINS and overwrites whatever the client sent.</li>
+     *   <li>If it does not, the client's own {@code latitude}/{@code longitude} stand — but
+     *       only because {@code CreateShopRequest} now range-validates them, so the worst a
+     *       client can put here is a real point on Earth rather than {@code latitude: 999}.</li>
+     *   <li>If there is neither, the previously PERSISTED coordinate stands (update path).</li>
+     *   <li>If there is none of the three, the coordinate stays {@code null}. Never
+     *       {@code (0,0)}: Null Island is nearer the origin than any real GB shop, so a shop
+     *       there becomes the nearest kitchen to every customer on the platform.</li>
+     * </ol>
+     *
+     * <p>RESEARCH recommended this over the alternative ("accept the client's coordinate
+     * whenever it is in range") because the platform's stated accuracy tolerance is the
+     * postcode centroid (~100 m, decision D-1) and a vendor-typed coordinate has no
+     * provenance at all — a dropped minus sign puts a Peckham kitchen in the North Sea and
+     * nothing in the product can tell. What the code did BEFORE this change was the worst of
+     * both: it silently accepted anything and geocoded nothing.
+     *
+     * <p>The deliberate trade-off: a vendor cannot pin a door-level coordinate more precise
+     * than their postcode centroid while their postcode resolves. That is accepted for now —
+     * D-1 already scopes this platform to centroid accuracy — and is a separate feature
+     * (a verified vendor-supplied override), not an accident of this method.
+     *
+     * @param shop            the entity, already carrying the FINAL address and whatever the
+     *                        client sent for latitude/longitude
+     * @param persistedLatitude  the coordinate held before this write, or {@code null} on create
+     * @param persistedLongitude the coordinate held before this write, or {@code null} on create
+     */
+    private void applyCoordinate(Shop shop, Double persistedLatitude, Double persistedLongitude) {
+        Optional<PostcodeGeocoder.Coordinate> located = postcodeGeocoder.locate(shop.getAddress());
+
+        if (located.isPresent()) {
+            shop.setLatitude(located.get().latitude());
+            shop.setLongitude(located.get().longitude());
+            return;
+        }
+
+        // A miss is normal, not an error: Northern Ireland is permanently absent (Code-Point
+        // Open is GB-only), and so is any postcode that does not exist. The shop keeps its
+        // storefront either way — it is simply absent from distance-ranked results. Log the
+        // SLUG only: PostcodeGeocoder has already logged the extracted postcode, and the rest
+        // of the address line is vendor-identifying detail that does not belong in a log
+        // (threat T-33-05-04).
+        log.warn("Shop '{}' could not be geocoded from its address — coordinates left as-is. "
+                        + "The shop stays published and reachable, but is absent from distance-ranked "
+                        + "results until its postcode resolves.",
+                shop.getSlug());
+
+        // Never let a miss delete a coordinate the row already had.
+        if (shop.getLatitude() == null && persistedLatitude != null) {
+            shop.setLatitude(persistedLatitude);
+        }
+        if (shop.getLongitude() == null && persistedLongitude != null) {
+            shop.setLongitude(persistedLongitude);
+        }
     }
 
     // QA-council M3 (extended): the caller's tenant, required. Used to scope shop

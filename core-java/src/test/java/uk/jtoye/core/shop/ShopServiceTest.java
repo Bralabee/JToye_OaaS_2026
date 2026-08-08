@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
@@ -52,6 +53,9 @@ class ShopServiceTest {
     @Mock
     private ShopAccessService shopAccessService;
 
+    @Mock
+    private PostcodeGeocoder postcodeGeocoder;
+
     // Phase 23-10 (CR-01): getShopById now delegates its cached data-load to the
     // ShopCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
     // repository + mapper) in setUp() so the existing by-id tests keep exercising
@@ -84,8 +88,15 @@ class ShopServiceTest {
         shopId = UUID.randomUUID();
 
         // Construct with a REAL ShopCacheLoader over the mocked repo+mapper (Phase 23-10).
+        // 33-05: ShopService now geocodes on create/update. These tests assert the
+        // pre-geocoding behaviour of everything else, so the geocoder is stubbed to the
+        // "no extractable postcode" answer its own contract gives for these addresses
+        // ("123 Test Street, London") — Optional.empty(), never (0,0). The geocoding
+        // behaviour itself is asserted in ShopServiceGeocodeTest.
+        lenient().when(postcodeGeocoder.locate(any())).thenReturn(Optional.empty());
         shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
-                shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper));
+                shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper),
+                postcodeGeocoder);
 
         // Set up tenant context
         TenantContext.set(tenantId);

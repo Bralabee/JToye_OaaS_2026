@@ -1,5 +1,7 @@
 package uk.jtoye.core.shop.dto;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -21,7 +23,27 @@ public class CreateShopRequest {
     private String bannerUrl;
     private String phone;
     private String email;
+    // 33-05 / ASVS V5 (threat T-33-05-01): these two fields had NO validation, and the
+    // generated ShopMapperImpl writes them onto the entity on create AND update — so a
+    // request body {"latitude": 999} persisted, unremarked, and the shop then sorted as
+    // nearer or further than every real shop on the platform depending on the sign.
+    // Measured before the fix: POST with latitude 999 returned 201 Created.
+    //
+    // The bounds are the WGS84 domain, nothing cleverer. They are a RANGE, not a ban:
+    // ShopServiceGeocodeTest asserts the exact boundaries (+/-90, +/-180) and a real
+    // London coordinate are all accepted, because a constraint that rejects everything
+    // would make all the rejection arms pass while breaking the field.
+    //
+    // The endpoint already runs @Valid, so a violation becomes an RFC 7807 typed 400
+    // (type https://jtoye.uk/errors/validation, with the offending field named under
+    // `errors`) via GlobalExceptionHandler — machine-parseable, per the agent-readiness
+    // contract — instead of a persisted absurdity.
+    @DecimalMin(value = "-90.0", message = "latitude must be between -90 and 90")
+    @DecimalMax(value = "90.0", message = "latitude must be between -90 and 90")
     private Double latitude;
+
+    @DecimalMin(value = "-180.0", message = "longitude must be between -180 and 180")
+    @DecimalMax(value = "180.0", message = "longitude must be between -180 and 180")
     private Double longitude;
     private Map<String, String> openingHours;
     private String deliveryInfo;
