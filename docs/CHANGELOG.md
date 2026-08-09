@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Typing a postcode into shop search finds kitchens near it, and the page says so (#619) — 2026-08-09
+### Typing a postcode into shop search finds kitchens near it, and the page says so (#619, #623) — 2026-08-09
 
 Both halves of #619, plans `33-08` (API) and `33-09` (storefront). The search box has always
 promised "Try 'jollof', 'vegan' **or your postcode**" and a postcode has always returned nothing:
