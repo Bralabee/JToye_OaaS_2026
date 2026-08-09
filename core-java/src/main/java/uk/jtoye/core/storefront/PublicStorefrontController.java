@@ -55,11 +55,48 @@ public class PublicStorefrontController {
         this.customerJwtVerifier = customerJwtVerifier;
     }
 
+    /**
+     * Distance search is ADDITIVE (33-06 / #460 link 5).
+     *
+     * <p>With no {@code lat}/{@code lon}/{@code radiusKm} this endpoint behaves exactly as it did
+     * before: name-ascending over every published shop, or the full-text search when {@code q} is
+     * present. That unlocated default is what the landing page and {@code /shop} depend on, so it
+     * is preserved rather than replaced — a distance sort applied unconditionally would empty both
+     * surfaces for every visitor who has not granted location.
+     *
+     * <p><b>Nothing is silently ignored.</b> A radius with no centre, one axis without the other,
+     * and text search combined with distance search are all client errors returning an RFC 7807
+     * typed 400. Accepting them and quietly dropping a parameter would tell the caller their filter
+     * applied when it did not — the same defect class as a silent clamp.
+     *
+     * <p><b>lat and lon are personal data</b> (UK GDPR / ASVS V9). They are validated and used, and
+     * they are never logged or persisted. Do not add them to a debug statement or an analytics
+     * payload here or downstream — see {@code PublicStorefrontService.listPublishedShopsNear}.
+     */
     @GetMapping("/shops")
-    @Operation(summary = "List published shops", description = "Browse available shops. Optionally filter by search query.")
+    @Operation(summary = "List published shops",
+            description = "Browse available shops. Optionally filter by search query, or order by "
+                    + "distance from a coordinate. Supplying 'lat' and 'lon' returns published shops "
+                    + "within 'radiusKm' (platform default when omitted, capped by the platform "
+                    + "maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode "
+                    + "centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied "
+                    + "together and cannot be combined with 'q'. With no coordinate the listing is "
+                    + "unchanged: name-ascending, and 'distanceKm' is null.")
     public Page<PublicShopDto> listShops(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lon,
+            @RequestParam(required = false) Double radiusKm,
             @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable) {
+        boolean located = lat != null || lon != null || radiusKm != null;
+        if (located) {
+            if (q != null && !q.isBlank()) {
+                throw new IllegalArgumentException(
+                        "'q' cannot be combined with a distance search ('lat'/'lon'/'radiusKm'); "
+                                + "ranked text search and distance ordering are separate results");
+            }
+            return storefrontService.listPublishedShopsNear(lat, lon, radiusKm, pageable);
+        }
         if (q != null && !q.isBlank()) {
             return storefrontService.searchPublishedShops(q.trim(), pageable);
         }

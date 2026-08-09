@@ -76,7 +76,10 @@ class PublicStorefrontServiceTest {
             return null;
         }).when(hibernateSession).doWork(any());
 
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository);
+        // 33-06: the last two arguments are jtoye.geo.default-radius-km / max-radius-km, injected
+        // by @Value in production. The values here mirror application.yml's declared defaults so
+        // this unit test exercises the same ceiling behaviour the running service has.
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, 5.0, 50.0);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();

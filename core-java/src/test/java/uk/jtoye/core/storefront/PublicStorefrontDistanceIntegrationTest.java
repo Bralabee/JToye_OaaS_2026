@@ -31,6 +31,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * The distance query — #460 link 5, against a real Postgres.
@@ -401,5 +404,131 @@ class PublicStorefrontDistanceIntegrationTest {
                         + "hand-built PageImpl rewrite the total it was handed")
                 .isEqualTo(3);
         assertThat(secondPage.getTotalPages()).isEqualTo(2);
+    }
+
+    // =====================================================================================
+    // The endpoint — additive by construction, validated at the trust boundary
+    // =====================================================================================
+
+    @Test
+    @DisplayName("with NO coordinate the listing is exactly what it was: name-ascending, distanceKm null")
+    void unlocatedListingIsUnchanged() throws Exception {
+        mockMvc.perform(get("/public/shops").param("size", "50"))
+                .andExpect(status().isOk())
+                // Six published shops, name-ascending. The unpublished one is absent as before.
+                .andExpect(jsonPath("$.totalElements").value(6))
+                .andExpect(jsonPath("$.content[0].slug").value(ACOS_TRAP))
+                .andExpect(jsonPath("$.content[1].slug").value(CORNER))
+                .andExpect(jsonPath("$.content[2].slug").value(FAR))
+                .andExpect(jsonPath("$.content[3].slug").value(MID))
+                .andExpect(jsonPath("$.content[4].slug").value(NEAR))
+                .andExpect(jsonPath("$.content[5].slug").value(NULLCO))
+                // NULLCO is here: a shop with no coordinate must keep its storefront listing.
+                .andExpect(jsonPath("$.content[0].distanceKm").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("with a coordinate the endpoint returns distance-ordered results carrying distanceKm")
+    void locatedListingIsOrderedAndCarriesDistance() throws Exception {
+        mockMvc.perform(get("/public/shops")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON)))
+                .andExpect(status().isOk())
+                // No radiusKm supplied, so the platform default (jtoye.geo.default-radius-km = 5)
+                // is in force. If that key were not being read, CORNER at ~6.36 km would appear
+                // and this assertion would fail — which is what makes "read from config" testable.
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content[0].slug").value(NEAR))
+                .andExpect(jsonPath("$.content[1].slug").value(MID))
+                .andExpect(jsonPath("$.content[2].slug").value(FAR))
+                .andExpect(jsonPath("$.content[0].distanceKm").isNumber())
+                // The full DTO, not a reduced one: a located result must not silently lose fields.
+                .andExpect(jsonPath("$.content[0].address").value("1 Fixture Street, London"));
+    }
+
+    @Test
+    @DisplayName("an explicit radius widens the result set — the parameter is honoured, not decorative")
+    void explicitRadiusWidensTheResultSet() throws Exception {
+        mockMvc.perform(get("/public/shops")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON))
+                        .param("radiusKm", "8"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.content[3].slug").value(CORNER));
+    }
+
+    /**
+     * Every rejection below must be an RFC 7807 typed 400 — never a 500, never a silent clamp, and
+     * never a quietly-dropped parameter. {@code $.type} is asserted, not just the status, because
+     * a machine consumer routes on the type and a bare 400 tells it nothing.
+     */
+    @Test
+    @DisplayName("out-of-range and incoherent parameters are typed 400s, not 500s and not clamps")
+    void invalidParametersAreTypedBadRequests() throws Exception {
+        String[][] cases = {
+                {"one axis without the other", "lat", String.valueOf(P_LAT)},
+                {"the other axis alone", "lon", String.valueOf(P_LON)},
+                {"a radius with no centre", "radiusKm", "5"},
+        };
+        for (String[] c : cases) {
+            mockMvc.perform(get("/public/shops").param(c[1], c[2]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
+        }
+
+        // Out of range on each axis, both signs.
+        for (String badLat : new String[]{"91", "-91", "999", "NaN"}) {
+            mockMvc.perform(get("/public/shops").param("lat", badLat).param("lon", "0"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
+        }
+        for (String badLon : new String[]{"181", "-181", "NaN"}) {
+            mockMvc.perform(get("/public/shops").param("lat", "0").param("lon", badLon))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
+        }
+
+        // Radius: zero, negative, and past the configured ceiling (jtoye.geo.max-radius-km = 50).
+        for (String badRadius : new String[]{"0", "-1", "51", "100000"}) {
+            mockMvc.perform(get("/public/shops")
+                            .param("lat", String.valueOf(P_LAT))
+                            .param("lon", String.valueOf(P_LON))
+                            .param("radiusKm", badRadius))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
+        }
+
+        // Text search combined with distance search: refused rather than one of them ignored.
+        mockMvc.perform(get("/public/shops")
+                        .param("q", "jollof")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
+
+        // A non-numeric coordinate is a bind failure, still a typed 400 and still not a 500.
+        mockMvc.perform(get("/public/shops").param("lat", "north").param("lon", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/type-mismatch"));
+    }
+
+    @Test
+    @DisplayName("the radius ceiling is refused, never clamped — 51 km must not silently become 50")
+    void aRadiusPastTheCeilingIsRefusedNotClamped() throws Exception {
+        // The clamp would be invisible from a status code alone: it would return 200 with the
+        // 50 km result set and the caller would believe their 51 km filter applied. So the
+        // assertion is on the REJECTION, paired with the largest accepted value succeeding.
+        mockMvc.perform(get("/public/shops")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON))
+                        .param("radiusKm", "50"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/public/shops")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON))
+                        .param("radiusKm", "50.0001"))
+                .andExpect(status().isBadRequest());
     }
 }
