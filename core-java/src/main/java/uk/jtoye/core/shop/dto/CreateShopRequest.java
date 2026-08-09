@@ -1,5 +1,7 @@
 package uk.jtoye.core.shop.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -45,6 +47,23 @@ public class CreateShopRequest {
     @DecimalMin(value = "-180.0", message = "longitude must be between -180 and 180")
     @DecimalMax(value = "180.0", message = "longitude must be between -180 and 180")
     private Double longitude;
+
+    // WR-02 (phase-33 code review): the two axes above are range-validated
+    // INDEPENDENTLY, so a request carrying only one of them validated clean — and on
+    // update the IGNORE-null ShopMapper then merged the client's half onto the entity
+    // next to the PERSISTED other half, publishing a coordinate nobody supplied into
+    // public distance ranking. A single axis is not a coordinate; the pair is atomic.
+    //
+    // @JsonIgnore keeps this derived property out of Jackson (de)serialisation AND
+    // out of the springdoc request schema, so the committed OpenAPI snapshot is
+    // unchanged by the constraint — the wire contract gains a validation rule, not a
+    // field. The violation surfaces as the usual RFC 7807 typed 400 with
+    // `errors.coordinatePaired` naming the rule (agent-readiness contract).
+    @JsonIgnore
+    @AssertTrue(message = "latitude and longitude must be supplied together")
+    public boolean isCoordinatePaired() {
+        return (latitude == null) == (longitude == null);
+    }
     private Map<String, String> openingHours;
     private String deliveryInfo;
     private Long minimumOrderPennies;
