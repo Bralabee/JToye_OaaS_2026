@@ -30,6 +30,25 @@ public class PublicShopDto {
      */
     private boolean acceptsCardPayments;
 
+    /**
+     * Great-circle distance in kilometres from the coordinate the caller supplied to this shop's
+     * stored coordinate (33-06 / #460 link 5).
+     *
+     * <p><b>Null when the caller supplied no coordinate</b> — every listing that is not a distance
+     * search, plus {@code GET /shops/{slug}} and everything derived from it. Nullable rather than
+     * absent so the OpenAPI contract has ONE shape for {@code PublicShopDto} and a machine consumer
+     * does not have to discover a second one at runtime.
+     *
+     * <p>This is the SAME number the ordering used: it comes back from the SQL expression in
+     * {@code ShopRepository.findPublishedNear} and is never recomputed in Java. Recomputing it
+     * would allow the sort and the label to drift, producing a correctly-ordered list whose
+     * printed distances are not monotonic.
+     *
+     * <p>Accuracy is bounded by the source data, not by this field: coordinates are postcode
+     * centroids (~100 m, UK/GB only), never door-level.
+     */
+    private Double distanceKm;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -64,4 +83,6 @@ public class PublicShopDto {
     public void setTags(String tags) { this.tags = tags; }
     public boolean isAcceptsCardPayments() { return acceptsCardPayments; }
     public void setAcceptsCardPayments(boolean acceptsCardPayments) { this.acceptsCardPayments = acceptsCardPayments; }
+    public Double getDistanceKm() { return distanceKm; }
+    public void setDistanceKm(Double distanceKm) { this.distanceKm = distanceKm; }
 }

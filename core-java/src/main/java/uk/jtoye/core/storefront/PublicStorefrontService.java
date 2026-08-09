@@ -8,10 +8,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
+import uk.jtoye.core.geo.GeoBounds;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -29,6 +31,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
 import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
@@ -70,11 +73,28 @@ public class PublicStorefrontService {
     private final ShopPromotionRepository promotionRepository;
     private final ShopAnnouncementRepository announcementRepository;
 
+    /**
+     * Platform default and ceiling for the distance-search radius, READ from {@code jtoye.geo.*}
+     * in {@code application.yml} — that block is owned and declared by 33-02, and this class only
+     * consumes it. Q-2 settled the radius as a query parameter with a platform default, so both
+     * values have to be operator-tunable without a code edit; a literal in this file would defeat
+     * the decision.
+     *
+     * <p>Deliberately NO inline {@code :default} on either placeholder. An inline default makes a
+     * missing key invisible — the recorded failure mode where eight outbox tunables were bound by
+     * {@code @Value} defaults, appeared in no yml, and could only be changed by rebuilding the
+     * image. If the key goes missing the context must fail to start, loudly.
+     */
+    private final double defaultRadiusKm;
+    private final double maxRadiusKm;
+
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
                                    EntityManager entityManager, PaymentService paymentService,
                                    ShopPromotionRepository promotionRepository,
-                                   ShopAnnouncementRepository announcementRepository) {
+                                   ShopAnnouncementRepository announcementRepository,
+                                   @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
+                                   @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
@@ -83,6 +103,8 @@ public class PublicStorefrontService {
         this.paymentService = paymentService;
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
+        this.defaultRadiusKm = defaultRadiusKm;
+        this.maxRadiusKm = maxRadiusKm;
     }
 
     /**
@@ -170,6 +192,103 @@ public class PublicStorefrontService {
         log.debug("Listing published shops, page {}", pageable.getPageNumber());
         return shopRepository.findByPublishedTrue(pageable)
                 .map(this::toPublicShopDto);
+    }
+
+    /**
+     * List published shops ordered by real distance from a caller-supplied coordinate, filtered to
+     * a radius (33-06 / #460 link 5).
+     *
+     * <h2>Validation is an ASVS V5 control, not a formality</h2>
+     *
+     * <p>These are new UNAUTHENTICATED numeric parameters that cross into a native SQL query.
+     * Every one is range-checked here, before {@link GeoBounds} and before the repository, and an
+     * out-of-range value is an {@link IllegalArgumentException} — which {@code GlobalExceptionHandler}
+     * renders as an RFC 7807 {@code https://jtoye.uk/errors/invalid-argument} 400. Never a 500, and
+     * never a silent clamp: a caller who asks for 500 km and is quietly given 50 has been told
+     * something false about the results.
+     *
+     * <p>The finiteness check is not decoration. {@code lat=NaN} binds successfully and passes both
+     * {@code < -90} and {@code > 90}, so the range comparisons alone would let it through to the
+     * query.
+     *
+     * <h2>PRIVACY — do not log lat/lon (T-33-06-04, ASVS V9)</h2>
+     *
+     * <p>A precise device coordinate is personal data under UK GDPR. It is not written to any log
+     * here, is not persisted anywhere, and must not be added to a debug statement, an analytics
+     * payload or an access-log query string later. The debug line below deliberately records the
+     * radius and the page only — those are not personal data. Note that the exception messages
+     * raised here also name the permitted RANGE and never echo the value supplied, because a
+     * {@code detail} string travels into client logs and error trackers.
+     *
+     * <h2>Accuracy, stated so a caller does not over-read it</h2>
+     *
+     * <p>Shop coordinates are postcode centroids (~100 m) from OS Code-Point Open, which is GB-only.
+     * A Northern Ireland shop keeps its storefront and is permanently absent from these results;
+     * that is a licence-containment choice recorded in 33-02's SOURCE.md, not a defect.
+     */
+    public Page<PublicShopDto> listPublishedShopsNear(Double latitude, Double longitude,
+                                                     Double radiusKm, Pageable pageable) {
+        if (latitude == null || longitude == null) {
+            throw new IllegalArgumentException(
+                    "'lat' and 'lon' must be supplied together to search by distance");
+        }
+        if (!Double.isFinite(latitude) || latitude < -90.0 || latitude > 90.0) {
+            throw new IllegalArgumentException("'lat' must be a number between -90 and 90");
+        }
+        if (!Double.isFinite(longitude) || longitude < -180.0 || longitude > 180.0) {
+            throw new IllegalArgumentException("'lon' must be a number between -180 and 180");
+        }
+
+        double radius = radiusKm != null ? radiusKm : defaultRadiusKm;
+        if (!Double.isFinite(radius) || radius <= 0.0) {
+            throw new IllegalArgumentException("'radiusKm' must be a number greater than 0");
+        }
+        if (radius > maxRadiusKm) {
+            // Named ceiling, no clamp. The caller must learn that their request was refused.
+            throw new IllegalArgumentException(
+                    "'radiusKm' must not exceed " + maxRadiusKm);
+        }
+
+        // The box is computed HERE and passed as four more named parameters, which is what keeps
+        // the prefilter leakproof and index-eligible under the RLS barrier — see the comment on
+        // ShopRepository.findPublishedNear.
+        GeoBounds box = GeoBounds.boxAround(latitude, longitude, radius);
+
+        // Unsorted on purpose: the query owns its ordering (nearest first, id as tiebreak) and a
+        // client-supplied Sort must never reach a native ORDER BY (T-33-06-02).
+        Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+        log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
+                radius, unsorted.getPageNumber());
+
+        Page<ShopWithDistance> page = shopRepository.findPublishedNear(
+                latitude, longitude,
+                box.minLatitude(), box.maxLatitude(), box.minLongitude(), box.maxLongitude(),
+                radius, unsorted);
+
+        // One extra query for the page's shops, then the SAME toPublicShopDto the unlocated
+        // listing uses — so a located result differs from an unlocated one by exactly one field.
+        // The projection cannot carry shops.opening_hours (jsonb); see ShopWithDistance.
+        Map<UUID, Shop> byId = shopRepository.findAllById(
+                        page.getContent().stream().map(ShopWithDistance::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(Shop::getId, s -> s));
+
+        // Page.map, never `new PageImpl<>(content, pageable, total)`: the hand-built form REWRITES
+        // the total it is handed whenever offset + size exceeds it (recorded trap).
+        return page.map(projection -> {
+            Shop shop = byId.get(projection.getId());
+            if (shop == null) {
+                // Only reachable if a row disappeared between the two queries. Return what the
+                // projection knows rather than a null element in the page.
+                PublicShopDto sparse = new PublicShopDto();
+                sparse.setSlug(projection.getSlug());
+                sparse.setDistanceKm(projection.getDistanceKm());
+                return sparse;
+            }
+            PublicShopDto dto = toPublicShopDto(shop);
+            dto.setDistanceKm(projection.getDistanceKm());
+            return dto;
+        });
     }
 
     /**
