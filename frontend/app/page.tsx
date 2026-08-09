@@ -13,8 +13,7 @@ import { PublicShell } from "@/components/public/public-shell"
 import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
-import { DishScroller } from "@/components/marketing/dish-scroller"
-import { ShopCard } from "@/components/marketing/shop-card"
+import { NearYouRow } from "@/components/marketing/near-you-row"
 import { loadShopList } from "@/lib/storefront-server"
 import { headers } from "next/headers"
 import { resolvePublicOrigin } from "@/lib/public-origin"
@@ -111,8 +110,18 @@ const heroTiles = [
  * The heading makes no claim about where the visitor is. It deliberately does not
  * say "Open now" either: `lib/opening-hours.ts:74` returns true when hours are
  * null or empty, so an openness claim would be a NEW fiction for every shop with
- * no hours data — exactly what #544 exists to stop. Device location arrives in
- * 33-07; this page tells the truth without a coordinate.
+ * no hours data — exactly what #544 exists to stop.
+ *
+ * ── DEVICE LOCATION (33-07) ───────────────────────────────────────────────────
+ *
+ * The row's markup moved into `components/marketing/near-you-row.tsx`, a client
+ * island, so that a visitor who explicitly asks can have the same shops
+ * re-ordered by real distance. What did NOT move is the fetch: `loadShopList`
+ * still runs HERE, on the server, and the island receives the result as a prop —
+ * so the real names are still in the initial HTML before any JavaScript, which
+ * is the whole point of #507. The island's no-coordinate state renders exactly
+ * what this section rendered before it existed, heading included, and only ever
+ * says "near you" while it genuinely holds a coordinate.
  */
 export default async function Home() {
   // Server-side, at request time, so the real names are in the INITIAL HTML —
@@ -242,27 +251,19 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* ── The kitchen row — REAL published shops (#544) ───────────────── */}
+        {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
         {shops.length > 0 && (
           <section className="border-t border-cream-100 bg-white">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
-              <div className="flex items-baseline justify-between">
-                {/* No locality claim: nothing on this page knows where the
-                    visitor is. 33-07 adds the located row as a separate,
-                    permission-gated surface. */}
-                <h2 className="text-2xl font-bold text-oxblood">Kitchens on J&apos;Toye</h2>
-                <Link href="/shop" className="text-sm font-bold text-amber-700 hover:text-amber-800">
-                  See all kitchens →
-                </Link>
-              </div>
-              <div className="mt-5">
-                {/* Label byte-identical — see the docblock. */}
-                <DishScroller label="Dishes cooking near you">
-                  {shops.map((shop) => (
-                    <ShopCard key={shop.slug} shop={shop} />
-                  ))}
-                </DishScroller>
-              </div>
+              {/* The row's heading, its scroller and its cards now live in a
+                  client island so that a visitor who GRANTS location gets the
+                  same shops re-ordered by real distance (33-07). The shops are
+                  still fetched HERE, on the server, and passed down — so the
+                  real names are in the initial HTML exactly as before, and the
+                  island's no-coordinate state is byte-for-byte what 33-03
+                  shipped. The heading it renders without a coordinate makes no
+                  locality claim; see near-you-row.tsx for the three states. */}
+              <NearYouRow serverShops={shops} />
             </div>
           </section>
         )}

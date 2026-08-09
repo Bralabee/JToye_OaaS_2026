@@ -19,6 +19,17 @@ export interface PublicShop {
   // Optional for old-backend tolerance: when absent, checkout renders no
   // "How you'll pay" section (the pre-fix behaviour).
   acceptsCardPayments?: boolean
+  /**
+   * Kilometres from the coordinate the caller supplied — 33-06's
+   * `GET /public/shops?lat=&lon=&radiusKm=`. NULL on every unlocated response,
+   * and absent entirely from an older backend, hence optional-AND-nullable:
+   * the same old-backend tolerance the `acceptsCardPayments` line above states.
+   *
+   * It is the number the ORDERING used, computed in SQL. Never recompute it in
+   * the browser: a second haversine is a second answer, and the card would then
+   * be able to disagree with the position it was given in the list.
+   */
+  distanceKm?: number | null
 }
 
 import type { MediaAsset } from "@/types/api"
