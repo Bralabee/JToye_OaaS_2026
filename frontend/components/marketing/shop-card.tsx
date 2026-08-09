@@ -41,6 +41,20 @@ function pounds(pennies: number): string {
 }
 
 /**
+ * Distance, as the database computed it (33-06 `distanceKm`) — never recomputed
+ * here, so the figure on the card is always the figure the ordering used.
+ *
+ * One decimal below 10 km, whole kilometres above. Deliberately NOT metres:
+ * coordinates are POSTCODE CENTROIDS accurate to about 100 m (33-02's D-1
+ * trade-off), so "270 m" would advertise a precision the data does not have —
+ * the same class of invented certainty the invented ratings this card removed
+ * were. "0.3 km" is honest at that resolution.
+ */
+export function formatDistanceKm(km: number): string {
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`
+}
+
+/**
  * `tags` arrives as a single free-text field, not an array. Split, trim and cap
  * so one vendor with a long tag list cannot set the row's card height for
  * everyone — an uneven row is the CLS risk this card exists to avoid.
@@ -75,7 +89,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
           logo arrives. Phase 24's D-07 precedent, and the landing route's CLS
           budget in e2e/landing-webperf.spec.ts depends on it — the emoji-to-
           real-image swap is exactly where layout shift enters. */}
-      <div className="h-28 w-full overflow-hidden bg-cream">
+      <div className="relative h-28 w-full overflow-hidden bg-cream">
         <SafeImage
           src={shop.logoUrl}
           alt={`${shop.name} logo`}
@@ -83,6 +97,18 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
           height={LOGO_HEIGHT}
           className="h-28 w-full object-cover"
         />
+        {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
+            decision rather than a styling one. 33-07 swaps this row's contents
+            after a permission grant; a distance rendered in the flow would add
+            a line to every card and push everything below the row down. Out of
+            flow, the located and unlocated cards are byte-identical in height,
+            so the upgrade cannot shift the page at all. */}
+        {shop.distanceKm != null && (
+          <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
+            {formatDistanceKm(shop.distanceKm)}
+            <span className="sr-only"> away</span>
+          </span>
+        )}
       </div>
 
       <div className="p-3.5">
