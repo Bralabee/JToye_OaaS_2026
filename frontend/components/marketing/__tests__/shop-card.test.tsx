@@ -61,6 +61,35 @@ describe("ShopCard", () => {
     expect(screen.queryByText(/£0\.00 delivery/)).toBeNull()
   })
 
+  it("renders NO delivery line when the wire fee is null — never '£0.00 delivery' (review WR-04)", () => {
+    // PublicShopDto.deliveryFeePennies is a nullable Long on the backend and
+    // CreateShopRequest has no delivery-fee field at all, so an API-created shop
+    // genuinely serialises null. Pre-fix, null / 100 coerced to 0 and the card
+    // printed "£0.00 delivery" — the exact string the zero-fee test above
+    // declares must never appear — while null === 0 dodged the "Free delivery"
+    // branch. Run against the unfixed component this arm FAILS by finding that
+    // string; the run is recorded in 33-REVIEW-FIX.md as the broken direction.
+    render(<ShopCard shop={makeShop({ deliveryFeePennies: null })} />)
+    expect(screen.queryByText(/£0\.00 delivery/)).toBeNull()
+    // Not renamed, not reworded — absent. An unknown fee is also not FREE:
+    // that claim needs a zero from the wire, not a null.
+    expect(screen.queryByText(/delivery/i)).toBeNull()
+    // The minimum is independently known and still prints.
+    expect(screen.getByText(/min £15\.00/)).toBeTruthy()
+  })
+
+  it("renders NO minimum line for a null or zero wire minimum — never 'min £0.00' (review WR-04)", () => {
+    render(<ShopCard shop={makeShop({ minimumOrderPennies: null })} />)
+    expect(screen.queryByText(/min £/)).toBeNull()
+    // Zero is a KNOWN value meaning "no minimum" — printing "min £0.00" would
+    // state a constraint that does not exist, so it renders nothing too (the
+    // discovery listing already hides a zero minimum; the card now agrees).
+    render(<ShopCard shop={makeShop({ minimumOrderPennies: 0 })} />)
+    expect(screen.queryByText(/min £0\.00/)).toBeNull()
+    // Positive control for both queries: the real-figures test above finds
+    // "min £15.00" with the same matcher shape.
+  })
+
   it("prints NO rating and NO FHRS badge — neither field exists on PublicShop", () => {
     render(<ShopCard shop={makeShop()} />)
 

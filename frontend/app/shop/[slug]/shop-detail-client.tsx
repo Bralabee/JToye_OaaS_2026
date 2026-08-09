@@ -554,12 +554,15 @@ export function ShopDetailClient({
                 {shop.email}
               </a>
             )}
-            {shop.minimumOrderPennies > 0 && (
+            {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
               <span className="font-medium text-slate-600">
                 Min order {formatPrice(shop.minimumOrderPennies)}
               </span>
             )}
-            {shop.deliveryFeePennies > 0 ? (
+            {/* A null fee falls through to "Free delivery" — pre-existing
+                behaviour on this surface, kept as-is when the wire type went
+                nullable (review WR-04 fixed the landing card). */}
+            {shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
               <span className="text-slate-600">
                 Delivery {formatPrice(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
@@ -756,8 +759,10 @@ export function ShopDetailClient({
         )}
       </div>
 
-      {/* Floating cart bar */}
-      <FloatingCartBar slug={slug} minimumOrderPennies={shop.minimumOrderPennies} />
+      {/* Floating cart bar. A null wire minimum is coerced to 0 — "no minimum"
+          — which is what the > 0 gates below already made of it (review WR-04
+          made the nullability visible to the compiler; behaviour unchanged). */}
+      <FloatingCartBar slug={slug} minimumOrderPennies={shop.minimumOrderPennies ?? 0} />
     </div>
   )
 }

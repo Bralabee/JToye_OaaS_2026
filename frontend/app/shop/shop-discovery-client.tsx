@@ -107,7 +107,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
                 <span className="truncate">{shop.address}</span>
               </span>
             )}
-            {shop.minimumOrderPennies > 0 && (
+            {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
               <span className="whitespace-nowrap font-medium text-slate-600">
                 Min {formatPennies(shop.minimumOrderPennies)}
               </span>
@@ -115,7 +115,11 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           </div>
 
           <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
-            {shop.deliveryFeePennies > 0 ? (
+            {/* A null fee falls through to "Free delivery" here — pre-existing
+                behaviour on this surface, kept as-is when the wire type went
+                nullable (review WR-04 fixed the landing card; this listing's
+                null-as-free rendering is its own recorded question). */}
+            {shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
               <span className="text-slate-600">
                 Delivery {formatPennies(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
