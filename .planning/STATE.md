@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 33-06-PLAN.md — **#460 link 5 closed: GET /public/shops orders by real distance on the delivered runtime.** Phase 33 is 7/8; 33-07 is next and is blocked on nothing in code, but CA-2 (`geolocation=()` on every route) must be lifted before a browser can supply a coordinate. Hand-edited: this field said "Completed 26-09-PLAN.md" until 33-06, three phases stale.
-last_updated: "2026-08-09T07:31:17.195Z"
+stopped_at: Completed 33-07-PLAN.md — **PHASE 33 IS 8/8 AND CUST-01 IS CLOSED.** The located journey ships: a customer who grants location sees the real published kitchens reordered by a distance PostgreSQL computed, in MILES, under a heading that only claims proximity when a coordinate is held, and the shops the radius filter removed are disclosed rather than dropped. Human gate APPROVED — *"Walkthrough was a success"* — with two corrections (miles for both the distance and the radius), both shipped. The phase's designed doc-gate red is closed: `check-doc-metrics` and `check-claims` are both green for the first time since wave 2. NOT closed and recorded as such: CUST-02 (no adjudicator is named for `MANUAL_REVIEW`) and CUST-04 (unknown, never measured). Two search findings filed rather than built: #619 and #207.
+last_updated: "2026-08-09T09:59:47.000Z"
 last_activity: 2026-08-09
 progress:
   total_phases: 14
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 64
-  completed_plans: 63
-  percent: 50
+  completed_plans: 64
+  percent: 57
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: **33 (the-consumer-product) — EXECUTING, 7/8 plans complete (33-00..33-06). Wave 6 (33-07) is next and is unblocked.**
+Phase: **33 (the-consumer-product) — ALL 8 PLANS EXECUTED (33-00..33-07). Awaiting phase verification.**
 *(The `Plan: 1 of 8` line that stood here on 2026-08-09 was wrong and is deleted — it was written by
 one of the two verbs named below and would have sent a fresh session back to the start of a phase
 that is seven eighths done. The rest of that same uncommitted rewrite — `stopped_at`,
@@ -81,6 +81,71 @@ rather than silently reverted; it is not this plan's work.)*
 > route: an empty allowlist that denies the API to the document's own origin before any prompt, and
 > presents to a user and a tester identically to a denial. The endpoint is ready; the browser
 > cannot obtain a coordinate to send it.
+>
+> **↑ CORRECTED BY 33-07 (2026-08-09), left standing rather than rewritten.** CA-2 was already
+> lifted by **33-03**, which set `geolocation=(self)`; 33-06 read a runtime that had not yet been
+> rebuilt with it. Measured on the live response before anything else was debugged, exactly as both
+> plans instruct: `Permissions-Policy: camera=(), microphone=(), geolocation=(self),
+> browsing-topics=()`. The paragraph above is kept because a stale blocker corrected in place looks
+> identical to one that never existed, and the reason it was wrong — reading a runtime older than
+> the branch — is the phase's own recurring lesson.
+
+> **33-07 COMPLETE (2026-08-09) — PHASE 33 IS 8/8 AND #460's LAST LINK IS CLOSED.** The landing row
+> now upgrades from the server-rendered list to a distance-ordered one once the browser returns a
+> coordinate, and the heading is derived from state: `Kitchens on J'Toye` with no coordinate **and
+> after a denial**, `Kitchens near you` with results, and `No kitchens within 3.1 miles — here is
+> everything on J'Toye` when nothing is in range. The third state is the honest one, and it is not
+> optional: showing London shops under a "near you" heading to somebody in Manchester is the class
+> of untruth #544 exists to stop.
+>
+> **The human gate APPROVED it — *"Walkthrough was a success"* — with corrections.** Distances and
+> the radius must read in **MILES**. Shipped in `159b135f`: the API contract stays metric
+> (`radiusKm`, `distanceKm`, `jtoye.geo.*` and 33-06's committed OpenAPI snapshot are untouched) and
+> the conversion happens at render, in ONE module, so a break arm on the constant is decisive. The
+> radius reads **3.1 miles**, not a tidier "3 miles" — 3 miles is 4.83 km, a radius nothing applied.
+> Break arms, restores verified by `git hash-object`, clean direction asserted LAST: setting the
+> factor to 1 reds **12 tests** (the card printed `3.0 miles`, the copy said `further than 5.0
+> miles`); putting km back in the visible copy reds **2**.
+>
+> **Proven against the REBUILT runtime, by content.** Frontend rebuilt and force-recreated;
+> `check-runtime-freshness` rc=0, 4/4 FRESH. Read out of the 17 chunks the browser actually
+> downloads: the minified factor `.621371` present **1**, `" miles"` **2**, and the control — any
+> kilometre label — **0**. Playwright **20/20** green on both projects afterwards, never before.
+>
+> **Web performance re-measured POST-GRANT rather than inherited from 33-03's server-rendered pass**,
+> because the refetch-and-re-render is the larger risk: LCP 748 ms, CLS 0.1793 (identical to the
+> recorded pre-existing baseline), max **vertical** shift **0.00 px**, the "How it works" anchor
+> **0.00 px**, client JS **959,032** against a consumed ceiling of 973,833. The strict post-grant
+> shift bound had to be **replaced, not raised** — its obvious form forbids the feature, since the
+> only entry is a card moving 120 px HORIZONTALLY with its height unchanged, which is the reorder
+> the visitor asked for.
+>
+> **This plan owned the phase's designed doc-gate red and closed it.** `docs-freshness` regenerated
+> BY SCRIPT (2591 → **2628**), prose then hand-updated because the script does not touch prose;
+> `check-doc-metrics` **rc=0** (37 claims / 3 docs) and `check-claims` **rc=0** (43 / 5) for the
+> first time since wave 2. Jest **97 suites / 880 tests**, `npm run build` rc=0.
+>
+> **What did NOT close, deliberately visible.** CUST-02 stays unticked: the recorded decision
+> explains the non-build but **no adjudicator is named** for `MANUAL_REVIEW`, which is the
+> requirement's own second limb, and there is no cross-tenant operator identity to fall back on — a
+> vendor stuck there still reaches nobody. CUST-04 is **unknown, not clean**: out of scope per D-3
+> and never measured by any plan in this phase. Two findings from the walkthrough were filed rather
+> than built with the owner's agreement: **#619** (a customer postcode with no string match returns
+> 0 shops; the FTS path itself measured healthy — SE15 → 2, SE15 5BS → 1, jollof → 2) and **#207**
+> (semantic search, the open pgvector track).
+>
+> **Two product limitations recorded before they can be found as bugs:** coordinates are
+> postcode-centroid accurate (~100 m), not door-level; and coverage is **Great Britain only** — a
+> Northern Ireland vendor never geocodes, keeps their storefront, and is DISCLOSED by the exclusion
+> notice rather than vanishing from the primary discovery row.
+>
+> **Two control arms were themselves defective and were caught by running them.** `p:visible`
+> measured 1 on mobile and **0 on desktop** (hero steps are `autoAlpha: 0` until scrolled), so it
+> would have reported deliberately out-of-scope copy as DELETED on every desktop run; and
+> `getByRole("link", {name: /Peckham Jollof/i})` found nothing while the served HTML held the name
+> five times, because a link's accessible name is not computed from a wrapped `<article>` — that
+> absence would have read as "the excluded shop has vanished from the platform", the exact defect
+> the arm exists to detect. Both replaced.
 
 Prior: **27 (operational-maturity) — COMPLETE 7/7 (2026-07-29)**
 Milestone: **v2.3 — OPEN, and deliberately not closed.** Widened 2026-08-01 from Phases 21–26 to

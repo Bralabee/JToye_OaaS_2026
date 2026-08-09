@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 7/8 | In Progress | — |
+| 33. The Consumer Product | v2.3 | 8/8 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -759,7 +759,7 @@ Plans:
 
 **Wave 6** *(blocked on 33-03, 33-05, 33-06)*
 
-- [ ] 33-07-PLAN.md (Wave 6) — The located journey: gesture-gated client island, three states with the heading derived from state, **disclosure of published shops excluded for lack of coordinates**, deterministic granted/denied/far-away/exclusion Playwright arms, and the honest requirement close-out. `autonomous: false`
+- [x] 33-07-PLAN.md (Wave 6) — The located journey: gesture-gated client island, three states with the heading derived from state, **disclosure of published shops excluded for lack of coordinates**, deterministic granted/denied/far-away/exclusion Playwright arms, and the honest requirement close-out. `autonomous: false`
 
 > **Scope note.** These eight plans cover **#460, #544 and #432** only. #453 ships no code by D-2;
 > #452, #545, #546, #285 and #458's dispatch half are out of scope by D-3. **SC-4 is not planned** —
