@@ -1,5 +1,6 @@
 package uk.jtoye.core.storefront;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -9,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.shop.DiscountType;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
@@ -25,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -86,13 +89,74 @@ class PublicStorefrontControllerTest {
     void searchShops_delegatesToSearchMethod() throws Exception {
         PublicShopDto shop = buildShopDto("jollof-palace", "Jollof Palace");
         when(storefrontService.searchPublishedShops(eq("jollof"), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(shop)));
+                .thenReturn(new PublicStorefrontService.SearchOutcome(
+                        new PageImpl<>(List.of(shop)), SearchInterpretation.text()));
 
         mockMvc.perform(get("/public/shops").param("q", "jollof"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].name").value("Jollof Palace"));
 
         verify(storefrontService).searchPublishedShops(eq("jollof"), any(Pageable.class));
+    }
+
+    // --- 33-08 / #619: the server-asserted search interpretation ---
+
+    @Test
+    @DisplayName("CA-C(api): a text match carries the literal header 'text' — never a proximity claim")
+    void searchShops_textMatchDisclosesText() throws Exception {
+        PublicShopDto shop = buildShopDto("jollof-palace", "Jollof Palace");
+        when(storefrontService.searchPublishedShops(eq("jollof"), any(Pageable.class)))
+                .thenReturn(new PublicStorefrontService.SearchOutcome(
+                        new PageImpl<>(List.of(shop)), SearchInterpretation.text()));
+
+        mockMvc.perform(get("/public/shops").param("q", "jollof"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(SearchInterpretation.HEADER, "text"));
+    }
+
+    @Test
+    @DisplayName("a proximity match publishes the full grammar 33-09's parser consumes")
+    void searchShops_proximityMatchDisclosesTheGrammar() throws Exception {
+        PublicShopDto shop = buildShopDto("peckham-jollof", "Peckham Jollof Co.");
+        when(storefrontService.searchPublishedShops(eq("SE22"), any(Pageable.class)))
+                .thenReturn(new PublicStorefrontService.SearchOutcome(
+                        new PageImpl<>(List.of(shop)),
+                        SearchInterpretation.proximity("SE22", PostcodeGeocoder.Precision.DISTRICT, 5.0)));
+
+        mockMvc.perform(get("/public/shops").param("q", "SE22"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(SearchInterpretation.HEADER,
+                        "proximity; postcode=SE22; precision=district; radiusKm=5.0"));
+    }
+
+    @Test
+    @DisplayName("the plain listing and the lat/lon distance path carry NO interpretation header")
+    void unsearchedPathsCarryNoHeader() throws Exception {
+        PublicShopDto shop = buildShopDto("test-shop", "Test Shop");
+        when(storefrontService.listPublishedShops(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(shop)));
+        when(storefrontService.listPublishedShopsNear(any(), any(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(shop)));
+
+        // The header answers "how did you read my q?". With no q there is no question, and a
+        // header asserting "text" on a plain listing would be an answer to one nobody asked.
+        mockMvc.perform(get("/public/shops"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist(SearchInterpretation.HEADER));
+
+        mockMvc.perform(get("/public/shops").param("lat", "51.47").param("lon", "-0.07"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist(SearchInterpretation.HEADER));
+    }
+
+    @Test
+    @DisplayName("q combined with a coordinate is STILL a typed 400 — a derived coordinate is not a "
+            + "caller-supplied one")
+    void searchCombinedWithCoordinateIsStillATyped400() throws Exception {
+        mockMvc.perform(get("/public/shops")
+                        .param("q", "SE22").param("lat", "51.47").param("lon", "-0.07"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/invalid-argument"));
     }
 
     @Test

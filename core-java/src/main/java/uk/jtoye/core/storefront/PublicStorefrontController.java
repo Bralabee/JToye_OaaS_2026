@@ -98,7 +98,7 @@ public class PublicStorefrontController {
             return storefrontService.listPublishedShopsNear(lat, lon, radiusKm, pageable);
         }
         if (q != null && !q.isBlank()) {
-            return storefrontService.searchPublishedShops(q.trim(), pageable);
+            return storefrontService.searchPublishedShops(q.trim(), pageable).page();
         }
         return storefrontService.listPublishedShops(pageable);
     }

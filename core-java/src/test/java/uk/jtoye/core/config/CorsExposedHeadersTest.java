@@ -163,6 +163,63 @@ class CorsExposedHeadersTest {
         assertThat(expression).contains("Authorization").contains("Content-Type");
     }
 
+    // --- 33-08 / #619 -----------------------------------------------------------------
+    //
+    // W-5: these live in their OWN methods and deliberately do NOT extend
+    // shippedDefaultNamesAllFourHeaders. That method is named and documented for #412's four
+    // rate-limit headers; widening it would blur what it guards and make a future failure
+    // ambiguous about which regression fired.
+
+    @Test
+    @DisplayName("33-08: the SHIPPED default also names X-Search-Interpretation")
+    void shippedDefaultAlsoNamesSearchInterpretationHeader() throws Exception {
+        // Same source of truth as #412's guard — application.yml, not the @Value fallback,
+        // because the yml defines the key and therefore wins at runtime.
+        Map<String, Object> yaml;
+        try (InputStream in = new ClassPathResource("application.yml").getInputStream()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> firstDocument = (Map<String, Object>) new Yaml().loadAll(in).iterator().next();
+            yaml = firstDocument;
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cors = (Map<String, Object>) yaml.get("cors");
+        assertThat(cors).as("cors block present in application.yml").isNotNull();
+
+        String expression = String.valueOf(cors.get("exposed-headers"));
+        assertThat(expression)
+                .as("must stay env-overridable, not a bare literal")
+                .startsWith("${CORS_EXPOSED_HEADERS:");
+        assertThat(expression)
+                .as("shipped default must name the search-interpretation header")
+                .contains("X-Search-Interpretation");
+    }
+
+    @Test
+    @DisplayName("33-08: an actual cross-origin response exposes X-Search-Interpretation to script")
+    void actualResponseExposesSearchInterpretationHeader() throws Exception {
+        // The yml assertion above proves the CONFIGURED name. This proves the filter emits it —
+        // the same distinction #412 turned on, where the header was genuinely set and genuinely
+        // invisible to every browser. Whether a real browser then hands it to script is 33-09's
+        // CA-H; neither this test nor curl can answer that.
+        CorsFilter shipped = buildFilter(
+                "Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,"
+                        + "X-RateLimit-Reset,X-Search-Interpretation");
+
+        assertThat(exposedNames(actualRequest(shipped))).contains("x-search-interpretation");
+    }
+
+    @Test
+    @DisplayName("33-08 fail-direction: the pre-33-08 allowlist FAILS the same assertion")
+    void pre3308AllowlistOmitsSearchInterpretationHeader() throws Exception {
+        // The exact list that shipped before this change. Without this arm the assertion above
+        // could not be shown to fail, and #412's whole lesson is that this class of header is
+        // invisible until something looks for its absence.
+        assertThat(exposedNames(actualRequest(filter)))
+                .as("the #412-era allowlist must NOT already contain the new name")
+                .doesNotContain("x-search-interpretation");
+    }
+
     @Test
     @DisplayName("#412: the allowlist is config-injected, not hardcoded")
     void allowlistIsConfigurable() throws Exception {

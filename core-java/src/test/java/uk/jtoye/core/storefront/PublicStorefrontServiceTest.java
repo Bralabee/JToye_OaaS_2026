@@ -5,6 +5,7 @@ import org.hibernate.Session;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -16,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
@@ -32,6 +34,7 @@ import uk.jtoye.core.shop.ShopAnnouncement;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
 import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.*;
 
 import java.lang.reflect.Field;
@@ -39,6 +42,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +63,7 @@ class PublicStorefrontServiceTest {
     @Mock private PaymentService paymentService;
     @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
     @Mock private ShopAnnouncementRepository announcementRepository;
+    @Mock private PostcodeGeocoder postcodeGeocoder;
 
     private PublicStorefrontService service;
 
@@ -79,7 +84,9 @@ class PublicStorefrontServiceTest {
         // 33-06: the last two arguments are jtoye.geo.default-radius-km / max-radius-km, injected
         // by @Value in production. The values here mirror application.yml's declared defaults so
         // this unit test exercises the same ceiling behaviour the running service has.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, 5.0, 50.0);
+        // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
+        // tiers return empty, so most arms in this file never touch it.
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, postcodeGeocoder, 5.0, 50.0);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -817,5 +824,223 @@ class PublicStorefrontServiceTest {
                 () -> service.resolvePublicShopForSlug("missing-slug"));
         assertTrue(TenantContext.get().isEmpty(),
                 "TenantContext must remain empty when slug is unknown");
+    }
+
+    // =====================================================================================
+    // 33-08 / #619 — the third search tier and the interpretation it discloses
+    // =====================================================================================
+
+    private ShopWithDistance projection(UUID id, String slug, double distanceKm) {
+        return new ShopWithDistance() {
+            @Override
+            public UUID getId() {
+                return id;
+            }
+
+            @Override
+            public String getSlug() {
+                return slug;
+            }
+
+            @Override
+            public Double getDistanceKm() {
+                return distanceKm;
+            }
+        };
+    }
+
+    @Nested
+    @DisplayName("searchPublishedShops — the third tier runs LAST, or not at all")
+    class PostcodeSearchTier {
+
+        @Test
+        @DisplayName("CA-A: a query the text search answers never reaches the geocoder at all")
+        void textHitNeverConsultsTheGeocoder() {
+            when(shopRepository.fullTextSearchPublished(eq("jollof"), any()))
+                    .thenReturn(new PageImpl<>(List.of(publishedShop)));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("jollof", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
+            assertEquals(1, outcome.page().getTotalElements());
+            // The fall-through is provable BY CONSTRUCTION, not by inspection: if the geocoder is
+            // never invoked, no postcode branch can have influenced this answer. A mere
+            // "interpretation is TEXT" assertion would still pass if tier 3 ran and lost.
+            verifyNoInteractions(postcodeGeocoder);
+            verify(shopRepository, never()).findPublishedNear(
+                    anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any());
+        }
+
+        @Test
+        @DisplayName("CA-A: the LIKE fallback also wins before the geocoder is consulted")
+        void likeFallbackHitNeverConsultsTheGeocoder() {
+            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(shopRepository.searchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of(publishedShop)));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("SE22", PageRequest.of(0, 20));
+
+            // A shop literally NAMED "SE22 Kitchen" must still win a search for SE22 (D-A).
+            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
+            verifyNoInteractions(postcodeGeocoder);
+        }
+
+        @Test
+        @DisplayName("both text tiers empty + a resolvable postcode → PROXIMITY at the platform radius")
+        void emptyTextTiersFallThroughToProximity() {
+            UUID shopId = publishedShop.getId();
+            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(shopRepository.searchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.of(
+                    new PostcodeGeocoder.LocatedPostcode(
+                            new PostcodeGeocoder.Coordinate(51.454445, -0.072403),
+                            "SE22", PostcodeGeocoder.Precision.DISTRICT)));
+            when(shopRepository.findPublishedNear(anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any()))
+                    .thenReturn(new PageImpl<>(List.of(projection(shopId, "test-shop-abc12345", 1.5))));
+            when(shopRepository.findAllById(List.of(shopId))).thenReturn(List.of(publishedShop));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("SE22", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.PROXIMITY, outcome.interpretation().kind());
+            assertEquals("SE22", outcome.interpretation().postcode());
+            assertEquals(PostcodeGeocoder.Precision.DISTRICT, outcome.interpretation().precision());
+            assertEquals(5.0, outcome.interpretation().radiusKm());
+            assertEquals(1, outcome.page().getContent().size());
+            assertEquals(1.5, outcome.page().getContent().get(0).getDistanceKm());
+
+            // D-C: the radius is jtoye.geo.default-radius-km, not a new key and not a literal.
+            ArgumentCaptor<Double> radius = ArgumentCaptor.forClass(Double.class);
+            verify(shopRepository).findPublishedNear(anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), radius.capture(), any());
+            assertEquals(5.0, radius.getValue());
+        }
+
+        @Test
+        @DisplayName("an EMPTY proximity page keeps its PROXIMITY interpretation, never downgraded to text")
+        void emptyProximityPageKeepsItsInterpretation() {
+            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(shopRepository.searchPublished(eq("SE22"), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.of(
+                    new PostcodeGeocoder.LocatedPostcode(
+                            new PostcodeGeocoder.Coordinate(51.454445, -0.072403),
+                            "SE22", PostcodeGeocoder.Precision.DISTRICT)));
+            when(shopRepository.findPublishedNear(anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("SE22", PageRequest.of(0, 20));
+
+            // "No kitchens within 3.1 miles of SE22" and "no kitchens match 'SE22'" are different
+            // sentences. Downgrading here would tell the customer their postcode was not
+            // understood, which is the one case where the disclosure matters most (D-B option D).
+            assertTrue(outcome.page().isEmpty());
+            assertEquals(SearchInterpretation.Kind.PROXIMITY, outcome.interpretation().kind());
+            assertEquals("SE22", outcome.interpretation().postcode());
+        }
+
+        @Test
+        @DisplayName("a postcode-shaped term outside Code-Point Open falls back to TEXT, never a "
+                + "proximity claim on a branch that did not apply")
+        void unresolvablePostcodeStaysText() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("BT1 5GS")).thenReturn(Optional.empty());
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("BT1 5GS", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
+            assertTrue(outcome.page().isEmpty());
+            verify(shopRepository, never()).findPublishedNear(
+                    anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("SearchInterpretation.headerValue — a published grammar, and a header-injection sink")
+    class SearchInterpretationGrammar {
+
+        @Test
+        @DisplayName("a text interpretation is the single literal token 'text'")
+        void textGrammar() {
+            assertEquals("text", SearchInterpretation.text().headerValue());
+        }
+
+        @Test
+        @DisplayName("a district proximity reads exactly as 33-09's parser expects")
+        void districtGrammar() {
+            String value = SearchInterpretation
+                    .proximity("SE22", PostcodeGeocoder.Precision.DISTRICT, 5.0)
+                    .headerValue();
+
+            assertEquals("proximity; postcode=SE22; precision=district; radiusKm=5.0", value);
+        }
+
+        @Test
+        @DisplayName("a unit proximity differs only in the precision token")
+        void unitGrammar() {
+            String value = SearchInterpretation
+                    .proximity("SE155BS", PostcodeGeocoder.Precision.UNIT, 5.0)
+                    .headerValue();
+
+            assertEquals("proximity; postcode=SE155BS; precision=unit; radiusKm=5.0", value);
+        }
+
+        @Test
+        @DisplayName("T-33-08-05: a key carrying CR/LF or ';' degrades to 'text', never splits the response")
+        void hostileKeyCannotSplitTheResponse() {
+            // Reached only if the upstream regex were ever loosened, which is exactly when a
+            // defence in depth has to hold. The key is interpolated into a header value, so CR,
+            // LF and ';' are the injection alphabet.
+            for (String hostile : List.of("SE22\r\nX-Evil: 1", "SE22; precision=unit",
+                    "SE22\nSet-Cookie: a=b", "se22", "", "S")) {
+                String value = SearchInterpretation
+                        .proximity(hostile, PostcodeGeocoder.Precision.DISTRICT, 5.0)
+                        .headerValue();
+
+                assertEquals("text", value, "hostile or malformed key must degrade to text: " + hostile);
+                assertFalse(value.contains("\r"), "no CR may survive");
+                assertFalse(value.contains("\n"), "no LF may survive");
+            }
+        }
+
+        @Test
+        @DisplayName("CONTROL: the same assertion PASSES a legitimate key, so the rejection above "
+                + "is about the key and not about the method")
+        void legitimateKeyIsNotRejected() {
+            // Without this, the arm above would be satisfied by a headerValue() that returns
+            // "text" unconditionally — which is precisely the RED stub it was written against.
+            assertNotEquals("text", SearchInterpretation
+                    .proximity("SE22", PostcodeGeocoder.Precision.DISTRICT, 5.0)
+                    .headerValue());
+        }
+
+        @Test
+        @DisplayName("no coordinate ever appears in the header value (T-33-08-04)")
+        void headerCarriesNoCoordinate() {
+            String value = SearchInterpretation
+                    .proximity("SE22", PostcodeGeocoder.Precision.DISTRICT, 5.0)
+                    .headerValue();
+
+            // A header lands in proxy and access logs; 33-06 established coordinates do not reach
+            // a log. The postcode does appear, and that is accepted — it is already in the request
+            // URI's query string, so the header opens no new sink.
+            assertFalse(value.contains("51.4"), "no latitude in the header");
+            assertFalse(value.contains("-0.0"), "no longitude in the header");
+            assertFalse(value.toLowerCase(Locale.ROOT).contains("lat"), "no lat token at all");
+        }
     }
 }

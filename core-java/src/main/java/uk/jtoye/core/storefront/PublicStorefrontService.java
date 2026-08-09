@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -74,6 +75,13 @@ public class PublicStorefrontService {
     private final ShopAnnouncementRepository announcementRepository;
 
     /**
+     * The offline postcode geocoder (33-02), used ONLY by the third search tier (33-08 / #619)
+     * and only when the two text tiers have already returned nothing. It is the search-side
+     * entry point {@code locateSearchTerm}, never {@code locate} — see that class.
+     */
+    private final PostcodeGeocoder postcodeGeocoder;
+
+    /**
      * Platform default and ceiling for the distance-search radius, READ from {@code jtoye.geo.*}
      * in {@code application.yml} — that block is owned and declared by 33-02, and this class only
      * consumes it. Q-2 settled the radius as a query parameter with a platform default, so both
@@ -93,6 +101,7 @@ public class PublicStorefrontService {
                                    EntityManager entityManager, PaymentService paymentService,
                                    ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
+                                   PostcodeGeocoder postcodeGeocoder,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -103,6 +112,7 @@ public class PublicStorefrontService {
         this.paymentService = paymentService;
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
+        this.postcodeGeocoder = postcodeGeocoder;
         this.defaultRadiusKm = defaultRadiusKm;
         this.maxRadiusKm = maxRadiusKm;
     }
@@ -294,7 +304,7 @@ public class PublicStorefrontService {
     /**
      * Search published shops by name or tags.
      */
-    public Page<PublicShopDto> searchPublishedShops(String query, Pageable pageable) {
+    public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
@@ -302,11 +312,22 @@ public class PublicStorefrontService {
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
             Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
-                return results.map(this::toPublicShopDto);
+                return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
         }
-        return shopRepository.searchPublished(query, pageable)
-                .map(this::toPublicShopDto);
+        return new SearchOutcome(
+                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
+                SearchInterpretation.text());
+    }
+
+    /**
+     * A page of shops together with the server's statement about how the query was read.
+     *
+     * <p>Nested rather than free-standing because it is this method's return shape and has no
+     * other caller. {@code Page<PublicShopDto>} itself is deliberately unchanged — every existing
+     * consumer of {@code GET /public/shops} still receives exactly the body it received before.
+     */
+    public record SearchOutcome(Page<PublicShopDto> page, SearchInterpretation interpretation) {
     }
 
     /**
