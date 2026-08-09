@@ -132,6 +132,149 @@ from ONSPD). It is retained deliberately — a shop whose postcode does not geoc
 storefront and keep NULL coordinates, never land at (0,0), and this row is the only thing that can
 prove it.
 
+## CA-1 CLOSED — post-population, live runtime
+
+**Closed 2026-08-09 by `33-05`**, on the same live dev Compose stack, against a runtime rebuilt
+from `9e5076bc`. Placed here rather than at the end of the file so the before and after sit
+together and nobody has to hunt for the pair.
+
+The arm above **has now expired**, exactly as predicted: coordinates exist, so "nothing before"
+can no longer be reconstructed. What follows is what replaced it — a re-run of CA-1's own two
+queries, plus the gate that will keep re-running them.
+
+### The rebuild came first, and is proven by content
+
+`docker compose start` does not rebuild, and `.Created` is preserved across a fully-cached
+rebuild — so parity is read from `.Metadata.LastTagTime` against the newest commit touching each
+service's build inputs. `scripts/check-runtime-freshness.sh`, run from the MAIN checkout
+(the compose project name comes from the directory, so a worktree VOIDs it):
+
+```
+  HEAD         : 9e5076bc (phase/33-the-consumer-product)
+
+  core-java    FRESH  image tagged 2026-08-09 00:10:52 UTC >= newest build-input commit 9e5076bc (2026-08-09 00:04:23 UTC)
+  edge-go      FRESH  image tagged 2026-08-09 00:10:08 UTC >= newest build-input commit 7b9b0666 (2026-08-05 22:00:14 UTC)
+  frontend     FRESH  image tagged 2026-08-09 00:10:33 UTC >= newest build-input commit 380ba3b8 (2026-08-08 17:18:39 UTC)
+  mcp-server   FRESH  image tagged 2026-08-09 00:10:08 UTC >= newest build-input commit 8f6c03b1 (2026-08-04 03:37:39 UTC)
+
+  PASS: 4 running built service(s) match the source tree (0 unverified)      rc=0
+```
+
+All four were rebuilt and `--force-recreate`d, not started.
+
+### The post-population reading, both roles, as CA-1 recorded them
+
+```
+ARM A — as jtoye_app, NO tenant GUC (role downgrade; RLS applies)
+  current_user|total|with_latitude|published
+  jtoye_app|3|3|3                                    rc=0    <- still UNDERCOUNTS: 2 rows invisible
+
+ARM B — as superuser jtoye, the TRUE state
+  total|with_latitude|published
+  5|3|3                                              rc=0
+
+per-shop truth (superuser)   slug | published | latitude | address
+  brixton-village-grill  t  51.46262    Unit 74, Brixton Village Market, London SW9 8PS
+  mama-ades-kitchen      t  51.472435   48 Rye Lane, Peckham, London SE15 5BS
+  peckham-jollof-co      t  51.466812   12 Bellenden Road, Peckham, London SE15 4BW
+  tenant-b-probe         f  NULL        1 Probe Lane, London
+  unsorted-legacy-items  f  NULL        —
+                                                     rc=0
+
+postcode_centroid rows = 1748230                     rc=0
+shops at (0,0)         = 0                           rc=0
+```
+
+**Both roles are recorded for the same reason CA-1 gave, and the disagreement is unchanged.**
+`shops` is ENABLE+FORCE RLS and `shops_public_read` reads `((published = true) OR (tenant_id =
+current_tenant_id()))`. With no tenant GUC that reduces to `published = true`, so `jtoye_app`
+sees 3 of 5 rows and cannot see either unpublished shop. Reporting `3|3|3` alone would record a
+complete population where two rows are deliberately, correctly NULL — and would have looked
+identical to a backfill that stopped two rows early.
+
+**The three negative controls all survived the phase**, which is the half a green count cannot
+show. `tenant-b-probe` and `unsorted-legacy-items` still hold no extractable postcode and still
+hold NULL coordinates — they are the only rows on this database exercising that branch.
+`peckham-jollof-co`'s non-existent postcode was **corrected**, not worked around: the unit it
+carried is absent from Code-Point Open and 404s from ONSPD, so left in place it would have kept
+its storefront and stayed NULL forever. It now carries SE15 4BW, the real unit nearest Bellenden
+Road and the one `33-02` provisioned in the test fixture for exactly this. The "unknown postcode
+yields NULL, never (0,0)" behaviour it used to prove is now proven by
+`ShopCoordinateBackfillIntegrationTest` and `ShopServiceGeocodeTest`, which assert it directly
+instead of relying on a defect surviving in seeded data.
+
+### The gate: `scripts/check-live-shop-coordinates.sh`
+
+Re-runs the queries above on every invocation. Exit codes 0 / 1 / 2 (VOID). Assertions:
+
+| | Assertion | Reading |
+|---|---|---|
+| A-1 | published shops whose postcode IS IN `postcode_centroid` and whose `latitude IS NULL` = **0** | 0 |
+| A-2 | denominator of that relation >= 1 | **3** |
+| A-3 | the three curated demo storefronts, by slug, all carry a coordinate (denominator asserted = 3) | 3 of 3 |
+| A-4 | rows anywhere at `latitude = 0 AND longitude = 0`, as superuser = 0 | 0 |
+| A-5 | `postcode_centroid` is non-empty | 1748230 |
+
+The day's census — 5 total / 3 published / 3 geocoded — is printed as **context, not asserted**.
+Pinning `total = 5` reds on any sixth shop, including one an E2E run creates, and a gate that
+fails on legitimate data teaches people to ignore it.
+
+**SUBSTITUTION RECORDED, NOT MADE SILENTLY.** `33-05` Task 4 specified A-1 over the wider set
+*every published shop whose address yields a postcode at all*. That form is strictly stronger and
+it does fail on the pre-change tree — but it **reds on correct data**. Code-Point Open is GB-only,
+so a Northern Ireland vendor's postcode is real, extractable and permanently absent from the
+table; `33-02`'s SOURCE.md records that as a licence-containment choice, not a bug, and such a
+vendor keeps their storefront while being absent from distance results. The wider predicate would
+red the platform for behaving exactly as designed — the same species of brittleness the plan
+itself rejected in `total = 5`, one level deeper. So the narrower relation is the assertion, the
+wider one is **printed alongside** (3 / 0 today, so nothing is hidden), any published shop whose
+postcode is not in the table is **listed by slug** as a diagnostic, and A-3 keeps the full
+original strength on the three shops we actually own — where the false-positive risk is zero and
+where the seeded-postcode defect would show.
+
+### Both directions, run and recorded
+
+```
+CLEAN (the delivered runtime, after rebuild)
+  RESULT: PASS — the delivered runtime satisfies the relation                        rc=0
+
+ARM 0 — THE ARM THAT EXPIRED. The same script against the PRE-deployment runtime,
+        i.e. the exact state CA-1 captured, before the rebuild:
+  A-1  denominator 2, of which latitude IS NULL = 2                                  FAIL
+  A-3  3 curated shops found, 0 with a coordinate                                    FAIL
+  diagnostic listing named the defect by slug:  peckham-jollof-co  postcode=SE154QA
+  RESULT: FAIL                                                                       rc=1
+
+ARM 1 — the stack stopped (docker compose stop postgres):
+  VOID: container 'jtoye-postgres' is 'exited', not running — the stack is down      rc=2
+  ...NOT 0. This is the arm proving the script cannot report a clean result over a
+  dead runtime, which is the whole reason it exists.
+
+ARM 2 — one published shop's latitude set to NULL directly (UPDATE 1):
+  A-1  denominator 3, of which latitude IS NULL = 1                                  FAIL
+  A-3  3 found, 2 with a coordinate                                                  FAIL
+  RESULT: FAIL                                                                       rc=1
+
+ARM 3 — one shop set to (0,0) (UPDATE 1):
+  A-4  shops at Null Island = 1                                                      FAIL
+  RESULT: FAIL                                                                       rc=1
+
+CLOSING ARM — the clean direction re-run LAST, after every restore
+  RESULT: PASS                                                                       rc=0
+  check-runtime-freshness.sh                                                         rc=0
+```
+
+Every restore was verified **by content**, not by an exit code: the five-row
+`slug|latitude|longitude` listing was captured before the arms and compared after each one —
+`sha256 d1893eac…` identical at baseline, after ARM 2's restore and after ARM 3's restore. The
+`UPDATE 1` row counts were read from psql's own command tag, never the process exit status,
+because `docker exec` without `-i` does not deliver a statement to psql and still exits 0.
+
+`scripts/check-gate-enforcement.sh` was also falsified in both directions, because a gate nobody
+runs prevents nothing: with the exemption declared, `gates: 32, workflows: 6, exempt: 5 declared`
+-> rc=0; with the entry deleted, rc=**1** naming `check-live-shop-coordinates.sh` — then restored
+(hash `ae2223d3…` identical) and re-run to rc=0.
+
 ### CA-2 — Geolocation is denied at the HTTP header, on every route. BLOCKER.
 
 measure: read `frontend/next.config.mjs:35` and its enclosing `source:` scope, then read the header back off the running app with `curl -sSI`.
