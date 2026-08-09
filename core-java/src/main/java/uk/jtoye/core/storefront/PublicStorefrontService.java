@@ -75,9 +75,18 @@ public class PublicStorefrontService {
     private final ShopAnnouncementRepository announcementRepository;
 
     /**
-     * The offline postcode geocoder (33-02), used ONLY by the third search tier (33-08 / #619)
-     * and only when the two text tiers have already returned nothing. It is the search-side
-     * entry point {@code locateSearchTerm}, never {@code locate} — see that class.
+     * The offline postcode geocoder (33-02), consulted FIRST for every {@code q} by
+     * {@link #searchPublishedShops} — D-A, flipped at the 33-09 owner gate on 2026-08-09.
+     *
+     * <p>This text was left behind by that flip and said the opposite until 2026-08-09 (WR-01):
+     * "used ONLY by the third search tier and only when the two text tiers have already returned
+     * nothing". Both clauses were false, and this field declaration is the natural entry point
+     * when tracing the dependency, so it read as evidence the flip had never happened.
+     *
+     * <p>Running it first is cheap rather than costly: {@link PostcodeGeocoder#locateSearchTerm}
+     * applies its length bound and its anchored shape test BEFORE any lookup, so an ordinary food
+     * search issues no query here at all. It is the search-side entry point
+     * {@code locateSearchTerm}, never {@code locate} — see that class.
      */
     private final PostcodeGeocoder postcodeGeocoder;
 
