@@ -100,9 +100,77 @@ export const LANDING_CLS_TOLERANCE = 0.02
 export const LANDING_BUNDLE_BASELINE_BYTES = 953_353
 
 /**
- * Growth factor the landing route's client JS may not exceed relative to the
- * baseline above, until 33-07 replaces this with an absolute ceiling it can
- * defend. A multiplier rather than an absolute number, because chunk hashing and
- * code-splitting move the exact figure between builds.
+ * What the island is allowed to cost, in bytes, on top of the baseline above.
+ *
+ * 33-03 left a 1.5x GROWTH FACTOR here — 1,430,029 bytes — as an explicit
+ * placeholder for "until 33-07 replaces this with an absolute ceiling it can
+ * defend". 33-07 is that plan, and this is that ceiling. It is a TIGHTENING, not
+ * a substitution: 973,833 is 456,196 bytes below the bound it replaces, and the
+ * regression it was written for (below) sails under the old one.
+ *
+ * DERIVED FROM A MEASUREMENT, NOT CHOSEN. Both arms run on the rebuilt stack
+ * with this file's own meter, 2026-08-09:
+ *
+ *   33-03 baseline, no island                             953,353 bytes
+ *   33-07 island, issuing its one GET with `fetch`        958,988   (+5,635)
+ *   33-07 island, issuing it through `publicApiClient`  1,005,834   (+52,481)
+ *
+ * The allowance is 20,480 bytes — 3.6x the growth actually shipped, which is
+ * headroom for a small future addition and for chunk-boundary shuffling, and
+ * comfortably under the 46,846 bytes that pulling axios onto this route costs.
+ * So the ceiling has a REGRESSION IT DEMONSTRABLY CATCHES rather than being a
+ * number nobody can defend: re-importing the axios client into the landing
+ * island puts the route at 1,005,834 and reds this assertion by 31,999 bytes.
+ *
+ * Why an absolute ceiling now that a multiplier was right before: a multiplier
+ * of a moving baseline ratchets. Each plan measures its own growth against the
+ * previous plan's total, so a route can gain 50% three times and never fail.
+ * `/` is the LCP-critical page every customer sees first; the number it may not
+ * exceed should be a number, and changing it should be a visible edit here.
  */
-export const LANDING_BUNDLE_MAX_GROWTH = 1.5
+export const LANDING_BUNDLE_ISLAND_ALLOWANCE_BYTES = 20_480
+
+/**
+ * The bound `landing-webperf.spec.ts` asserts. Written as baseline + allowance
+ * rather than as a literal so the derivation cannot drift away from the number.
+ */
+export const LANDING_BUNDLE_CEILING_BYTES =
+  LANDING_BUNDLE_BASELINE_BYTES + LANDING_BUNDLE_ISLAND_ALLOWANCE_BYTES
+
+/**
+ * VERTICAL displacement, in CSS pixels, permitted anywhere on `/` in the
+ * POST-GRANT window — after the "Use my location" click lands a new list.
+ *
+ * WHY VERTICAL PIXELS AND NOT A LAYOUT-SHIFT SCORE. Two reasons, and the second
+ * was measured the hard way.
+ *
+ * FIRST: the layout-shift entry carries `hadRecentInput`, true for anything
+ * within 500 ms of an interaction, and every CLS implementation — including the
+ * one in this file's spec — drops those entries. So a post-grant CLS assertion
+ * has a number that cannot move however badly the row jumps. It is right for the
+ * metric and useless as this plan's criterion.
+ *
+ * SECOND, AND THIS IS THE PART I GOT WRONG FIRST: the obvious repair — sum the
+ * shift entries CLS discards and bound the total — FORBIDS THE FEATURE. Measured
+ * 2026-08-09 at 375px, that total is 0.0687, and the probe shows exactly one
+ * entry with exactly one source:
+ *
+ *   A.group.grow.basis-[220px]   "0.4 km away Peckham Jollof Co. …"
+ *     prev  x=136  y=443.234375  height=216
+ *     cur   x= 16  y=443.234375  height=216
+ *
+ * A card moving 120 px HORIZONTALLY with its y and its height unchanged to the
+ * fractional pixel. That is the reorder — the entire point of the feature, asked
+ * for by the visitor a moment earlier. A budget that reds on it would be a budget
+ * that says "do not ship distance ordering", and the honest response is to
+ * replace the criterion rather than to raise it until it goes green.
+ *
+ * What actually matters is that the row does not push the PAGE around: content
+ * below it staying put, and cards keeping their height. That is what this bounds,
+ * and it is falsifiable in the direction that matters — putting the distance in
+ * the card's flow instead of out of it changes card height, and un-reserving the
+ * status line's height moves everything below the heading.
+ *
+ * 1 px is fractional-rounding tolerance around a measured ZERO, not headroom.
+ */
+export const LANDING_POST_GRANT_MAX_VERTICAL_PX = 1

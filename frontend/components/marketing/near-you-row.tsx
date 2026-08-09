@@ -5,7 +5,6 @@ import Link from "next/link"
 import { Loader2, LocateFixed } from "lucide-react"
 import { DishScroller } from "@/components/marketing/dish-scroller"
 import { ShopCard } from "@/components/marketing/shop-card"
-import publicApiClient from "@/lib/public-api-client"
 import type { PageResponse } from "@/types/api"
 import type { PublicShop } from "@/types/storefront"
 
@@ -93,6 +92,36 @@ export const NEAR_YOU_RADIUS_KM = 5
 const PAGE_SIZE = 8
 
 /**
+ * The browser-facing core origin — the same value `lib/public-api-client.ts`
+ * gives its axios instance, read the same way, so there is still exactly one
+ * place that decides where a public call goes.
+ *
+ * WHY NOT `publicApiClient` ITSELF, WHICH IS THE PATTERN NEXT DOOR. Measured, on
+ * the rebuilt stack, with the landing route's own bundle meter:
+ *
+ *   island using publicApiClient (axios)   1,005,834 bytes   +52,481 over 33-03
+ *   island using fetch                       958,988 bytes   + 5,635 over 33-03
+ *
+ * Importing axios here puts 46,846 bytes of HTTP client onto `/` — the
+ * LCP-critical route every customer sees first — to issue ONE GET with five
+ * query parameters and read one JSON body. Nothing axios provides is used on
+ * that path: there is no auth interceptor on the public client (its own comment
+ * says so), no upload progress, no cancellation, and the rate-limit retry helpers
+ * in `lib/public-fetch-retry.ts` are not wired in here. Web performance is a
+ * standing design-time acceptance criterion in CLAUDE.md, and a 5.5% bundle
+ * increase on the landing page for an unused abstraction is precisely the
+ * "unbounded island on the LCP-critical public route" it exists to catch.
+ *
+ * `app/shop/shop-discovery-client.tsx` keeps `publicApiClient`, correctly: it
+ * pages, searches, and consumes the axios-shaped 429 errors that
+ * `public-fetch-retry` inspects. This is one call, on the first page load.
+ *
+ * If a future change here needs interceptors, retry classification or cancellation,
+ * switch back and RE-MEASURE — do not switch back on symmetry alone.
+ */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""
+
+/**
  * Geolocation options. High accuracy is deliberately OFF: shop coordinates are
  * postcode centroids accurate to ~100 m, so a GPS fix good to 5 m cannot improve
  * the ranking by one position, and asking for it costs battery, seconds, and (on
@@ -173,16 +202,24 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
         // input here to debounce, and a watchPosition would re-fire on every
         // metre of drift against a rate-limited public endpoint (T-33-07-04).
         try {
-          const res = await publicApiClient.get<PageResponse<PublicShop>>("/public/shops", {
-            params: {
-              lat: round(position.coords.latitude),
-              lon: round(position.coords.longitude),
-              radiusKm: NEAR_YOU_RADIUS_KM,
-              page: 0,
-              size: PAGE_SIZE,
-            },
+          const params = new URLSearchParams({
+            lat: String(round(position.coords.latitude)),
+            lon: String(round(position.coords.longitude)),
+            radiusKm: String(NEAR_YOU_RADIUS_KM),
+            page: "0",
+            size: String(PAGE_SIZE),
           })
-          const content = res.data?.content ?? []
+          const res = await fetch(`${API_BASE}/public/shops?${params}`, {
+            headers: { Accept: "application/json" },
+          })
+          // A 429 or a 5xx is NOT an answer. Falling through to `res.json()`
+          // here would parse an RFC 7807 problem document into a shop page and
+          // render an empty row as if the visitor genuinely had no kitchens
+          // nearby — a non-answer presented as an authoritative one, which is
+          // the distinction `lib/storefront-server.ts` exists to preserve.
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const body = (await res.json()) as PageResponse<PublicShop>
+          const content = body?.content ?? []
           if (content.length === 0) {
             setNearby(null)
             setPhase("empty")
