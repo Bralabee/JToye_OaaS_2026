@@ -240,7 +240,7 @@ silent, and would otherwise be attributed to a human edit.
 ## Suites and gates
 
 - **Unit:** 141 classes, **1017 tests**, 0 failures, 1 skipped (33-02 baseline 138 / 997 — the delta is exactly this plan's 26 new tests, 16 + 4 + 6)
-- **Integration:** **513 tests**, 1 skipped — one failure (`OpenApiSnapshotTest`) found, fixed and re-verified
+- **Integration:** first full run **513 tests / 1 failure** (`OpenApiSnapshotTest`) / 1 skipped; after the snapshot fix, the whole suite re-run clean — **118 classes, 513 tests, 0 failures, 0 errors, 1 skipped** in 15m 38s. The clean direction was run LAST, on the whole suite, not just the class that had failed
 - `check-live-shop-coordinates` rc=0 · `check-runtime-freshness` rc=0 (4/4 FRESH, proven by `.Metadata.LastTagTime`) · `check-gate-enforcement` rc=0 (32 gates / 5 exempt) · `docs-freshness` rc=0 (2551 → 2577) · `check-branch-behind-base` rc=0 (0 behind `origin/main`) · `check-alert-metrics` rc=0 after the mandatory `seed-order-metric.sh`
 - **Pre-existing red, NOT this plan's:** `check-doc-metrics` rc=1 and `check-claims` rc=1. Verified at `f11e3701` before any change here: `CLAUDE.md` claimed 1461 / 2509 / V60 while `docs/metrics.json` already held 1484 / 2551 / 61. Owned by 33-07 Task 4.
 
