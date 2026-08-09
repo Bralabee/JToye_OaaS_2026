@@ -430,6 +430,75 @@ class ShopServiceGeocodeTest {
             assertThat(shop.getLongitude()).isEqualTo(-0.07);
         }
 
+        // ---- WR-03 (phase-33 code review): the client fallback is bounded to the UK ----
+
+        @Test
+        @DisplayName("WR-03: a client fallback OUTSIDE the UK box is discarded on create")
+        void clientFallbackOutsideTheUkIsDiscardedOnCreate() {
+            // A geocode miss is under the vendor's control (append a suffix the
+            // end-anchored extractor cannot see, or use a well-formed non-existent
+            // unit), so before this fix any SHOP_MANAGER could force the fallback and
+            // place their shop at an arbitrary valid point on Earth — run against the
+            // pre-fix tree this arm FAILED by persisting New York (40.7128, -74.006).
+            shopService.createShop(request(UNKNOWN, 40.7128, -74.0060));
+
+            Shop shop = persisted();
+            assertThat(shop.getLatitude()).as("latitude for a non-UK client fallback").isNull();
+            assertThat(shop.getLongitude()).as("longitude for a non-UK client fallback").isNull();
+        }
+
+        @Test
+        @DisplayName("WR-03: a client fallback OUTSIDE the UK box cannot displace a persisted coordinate")
+        void clientFallbackOutsideTheUkCannotDisplaceAPersistedCoordinate() {
+            UUID shopId = UUID.randomUUID();
+            when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                    .thenReturn(Optional.of(existingShop(shopId, REAL, SE15_5BS_LAT, SE15_5BS_LON)));
+
+            shopService.updateShop(shopId, request(UNKNOWN, 35.6762, 139.6503));
+
+            Shop shop = persisted();
+            assertThat(shop.getLatitude())
+                    .as("the coordinate the shop already had, not Tokyo")
+                    .isEqualTo(SE15_5BS_LAT);
+            assertThat(shop.getLongitude()).isEqualTo(SE15_5BS_LON);
+        }
+
+        @Test
+        @DisplayName("WR-03: a Northern Ireland fallback still stands, and is WARN-logged for operator review")
+        void northernIrelandClientFallbackStillStandsAndIsLogged() {
+            // The legitimate population the fallback exists for: Code-Point Open is
+            // GB-only, so an NI postcode NEVER geocodes and the vendor's own pair is
+            // all there is. The box (lat 49.8–60.9, lon −8.7–1.8) includes NI, so this
+            // arm is the accept-direction control proving the containment is a bound,
+            // not a ban. The WARN is asserted here too: an unverified vendor-supplied
+            // position on the public ranking surface must leave an operator-visible
+            // trace (event=client_coordinate_accepted) — run against the pre-fix tree
+            // this arm failed on the absent log event.
+            ch.qos.logback.classic.Logger serviceLogger =
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ShopService.class);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                    new ch.qos.logback.core.read.ListAppender<>();
+            appender.start();
+            serviceLogger.addAppender(appender);
+            try {
+                shopService.createShop(request("14 Ormeau Road, Belfast BT7 1SH", 54.5973, -5.9301));
+
+                Shop shop = persisted();
+                assertThat(shop.getLatitude()).isEqualTo(54.5973);
+                assertThat(shop.getLongitude()).isEqualTo(-5.9301);
+                assertThat(appender.list)
+                        .as("the operator-review WARN for an accepted client fallback")
+                        .anySatisfy(event -> {
+                            assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+                            assertThat(event.getFormattedMessage())
+                                    .contains("event=client_coordinate_accepted")
+                                    .contains("coordinate-probe");
+                        });
+            } finally {
+                serviceLogger.detachAppender(appender);
+            }
+        }
+
         @Test
         @DisplayName("WR-02: create with a lone axis persists NO coordinate at all, not half of one")
         void createWithALoneAxisPersistsNoCoordinate() {

@@ -56,6 +56,19 @@ public class ShopService {
     @Value("${jtoye.shop.reserved-slugs:auth,orders,signin}")
     private Set<String> reservedSlugs;
 
+    // WR-03 (phase-33 code review): the bounding box a CLIENT-SUPPLIED fallback
+    // coordinate must lie inside. Approximate on purpose — it is a containment
+    // bound, not a border: it covers all of Great Britain AND Northern Ireland
+    // (the legitimate population the fallback exists for, since Code-Point Open
+    // is GB-only and an NI postcode never geocodes). It applies ONLY to
+    // precedence rule 2 (the client fallback); a geocoded centroid is by
+    // construction inside it, and a persisted coordinate (rule 3) is never
+    // retro-rejected. See applyCoordinate for why this exists.
+    private static final double UK_MIN_LATITUDE = 49.8;
+    private static final double UK_MAX_LATITUDE = 60.9;
+    private static final double UK_MIN_LONGITUDE = -8.7;
+    private static final double UK_MAX_LONGITUDE = 1.8;
+
     public ShopService(ShopRepository shopRepository,
                        ShopMapper shopMapper,
                        StorageService storageService,
@@ -399,9 +412,21 @@ public class ShopService {
      * <ol>
      *   <li>If the address yields a postcode present in {@code postcode_centroid}, that
      *       centroid WINS and overwrites whatever the client sent.</li>
-     *   <li>If it does not, the client's own {@code latitude}/{@code longitude} stand — but
-     *       only because {@code CreateShopRequest} now range-validates them, so the worst a
-     *       client can put here is a real point on Earth rather than {@code latitude: 999}.</li>
+     *   <li>If it does not, the client's own {@code latitude}/{@code longitude} stand —
+     *       PROVIDED the pair lies inside the UK bounding box. Range validation
+     *       (±90/±180) bounds absurdity, not abuse: a geocode miss is under the vendor's
+     *       control (append a suffix the end-anchored extractor cannot see, or use a
+     *       well-formed non-existent unit), so an unbounded fallback let any
+     *       {@code SHOP_MANAGER} place their shop at an arbitrary point on Earth and rank
+     *       as "nearest kitchen" on the anonymous discovery surface (review WR-03). A
+     *       pair outside the box is DISCARDED (falling through to rule 3) with a
+     *       {@code event=client_coordinate_rejected} WARN; an accepted fallback leaves an
+     *       {@code event=client_coordinate_accepted} WARN naming the shop, so operator
+     *       review of unverified vendor-supplied positions is possible. The box includes
+     *       Northern Ireland — the legitimate population this fallback exists for.
+     *       Placement abuse WITHIN the UK box remains possible (central London from
+     *       Belfast) and is the accepted residual: closing it needs the
+     *       {@code coordinate_source} column / verified-override feature named below.</li>
      *   <li>If there is neither, the previously PERSISTED coordinate stands (update path).</li>
      *   <li>If there is none of the three, the coordinate stays {@code null}. Never
      *       {@code (0,0)}: Null Island is nearer the origin than any real GB shop, so a shop
@@ -460,6 +485,33 @@ public class ShopService {
         if ((request.getLatitude() == null) != (request.getLongitude() == null)) {
             shop.setLatitude(persistedLatitude);
             shop.setLongitude(persistedLongitude);
+        }
+
+        // WR-03 (phase-33 code review): precedence rule 2 — the client's own pair may
+        // stand, but only inside the UK bounding box, and never silently. See the
+        // precedence docblock above for the threat (a vendor-forced geocode miss is a
+        // self-placement vector in public ranking) and the accepted residual. The
+        // check reads the REQUEST for the same reason as the pairing guard: after the
+        // mapper, the entity cannot say whose pair it is holding.
+        if (request.getLatitude() != null && request.getLongitude() != null) {
+            boolean withinUk = request.getLatitude() >= UK_MIN_LATITUDE
+                    && request.getLatitude() <= UK_MAX_LATITUDE
+                    && request.getLongitude() >= UK_MIN_LONGITUDE
+                    && request.getLongitude() <= UK_MAX_LONGITUDE;
+            if (withinUk) {
+                log.warn("event=client_coordinate_accepted shop='{}' latitude={} longitude={} — "
+                                + "the address did not geocode and the client-supplied fallback was "
+                                + "accepted. This is an UNVERIFIED vendor-supplied position on the "
+                                + "public ranking surface; review if disputed.",
+                        shop.getSlug(), request.getLatitude(), request.getLongitude());
+            } else {
+                log.warn("event=client_coordinate_rejected shop='{}' latitude={} longitude={} — "
+                                + "the client-supplied fallback lies outside the UK bounding box and "
+                                + "was discarded; the persisted coordinate (or none) stands.",
+                        shop.getSlug(), request.getLatitude(), request.getLongitude());
+                shop.setLatitude(persistedLatitude);
+                shop.setLongitude(persistedLongitude);
+            }
         }
 
         // Never let a miss delete a coordinate the row already had.
