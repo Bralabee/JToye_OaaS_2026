@@ -963,6 +963,8 @@
           },
           "latitude" : {
             "format" : "double",
+            "maximum" : 9E+1,
+            "minimum" : -9E+1,
             "type" : "number"
           },
           "logoUrl" : {
@@ -970,6 +972,8 @@
           },
           "longitude" : {
             "format" : "double",
+            "maximum" : 1.8E+2,
+            "minimum" : -1.8E+2,
             "type" : "number"
           },
           "minimumOrderPennies" : {
