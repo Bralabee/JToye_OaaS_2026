@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Typing a postcode into shop search finds kitchens near it, and the page says so (#619) — 2026-08-09
+
+Both halves of #619, plans `33-08` (API) and `33-09` (storefront). The search box has always
+promised "Try 'jollof', 'vegan' **or your postcode**" and a postcode has always returned nothing:
+measured on the live stack before the change, `?q=SE22` was **0 shops**. It is now **3**, ordered by
+real distance, and the page states which of the two questions it answered rather than leaving the
+customer to guess.
+
+#### Added
+- **A third search tier** on `GET /api/v1/public/shops?q=`, reached **only** when full-text search
+  and the `LIKE` fallback have both returned an empty page — so every query that works today takes
+  an untouched path. The term is offered to a new search-only geocoder entry point; a GB outward
+  code or full unit resolves through `postcode_centroid` and reuses 33-06's distance query at the
+  platform radius. The district lookup is a half-open range plus a unit-length guard, so it is an
+  **Index Scan** over 1,748,230 rows and not the Parallel Seq Scan a `LIKE` prefix plans to.
+- **`X-Search-Interpretation`** — the server's own statement about how `q` was read
+  (`text`, or `proximity; postcode=SE22; precision=district; radiusKm=5.0`), emitted on `?q=`
+  responses only, declared in the OpenAPI snapshot, and added to `cors.exposed-headers` without
+  displacing the six names already there.
+- **The storefront repeats that statement, and only that statement.** `/shop?q=SE22` renders
+  *"3 kitchens within 3.1 miles of SE22"* — **in the server-rendered HTML**, so there is no flash of
+  the plain wording — with the distance on every card in miles, a generic exclusion disclosure and a
+  *See every kitchen* route out. Every other query renders exactly the copy it rendered before.
+
+#### Notes
+- There is **no UK-postcode regex anywhere in the storefront's search path**: the heading is
+  derivable only from the parsed header, and an absent, malformed or incomplete disclosure degrades
+  to plain text. A 429 or a network failure resets it too — a non-answer carries no proximity claim.
+- Distances and the radius read in **miles** (`3.1`, not a tidier `3`: three miles is 4.83 km, a
+  radius nothing applied). The wire, the config keys and the OpenAPI contract stay metric.
+- The header being on the wire is not the same as a browser being able to read it — #412 is the
+  recorded scar. Proved with an in-page `fetch`, and proved `null` with the allowlist wrong while
+  `curl` still showed it.
+- **A full postcode that matches a shop's own address is still answered as a text match**
+  (`?q=SE15 5BS` returns the kitchen at that address, not every kitchen nearby), because the
+  postcode tier runs third. Disclosed by the header rather than hidden; flipping it is a
+  one-statement change and every test still applies.
+- Zero new dependencies; no migration; `postcode_centroid` is public reference data with no
+  tenant column, exempt from RLS by written addition.
+
 ### The rejected client coordinate is logged at integer degrees, never the raw pair (#621) — 2026-08-09
 
 Closes **UF-33-01**, the single WARNING-level residual from phase 33's security verification.
