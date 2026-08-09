@@ -129,6 +129,12 @@ export default async function Home() {
   // first paint with an empty row, which is #507's measured complaint.
   const shopList = await loadShopList({ page: 0, size: 8 })
   const shops = shopList.state === "ok" ? (shopList.data.content ?? []) : []
+  // How many published shops EXIST, not how many fitted on the page — the
+  // island's exclusion disclosure may only do arithmetic over `shops` when the
+  // two agree (review WR-01: a truncated sample must never be presented as a
+  // census). Undefined when the load failed; the island then treats a full
+  // page as possibly truncated, which suppresses rather than fabricates.
+  const serverTotal = shopList.state === "ok" ? shopList.data.totalElements : undefined
 
   // SEO. `/` is a public, unauthenticated surface and — as of this change — a
   // genuine shop-discovery surface for the first time, with no structured data at
@@ -263,7 +269,7 @@ export default async function Home() {
                   island's no-coordinate state is byte-for-byte what 33-03
                   shipped. The heading it renders without a coordinate makes no
                   locality claim; see near-you-row.tsx for the three states. */}
-              <NearYouRow serverShops={shops} />
+              <NearYouRow serverShops={shops} serverTotal={serverTotal} />
             </div>
           </section>
         )}

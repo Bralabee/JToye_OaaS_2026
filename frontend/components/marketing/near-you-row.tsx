@@ -176,9 +176,24 @@ function withoutCoordinates(shops: PublicShop[]): PublicShop[] {
   return shops.filter((s) => s.latitude == null || s.longitude == null)
 }
 
-export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
+export function NearYouRow({
+  serverShops,
+  serverTotal,
+}: {
+  serverShops: PublicShop[]
+  /**
+   * `totalElements` from the SAME response `serverShops` is the content of —
+   * how many published shops exist, not how many fitted on the page. The
+   * exclusion disclosure below may only do arithmetic over `serverShops` when
+   * the two agree, i.e. when the page IS the whole listing. Optional because a
+   * caller that cannot supply it degrades safely: a full page is then treated
+   * as possibly truncated and the arithmetic is suppressed.
+   */
+  serverTotal?: number
+}) {
   const [phase, setPhase] = useState<Phase>("idle")
   const [nearby, setNearby] = useState<PublicShop[] | null>(null)
+  const [nearbyTotal, setNearbyTotal] = useState<number | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
   const located = phase === "located" && nearby !== null
@@ -194,9 +209,30 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
       : "Kitchens on J'Toye"
 
   const unranked = located ? withoutCoordinates(serverShops) : []
-  const beyondRadius = located
-    ? Math.max(0, serverShops.length - nearby.length - unranked.length)
-    : 0
+
+  // ── A PAGE IS A SAMPLE, NOT A CENSUS (review WR-01) ─────────────────────────
+  //
+  // `serverShops` is the first page of the NAME-ordered listing and `nearby` is
+  // the first page of the DISTANCE-ordered result. Once either list is longer
+  // than its page, the two are different samples of different orderings and
+  // subtracting one from the other is meaningless: a shop genuinely inside the
+  // radius but ranked 9th by distance would be counted into "further than" —
+  // the row stating something false about a shop it has never seen, which is
+  // the exact class of untruth this component's docblock (issue 544) exists to
+  // stop. So the arithmetic below runs ONLY when both totals confirm the pages
+  // are complete. When a total is unavailable (older caller, older backend) a
+  // full page is treated as possibly truncated — suppressing a true statement
+  // is recoverable; making a false one is not. `unranked` stays on screen even
+  // when truncated: "N kitchens have no location data" remains true of the
+  // shops it counted, merely incomplete, while the subtraction becomes wrong.
+  const serverListComplete =
+    serverTotal != null ? serverShops.length >= serverTotal : serverShops.length < PAGE_SIZE
+  const nearbyListComplete =
+    located && (nearbyTotal != null ? nearby.length >= nearbyTotal : nearby.length < PAGE_SIZE)
+  const beyondRadius =
+    located && serverListComplete && nearbyListComplete
+      ? Math.max(0, serverShops.length - nearby.length - unranked.length)
+      : 0
 
   const requestLocation = useCallback(() => {
     if (phase === "locating") return
@@ -235,22 +271,31 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
           const content = body?.content ?? []
           if (content.length === 0) {
             setNearby(null)
+            setNearbyTotal(null)
             setPhase("empty")
             return
           }
           setNearby(content)
+          // How many shops are inside the radius, not how many fitted on the
+          // page — the number that decides whether the exclusion arithmetic
+          // above is allowed to treat `content` as the whole in-radius set.
+          // Defensive typeof: an older backend that omits it degrades to
+          // "possibly truncated", never to NaN arithmetic.
+          setNearbyTotal(typeof body?.totalElements === "number" ? body.totalElements : null)
           setPhase("located")
         } catch {
           // A 429, a 5xx or a dropped connection. The server list is still on
           // screen and still true, so say so briefly and stop — never an empty
           // row, and never a spinner left running.
           setNearby(null)
+          setNearbyTotal(null)
           setPhase("error")
           setNote("We could not check what is near you just now — showing every kitchen.")
         }
       },
       (error) => {
         setNearby(null)
+        setNearbyTotal(null)
         setPhase("error")
         setNote(
           error.code === error.PERMISSION_DENIED
