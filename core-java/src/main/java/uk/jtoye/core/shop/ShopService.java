@@ -112,7 +112,7 @@ public class ShopService {
         // #460 link 3a: derive the coordinate from the address BEFORE the row is written,
         // so a shop is never born invisible to every distance query. On create there is no
         // prior coordinate to preserve, hence the two nulls.
-        applyCoordinate(shop, null, null);
+        applyCoordinate(shop, request, null, null);
 
         shop = shopRepository.saveAndFlush(shop);
 
@@ -266,7 +266,7 @@ public class ShopService {
         // lookup per update. `published` is NOT touched here — the sole-writer invariant
         // (threat T-18-05-T) is unaffected by this change; the only fields written are
         // latitude and longitude.
-        applyCoordinate(shop, latitudeBeforeUpdate, longitudeBeforeUpdate);
+        applyCoordinate(shop, request, latitudeBeforeUpdate, longitudeBeforeUpdate);
 
         shop = shopRepository.saveAndFlush(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
@@ -422,10 +422,14 @@ public class ShopService {
      *
      * @param shop            the entity, already carrying the FINAL address and whatever the
      *                        client sent for latitude/longitude
+     * @param request         the request as the client sent it — consulted so a LONE axis can
+     *                        be told apart from a full pair, which the merged entity cannot
+     *                        reveal once the IGNORE-null mapper has run (WR-02)
      * @param persistedLatitude  the coordinate held before this write, or {@code null} on create
      * @param persistedLongitude the coordinate held before this write, or {@code null} on create
      */
-    private void applyCoordinate(Shop shop, Double persistedLatitude, Double persistedLongitude) {
+    private void applyCoordinate(Shop shop, CreateShopRequest request,
+                                 Double persistedLatitude, Double persistedLongitude) {
         Optional<PostcodeGeocoder.Coordinate> located = postcodeGeocoder.locate(shop.getAddress());
 
         if (located.isPresent()) {
@@ -444,6 +448,19 @@ public class ShopService {
                         + "The shop stays published and reachable, but is absent from distance-ranked "
                         + "results until its postcode resolves.",
                 shop.getSlug());
+
+        // WR-02 (phase-33 code review): a single axis is not a coordinate — never merge a
+        // client half with a persisted half. The DTO's pairing constraint (coordinatePaired)
+        // refuses this at the HTTP boundary; this is the service's own last line for any
+        // caller that arrives unvalidated. It must consult the REQUEST, not the entity: on
+        // update the IGNORE-null mapper has already copied the lone half onto the entity
+        // next to the persisted other half, so the merged entity always looks like a full
+        // pair. Reset the whole pair to the persisted state (null/null on create) so the
+        // decision falls through to precedence rule 3 as if no client coordinate existed.
+        if ((request.getLatitude() == null) != (request.getLongitude() == null)) {
+            shop.setLatitude(persistedLatitude);
+            shop.setLongitude(persistedLongitude);
+        }
 
         // Never let a miss delete a coordinate the row already had.
         if (shop.getLatitude() == null && persistedLatitude != null) {

@@ -187,6 +187,79 @@ class ShopServiceGeocodeTest {
     }
 
     // =====================================================================================
+    // WR-02 (phase-33 code review): a single axis is not a coordinate
+    // =====================================================================================
+
+    @Nested
+    @DisplayName("an unpaired coordinate axis is refused — never half a position")
+    class UnpairedCoordinates {
+
+        /**
+         * Review WR-02: latitude and longitude were range-validated INDEPENDENTLY, so a
+         * request carrying only one axis validated clean, and on update the IGNORE-null
+         * mapper then merged the client's half with the persisted other half — a
+         * coordinate nobody supplied, range-valid, ranked in public distance results.
+         *
+         * <p>These arms were run against the pre-fix tree first and FAILED there: a lone
+         * latitude produced zero constraint violations and the POST returned 201. That
+         * broken-direction run is recorded in 33-REVIEW-FIX.md.
+         */
+        @Test
+        @DisplayName("a lone latitude violates the pairing constraint on the DTO")
+        void loneLatitudeViolatesTheDto() {
+            Set<ConstraintViolation<CreateShopRequest>> violations =
+                    validator.validate(request("anywhere", 51.47, null));
+
+            assertThat(violations)
+                    .as("constraint violations for latitude without longitude")
+                    .isNotEmpty();
+            assertThat(violations)
+                    .extracting(v -> v.getPropertyPath().toString())
+                    .contains("coordinatePaired");
+        }
+
+        @Test
+        @DisplayName("a lone longitude violates the pairing constraint on the DTO")
+        void loneLongitudeViolatesTheDto() {
+            assertThat(validator.validate(request("anywhere", null, -0.07)))
+                    .as("constraint violations for longitude without latitude")
+                    .isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("POST with only a latitude is a typed 400 and the service is never reached")
+        void postWithLoneLatitudeIsRejectedBeforePersistence() throws Exception {
+            ShopService shopService = mock(ShopService.class);
+            when(shopService.createShop(any())).thenReturn(new ShopDto());
+
+            MockMvcBuilders.standaloneSetup(new ShopController(shopService))
+                    .setControllerAdvice(new GlobalExceptionHandler())
+                    .build()
+                    .perform(post("/shops")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(new ObjectMapper().writeValueAsString(
+                                    request("12 Bellenden Road, Peckham, London SE15 4QA", 51.47, null))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/validation"))
+                    .andExpect(jsonPath("$.errors.coordinatePaired").exists());
+
+            verify(shopService, never()).createShop(any());
+        }
+
+        @Test
+        @DisplayName("a full pair and an absent pair both still validate — the constraint is about pairing, not presence")
+        void pairedAndAbsentCoordinatesStayLegal() {
+            // Non-vacuity for the arms above: a constraint that rejected every request
+            // would satisfy all three while breaking the field. Both legal shapes are
+            // asserted here, next to the arms whose honesty depends on them.
+            assertThat(validator.validate(request("anywhere", 51.47, -0.07)))
+                    .as("violations on a full pair").isEmpty();
+            assertThat(validator.validate(request("anywhere", null, null)))
+                    .as("violations on an absent pair").isEmpty();
+        }
+    }
+
+    // =====================================================================================
     // The write path itself — geocode on create and update, and the precedence rule
     // =====================================================================================
 
@@ -355,6 +428,38 @@ class ShopServiceGeocodeTest {
                     .as("the fallback limb — a range-validated client value, since nothing better exists")
                     .isEqualTo(51.47);
             assertThat(shop.getLongitude()).isEqualTo(-0.07);
+        }
+
+        @Test
+        @DisplayName("WR-02: create with a lone axis persists NO coordinate at all, not half of one")
+        void createWithALoneAxisPersistsNoCoordinate() {
+            // The DTO's pairing constraint refuses this at the HTTP boundary; this arm
+            // pins the service's own last line for any caller that arrives unvalidated.
+            shopService.createShop(request(UNKNOWN, 51.47, null));
+
+            Shop shop = persisted();
+            assertThat(shop.getLatitude()).as("latitude from an unpaired request").isNull();
+            assertThat(shop.getLongitude()).as("longitude from an unpaired request").isNull();
+        }
+
+        @Test
+        @DisplayName("WR-02: update with a lone axis cannot mint a Frankenstein pair from a persisted half")
+        void updateWithALoneAxisKeepsThePersistedPairIntact() {
+            // The review's headline defect: PUT carrying only latitude, address failing to
+            // geocode — the IGNORE-null mapper merged the client's latitude with the
+            // PERSISTED longitude, publishing a coordinate nobody supplied. Run against
+            // the pre-fix tree this arm failed with exactly that pair (51.5074, -0.070047).
+            UUID shopId = UUID.randomUUID();
+            when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                    .thenReturn(Optional.of(existingShop(shopId, REAL, SE15_5BS_LAT, SE15_5BS_LON)));
+
+            shopService.updateShop(shopId, request(UNKNOWN, 51.5074, null));
+
+            Shop shop = persisted();
+            assertThat(shop.getLatitude())
+                    .as("the coordinate the shop already had, never the client's half")
+                    .isEqualTo(SE15_5BS_LAT);
+            assertThat(shop.getLongitude()).isEqualTo(SE15_5BS_LON);
         }
 
         // ---- update -------------------------------------------------------------------
