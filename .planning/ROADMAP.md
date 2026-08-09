@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 8/8 | Complete   | 2026-08-09 |
+| 33. The Consumer Product | v2.3 | 9/10 | In Progress | — |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
