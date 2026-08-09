@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The rejected client coordinate is logged at integer degrees, never the raw pair (#621) — 2026-08-09
+
+Closes **UF-33-01**, the single WARNING-level residual from phase 33's security verification.
+The WR-03 `client_coordinate_rejected` WARN in `ShopService` logged the vendor-supplied lat/lon at
+full precision — a pair that never becomes public on that branch and could be a residential
+position. It now logs integer degrees (~111 km): enough to tell "New York" from "a typo near
+Calais", never an address fix. The accepted branch is deliberately untouched (that value is
+published on the ranking surface anyway).
+
+#### Fixed
+- `ShopService` rejected-branch WARN coarsened via `Math.round`; new test arm proves the raw pair
+  is absent and the coarse pair present, shown failing against the pre-fix tree.
+
+### Phase 33 — the consumer product: locality is real, honest, and shipped in miles (#620) — 2026-08-09
+
+Eight plans, rebase-merged as 64 commits (which is why the individual commits carry no PR number —
+see the FLOOR note in `scripts/gates/changelog-contract.conf`). A real person who is not a vendor
+can now find a shop near them and be shown something true (#460, #544, CUST-01/CUST-03).
+
+#### Added
+- **V61 `postcode_centroid`** + geocoder + `GeoBounds` (33-02); Code-Point Open dataset with OGL
+  attribution and a year gate (33-01).
+- **Live shop coordinates** on the write path, backfilled under FORCE RLS and proven against the
+  running database (33-05).
+- **`GET /public/shops?lat=&lon=&radiusKm=`** — distance-ordered, radius-filtered, validated;
+  native `asin` haversine under a leakproof `BETWEEN` bounding-box prefilter that pushes below the
+  RLS barrier (33-06), plus a fail-closed gate diffing the committed OpenAPI snapshot against the
+  RUNNING service.
+- **The located "near you" landing row** (33-07): gesture-gated geolocation, three honest heading
+  states, exclusion disclosure, no coordinate persisted to any browser storage. The wire stays
+  metric; the customer reads **miles** (owner checkpoint correction).
+
+#### Fixed
+- The landing row shows real published shops, never fictional vendors (#544); `Permissions-Policy`
+  carries `geolocation=(self)` (33-03).
+- Post-review hardening: truncated-sample disclosure suppression, lat/lon pairing constraint,
+  UK bounding box on the client-coordinate fallback, null delivery fee renders nothing (WR-01..04).
+
+#### Security
+- 53/53 phase threats closed (40 mitigate / 13 accept, ASVS L1) — `33-SECURITY.md`.
+
 ### CVE-2026-67213 in nanoid reds every open PR with no code change (#613) — 2026-08-08
 
 The Trivy vuln DB picked up **CVE-2026-67213** overnight. The **same tree** that passed
