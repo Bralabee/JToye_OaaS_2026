@@ -505,10 +505,15 @@ public class ShopService {
                                 + "public ranking surface; review if disputed.",
                         shop.getSlug(), request.getLatitude(), request.getLongitude());
             } else {
-                log.warn("event=client_coordinate_rejected shop='{}' latitude={} longitude={} — "
+                // UF-33-01: integer-degree coarsening (~111 km). The rejected pair never
+                // becomes public and could be a residential position, so the trace says
+                // roughly where it pointed without fixing an address.
+                log.warn("event=client_coordinate_rejected shop='{}' latitude~{} longitude~{} — "
                                 + "the client-supplied fallback lies outside the UK bounding box and "
-                                + "was discarded; the persisted coordinate (or none) stands.",
-                        shop.getSlug(), request.getLatitude(), request.getLongitude());
+                                + "was discarded; the persisted coordinate (or none) stands. Values "
+                                + "coarsened to integer degrees.",
+                        shop.getSlug(), Math.round(request.getLatitude()),
+                        Math.round(request.getLongitude()));
                 shop.setLatitude(persistedLatitude);
                 shop.setLongitude(persistedLongitude);
             }

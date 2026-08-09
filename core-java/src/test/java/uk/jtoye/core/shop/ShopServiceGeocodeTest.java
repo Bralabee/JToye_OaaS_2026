@@ -500,6 +500,39 @@ class ShopServiceGeocodeTest {
         }
 
         @Test
+        @DisplayName("UF-33-01: a rejected client fallback is WARN-logged WITHOUT the raw coordinate pair")
+        void rejectedClientFallbackIsLoggedWithoutTheRawPair() {
+            // The rejected pair never becomes public and could be a residential position
+            // (a home kitchen's real location), so the operator trace must be coarse:
+            // integer degrees (~111 km) says "New York, not a typo near Calais" without
+            // fixing an address. Run against the pre-fix tree this arm FAILED with the
+            // raw pair (40.7128, -74.006) in the formatted message.
+            ch.qos.logback.classic.Logger serviceLogger =
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ShopService.class);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                    new ch.qos.logback.core.read.ListAppender<>();
+            appender.start();
+            serviceLogger.addAppender(appender);
+            try {
+                shopService.createShop(request(UNKNOWN, 40.7128, -74.0060));
+
+                assertThat(appender.list)
+                        .as("the rejection WARN exists and is coarse")
+                        .anySatisfy(event -> {
+                            assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+                            assertThat(event.getFormattedMessage())
+                                    .contains("event=client_coordinate_rejected")
+                                    .doesNotContain("40.7128")
+                                    .doesNotContain("-74.006")
+                                    .contains("41")
+                                    .contains("-74");
+                        });
+            } finally {
+                serviceLogger.detachAppender(appender);
+            }
+        }
+
+        @Test
         @DisplayName("WR-02: create with a lone axis persists NO coordinate at all, not half of one")
         void createWithALoneAxisPersistsNoCoordinate() {
             // The DTO's pairing constraint refuses this at the HTTP boundary; this arm
