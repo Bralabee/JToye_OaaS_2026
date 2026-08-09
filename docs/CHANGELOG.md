@@ -20,7 +20,7 @@ customer to guess.
   search-only geocoder entry point first; a GB outward code or full unit resolves through
   `postcode_centroid` and reuses 33-06's distance query at the platform radius. Anything that is
   not a postcode, and any postcode the dataset does not know, falls straight through to the
-  existing full-text search and `LIKE` fallback, unchanged. The district lookup is a half-open
+  existing full-text search and `LIKE` fallback, unchanged. The district lookup is a closed key
   range plus a unit-length guard, so it is an **Index Scan** over 1,748,230 rows and not the
   Parallel Seq Scan a `LIKE` prefix plans to.
 - **`X-Search-Interpretation`** — the server's own statement about how `q` was read
