@@ -1,17 +1,32 @@
-# Handoff: Phase 33 waves 1–3 COMPLETE — 33-05 (wave 4) is next
+# Handoff: Phase 33 SHIPPED — 10/10 plans on main, nothing in flight
 
-**Generated 2026-08-08, later the same day. This section supersedes everything below for anything
-concerning Phase 33's execution state.** Everything below is retained as history.
+**Generated 2026-08-10. This section supersedes everything below for anything concerning
+Phase 33's execution state.** Everything below is retained as history.
 
 ## Resume here
 
-**Branch `phase/33-the-consumer-product`, pushed, clean tree, 0 behind `origin/main`.**
-No PR — the stacked strategy says nothing merges to `main` until `33-07` lands.
+**Branch `main`, clean tree, everything merged — there is no in-flight phase work.**
+Phase 33 shipped via PR #620 (plans 33-00..33-07, rebase-merge); the additive postcode-proximity
+pair 33-08/33-09 (issue #619) shipped via PR #623 (squash, main commit `8d53a6fc`, 2026-08-09);
+UF-33-01 closed via #621; learnings extracted via #622. Issue #619 is CLOSED and the post-merge
+main CI/CD run (31337206398) concluded success end-to-end, image builds included.
 
 ```bash
-git checkout phase/33-the-consumer-product && git status --short   # expect clean
-git rev-list --count HEAD..origin/main                             # expect 0
+git checkout main && git status --short   # expect clean
+git log --oneline -1                      # expect 8d53a6fc or a descendant
 ```
+
+Two decisions travel forward from Phase 33, both recorded, neither to be re-derived:
+**D-A is LOCKED interpretation-first** (owner walkthrough verdict 2026-08-09, quoted verbatim in
+33-09-SUMMARY.md — a geocodable postcode-shaped `q` is a locality question; do not re-litigate),
+and **CUST-02's `MANUAL_REVIEW` adjudicator remains unassigned** (owner-deferred per D-2, carried
+to the next phase's decision queue). Next roadmap item, per ROADMAP.md: **Phase 28 (Security
+Triage + the Dev/Prod Boundary) — not started, not yet planned.**
+
+## Resume point as of 2026-08-08 (superseded — history only)
+
+**Branch `phase/33-the-consumer-product`** (since merged via #620 and deleted).
+No PR — the stacked strategy said nothing merges to `main` until `33-07` lands.
 
 | Plan | Wave | State |
 |---|---|---|
