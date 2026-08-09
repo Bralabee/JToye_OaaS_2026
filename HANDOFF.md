@@ -2607,7 +2607,11 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 32 x rc=0. A VOID (2) is not a pass. (31 -> 32: plan 33-02 added
+# EXPECT 34 x rc=0. A VOID (2) is not a pass. (32 -> 34: plan 33-05 added
+#   check-live-shop-coordinates.sh, proving the seeded coordinates exist on the
+#   LIVE database, and plan 33-06 added check-openapi-snapshot-fresh.sh, diffing
+#   the committed OpenAPI snapshot against the RUNNING service.
+#   31 -> 32: plan 33-02 added
 #   check-no-create-extension.sh, enforcing that no Flyway migration creates a
 #   PostgreSQL extension — the role Flyway runs as cannot execute the statement at
 #   all, so one would abort startup in every environment at once.
