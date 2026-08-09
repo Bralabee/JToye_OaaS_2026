@@ -259,21 +259,42 @@ public class PublicStorefrontService {
                     "'radiusKm' must not exceed " + maxRadiusKm);
         }
 
+        log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
+                radius, pageable.getPageNumber());
+
+        return nearestPublished(latitude, longitude, radius, pageable);
+    }
+
+    /**
+     * The distance query and its projection-to-DTO tail, shared by BOTH callers that need it:
+     * the caller-supplied coordinate path ({@link #listPublishedShopsNear}) and the postcode
+     * tier of {@link #searchPublishedShops}.
+     *
+     * <p>Extracted rather than duplicated, and the reason is specific rather than stylistic. The
+     * projection cannot carry {@code shops.opening_hours} — that column is {@code jsonb} and a
+     * native tuple hands back raw JSON that a projection getter cannot convert — so the entities
+     * are re-resolved and mapped through the SAME {@code toPublicShopDto} the unlocated listing
+     * uses. A second shop-mapping path would be the one quietly missing opening hours, and no
+     * assertion on either path alone would see it (33-06's recorded reason).
+     *
+     * <p>Callers own validation. Everything reaching here is already range-checked, and the
+     * radius is a platform value rather than a caller's.
+     */
+    private Page<PublicShopDto> nearestPublished(double latitude, double longitude,
+                                                 double radiusKm, Pageable pageable) {
         // The box is computed HERE and passed as four more named parameters, which is what keeps
         // the prefilter leakproof and index-eligible under the RLS barrier — see the comment on
         // ShopRepository.findPublishedNear.
-        GeoBounds box = GeoBounds.boxAround(latitude, longitude, radius);
+        GeoBounds box = GeoBounds.boxAround(latitude, longitude, radiusKm);
 
         // Unsorted on purpose: the query owns its ordering (nearest first, id as tiebreak) and a
         // client-supplied Sort must never reach a native ORDER BY (T-33-06-02).
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
-        log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
-                radius, unsorted.getPageNumber());
 
         Page<ShopWithDistance> page = shopRepository.findPublishedNear(
                 latitude, longitude,
                 box.minLatitude(), box.maxLatitude(), box.minLongitude(), box.maxLongitude(),
-                radius, unsorted);
+                radiusKm, unsorted);
 
         // One extra query for the page's shops, then the SAME toPublicShopDto the unlocated
         // listing uses — so a located result differs from an unlocated one by exactly one field.
@@ -302,7 +323,43 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Search published shops by name or tags.
+     * Search published shops by name or tags, and — only if that finds nothing — by locality
+     * (33-08 / #619).
+     *
+     * <h2>Three tiers, in this order, and the order is a product decision (D-A)</h2>
+     *
+     * <ol>
+     *   <li>ranked full-text search over {@code shops.search_vector}</li>
+     *   <li>the pre-existing {@code LIKE} fallback for short queries</li>
+     *   <li><strong>NEW:</strong> the term read as a GB postcode, answered by distance</li>
+     * </ol>
+     *
+     * <p>Tier 3 runs <strong>only when tiers 1 and 2 both returned an empty page</strong>. That
+     * makes the old behaviour preserved by construction rather than by inspection: every query
+     * that returns results today takes a path this change does not touch, so {@code SE15 -> 2},
+     * {@code SE15 5BS -> 1} and {@code jollof -> 2} (all measured live at 33-07's gate) cannot
+     * move. It also keeps a shop literally named "SE22 Kitchen" winning a search for SE22, which
+     * is what a customer typing a shop's name expects.
+     *
+     * <p><em>The rejected alternative was interpretation-first</em> — trying the postcode BEFORE
+     * the text search. It arguably gives the better answer to {@code SE15 5BS} ("every kitchen
+     * near you" rather than "the kitchen at that address"), but it silently changes three
+     * measured behaviours. The resulting inconsistency is not hidden: it is disclosed in the
+     * header, and flipping the order later is a single-statement change that every test in this
+     * class still covers. <strong>This is the open question 33-09 puts to the owner.</strong>
+     *
+     * <p><em>Cost, stated:</em> the centroid lookup happens only on a zero-result search, so an
+     * ordinary food search costs zero extra queries.
+     *
+     * <h2>An empty proximity page is a real answer</h2>
+     *
+     * <p>A postcode that resolves but has no kitchen within the radius returns an EMPTY page
+     * carrying a {@code PROXIMITY} interpretation — never a downgrade to {@code TEXT}, which
+     * would tell the customer their postcode was not understood when in fact it was.
+     *
+     * <p>The radius is {@code jtoye.geo.default-radius-km}, the same platform default the
+     * "near you" row already uses (D-C). No second radius, and therefore no second number to
+     * keep in step.
      */
     public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
@@ -315,9 +372,33 @@ public class PublicStorefrontService {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
         }
+
+        Page<PublicShopDto> textResults = shopRepository.searchPublished(query, pageable)
+                .map(this::toPublicShopDto);
+        if (textResults.hasContent()) {
+            return new SearchOutcome(textResults, SearchInterpretation.text());
+        }
+
+        // TIER 3. Reached only when the text search found nothing at all.
+        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
+        if (located.isEmpty()) {
+            // Not a postcode, or a postcode outside Code-Point Open (Northern Ireland is the
+            // common real case). The honest answer is the empty text page — never a proximity
+            // claim on a branch that did not apply one.
+            return new SearchOutcome(textResults, SearchInterpretation.text());
+        }
+
+        PostcodeGeocoder.LocatedPostcode postcode = located.get();
+        // Kind and page only. The coordinate is derived from the customer's postcode and is not
+        // logged here, for the same reason a device coordinate is not logged on the lat/lon path.
+        log.debug("Search interpreted as PROXIMITY at {} precision, page {} — "
+                        + "coordinates deliberately not logged",
+                postcode.precision(), pageable.getPageNumber());
+
         return new SearchOutcome(
-                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
-                SearchInterpretation.text());
+                nearestPublished(postcode.coordinate().latitude(), postcode.coordinate().longitude(),
+                        defaultRadiusKm, pageable),
+                SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
     }
 
     /**

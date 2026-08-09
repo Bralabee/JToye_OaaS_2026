@@ -36,8 +36,17 @@ public class CorsConfig {
      *
      * <p>{@code curl} cannot answer this question: it shows what was SENT, not what
      * the browser exposes. Verify in a browser.
+     *
+     * <p>33-08 (#619) appends the search-interpretation header — the last name in
+     * the default below, and declared canonically as
+     * {@code SearchInterpretation.HEADER}. Same hazard, same reason it is listed
+     * rather than assumed: the storefront talks to core cross-origin (:3000 to
+     * :9090), so unlisted it is on the wire and {@code null} to every {@code fetch}.
+     * It is an ADDITION — none of the six names above may be displaced, which
+     * {@code preExistingExposuresRetained} and
+     * {@code shippedDefaultNamesAllFourHeaders} both guard.
      */
-    @Value("${cors.exposed-headers:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset}")
+    @Value("${cors.exposed-headers:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,X-Search-Interpretation}")
     private List<String> exposedHeaders;
 
     @Bean
