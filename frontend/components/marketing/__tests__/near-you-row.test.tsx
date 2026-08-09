@@ -25,15 +25,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { NearYouRow, NEAR_YOU_RADIUS_KM } from "@/components/marketing/near-you-row"
-import publicApiClient from "@/lib/public-api-client"
 import type { PublicShop } from "@/types/storefront"
 
-jest.mock("@/lib/public-api-client", () => ({
-  __esModule: true,
-  default: { get: jest.fn() },
-}))
-
-const mockGet = publicApiClient.get as jest.Mock
+/**
+ * `fetch`, not the axios client next door — deliberately, and measured: importing
+ * axios into this island costs 46,846 bytes on the landing route's client bundle
+ * for one GET. See the docblock in near-you-row.tsx for both readings.
+ */
+const mockFetch = jest.fn()
+global.fetch = mockFetch as unknown as typeof fetch
 
 function shop(overrides: Partial<PublicShop> & { slug: string; name: string }): PublicShop {
   return {
@@ -78,9 +78,12 @@ const NO_COORDS = shop({
 /** The three published shops the server rendered, one of them unrankable. */
 const SERVER_SHOPS = [BRIXTON, MAMA, NO_COORDS]
 
+/** A 200 carrying a page of shops, in the shape `fetch` hands back. */
 function page<T>(content: T[]) {
   return {
-    data: {
+    ok: true,
+    status: 200,
+    json: async () => ({
       content,
       totalElements: content.length,
       totalPages: 1,
@@ -88,8 +91,14 @@ function page<T>(content: T[]) {
       number: 0,
       first: true,
       last: true,
-    },
+    }),
   }
+}
+
+/** The query string of the one request the island issued. */
+function requestedParams(): URLSearchParams {
+  const url = String(mockFetch.mock.calls[0][0])
+  return new URL(url, "http://core.test").searchParams
 }
 
 /**
@@ -139,7 +148,7 @@ const headingsSayingNearYou = () =>
   screen.getAllByRole("heading").filter((h) => /near you/i.test(h.textContent ?? ""))
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockFetch.mockReset()
 })
 
 describe("NearYouRow — no coordinate held", () => {
@@ -181,14 +190,14 @@ describe("NearYouRow — no coordinate held", () => {
   it("never issues a shop request before a coordinate is held", async () => {
     installGeolocation(() => {})
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
-    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })
 
 describe("NearYouRow — a granted coordinate", () => {
   it("re-renders distance-ordered under a 'near you' heading, showing the real distance", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockResolvedValue(
+    mockFetch.mockResolvedValue(
       page([
         { ...MAMA, distanceKm: 0.2707795900623579 },
         { ...BRIXTON, distanceKm: 3.0104 },
@@ -209,24 +218,26 @@ describe("NearYouRow — a granted coordinate", () => {
 
   it("asks for exactly one page, with the radius the heading quotes, once per grant", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockResolvedValue(page([{ ...MAMA, distanceKm: 0.27 }]))
+    mockFetch.mockResolvedValue(page([{ ...MAMA, distanceKm: 0.27 }]))
 
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
     await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
-    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
 
-    const [path, config] = mockGet.mock.calls[0]
-    expect(path).toBe("/public/shops")
-    expect(config.params.radiusKm).toBe(NEAR_YOU_RADIUS_KM)
+    expect(String(mockFetch.mock.calls[0][0])).toContain("/public/shops?")
+    const params = requestedParams()
+    expect(params.get("radiusKm")).toBe(String(NEAR_YOU_RADIUS_KM))
+    expect(params.get("size")).toBe("8")
     // Coordinate precision is reduced before it leaves the browser: 4 dp is
-    // ~11 m against ~100 m postcode centroids, so it cannot change the ranking.
-    expect(config.params.lat).toBe(51.4712)
-    expect(config.params.lon).toBe(-0.0701)
+    // ~11 m against ~100 m postcode centroids, so it cannot change the ranking,
+    // while a raw 13-decimal reading is a far more identifying value in a URL.
+    expect(params.get("lat")).toBe("51.4712")
+    expect(params.get("lon")).toBe("-0.0701")
   })
 
   it("shows the nothing-in-radius state honestly, keeping the full list", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockResolvedValue(page([]))
+    mockFetch.mockResolvedValue(page([]))
 
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
     await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
@@ -252,7 +263,7 @@ describe("NearYouRow — a granted coordinate", () => {
 describe("NearYouRow — the exclusion disclosure (issue 460 / plan-checker B8)", () => {
   it("names the shops that could not be ranked, with a route to the full list", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockResolvedValue(
+    mockFetch.mockResolvedValue(
       page([
         { ...MAMA, distanceKm: 0.27 },
         { ...BRIXTON, distanceKm: 3.01 },
@@ -273,7 +284,7 @@ describe("NearYouRow — the exclusion disclosure (issue 460 / plan-checker B8)"
 
   it("says nothing when every published shop made it into the located row", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockResolvedValue(
+    mockFetch.mockResolvedValue(
       page([
         { ...MAMA, distanceKm: 0.27 },
         { ...BRIXTON, distanceKm: 3.01 },
@@ -293,7 +304,7 @@ describe("NearYouRow — the exclusion disclosure (issue 460 / plan-checker B8)"
     installGeolocation((success) => success(POSITION))
     // Only the nearest shop came back: Brixton is outside the radius, Belfast
     // has no coordinate. Two different reasons, both disclosed as themselves.
-    mockGet.mockResolvedValue(page([{ ...MAMA, distanceKm: 0.27 }]))
+    mockFetch.mockResolvedValue(page([{ ...MAMA, distanceKm: 0.27 }]))
 
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
     await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
@@ -345,7 +356,7 @@ describe("NearYouRow — all three geolocation failures degrade the same way", (
 
   it("a failed shop request falls back too, rather than emptying the row", async () => {
     installGeolocation((success) => success(POSITION))
-    mockGet.mockRejectedValue(new Error("429"))
+    mockFetch.mockResolvedValue({ ok: false, status: 429, json: async () => ({}) })
 
     const { container } = render(<NearYouRow serverShops={SERVER_SHOPS} />)
     await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
