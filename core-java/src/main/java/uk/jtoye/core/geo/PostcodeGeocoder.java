@@ -111,9 +111,30 @@ public class PostcodeGeocoder {
     }
 
     /**
+     * Resolve a customer's SEARCH TERM to a coordinate (33-08 / #619).
+     *
+     * <p>Not yet implemented — see the RED commit that introduced this signature.
+     */
+    public Optional<LocatedPostcode> locateSearchTerm(String term) {
+        return Optional.empty();
+    }
+
+    /**
      * A WGS84 point. Never constructed for an unresolved address — the absence of a coordinate
      * is represented by an empty {@link Optional}, never by a sentinel value.
      */
     public record Coordinate(double latitude, double longitude) {
+    }
+
+    /** How precisely a search term was resolved. */
+    public enum Precision {
+        /** A full postcode unit: a primary-key hit, ~100 m. */
+        UNIT,
+        /** An outward code: the mean of every unit in that district, ~1 km. */
+        DISTRICT
+    }
+
+    /** A resolved search term: where it is, the normalised key, and how precise that is. */
+    public record LocatedPostcode(Coordinate coordinate, String key, Precision precision) {
     }
 }
