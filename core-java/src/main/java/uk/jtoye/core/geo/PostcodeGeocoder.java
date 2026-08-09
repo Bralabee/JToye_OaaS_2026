@@ -63,8 +63,46 @@ public class PostcodeGeocoder {
     private static final Pattern TRAILING_POSTCODE = Pattern.compile(
             "([A-Za-z]{1,2}[0-9]{1,2}[A-Za-z]?)\\s{0,4}([0-9][A-Za-z]{2})\\s{0,8}$");
 
+    /**
+     * Permissive whole-term postcode matcher for the customer SEARCH box (33-08 / #619).
+     *
+     * <p>Two things make it different from {@link #TRAILING_POSTCODE}, and both are load-bearing:
+     *
+     * <ul>
+     *   <li><strong>Anchored at BOTH ends.</strong> {@code TRAILING_POSTCODE} only has to find a
+     *       postcode at the end of an address line. A search term is not an address: if the
+     *       customer typed anything else at all — {@code "SE22 pizza"}, {@code "x SE15 5BS"} —
+     *       they are searching for words, and answering with a map of a district would be the
+     *       platform deciding it knew better. Both-ends anchoring is what makes that a text
+     *       search instead of a proximity one.</li>
+     *   <li><strong>The inward code is OPTIONAL.</strong> {@code SE22} on its own is the whole
+     *       point of #619; {@code TRAILING_POSTCODE} requires the inward code and must keep
+     *       requiring it, because it feeds the vendor write path.</li>
+     * </ul>
+     *
+     * <p>Group 1 is the outward code ({@code SE15}), group 2 the optional inward code
+     * ({@code 5BS}). Every quantifier is explicitly bounded and there is no nested repetition,
+     * so matching is linear (T-33-08-01) — but the real denial-of-service control is
+     * {@link #MAX_SEARCH_TERM_LENGTH}, applied before the matcher ever runs.
+     */
+    private static final Pattern SEARCH_POSTCODE = Pattern.compile(
+            "^\\s{0,4}([A-Za-z]{1,2}[0-9]{1,2}[A-Za-z]?)(?:\\s{0,4}([0-9][A-Za-z]{2}))?\\s{0,4}$");
+
     /** Longest possible normalised key ({@code XX99XXX}); the column is {@code length = 8}. */
     private static final int MAX_KEY_LENGTH = 8;
+
+    /**
+     * Longest search term that could possibly be a postcode: outward 4 + up to 4 spaces between
+     * the codes + inward 3, with slack. Anything longer is refused BEFORE the regex, so the
+     * matcher never sees an unbounded string from an anonymous caller (T-33-08-01).
+     */
+    private static final int MAX_SEARCH_TERM_LENGTH = 12;
+
+    /** Lowest inward code in any district — Code-Point Open inward codes are digit-letter-letter. */
+    private static final String LOWEST_INWARD = "0AA";
+
+    /** Highest inward code in any district. */
+    private static final String HIGHEST_INWARD = "9ZZ";
 
     private final PostcodeCentroidRepository repository;
 
@@ -113,10 +151,103 @@ public class PostcodeGeocoder {
     /**
      * Resolve a customer's SEARCH TERM to a coordinate (33-08 / #619).
      *
-     * <p>Not yet implemented — see the RED commit that introduced this signature.
+     * <p>The second entry point on this class, and deliberately not a loosening of
+     * {@link #locate(String)}. The two answer different questions from different callers:
+     * {@code locate} reads a VENDOR's address line on the write path, where a district centroid
+     * would be a silent ~1 km error stamped onto a shop forever; this reads a CUSTOMER's search
+     * box, where a district centroid is exactly the right answer to {@code "SE22"}. Their
+     * disagreement about the term {@code "SE15"} — empty there, present here — is asserted
+     * permanently in {@code PostcodeGeocoderTest}.
+     *
+     * <h2>The table is the authority, not the regex</h2>
+     *
+     * <p>Unchanged from {@code locate}, and worth restating because this method has two lookups
+     * instead of one. {@link #SEARCH_POSTCODE} only NOMINATES a candidate; a row in
+     * {@code postcode_centroid} is what decides. {@code ZZ99 9ZZ} matches the pattern perfectly
+     * and resolves to nothing, and that is the correct outcome — the alternative is inventing a
+     * coordinate and quietly showing the customer kitchens that are nowhere near them.
+     *
+     * <h2>Unit first, then district</h2>
+     *
+     * <p>A full unit is tried by primary key. If the unit is absent the OUTWARD code is tried,
+     * which is what turns this repo's permanent negative control {@code SE15 4QA} — well-formed,
+     * in our own seeded demo data, and not in Code-Point Open — from zero kitchens into the
+     * kitchens around SE15.
+     *
+     * @param term the raw {@code q} a customer typed; untrusted, may be {@code null}
+     * @return where the term points, its normalised key and how precise that is, or empty if the
+     *         term is not a postcode or names no postcode in the dataset. Never {@code (0,0)},
+     *         never an exception.
      */
     public Optional<LocatedPostcode> locateSearchTerm(String term) {
-        return Optional.empty();
+        if (term == null || term.isBlank() || term.length() > MAX_SEARCH_TERM_LENGTH) {
+            // Length is checked HERE, before the matcher and before either lookup: this is the
+            // DoS control on an anonymous endpoint, and a bounded regex alone is not one.
+            return Optional.empty();
+        }
+
+        Matcher matcher = SEARCH_POSTCODE.matcher(term);
+        if (!matcher.matches()) {
+            // Not a postcode-shaped term at all. Not a miss worth logging — this is the ordinary
+            // case for every food search on the platform.
+            return Optional.empty();
+        }
+
+        String outward = matcher.group(1).toUpperCase(Locale.ROOT);
+        String inward = matcher.group(2);
+
+        if (inward != null) {
+            String key = (outward + inward).toUpperCase(Locale.ROOT);
+            if (key.length() <= MAX_KEY_LENGTH) {
+                Optional<LocatedPostcode> unit = repository.findById(key)
+                        .map(row -> new LocatedPostcode(
+                                new Coordinate(row.getLatitude(), row.getLongitude()),
+                                key, Precision.UNIT));
+                if (unit.isPresent()) {
+                    return unit;
+                }
+            }
+            // Fall through to the district: the customer named a real area even if that exact
+            // unit does not exist.
+        }
+
+        return locateDistrict(outward);
+    }
+
+    /**
+     * Mean centroid of every unit under one outward code, or empty.
+     *
+     * <p>The bounds are computed here rather than in SQL so the predicate stays a plain
+     * comparison the planner can push at the primary-key index — see the measured EXPLAIN on
+     * {@link PostcodeCentroidRepository#findDistrictCentroid}. The inward code is always
+     * digit-letter-letter, so {@code 0AA} and {@code 9ZZ} are the true inclusive bounds and the
+     * range needs no successor arithmetic.
+     */
+    private Optional<LocatedPostcode> locateDistrict(String outward) {
+        String rangeStart = outward + LOWEST_INWARD;
+        String rangeEnd = outward + HIGHEST_INWARD;
+        int unitLength = outward.length() + LOWEST_INWARD.length();
+
+        DistrictCentroid district = repository.findDistrictCentroid(rangeStart, rangeEnd, unitLength);
+
+        // THE AGGREGATE TRAP. This projection is never null: avg() with no GROUP BY returns one
+        // row of NULLs when nothing matched. Gate on the count AND on both coordinates, or the
+        // NULLs unbox to (0,0) — Null Island, which under a distance sort is the nearest kitchen
+        // to every customer on the platform.
+        if (district == null || district.getUnits() <= 0
+                || district.getLatitude() == null || district.getLongitude() == null) {
+            // WARN, and name the NORMALISED KEY only — never the raw term. The term is arbitrary
+            // customer text and does not belong in a log; the key is [A-Z0-9]{2,8} by
+            // construction. Same rule as locate().
+            log.warn("Postcode district '{}' is not in the Code-Point Open dataset — search term "
+                    + "not resolved to a location. This is expected for Northern Ireland (the "
+                    + "dataset is GB-only) and for districts that do not exist.", outward);
+            return Optional.empty();
+        }
+
+        return Optional.of(new LocatedPostcode(
+                new Coordinate(district.getLatitude(), district.getLongitude()),
+                outward, Precision.DISTRICT));
     }
 
     /**
